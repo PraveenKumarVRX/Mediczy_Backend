@@ -1,13 +1,13 @@
 /**
- * Mediczy Brand Configuration
+ * Mediqzy Brand Configuration
  * Centralized branding constants for consistent UI across all dashboards
  */
 
 export const BRAND = {
   // Brand Names
   name: 'Mediqzy',
-  fullName: 'Mediqzy CareOS',
-  tagline: 'The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.',
+  fullName: 'HealthOS',
+  tagline: 'Mediqzy - HealthOS',
   signoff: 'Team Mediqzy',
 
   // Logo
@@ -60,25 +60,29 @@ export const BRAND = {
   
   // Support info
   support: {
-    email: 'support@smarthealth.com',
+    email: 'support@mediqzy.com',
     phone: '+91 1800-XXX-XXXX',
-    website: 'https://smarthealth.com',
+    website: 'https://mediqzy.com',
   },
   
   // Social links
   social: {
-    twitter: 'https://twitter.com/smarthealth',
-    facebook: 'https://facebook.com/smarthealth',
-    linkedin: 'https://linkedin.com/company/smarthealth',
+    twitter: 'https://twitter.com/mediqzy',
+    facebook: 'https://facebook.com/mediqzy',
+    linkedin: 'https://linkedin.com/company/mediqzy',
   },
 };
 
-export const CAREOS = {
+/** Mediqzy HealthOS — product brand (API namespace remains /careos) */
+export const HEALTH_OS = {
   name: 'Mediqzy',
-  product: 'Mediqzy CareOS',
-  tagline: 'The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.',
-  shortTagline: 'AI-Native Healthcare Operating System',
+  product: 'HealthOS',
+  brandLine: 'Mediqzy - HealthOS',
+  tagline: 'Mediqzy - HealthOS',
 } as const;
+
+/** @deprecated Use HEALTH_OS */
+export const CAREOS = HEALTH_OS;
 
 // Helper function to get role label
 export const getRoleLabel = (role: string): string => {

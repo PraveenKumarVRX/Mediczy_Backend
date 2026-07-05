@@ -1,12 +1,22 @@
-# Mediqzy CareOS — Product Vision & Positioning
+# Mediqzy HealthOS — Product Vision & Positioning
 
 | Field | Value |
 |-------|-------|
-| **Document ID** | MED-CAREOS-001 |
-| **Version** | 2.0 |
+| **Document ID** | MED-HEALTHOS-001 |
+| **Version** | 2.1 |
 | **Date** | 2026-07-05 |
 | **Owner** | AI CTO / Product |
-| **Tagline** | *The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care.* |
+| **Brand** | **Mediqzy - HealthOS** |
+
+---
+
+## Brand
+
+**Mediqzy** — company  
+**HealthOS** — product (the healthcare operating system)  
+**Tagline:** `Mediqzy - HealthOS`
+
+> Technical API namespace: `/api/v3/healthos` (alias: `/api/v3/careos`)
 
 ---
 
@@ -15,14 +25,14 @@
 **Do not build another HIS.**
 
 An HIS is a **system of record** — it stores information.  
-**CareOS** is a **system of intelligence and collaboration** — it coordinates people, AI, devices, and organizations.
+**HealthOS** is a **system of intelligence and collaboration** — it coordinates people, AI, devices, and organizations.
 
 | Analogy | What it became |
 |---------|----------------|
 | Windows | Operating system for PCs |
 | Android | Operating system for mobile |
 | AWS | Operating system for cloud |
-| **Mediqzy CareOS** | **Operating layer for healthcare** |
+| **Mediqzy HealthOS** | **Operating layer for healthcare** |
 
 Not software *for* hospitals. An operating system *for healthcare organizations* — hospitals, clinics, labs, pharmacies, insurers, governments, research, and patients.
 
@@ -39,9 +49,9 @@ Every participant uses different systems. The patient repeats their story. Recor
 
 ---
 
-## 3. The CareOS answer: connect, don't replace
+## 3. The HealthOS answer: connect, don't replace
 
-CareOS does not rip-and-replace every system on day one. It becomes the **intelligence layer** that connects them:
+HealthOS does not rip-and-replace every system on day one. It becomes the **intelligence layer** that connects them:
 
 ```
                     AI
@@ -78,7 +88,7 @@ Every relationship connected: patient → doctors → diseases → procedures �
 One verified professional identity across hospitals, telemedicine, research, emergency response. Patients get a **longitudinal identity** linkable across orgs — with consent and local law.
 
 ### 4.5 Care Cloud
-Each hospital has a private environment. CareOS **federates** them securely when authorized.
+Each hospital has a private environment. HealthOS **federates** them securely when authorized.
 
 ### 4.6 Medical Passport
 Patient-owned portable profile: allergies, diagnoses, meds, surgeries, vaccines, imaging/lab summaries. Patient chooses who sees what.
@@ -90,7 +100,7 @@ Patient in Kenya. Specialist in India. Radiologist in Singapore. Insurance in UA
 
 ## 5. Differentiators vs. market
 
-| What vendors build | CareOS owns |
+| What vendors build | HealthOS owns |
 |--------------------|-------------|
 | AI scribes (documentation) | Patient-centric workspace + timeline |
 | Virtual nursing (tasks) | Dynamic care team per patient |
@@ -125,7 +135,7 @@ Patient
 ## 7. Platform modules (future)
 
 ```
-CareOS
+HealthOS
 ├── Care Workspace    ├── Care AI           ├── Care Graph
 ├── Care Identity     ├── Care Cloud        ├── Care Video
 ├── Care Monitoring   ├── Care Analytics    ├── Care Marketplace
@@ -157,7 +167,7 @@ Delivery stages: **Land → Expand → Network → Platform** — see `CAREOS_PL
 ## 10. GTM messaging
 
 **Wrong:** "Another HIS" / "Group chat for doctors"  
-**Right:** "The AI-Native Healthcare Operating System for Hospitals, Health Systems, and Cross-Border Care."
+**Right:** "Mediqzy - HealthOS"
 
 ---
 
@@ -172,4 +182,4 @@ Delivery stages: **Land → Expand → Network → Platform** — see `CAREOS_PL
 
 ---
 
-*CareOS = product. Hospital OS = platform intelligence. Together they form the full stack.*
+*HealthOS = product. Hospital OS = platform intelligence. Together they form the full stack.*

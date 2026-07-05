@@ -1393,7 +1393,8 @@ app.use("/api/telemetry", telemetryRouter);                   // Client-side eve
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence layer (agentic LLM + RAG + 15 tools)
 app.use("/api/v3/module-copilot", moduleCopilotRouter); // Per-module AI copilots
-app.use("/api/v3/careos", sibAIGuard, attachAIReporter, careosRouter); // Mediqzy CareOS — Living Patient Workspace
+app.use("/api/v3/careos", sibAIGuard, attachAIReporter, careosRouter); // Mediqzy HealthOS (Living Patient Workspace)
+app.use("/api/v3/healthos", sibAIGuard, attachAIReporter, careosRouter); // HealthOS brand alias
 app.use("/api/v3/rwe", authUser, rwePlatformRouter); // Real-world evidence platform (Wave 4)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
 app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (triage/assess, risk-score)

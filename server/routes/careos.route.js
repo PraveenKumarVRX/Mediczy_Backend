@@ -1,5 +1,5 @@
 /**
- * Mediqzy CareOS — Phase 1 API routes
+ * Mediqzy HealthOS — API routes
  */
 import { Router } from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';

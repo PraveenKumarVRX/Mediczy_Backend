@@ -1726,8 +1726,10 @@ const AppRoutes = () => {
         <Route path="/hmis/ot/command-center"                           element={<OTCommandCenter />} />
         <Route path="/hmis/emar"                                        element={<EMARPage />} />
         <Route path="/hmis/discharge-board"                             element={<DischargeBoard />} />
-        <Route path="/hmis/careos"                                       element={<CareOSEcosystem />} />
-        <Route path="/hmis/patient/:patientId/careos"                  element={<LivingPatientWorkspace />} />
+        <Route path="/hmis/healthos"                                      element={<CareOSEcosystem />} />
+        <Route path="/hmis/careos"                                        element={<CareOSEcosystem />} />
+        <Route path="/hmis/patient/:patientId/healthos"                 element={<LivingPatientWorkspace />} />
+        <Route path="/hmis/patient/:patientId/careos"                     element={<LivingPatientWorkspace />} />
         <Route path="/hmis/patient/:patientId/workspace"                element={<InpatientWorkspace />} />
         <Route path="/hmis/command-center"                              element={<CommandCenter />} />
         <Route path="/hmis/predictive-analytics"                        element={<PredictiveAnalytics />} />

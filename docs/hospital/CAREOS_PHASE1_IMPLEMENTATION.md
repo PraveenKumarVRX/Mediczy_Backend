@@ -1,6 +1,6 @@
-# CareOS Phase 1 — Technical Implementation
+# Mediqzy HealthOS — Phase 1 Technical Implementation
 
-## API surface: `/api/v3/careos`
+> API namespace: `/api/v3/healthos` (alias: `/api/v3/careos`)
 
 | Method | Path | Purpose |
 |--------|------|---------|

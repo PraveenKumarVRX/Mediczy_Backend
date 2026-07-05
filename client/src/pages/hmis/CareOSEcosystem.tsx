@@ -8,7 +8,7 @@ import {
   Store, FlaskConical, GraduationCap, Wallet, Radio, Building2, Home, Loader2,
 } from 'lucide-react';
 import { getCareOSHealth, getFederationStatus, listNetworkOrgs, getCareIdentity } from '@/services/careos.service';
-import { CAREOS } from '@/config/brand';
+import { HEALTH_OS } from '@/config/brand';
 
 const PILLARS = [
   { id: 'care_workspace', label: 'Care Workspace', icon: Globe, stage: 1, status: 'live' },
@@ -78,9 +78,9 @@ export default function CareOSEcosystem() {
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Network className="h-7 w-7 text-teal-400" />
-              {CAREOS.name}
+              {HEALTH_OS.brandLine}
             </h1>
-            <p className="text-slate-300 text-sm max-w-2xl">{CAREOS.tagline}</p>
+            <p className="text-slate-300 text-sm max-w-2xl">The AI-native healthcare operating system</p>
           </div>
         </div>
 
@@ -170,7 +170,7 @@ export default function CareOSEcosystem() {
 
         {orgs.length > 0 && (
           <Card className="bg-white/5 border-white/10 text-white">
-            <CardHeader><CardTitle className="text-base">CareOS Network Organizations</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">HealthOS Network Organizations</CardTitle></CardHeader>
             <CardContent className="grid sm:grid-cols-2 gap-2 text-sm">
               {orgs.map((o) => (
                 <div key={o.id} className="border border-white/10 rounded-lg p-3">

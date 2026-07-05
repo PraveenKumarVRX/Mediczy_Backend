@@ -10,7 +10,7 @@ import {
   ArrowLeft, RefreshCw, Activity, Users, ListTodo, Brain, Route, PlayCircle,
   Video, Sparkles, Clock, AlertTriangle, CheckCircle2, Loader2,
 } from 'lucide-react';
-import { CAREOS } from '@/config/brand';
+import { HEALTH_OS } from '@/config/brand';
 import {
   getLivingWorkspace,
   runCoordinatorAnalysis,
@@ -49,7 +49,7 @@ export default function LivingPatientWorkspace() {
       setWorkspace(res?.data || null);
       setError(null);
     } catch (e: any) {
-      setError(e?.response?.data?.error || e?.message || 'Failed to load CareOS workspace');
+      setError(e?.response?.data?.error || e?.message || 'Failed to load HealthOS workspace');
     } finally {
       setLoading(false);
     }
@@ -142,9 +142,9 @@ export default function LivingPatientWorkspace() {
           <div className="flex-1 min-w-[200px]">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-slate-800">{patientName}</h1>
-              <Badge className="bg-teal-600">{CAREOS.product}</Badge>
+              <Badge className="bg-teal-600">{HEALTH_OS.brandLine}</Badge>
             </div>
-            <p className="text-sm text-slate-500">{CAREOS.shortTagline}</p>
+            <p className="text-sm text-slate-500">Living Patient Workspace</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -154,8 +154,8 @@ export default function LivingPatientWorkspace() {
               <Video className="h-4 w-4 mr-1" /> One-touch Call
             </Button>
             <Button variant="secondary" size="sm" asChild>
-              <Link to="/hmis/careos">
-                <Brain className="h-4 w-4 mr-1" /> CareOS Ecosystem
+              <Link to="/hmis/healthos">
+                <Brain className="h-4 w-4 mr-1" /> HealthOS Platform
               </Link>
             </Button>
           </div>
