@@ -257,6 +257,18 @@ class WhisperSTT:
         logger.info("  pip install openai-whisper")
         logger.info("  Build whisper.cpp from source")
     
+    @staticmethod
+    def _is_native_binary(path: str) -> bool:
+        """Reject Python/shell console-scripts (e.g. the openai-whisper pip CLI,
+        also named "whisper") that would otherwise be mistaken for the compiled
+        whisper.cpp binary — they have the same name on PATH but are text files
+        starting with a shebang, not an ELF executable."""
+        try:
+            with open(path, "rb") as f:
+                return f.read(4) == b"\x7fELF"
+        except OSError:
+            return False
+
     def _find_whisper_cpp(self) -> Optional[str]:
         """Find whisper.cpp binary"""
         explicit = os.getenv("WHISPER_CPP_BIN")
@@ -265,7 +277,7 @@ class WhisperSTT:
 
         for binary in ["whisper-cli", "whisper", "main"]:
             resolved = shutil.which(binary)
-            if resolved:
+            if resolved and self._is_native_binary(resolved):
                 return resolved
 
         possible_paths = [
@@ -279,7 +291,7 @@ class WhisperSTT:
             "../whisper.cpp/main",
         ]
         for path in possible_paths:
-            if Path(path).exists():
+            if Path(path).exists() and self._is_native_binary(path):
                 return path
         return None
 
