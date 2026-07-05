@@ -82,3 +82,68 @@ export async function listSimulationScenarios() {
   const res = await api.get('/v3/hospital-os/simulate/scenarios');
   return res.data;
 }
+
+export async function syncPatientTwin(patientId: number) {
+  const res = await api.post(`/v3/hospital-os/twins/patient/${patientId}/sync`);
+  return res.data;
+}
+
+export async function getHospitalTwin() {
+  const res = await api.get('/v3/hospital-os/twins/hospital');
+  return res.data;
+}
+
+export async function buildKnowledgeGraph(patientId: number) {
+  const res = await api.post(`/v3/hospital-os/knowledge-graph/patient/${patientId}/build`);
+  return res.data;
+}
+
+export async function queryKnowledgeGraph(params: { nodeType?: string; externalId?: string }) {
+  const res = await api.get('/v3/hospital-os/knowledge-graph/query', { params });
+  return res.data;
+}
+
+export async function listTranslatorLanguages() {
+  const res = await api.get('/v3/hospital-os/translator/languages');
+  return res.data;
+}
+
+export async function analyzeWorkforce(department = 'nursing') {
+  const res = await api.get('/v3/hospital-os/workforce/analysis', { params: { department } });
+  return res.data;
+}
+
+export async function matchHospitalOsTrials(patientId: number) {
+  const res = await api.get(`/v3/hospital-os/research/trials/${patientId}`);
+  return res.data;
+}
+
+export async function detectResearchPatterns(days = 30) {
+  const res = await api.get('/v3/hospital-os/research/patterns', { params: { days } });
+  return res.data;
+}
+
+export async function getAmbientPipelineStatus() {
+  const res = await api.get('/v3/hospital-os/ambient/status');
+  return res.data;
+}
+
+export async function routeAmbientDocument(body: Record<string, unknown>) {
+  const res = await api.post('/v3/hospital-os/ambient/route', body);
+  return res.data;
+}
+
+export async function draftVoiceLabOrder(body: Record<string, unknown>) {
+  const res = await api.post('/v3/hospital-os/voice/draft-lab-order', body);
+  return res.data;
+}
+
+export async function draftVoiceImagingOrder(body: Record<string, unknown>) {
+  const res = await api.post('/v3/hospital-os/voice/draft-imaging-order', body);
+  return res.data;
+}
+
+export async function listHospitalOsEvents(params?: Record<string, string>) {
+  const res = await api.get('/v3/hospital-os/events', { params });
+  return res.data;
+}

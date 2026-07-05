@@ -830,6 +830,7 @@ const MarketplacePage       = lazy(() => import("@/features/ecosystem/pages/Mark
 const DeveloperPortal       = lazy(() => import("@/features/ecosystem/pages/DeveloperPortal"));
 const ResearchHub           = lazy(() => import("@/features/ecosystem/pages/ResearchHub"));
 const HomeMonitoring        = lazy(() => import("@/features/ecosystem/pages/HomeMonitoring"));
+const HospitalOSRouter      = lazy(() => import("@/features/hospital-os/HospitalOSRouter"));
 
 const CLINICAL_PAGES = {
   PatientTimeline,
@@ -1124,6 +1125,7 @@ const AppRoutes = () => {
         <Route path="/hospital/marketplace" element={<MarketplacePage />} />
         <Route path="/hospital/research" element={<ResearchHub />} />
         <Route path="/hospital/home-care" element={<HomeMonitoring />} />
+        <Route path="/hospital/os/*" element={<HospitalOSRouter />} />
         <Route path="/hospital/patient/:patientId/healthos/*" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
