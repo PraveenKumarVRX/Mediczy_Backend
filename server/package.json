@@ -45,7 +45,8 @@
     "backfill:phi-encryption": "node scripts/qa/backfill-phi-encryption.mjs",
     "ops:activate-subscription": "node scripts/admin/activate-user-subscription.mjs",
     "test:team-booking-alert": "node scripts/smoke-team-booking-alert.mjs",
-    "test:team-booking-alert:send": "node scripts/smoke-team-booking-alert.mjs --send"
+    "test:team-booking-alert:send": "node scripts/smoke-team-booking-alert.mjs --send",
+    "test:healthos-smoke": "node scripts/healthos-smoke.mjs"
   },
   "keywords": [],
   "author": "",

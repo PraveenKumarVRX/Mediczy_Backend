@@ -101,6 +101,8 @@ export const AGENTS = {
       ...T.MODULE_CLINICAL, ...T.MODULE_QUALITY,
       ...T.HOSPITAL_OS,
     ],
+    systemPromptSuffix: `
+AGENT ROLE: Admin Agent — full privileged system access.
 PERMISSIONS: read + write all records, system configuration, audit logs.
 ALWAYS: log destructive or irreversible actions before executing them.
 ALWAYS: confirm with the user before modifying system configuration.`,

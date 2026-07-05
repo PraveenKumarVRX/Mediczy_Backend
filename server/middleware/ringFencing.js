@@ -202,6 +202,10 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
+      '/api/v3/healthos',  // Mediqzy HealthOS — Living Patient Workspace
+      '/api/v3/careos',  // HealthOS alias
+      '/api/v3/hospital-os',  // Hospital OS 2035 platform
+      '/api/hypergrid',  // DICOMweb + HyperGrid interoperability
       '/api/ehr',  // Electronic Health Records - patient records access
       '/api/emr',  // EMR folder (own record)
       '/api/fhir',  // FHIR R4 interoperability endpoints
@@ -267,6 +271,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
       '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
+      '/api/v3/healthos',  // Mediqzy HealthOS
+      '/api/v3/careos',
+      '/api/v3/hospital-os',
       '/api/ehr',  // Electronic Health Records
       '/api/fhir',  // FHIR R4 interoperability endpoints
       '/api/hypergrid',  // HyperGrid interoperability & IoT layer
@@ -321,7 +328,11 @@ const USER_TYPE_PERMISSIONS = {
       '/api/vitals',
       '/api/medications',
       '/api/appointments',
-      '/api/notes'
+      '/api/notes',
+      '/api/v3/healthos',
+      '/api/v3/careos',
+      '/api/v3/hospital-os',
+      '/api/hypergrid',
     ],
     tokenField: 'nurseId'
   },
@@ -335,7 +346,11 @@ const USER_TYPE_PERMISSIONS = {
       '/api/billing',
       '/api/messages',
       '/api/reports',
-      '/api/v2/assistants'  // Enterprise API v2 assistant endpoints
+      '/api/v2/assistants',  // Enterprise API v2 assistant endpoints
+      '/api/v3/healthos',
+      '/api/v3/careos',
+      '/api/v3/hospital-os',
+      '/api/hypergrid',
     ],
     tokenField: 'assistantId'
   },
