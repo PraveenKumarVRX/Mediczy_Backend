@@ -78,7 +78,9 @@ const HospitalLogin = () => {
           ]
         : [
             { endpoint: '/hospital/auth/login', body: { email, password } },
+            { endpoint: '/hospital/auth/login/v2', body: { email, password } },
             { endpoint: '/hospital/login', body: { email, password } },
+            { endpoint: '/hospital/login/v2', body: { email, password } },
           ];
 
       let data: any = null;
