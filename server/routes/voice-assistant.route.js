@@ -927,7 +927,13 @@ ${context ? `Patient context: ${context}` : ''}${extra}`
 router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
-  const language = req.body.language || 'en';
+  // The client never sends a language hint, so this used to default to 'en' —
+  // forcing Whisper to decode every utterance as English. Non-English speech
+  // (Tamil/Telugu/etc.) came back as garbled Latin-script phonetic guesses
+  // ("Isha Meiru Bagunara" instead of "ఇషా మీరు బాగున్నారా") instead of native
+  // script, which meant the Unicode-based language detector downstream never
+  // had a chance to fire. Default to auto-detect instead.
+  const language = req.body.language || 'auto';
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
   const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
   const attempted = [];
@@ -941,7 +947,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
         contentType: req.file.mimetype || 'audio/wav',
       });
       groqForm.append('model', 'whisper-large-v3-turbo');
-      groqForm.append('language', language);
+      if (language && language !== 'auto') groqForm.append('language', language);
       groqForm.append('response_format', 'json');
 
       const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
