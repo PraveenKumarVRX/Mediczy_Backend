@@ -13,6 +13,7 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import llmProvider from './ai-brain/llm-provider.js';
 
 async function ensureTables() {
   await sequelize.query(`
@@ -367,4 +368,49 @@ export async function getICUSummary(icuAdmissionId) {
     recentScores: recentScores.slice(0, 5),
     recentEvents
   };
+}
+
+/**
+ * Draft a SOAP-format ICU progress note from live ventilator/drips/goals/
+ * scores/events data. Returned for physician review/edit — the caller
+ * submits the (possibly edited) text via createClinicalNote with
+ * noteType: 'icu_progress_note', isAiGenerated: true. Documentation with
+ * mandatory physician sign-off before it becomes a clinical note, so this
+ * is NOT SaMD per CLAUDE.md's classification table — same as the
+ * discharge-summary and referral-letter drafters.
+ */
+export async function generateICUProgressNoteDraft(icuAdmissionId) {
+  const summary = await getICUSummary(icuAdmissionId);
+  const fallback = {
+    subjective: 'ICU patient — see charted vitals, drips, and goals for this shift.',
+    objective: JSON.stringify({ ventilator: summary.latestVentilator, drips: summary.activeDrips, scores: summary.recentScores }),
+    assessment: 'Assessment pending physician review.',
+    plan: (summary.dailyGoals?.goals || []).join('; ') || 'Continue current management, reassess at next round.',
+  };
+  if (!summary.admission) return { ...fallback, aiGenerated: false, model: null };
+
+  try {
+    const llm = await llmProvider.chat({
+      messages: [
+        {
+          role: 'system',
+          content: `You are drafting a SOAP-format ICU progress note for physician review — this is a DRAFT, not a final clinical document. Use the provided ventilator settings, active drips, daily goals, severity scores, and recent events. Do not invent facts not present in the data. Output JSON: {"subjective":"","objective":"","assessment":"","plan":""}`,
+        },
+        {
+          role: 'user',
+          content: `Patient: ${summary.admission.patient_name || 'Unknown'}\nICU admission: ${JSON.stringify(summary.admission)}\nLatest ventilator: ${JSON.stringify(summary.latestVentilator)}\nActive drips: ${JSON.stringify(summary.activeDrips)}\nDaily goals: ${JSON.stringify(summary.dailyGoals)}\nRecent severity scores: ${JSON.stringify(summary.recentScores)}\nRecent events: ${JSON.stringify(summary.recentEvents)}`,
+        },
+      ],
+      temperature: 0.2,
+      maxTokens: 700,
+      responseFormat: { type: 'json_object' },
+      skipCache: true,
+    });
+    const parsed = JSON.parse(llm.content || '{}');
+    if (!parsed.subjective && !parsed.assessment) throw new Error('empty/malformed LLM response');
+    return { ...fallback, ...parsed, aiGenerated: true, model: llm.model || llm.provider || 'llm' };
+  } catch (err) {
+    console.warn('[icu.service] LLM progress-note draft failed, falling back to template:', err.message);
+    return { ...fallback, aiGenerated: false, model: null };
+  }
 }

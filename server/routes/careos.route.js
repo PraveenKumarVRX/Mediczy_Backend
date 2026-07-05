@@ -221,6 +221,12 @@ router.post('/memory/archive', ...doctorOnly, async (req, res) => {
 // ── Family Portal ──────────────────────────────────────────────────────────────
 router.get('/family/:patientId/updates', authUser, async (req, res) => {
   const familyOnly = req.user.role === 'patient' || req.query.family === 'true';
+  // A patient/family user may only ever read their OWN updates — the
+  // familyOnly flag alone doesn't stop a patient requesting someone else's
+  // patientId, so this must be checked explicitly, not just inferred.
+  if (req.user.role === 'patient' && pid(req) !== Number(req.user.id)) {
+    return res.status(403).json({ success: false, error: 'Not authorized to view this patient\'s updates' });
+  }
   const rows = await careos.listFamilyUpdates(pid(req), { familyVisibleOnly: familyOnly });
   res.json({ success: true, data: rows });
 });
@@ -462,6 +468,9 @@ router.get('/network/referrals', ...clinical, async (req, res) => {
 router.post('/network/referrals', ...doctorOnly, async (req, res) => {
   res.json({ success: true, data: await careos.createReferral({ fromOrgId: req.body.fromOrgId, toOrgId: req.body.toOrgId, patientId: req.body.patientId, reason: req.body.reason, urgency: req.body.urgency, clinicalSummary: req.body.clinicalSummary, referredBy: req.user.id, passportShareId: req.body.passportShareId }) });
 });
+router.post('/network/referrals/draft-letter', ...doctorOnly, async (req, res) => {
+  res.json({ success: true, data: await careos.generateReferralLetter({ patientId: req.body.patientId, organizationId: orgId(req), toOrgName: req.body.toOrgName, reason: req.body.reason, urgency: req.body.urgency }) });
+});
 router.post('/network/referrals/:id/accept', ...doctorOnly, async (req, res) => {
   res.json({ success: true, data: await careos.acceptReferral(Number(req.params.id), req.user.id) });
 });
@@ -554,6 +563,189 @@ router.get('/platform/emergency/summary', ...clinical, async (req, res) => {
 });
 router.post('/platform/emergency/resources', ...doctorOnly, async (req, res) => {
   res.json({ success: true, data: await careos.registerEmergencyResource({ organizationId: orgId(req), ...req.body }) });
+});
+
+
+// ── World-class readiness workflows ───────────────────────────────────────────
+router.get('/readiness/dashboard', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getReadinessDashboard(orgId(req)) });
+});
+
+router.get('/collaboration/artifacts', ...clinical, async (req, res) => {
+  res.json({
+    success: true,
+    data: await careos.listCollaborationArtifacts({
+      organizationId: orgId(req),
+      patientId: req.query.patientId ? Number(req.query.patientId) : undefined,
+      sessionId: req.query.sessionId ? Number(req.query.sessionId) : undefined,
+    }),
+  });
+});
+
+router.post('/collaboration/artifacts', ...clinical, async (req, res) => {
+  const row = await careos.createCollaborationArtifact({
+    organizationId: orgId(req),
+    patientId: req.body.patientId ? Number(req.body.patientId) : undefined,
+    sessionId: req.body.sessionId ? Number(req.body.sessionId) : undefined,
+    artifactType: req.body.artifactType || 'decision',
+    title: req.body.title,
+    payload: req.body.payload || {},
+    createdBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
+});
+
+router.get('/governance/ai-validation/packs', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listAIValidationPacks(orgId(req)) });
+});
+
+router.post('/governance/ai-validation/packs', ...doctorOnly, async (req, res) => {
+  const pack = await careos.createAIValidationPack({
+    organizationId: orgId(req),
+    modelName: req.body.modelName,
+    useCase: req.body.useCase,
+    riskClass: req.body.riskClass,
+    datasetRef: req.body.datasetRef,
+    acceptanceCriteria: req.body.acceptanceCriteria,
+    createdBy: req.user.id,
+    seedDefaultCases: req.body.seedDefaultCases !== false,
+  });
+  res.json({ success: true, data: pack });
+});
+
+router.get('/governance/ai-validation/packs/:packId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getAIValidationPack(Number(req.params.packId)) });
+});
+
+router.post('/governance/ai-validation/packs/:packId/cases', ...doctorOnly, async (req, res) => {
+  const row = await careos.addAIValidationCase({
+    packId: Number(req.params.packId),
+    scenarioTitle: req.body.scenarioTitle,
+    inputSummary: req.body.inputSummary,
+    expectedBehavior: req.body.expectedBehavior,
+    safetyControls: req.body.safetyControls || [],
+  });
+  res.json({ success: true, data: row });
+});
+
+router.post('/governance/ai-validation/cases/:caseId/result', ...doctorOnly, async (req, res) => {
+  const row = await careos.recordAIValidationResult({
+    caseId: Number(req.params.caseId),
+    result: req.body.result,
+    evidence: req.body.evidence || {},
+    testedBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
+});
+
+router.get('/ecosystem/federation/uat', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listFederationUATRuns(orgId(req)) });
+});
+
+router.post('/ecosystem/federation/uat', ...doctorOnly, async (req, res) => {
+  const run = await careos.createFederationUATRun({
+    organizationId: orgId(req),
+    name: req.body.name,
+    fromOrgNetworkId: req.body.fromOrgNetworkId,
+    toOrgNetworkId: req.body.toOrgNetworkId,
+    scenarios: req.body.scenarios,
+    requestedBy: req.user.id,
+  });
+  res.json({ success: true, data: run });
+});
+
+router.get('/ecosystem/federation/uat/:runId', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.getFederationUATRun(Number(req.params.runId)) });
+});
+
+router.post('/ecosystem/federation/uat/cases/:caseId/result', ...doctorOnly, async (req, res) => {
+  const row = await careos.recordFederationUATCase({
+    caseId: Number(req.params.caseId),
+    status: req.body.status,
+    actualResult: req.body.actualResult,
+    evidence: req.body.evidence || {},
+  });
+  res.json({ success: true, data: row });
+});
+
+router.get('/platform/marketplace/reviews', ...clinical, async (req, res) => {
+  res.json({
+    success: true,
+    data: await careos.listMarketplaceReviews({
+      organizationId: orgId(req),
+      appId: req.query.appId ? Number(req.query.appId) : undefined,
+    }),
+  });
+});
+
+router.post('/platform/marketplace/apps/:appId/reviews', ...doctorOnly, async (req, res) => {
+  const row = await careos.submitMarketplaceReview({
+    organizationId: orgId(req),
+    appId: Number(req.params.appId),
+    reviewType: req.body.reviewType,
+    riskLevel: req.body.riskLevel,
+    status: req.body.status,
+    findings: req.body.findings || [],
+    controls: req.body.controls || [],
+    reviewedBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
+});
+
+router.get('/platform/displays/tests', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listDisplayHardwareTests(orgId(req)) });
+});
+
+router.post('/platform/displays/tests', ...doctorOnly, async (req, res) => {
+  const row = await careos.createDisplayHardwareTest({
+    organizationId: orgId(req),
+    displayName: req.body.displayName,
+    locationType: req.body.locationType,
+    hardwareProfile: req.body.hardwareProfile || {},
+    viewport: req.body.viewport || {},
+    testResults: req.body.testResults || {},
+    status: req.body.status,
+    testedBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
+});
+
+router.get('/platform/research/protocols', ...clinical, async (req, res) => {
+  res.json({ success: true, data: await careos.listResearchProtocols(orgId(req)) });
+});
+
+router.post('/platform/research/protocols', ...doctorOnly, async (req, res) => {
+  const row = await careos.createResearchProtocol({
+    organizationId: orgId(req),
+    title: req.body.title,
+    protocolCode: req.body.protocolCode,
+    studyType: req.body.studyType,
+    irbReference: req.body.irbReference,
+    dataUsePolicy: req.body.dataUsePolicy,
+    deidentificationPlan: req.body.deidentificationPlan,
+    consentModel: req.body.consentModel,
+    createdBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
+});
+
+router.post('/platform/research/protocols/:protocolId/approve', ...doctorOnly, async (req, res) => {
+  const row = await careos.approveResearchProtocol({
+    protocolId: Number(req.params.protocolId),
+    approvedBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
+});
+
+router.post('/platform/research/protocols/:protocolId/consents', ...doctorOnly, async (req, res) => {
+  const row = await careos.captureResearchConsent({
+    protocolId: Number(req.params.protocolId),
+    patientId: Number(req.body.patientId),
+    consentStatus: req.body.consentStatus,
+    consentScope: req.body.consentScope || [],
+    capturedBy: req.user.id,
+  });
+  res.json({ success: true, data: row });
 });
 
 export default router;

@@ -1,7 +1,7 @@
 import { appendClinicalEvent, getClinicalTimeline } from './clinical-timeline.service.js';
 import { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists } from './care-team.service.js';
 import { analyzePatient, listCoordinatorAlerts } from './clinical-coordinator.service.js';
-import { getPathway, updatePathway } from './treatment-pathway.service.js';
+import { getPathway, updatePathway, autoAdvancePathway } from './treatment-pathway.service.js';
 import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus } from './mdt-board.service.js';
 import { buildClinicalPlayback } from './clinical-playback.service.js';
 import { findSimilarCases, archiveCase } from './hospital-memory.service.js';
@@ -18,7 +18,7 @@ import { ingestLabResult, listLabResults } from './lab-connector.service.js';
 import { createPharmacyOrder, updatePharmacyStatus, listPharmacyOrders } from './pharmacy-connector.service.js';
 import { scheduleHomecareVisit, completeHomecareVisit, listHomecareVisits } from './home-care.service.js';
 import { ingestWearableReading, listWearableReadings, getMonitoringSummary } from './wearables-monitoring.service.js';
-import { createReferral, acceptReferral, listReferrals } from './referral-federation.service.js';
+import { createReferral, acceptReferral, listReferrals, generateReferralLetter } from './referral-federation.service.js';
 import { shareDocument, listDocuments, getDocumentBundle } from './document-exchange.service.js';
 import { publishGlobalCase, searchGlobalCases } from './global-knowledge.service.js';
 import { detectNetworkSignals, listNetworkSignals, resolveSignal } from './hospital-network-signals.service.js';
@@ -32,6 +32,28 @@ import { getGovernmentDashboard, submitGovernmentReport, simulatePandemic } from
 import { registerEmergencyResource, searchEmergencyResources, getEmergencyNetworkSummary } from './emergency-network.service.js';
 import { computePopulationMetrics, getPopulationDashboard } from './population-analytics.service.js';
 import { getPlatformStatus, getHealthOSCapabilities } from './platform-status.service.js';
+import {
+  createCollaborationArtifact,
+  listCollaborationArtifacts,
+  createAIValidationPack,
+  getAIValidationPack,
+  listAIValidationPacks,
+  addAIValidationCase,
+  recordAIValidationResult,
+  createFederationUATRun,
+  listFederationUATRuns,
+  getFederationUATRun,
+  recordFederationUATCase,
+  submitMarketplaceReview,
+  listMarketplaceReviews,
+  createDisplayHardwareTest,
+  listDisplayHardwareTests,
+  createResearchProtocol,
+  approveResearchProtocol,
+  listResearchProtocols,
+  captureResearchConsent,
+  getReadinessDashboard,
+} from './worldclass-readiness.service.js';
 
 export function getCareOSCapabilities() {
   return getHealthOSCapabilities();
@@ -49,6 +71,7 @@ export {
   listCoordinatorAlerts,
   getPathway,
   updatePathway,
+  autoAdvancePathway,
   startClinicalBoard,
   joinClinicalBoard,
   recordOpinion,
@@ -92,6 +115,7 @@ export {
   createReferral,
   acceptReferral,
   listReferrals,
+  generateReferralLetter,
   shareDocument,
   listDocuments,
   getDocumentBundle,
@@ -126,6 +150,26 @@ export {
   dispatchWebhooks,
   getGatewayStatus,
   proxyFhirToOrg,
+  createCollaborationArtifact,
+  listCollaborationArtifacts,
+  createAIValidationPack,
+  getAIValidationPack,
+  listAIValidationPacks,
+  addAIValidationCase,
+  recordAIValidationResult,
+  createFederationUATRun,
+  listFederationUATRuns,
+  getFederationUATRun,
+  recordFederationUATCase,
+  submitMarketplaceReview,
+  listMarketplaceReviews,
+  createDisplayHardwareTest,
+  listDisplayHardwareTests,
+  createResearchProtocol,
+  approveResearchProtocol,
+  listResearchProtocols,
+  captureResearchConsent,
+  getReadinessDashboard,
 };
 
 export default {
@@ -141,6 +185,7 @@ export default {
   listCoordinatorAlerts,
   getPathway,
   updatePathway,
+  autoAdvancePathway,
   startClinicalBoard,
   joinClinicalBoard,
   recordOpinion,
@@ -184,6 +229,7 @@ export default {
   createReferral,
   acceptReferral,
   listReferrals,
+  generateReferralLetter,
   shareDocument,
   listDocuments,
   getDocumentBundle,
@@ -218,4 +264,24 @@ export default {
   dispatchWebhooks,
   getGatewayStatus,
   proxyFhirToOrg,
+  createCollaborationArtifact,
+  listCollaborationArtifacts,
+  createAIValidationPack,
+  getAIValidationPack,
+  listAIValidationPacks,
+  addAIValidationCase,
+  recordAIValidationResult,
+  createFederationUATRun,
+  listFederationUATRuns,
+  getFederationUATRun,
+  recordFederationUATCase,
+  submitMarketplaceReview,
+  listMarketplaceReviews,
+  createDisplayHardwareTest,
+  listDisplayHardwareTests,
+  createResearchProtocol,
+  approveResearchProtocol,
+  listResearchProtocols,
+  captureResearchConsent,
+  getReadinessDashboard,
 };

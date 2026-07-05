@@ -5,6 +5,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import Appointment from '../models/postgres/appointment.model.postgres.js';
 import Doctor from '../models/postgres/doctor.model.postgres.js';
 import User from '../models/postgres/user.model.postgres.js';
+import { appendClinicalEvent } from '../services/careos/clinical-timeline.service.js';
 
 const router = Router();
 
@@ -592,6 +593,17 @@ router.post('/prescriptions', authUser, requireHospitalAuth, async (req, res) =>
         type: QueryTypes.INSERT
       }
     );
+
+    appendClinicalEvent({
+      organizationId: hospitalId,
+      patientId,
+      eventType: 'prescription',
+      title: `Prescription: ${medications.length} medication${medications.length > 1 ? 's' : ''}`,
+      body: diagnosis || notes || null,
+      actorType: 'doctor', actorId: doctorId || req.user.id,
+      severity: 'info',
+      metadata: { prescriptionId: prescription[0].id, medications },
+    }).catch((err) => console.warn('[hospital-practice] timeline event failed (prescription):', err.message));
 
     res.status(201).json({
       success: true,

@@ -5,6 +5,7 @@ import pool from '../../db/pgPool.js';
 import { up as migrate } from '../../migrations/careos-phase1.migration.js';
 import { getPatientWorkspace } from '../clinical-workspace.service.js';
 import { appendClinicalEvent } from './clinical-timeline.service.js';
+import { autoAdvancePathway } from './treatment-pathway.service.js';
 import llmProvider from '../ai-brain/llm-provider.js';
 
 let ready = false;
@@ -104,6 +105,10 @@ Write SPECIFIC actionable alerts with numbers and trends. Never say only "patien
       metadata: a.evidence,
     });
   }
+
+  const hasCriticalAlert = saved.some((a) => a.severity === 'critical');
+  autoAdvancePathway(patientId, organizationId, workspace?.admission?.id || null, { hasCriticalAlert })
+    .catch((err) => console.warn('[clinical-coordinator] pathway auto-advance failed:', err.message));
 
   return { alerts: saved, analyzedAt: new Date().toISOString() };
 }

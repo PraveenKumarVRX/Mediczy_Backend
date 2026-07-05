@@ -83,6 +83,7 @@ const ProgramJourney        = lazy(() => import("@/pages/ProgramJourney"));
 
 // ─── Patient sub-pages ───────────────────────────────────────────────────────
 const PatientNotifications  = lazy(() => import("@/pages/patient/PatientNotifications"));
+const FamilyCareUpdates      = lazy(() => import("@/pages/patient/FamilyCareUpdates"));
 const LabTests              = lazy(() => import("@/pages/patient/LabTests"));
 const MyReports             = lazy(() => import("@/pages/patient/MyReports"));
 const Pharmacy              = lazy(() => import("@/pages/patient/Pharmacy"));
@@ -1839,6 +1840,7 @@ const AppRoutes = () => {
         <Route path="/video-consultation"    element={<MainLayout><VideoConsultation /></MainLayout>} />
         <Route path="/notifications"              element={<Navigate to="/patient/notifications" replace />} />
         <Route path="/patient/notifications"      element={<MainLayout><PatientNotifications /></MainLayout>} />
+        <Route path="/patient/care-updates"       element={<MainLayout><FamilyCareUpdates /></MainLayout>} />
         <Route path="/patient/lab-tests"          element={<MainLayout><LabTests /></MainLayout>} />
         <Route path="/patient/my-reports"         element={<MainLayout><MyReports /></MainLayout>} />
         <Route path="/patient/pharmacy"           element={<MainLayout><Pharmacy /></MainLayout>} />

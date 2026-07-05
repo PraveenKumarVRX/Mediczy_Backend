@@ -10,6 +10,10 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { consumeReservation } from './bed-allocation.service.js';
+import { isComplexDiagnosis, autoInviteSpecialists } from './careos/care-team.service.js';
+import { appendClinicalEvent } from './careos/clinical-timeline.service.js';
+import { autoAdvancePathway } from './careos/treatment-pathway.service.js';
+import { archiveCase } from './careos/hospital-memory.service.js';
 
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
 
@@ -104,6 +108,19 @@ export async function updateReadinessItem(admissionId, dimension, { completedBy,
      WHERE admission_id = :admId AND dimension = :dim`,
     { replacements: { admId: admissionId, dim: dimension, by: completedBy || null, notes: notes || null }, type: QueryTypes.UPDATE }
   );
+
+  // Recompute the Living Treatment Pathway now that a readiness item changed.
+  const [admission] = await sequelize.query(
+    `SELECT organization_id, patient_id FROM ip_admissions WHERE id = :admId`,
+    { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
+  ).catch(() => [null]);
+  if (admission) {
+    const readiness = await getDischargeReadiness(admissionId, admission.organization_id);
+    autoAdvancePathway(admission.patient_id, admission.organization_id, admissionId, {
+      readinessReady: readiness.ready,
+    }).catch((err) => console.warn('[adt.service] pathway auto-advance failed:', err.message));
+  }
+
   return { success: true };
 }
 
@@ -240,6 +257,27 @@ export async function admitPatient({
     });
 
     await tx.commit();
+
+    appendClinicalEvent({
+      organizationId, patientId, admissionId: admission.id,
+      eventType: 'admission',
+      title: `Admitted (${admissionType}) — ${admissionNumber}`,
+      body: admissionDiagnosis || null,
+      actorType: 'staff', actorId: performedBy,
+      severity: 'info',
+      metadata: { wardId, bedId, admissionNumber },
+    }).catch((err) => console.warn('[adt.service] timeline event failed (admission):', err.message));
+
+    // Dynamic Care Team: auto-invite specialists for recognized high-acuity
+    // diagnoses on admission. Fire-and-forget — CareOS being down must never
+    // block or fail a patient admission, which is why this runs after commit
+    // with errors swallowed rather than inside the transaction.
+    if (isComplexDiagnosis(admissionDiagnosis)) {
+      autoInviteSpecialists(patientId, organizationId, admissionDiagnosis).catch((err) => {
+        console.warn('[adt.service] auto care-team invite failed:', err.message);
+      });
+    }
+
     return admission;
   } catch (err) {
     await tx.rollback();
@@ -278,6 +316,17 @@ export async function transferPatient({
     });
 
     await tx.commit();
+
+    appendClinicalEvent({
+      organizationId, patientId: current.patient_id, admissionId,
+      eventType: 'transfer',
+      title: `Transferred: ward ${fromLocation.ward_id || '—'}/bed ${fromLocation.bed_id || '—'} → ward ${toWardId || '—'}/bed ${toBedId || '—'}`,
+      body: reason || null,
+      actorType: 'staff', actorId: performedBy,
+      severity: 'info',
+      metadata: { fromLocation, toLocation: { ward_id: toWardId, bed_id: toBedId } },
+    }).catch((err) => console.warn('[adt.service] timeline event failed (transfer):', err.message));
+
     return { success: true, from: fromLocation, to: { ward_id: toWardId, bed_id: toBedId } };
   } catch (err) {
     await tx.rollback();
@@ -365,6 +414,33 @@ export async function dischargePatient({
     });
 
     await tx.commit();
+
+    appendClinicalEvent({
+      organizationId, patientId: current.patient_id, admissionId,
+      eventType: 'discharge',
+      title: `Discharged (${dischargeType})`,
+      body: reason || null,
+      actorType: 'staff', actorId: performedBy,
+      severity: 'info',
+      metadata: { dischargeType, dischargeSummaryId: dischargeSummaryId || null },
+    }).catch((err) => console.warn('[adt.service] timeline event failed (discharge):', err.message));
+
+    // Hospital Knowledge Network: auto-archive complex cases on discharge so
+    // future similar presentations can be matched — previously this only
+    // happened if a clinician manually called POST /memory/archive.
+    if (isComplexDiagnosis(current.admission_diagnosis)) {
+      const keywords = String(current.admission_diagnosis || '')
+        .toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 8);
+      archiveCase({
+        organizationId,
+        patientId: current.patient_id,
+        presentationSummary: current.admission_diagnosis || 'Complex admission',
+        finalDiagnosis: current.admission_diagnosis || null,
+        lessonsLearned: reason || null,
+        keywords,
+      }).catch((err) => console.warn('[adt.service] auto case-archive failed:', err.message));
+    }
+
     return { success: true, dischargedAt: new Date() };
   } catch (err) {
     await tx.rollback();

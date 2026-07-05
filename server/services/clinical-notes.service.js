@@ -4,6 +4,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import ClinicalNote from '../models/clinical-note.model.js';
+import { appendClinicalEvent } from './careos/clinical-timeline.service.js';
 
 let columnsReady = false;
 
@@ -81,6 +82,21 @@ export async function createClinicalNote(payload) {
         type: QueryTypes.UPDATE,
       }
     );
+  }
+
+  if (payload.organizationId) {
+    appendClinicalEvent({
+      organizationId: payload.organizationId,
+      patientId: payload.patientId,
+      admissionId: payload.admissionId || null,
+      eventType: 'clinical_note',
+      title: `${(payload.noteType || 'progress_note').replace(/_/g, ' ')} added`,
+      body: payload.chiefComplaint || payload.subject || payload.assessment || null,
+      actorType: payload.isAiGenerated ? 'ai' : 'doctor',
+      actorId: doctorId,
+      severity: 'info',
+      metadata: { noteId: note.id, noteType: payload.noteType || 'progress_note' },
+    }).catch((err) => console.warn('[clinical-notes] timeline event failed:', err.message));
   }
 
   return getClinicalNoteById(note.id);
