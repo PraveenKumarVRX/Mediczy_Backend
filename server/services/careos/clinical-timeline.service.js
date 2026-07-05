@@ -3,6 +3,7 @@
  */
 import pool from '../../db/pgPool.js';
 import { up as migrate } from '../../migrations/careos-phase1.migration.js';
+import { dispatchWebhooks } from './webhook-delivery.service.js';
 
 let ready = false;
 async function ensure() { if (!ready) { await migrate(); ready = true; } }
@@ -33,7 +34,11 @@ export async function appendClinicalEvent({
       JSON.stringify(metadata), eventAt || new Date(),
     ]
   );
-  return rows[0];
+  const event = rows[0];
+  if (organizationId) {
+    dispatchWebhooks(organizationId, `timeline.${eventType}`, event).catch(() => {});
+  }
+  return event;
 }
 
 export async function getClinicalTimeline(patientId, { organizationId, limit = 200, search, eventType } = {}) {

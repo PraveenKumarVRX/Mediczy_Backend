@@ -16,10 +16,15 @@ import { listLabResults } from './lab-connector.service.js';
 import { listPharmacyOrders } from './pharmacy-connector.service.js';
 import { listHomecareVisits } from './home-care.service.js';
 import { getMonitoringSummary } from './wearables-monitoring.service.js';
+import { syncLabsFromFhir, syncWearablesFromAppleHealth } from './healthos-integration.service.js';
 
-export async function getLivingWorkspace(patientId, organizationId, { admissionId, timelineLimit = 50 } = {}) {
+export async function getLivingWorkspace(patientId, organizationId, { admissionId, timelineLimit = 50, userId } = {}) {
   const clinical = await getPatientWorkspace(patientId, organizationId).catch(() => null);
   const diagnosisHint = clinical?.activeAdmission?.diagnosis || clinical?.admission?.diagnosis || '';
+
+  // Auto-sync FHIR labs + wearables into HealthOS
+  await syncLabsFromFhir(patientId, organizationId).catch(() => {});
+  if (userId) await syncWearablesFromAppleHealth(userId, patientId, organizationId).catch(() => {});
 
   const [timeline, careTeam, pathway, coordinatorAlerts, tasks, similarCases, familyUpdates, passport, careGraph, federation, labs, pharmacy, homecare, monitoring] = await Promise.all([
     getClinicalTimeline(patientId, { organizationId, limit: timelineLimit }),

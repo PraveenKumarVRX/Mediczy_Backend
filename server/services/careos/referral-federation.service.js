@@ -5,6 +5,7 @@ import pool from '../../db/pgPool.js';
 import { up as migrate } from '../../migrations/healthos-phases-2-4.migration.js';
 import { appendClinicalEvent } from './clinical-timeline.service.js';
 import { logFederationAudit } from './care-federation.service.js';
+import { dispatchWebhooks } from './webhook-delivery.service.js';
 
 let ready = false;
 async function ensure() { if (!ready) { await migrate(); ready = true; } }
@@ -32,6 +33,7 @@ export async function createReferral({ fromOrgId, toOrgId, patientId, reason, ur
     actorUserId: referredBy, actorOrgId: fromOrgId,
     action: 'referral_created', resourceType: 'referral', resourceId: String(ref.id), patientId,
   });
+  dispatchWebhooks(fromOrgId, 'referral.created', ref).catch(() => {});
   return ref;
 }
 

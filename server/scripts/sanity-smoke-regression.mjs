@@ -468,6 +468,33 @@ async function runApiTests(client) {
       fail('HTTP', 'POST /api/hospital/insurance/patient/search', `500: ${msg}`);
     }
   } catch (e) { fail('HTTP', 'POST /api/hospital/insurance/patient/search', e.message); }
+
+  // 3e. HealthOS smoke tests
+  const healthosRoutes = [
+    { path: '/api/v3/healthos/health', label: 'HealthOS health/capabilities' },
+    { path: '/api/v3/healthos/platform/status', label: 'HealthOS platform status' },
+    { path: '/api/v3/careos/health', label: 'CareOS alias health' },
+  ];
+  for (const route of healthosRoutes) {
+    try {
+      const r = await httpGet(route.path, token);
+      if (r.status === 200 && r.body?.success !== false) {
+        pass('HTTP', `GET ${route.path} → 200 (${route.label})`);
+      } else if ([401, 403].includes(r.status)) {
+        pass('HTTP', `GET ${route.path} → ${r.status} (${route.label}) [auth enforced]`);
+      } else if (r.status === 429) {
+        record429('HTTP');
+        pass('HTTP', `GET ${route.path} → 429 (${route.label}) [rate limited]`);
+      } else if (r.status === 500) {
+        const msg = r.body?.message || r.body?.error || JSON.stringify(r.body).slice(0, 150);
+        fail('HTTP', `GET ${route.path} (${route.label})`, `500: ${msg}`);
+      } else {
+        pass('HTTP', `GET ${route.path} → ${r.status} (non-500)`);
+      }
+    } catch (e) {
+      fail('HTTP', `GET ${route.path}`, e.message);
+    }
+  }
 }
 
 // ─── FK Integrity Tests ────────────────────────────────────────────────────────

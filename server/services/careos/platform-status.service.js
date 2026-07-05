@@ -16,60 +16,73 @@ async function ensureAll() {
   }
 }
 
-const STAGES = {
+async function tableExists(name) {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`,
+    [name]
+  );
+  return rows.length > 0;
+}
+
+async function moduleStatus(tableName) {
+  const exists = await tableExists(tableName);
+  return exists ? 'live' : 'api';
+}
+
+const STAGE_DEFS = {
   1: {
     name: 'Land',
     goal: 'AI-native hospital platform + Care Workspace',
     modules: [
-      { id: 'workspace', label: 'Living Patient Workspace', status: 'live' },
-      { id: 'timeline', label: 'Clinical Timeline', status: 'live' },
-      { id: 'care_team', label: 'Dynamic Care Teams', status: 'live' },
-      { id: 'coordinator', label: 'AI Clinical Coordinator', status: 'live' },
-      { id: 'pathway', label: 'Living Treatment Pathway', status: 'live' },
-      { id: 'mdt', label: 'Instant Clinical Board', status: 'live' },
-      { id: 'playback', label: 'Clinical Playback', status: 'live' },
-      { id: 'video', label: 'One-touch Clinical Call', status: 'live' },
-      { id: 'tasks', label: 'Task Management', status: 'live' },
-      { id: 'family', label: 'Family Portal', status: 'live' },
-      { id: 'memory', label: 'Hospital Memory', status: 'live' },
+      { id: 'workspace', label: 'Living Patient Workspace', table: 'careos_clinical_events' },
+      { id: 'timeline', label: 'Clinical Timeline', table: 'careos_clinical_events' },
+      { id: 'care_team', label: 'Dynamic Care Teams', table: 'careos_team_members' },
+      { id: 'coordinator', label: 'AI Clinical Coordinator', table: 'careos_coordinator_alerts' },
+      { id: 'pathway', label: 'Living Treatment Pathway', table: 'careos_treatment_pathways' },
+      { id: 'mdt', label: 'Instant Clinical Board', table: 'careos_mdt_sessions' },
+      { id: 'playback', label: 'Clinical Playback', table: 'careos_clinical_events' },
+      { id: 'video', label: 'One-touch Clinical Call', table: 'careos_mdt_sessions' },
+      { id: 'tasks', label: 'Task Management', table: 'careos_tasks' },
+      { id: 'family', label: 'Family Portal', table: 'careos_family_updates' },
+      { id: 'memory', label: 'Hospital Memory', table: 'careos_hospital_cases' },
     ],
   },
   2: {
     name: 'Expand',
     goal: 'Connect labs, pharmacy, home care, wearables, passport',
     modules: [
-      { id: 'labs', label: 'Lab Connector (FHIR → timeline)', status: 'live' },
-      { id: 'pharmacy', label: 'Pharmacy Fulfillment', status: 'live' },
-      { id: 'homecare', label: 'Care Home Visits', status: 'live' },
-      { id: 'wearables', label: 'Wearables Monitoring', status: 'live' },
-      { id: 'passport', label: 'Medical Passport', status: 'live' },
-      { id: 'identity', label: 'Care Identity', status: 'live' },
-      { id: 'graph', label: 'Care Graph', status: 'live' },
+      { id: 'labs', label: 'Lab Connector (FHIR → timeline)', table: 'healthos_lab_results' },
+      { id: 'pharmacy', label: 'Pharmacy Fulfillment', table: 'healthos_pharmacy_orders' },
+      { id: 'homecare', label: 'Care Home Visits', table: 'healthos_homecare_visits' },
+      { id: 'wearables', label: 'Wearables Monitoring', table: 'healthos_wearable_readings' },
+      { id: 'passport', label: 'Medical Passport', table: 'careos_patient_passports' },
+      { id: 'identity', label: 'Care Identity', table: 'careos_professional_identity' },
+      { id: 'graph', label: 'Care Graph', table: 'careos_graph_nodes' },
     ],
   },
   3: {
     name: 'Network',
     goal: 'Cross-organization and cross-border collaboration',
     modules: [
-      { id: 'federation', label: 'Care Cloud Federation', status: 'live' },
-      { id: 'referrals', label: 'Federated Referrals', status: 'live' },
-      { id: 'documents', label: 'Document / Imaging Exchange', status: 'live' },
-      { id: 'global_board', label: 'Global Clinical Board', status: 'live' },
-      { id: 'translation', label: 'AI Clinical Translation', status: 'live' },
-      { id: 'global_knowledge', label: 'Global Knowledge Network', status: 'live' },
-      { id: 'network_signals', label: 'AI Hospital Network Signals', status: 'live' },
+      { id: 'federation', label: 'Care Cloud Federation', table: 'careos_network_orgs' },
+      { id: 'referrals', label: 'Federated Referrals', table: 'healthos_referrals' },
+      { id: 'documents', label: 'Document / Imaging Exchange', table: 'healthos_document_exchanges' },
+      { id: 'global_board', label: 'Global Clinical Board', table: 'careos_global_sessions' },
+      { id: 'translation', label: 'AI Clinical Translation', table: 'careos_global_sessions' },
+      { id: 'global_knowledge', label: 'Global Knowledge Network', table: 'healthos_global_cases' },
+      { id: 'network_signals', label: 'AI Hospital Network Signals', table: 'healthos_network_signals' },
     ],
   },
   4: {
     name: 'Platform',
     goal: 'Open healthcare app ecosystem',
     modules: [
-      { id: 'marketplace', label: 'Care Marketplace', status: 'live' },
-      { id: 'developer', label: 'Developer APIs & Webhooks', status: 'live' },
-      { id: 'research', label: 'Research & Trial Matching', status: 'live' },
-      { id: 'population', label: 'Population Analytics', status: 'live' },
-      { id: 'government', label: 'Care Government', status: 'live' },
-      { id: 'emergency', label: 'Global Emergency Network', status: 'live' },
+      { id: 'marketplace', label: 'Care Marketplace', table: 'healthos_marketplace_apps' },
+      { id: 'developer', label: 'Developer APIs & Webhooks', table: 'healthos_api_keys' },
+      { id: 'research', label: 'Research & Trial Matching', table: 'healthos_clinical_trials' },
+      { id: 'population', label: 'Population Analytics', table: 'healthos_population_metrics' },
+      { id: 'government', label: 'Care Government', table: 'healthos_government_reports' },
+      { id: 'emergency', label: 'Global Emergency Network', table: 'healthos_emergency_resources' },
     ],
   },
 };
@@ -92,20 +105,31 @@ export async function getPlatformStatus(organizationId) {
     }
   }
 
-  const allModules = Object.values(STAGES).flatMap((s) => s.modules);
+  const stages = {};
+  for (const [n, def] of Object.entries(STAGE_DEFS)) {
+    const modules = [];
+    for (const m of def.modules) {
+      const status = await moduleStatus(m.table);
+      modules.push({ id: m.id, label: m.label, status });
+    }
+    stages[n] = { name: def.name, goal: def.goal, modules };
+  }
+
+  const allModules = Object.values(stages).flatMap((s) => s.modules);
   const liveCount = allModules.filter((m) => m.status === 'live').length;
 
   return {
     brand: 'Mediqzy',
     product: 'HealthOS',
     brandLine: 'Mediqzy - HealthOS',
-    implementation: 'complete',
-    stages: STAGES,
+    implementation: liveCount === allModules.length ? 'complete' : 'partial',
+    stages,
     summary: {
       totalModules: allModules.length,
       liveModules: liveCount,
       currentStage: 4,
       tableCounts: counts,
+      note: 'live = DB tables migrated; integrations may require external connectors',
     },
     organizationId,
     refreshedAt: new Date().toISOString(),
@@ -123,8 +147,7 @@ export function getHealthOSCapabilities() {
     pillars: [
       'care_workspace', 'care_ai', 'care_graph', 'care_identity', 'care_cloud',
       'care_video', 'care_monitoring', 'care_analytics', 'care_marketplace',
-      'care_research', 'care_education', 'care_finance', 'care_command',
-      'care_government', 'care_home',
+      'care_research', 'care_command', 'care_government', 'care_home',
     ],
   };
 }

@@ -56,4 +56,13 @@ export async function listWebhooks(organizationId) {
   return rows;
 }
 
-export default { createApiKey, listApiKeys, registerWebhook, listWebhooks };
+export async function revokeApiKey(keyId, organizationId) {
+  await ensure();
+  const { rows } = await pool.query(
+    `UPDATE healthos_api_keys SET revoked_at = NOW() WHERE id = $1 AND organization_id = $2 RETURNING id`,
+    [keyId, organizationId]
+  );
+  return rows[0];
+}
+
+export default { createApiKey, listApiKeys, registerWebhook, listWebhooks, revokeApiKey };

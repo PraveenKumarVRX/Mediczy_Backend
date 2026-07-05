@@ -70,6 +70,13 @@ router.post("/sync", authLimiter, authUser, auditHealthAccess('APPLE_HEALTH_SYNC
       message: "Apple Health data synced successfully",
       data: result,
     });
+
+    // Bridge to HealthOS wearables (patient_id = user_id for self-tracked patients)
+    try {
+      const { syncWearablesFromAppleHealth } = await import('../services/careos/healthos-integration.service.js');
+      const orgId = req.user?.organization_id || req.user?.tenant_id || 1;
+      await syncWearablesFromAppleHealth(userId, userId, orgId);
+    } catch { /* non-blocking */ }
   } catch (error) {
     console.error("Apple Health sync error:", error);
     res.status(500).json({

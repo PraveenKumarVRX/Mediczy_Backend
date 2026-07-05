@@ -20,6 +20,12 @@ import {
   createCareTask,
   updateCareTask,
   getClinicalCallToken,
+  recordMDTOpinion,
+  getMDTConsensus,
+  joinMDT,
+  publishFamilyUpdate,
+  listFamilyUpdates,
+  syncFhirLabs,
 } from '@/services/careos.service';
 
 const SEVERITY_STYLE: Record<string, string> = {
@@ -40,6 +46,12 @@ export default function LivingPatientWorkspace() {
   const [error, setError] = useState<string | null>(null);
   const [newTask, setNewTask] = useState('');
   const [callInfo, setCallInfo] = useState<any>(null);
+  const [mdtSession, setMdtSession] = useState<any>(null);
+  const [mdtConsensus, setMdtConsensus] = useState<any>(null);
+  const [mdtOpinion, setMdtOpinion] = useState({ role: '', text: '', rec: '' });
+  const [familyTitle, setFamilyTitle] = useState('');
+  const [familyBody, setFamilyBody] = useState('');
+  const [familyUpdates, setFamilyUpdates] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     if (!pid) return;
@@ -80,11 +92,40 @@ export default function LivingPatientWorkspace() {
   const startBoard = async () => {
     setActionLoading('board');
     try {
-      await startClinicalBoard(pid, `Clinical Board — Patient ${pid}`);
+      const res = await startClinicalBoard(pid, `Clinical Board — Patient ${pid}`);
+      setMdtSession(res?.data);
       await load();
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const submitOpinion = async () => {
+    if (!mdtSession?.id || !mdtOpinion.text) return;
+    await recordMDTOpinion(mdtSession.id, { specialistRole: mdtOpinion.role || 'specialist', opinion: mdtOpinion.text, recommendation: mdtOpinion.rec });
+    const c = await getMDTConsensus(mdtSession.id);
+    setMdtConsensus(c?.data);
+  };
+
+  const loadFamily = async () => {
+    const res = await listFamilyUpdates(pid);
+    setFamilyUpdates(res?.data || []);
+  };
+
+  const publishFamily = async () => {
+    if (!familyTitle.trim() || !familyBody.trim()) return;
+    await publishFamilyUpdate(pid, { title: familyTitle, body: familyBody, visibleToFamily: true });
+    setFamilyTitle('');
+    setFamilyBody('');
+    await loadFamily();
+  };
+
+  const syncLabs = async () => {
+    setActionLoading('labs');
+    try {
+      await syncFhirLabs(pid);
+      await load();
+    } finally { setActionLoading(null); }
   };
 
   const loadPlayback = async () => {
@@ -186,6 +227,8 @@ export default function LivingPatientWorkspace() {
               <TabsTrigger value="tasks">Tasks</TabsTrigger>
               <TabsTrigger value="playback">Clinical Playback</TabsTrigger>
               <TabsTrigger value="ecosystem">Ecosystem</TabsTrigger>
+              <TabsTrigger value="mdt">Clinical Board</TabsTrigger>
+              <TabsTrigger value="family" onClick={() => loadFamily()}>Family</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="space-y-4">
@@ -346,6 +389,15 @@ export default function LivingPatientWorkspace() {
             </TabsContent>
 
             <TabsContent value="ecosystem" className="space-y-4">
+              <div className="flex gap-2 flex-wrap">
+                <Button size="sm" variant="outline" onClick={syncLabs} disabled={actionLoading === 'labs'}>Sync FHIR labs</Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={`/hmis/healthos/passport/${patientId}`}>Medical Passport</Link>
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={`/hmis/healthos/board/${patientId}`}>Global Board</Link>
+                </Button>
+              </div>
               <div className="grid md:grid-cols-2 gap-4">
                 <Card>
                   <CardHeader><CardTitle className="text-base">Labs (Stage 2)</CardTitle></CardHeader>
@@ -386,6 +438,53 @@ export default function LivingPatientWorkspace() {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            <TabsContent value="mdt" className="space-y-4">
+              <div className="flex gap-2">
+                <Button onClick={startBoard} disabled={actionLoading === 'board'}>Start Clinical Board</Button>
+                {mdtSession && <Button variant="outline" onClick={() => joinMDT(mdtSession.id)}>Join session</Button>}
+              </div>
+              {mdtSession && (
+                <Card>
+                  <CardContent className="pt-4 text-sm space-y-3">
+                    <p>Session #{mdtSession.id} — Room: {mdtSession.livekit_room}</p>
+                    <Input placeholder="Your role" value={mdtOpinion.role} onChange={(e) => setMdtOpinion({ ...mdtOpinion, role: e.target.value })} />
+                    <Input placeholder="Opinion" value={mdtOpinion.text} onChange={(e) => setMdtOpinion({ ...mdtOpinion, text: e.target.value })} />
+                    <Input placeholder="Recommendation" value={mdtOpinion.rec} onChange={(e) => setMdtOpinion({ ...mdtOpinion, rec: e.target.value })} />
+                    <Button onClick={submitOpinion}>Submit opinion</Button>
+                    {mdtConsensus?.consensus && (
+                      <div className="bg-slate-100 p-3 rounded text-xs">
+                        <p><strong>AI Consensus:</strong> {mdtConsensus.consensus.consensusPercent}%</p>
+                        <p>{mdtConsensus.consensus.summary}</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="family" className="space-y-4">
+              <Card>
+                <CardHeader><CardTitle className="text-base">Publish family update</CardTitle></CardHeader>
+                <CardContent className="space-y-2">
+                  <Input placeholder="Title" value={familyTitle} onChange={(e) => setFamilyTitle(e.target.value)} />
+                  <Input placeholder="Message for family" value={familyBody} onChange={(e) => setFamilyBody(e.target.value)} />
+                  <Button onClick={publishFamily}>Publish (clinician-approved)</Button>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader><CardTitle className="text-base">Family updates</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {familyUpdates.map((u) => (
+                    <div key={u.id} className="border rounded p-2">
+                      <p className="font-medium">{u.title}</p>
+                      <p className="text-muted-foreground">{u.body}</p>
+                    </div>
+                  ))}
+                  {!familyUpdates.length && <p className="text-muted-foreground">No updates yet</p>}
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         )}

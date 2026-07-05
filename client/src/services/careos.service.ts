@@ -200,3 +200,113 @@ export async function matchTrials(patientId: number) {
   const res = await api.get(`/v3/healthos/platform/research/match/${patientId}`);
   return res.data;
 }
+
+export async function syncFhirLabs(patientId: number) {
+  const res = await api.post(`/v3/healthos/expand/labs/${patientId}/sync-fhir`);
+  return res.data;
+}
+
+export async function createReferral(body: { fromOrgId: number; toOrgId: number; patientId: number; reason: string; urgency?: string; clinicalSummary?: string }) {
+  const res = await api.post('/v3/healthos/network/referrals', body);
+  return res.data;
+}
+
+export async function acceptReferral(id: number) {
+  const res = await api.post(`/v3/healthos/network/referrals/${id}/accept`);
+  return res.data;
+}
+
+export async function shareDocument(body: Record<string, unknown>) {
+  const res = await api.post('/v3/healthos/network/documents', body);
+  return res.data;
+}
+
+export async function detectNetworkSignals() {
+  const res = await api.post('/v3/healthos/network/signals/detect');
+  return res.data;
+}
+
+export async function resolveSignal(id: number) {
+  const res = await api.post(`/v3/healthos/network/signals/${id}/resolve`);
+  return res.data;
+}
+
+export async function installMarketplaceApp(appId: number) {
+  const res = await api.post('/v3/healthos/platform/marketplace/install', { appId });
+  return res.data;
+}
+
+export async function listInstalledApps() {
+  const res = await api.get('/v3/healthos/platform/marketplace/installed');
+  return res.data;
+}
+
+export async function createApiKey(name: string, scopes?: string[]) {
+  const res = await api.post('/v3/healthos/platform/developer/keys', { name, scopes });
+  return res.data;
+}
+
+export async function listApiKeys() {
+  const res = await api.get('/v3/healthos/platform/developer/keys');
+  return res.data;
+}
+
+export async function registerWebhook(url: string, events: string[]) {
+  const res = await api.post('/v3/healthos/platform/developer/webhooks', { url, events });
+  return res.data;
+}
+
+export async function listWebhooks() {
+  const res = await api.get('/v3/healthos/platform/developer/webhooks');
+  return res.data;
+}
+
+export async function revokeApiKey(keyId: number) {
+  const res = await api.delete(`/v3/healthos/platform/developer/keys/${keyId}`);
+  return res.data;
+}
+
+export async function publishFamilyUpdate(patientId: number, body: { title: string; body: string; stage?: string; visibleToFamily?: boolean }) {
+  const res = await api.post(`/v3/healthos/family/${patientId}/updates`, body);
+  return res.data;
+}
+
+export async function listFamilyUpdates(patientId: number, family = false) {
+  const res = await api.get(`/v3/healthos/family/${patientId}/updates`, { params: family ? { family: 'true' } : undefined });
+  return res.data;
+}
+
+export async function recordMDTOpinion(sessionId: number, body: { specialistRole: string; opinion: string; recommendation?: string }) {
+  const res = await api.post(`/v3/healthos/mdt/${sessionId}/opinion`, body);
+  return res.data;
+}
+
+export async function joinMDT(sessionId: number, role?: string) {
+  const res = await api.post(`/v3/healthos/mdt/${sessionId}/join`, { role });
+  return res.data;
+}
+
+export async function joinGlobalBoard(sessionId: number, body?: { role?: string; languagePreference?: string }) {
+  const res = await api.post(`/v3/healthos/ecosystem/global-board/${sessionId}/join`, body || {});
+  return res.data;
+}
+
+export async function listClinicalTrials(condition?: string) {
+  const res = await api.get('/v3/healthos/platform/research/trials', { params: condition ? { condition } : undefined });
+  return res.data;
+}
+
+export async function getPassportByToken(token: string) {
+  const res = await api.get(`/v3/healthos/ecosystem/passport/access/${token}`);
+  return res.data;
+}
+
+export async function scheduleHomecareVisit(patientId: number, body: Record<string, unknown>) {
+  const res = await api.post(`/v3/healthos/expand/homecare/${patientId}`, body);
+  return res.data;
+}
+
+export async function createPharmacyOrder(patientId: number, body: { drugName: string; dose?: string; pharmacyName?: string }) {
+  const res = await api.post(`/v3/healthos/expand/pharmacy/${patientId}`, body);
+  return res.data;
+}
