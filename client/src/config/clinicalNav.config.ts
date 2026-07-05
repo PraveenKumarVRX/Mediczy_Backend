@@ -11,6 +11,7 @@ import {
   Pill,
   ScanLine,
   Siren,
+  BookOpen,
 } from 'lucide-react';
 
 export interface ClinicalNavItem {
@@ -35,6 +36,12 @@ export const HOSPITAL_HEALTHOS_NAV: ClinicalNavSection[] = [
       { label: 'HealthOS Platform', href: '/hospital/healthos', icon: HeartPulse, capability: 'ehr' },
       { label: 'MDT Inbox', href: '/hospital/mdt/inbox', icon: Users, capability: 'ehr', hospitalOnly: true },
       { label: 'Hospital Copilot', href: '/hospital/copilot', icon: Sparkles, capability: 'ehr' },
+      { label: 'Case Library', href: '/hospital/knowledge/cases', icon: BookOpen, capability: 'ehr', hospitalOnly: true },
+      { label: 'Federation', href: '/hospital/federation', icon: HeartPulse, capability: 'ehr', hospitalOnly: true },
+      { label: 'Referrals', href: '/hospital/referrals', icon: Users, capability: 'ehr', hospitalOnly: true },
+      { label: 'Marketplace', href: '/hospital/marketplace', icon: Sparkles, capability: 'ehr', hospitalOnly: true },
+      { label: 'Research Hub', href: '/hospital/research', icon: Activity, capability: 'ehr', hospitalOnly: true },
+      { label: 'Home Care / RPM', href: '/hospital/home-care', icon: HeartPulse, capability: 'ehr', hospitalOnly: true },
     ],
   },
   {
@@ -85,5 +92,7 @@ export const WORKSPACE_NAV: WorkspaceNavItem[] = [
   { key: 'playback', label: 'Clinical Playback', segment: 'playback', icon: Activity },
   { key: 'mdt', label: 'Clinical Board', segment: 'mdt', icon: Users },
   { key: 'family', label: 'Family', segment: 'family', icon: HeartPulse },
+  { key: 'documents', label: 'Documents', segment: 'documents', icon: ClipboardList },
+  { key: 'similar-cases', label: 'Similar Cases', segment: 'similar-cases', icon: BookOpen },
   { key: 'ecosystem', label: 'Ecosystem', segment: 'ecosystem', icon: HeartPulse },
 ];

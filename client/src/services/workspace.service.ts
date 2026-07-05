@@ -22,6 +22,7 @@ export {
   listFamilyUpdates,
   recordMDTOpinion,
   joinMDT,
+  getMDTCallToken,
   syncFhirLabs,
   listPatientImaging,
   listLabResults,

@@ -1,12 +1,15 @@
 import { useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Video } from 'lucide-react';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { startClinicalBoard, recordMDTOpinion, getMDTConsensus, joinMDT } from '@/services/workspace.service';
 
 export default function MDTSessionPage() {
   const { patientId, actionLoading, setActionLoading } = useWorkspace();
+  const { portal } = useParams<{ portal: string }>();
   const [mdtSession, setMdtSession] = useState<any>(null);
   const [mdtConsensus, setMdtConsensus] = useState<any>(null);
   const [mdtOpinion, setMdtOpinion] = useState({ role: '', text: '', rec: '' });
@@ -32,12 +35,22 @@ export default function MDTSessionPage() {
     setMdtConsensus(c?.data);
   };
 
+  const portalPrefix = portal || 'hospital';
+
   return (
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
         <Button onClick={startBoard} disabled={actionLoading === 'board'}>Start Clinical Board</Button>
         {mdtSession && (
-          <Button variant="outline" onClick={() => joinMDT(mdtSession.id)}>Join session</Button>
+          <>
+            <Button variant="outline" onClick={() => joinMDT(mdtSession.id)}>Join session</Button>
+            <Button asChild>
+              <Link to={`/${portalPrefix}/mdt/${mdtSession.id}/room`}>
+                <Video className="h-4 w-4 mr-1" />
+                Open video room
+              </Link>
+            </Button>
+          </>
         )}
       </div>
       {mdtSession && (

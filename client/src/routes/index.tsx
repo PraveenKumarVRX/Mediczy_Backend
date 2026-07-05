@@ -818,6 +818,18 @@ const AIOperationsHub       = lazy(() => import("@/pages/hmis/AIOperationsHub"))
 const AIRevenueIntelligence = lazy(() => import("@/pages/hmis/AIRevenueIntelligence"));
 const AIDepartmentHub       = lazy(() => import("@/pages/hmis/AIDepartmentHub"));
 const MDTInboxPage          = lazy(() => import("@/features/mdt/pages/MDTInboxPage"));
+const MDTRoom               = lazy(() => import("@/features/mdt/pages/MDTRoom"));
+const FamilyPortalRouter    = lazy(() => import("@/features/family/FamilyPortalRouter"));
+const WardBoard             = lazy(() => import("@/features/display/WardBoard"));
+const ICUMonitorWall        = lazy(() => import("@/features/display/ICUMonitorWall"));
+const RoomDisplay           = lazy(() => import("@/features/display/RoomDisplay"));
+const CaseLibrary           = lazy(() => import("@/features/knowledge/CaseLibrary"));
+const FederationConsole     = lazy(() => import("@/features/ecosystem/pages/FederationConsole"));
+const ReferralNetwork       = lazy(() => import("@/features/ecosystem/pages/ReferralNetwork"));
+const MarketplacePage       = lazy(() => import("@/features/ecosystem/pages/MarketplacePage"));
+const DeveloperPortal       = lazy(() => import("@/features/ecosystem/pages/DeveloperPortal"));
+const ResearchHub           = lazy(() => import("@/features/ecosystem/pages/ResearchHub"));
+const HomeMonitoring        = lazy(() => import("@/features/ecosystem/pages/HomeMonitoring"));
 
 const CLINICAL_PAGES = {
   PatientTimeline,
@@ -1053,6 +1065,7 @@ const AppRoutes = () => {
         <Route path="/doctor/patient/:patientId/healthos/*" element={<LivingPatientWorkspace />} />
         <Route path="/doctor/patient/:patientId/careos/*" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("doctor", CLINICAL_PAGES)}
+        <Route path="/doctor/mdt/:sessionId/room" element={<MDTRoom />} />
 
         {/* ── Webinars ───────────────────────────────────────────────── */}
         <Route path="/webinars"                   element={<WebinarListPage />} />
@@ -1103,7 +1116,14 @@ const AppRoutes = () => {
         <Route path="/hospital/careos" element={<CareOSEcosystem />} />
         <Route path="/hospital/copilot" element={<HospitalCopilot />} />
         <Route path="/hospital/mdt/inbox" element={<MDTInboxPage />} />
-        <Route path="/hospital/command-center" element={<CommandCenter />} />
+        <Route path="/hospital/mdt/:sessionId/room" element={<MDTRoom />} />
+        <Route path="/hospital/command-center/*" element={<CommandCenter />} />
+        <Route path="/hospital/knowledge/cases" element={<CaseLibrary />} />
+        <Route path="/hospital/federation" element={<FederationConsole />} />
+        <Route path="/hospital/referrals" element={<ReferralNetwork />} />
+        <Route path="/hospital/marketplace" element={<MarketplacePage />} />
+        <Route path="/hospital/research" element={<ResearchHub />} />
+        <Route path="/hospital/home-care" element={<HomeMonitoring />} />
         <Route path="/hospital/patient/:patientId/healthos/*" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
@@ -1233,6 +1253,7 @@ const AppRoutes = () => {
         <Route path="/nurse/book-appointment"   element={<MainLayout><NurseBookAppointment /></MainLayout>} />
         <Route path="/nurse/video-consultation" element={<NurseVideoConsultation />} />
         {portalClinicalRoutes("nurse", CLINICAL_PAGES)}
+        <Route path="/nurse/mdt/:sessionId/room" element={<MDTRoom />} />
 
         {/* ── Assistant ───────────────────────────────────────────────── */}
         <Route path="/assistant/login"             element={<AssistantLogin />} />
@@ -1413,6 +1434,7 @@ const AppRoutes = () => {
         <Route path="/admin/copilot"              element={<AdminRoute><AdminCopilot /></AdminRoute>} />
         <Route path="/admin/samd-compliance"      element={<AdminRoute><AdminSaMD /></AdminRoute>} />
         <Route path="/admin/ai-guard"             element={<AdminRoute><SIBAIDashboard /></AdminRoute>} />
+        <Route path="/admin/developers"          element={<AdminRoute><DeveloperPortal /></AdminRoute>} />
         <Route path="/admin/hypergrid"            element={<AdminRoute><HyperGridDashboard /></AdminRoute>} />
         <Route path="/admin/hypergrid/marketplace" element={<AdminRoute><HyperGridMarketplace /></AdminRoute>} />
         <Route path="/admin/hypergrid-ai"         element={<AdminRoute><HyperGridAIView /></AdminRoute>} />
@@ -1881,6 +1903,7 @@ const AppRoutes = () => {
         <Route path="/symptom-checker"         element={<AISymptomTriage />} />
         <Route path="/smart-health"            element={<SmartHealthDashboard />} />
         <Route path="/benefits"               element={<SmartBenefitsHub />} />
+        <Route path="/family/*" element={<FamilyPortalRouter />} />
         <Route path="/family-hub"             element={<FamilyHealthHub />} />
         <Route path="/wellness-rewards"       element={<WellnessRewards />} />
         <Route path="/smart-opd"              element={<SmartOPD />} />
@@ -1898,6 +1921,9 @@ const AppRoutes = () => {
         <Route path="/contact-us"    element={<MainLayout><ContactUs /></MainLayout>} />
 
         {/* ── Hospital Display & Kiosk System ─────────────────────────── */}
+        <Route path="/display/ward/:wardId"     element={<WardBoard />} />
+        <Route path="/display/icu/:unitId"      element={<ICUMonitorWall />} />
+        <Route path="/display/room/:bedId"     element={<RoomDisplay />} />
         <Route path="/display/queue"            element={<OPDQueueDisplay />} />
         <Route path="/display/icu-board"        element={<ICUBoardDisplay />} />
         <Route path="/display/blood-bank"       element={<BloodBankDisplay />} />

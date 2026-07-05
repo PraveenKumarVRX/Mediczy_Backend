@@ -2,7 +2,7 @@ import { appendClinicalEvent, getClinicalTimeline } from './clinical-timeline.se
 import { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists } from './care-team.service.js';
 import { analyzePatient, listCoordinatorAlerts, acknowledgeCoordinatorAlert } from './clinical-coordinator.service.js';
 import { getPathway, updatePathway } from './treatment-pathway.service.js';
-import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus } from './mdt-board.service.js';
+import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus, createMdtCallToken, listMdtSessions } from './mdt-board.service.js';
 import { buildClinicalPlayback } from './clinical-playback.service.js';
 import { findSimilarCases, archiveCase } from './hospital-memory.service.js';
 import { listFamilyUpdates, publishFamilyUpdate } from './family-portal.service.js';
@@ -54,6 +54,8 @@ export {
   joinClinicalBoard,
   recordOpinion,
   getAIConsensus,
+  createMdtCallToken,
+  listMdtSessions,
   buildClinicalPlayback,
   findSimilarCases,
   archiveCase,
@@ -147,6 +149,8 @@ export default {
   joinClinicalBoard,
   recordOpinion,
   getAIConsensus,
+  createMdtCallToken,
+  listMdtSessions,
   buildClinicalPlayback,
   findSimilarCases,
   archiveCase,

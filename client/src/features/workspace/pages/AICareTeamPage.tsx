@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { Sparkles, Loader2, Brain } from 'lucide-react';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { runCoordinatorAnalysis, acknowledgeCoordinatorAlert } from '@/services/workspace.service';
 import { AgentRosterCard } from '@/components/ai/AgentRosterCard';
@@ -9,11 +9,14 @@ import { AI_AGENT_ROSTER } from '@/features/workspace/types/workspace.types';
 import type { AIAgentRosterEntry, CoordinatorAlert } from '@/features/workspace/types/workspace.types';
 import { ClinicalEmptyState } from '@/components/clinical/ClinicalEmptyState';
 import { normalizeCoordinatorAlert } from '@/features/workspace/utils/normalizeAlerts';
+import { SHAPAttributionDrawer } from '@/components/ai/SHAPAttributionDrawer';
+import { AgentActivityLog } from '@/components/ai/AgentActivityLog';
 
 export default function AICareTeamPage() {
   const { workspace, refresh, patientId, actionLoading, setActionLoading } = useWorkspace();
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [localAlerts, setLocalAlerts] = useState<CoordinatorAlert[]>([]);
+  const [shapOpen, setShapOpen] = useState(false);
 
   const rawAlerts = workspace?.sections?.ai?.coordinatorAlerts || [];
   const alerts: CoordinatorAlert[] = localAlerts.length
@@ -85,6 +88,10 @@ export default function AICareTeamPage() {
           {actionLoading === 'coordinator' ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
           Run analysis
         </Button>
+        <Button variant="outline" onClick={() => setShapOpen(true)}>
+          <Brain className="h-4 w-4 mr-1" />
+          SHAP
+        </Button>
       </div>
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -119,6 +126,10 @@ export default function AICareTeamPage() {
           ))
         )}
       </div>
+
+      <AgentActivityLog patientId={patientId} />
+
+      <SHAPAttributionDrawer patientId={patientId} open={shapOpen} onOpenChange={setShapOpen} />
     </div>
   );
 }

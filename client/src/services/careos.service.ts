@@ -286,6 +286,11 @@ export async function joinMDT(sessionId: number, role?: string) {
   return res.data;
 }
 
+export async function getMDTCallToken(sessionId: number, role?: string) {
+  const res = await api.post(`/v3/healthos/mdt/${sessionId}/token`, { role });
+  return res.data;
+}
+
 export async function joinGlobalBoard(sessionId: number, body?: { role?: string; languagePreference?: string }) {
   const res = await api.post(`/v3/healthos/ecosystem/global-board/${sessionId}/join`, body || {});
   return res.data;

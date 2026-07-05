@@ -13,6 +13,8 @@ import ClinicalPlaybackPage from '@/features/workspace/pages/ClinicalPlaybackPag
 import MDTSessionPage from '@/features/workspace/pages/MDTSessionPage';
 import FamilyPublishPage from '@/features/workspace/pages/FamilyPublishPage';
 import EcosystemPage from '@/features/workspace/pages/EcosystemPage';
+import ClinicalDocuments from '@/features/workspace/pages/ClinicalDocuments';
+import SimilarCases from '@/features/workspace/pages/SimilarCases';
 
 /** Nested routes for /:portal/patient/:patientId/healthos/* */
 export default function PatientHealthOSRouter() {
@@ -38,6 +40,8 @@ export default function PatientHealthOSRouter() {
           <Route path="playback" element={<ClinicalPlaybackPage />} />
           <Route path="mdt" element={<MDTSessionPage />} />
           <Route path="family" element={<FamilyPublishPage />} />
+          <Route path="documents" element={<ClinicalDocuments />} />
+          <Route path="similar-cases" element={<SimilarCases />} />
           <Route path="ecosystem" element={<EcosystemPage />} />
         </Route>
       </Routes>

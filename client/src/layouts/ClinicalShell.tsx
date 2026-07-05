@@ -1,14 +1,15 @@
+import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, RefreshCw, Video, Brain, Loader2 } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Video, Brain, Loader2, Sparkles } from 'lucide-react';
 import { WORKSPACE_NAV } from '@/config/clinicalNav.config';
 import { useClinicalPaths } from '@/hooks/useClinicalPaths';
 import { PatientBanner } from '@/components/clinical/PatientBanner';
 import { useWorkspace } from '@/features/workspace/hooks/useWorkspace';
 import { useWorkspaceRealtime } from '@/features/workspace/hooks/useWorkspaceRealtime';
 import { getClinicalCallToken } from '@/services/workspace.service';
-import { useState } from 'react';
+import { PatientCopilotPanel } from '@/features/copilot/PatientCopilotPanel';
 
 function workspaceSectionPath(base: string, segment: string) {
   if (!segment) return base;
@@ -31,6 +32,7 @@ export default function ClinicalShell() {
   const location = useLocation();
   const { workspace, loading, error, refresh, actionLoading, setActionLoading } = useWorkspace();
   const [callInfo, setCallInfo] = useState<{ configured?: boolean; room?: string; message?: string } | null>(null);
+  const [copilotOpen, setCopilotOpen] = useState(false);
 
   useWorkspaceRealtime(pid);
 
@@ -62,6 +64,10 @@ export default function ClinicalShell() {
             <Button size="sm" onClick={joinCall} disabled={actionLoading === 'call'}>
               <Video className="h-4 w-4 mr-1" />
               One-touch Call
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setCopilotOpen(true)}>
+              <Sparkles className="h-4 w-4 mr-1" />
+              Copilot
             </Button>
             <Button variant="secondary" size="sm" asChild>
               <Link to={paths.healthosHub}>
@@ -124,6 +130,13 @@ export default function ClinicalShell() {
           )}
         </main>
       </div>
+
+      <PatientCopilotPanel
+        patientId={pid}
+        open={copilotOpen}
+        onOpenChange={setCopilotOpen}
+        patientName={workspace?.patient?.name}
+      />
     </div>
   );
 }

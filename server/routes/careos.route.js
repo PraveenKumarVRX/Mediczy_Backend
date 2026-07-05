@@ -169,6 +169,11 @@ router.post('/coordinator/:patientId/alerts/:alertId/ack', ...clinical, async (r
 });
 
 // ── Instant MDT / Clinical Board ─────────────────────────────────────────────
+router.get('/mdt/inbox', ...clinical, async (req, res) => {
+  const rows = await careos.listMdtSessions(orgId(req));
+  res.json({ success: true, data: rows });
+});
+
 router.post('/mdt/start', ...doctorOnly, async (req, res) => {
   const session = await careos.startClinicalBoard({
     patientId: Number(req.body.patientId),
@@ -187,6 +192,16 @@ router.post('/mdt/:sessionId/join', ...clinical, async (req, res) => {
     role: req.body.role,
   });
   res.json({ success: true, data: result });
+});
+
+router.post('/mdt/:sessionId/token', ...clinical, async (req, res) => {
+  const data = await careos.createMdtCallToken({
+    sessionId: Number(req.params.sessionId),
+    userId: req.user.id,
+    userName: req.user.name || req.user.email,
+    role: req.body.role || 'specialist',
+  });
+  res.json({ success: true, data });
 });
 
 router.post('/mdt/:sessionId/opinion', ...clinical, async (req, res) => {
