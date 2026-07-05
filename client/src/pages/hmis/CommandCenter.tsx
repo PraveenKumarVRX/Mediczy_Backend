@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, RefreshCw, TrendingUp, TrendingDown, Minus, BarChart2 } from 'lucide-react';
 import api from '@/utils/api';
+import { getCommandCenterAI } from '@/services/hospitalOs.service';
 
 interface Snapshot { bedOccupancyPct: number; activeAdmissions: number; todayOTCases: number; criticalAlerts: number; pendingDischarges: number; preAuthsPending: number; }
 interface KPI { name: string; value: string; target: string; status: 'on-track' | 'needs-attention' | 'critical'; }
@@ -32,6 +33,7 @@ export default function CommandCenter() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [aiRecs, setAiRecs] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,6 +59,7 @@ export default function CommandCenter() {
       }
       setLastUpdated(new Date());
       setError(null);
+      getCommandCenterAI().then((r) => setAiRecs(r?.data?.recommendations || [])).catch(() => {});
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Failed to load analytics');
     } finally {
@@ -188,6 +191,22 @@ export default function CommandCenter() {
             </CardContent>
           </Card>
         </div>
+
+        {aiRecs.length > 0 && (
+          <Card className="mt-6">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-700">AI Operational Recommendations</CardTitle>
+            </CardHeader>
+            <CardContent className="grid md:grid-cols-2 gap-3">
+              {aiRecs.map((r: any, i: number) => (
+                <div key={i} className={`rounded-lg border p-3 text-sm ${r.severity === 'critical' ? 'border-red-200 bg-red-50' : 'bg-white'}`}>
+                  <p className="font-medium">{r.title}</p>
+                  <p className="text-slate-600 mt-1">{r.message}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

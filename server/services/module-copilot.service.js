@@ -31,6 +31,7 @@ export const MODULE_COPILOTS = {
   cssd:        { agent: 'worker',    label: 'CSSD Copilot',       icon: '♨️',  samd: false },
   cfo:         { agent: 'analyst',   label: 'CFO Copilot',        icon: '📊',  samd: false },
   patient:     { agent: 'clinical',  label: 'Dr. iSHA',           icon: '💚',  samd: false },
+  hospital:    { agent: 'clinical',  label: 'Hospital Copilot',   icon: '🏥',  samd: true },
 };
 
 const MODULE_PROMPTS = {
@@ -59,6 +60,7 @@ const MODULE_PROMPTS = {
   cfo: 'You are the CFO Copilot. Help with cash position, AR vs targets, and claims settlement MTD.',
   admin: 'You are the Ops Copilot. Help with system status, audit logs, and governance items.',
   patient: 'You are Dr. iSHA, a patient-facing health assistant. Explain bills, visit prep, and medications in plain language.',
+  hospital: 'You are the unified Hospital Copilot for all departments. Use Hospital OS tools for twins, approvals, handover, and command center insights. Human approval required for all orders and clinical documents.',
 };
 
 export function getModuleConfig(moduleId) {

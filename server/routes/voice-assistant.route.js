@@ -43,6 +43,11 @@ import {
 import logger from '../config/logger.js';
 import pool from '../db/pgPool.js';
 import { getAIServiceConfig } from '../config/ai-services.config.js';
+import {
+  draftLabOrderFromVoice,
+  draftImagingOrderFromVoice,
+  draftTeamNotification,
+} from '../services/hospital-os/voice-commands.service.js';
 
 const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
@@ -356,6 +361,62 @@ const ASSISTANT_TOOLS = [
           title: { type: 'string', description: 'Task title or keywords to find the task if ID not known' }
         }
       }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'draft_lab_order',
+      description: 'Draft a lab order (e.g. CBC, LFT) for clinician approval. Use for "order CBC", "order blood tests".',
+      parameters: {
+        type: 'object',
+        properties: {
+          tests: { type: 'array', items: { type: 'string' } },
+          priority: { type: 'string', enum: ['routine', 'urgent', 'stat'] },
+          patient_id: { type: 'integer' }
+        },
+        required: ['tests']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'draft_imaging_order',
+      description: 'Draft imaging order (MRI, CT, X-ray) for approval.',
+      parameters: {
+        type: 'object',
+        properties: {
+          modality: { type: 'string', enum: ['X-Ray', 'CT', 'MRI', 'USG', 'Echo'] },
+          body_part: { type: 'string' },
+          patient_id: { type: 'integer' }
+        },
+        required: ['modality']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'notify_clinical_team',
+      description: 'Notify clinical team (cardiology, nursing, lab, pharmacy, icu, er).',
+      parameters: {
+        type: 'object',
+        properties: {
+          team: { type: 'string', enum: ['cardiology', 'nursing', 'lab', 'pharmacy', 'icu', 'er'] },
+          message: { type: 'string' },
+          patient_id: { type: 'integer' }
+        },
+        required: ['team', 'message']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'show_icu_admissions',
+      description: 'Show ICU admissions / open ICU dashboard.',
+      parameters: { type: 'object', properties: {} }
     }
   }
 ];
@@ -1791,6 +1852,75 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
         ? `Done! Task "${result.task?.title || args.title || 'task'}" marked as completed.`
         : `Couldn't find that task. Try saying "show my tasks" to see what's pending.`;
       return res.json({ intent: 'action', action: 'complete_task', parameters: args, response: msg, speak: msg, data: result.task || null, requiresConfirmation: false });
+    }
+
+    // draft_lab_order — Hospital OS approval inbox (T1)
+    if (toolName === 'draft_lab_order') {
+      const patientId = args.patient_id || currentPatientId;
+      if (!patientId) {
+        const msg = 'Please select a patient before ordering labs.';
+        return res.json({ intent: 'action', action: 'draft_lab_order', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
+      }
+      const tests = (args.tests || []).map((t) => ({ name: String(t), price: 0 }));
+      const result = await draftLabOrderFromVoice({
+        utterance: text,
+        patientId: Number(patientId),
+        doctorId,
+        hospitalId: req.user?.organization_id || req.user?.hospital_id || 1,
+        tests,
+        priority: args.priority || 'routine',
+      });
+      const msg = `Lab order drafted for ${tests.map((t) => t.name).join(', ')}. Please approve in the approval inbox.`;
+      return res.json({
+        intent: 'action',
+        action: 'draft_lab_order',
+        parameters: args,
+        response: msg,
+        speak: msg,
+        data: result,
+        requiresConfirmation: true,
+      });
+    }
+
+    if (toolName === 'draft_imaging_order') {
+      const patientId = args.patient_id || currentPatientId;
+      if (!patientId) {
+        const msg = 'Please select a patient before ordering imaging.';
+        return res.json({ intent: 'action', action: 'draft_imaging_order', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
+      }
+      const result = await draftImagingOrderFromVoice({
+        utterance: text,
+        patientId: Number(patientId),
+        doctorId,
+        hospitalId: req.user?.organization_id || req.user?.hospital_id || 1,
+        modality: args.modality,
+        bodyPart: args.body_part,
+      });
+      const msg = `${args.modality} order drafted. Approve in the approval inbox.`;
+      return res.json({ intent: 'action', action: 'draft_imaging_order', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: true });
+    }
+
+    if (toolName === 'notify_clinical_team') {
+      const result = await draftTeamNotification({
+        utterance: text,
+        team: args.team,
+        patientId: args.patient_id || currentPatientId,
+        requestedBy: doctorId,
+      });
+      const msg = `Notification queued for ${args.team} team.`;
+      return res.json({ intent: 'action', action: 'notify_clinical_team', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+    }
+
+    if (toolName === 'show_icu_admissions') {
+      const msg = 'Opening ICU dashboard';
+      return res.json({
+        intent: 'action',
+        action: 'navigate_to',
+        parameters: { screen: 'icu-dashboard' },
+        response: msg,
+        speak: msg,
+        requiresConfirmation: false,
+      });
     }
 
     // Unknown tool — fallback

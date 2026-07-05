@@ -66,6 +66,14 @@ const T = {
   MODULE_LAB:     ['get_lab_orders_pending'],
   MODULE_CLINICAL:['get_early_warning_alerts', 'query_patient_cohort', 'get_discharge_clearance'],
   MODULE_QUALITY: ['get_quality_kpi_snapshot'],
+
+  // Hospital OS 2035 tools
+  HOSPITAL_OS: [
+    'get_patient_workspace_summary', 'get_patient_digital_twin', 'get_command_center_ai_recommendations',
+    'generate_nurse_handover', 'run_hospital_whatif_simulation', 'build_patient_knowledge_graph',
+    'get_pending_approvals', 'forecast_ed_demand', 'optimize_patient_journey',
+    'match_patient_clinical_trials', 'sync_hospital_digital_twin',
+  ],
 };
 
 // ─── Agent Definitions ────────────────────────────────────────────────────────
@@ -91,9 +99,8 @@ export const AGENTS = {
       ...T.INTEL, ...T.FINANCE, ...T.SYSTEM,
       ...T.MODULE_BILLING, ...T.MODULE_ADT, ...T.MODULE_LAB,
       ...T.MODULE_CLINICAL, ...T.MODULE_QUALITY,
+      ...T.HOSPITAL_OS,
     ],
-    systemPromptSuffix: `
-AGENT ROLE: Admin Agent — full privileged system access.
 PERMISSIONS: read + write all records, system configuration, audit logs.
 ALWAYS: log destructive or irreversible actions before executing them.
 ALWAYS: confirm with the user before modifying system configuration.`,
@@ -116,6 +123,7 @@ ALWAYS: confirm with the user before modifying system configuration.`,
       ...T.WELLNESS, ...T.MEMORY, ...T.RAG,
       ...T.INTEL, ...T.APPT,
       ...T.MODULE_CLINICAL, ...T.MODULE_ADT, ...T.MODULE_LAB,
+      ...T.HOSPITAL_OS,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Clinical Agent — specialist medical AI assistant.
@@ -140,6 +148,7 @@ ALWAYS: flag critical values (BP > 180/120, SpO2 < 92%, glucose < 60 or > 400).`
       ...T.PATIENT_READ, ...T.LAB_READ,
       ...T.WELLNESS, ...T.RAG, ...T.INTEL, ...T.FINANCE,
       ...T.MODULE_BILLING, ...T.MODULE_QUALITY, ...T.MODULE_CLINICAL,
+      ...T.HOSPITAL_OS,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Analyst Agent — data intelligence, READ-ONLY.
@@ -229,6 +238,7 @@ ALWAYS: verify policy coverage before approving claims. Flag exclusions explicit
       ...T.PATIENT_READ, ...T.PATIENT_WRITE,
       ...T.INTEL, ...T.APPT,
       ...T.MODULE_CLINICAL, ...T.MODULE_ADT,
+      ...T.HOSPITAL_OS,
     ],
     systemPromptSuffix: `
 AGENT ROLE: Emergency Agent — critical care AI triage coordinator.

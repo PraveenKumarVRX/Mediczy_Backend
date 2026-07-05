@@ -38,6 +38,10 @@ import { AI_DECISION_TYPES } from '../services/sib-control-layer.service.js';
 const ROUTE_TO_DECISION = [
   // CDSS queries
   { method: 'POST', pattern: /^\/api\/cdss\/knowledge\/query/, type: AI_DECISION_TYPES.AI_QUERY },
+
+  // Hospital OS unified copilot
+  { method: 'POST', pattern: /^\/api\/v3\/hospital-os\/copilot\/chat/, type: AI_DECISION_TYPES.AI_QUERY },
+  { method: 'POST', pattern: /^\/api\/v3\/hospital-os\/simulate\/clinical/, type: AI_DECISION_TYPES.AI_QUERY },
   
   // AI Brain orchestrator
   { method: 'POST', pattern: /^\/api\/v3\/ai-brain\/think/, type: AI_DECISION_TYPES.AI_QUERY },
