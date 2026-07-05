@@ -24,7 +24,14 @@ class SocketService {
     if (import.meta.env.DEV) console.log('🔌 Connecting to Socket.IO server:', SOCKET_URL);
     
     this.socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      // Polling first — app.mediqzy.com is fronted by Cloudflare, whose edge
+      // fails the WebSocket upgrade over the HTTP/2 connections browsers
+      // negotiate by default here (confirmed: upgrade succeeds forced to
+      // HTTP/1.1, fails over H2 — "Invalid frame header" / max reconnect
+      // attempts client-side). Polling establishes a session over plain
+      // HTTP first, then upgrades to websocket only if that succeeds,
+      // instead of failing outright when websocket-first can't connect.
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
       reconnectionDelay: 1000,

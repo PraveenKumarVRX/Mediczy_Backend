@@ -35,7 +35,9 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Connect to socket server
     socketRef.current = io(socketOrigin, {
-      transports: ['websocket', 'polling'],
+      // Polling first — see socket.service.ts for why (Cloudflare edge fails
+      // the WS upgrade over HTTP/2 on this domain; polling degrades safely).
+      transports: ['polling', 'websocket'],
       path: '/socket.io',
       query: {
         userId: currentId,

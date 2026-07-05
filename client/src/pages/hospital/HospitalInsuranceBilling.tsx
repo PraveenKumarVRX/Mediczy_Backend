@@ -242,7 +242,9 @@ const HospitalInsuranceBilling = () => {
 
     // Connect to WebSocket server
     const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:8000', {
-      transports: ['websocket', 'polling'],
+      // Polling first — see socket.service.ts for why (Cloudflare edge fails
+      // the WS upgrade over HTTP/2 on this domain; polling degrades safely).
+      transports: ['polling', 'websocket'],
       auth: { token }
     });
 

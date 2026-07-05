@@ -103,7 +103,9 @@ const NurseChat: React.FC = () => {
          : window.location.origin));
 
     const sock = io(socketOrigin, {
-      transports: ['websocket', 'polling'],
+      // Polling first — see socket.service.ts for why (Cloudflare edge fails
+      // the WS upgrade over HTTP/2 on this domain; polling degrades safely).
+      transports: ['polling', 'websocket'],
       path: '/socket.io',
       query: { userId: nurseId, userType: 'nurse' },
     });

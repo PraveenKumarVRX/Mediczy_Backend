@@ -20,6 +20,14 @@ export function clinicalBase(portal: ClinicalPortal = getClinicalPortal()): stri
   return `/${portal}`;
 }
 
+/**
+ * Routes that portalClinicalRoutes.tsx's HOSPITAL_ONLY list keeps mounted
+ * under /hospital/* regardless of the active portal — /doctor/command-center
+ * etc. simply don't exist, so paths built with the generic portal ${base}
+ * 404. Kept in sync manually since HOSPITAL_ONLY isn't exported from there.
+ */
+const HOSPITAL_ONLY_BASE = "/hospital";
+
 /** HealthOS + inpatient paths for a portal prefix */
 export function buildClinicalPaths(portal: ClinicalPortal = getClinicalPortal()) {
   const base = clinicalBase(portal);
@@ -28,17 +36,17 @@ export function buildClinicalPaths(portal: ClinicalPortal = getClinicalPortal())
     base,
     healthosHub: `${base}/healthos`,
     careosHub: `${base}/careos`,
-    commandCenter: `${base}/command-center`,
+    commandCenter: `${HOSPITAL_ONLY_BASE}/command-center`,
     copilot: `${base}/copilot`,
     patientHealthos: (patientId: string | number) => `${base}/patient/${patientId}/healthos`,
     patientCareos: (patientId: string | number) => `${base}/patient/${patientId}/careos`,
     patientWorkspace: (patientId: string | number) => `${base}/patient/${patientId}/workspace`,
     globalBoard: (patientId: string | number) => `${base}/healthos/board/${patientId}`,
     passport: (patientId: string | number) => `${base}/healthos/passport/${patientId}`,
-    bedsMap: `${base}/beds/map`,
-    emar: `${base}/emar`,
+    bedsMap: `${HOSPITAL_ONLY_BASE}/beds/map`,
+    emar: `${HOSPITAL_ONLY_BASE}/emar`,
     echart: `${base}/echart`,
-    aiOps: `${base}/ai-ops`,
+    aiOps: `${HOSPITAL_ONLY_BASE}/ai-ops`,
   };
 }
 
