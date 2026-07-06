@@ -324,15 +324,15 @@ const DoctorDashboard = () => {
   const quickLaunch = [
     { label: "Prescriptions", icon: Pill, link: "/doctor/prescriptions", bgColor: "bg-purple-500/10", iconColor: "text-purple-600 dark:text-purple-400" },
     { label: "Messages", icon: MessageSquare, link: "/doctor/messages", bgColor: "bg-indigo-500/10", iconColor: "text-indigo-600 dark:text-indigo-400" },
-    { label: "AI Assist", icon: BrainCircuit, link: "/doctor/assist", bgColor: "bg-cyan-500/10", iconColor: "text-cyan-600 dark:text-cyan-400" },
+    { label: "AI Hub", icon: BrainCircuit, link: "/doctor/ai-hub", bgColor: "bg-cyan-500/10", iconColor: "text-cyan-600 dark:text-cyan-400" },
     { label: "iSHA", icon: Sparkles, link: "/doctor/assistant", bgColor: "bg-amber-500/10", iconColor: "text-amber-600 dark:text-amber-400" },
     { label: "Health Mon.", icon: HeartPulse, link: "/doctor/health-monitoring", bgColor: "bg-red-500/10", iconColor: "text-red-500" },
-    { label: "Analytics", icon: BarChart3, link: "/doctor/analytics", bgColor: "bg-teal-500/10", iconColor: "text-teal-600 dark:text-teal-400" },
+    { label: "Insights", icon: BarChart3, link: "/doctor/insights", bgColor: "bg-teal-500/10", iconColor: "text-teal-600 dark:text-teal-400" },
   ];
 
   const clinicalArsenal = [
     { title: "Appointments", description: "Schedule & queue", icon: Calendar, link: "/doctor/appointments", badge: stats?.pendingAppointments ? `${stats.pendingAppointments} pending` : null, color: "text-blue-500", bgColor: "bg-blue-500/10" },
-    { title: "Patient Workspace", description: "Living clinical record", icon: HeartPulse, link: "/doctor/patients", badge: "HealthOS", color: "text-teal-500", bgColor: "bg-teal-500/10" },
+    { title: "Patient Workspace", description: "Living clinical record", icon: HeartPulse, link: "/doctor/patients", badge: "Chart", color: "text-teal-500", bgColor: "bg-teal-500/10" },
     { title: "Clinical Notes", description: "SOAP & IPD docs", icon: ClipboardList, link: "/doctor/clinical-workspace", badge: "SOAP", color: "text-purple-500", bgColor: "bg-purple-500/10" },
     { title: "Templates", description: "Forms & Rx layouts", icon: FileSearch, link: "/doctor/templates", badge: null, color: "text-violet-500", bgColor: "bg-violet-500/10" },
     { title: "Imaging", description: "CT, MRI, X-Ray", icon: ScanLine, link: "/doctor/imaging", badge: null, color: "text-cyan-500", bgColor: "bg-cyan-500/10" },
@@ -978,7 +978,7 @@ const DoctorDashboard = () => {
           </div>
 
           <div className="relative flex justify-end mt-4">
-            <Link to="/doctor/analytics">
+            <Link to="/doctor/insights">
               <button className="flex items-center gap-1.5 text-xs text-teal-300 hover:text-teal-200 font-semibold transition-colors">
                 <BarChart3 className="w-3.5 h-3.5" />
                 Full analytics

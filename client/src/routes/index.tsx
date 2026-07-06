@@ -136,6 +136,9 @@ const DoctorAssist             = lazy(() => import("@/pages/doctor/DoctorAssist"
 const HealthMonitoringDashboardWrapper = lazy(() => import("@/pages/doctor/HealthMonitoringDashboardWrapper"));
 const DoctorAnalytics          = lazy(() => import("@/pages/doctor/DoctorAnalytics"));
 const DoctorReports            = lazy(() => import("@/pages/doctor/DoctorReports"));
+const DoctorInsights           = lazy(() => import("@/pages/doctor/DoctorInsights"));
+const DoctorAIHub                = lazy(() => import("@/pages/doctor/DoctorAIHub"));
+const DoctorHealthRecordsRedirect = lazy(() => import("@/pages/doctor/DoctorHealthRecordsRedirect"));
 const DoctorSettings           = lazy(() => import("@/pages/doctor/DoctorSettings"));
 const DoctorDocumentTemplates  = lazy(() => import("@/pages/doctor/DoctorDocumentTemplates"));
 const DoctorTemplateSettings   = lazy(() => import("@/pages/doctor/DoctorTemplateSettings"));
@@ -1027,7 +1030,7 @@ const AppRoutes = () => {
 
         {/* ── Doctor ──────────────────────────────────────────────────── */}
         <Route path="/doctor/login"               element={<DoctorLogin />} />
-        <Route path="/doctor/home"                element={<DoctorMobileHome />} />
+        <Route path="/doctor/home"                element={<Navigate to="/doctor/dashboard" replace />} />
         <Route path="/doctor-dashboard"           element={<DoctorDashboard />} />
         <Route path="/doctor/dashboard"           element={<DoctorDashboard />} />
         <Route path="/doctor/clinical-workspace"  element={<MainLayout><EnhancedDoctorDashboard /></MainLayout>} />
@@ -1036,24 +1039,26 @@ const AppRoutes = () => {
         <Route path="/doctor/prescriptions"       element={<DoctorPrescriptions />} />
         <Route path="/doctor/patients"            element={<DoctorPatients />} />
         <Route path="/doctor/triage"              element={<DoctorTriage />} />
-        <Route path="/doctor/remote-monitoring"   element={<RemoteHealthMonitoring />} />
+        <Route path="/doctor/remote-monitoring"   element={<Navigate to="/doctor/health-monitoring?view=advanced" replace />} />
         <Route path="/doctor/assist"              element={<DoctorAssist />} />
         <Route path="/doctor/health-monitoring"   element={<HealthMonitoringDashboardWrapper />} />
-        <Route path="/doctor/contact"             element={<DoctorContact />} />
+        <Route path="/doctor/contact"             element={<Navigate to="/doctor/messages?tab=inbox" replace />} />
         <Route path="/doctor/alerts"              element={<DoctorAlerts />} />
         <Route path="/doctor/video"               element={<DoctorVideoConsultation />} />
         <Route path="/doctor/recording-test"      element={<RecordingTest />} />
-        <Route path="/doctor/chat"                element={<ChatCall />} />
-        <Route path="/doctor/analytics"           element={<DoctorAnalytics />} />
-        <Route path="/doctor/reports"             element={<DoctorReports />} />
+        <Route path="/doctor/chat"                element={<Navigate to="/doctor/messages" replace />} />
+        <Route path="/doctor/analytics"           element={<Navigate to="/doctor/insights" replace />} />
+        <Route path="/doctor/reports"             element={<Navigate to="/doctor/insights?tab=export" replace />} />
+        <Route path="/doctor/insights"            element={<DoctorInsights />} />
+        <Route path="/doctor/ai-hub"               element={<DoctorAIHub />} />
         <Route path="/doctor/settings"            element={<DoctorSettings />} />
         <Route path="/doctor/templates"           element={<DoctorDocumentTemplates />} />
-        <Route path="/doctor/template-settings"   element={<DoctorTemplateSettings />} />
+        <Route path="/doctor/template-settings"   element={<Navigate to="/doctor/settings?tab=documents" replace />} />
         <Route path="/doctor/specialty-templates" element={<DoctorSpecialtyTemplates />} />
         <Route path="/doctor/prescription-writer" element={<Navigate to="/doctor/prescriptions" replace />} />
-        <Route path="/doctor/services"            element={<DoctorServices />} />
+        <Route path="/doctor/services"            element={<Navigate to="/doctor/settings?tab=practice" replace />} />
         <Route path="/doctor/billing"             element={<DoctorBilling />} />
-        <Route path="/doctor/health-records"      element={<PatientEMR />} />
+        <Route path="/doctor/health-records"      element={<DoctorHealthRecordsRedirect />} />
         <Route path="/doctor/voice-scribe"        element={<DoctorVoiceScribe />} />
         <Route path="/doctor/calculators"         element={<DoctorCalculators />} />
         <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />

@@ -356,7 +356,7 @@ const DoctorAppointments = () => {
         toast({ variant: "destructive", title: "Failed to Start Call", description: error.response?.data?.message || "Please try again." });
       }
     } else {
-      window.location.href = `/doctor/chat?userId=${appointment.userId}`;
+      navigate(`/doctor/messages?patientId=${appointment.userId}`);
     }
   };
 

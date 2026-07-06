@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import api from '@/utils/api';
 import { cn } from '@/lib/utils';
+import RemoteHealthMonitoring from './RemoteHealthMonitoring';
 
 interface PatientVitals {
   id: string;
@@ -69,6 +71,8 @@ const VitalBox = ({ icon, label, value, unit, status }: {
 );
 
 const HealthMonitoringDashboardWrapper = () => {
+  const [searchParams] = useSearchParams();
+  const isAdvanced = searchParams.get('view') === 'advanced';
   const [searchQuery, setSearchQuery] = useState('');
   const [riskFilter, setRiskFilter] = useState<string>('all');
 
@@ -141,6 +145,10 @@ const HealthMonitoringDashboardWrapper = () => {
     }
   };
 
+  if (isAdvanced) {
+    return <RemoteHealthMonitoring />;
+  }
+
   return (
     <MainLayout>
       <div className="space-y-6">
@@ -154,6 +162,11 @@ const HealthMonitoringDashboardWrapper = () => {
             <p className="text-muted-foreground mt-1">Real-time patient vitals & health tracking</p>
           </div>
           <div className="flex gap-2">
+            <Button variant="outline" asChild>
+              <Link to="/doctor/health-monitoring?view=advanced">
+                Advanced command center
+              </Link>
+            </Button>
             <Button variant="outline" onClick={() => refetch()}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh

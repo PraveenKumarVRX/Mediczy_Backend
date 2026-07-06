@@ -1,7 +1,9 @@
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import api from "@/utils/api";
 import { useSocket } from "@/context/SocketContext";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Send, ArrowLeft, RefreshCw, MessageSquare, Users, Stethoscope,
-  Paperclip, X, FileText, Download, Video, Phone, UserPlus, Check,
+  Paperclip, X, FileText, Download, Video, Phone, PhoneOff, UserPlus, Check, Inbox, Mail,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -101,10 +103,23 @@ function getAttachments(raw: Attachment[] | Record<string, Attachment> | null | 
   return Object.values(raw);
 }
 
+interface InboxMessage {
+  id: string;
+  from: string;
+  subject: string;
+  message: string;
+  timestamp: string;
+  status: 'new' | 'read' | 'replied';
+  priority: 'low' | 'medium' | 'high';
+}
+
 const DoctorMessaging: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { toast } = useToast();
   const { socket } = useSocket();
-  const [tab, setTab] = useState<"patients" | "team">("patients");
+  const initialTab = (searchParams.get('tab') === 'inbox' ? 'inbox' : searchParams.get('tab') === 'team' ? 'team' : 'patients') as 'patients' | 'team' | 'inbox';
+  const [tab, setTab] = useState<"patients" | "team" | "inbox">(initialTab);
   const [patientContacts, setPatientContacts] = useState<Contact[]>([]);
   const [teamContacts, setTeamContacts]       = useState<Contact[]>([]);
   const [selected, setSelected]               = useState<Contact | null>(null);
@@ -126,8 +141,20 @@ const DoctorMessaging: React.FC = () => {
   const bottomRef    = useRef<HTMLDivElement>(null);
   const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const selectedRef  = useRef<Contact | null>(null);
-  const tabRef       = useRef<"patients" | "team">("patients");
+  const tabRef       = useRef<"patients" | "team" | "inbox">("patients");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [selectedInbox, setSelectedInbox] = useState<InboxMessage | null>(null);
+  const [inboxReply, setInboxReply] = useState("");
+
+  const { data: inboxMessages = [], refetch: refetchInbox, isLoading: inboxLoading } = useQuery({
+    queryKey: ['doctor-async-inbox'],
+    queryFn: async () => {
+      const { data } = await api.get('/doctors/messages');
+      return (data.messages || []) as InboxMessage[];
+    },
+    staleTime: 2 * 60 * 1000,
+    enabled: tab === 'inbox',
+  });
 
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { tabRef.current = tab; }, [tab]);
@@ -194,6 +221,18 @@ const DoctorMessaging: React.FC = () => {
   }, [selected, loadMessages]);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
+
+  // Deep-link: ?patientId= or ?userId=
+  useEffect(() => {
+    const pid = searchParams.get('patientId') || searchParams.get('userId');
+    if (!pid || patientContacts.length === 0) return;
+    const found = patientContacts.find((c) => String(c.id) === String(pid));
+    if (found) {
+      setTab('patients');
+      selectContact(found);
+    }
+  }, [patientContacts, searchParams]);
+
   useEffect(() => { if (messages.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const clearPendingFile = () => {
@@ -387,6 +426,21 @@ const DoctorMessaging: React.FC = () => {
     );
   };
 
+  const sendInboxReply = async () => {
+    if (!selectedInbox || !inboxReply.trim()) return;
+    try {
+      await api.post('/doctors/messages/reply', { messageId: selectedInbox.id, reply: inboxReply.trim() });
+      toast({ title: 'Reply sent' });
+      setInboxReply('');
+      setSelectedInbox(null);
+      refetchInbox();
+    } catch {
+      toast({ title: 'Failed to send reply', variant: 'destructive' });
+    }
+  };
+
+  const showSidebarList = !(selected || (tab === 'inbox' && selectedInbox));
+
   return (
     <div className="flex h-screen bg-slate-900 text-white overflow-hidden">
       {/* Call status toasts (declined / busy) */}
@@ -507,7 +561,7 @@ const DoctorMessaging: React.FC = () => {
       {/* Sidebar */}
       <div className={cn(
         "flex flex-col border-r border-slate-700/60 bg-slate-900/95",
-        selected ? "hidden md:flex w-80 flex-shrink-0" : "flex w-full md:w-80 flex-shrink-0"
+        showSidebarList ? "flex w-full md:w-80 flex-shrink-0" : "hidden md:flex w-80 flex-shrink-0"
       )}>
         <div className="flex items-center gap-3 px-4 py-4 border-b border-slate-700/60">
           <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400" onClick={() => navigate(-1)}>
@@ -519,8 +573,8 @@ const DoctorMessaging: React.FC = () => {
             <RefreshCw className={cn("h-4 w-4", loadingContacts && "animate-spin")} />
           </Button>
         </div>
-        <Tabs value={tab} onValueChange={(v) => { setTab(v as "patients" | "team"); setSelected(null); }} className="flex-1 flex flex-col overflow-hidden">
-          <TabsList className="grid grid-cols-2 mx-3 mt-3 mb-1 bg-slate-800/60">
+        <Tabs value={tab} onValueChange={(v) => { setTab(v as "patients" | "team" | "inbox"); setSelected(null); setSelectedInbox(null); }} className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="grid grid-cols-3 mx-3 mt-3 mb-1 bg-slate-800/60">
             <TabsTrigger value="patients" className="flex items-center gap-1.5 text-xs data-[state=active]:bg-blue-600">
               <Users className="h-3.5 w-3.5" /> Patients
               {patientUnread > 0 && <Badge className="bg-red-500 text-white text-[10px] h-4 px-1 ml-0.5">{patientUnread}</Badge>}
@@ -528,6 +582,9 @@ const DoctorMessaging: React.FC = () => {
             <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs data-[state=active]:bg-emerald-600">
               <Stethoscope className="h-3.5 w-3.5" /> Team
               {teamUnread > 0 && <Badge className="bg-red-500 text-white text-[10px] h-4 px-1 ml-0.5">{teamUnread}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="inbox" className="flex items-center gap-1.5 text-xs data-[state=active]:bg-amber-600">
+              <Inbox className="h-3.5 w-3.5" /> Inbox
             </TabsTrigger>
           </TabsList>
           <TabsContent value="patients" className="flex-1 overflow-y-auto mt-0">
@@ -555,6 +612,40 @@ const DoctorMessaging: React.FC = () => {
               </Button>
             </div>
             <ScrollArea className="flex-1"><ContactList items={teamContacts} type="team" /></ScrollArea>
+          </TabsContent>
+          <TabsContent value="inbox" className="flex-1 overflow-y-auto mt-0">
+            <ScrollArea className="h-full px-2 py-1">
+              {inboxLoading ? (
+                <p className="text-center text-slate-500 text-xs py-8">Loading inbox…</p>
+              ) : inboxMessages.length === 0 ? (
+                <p className="text-center text-slate-500 text-xs py-8">No admin or async messages</p>
+              ) : (
+                inboxMessages.map((msg) => (
+                  <button
+                    key={msg.id}
+                    type="button"
+                    onClick={async () => {
+                      setSelectedInbox(msg);
+                      if (msg.status === 'new') {
+                        try { await api.patch(`/doctors/messages/${msg.id}/read`); refetchInbox(); } catch { /* ignore */ }
+                      }
+                    }}
+                    className={cn(
+                      "w-full text-left p-3 rounded-lg mb-1 border border-transparent hover:bg-slate-800/60 transition-colors",
+                      selectedInbox?.id === msg.id && "bg-slate-800 border-slate-600"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 mb-1">
+                      <Mail className="h-3.5 w-3.5 text-amber-400" />
+                      <span className="text-sm font-medium text-white truncate">{msg.from}</span>
+                      {msg.status === 'new' && <Badge className="bg-amber-500 text-[10px] h-4 px-1">New</Badge>}
+                    </div>
+                    <p className="text-xs font-medium text-slate-300 truncate">{msg.subject}</p>
+                    <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{msg.message}</p>
+                  </button>
+                ))
+              )}
+            </ScrollArea>
           </TabsContent>
         </Tabs>
       </div>
@@ -693,6 +784,34 @@ const DoctorMessaging: React.FC = () => {
               disabled={sending || uploading || (!input.trim() && !pendingFile)}
             >
               {uploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </Button>
+          </div>
+        </div>
+      ) : tab === 'inbox' && selectedInbox ? (
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex items-center gap-3 px-4 py-3.5 border-b border-slate-700/60 bg-slate-900/90">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 md:hidden" onClick={() => setSelectedInbox(null)}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Mail className="h-5 w-5 text-amber-400" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-white text-sm">{selectedInbox.subject}</p>
+              <p className="text-xs text-slate-400">From {selectedInbox.from}</p>
+            </div>
+          </div>
+          <ScrollArea className="flex-1 p-4">
+            <p className="text-sm text-slate-300 whitespace-pre-wrap">{selectedInbox.message}</p>
+            <p className="text-xs text-slate-500 mt-4">{new Date(selectedInbox.timestamp).toLocaleString()}</p>
+          </ScrollArea>
+          <div className="flex items-center gap-2 px-4 py-3 border-t border-slate-700/60 bg-slate-900/90">
+            <Input
+              value={inboxReply}
+              onChange={(e) => setInboxReply(e.target.value)}
+              placeholder="Write a reply…"
+              className="flex-1 bg-slate-800/80 border-slate-600/60 text-white"
+            />
+            <Button onClick={sendInboxReply} disabled={!inboxReply.trim()} className="bg-amber-600 hover:bg-amber-700">
+              <Send className="h-4 w-4" />
             </Button>
           </div>
         </div>

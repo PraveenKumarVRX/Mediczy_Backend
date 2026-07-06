@@ -295,12 +295,12 @@ const DoctorPatients = () => {
   };
 
   // Action handlers for patient table
-  const handleViewPatient = (patientId: number) => {
-    navigate(`/doctor/health-records?patientId=${patientId}`);
+  const handleOpenWorkspace = (patientId: number) => {
+    navigate(`/doctor/patient/${patientId}/healthos`);
   };
 
   const handleChatWithPatient = (patientId: number) => {
-    navigate(`/doctor/chat?patientId=${patientId}`);
+    navigate(`/doctor/messages?patientId=${patientId}`);
   };
 
   const handleGeneratePDF = async (patient: Patient) => {
@@ -572,8 +572,8 @@ const DoctorPatients = () => {
                               size="sm" 
                               variant="ghost" 
                               className="h-8 w-8 p-0"
-                              onClick={() => handleViewPatient(patient.id)}
-                              title="View patient details"
+                              onClick={() => handleOpenWorkspace(patient.id)}
+                              title="Open patient workspace"
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -678,7 +678,7 @@ const DoctorPatients = () => {
                         size="sm" 
                         variant="outline" 
                         className="flex-1"
-                        onClick={() => handleViewPatient(patient.id)}
+                        onClick={() => handleOpenWorkspace(patient.id)}
                       >
                         <FileText className="h-4 w-4 mr-1" />
                         Records

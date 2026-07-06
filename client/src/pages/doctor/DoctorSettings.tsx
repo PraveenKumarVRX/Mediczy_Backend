@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw, Building2, Plus, Trash2, Share2, Youtube, Instagram, Facebook } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
@@ -18,6 +19,8 @@ const DoctorSettings = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { currentDoctor } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const settingsTab = searchParams.get('tab') || 'profile';
 
   const [profile, setProfile] = useState({
     firstName: '',
@@ -435,7 +438,7 @@ const DoctorSettings = () => {
           <p className="text-muted-foreground">Manage your account and preferences</p>
         </div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
+        <Tabs value={settingsTab} onValueChange={(v) => setSearchParams({ tab: v }, { replace: true })} className="space-y-6">
           <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />

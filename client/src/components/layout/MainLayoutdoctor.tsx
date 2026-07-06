@@ -62,7 +62,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import ChatApplet from '@/components/chat/ChatApplet';
 
-import { DOCTOR_NAV_ITEMS, DOCTOR_NAV_CATEGORIES } from '@/config/doctorNav.config';
+import { DOCTOR_NAV_ITEMS, DOCTOR_NAV_CATEGORIES, HOSPITAL_NAV_CATEGORIES } from '@/config/doctorNav.config';
 import type { DoctorNavItem } from '@/config/doctorNav.config';
 import { filterDoctorNavItems } from '@/utils/doctorAffiliation';
 
@@ -394,7 +394,14 @@ const MainLayoutdoctor = ({ children }) => {
                   <div key={category}>
                     {idx > 0 && !(isCollapsed && isDesktop) && (
                       <div className="px-3 py-2 mt-4">
-                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{category}</p>
+                        <p className={cn(
+                          "text-xs font-semibold uppercase tracking-wider",
+                          HOSPITAL_NAV_CATEGORIES.has(category)
+                            ? "text-indigo-400"
+                            : "text-slate-500"
+                        )}>
+                          {category}
+                        </p>
                       </div>
                     )}
                     {isCollapsed && isDesktop && idx > 0 && (
