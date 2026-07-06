@@ -1073,6 +1073,42 @@ router.delete('/assistants/:id', authUser, requireRole('admin'), async (req, res
   }
 });
 
+// Free-text fields are stored via parameterized queries (never string-concatenated
+// into SQL), so this is data-hygiene validation, not an injection boundary — but a
+// corporate record with "'; DROP TABLE corporates; --" as its company name is what
+// prompted adding it: names/contacts should look like names, not raw input dumped
+// straight into a column.
+const CORPORATE_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function validateCorporateFields({ companyName, contactPerson, email, phoneNumber }, { requireCompanyName = false, requireEmail = false } = {}) {
+  const looksLikeText = (v) => /[a-zA-Z0-9]/.test(v) && !/[;<>]|--/.test(v);
+
+  if (requireCompanyName || companyName !== undefined) {
+    if (!companyName || !companyName.trim()) {
+      if (requireCompanyName) return 'Company name is required';
+    } else {
+      const trimmed = companyName.trim();
+      if (trimmed.length < 2 || trimmed.length > 255) return 'Company name must be between 2 and 255 characters';
+      if (!looksLikeText(trimmed)) return 'Company name contains invalid characters';
+    }
+  }
+  if (requireEmail || email !== undefined) {
+    if (!email || !email.trim()) {
+      if (requireEmail) return 'Email is required';
+    } else if (!CORPORATE_EMAIL_REGEX.test(email.trim()) || email.trim().length > 255) {
+      return 'A valid email address is required';
+    }
+  }
+  if (contactPerson !== undefined && contactPerson !== null && contactPerson.trim()) {
+    const trimmed = contactPerson.trim();
+    if (trimmed.length > 255) return 'Contact person name is too long';
+    if (!looksLikeText(trimmed)) return 'Contact person name contains invalid characters';
+  }
+  if (phoneNumber !== undefined && phoneNumber !== null && phoneNumber.trim()) {
+    if (!/^[0-9+\-()\s]{6,20}$/.test(phoneNumber.trim())) return 'Phone number format is invalid';
+  }
+  return null;
+}
+
 router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req, res) => {
   try {
     const corporateData = req.body?.corporate || req.body;
@@ -1091,7 +1127,15 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         message: 'Company name and email are required'
       });
     }
-    
+
+    const validationError = validateCorporateFields(
+      { companyName, contactPerson, email, phoneNumber },
+      { requireCompanyName: true, requireEmail: true }
+    );
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
+    }
+
     // Check if corporate with this email already exists
     const existingRows = await postgresSequelize.query(`
       SELECT id FROM corporates WHERE email = :email LIMIT 1
@@ -1387,7 +1431,12 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireC
       teamAssignments, // Array of: { teamMemberId, clinicId, isPrimary }
       plans // Array of: { sponsorshipId (optional), planId, clinicId, doctorId, startDate, endDate, networkPartners }
     } = corporateData;
-    
+
+    const validationError = validateCorporateFields({ companyName, contactPerson, email, phoneNumber });
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
+    }
+
     // Fetch existing metadata for partial-update merging
     const [existingCorporate] = await postgresSequelize.query(`
       SELECT id, metadata, "assignedTo" FROM corporates WHERE id = :corporateId
