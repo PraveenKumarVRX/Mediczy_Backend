@@ -12,6 +12,7 @@
     "test:tenant-pentest": "node scripts/qa/tenant-isolation-pentest.mjs",
     "test:worldclass-smoke": "node scripts/qa/worldclass-features-smoke.mjs",
     "test:communication-hub-smoke": "node scripts/qa/communication-hub-smoke.mjs",
+    "test:care-team-booking-alert": "node scripts/test-care-team-booking-alert.mjs",
     "test:whatsapp-sib-auth-smoke": "node scripts/whatsapp-sib-auth-smoke.mjs",
     "test:rag-refresh-audit": "node scripts/rag-refresh-audit.mjs",
     "test:all": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",

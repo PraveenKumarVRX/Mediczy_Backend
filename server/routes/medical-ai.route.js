@@ -14,6 +14,7 @@ import emergencyTriageService from '../services/ai-emergency-triage.service.js';
 import { getWearableContextForUser } from '../services/patient-wearable-context.service.js';
 import { canonicalizeAppointmentTime } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -1729,6 +1730,13 @@ router.post('/book-appointment', authUser, async (req, res) => {
       paymentStatus: 'pending',
       symptoms: symptoms || '',
       notes: notes || `Booked via Dr. iSHA Chatbot${sessionId ? ` (Session: ${sessionId})` : ''}`
+    });
+
+    notifyCareTeamOfBooking({
+      appointment,
+      patient,
+      doctor,
+      bookingSource: 'medical-ai-chatbot'
     });
 
     // Generate a confirmation response from Dr. iSHA

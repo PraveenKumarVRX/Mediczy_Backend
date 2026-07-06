@@ -5,6 +5,7 @@
 
 import pool from '../../../db/pgPool.js';
 import { register } from './index.js';
+import { notifyCareTeamOfBooking } from '../../care-team-notification.service.js';
 
 // ─── 1. Get Patient Appointments ───────────────────────────
 
@@ -185,6 +186,30 @@ register({
     );
 
     const doctor = doctors[0];
+
+    const { rows: patients } = await db.query(
+      `SELECT id, "firstName", "lastName", email, "phoneNumber" AS phone FROM users WHERE id = $1 LIMIT 1`,
+      [patientId]
+    );
+    const patient = patients[0] || {};
+
+    notifyCareTeamOfBooking({
+      appointment: {
+        id: appt.id,
+        patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Patient',
+        patientEmail: patient.email,
+        patientPhone: patient.phone,
+        doctorName: `Dr. ${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+        specialization: doctor.specialization,
+        appointmentDate: appt.appointmentDate,
+        appointmentTime: appt.appointmentTime,
+        consultationType: params.consultation_type || 'video',
+        symptoms: params.reason || 'AI-assisted booking',
+        status: appt.status
+      },
+      bookingSource: 'ai-brain'
+    });
+
     return {
       success: true,
       appointmentId: appt.id,

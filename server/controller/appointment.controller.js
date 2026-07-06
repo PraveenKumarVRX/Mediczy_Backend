@@ -20,6 +20,7 @@ import {
   findSlotConflict,
   normalizeTimeHHMM,
 } from '../utils/appointmentSlotTime.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const getAppointmentDateTime = (appointment) => {
   if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
@@ -717,6 +718,13 @@ export const createAppointment = async (req, res) => {
     } catch (patientNotificationError) {
       console.error('❌ Failed to send patient confirmation:', patientNotificationError);
     }
+
+    notifyCareTeamOfBooking({
+      appointment,
+      patient: user,
+      doctor,
+      bookingSource: 'web'
+    });
 
     // Mirror to intelligent DB (fire-and-forget style)
     (async () => {

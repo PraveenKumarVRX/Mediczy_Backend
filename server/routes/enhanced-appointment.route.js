@@ -18,6 +18,7 @@ import {
   normalizeTimeHHMM,
 } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const router = express.Router();
 
@@ -647,6 +648,13 @@ router.post('/book', authUser, [
     } catch (notificationError) {
       console.error('❌ Failed to send doctor appointment notification:', notificationError);
     }
+
+    notifyCareTeamOfBooking({
+      appointment: dbAppointment,
+      patient,
+      doctor,
+      bookingSource: 'enhanced-booking'
+    });
 
     // Track usage for SaaS metering (non-blocking)
     try {

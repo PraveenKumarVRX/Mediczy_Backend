@@ -22,6 +22,7 @@ import { errorHandler, notFoundHandler, asyncHandler } from '../../middleware/er
 import { multitenancyMiddleware as extractTenant } from '../../middleware/multitenancy.middleware.js';
 import { ConflictError } from '../../shared/errors/AppError.js';
 import { generateOAuthPassword } from '../../utils/oauth-security.js';
+import { notifyCareTeamOfBooking } from '../../services/care-team-notification.service.js';
 
 const router = express.Router();
 
@@ -3007,6 +3008,25 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     'pending'
   ]);
   
+  const bookedAppointment = result.rows[0];
+  notifyCareTeamOfBooking({
+    appointment: {
+      id: bookedAppointment.id,
+      patientName,
+      patientEmail: patient.email,
+      patientPhone: patient.phone,
+      doctorName,
+      specialization: doctor.specialization,
+      appointmentDate,
+      appointmentTime,
+      consultationType,
+      symptoms: symptomList,
+      notes: notes || null,
+      status: 'pending'
+    },
+    bookingSource: 'mobile'
+  });
+
   res.status(201).json({
     success: true,
     message: 'Appointment booked successfully',
