@@ -47,7 +47,7 @@ export async function publishFamilyUpdate({
   return rows[0];
 }
 
-export async function verifyFamilyAccess(patientId: number, accessCode: string) {
+export async function verifyFamilyAccess(patientId, accessCode) {
   await ensure();
   const pid = Number(patientId);
   if (!pid || !accessCode?.trim()) {
