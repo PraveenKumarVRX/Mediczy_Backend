@@ -3,11 +3,11 @@
 | Field | Value |
 |-------|-------|
 | **Document ID** | MED-HOSP-OS-2035-001 |
-| **Version** | 1.0 |
+| **Version** | 1.1 |
 | **Date** | 2026-07-05 |
 | **Owner** | AI CTO |
 | **Status** | ACTIVE — master delivery plan |
-| **Related** | `SMART_HOSPITAL_OS_VISION.md`, `MEDIQZY_HOSPITAL_OS_MASTER_GAP_IMPLEMENTATION.md`, `SAMD_READINESS_SCORECARD.md` |
+| **Related** | `SMART_HOSPITAL_OS_VISION.md`, `MEDIQZY_HOSPITAL_OS_MASTER_GAP_IMPLEMENTATION.md`, `MEDIQZY_CAREOS_VISION.md`, `CAREOS_ECOSYSTEM_ARCHITECTURE.md`, `CAREOS_PLATFORM_ROADMAP.md`, `HEALTHOS_ALL_PHASES_IMPLEMENTATION.md`, `SAMD_READINESS_SCORECARD.md` |
 
 ---
 
@@ -333,6 +333,8 @@ Migration: `server/migrations/hospital-os-2035.migration.js`
 - [ ] Research hub trial matching
 - [ ] Brain tools + agent allowlists
 - [ ] Frontend Hospital Copilot page
+- [ ] **Frontend Phase 0** — ClinicalShell + unified nav (see §9)
+- [ ] **Frontend Phase 1** — AI Care Team + workspace tab extraction (see §9)
 
 ### Wave 2 (2026 Q4 – 2027 Q2) — Predictive Hospital
 
@@ -341,6 +343,7 @@ Migration: `server/migrations/hospital-os-2035.migration.js`
 - MFA / zero-trust hardening
 - Pharmacy CDSS at dispense
 - ML ED forecast
+- **Frontend Phase 2** — Command Center realtime, family portal, clinical playback (see §9)
 
 ### Wave 3 (2027 – 2029) — Autonomous Operations
 
@@ -348,6 +351,7 @@ Migration: `server/migrations/hospital-os-2035.migration.js`
 - Workforce AI scheduling
 - Genomics twin integration
 - Robotics gateway
+- **Frontend Phase 3** — Federation console, marketplace, research hub (see §9)
 
 ### Wave 4 (2030 – 2035) — Physical + Spatial Hospital
 
@@ -389,6 +393,359 @@ Every clinical AI output in Hospital OS must:
 | Nurse handover generation | < 5s |
 | Command center AI actions | 3+ recommendations per snapshot |
 | SaMD gate pass rate | > 99% for triage/drug checks |
+
+---
+
+## 9. Frontend implementation plan (HealthOS / Living Patient Workspace)
+
+**Audience:** AI CTO, UX research, UI design, frontend engineering  
+**Scope:** React/Vite client (`client/src/`) — pages, layouts, components, routes  
+**Design north star:** Every clinician opens one patient and sees **human + AI care teams** in a single Living Patient Workspace. Hospital ops, intelligence, and collaboration are **modes of one screen**, not separate apps.
+
+**Brand:** Mediqzy — *The AI-Native Healthcare Operating System* · Product line: **HealthOS**  
+**Visual system:** Teal primary (`client/src/config/brand.ts`), Plus Jakarta Sans, shadcn/ui (`components/ui/`), dark mode for command surfaces
+
+### 9.1 Current frontend baseline (as of 2026-07-05)
+
+| Area | Status | Key paths |
+|------|--------|-----------|
+| HMIS / HealthOS pages | 26 screens in `client/src/pages/hmis/` | Shared via `portalClinicalRoutes.tsx` |
+| Living Patient Workspace | Exists — monolithic | `hmis/LivingPatientWorkspace.tsx` |
+| Legacy inpatient workspace | Coexists | `hmis/InpatientWorkspace.tsx` → consolidate |
+| Command Center | Exists — standalone | `hmis/CommandCenter.tsx` (no `HospitalLayout`) |
+| Hospital Copilot | Exists | `hmis/HospitalCopilot.tsx` |
+| Module copilots | 26 dept widgets | `module-copilot.service.ts`, floating in layouts |
+| Routes | Portal-native (`/hospital`, `/doctor`, `/nurse`) | `/hmis/*` deprecated → `HmisLegacyRedirect` |
+| Navigation | **Fragmented** (3 models) | `HospitalSidebar`, `HospitalOSHub`, `HospDeptLayout` |
+
+**UX debt to fix in Phase 0:**
+- Two workspace UIs (`InpatientWorkspace` vs `LivingPatientWorkspace`)
+- HMIS pages lack shared clinical shell (jarring back-button standalone chrome)
+- HealthOS routes missing from doctor sidebar
+- Broken OS Hub link: `/hospital/hospital-copilot` → should be `/hospital/copilot`
+- AI split across ModuleCopilot, HospitalCopilot, and AI Brain — no unified patient copilot
+- No AI Care Team roster UI; no SaMD confidence/gate UI on HealthOS AI outputs
+
+### 9.2 Personas & jobs-to-be-done
+
+| Persona | Primary job | Target experience |
+|---------|-------------|-------------------|
+| Attending physician | Understand patient in <30s; decide next action | One workspace: AI briefing + timeline + pathway |
+| Nurse | Execute tasks, document vitals, escalate | Ops-first mode: tasks + vitals + alerts |
+| ICU intensivist | Monitor deterioration continuously | Monitoring Agent alerts in workspace + ICU board link |
+| Hospital admin / COO | See bottlenecks; act on capacity | Live command center with drill-down |
+| Specialist (MDT) | Join case, give opinion, leave | MDT inbox + one-click video join |
+| Family member | Know progress safely | Consent-gated family portal |
+| Medical director | Trust AI outputs | SaMD badges + confidence on every AI artifact |
+
+### 9.3 Layout system (build first)
+
+#### 9.3.1 `ClinicalShell` (NEW)
+
+**File:** `client/src/layouts/ClinicalShell.tsx`
+
+Persistent patient context bar + left context rail + main content + optional copilot drawer.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ [← Back]  Patient: Name · MRN · Location  [Acuity] [Video]  │
+├──────────┬──────────────────────────────────────────────────┤
+│ Context  │  Main (workspace tab / child route)                │
+│ rail     │                                                  │
+│ Overview │                                                  │
+│ Timeline │                                                  │
+│ Team     │                                                  │
+│ AI Team  │                                                  │
+│ Tasks    │                                                  │
+│ Pathway  │                                                  │
+│ MDT      │                                                  │
+│ Family   │                                                  │
+└──────────┴──────────────────────────────────────────────────┘
+```
+
+**Wraps:** All Living Patient Workspace tabs and child routes under `/:portal/patient/:id/healthos/*`
+
+#### 9.3.2 `CommandCenterShell` (NEW)
+
+**File:** `client/src/layouts/CommandCenterShell.tsx`
+
+Full-bleed dark ops UI: zone filters (ED, ICU, OT, Wards), KPI grid, live event feed, AI recommendations drawer.
+
+#### 9.3.3 `FamilyPortalShell` (NEW)
+
+**File:** `client/src/layouts/FamilyPortalShell.tsx`
+
+Mobile-first, warm tone, plain language, consent banner on every page.
+
+### 9.4 Route architecture
+
+| Pattern | Example | Rule |
+|---------|---------|------|
+| Portal prefix | `/hospital`, `/doctor`, `/nurse` | Role-scoped permissions |
+| Patient anchor | `/:portal/patient/:id/healthos` | All clinical collaboration lives here |
+| Ops surfaces | `/hospital/command-center` | Hospital role unless granted |
+| Legacy | `/hmis/*` | Redirect via `HmisLegacyRedirect` + `clinicalPortalPaths.ts` |
+
+**Route registry:** `client/src/routes/portalClinicalRoutes.tsx`, `client/src/routes/index.tsx`
+
+### 9.5 Page inventory by delivery phase
+
+**Legend:** ✅ enhance existing · 🆕 new · 🔀 merge/redirect
+
+#### Phase 0 — Unify & wire (Wave 1, weeks 1–4)
+
+| # | Page / artifact | Route | File | Action |
+|---|-----------------|-------|------|--------|
+| 0.1 | Clinical Shell | — | `layouts/ClinicalShell.tsx` | 🆕 |
+| 0.2 | Living Patient Workspace | `/:portal/patient/:id/healthos` | `hmis/LivingPatientWorkspace.tsx` | ✅ refactor into shell |
+| 0.3 | Inpatient Workspace | `/:portal/patient/:id/workspace` | `hmis/InpatientWorkspace.tsx` | 🔀 redirect → `healthos?mode=ops` |
+| 0.4 | Hospital Sidebar v2 | — | `components/hospital/HospitalSidebar.tsx` | ✅ HealthOS section |
+| 0.5 | Doctor Sidebar v2 | — | `components/doctor/DoctorSidebar.tsx` | 🆕 extract from `MainLayoutdoctor` |
+| 0.6 | Central nav config | — | `config/clinicalNav.config.ts` | 🆕 |
+| 0.7 | HealthOS Hub | `/:portal/healthos` | `hmis/CareOSEcosystem.tsx` | ✅ simplify |
+
+**Hospital clinical nav (proposed — `config/clinicalNav.config.ts`):**
+
+| Section | Items |
+|---------|-------|
+| HealthOS | Command Center, Patient Workspaces, MDT Inbox, Hospital Copilot |
+| Ward Operations | Bed Map, eMAR, Discharge Board, Nursing Tasks |
+| Departments | ICU Board, OT Command, ER Queue, Radiology, Pharmacy |
+
+#### Phase 1 — Living Workspace + Augmented AI (Wave 1, weeks 5–12)
+
+Refactor `LivingPatientWorkspace.tsx` into tab routes under `ClinicalShell`:
+
+| Tab | Route suffix | Component file | Maps to pillar |
+|-----|--------------|----------------|----------------|
+| Overview | `/healthos` | `features/workspace/pages/WorkspaceOverview.tsx` | Pillar 3, 14 |
+| Timeline | `/healthos/timeline` | `features/workspace/pages/ClinicalTimeline.tsx` | CareOS timeline |
+| Human Care Team | `/healthos/team` | `features/workspace/pages/HumanCareTeam.tsx` | Dynamic care team |
+| **AI Care Team** | `/healthos/ai-team` | `features/workspace/pages/AICareTeam.tsx` | **Pillars 1, 7, 19** |
+| Tasks | `/healthos/tasks` | `features/workspace/pages/CareTasks.tsx` | Task orchestration |
+| Treatment Pathway | `/healthos/pathway` | `features/workspace/pages/TreatmentPathway.tsx` | Pillar 14 |
+| Vitals & Monitoring | `/healthos/monitoring` | `features/workspace/pages/PatientMonitoring.tsx` | Pillars 6, 13 |
+| Labs & Imaging | `/healthos/results` | `features/workspace/pages/ResultsHub.tsx` | DICOM + lab connectors |
+| Clinical Playback | `/healthos/playback` | `features/workspace/pages/ClinicalPlayback.tsx` | Clinical journey replay |
+| MDT Board | `/healthos/mdt` | `features/workspace/pages/MDTSession.tsx` | Collaboration |
+| Family (staff) | `/healthos/family` | `features/workspace/pages/FamilyPublish.tsx` | Family updates |
+| Documents | `/healthos/documents` | `features/workspace/pages/ClinicalDocuments.tsx` | Pillar 4 |
+
+**New directory structure:**
+
+```
+client/src/
+  features/workspace/
+    pages/           # tab page components
+    components/      # workspace widgets
+    hooks/           # useWorkspace, useWorkspaceRealtime
+    types/           # WorkspaceDTO, AITeamMember, TimelineEvent
+  layouts/
+    ClinicalShell.tsx
+    CommandCenterShell.tsx
+    FamilyPortalShell.tsx
+  config/
+    clinicalNav.config.ts
+  services/
+    workspace.service.ts   # wraps careos.service.ts
+```
+
+##### AI Care Team page (highest differentiation)
+
+**Route:** `/:portal/patient/:id/healthos/ai-team`
+
+| UI block | Components | API |
+|----------|------------|-----|
+| Agent roster grid | `AgentRosterCard.tsx` | Coordinator + agent registry |
+| Active recommendations | `AIRecommendationCard.tsx`, `SaMDBadge.tsx`, `ConfidenceMeter.tsx` | `GET /api/v3/healthos/coordinator/:id/alerts` |
+| Human-in-the-loop | `ApprovalActionBar.tsx` | Approve / Modify / Dismiss → approval inbox |
+| Explainability | `SHAPAttributionDrawer.tsx` | `GET /api/ai-governance/patient/:id/explanation` |
+| Activity log | `AgentActivityLog.tsx` | Audit + quality gate log |
+
+**Agent roster (target UI):** Clinical Intelligence · Monitoring Agent · Medication Agent · Documentation Agent · Research Agent · Workflow Agent · Prediction Agent · Family Agent · Translation Agent
+
+**Governance:** Every recommendation shows SaMD class, confidence score, data completeness; T1+ actions route to **approval inbox** (Pillar 4).
+
+##### Unified copilot surfaces
+
+| Surface | Scope | Component |
+|---------|-------|-----------|
+| Patient copilot | In workspace | `features/copilot/PatientCopilotPanel.tsx` (slide-over) |
+| Module copilot | Per department | Keep `ModuleCopilot` — shared design tokens |
+| Hospital copilot | Hospital-wide ops | `hmis/HospitalCopilot.tsx` ✅ |
+
+##### MDT pages
+
+| Page | Route | File |
+|------|-------|------|
+| MDT Inbox | `/hospital/mdt/inbox` | `features/mdt/MDTInbox.tsx` 🆕 |
+| MDT Session | `/:portal/patient/:id/healthos/mdt` | `features/mdt/MDTSession.tsx` 🆕 |
+| Global Board | `/:portal/healthos/board/:patientId` | `hmis/GlobalClinicalBoard.tsx` ✅ |
+| MDT Video Room | `/:portal/mdt/:sessionId/room` | `features/mdt/MDTRoom.tsx` 🆕 (LiveKit) |
+
+#### Phase 2 — Hospital intelligence (Wave 2, weeks 13–20)
+
+| Page | Route | File | Pillar |
+|------|-------|------|--------|
+| Command Center | `/hospital/command-center` | `hmis/CommandCenter.tsx` | 5 |
+| ED Board | `/hospital/command-center/ed` | `features/command/EDBoard.tsx` | 8 |
+| ICU Overview | `/hospital/command-center/icu` | `features/command/ICUOverview.tsx` | 7 |
+| OT Live Board | `/hospital/command-center/ot` | `features/command/OTLiveBoard.tsx` | 10 |
+| Diagnostics Queue | `/hospital/command-center/diagnostics` | `features/command/DiagnosticsQueue.tsx` | — |
+| AI Recommendations | `/hospital/command-center/ai` | `features/command/AIRecommendations.tsx` | 5 |
+| Ward Display | `/display/ward/:wardId` | `features/display/WardBoard.tsx` | 6 |
+| ICU Monitor Wall | `/display/icu/:unitId` | `features/display/ICUMonitorWall.tsx` | 6 |
+| Room Display | `/display/room/:bedId` | `features/display/RoomDisplay.tsx` | 6 |
+| Family Login | `/family/login` | `features/family/FamilyLogin.tsx` | — |
+| Family Patient Home | `/family/patient/:id` | `features/family/FamilyPatientHome.tsx` | — |
+| Similar Cases | `/:portal/patient/:id/healthos/similar-cases` | `features/workspace/pages/SimilarCases.tsx` | 19 |
+| Case Library | `/hospital/knowledge/cases` | `features/knowledge/CaseLibrary.tsx` | 19 |
+
+**Note:** Consumer `FamilyHealthHub.tsx` (`/family-hub`) remains membership/wellness — separate from inpatient CareOS family portal.
+
+#### Phase 3 — Ecosystem (Wave 3+)
+
+| Page | Route | Purpose |
+|------|-------|---------|
+| Federation Console | `/hospital/federation` | Trust agreements, partner hospitals |
+| Referral Network | `/hospital/referrals` | Inbound/outbound referrals |
+| Medical Passport | `/:portal/healthos/passport/:patientId` | `MedicalPassportPortal.tsx` ✅ |
+| Marketplace | `/hospital/marketplace` | Third-party app install |
+| Developer Portal | `/admin/developers` | API keys, sandbox |
+| Research Hub | `/hospital/research` | Pillar 18 |
+| Home Monitoring | `/hospital/home-care` | Pillar 13 RPM |
+
+### 9.6 Component library extensions
+
+#### `components/clinical/` (NEW)
+
+`PatientBanner`, `AcuityBadge`, `VitalsStrip`, `TimelineEventCard`, `CareTeamAvatarRow`, `TaskCard`, `ClinicalEmptyState`, `SaMDBadge`, `ApprovalButtons`, `LiveIndicator`, `MilestoneNode`, `BedStatusChip`
+
+#### `components/ai/` (NEW)
+
+`AgentRosterCard`, `CopilotPanel`, `AIStreamingText`, `ConfidenceBar`, `GateStatusChip`, `AttributionChart`
+
+#### Design tokens (extend `client/src/index.css`)
+
+```css
+--clinical-critical: 0 84% 60%;
+--clinical-warning: 38 92% 50%;
+--clinical-stable: 142 76% 36%;
+--ai-surface: 270 50% 98%;
+--ai-agent-active: 142 76% 36%;
+--ai-agent-idle: 215 16% 65%;
+```
+
+### 9.7 Pillar → frontend mapping
+
+| Pillar | Primary frontend surfaces |
+|--------|---------------------------|
+| 1 AI Hospital Copilot | `HospitalCopilot.tsx`, `PatientCopilotPanel.tsx` |
+| 2 Digital Twin Hospital | Command Center simulation tab (Wave 2) |
+| 3 Patient Digital Twin | `WorkspaceOverview` twin widget, `PatientMonitoring` |
+| 4 Ambient Documentation | Approval inbox tab in `HospitalCopilot.tsx` |
+| 5 Command Center + AI | `CommandCenter.tsx`, `AIRecommendations.tsx` |
+| 7 AI Nurse Assistant | `CareTasks`, nurse handover in workspace |
+| 8 Predictive ED | `EDBoard.tsx` |
+| 12 Translator | MDT room + `GlobalClinicalBoard` |
+| 14 Patient Journey | `TreatmentPathway.tsx` |
+| 15 Voice-First | Voice shell overlay (Wave 2) |
+| 19 Knowledge Graph | `SimilarCases.tsx`, `CaseLibrary.tsx` |
+| 20 What-If Simulator | Twin tab in workspace / command center |
+
+### 9.8 Key user flows (acceptance)
+
+| Flow | Steps | Success criteria |
+|------|-------|------------------|
+| Admit → workspace | ADT admit → CTA → `/healthos` → AI briefing on Overview | Workspace exists before first open; briefing < 8s |
+| Critical lab → action | Lab event → socket alert → AI Care Team → nurse approves → task created | End-to-end < 60s in test env |
+| MDT in 60s | Overview → Start MDT → inbox notify → LiveKit join → opinion → timeline | Specialist join < 60s |
+| Family update | Nurse `FamilyPublish` → preview → publish → `/family/patient/:id` | Plain language only |
+
+### 9.9 Engineering conventions
+
+| Concern | Choice |
+|---------|--------|
+| Server state | TanStack Query |
+| Workspace UI state | Zustand (active tab, copilot open) |
+| Realtime | `socket.service.ts` → `useWorkspaceRealtime(patientId)` |
+| Code split | Lazy load each workspace tab |
+| Forms | react-hook-form + zod |
+| Charts | Chart.js / Recharts |
+| Video | `@livekit/components-react` |
+| Imaging | Cornerstone (MDT room) |
+| i18n | `react-i18next` (family portal + global MDT) |
+
+**API service:** `client/src/services/workspace.service.ts` — single import wrapping `careos.service.ts` + future `GET /api/v3/healthos/ai-team/:patientId`
+
+### 9.10 Sprint plan (frontend)
+
+| Sprint | Deliverables |
+|--------|--------------|
+| 1 | `ClinicalShell` + `clinicalNav.config` + sidebar updates |
+| 2 | `useWorkspace` hook + `WorkspaceOverview` extraction |
+| 3 | `ClinicalTimeline` + `PatientMonitoring` + realtime hook |
+| 4 | **`AICareTeam`** + SaMD components + approval flow |
+| 5 | `TreatmentPathway` + `CareTasks` + `HumanCareTeam` |
+| 6 | `MDTInbox` + `MDTSession` + `MDTRoom` |
+| 7 | `CommandCenterShell` + WebSocket KPIs |
+| 8 | Family portal (4 pages) + `FamilyPublish` |
+| 9 | `ClinicalPlayback` + `SimilarCases` + polish |
+
+### 9.11 Page count summary
+
+| Phase | New pages | Enhanced | New components |
+|-------|-----------|----------|----------------|
+| Phase 0 | 4 | 6 | 3 layouts |
+| Phase 1 | 18 | 8 | ~25 clinical/AI |
+| Phase 2 | 14 | 6 | ~12 display/command |
+| Phase 3 | 10 | 4 | ~8 ecosystem |
+| **Total** | **~46** | **~24** | **~48** |
+
+### 9.12 Out of scope (avoid scope creep)
+
+| Defer | Reason |
+|-------|--------|
+| Flutter mobile rebuild | React web + PWA first; `/api/mobile` exists |
+| Redesign all 45 `pages/hospital/*` | Link incrementally into workspace |
+| 26 department portal redesigns | Keep `HospDeptLayout`; link to workspace |
+| Custom design system | Extend shadcn/ui |
+| 3D digital twin UI | Backend simulator exists; UI Wave 3+ |
+| AR surgical planning | Research-tier per feasibility doc |
+
+### 9.13 Frontend success metrics
+
+| Metric | Target |
+|--------|--------|
+| Time to patient context | < 3 clicks from any hospital page |
+| Workspace load (p95) | < 2s |
+| AI recommendation review rate | > 60% acknowledged |
+| MDT join time (invite → video) | < 60s |
+| Command Center data freshness | < 5s via WebSocket (replace 60s poll) |
+| Nav discoverability | 90% find Command Center without OS Hub (tree test) |
+
+### 9.14 Immediate actions (this week)
+
+- [ ] Create `layouts/ClinicalShell.tsx`; wrap `LivingPatientWorkspace`
+- [ ] Create `config/clinicalNav.config.ts`; update `HospitalSidebar` + doctor nav
+- [ ] Extract `WorkspaceOverview` from monolithic `LivingPatientWorkspace.tsx`
+- [ ] Build `AICareTeam.tsx` + `AgentRosterCard` + `AIRecommendationCard`
+- [ ] Add `useWorkspaceRealtime` hook stub (Socket.IO)
+- [ ] Fix OS Hub copilot link → `/hospital/copilot`
+- [ ] Redirect `/patient/:id/workspace` → `/patient/:id/healthos?mode=ops`
+
+### 9.15 Related documentation
+
+| Document | Role |
+|----------|------|
+| `MEDIQZY_CAREOS_VISION.md` | Product vision & positioning |
+| `CAREOS_ECOSYSTEM_ARCHITECTURE.md` | CareOS platform map |
+| `CAREOS_PLATFORM_ROADMAP.md` | Stages 1–4 API/UI readiness |
+| `HEALTHOS_ALL_PHASES_IMPLEMENTATION.md` | API endpoint inventory |
+| `CAREOS_PHASE1_IMPLEMENTATION.md` | Phase 1 workspace API spec |
+| `HMIS_PATIENT_JOURNEY_IMPLEMENTATION_PLAN.md` | Patient navigation principles |
+| `docs/ai/MEDIQZY_V2_FEASIBILITY_AND_PHASED_PLAN.md` | Backend feasibility cross-check |
+| `docs/ai/AI_INTERPRETABILITY_AND_QUALITY_GATES.md` | SaMD UI requirements for AI surfaces |
 
 ---
 
