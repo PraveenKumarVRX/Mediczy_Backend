@@ -2,7 +2,8 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import multer from 'multer';
-import { Sequelize } from 'sequelize';
+import { QueryTypes } from 'sequelize';
+import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import { execFile } from 'child_process';
@@ -92,18 +93,6 @@ async function scanWithClamAV(buffer, filename) {
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
-// Database connection
-const sequelize = new Sequelize(
-  process.env.POSTGRES_DATABASE || 'mediczy_ai',
-  process.env.POSTGRES_USER || 'mediczy_helper',
-  process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
-  {
-    host: process.env.POSTGRES_HOST || '127.0.0.1',
-    dialect: 'postgres',
-    logging: false
-  }
-);
-
 // Clinic Login - Now using database
 router.post('/login', authLimiter, async (req, res) => {
   try {
@@ -128,7 +117,7 @@ router.post('/login', authLimiter, async (req, res) => {
        LIMIT 1`,
       {
         replacements: { email },
-        type: Sequelize.QueryTypes.SELECT
+        type: QueryTypes.SELECT
       }
     );
 

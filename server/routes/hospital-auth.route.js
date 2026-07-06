@@ -504,8 +504,7 @@ export const hospitalLogin = async (req, res) => {
       const user = await User.findOne({
         where: {
           email: normalizedEmail,
-          status: 'active',
-          isActive: { [Op.ne]: false }, // P0-A: must not be explicitly disabled
+          status: 'active', // must not be disabled/suspended/deleted
           [Op.or]: [
             { organization_type: 'hospital' },
             { role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist', 'ceo', 'coo', 'ms', 'medical_superintendent', 'cmo', 'chief_medical_officer'] } }
