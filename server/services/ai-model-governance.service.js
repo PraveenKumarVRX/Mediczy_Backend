@@ -64,6 +64,30 @@ export const MODEL_CARDS = {
     regulatoryNotes:   'Requires clinical validation study before use as primary decision input. Currently approved for decision support only with physician review.'
   },
 
+  'admin-copilot': {
+    componentName:      'Admin AI Copilot',
+    version:            '1.0.0',
+    regulatoryClass:    'NOT SaMD',
+    intendedUse:        'Privileged ops assistant for hospital/platform administrators. Default mode: configuration, analytics, audit — not clinical decision support.',
+    notIntendedFor:     'Autonomous clinical decisions; patient-facing triage; unsupervised write operations on production configuration.',
+    inputFeatures:      ['Admin natural language query', 'Conversation context', 'Ops RAG documents (admin-ops category)'],
+    outputDescription:  'Natural language response, tool call results, governance deep links. Write/system actions require human approval.',
+    modelType:          'Multi-agent orchestrator (admin/analyst/insurance agents) + llm-provider.js cascade',
+    trainingDataSource: 'No population training — retrieval from internal ops docs and live system tools.',
+    validationStatus:   'Internal QA and permission-engine integration tests.',
+    knownLimitations: [
+      'May hallucinate governance steps without RAG corpus coverage',
+      'Hospital admins are tenant-scoped — platform-wide ops require super_admin',
+      'Write tools blocked until explicit human approval',
+    ],
+    performanceMetrics: { note: 'Ops assistant — no clinical performance metrics' },
+    demographicPerformance: { note: 'N/A — not a clinical model' },
+    updateCadence:     'Continuous deployment via feature flags ADMIN_COPILOT_*',
+    changeControlPlan: 'Prompt and tool changes via ai-model-governance PCCP; no autonomous weight changes.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Classified NOT SaMD for default ops persona. Clinical oversight route inherits source SaMD controls.',
+  },
+
   'emergency-triage-esi-v1': {
     componentName:      'Emergency Triage (ESI)',
     version:            'v1-rule+llm',

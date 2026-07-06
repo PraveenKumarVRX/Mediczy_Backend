@@ -13,4 +13,5 @@ import './system-tools.js';
 import './module-tools.js';
 import './hospital-os-tools.js';
 
-export { getToolDefinitions, listTools, execute } from './index.js';
+
+export { getToolDefinitions, listTools, execute, getToolMeta } from './index.js';

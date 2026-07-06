@@ -122,6 +122,7 @@ const patientFooterItems: SidebarItem[] = [
 /* ─── Team / Nurse / Assistant items (unchanged) ─────────────────────────── */
 const teamSidebarItems: SidebarItem[] = [
   { icon: Home,        label: "Dashboard",               path: "/team/dashboard" },
+  { icon: Bot,         label: "Admin Copilot",           path: "/team/copilot" },
   { icon: Users,       label: "Team Directory",          path: "/team/directory",               permission: "User Management" },
   { icon: BarChart3,   label: "Reports",                 path: "/team/reports",                 permission: ["Patient Reports","Analytics Access","Reports Access"] },
   { icon: Activity,    label: "System Tools",            path: "/team/tools",                   adminOnly: true },

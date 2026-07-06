@@ -29,6 +29,17 @@ function register(tool) {
   _tools.set(tool.name, tool);
 }
 
+function getToolMeta(name) {
+  const tool = _tools.get(name);
+  if (!tool) return null;
+  return {
+    name: tool.name,
+    category: tool.category,
+    isWrite: !!tool.isWrite,
+    isSystem: !!tool.isSystem,
+  };
+}
+
 /**
  * Get all registered tools as OpenAI function-calling format.
  */
@@ -38,8 +49,13 @@ function getToolDefinitions() {
     function: {
       name: t.name,
       description: t.description,
-      parameters: t.parameters
-    }
+      parameters: t.parameters,
+    },
+    _meta: {
+      isWrite: !!t.isWrite,
+      isSystem: !!t.isSystem,
+      category: t.category,
+    },
   }));
 }
 
@@ -52,7 +68,8 @@ function listTools() {
     description: t.description,
     category: t.category,
     isWrite: !!t.isWrite,
-    parameterCount: Object.keys(t.parameters?.properties || {}).length
+    isSystem: !!t.isSystem,
+    parameterCount: Object.keys(t.parameters?.properties || {}).length,
   }));
 }
 
@@ -67,6 +84,28 @@ async function execute(name, params, context = {}) {
   const tool = _tools.get(name);
   if (!tool) {
     return { error: `Unknown tool: ${name}` };
+  }
+
+  if (tool.isWrite && context.copilotContext) {
+    const writeEnabled = process.env.ADMIN_COPILOT_WRITE_ACTIONS === 'true';
+    const approved = context.approvedActionIds?.includes(context.currentActionId);
+    if (!writeEnabled && !approved && !context.skipApprovalCheck) {
+      const { createPendingAction } = await import('../../ai-copilot-pending-actions.service.js');
+      const pending = await createPendingAction({
+        userId: context.userId,
+        tenantId: context.tenantId,
+        agentId: context.agentId || 'admin',
+        toolName: name,
+        toolParams: params,
+        summary: `Execute ${name}${params?.reason ? `: ${params.reason}` : ''}`,
+      });
+      return {
+        pendingApproval: true,
+        actionId: pending.actionId,
+        summary: pending.summary,
+        message: 'This action requires human approval in Admin Copilot before it can run.',
+      };
+    }
   }
 
   const start = Date.now();
@@ -109,4 +148,4 @@ async function execute(name, params, context = {}) {
   return result;
 }
 
-export { register, getToolDefinitions, listTools, execute };
+export { register, getToolDefinitions, listTools, execute, getToolMeta };

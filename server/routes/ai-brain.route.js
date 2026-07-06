@@ -430,21 +430,47 @@ router.get('/providers', requireAuth, requireAdminRole, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 // MULTI-AGENT ROUTES
 // POST   /agents/process        — Route request through role-based agent system
+// POST   /agents/process/stream  — SSE streaming variant
+// POST   /agents/approve-action  — Human approval for write tools
+// GET    /agents/copilot-config  — Feature flags for Admin Copilot UI
 // GET    /agents/available      — List agents this caller can invoke
 // GET    /agents/all            — Full agent registry (admin only)
 // GET    /agents/history        — Caller's agent run history
 // ─────────────────────────────────────────────────────────────────────────────
 
+function isCopilotEnabled() {
+  return process.env.ADMIN_COPILOT_ENABLED !== 'false';
+}
+
+function assertCopilotEnabled(res) {
+  if (!isCopilotEnabled()) {
+    res.status(503).json({ success: false, error: 'Admin Copilot is disabled', code: 'COPILOT_DISABLED' });
+    return false;
+  }
+  return true;
+}
+
+router.get('/agents/copilot-config', async (req, res) => {
+  res.json({
+    success: true,
+    enabled: isCopilotEnabled(),
+    streaming: process.env.ADMIN_COPILOT_STREAMING !== 'false',
+    writeActions: process.env.ADMIN_COPILOT_WRITE_ACTIONS === 'true',
+  });
+});
+
 /**
  * POST /agents/process
  * Main multi-agent entry point. Resolves identity, plans tasks, routes agents.
  *
- * Body: { message, conversationId?, contextMessages?, forceAgent? }
+ * Body: { message, conversationId?, contextMessages?, forceAgent?, copilotType?, persona? }
  * forceAgent: bypass planner and use a specific agent (still permission-checked)
  */
 router.post('/agents/process', async (req, res) => {
   try {
-    const { message, conversationId, contextMessages, forceAgent } = req.body;
+    if (!assertCopilotEnabled(res)) return;
+
+    const { message, conversationId, contextMessages, forceAgent, copilotType, persona } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ error: 'message is required' });
@@ -456,9 +482,11 @@ router.post('/agents/process', async (req, res) => {
     const result = await multiAgentOrchestrator.process({
       message: message.trim(),
       req,
-      conversationId: conversationId ? parseInt(conversationId) : null,
+      conversationId: conversationId ? parseInt(conversationId, 10) : null,
       contextMessages: Array.isArray(contextMessages) ? contextMessages : [],
       forceAgent: forceAgent || null,
+      copilotType: copilotType || null,
+      persona: persona || null,
     });
 
     res.json({
@@ -476,6 +504,87 @@ router.post('/agents/process', async (req, res) => {
   } catch (err) {
     const status = err.status || 500;
     res.status(status).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+/**
+ * POST /agents/process/stream — SSE events: status, agent_switch, tool_start, tool_end, response, done, error
+ */
+router.post('/agents/process/stream', async (req, res) => {
+  if (!assertCopilotEnabled(res)) return;
+  if (process.env.ADMIN_COPILOT_STREAMING === 'false') {
+    return res.status(503).json({ success: false, error: 'Streaming disabled', code: 'STREAMING_DISABLED' });
+  }
+
+  const { message, conversationId, contextMessages, forceAgent, copilotType, persona } = req.body || {};
+  if (!message || typeof message !== 'string' || message.trim().length === 0) {
+    return res.status(400).json({ error: 'message is required' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  const send = (payload) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  try {
+    const result = await multiAgentOrchestrator.process({
+      message: message.trim(),
+      req,
+      conversationId: conversationId ? parseInt(conversationId, 10) : null,
+      contextMessages: Array.isArray(contextMessages) ? contextMessages : [],
+      forceAgent: forceAgent || null,
+      copilotType: copilotType || null,
+      persona: persona || null,
+      onEvent: (event) => send(event),
+    });
+
+    // Pseudo-stream final response in chunks for UX
+    const text = result.response || '';
+    const chunkSize = 80;
+    for (let i = 0; i < text.length; i += chunkSize) {
+      send({ type: 'token', content: text.slice(i, i + chunkSize) });
+    }
+
+    send({
+      type: 'response',
+      success: true,
+      response: result.response,
+      agentsUsed: result.agentsUsed,
+      taskPlan: result.taskPlan,
+      identity: result.identity,
+      meta: {
+        totalTokens: result.totalTokens,
+        latencyMs: result.latencyMs,
+        isMultiAgent: result.taskPlan?.isMultiAgent,
+      },
+    });
+    send({ type: 'done' });
+    res.write('data: [DONE]\n\n');
+    res.end();
+  } catch (err) {
+    send({ type: 'error', error: err.message, code: err.code });
+    res.end();
+  }
+});
+
+/**
+ * POST /agents/approve-action — Approve or reject a pending copilot write action
+ */
+router.post('/agents/approve-action', requireAuth, async (req, res) => {
+  try {
+    const { actionId, reject = false } = req.body || {};
+    if (!actionId) {
+      return res.status(400).json({ success: false, error: 'actionId is required' });
+    }
+    const { approvePendingAction } = await import('../services/ai-copilot-pending-actions.service.js');
+    const result = await approvePendingAction(actionId, req.user.id, { reject: reject === true });
+    res.json(result);
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, error: err.message });
   }
 });
 
