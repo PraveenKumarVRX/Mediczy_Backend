@@ -1174,21 +1174,34 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
     const jwt = await token.toJwt();
 
     // Dispatch the Dr Isha agent to the room so it joins automatically.
-    // Fire-and-forget — if dispatch fails (e.g. agent worker not running)
-    // the mobile still gets a valid token and can retry later.
+    // We still return a valid token even if dispatch fails, but we report the
+    // dispatch status so the client can fall back gracefully (show a "voice
+    // assistant unavailable" notice or switch to text) instead of silently
+    // joining a room where Dr iSHA never speaks.
+    let agentDispatched = false;
+    let agentError = null;
     try {
       const httpUrl = wsUrl.replace('wss://', 'https://').replace('ws://', 'http://');
       const dispatchClient = new AgentDispatchClient(httpUrl, apiKey, apiSecret);
       await dispatchClient.createDispatch(roomName, 'dr-isha', {
         metadata: JSON.stringify({ doctorId }),
       });
+      agentDispatched = true;
     } catch (dispatchErr) {
+      agentError = dispatchErr.message;
       logger.warn('[VoiceAssistant] Agent dispatch failed (agent may not be running)', {
         error: dispatchErr.message, roomName,
       });
     }
 
-    return res.json({ token: jwt, url: wsUrl, roomName });
+    return res.json({
+      token: jwt,
+      url: wsUrl,
+      roomName,
+      agentName: 'dr-isha',
+      agentDispatched,
+      ...(agentError ? { agentError } : {}),
+    });
   } catch (err) {
     logger.error('[VoiceAssistant] LiveKit token error', { error: err.message });
     return res.status(500).json({ error: err.message });

@@ -15,6 +15,7 @@ import { getWearableContextForUser } from '../services/patient-wearable-context.
 import { canonicalizeAppointmentTime } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
+import redisClient from '../config/redis.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -32,6 +33,50 @@ function ownsSession(sessionId, userId) {
   const hmacId = buildSessionId(userId);
   const legacyId = `mediczy_${userId}`;
   return sessionId.startsWith(hmacId) || sessionId.startsWith(legacyId) || sessionId.startsWith(`test_${userId}`);
+}
+
+// ── Conversational short-term memory ────────────────────────────────────────
+// Lets Dr. iSHA hold a natural, multi-turn conversation (like a voice assistant)
+// even when the client sends only the latest message, and — critically — keeps
+// context when the request falls back from SIB to the LLM cascade. Memory is
+// best-effort: any Redis hiccup degrades gracefully to a stateless reply.
+const CONVO_TTL_SECONDS = Number(process.env.DR_ISHA_MEMORY_TTL || 3600); // 1h rolling window
+const CONVO_MAX_MESSAGES = 30;                  // ~15 user/assistant turns sent to SIB
+const CONVO_FALLBACK_MESSAGES = 6;              // tighter window for the LLM cascade
+const CONVO_MAX_CONTENT = 4000;                 // per-message clamp
+const convoKey = (sessionId) => `medical-ai:convo:${sessionId}`;
+
+function normalizeHistory(history, limit = CONVO_MAX_MESSAGES) {
+  if (!Array.isArray(history)) return [];
+  return history
+    .filter((m) => m && typeof m.content === 'string' && m.content.trim())
+    .map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: String(m.content).slice(0, CONVO_MAX_CONTENT),
+    }))
+    .slice(-limit);
+}
+
+async function loadConversation(sessionId) {
+  if (!sessionId) return [];
+  try {
+    const raw = await redisClient.get(convoKey(sessionId));
+    return raw ? normalizeHistory(JSON.parse(raw)) : [];
+  } catch (e) {
+    mwarn('Conversation memory load failed', { error: e?.message });
+    return [];
+  }
+}
+
+async function appendConversation(sessionId, turns) {
+  if (!sessionId || !Array.isArray(turns) || turns.length === 0) return;
+  try {
+    const existing = await loadConversation(sessionId);
+    const merged = normalizeHistory([...existing, ...turns]);
+    await redisClient.setex(convoKey(sessionId), CONVO_TTL_SECONDS, JSON.stringify(merged));
+  } catch (e) {
+    mwarn('Conversation memory append failed', { error: e?.message });
+  }
 }
 
 // Rate limiter for feedback (20 per hour per user — prevent spam)
@@ -92,13 +137,41 @@ function validateMedicalQuery(query) {
   return null;
 }
 
+// Coerce a SIB field into clean text. SIB / LLM wrappers sometimes return the
+// answer as a nested object; naive String() on those yields "[object Object]"
+// which surfaced to users as a broken Dr. iSHA reply.
+const coerceSibText = (value) => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (typeof value === 'object') {
+    const nested = value.text
+      || value.content
+      || value.answer
+      || value.message
+      || value.response
+      || value.output
+      || value.choices?.[0]?.message?.content;
+    if (typeof nested === 'string') return nested.trim();
+  }
+  return '';
+};
+
 const extractSibResponse = (sibData) => {
-  const raw = sibData?.response
-    || sibData?.primary_response
-    || sibData?.chat_answer
-    || sibData?.message
-    || sibData?.result;
-  const text = typeof raw === 'string' ? raw.trim() : String(raw ?? '').trim();
+  const candidates = [
+    sibData?.response,
+    sibData?.primary_response,
+    sibData?.chat_answer,
+    sibData?.message,
+    sibData?.result,
+  ];
+  let text = '';
+  for (const candidate of candidates) {
+    text = coerceSibText(candidate);
+    if (text) break;
+  }
+  // Treat empty / unparseable shapes as a failure so the caller can fall back
+  // to the LLM cascade instead of returning garbage to the user.
   if (!text) throw new Error('SIB returned an empty response');
   return text;
 };
@@ -231,8 +304,16 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     // Use provided session ID if present to preserve memory
     const sessionId = requestedSessionId || userContext.sessionId || buildSessionId(req.user.id);
 
-    // Clinicians (doctor/nurse/assistant/admin) must not inherit another user's patient record.
-    const callerRole = req.user.role || 'patient';
+    // Resolve conversation history: trust the client's turns when supplied,
+    // otherwise rehydrate from server-side memory so context survives even on
+    // minimal clients. This is what makes follow-up questions feel natural.
+    const clientHistory = normalizeHistory(userContext?.conversationHistory);
+    const conversationHistory = clientHistory.length
+      ? clientHistory
+      : await loadConversation(sessionId);
+
+    // Role-aware context resolution — clinicians must not inherit another user's patient record.
+    const callerRole = String(req.userRole || req.user?.role || 'user').toLowerCase();
     const isClinician = ['doctor', 'nurse', 'assistant', 'admin', 'team'].includes(callerRole);
 
     let dbContext = null;
@@ -250,16 +331,20 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
       }
     }
 
+    const callerName = req.user?.firstName || req.user?.name || (isClinician ? 'Doctor' : 'Patient');
+
     // Add user info to context
     const enhancedContext = {
       ...userContext,
       ...(dbContext || {}),
       ...(wearableContext || {}),
       userId: req.user.id,
+      userRole: callerRole,
+      isClinician,
+      callerRole,
       userName: isClinician
         ? `Dr. ${req.user.firstName || req.user.name || 'Doctor'}`
-        : (req.user.firstName || 'Patient'),
-      callerRole,
+        : (req.user.firstName || callerName || 'Patient'),
     };
 
     const timeoutMs = isEmergencyMode ? 15000 : 30000;
@@ -276,13 +361,13 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
           patient_id: sessionId,
           message: query,
           language,
-          // Forward up to 15 conversation turns for context continuity
-          history: Array.isArray(userContext?.conversationHistory)
-            ? userContext.conversationHistory.slice(-15)
-            : [],
+          // Forward recent conversation turns for context continuity
+          history: conversationHistory.slice(-CONVO_MAX_MESSAGES),
           patient_data: {
             ...enhancedContext,
-            channel: isClinician ? 'doctor_app' : 'web',
+            // Tell SIB who is asking so it can respond in the right register
+            channel: isClinician ? 'doctor_app' : (userContext?.channel || 'web'),
+            role: callerRole,
             patientData: dbContext || undefined
           }
         })
@@ -326,6 +411,8 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
         const llmResult = await llmProvider.chat({
           messages: [
             { role: 'system', content: fallbackSystemPrompt },
+            // Carry recent turns so the fallback stays in the conversation
+            ...conversationHistory.slice(-CONVO_FALLBACK_MESSAGES),
             { role: 'user', content: query }
           ],
           maxTokens: 512,
@@ -353,6 +440,18 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
           retryAfterSeconds: 30,
         });
       }
+    }
+
+    // Persist this turn so the next message continues the conversation
+    // naturally. Best-effort: never block or fail the reply on memory writes.
+    if (consultation?.response) {
+      await appendConversation(sessionId, [
+        { role: 'user', content: query },
+        { role: 'assistant', content: consultation.response },
+      ]);
+      consultation.conversationLength = Math.floor(
+        (conversationHistory.length + 2) / 2
+      );
     }
 
     res.json(consultation);
@@ -1306,6 +1405,10 @@ router.delete('/session/:sessionId', authUser, async (req, res) => {
         error: 'Unauthorized to clear this session'
       });
     }
+
+    // Clear server-side conversation memory first (best-effort) so the next
+    // message starts a fresh conversation even if SIB is unreachable.
+    try { await redisClient.del(convoKey(sessionId)); } catch (e) { mwarn('Conversation memory clear failed', { error: e?.message }); }
 
     const sibResponse = await fetch(`${SIB_URL}/chat/history/${sessionId}`, {
       method: 'DELETE'
