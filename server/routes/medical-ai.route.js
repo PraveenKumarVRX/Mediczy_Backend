@@ -12,6 +12,8 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 import { mlog, mwarn, merr } from '../utils/medical-ai-logger.js';
 import emergencyTriageService from '../services/ai-emergency-triage.service.js';
 import { getWearableContextForUser } from '../services/patient-wearable-context.service.js';
+import { canonicalizeAppointmentTime } from '../utils/appointmentSlotTime.js';
+import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -1658,20 +1660,11 @@ router.post('/book-appointment', authUser, async (req, res) => {
       });
     }
 
-    // Parse time slot
-    const [startTime] = timeSlot.split('-');
-    
-    // Check if doctor has an appointment at this time (prevent doctor double-booking)
-    const doctorConflict = await Appointment.findOne({
-      where: {
-        doctorId,
-        appointmentDate,
-        appointmentTime: startTime,
-        status: ['scheduled', 'confirmed', 'pending', 'accepted', 'in-progress']
-      }
-    });
+    const canonicalStartTime = canonicalizeAppointmentTime(timeSlot.split('-')[0]);
 
-    if (doctorConflict) {
+    const doctorConflictResult = await checkDoctorConflict(doctorId, appointmentDate, canonicalStartTime);
+
+    if (doctorConflictResult.conflict) {
       return res.status(409).json({
         success: false,
         error: 'This doctor is not available at the selected time. The time slot is already booked by another patient. Please choose another slot.',
@@ -1680,23 +1673,11 @@ router.post('/book-appointment', authUser, async (req, res) => {
       });
     }
 
-    // Check if patient has an appointment at this time (prevent patient double-booking)
-    const patientConflict = await Appointment.findOne({
-      where: {
-        userId: req.user.id,
-        appointmentDate,
-        appointmentTime: startTime,
-        status: ['scheduled', 'confirmed', 'pending', 'accepted', 'in-progress']
-      }
-    });
+    const patientConflictResult = await checkPatientConflict(req.user.id, appointmentDate, canonicalStartTime);
 
-    if (patientConflict) {
-      const conflictDoctor = await doctorModel.findByPk(patientConflict.doctorId, {
-        attributes: ['firstName', 'lastName', 'specialization', 'prefix']
-      });
-      const conflictDoctorName = conflictDoctor 
-        ? `${conflictDoctor.prefix || 'Dr.'} ${conflictDoctor.firstName} ${conflictDoctor.lastName}`
-        : 'another doctor';
+    if (patientConflictResult.conflict) {
+      const conflictDoctorName = patientConflictResult.conflictDoctorName || 'another doctor';
+      const patientConflict = patientConflictResult.existingAppointment;
 
       return res.status(409).json({
         success: false,
@@ -1740,7 +1721,7 @@ router.post('/book-appointment', authUser, async (req, res) => {
       doctorName,
       specialization: doctor.specialization || 'General',
       appointmentDate,
-      appointmentTime: startTime,
+      appointmentTime: canonicalStartTime,
       duration: 30,
       consultationType: consultationTypeMap[consultationType] || 'video',
       status: 'scheduled',

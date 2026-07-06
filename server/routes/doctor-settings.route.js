@@ -1,7 +1,9 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
-import { Doctor } from '../models/index.js';
+import { Doctor, Appointment } from '../models/index.js';
+import { Op } from 'sequelize';
+import { isSlotBooked, normalizeSlotKey } from '../utils/appointmentSlotTime.js';
 
 const router = express.Router();
 
@@ -507,11 +509,20 @@ router.get('/available-slots/:doctorId', async (req, res) => {
     const daySchedule = weeklySchedule[dayName];
     const slotDuration = doctor.slotDuration || 15;
     const offDays = doctor.offDays || ['sunday'];
-    // Strip all whitespace before comparing so "10:00-10:30", "10:00 - 10:30",
-    // and "10:00- 10:30" are all treated as the same slot.
-    const normalizeSlotKey = (slot) => String(slot || '').replace(/\s+/g, '');
     const blockedSlots = daySchedule?.blockedSlots || [];
     const isBlockedSlot = (slot) => blockedSlots.some((blocked) => normalizeSlotKey(blocked) === normalizeSlotKey(slot));
+    const dateStr = (date || targetDate.toISOString().split('T')[0]);
+
+    const bookedAppointments = await Appointment.findAll({
+      where: {
+        doctorId: doctor.id,
+        appointmentDate: dateStr,
+        status: { [Op.notIn]: ['cancelled', 'no-show'] },
+      },
+      attributes: ['appointmentTime'],
+    });
+    const bookedSlotTimes = bookedAppointments.map((apt) => apt.appointmentTime);
+    const isBookedSlot = (slot) => isSlotBooked(slot, bookedSlotTimes);
 
     // Check if it's an off day
     if (offDays.includes(dayName) || daySchedule?.isOff) {
@@ -567,19 +578,21 @@ router.get('/available-slots/:doctorId', async (req, res) => {
     let availableSlots = [];
     
     if (type === 'online' && daySchedule?.online?.enabled) {
-      availableSlots = generateSlots(daySchedule.online.startTime, daySchedule.online.endTime).filter(slot => !isBlockedSlot(slot));
+      availableSlots = generateSlots(daySchedule.online.startTime, daySchedule.online.endTime)
+        .filter((slot) => !isBlockedSlot(slot) && !isBookedSlot(slot));
     } else if (type === 'in-person' && daySchedule?.inPerson?.enabled) {
-      availableSlots = generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime).filter(slot => !isBlockedSlot(slot));
+      availableSlots = generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime)
+        .filter((slot) => !isBlockedSlot(slot) && !isBookedSlot(slot));
     } else if (!type) {
       // Return both types if no specific type requested
       const onlineSlots = daySchedule?.online?.enabled 
         ? generateSlots(daySchedule.online.startTime, daySchedule.online.endTime)
-            .filter(slot => !isBlockedSlot(slot))
+            .filter((slot) => !isBlockedSlot(slot) && !isBookedSlot(slot))
             .map(s => ({ slot: s, type: 'online' }))
         : [];
       const inPersonSlots = daySchedule?.inPerson?.enabled
         ? generateSlots(daySchedule.inPerson.startTime, daySchedule.inPerson.endTime)
-            .filter(slot => !isBlockedSlot(slot))
+            .filter((slot) => !isBlockedSlot(slot) && !isBookedSlot(slot))
             .map(s => ({ slot: s, type: 'in-person' }))
         : [];
       

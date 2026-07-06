@@ -31,6 +31,7 @@ import { createDoctorTemplatesRouter } from './doctor/templates.routes.js';
 import { createDoctorMessagesRouter } from './doctor/messages.routes.js';
 import { createDoctorBillingRouter } from './doctor/billing.routes.js';
 import { toArray, normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
+import { isSlotBooked, normalizeSlotKey } from '../utils/appointmentSlotTime.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
@@ -964,11 +965,9 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       });
 
       const bookedSlotTimes = bookedAppointments.map(apt => apt.appointmentTime);
-      // Strip all whitespace before comparing so "10:00-10:30", "10:00 - 10:30",
-      // and "10:00- 10:30" are all treated as the same slot.
-      const normalizeSlotKey = (slot) => String(slot || '').replace(/\s+/g, '');
       const blockedSlots = daySchedule.blockedSlots || [];
       const isSlotBlocked = (slot) => blockedSlots.some((blocked) => normalizeSlotKey(blocked) === normalizeSlotKey(slot));
+      const isBooked = (slot) => isSlotBooked(slot, bookedSlotTimes);
 
       // Generate online slots
       const onlineSlots = daySchedule.online?.enabled
@@ -978,7 +977,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           slotDuration
         ).map(slot => ({
           time: slot,
-          available: !bookedSlotTimes.includes(slot) && !isSlotBlocked(slot),
+          available: !isBooked(slot) && !isSlotBlocked(slot),
           blocked: isSlotBlocked(slot)
         }))
         : [];
@@ -993,7 +992,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
           return {
             time: slot,
-            available: !bookedSlotTimes.includes(slot) && !isSlotBlocked(slot),
+            available: !isBooked(slot) && !isSlotBlocked(slot),
             blocked: isSlotBlocked(slot),
             location: location ? {
               name: location.name,

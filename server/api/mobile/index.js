@@ -2345,15 +2345,11 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
       AND status NOT IN ($3, $4, $5, $6)
   `, [req.params.id, targetDate, 'cancelled', 'completed', 'rejected', 'no-show']);
 
-  const bookedTimes = new Set(
-    bookedResult.rows
-      .map((row) => normalizeTime(row.appointmentTime))
-      .filter(Boolean)
-  );
+  const bookedTimes = bookedResult.rows.map((row) => getSlotStartTime(row.appointmentTime)).filter(Boolean);
 
   const slots = baseSlots.map((slot) => ({
     slot_time: slot.slot_time,
-    is_available: !bookedTimes.has(slot.slot_time),
+    is_available: !bookedTimes.some((booked) => isSlotBooked(slot.slot_time, [booked])),
     consultation_type: slot.consultation_type
   }));
   
@@ -2369,6 +2365,8 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
 // ============== Video Consultation ==============
 
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../../utils/videoProvider.js';
+import { canonicalizeAppointmentTime, getSlotStartTime, isSlotBooked } from '../../utils/appointmentSlotTime.js';
+import { checkDoctorConflict, checkPatientConflict } from '../../services/appointmentEligibility.service.js';
 
 const MOBILE_TURN_HOST = process.env.TURN_SERVER_HOST || '13.127.125.93';
 const MOBILE_TURN_USERNAME = process.env.TURN_USERNAME || 'livekit';
@@ -2846,7 +2844,8 @@ router.get('/appointments', authenticate(), asyncHandler(async (req, res) => {
 }));
 
 router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
-  const { doctorId, appointmentDate, appointmentTime, type, symptoms, notes } = req.body;
+  const { doctorId, appointmentDate, appointmentTime: rawAppointmentTime, type, symptoms, notes } = req.body;
+  const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
   
   if (!doctorId || !appointmentDate || !appointmentTime) {
     return res.status(400).json({
@@ -2892,20 +2891,11 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     WHERE id = $1
   `, [req.userId]);
 
-  const patientConflictPromise = db.query(
-    `SELECT id, "doctorId", "appointmentDate", "appointmentTime" FROM appointments
-     WHERE "userId" = $1
-       AND "appointmentDate" = $2
-       AND "appointmentTime" = $3
-       AND status NOT IN ($4, $5, $6, $7)
-     LIMIT 1`,
-    [req.userId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
-  );
+  const patientConflictResult = await checkPatientConflict(req.userId, appointmentDate, appointmentTime);
 
-  const [doctorResult, userResult, patientConflict] = await Promise.all([
+  const [doctorResult, userResult] = await Promise.all([
     doctorLookupPromise,
     userLookupPromise,
-    patientConflictPromise
   ]);
 
   if (doctorResult.rows.length === 0) {
@@ -2924,7 +2914,7 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     });
   }
 
-  if (patientConflict.rows.length > 0) {
+  if (patientConflictResult.conflict) {
     return res.status(409).json({
       success: false,
       message: 'You already have an appointment at this time. Please choose a different slot.',
@@ -2934,22 +2924,18 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
       },
       conflict: {
         type: 'patient_busy',
-        appointmentId: patientConflict.rows[0].id
+        appointmentId: patientConflictResult.existingAppointment?.id
       }
     });
   }
 
-  // Check doctor slot availability
-  const slotCheck = await db.query(
-    `SELECT id FROM appointments
-     WHERE "doctorId" = $1
-       AND "appointmentDate" = $2
-       AND "appointmentTime" = $3
-       AND status NOT IN ($4, $5, $6, $7)`,
-    [resolvedDoctorId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
+  const doctorConflictResult = await checkDoctorConflict(
+    resolvedDoctorId,
+    appointmentDate,
+    appointmentTime
   );
   
-  if (slotCheck.rows.length > 0) {
+  if (doctorConflictResult.conflict) {
     return res.status(409).json({
       success: false,
       message: 'This time slot is no longer available. Please select a different slot.',
