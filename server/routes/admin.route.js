@@ -562,8 +562,6 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), attachTenant
           plansMap[plan.corporate_id].push({
             sponsorshipId: plan.sponsorship_id,
             planId: plan.plan_id,
-            clinicId: plan.clinic_id,
-            doctorId: plan.doctor_id,
             startDate: plan.start_date,
             endDate: plan.end_date,
             isActive: plan.is_active,
@@ -1262,34 +1260,29 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       for (const plan of plans) {
         const {
           planId,
-          clinicId,
-          doctorId,
           startDate,
           endDate,
           networkPartners
         } = plan;
-        
+
         // Parse and validate IDs
         const parsedPlanId = planId ? parseInt(planId) : null;
-        const parsedClinicId = clinicId ? parseInt(clinicId) : null;
-        const parsedDoctorId = doctorId ? parseInt(doctorId) : null;
-        
+
         if (!parsedPlanId) continue; // Skip if no plan ID
-        
-        // Insert into corporate_plan_sponsorships (using snake_case for actual DB)
+
+        // Insert into corporate_plan_sponsorships — no clinic_id/doctor_id
+        // columns on this table (see corporate-plan-sponsorship.model.postgres.js)
         const [sponsorshipResult] = await postgresSequelize.query(`
-          INSERT INTO corporate_plan_sponsorships 
-          (corporate_id, plan_id, clinic_id, doctor_id, sponsorship_type, corporate_share, employee_share, 
+          INSERT INTO corporate_plan_sponsorships
+          (corporate_id, plan_id, sponsorship_type, corporate_share, employee_share,
            start_date, end_date, is_active, created_at, updated_at)
-          VALUES (:corporateId, :planId, :clinicId, :doctorId, 'full', 100, 0,
+          VALUES (:corporateId, :planId, 'FULL', 100, 0,
                   :startDate, :endDate, true, NOW(), NOW())
           RETURNING id
         `, {
           replacements: {
             corporateId: newCorporate.id,
             planId: parsedPlanId,
-            clinicId: parsedClinicId,
-            doctorId: parsedDoctorId,
             startDate: startDate || new Date().toISOString(),
             endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
           },
@@ -1498,8 +1491,11 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireC
     // Handle plans array (add/update/remove)
     if (plans && Array.isArray(plans)) {
       // Get existing plans for this corporate
+      // corporate_plan_sponsorships has no clinic_id/doctor_id columns — the
+      // model (corporate-plan-sponsorship.model.postgres.js) only has
+      // employeeId, no clinic/doctor reference.
       const [existingPlans] = await postgresSequelize.query(`
-        SELECT id as sponsorship_id, plan_id, clinic_id, doctor_id, start_date, end_date
+        SELECT id as sponsorship_id, plan_id, start_date, end_date
         FROM corporate_plan_sponsorships
         WHERE corporate_id = :corporateId
       `, {
@@ -1519,26 +1515,20 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireC
         const {
           sponsorshipId,
           planId,
-          clinicId,
-          doctorId,
           startDate,
           endDate,
           networkPartners
         } = plan;
-        
+
         const parsedPlanId = planId ? parseInt(planId) : null;
-        const parsedClinicId = clinicId ? parseInt(clinicId) : null;
-        const parsedDoctorId = doctorId ? parseInt(doctorId) : null;
-        
+
         if (!parsedPlanId) continue; // Skip if no plan ID
-        
+
         if (sponsorshipId && existingPlanMap[sponsorshipId]) {
           // Update existing plan
           await postgresSequelize.query(`
             UPDATE corporate_plan_sponsorships
             SET plan_id = :planId,
-                clinic_id = :clinicId,
-                doctor_id = :doctorId,
                 start_date = :startDate,
                 end_date = :endDate,
                 updated_at = NOW()
@@ -1548,35 +1538,31 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireC
               sponsorshipId,
               corporateId,
               planId: parsedPlanId,
-              clinicId: parsedClinicId,
-              doctorId: parsedDoctorId,
               startDate: startDate || new Date().toISOString(),
               endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
             }
           });
-          
+
           updatedSponsorshipIds.push(sponsorshipId);
-          
+
           // Update network partners for this sponsorship
           await postgresSequelize.query(`
             DELETE FROM tenant_partners WHERE sponsorship_id = :sponsorshipId
           `, { replacements: { sponsorshipId } });
-          
+
         } else {
           // Insert new plan
           const [sponsorshipResult] = await postgresSequelize.query(`
-            INSERT INTO corporate_plan_sponsorships 
-            (corporate_id, plan_id, clinic_id, doctor_id, sponsorship_type, corporate_share, employee_share,
+            INSERT INTO corporate_plan_sponsorships
+            (corporate_id, plan_id, sponsorship_type, corporate_share, employee_share,
              start_date, end_date, is_active, created_at, updated_at)
-            VALUES (:corporateId, :planId, :clinicId, :doctorId, 'full', 100, 0,
+            VALUES (:corporateId, :planId, 'FULL', 100, 0,
                     :startDate, :endDate, true, NOW(), NOW())
             RETURNING id
           `, {
             replacements: {
               corporateId,
               planId: parsedPlanId,
-              clinicId: parsedClinicId,
-              doctorId: parsedDoctorId,
               startDate: startDate || new Date().toISOString(),
               endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
             },
@@ -1733,11 +1719,9 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireC
     
     // Fetch updated plans
     const [updatedPlans] = await postgresSequelize.query(`
-      SELECT 
+      SELECT
         id as sponsorship_id,
         plan_id,
-        clinic_id,
-        doctor_id,
         start_date,
         end_date,
         is_active
@@ -1776,8 +1760,6 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), requireC
         plans: (updatedPlans || []).map(p => ({
           sponsorshipId: p.sponsorship_id,
           planId: p.plan_id,
-          clinicId: p.clinic_id,
-          doctorId: p.doctor_id,
           startDate: p.start_date,
           endDate: p.end_date,
           isActive: p.is_active
