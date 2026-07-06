@@ -222,7 +222,6 @@ const FederatedLearningDashboard = lazy(() => import("@/pages/admin/FederatedLea
 const HyperGridMarketplace       = lazy(() => import("@/pages/admin/HyperGridMarketplace"));
 const EnterpriseLoginPage        = lazy(() => import("@/pages/enterprise/EnterpriseLoginPage"));
 const EnterpriseCallbackPage     = lazy(() => import("@/pages/enterprise/EnterpriseCallbackPage"));
-const AdminCopilot             = lazy(() => import("@/pages/admin/AdminCopilot"));
 const AdminSaMD                = lazy(() => import("@/pages/admin/AdminSaMD"));
 
 // ─── CRM ─────────────────────────────────────────────────────────────────────
@@ -1441,7 +1440,6 @@ const AppRoutes = () => {
         <Route path="/admin/feedback-intelligence/sla"          element={<AdminRoute><SLATrackerPage /></AdminRoute>} />
         <Route path="/admin/feedback-intelligence/component/:name" element={<AdminRoute><ComponentDeepDive /></AdminRoute>} />
         <Route path="/admin/feedback-intelligence/prompts"      element={<AdminRoute><PromptVersionManager /></AdminRoute>} />
-        <Route path="/admin/copilot"              element={<AdminRoute><AdminCopilot /></AdminRoute>} />
         <Route path="/admin/samd-compliance"      element={<AdminRoute><AdminSaMD /></AdminRoute>} />
         <Route path="/admin/ai-guard"             element={<AdminRoute><SIBAIDashboard /></AdminRoute>} />
         <Route path="/admin/developers"          element={<AdminRoute><DeveloperPortal /></AdminRoute>} />
