@@ -353,13 +353,31 @@ async function callSib(params) {
     .filter(m => m?.role === 'system' && typeof m?.content === 'string')
     .map(m => m.content.trim())
     .filter(Boolean);
-  const userParts = messages
-    .filter(m => m?.role !== 'system' && typeof m?.content === 'string')
-    .map(m => m.content.trim())
-    .filter(Boolean);
 
-  const message = [...systemParts, ...userParts].join('\n\n').trim();
-  if (!message) throw new Error('SIB request has no message content');
+  const conversationMessages = messages
+    .filter(m => m?.role !== 'system' && typeof m?.content === 'string' && m.content.trim());
+
+  // Preserve turn structure so follow-ups like "what do you mean?" retain context
+  const labeledTurns = conversationMessages.map(m => {
+    const label = m.role === 'assistant' ? 'Assistant' : 'User';
+    return `${label}: ${m.content.trim()}`;
+  });
+
+  const history = conversationMessages.slice(0, -1).map(m => ({
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: m.content.trim(),
+  }));
+
+  const latestUser = [...conversationMessages].reverse().find(m => m.role === 'user');
+  const messageBody = labeledTurns.length
+    ? labeledTurns.join('\n')
+    : (latestUser?.content?.trim() || '');
+
+  const message = systemParts.length
+    ? `${systemParts.join('\n\n')}\n\n---\nConversation:\n${messageBody}`
+    : messageBody;
+
+  if (!message.trim()) throw new Error('SIB request has no message content');
 
   try {
     const res = await fetch(url, {
@@ -367,8 +385,13 @@ async function callSib(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
+<<<<<<< HEAD
         patient_id: params.patientId || params.userId || 'mediczy-backend',
         user_id: params.userId,
+=======
+        history,
+        user_id: 'mediczy-backend',
+>>>>>>> origin/cursor/fix-isha-assistant-responses-758c
         context: {
           source: 'llm-provider',
           model_hint: params.model,

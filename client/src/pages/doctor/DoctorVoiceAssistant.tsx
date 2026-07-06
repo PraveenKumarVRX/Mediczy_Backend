@@ -605,7 +605,7 @@ export default function DoctorVoiceAssistant() {
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
 
-    const history = messagesRef.current
+    const history = [...messagesRef.current, userMsg]
       .filter(m => m.id !== "welcome")
       .filter(m => !(m.id.startsWith("briefing-") && m.action === "get_doctor_briefing"))
       .slice(-8)
