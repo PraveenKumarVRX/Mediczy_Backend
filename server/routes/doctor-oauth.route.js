@@ -5,6 +5,7 @@ import { Strategy as FacebookStrategy } from 'passport-facebook';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
 import { issuePortalTokenPair } from '../services/token-revocation.service.js';
+import { generateOAuthPassword, isOAuthEmailVerified } from '../utils/oauth-security.js';
 
 const router = express.Router();
 
@@ -158,17 +159,29 @@ async function findOrCreateDoctor(profile, provider) {
       throw new Error(`No email provided by ${provider}`);
     }
     
+    const emailVerified = isOAuthEmailVerified(profile);
+
     // Check if doctor exists with this OAuth ID
     const oauthIdField = `${provider}Id`;
     let doctor = await Doctor.findOne({ where: { [oauthIdField]: profile.id } });
     
     // If not, check if doctor exists with this email
     if (!doctor) {
-      doctor = await Doctor.findOne({ where: { email } });
-      
-      if (doctor) {
-        // Link OAuth account to existing doctor
+      const existingByEmail = await Doctor.findOne({ where: { email } });
+
+      if (existingByEmail) {
+        // SECURITY: only auto-link a social identity to an existing account when
+        // the provider asserts the email is verified. Otherwise an attacker
+        // could create a provider account carrying this email and hijack the
+        // existing doctor account on first sign-in. Facebook does not assert
+        // verification, so such links are refused.
+        if (!emailVerified) {
+          throw new Error(
+            `${provider} did not verify this email, so it cannot be linked to the existing account. Please sign in with your password and link ${provider} from settings.`
+          );
+        }
         console.log(`🔗 Linking ${provider} account to existing doctor: ${email}`);
+        doctor = existingByEmail;
         await doctor.update({ [oauthIdField]: profile.id });
       }
     }
@@ -190,8 +203,8 @@ async function findOrCreateDoctor(profile, provider) {
       const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || 'Doctor';
       const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
       
-      // Generate a random password
-      const randomPassword = Math.random().toString(36).slice(-12) + 'A1!';
+      // Cryptographically strong placeholder password (login is via OAuth)
+      const randomPassword = generateOAuthPassword();
       
       doctor = await Doctor.create({
         email,
@@ -201,7 +214,7 @@ async function findOrCreateDoctor(profile, provider) {
         prefix: 'Dr',
         [oauthIdField]: profile.id,
         oauthProvider: provider,
-        emailVerified: true,
+        emailVerified,
         phoneNumber: '',
         specialization: 'General Practitioner', // Default, will be updated
         experience: 0,

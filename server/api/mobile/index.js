@@ -20,6 +20,8 @@ import { apiLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { requestLogger } from '../../middleware/logging.middleware.js';
 import { errorHandler, notFoundHandler, asyncHandler } from '../../middleware/errorHandler.middleware.js';
 import { multitenancyMiddleware as extractTenant } from '../../middleware/multitenancy.middleware.js';
+import { ConflictError } from '../../shared/errors/AppError.js';
+import { generateOAuthPassword } from '../../utils/oauth-security.js';
 
 const router = express.Router();
 
@@ -1406,6 +1408,17 @@ async function findOrCreateSocialUser({ db, provider, providerId, email, firstNa
 
   if (result.rows.length > 0) {
     const row = result.rows[0];
+    // SECURITY: only auto-link a social identity to an existing account when the
+    // provider asserts the email is verified. Without this an attacker could
+    // create a provider account carrying a victim's email and take over the
+    // victim's account on first social sign-in. Facebook does not assert email
+    // verification, so such links are refused here.
+    if (!emailVerified) {
+      throw new ConflictError(
+        'An account with this email already exists. Please sign in with your email and password, then link your social account from settings.',
+        { code: 'OAUTH_EMAIL_UNVERIFIED', provider }
+      );
+    }
     await db.query(
       `UPDATE users SET ${providerCol} = $1, "oauthProvider" = $2,
         "emailVerified" = TRUE,
@@ -1419,9 +1432,7 @@ async function findOrCreateSocialUser({ db, provider, providerId, email, firstNa
   }
 
   // 3. Create new user
-  const randomPassword = Math.random().toString(36).slice(-12) + 'Aa1!';
-  const bcrypt = (await import('bcrypt')).default;
-  const hashedPassword = await bcrypt.hash(randomPassword, 10);
+  const hashedPassword = await bcrypt.hash(generateOAuthPassword(), 10);
 
   const insertResult = await db.query(
     `INSERT INTO users (email, password, "firstName", "lastName", ${providerCol}, "oauthProvider",
@@ -1760,7 +1771,10 @@ router.post('/auth/facebook', asyncHandler(async (req, res) => {
     firstName: fbProfile.first_name || fbProfile.name?.split(' ')[0] || 'User',
     lastName: fbProfile.last_name || fbProfile.name?.split(' ').slice(1).join(' ') || '',
     avatarUrl: fbProfile.picture?.data?.url || null,
-    emailVerified: true
+    // Facebook's Graph API does not assert email verification, so we cannot
+    // treat the address as verified for the purpose of linking to an existing
+    // account (prevents account takeover via an unverified email).
+    emailVerified: false
   });
 
   if (deviceId) {
