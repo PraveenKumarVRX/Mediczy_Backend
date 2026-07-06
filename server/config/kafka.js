@@ -65,6 +65,15 @@ export const KAFKA_TOPICS = {
   // Video / Consultation
   CONSULTATION_STARTED:     'consultation.started',
   CONSULTATION_ENDED:       'consultation.ended',
+
+  // Imaging / RIS-PACS workflow (Phases 1–4)
+  IMAGING_STUDY_STORED:       'imaging.study.stored',
+  IMAGING_WORKFLOW_TRANSITION:'imaging.workflow.transition',
+  IMAGING_REPORT_DRAFTED:     'imaging.report.drafted',
+  IMAGING_REPORT_FINALIZED:   'imaging.report.finalized',
+  IMAGING_AI_TRIAGE_REQUESTED:'imaging.ai.triage.requested',
+  IMAGING_AI_TRIAGE_COMPLETE: 'imaging.ai.triage.complete',
+  IMAGING_COLLAB_ANNOTATION:  'imaging.collab.annotation',
 };
 
 // ─── Kafka Client ─────────────────────────────────────────────────────────────

@@ -36,6 +36,7 @@
     "fix:qa-login-blockers:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/fix-portal-login-blockers.mjs",
     "test:doctor-assistant-nav-regression": "node scripts/qa/doctor-assistant-navigation-regression.mjs",
     "test:voice-assistant-prod-smoke": "node scripts/qa/voice-assistant-prod-smoke.mjs",
+    "test:imaging-stack-smoke": "node scripts/qa/imaging-stack-smoke.mjs",
     "test:doctor-auth-deploy-health": "node scripts/qa/doctor-auth-deploy-health.mjs",
     "test:doctor-mobile-issue-smoke": "node scripts/qa/doctor-mobile-issue-smoke.mjs",
     "test:corporate-employee-list-smoke": "node scripts/qa/corporate-employee-list.smoke.mjs",

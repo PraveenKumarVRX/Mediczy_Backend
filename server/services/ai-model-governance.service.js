@@ -208,6 +208,58 @@ export const MODEL_CARDS = {
     regulatoryNotes:   'If physician always reviews and modifies before committing, this is a documentation productivity tool, not SaMD. If notes are committed without physician review, it crosses into SaMD territory.'
   },
 
+  'imaging-report-drafter-v1': {
+    componentName:      'Imaging AI Report Drafter',
+    version:            'v1-llm-assisted',
+    regulatoryClass:    'Class IIb SaMD (moderate-high risk)',
+    intendedUse:        'Generate draft radiology report text (Findings + Impression) from structured AI findings, triage output, and prior study comparison. Radiologist must review, edit, and sign before clinical use.',
+    notIntendedFor:     'Autonomous final reporting without radiologist sign-off; replacing radiologist interpretation; pediatric-specific protocols without validation.',
+    inputFeatures:      ['Structured findings JSON', 'AI triage output', 'Prior study reports', 'Modality/body part metadata', 'Report templates'],
+    outputDescription:  'Draft report text with confidence score, quality gate result, and mandatory physician review flag.',
+    modelType:          'Structured findings → LLM prose (iSHA/Groq/OpenAI cascade via llm-provider.js)',
+    knownLimitations: [
+      'LLM may generate plausible but incorrect findings if structured input is incomplete',
+      'Prior comparison quality depends on prior report availability',
+      'Not validated per-modality for diagnostic accuracy',
+      'Image analysis models not yet integrated for all modalities'
+    ],
+    safetyControls: [
+      'Quality gate checkImagingReport() on every draft',
+      'Mandatory PHYSICIAN_SIGNOFF_MANDATORY required action',
+      'Draft status only — cannot auto-finalize report',
+      'All drafts logged to imaging_ai_report_drafts and ai_quality_gate_log'
+    ],
+    changeControlPlan: 'Prompt or model changes require governanceService.proposeChange() and medical director approval.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Level 1 AI-assisted reporting. Physician is clinical actor. Draft must not be presented as final diagnosis.'
+  },
+
+  'imaging-triage-v1': {
+    componentName:      'Imaging AI Triage',
+    version:            'v1.3-cv-pipeline',
+    regulatoryClass:    'Class IIb SaMD (moderate risk)',
+    intendedUse:        'Screen imaging studies for review priorities and flag suspicious regions for radiologist attention. Informs worklist prioritization only.',
+    notIntendedFor:     'Autonomous diagnosis; final clinical disposition without radiologist review.',
+    inputFeatures:      ['StudyInstanceUID', 'Modality', 'Orthanc DICOM pixels', 'Orthanc study reference'],
+    outputDescription:  'Findings with severity, confidence, inference_backend, feature_attributions, critical alert triggers.',
+    modelType:          'TorchXRayVision (CXR) + MONAI UNet (CT/MRI when weights mounted) + nnU-Net v2 (optional) + heuristic/LLM fallback',
+    knownLimitations: [
+      'MONAI/nnU-Net weights require per-site clinical validation before production use',
+      'CT proxy via TorchXRayVision axial slice is screening-only — not a dedicated CT model',
+      'False negatives possible for critical findings',
+      'Heuristic fallback when DICOM unavailable or weights not mounted'
+    ],
+    safetyControls: [
+      'Critical findings trigger STAT queue bump + alert',
+      'reviewTriage() endpoint for physician acknowledgment',
+      'Quality gates on downstream report drafting',
+      'Model weight changes require governanceService.proposeChange() approval'
+    ],
+    changeControlPlan: 'Model weight or threshold changes require medical director approval via governance pipeline.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Advisory triage only. CV backends emit feature_attributions for interpretability; radiologist sign-off mandatory.'
+  },
+
   'admin-copilot-v1': {
     componentName:      'Admin AI Copilot',
     version:            'v1.0',

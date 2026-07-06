@@ -1,0 +1,62 @@
+# Mediczy Imaging Stack — Orthanc PACS + OHIF Viewer
+#
+# Usage:
+#   cd docker/imaging
+#   export MEDICZY_API_URL=https://mediqzy.com
+#   export ORTHANC_WEBHOOK_SECRET=your-secret
+#   docker compose up -d
+#
+# Orthanc UI:  http://localhost:8042  (orthanc / orthanc)
+# OHIF Viewer: http://localhost:3001
+# DICOM C-STORE port: 4242 (AE Title: MEDICZY)
+
+services:
+  orthanc:
+    image: orthancteam/orthanc:24.8.1
+    container_name: mediczy-orthanc
+    restart: unless-stopped
+    ports:
+      - "4242:4242"
+      - "8042:8042"
+    volumes:
+      - orthanc-data:/var/lib/orthanc/db
+      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
+    environment:
+      ORTHANC_NAME: MediczyPACS
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8042/system"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  orthanc-bridge:
+    image: curlimages/curl:8.11.1
+    container_name: mediczy-orthanc-bridge
+    restart: unless-stopped
+    depends_on:
+      orthanc:
+        condition: service_healthy
+    environment:
+      ORTHANC_URL: http://orthanc:8042
+      ORTHANC_USER: orthanc
+      ORTHANC_PASSWORD: orthanc
+      MEDICZY_API_URL: ${MEDICZY_API_URL:-http://host.docker.internal:8888}
+      ORTHANC_WEBHOOK_SECRET: ${ORTHANC_WEBHOOK_SECRET:-}
+      POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-30}
+    volumes:
+      - ./orthanc-bridge/poll-sync.sh:/poll-sync.sh:ro
+    entrypoint: ["/bin/sh", "/poll-sync.sh"]
+
+  ohif:
+    image: ohif/app:v3.9.2
+    container_name: mediczy-ohif
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    volumes:
+      - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
+    depends_on:
+      - orthanc
+
+volumes:
+  orthanc-data:

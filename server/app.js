@@ -264,6 +264,9 @@ import hypergridMqttRouter        from './routes/hypergrid-mqtt.route.js';
 import hypergridEventsRouter       from './routes/hypergrid-events.route.js';
 import hypergridTerminologyRouter  from './routes/hypergrid-terminology.route.js';
 import hypergridDicomRouter        from './routes/hypergrid-dicom.route.js';
+import orthancWebhookRouter        from './routes/orthanc-webhook.route.js';
+import imagingSessionRouter        from './routes/imaging-session.route.js';
+import imagingPlatformRouter       from './routes/imaging-platform.route.js';
 import hypergridSmartFhirRouter    from './routes/hypergrid-smart-fhir.route.js';
 import hypergridTwinsRouter        from './routes/hypergrid-twins.route.js';
 import hypergridConnectorRouter    from './routes/hypergrid-connector.route.js';
@@ -1624,6 +1627,9 @@ app.use('/api/hypergrid/mqtt',        hypergridMqttRouter);
 app.use('/api/hypergrid/events',      hypergridEventsRouter);
 app.use('/api/hypergrid/terminology', hypergridTerminologyRouter);
 app.use('/api/hypergrid/dicom',       hypergridDicomRouter);
+app.use('/api/orthanc',               orthancWebhookRouter);
+app.use('/api/imaging',               imagingSessionRouter);
+app.use('/api/imaging/platform',      imagingPlatformRouter);
 app.use('/api/hypergrid/smart',       hypergridSmartFhirRouter);
 app.use('/api/hypergrid/twins',       hypergridTwinsRouter);
 app.use('/api/hypergrid/connectors',  hypergridConnectorRouter);
@@ -1652,10 +1658,12 @@ app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (l
 import labAuthRouter from './routes/lab/auth.routes.js';
 import labOrdersRouter from './routes/lab/orders.route.js';
 import labRisImagingRouter from './routes/lab/ris-imaging.route.js';
+import dicomModalityRouter from './routes/dicom-modality.route.js';
 
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
 app.use('/api/lab/orders', labOrdersRouter); // Lab incoming EMR orders
 app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
+app.use('/api/dicom', dicomModalityRouter); // DICOM modality peer registry (Orthanc sync)
 
 // Pharmacy Service Routes
 // NOTE: Pharmacy routes already registered at line 616 with pharmacyRouter
