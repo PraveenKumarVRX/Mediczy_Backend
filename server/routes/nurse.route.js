@@ -455,16 +455,39 @@ router.get('/activity/recent', authNurse, async (req, res) => {
   try {
     const nurseId = req.nurse.id;
     const { Op } = await import('sequelize');
+    // PatientNote has no nurseId column — the /notes POST handler above
+    // already stores nurse attribution under metadata.nurseId (JSONB), same
+    // pattern as Medication's metadata.administeredBy. Match that here
+    // instead of a top-level column that doesn't exist.
+    // Each query is independently fault-tolerant: some legacy rows have
+    // non-numeric values (e.g. "nurse_001") in these JSONB fields from
+    // older seed/demo data, which makes Postgres's implicit cast for the
+    // comparison throw — one bad legacy row shouldn't 500 the whole feed.
     const [vitals, meds, notes] = await Promise.all([
-      VitalsRecord.findAll({ where: { recordedBy: nurseId }, order: [['recordedAt', 'DESC']], limit: 20 }),
+      VitalsRecord.findAll({ where: { recordedBy: nurseId }, order: [['recordedAt', 'DESC']], limit: 20 }).catch((err) => {
+        console.warn('[nurse/activity/recent] vitals query failed:', err.message);
+        return [];
+      }),
       Medication.findAll({
         where: {
           'metadata.administeredBy': { [Op.eq]: nurseId }
         },
         order: [['createdAt', 'DESC']],
         limit: 20
+      }).catch((err) => {
+        console.warn('[nurse/activity/recent] medication query failed:', err.message);
+        return [];
       }),
-      PatientNote.findAll({ where: { nurseId }, order: [['createdAt', 'DESC']], limit: 20 }),
+      PatientNote.findAll({
+        where: {
+          'metadata.nurseId': { [Op.eq]: nurseId }
+        },
+        order: [['createdAt', 'DESC']],
+        limit: 20
+      }).catch((err) => {
+        console.warn('[nurse/activity/recent] notes query failed:', err.message);
+        return [];
+      }),
     ]);
 
     const items = [
@@ -484,7 +507,7 @@ router.get('/activity/recent', authNurse, async (req, res) => {
         type: 'Note',
         patientId: n.patientId,
         timestamp: n.createdAt,
-        summary: (n.note || '').slice(0, 80)
+        summary: (n.content || '').slice(0, 80)
       })),
     ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20);
 
