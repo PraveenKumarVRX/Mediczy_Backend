@@ -46,9 +46,10 @@ function VitalValue({ label, value, unit }: { label: string; value?: number | nu
 
 export default function PatientInfoPane({ patientId, patientName }: Props) {
   const id = String(patientId);
+  const vitalsQueryKey = Number.isFinite(Number(patientId)) ? Number(patientId) : patientId;
 
   const { data: vitalsData, isLoading: vitalsLoading } = useQuery({
-    queryKey: ['patient-vitals', id],
+    queryKey: ['patient-vitals', vitalsQueryKey],
     queryFn: async () => {
       const res = await api.get(`/doctors/my-patients/${id}/vitals-history?limit=5`);
       return (res.data.vitals ?? []) as VitalsRow[];

@@ -15,6 +15,7 @@ const makeWeeklyAvailability = () => ({
 const state = {
   doctorId: 27,
   weeklyAvailability: makeWeeklyAvailability(),
+  slotDuration: 30,
 };
 
 const mockFindByPk = jest.fn(async (id) => {
@@ -25,6 +26,7 @@ const mockFindByPk = jest.fn(async (id) => {
     id: state.doctorId,
     dataValues: { weeklyAvailability },
     weeklyAvailability,
+    slotDuration: state.slotDuration,
     consultationTypes: {
       online: { available: true, fee: 500 },
       walkIn: { available: true, fee: 600 },
@@ -42,10 +44,14 @@ const mockUpdate = jest.fn(async (id, payload) => {
   if (payload?.weeklyAvailability) {
     state.weeklyAvailability = clone(payload.weeklyAvailability);
   }
+  if (payload?.slotDuration !== undefined) {
+    state.slotDuration = payload.slotDuration;
+  }
 
   return {
     id: state.doctorId,
     weeklyAvailability: clone(state.weeklyAvailability),
+    slotDuration: state.slotDuration,
   };
 });
 
@@ -130,6 +136,43 @@ describe('Doctor Availability Bulk Update', () => {
     expect(getRes.body.data.weeklyAvailability.monday).toEqual({
       isAvailable: true,
       slots: [{ startTime: '09:30', endTime: '11:30', consultationType: 'online' }],
+    });
+  });
+
+  it('preserves per-slot duration and updates global slotDuration', async () => {
+    const payload = {
+      slotDuration: 45,
+      monday: {
+        isAvailable: true,
+        slots: [{
+          startTime: '09:00',
+          endTime: '17:00',
+          consultationType: 'online',
+          slotDuration: 20,
+          maxPatients: 2,
+        }],
+      },
+    };
+
+    const saveRes = await request(app)
+      .post('/api/doctors/availability/bulk-update')
+      .send(payload);
+
+    expect(saveRes.status).toBe(200);
+    expect(saveRes.body).toEqual(expect.objectContaining({
+      success: true,
+      slotDuration: 45,
+    }));
+
+    const dashboardRes = await request(app).get('/api/doctors/availability/dashboard');
+    expect(dashboardRes.status).toBe(200);
+    expect(dashboardRes.body.dashboard.slotDuration).toBe(45);
+    expect(dashboardRes.body.dashboard.weeklyAvailability.monday.slots[0]).toEqual({
+      startTime: '09:00',
+      endTime: '17:00',
+      consultationType: 'online',
+      slotDuration: 20,
+      maxPatients: 2,
     });
   });
 });

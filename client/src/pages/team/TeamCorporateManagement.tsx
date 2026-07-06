@@ -3807,7 +3807,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
   <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Login Credentials</h3>
   <p><strong>Username:</strong> {{email}}<br/>
-  <strong>Password:</strong> [Temporary Password]</p>
+  <strong>Password:</strong> {{temporaryPassword}}</p>
 
   <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Download the My SmartHealth App</h3>
   <p><strong>Android:</strong> <a href="https://play.google.com/store/apps/details?id=com.mysmarthealth" target="_blank" rel="noopener noreferrer">https://play.google.com/store/apps/details?id=com.mysmarthealth</a></p>
@@ -3955,12 +3955,26 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
         replaceAllLiteral(selectedCorporate?.companyName || '', '{{companyName}}');
         replaceAllLiteral(selectedCorporate?.uniqueId || '', '{{corporateId}}');
+        replaceAllLiteral('[generated securely at send time]', '{{temporaryPassword}}');
 
-        const passwordPattern = /(Temporary Password\s*[:<\/strong>\-\s]*)([^<\s][^<\n]*)/gi;
-        const passwordSanitized = safeHtml.replace(passwordPattern, (_, prefix: string) => `${prefix}{{temporaryPassword}}`);
-        if (passwordSanitized !== safeHtml) {
+        const passwordPatterns = [
+          /(<strong>Password:<\/strong>\s*)([^<\n]+)/gi,
+          /(Temporary Password\s*[:<\/strong>\-\s]*)([^<\n]+)/gi,
+          /(Password\s*:\s*)([^<\n]+)/gi,
+        ];
+        for (const passwordPattern of passwordPatterns) {
+          const passwordSanitized = safeHtml.replace(passwordPattern, (_, prefix: string) => `${prefix}{{temporaryPassword}}`);
+          if (passwordSanitized !== safeHtml) {
+            changed = true;
+            safeHtml = passwordSanitized;
+          }
+        }
+
+        const usernamePattern = /(<strong>Username:<\/strong>\s*)([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi;
+        const usernameSanitized = safeHtml.replace(usernamePattern, '$1{{email}}');
+        if (usernameSanitized !== safeHtml) {
           changed = true;
-          safeHtml = passwordSanitized;
+          safeHtml = usernameSanitized;
         }
 
         return { safeSubject, safeHtml, changed };

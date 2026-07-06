@@ -1,6 +1,6 @@
 # Mediqzy — Doctor Mobile App API Integration Guide
 
-> **Version:** 2.12 · **Last Updated:** 2026-07-02  
+> **Version:** 2.12 · **Last Updated:** 2026-06-17  
 > **Base URL (Production):** `https://app.mediqzy.com/api`  
 > **WebSocket URL:** `https://app.mediqzy.com` (path: `/socket.io`)  
 > **LiveKit URL:** `wss://msh-kw9tvxa9.livekit.cloud` *(LiveKit Cloud)*
@@ -47,7 +47,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **2.12** | 2026-07-02 | Sanity pass: fixed broken markdown fence in Section 15.1.3 (Clinical Workflow); Section 9.10 documents `GET /api/doctors/my-patients/:patientId/vitals-history` and clarifies that patient vitals **trend charts** are not exposed as a dedicated endpoint (use history list or Remote Health Monitoring trends); Section 28 RIS-referred response fields aligned to live `ris_studies` column names (`patient_name`, `body_part`, `study_description`, `report_status`, `report_text`, `study_date`, `id` for file download); Section 20 attached pharmacy/lab paths confirmed as `/api/doctor-settings/*`. |
+| **2.12** | 2026-06-17 | **AI-PLATFORM-001:** §14.10 rewritten — `POST /api/doctor-copilot/chat` is the primary doctor AI entry (auto-routes agent vs clinical); added companion endpoints (`/health`, `/layer-map`, `/voice-assistant/stt`, `/voice-assistant/briefing`); documented `shared/doctor-mobile-api/` client for msh_d_app. **Availability:** §6.7–6.8 — `slotDuration` returned from dashboard and persisted per-slot on `bulk-update`; §7.3 accepts `duration` alias. **Vitals:** §9.10 — `GET /my-patients/:id/vitals-history` documented; mobile must refetch after POST. Appendix A.10 (iSHA copilot flow) and Appendix B copilot migration notes added. |
 | **2.11** | 2026-06-13 | Doctor mobile integration update: appointment settings now preserve `blockedSlots`, `inPerson.locationId`, and `practiceLocations`; patient vitals now persist through the `patient_vitals` migration and return `201` on create; iSHA appointment-list commands now query live doctor appointments instead of model-generated content. |
 | **2.10** | 2026-06-05 | Deploy health script now supports integrated review-policy smoke execution in a single run (`scripts/qa/doctor-auth-deploy-health.mjs`) when `DOCTOR_EMAIL` and `DOCTOR_PASSWORD` are provided. |
 | **2.9** | 2026-06-05 | Added deploy-ready smoke command for review consultation policy validation (`scripts/qa/doctor-review-policy-smoke.mjs`) that verifies: base consultation booking succeeds, first review is free (`freeReviewApplied=true`), and second review is billable. |
@@ -1028,6 +1028,7 @@ Authorization: Bearer <token>
 {
   "success": true,
   "dashboard": {
+    "slotDuration": 30,
     "weeklyAvailability": {
       "monday":    { "isAvailable": true,  "slots": [{ "startTime": "09:00", "endTime": "17:00", "consultationType": "online", "slotDuration": 30, "maxPatients": 1 }] },
       "tuesday":   { "isAvailable": true,  "slots": [...] },
@@ -1046,7 +1047,14 @@ Authorization: Bearer <token>
 }
 ```
 
-**Mobile app access path:** `res.data.dashboard.weeklyAvailability`
+**Mobile app access paths:**
+
+| Field | Path |
+|---|---|
+| Global default slot length | `res.data.dashboard.slotDuration` |
+| Weekly schedule | `res.data.dashboard.weeklyAvailability` |
+
+When the doctor changes slot duration in SetTimeSlots, include `slotDuration` on **each slot object** in the save payload. The saved value is returned on the next dashboard load.
 
 ### 6.8 Mobile: Save Weekly Schedule (SetTimeSlots screen)
 
@@ -1077,8 +1085,18 @@ Content-Type: application/json
 | `startTime` | string | ✅ | `HH:MM` 24-hour format |
 | `endTime` | string | ✅ | `HH:MM`, must be after `startTime` |
 | `consultationType` | string | ✅ | `online` · `walkIn` · `both` |
-| `slotDuration` | integer | ❌ | Minutes: 15, 20, 30, 45, 60 |
+| `slotDuration` | integer | ❌ | Minutes per slot: **15, 20, 30, 45, 60**. Send explicitly to persist — omitted slots keep server defaults. |
 | `maxPatients` | integer | ❌ | Max concurrent patients per slot (1–10) |
+
+**Optional top-level field** (updates doctor global default alongside weekly save):
+
+```json
+{
+  "slotDuration": 20,
+  "monday": { "isAvailable": true, "slots": [...] },
+  ...
+}
+```
 
 **Response (200):**
 
@@ -1197,6 +1215,8 @@ Authorization: Bearer <token>
 ```json
 { "slotDuration": 30 }
 ```
+
+Legacy alias also accepted: `{ "duration": 30 }`. Allowed values: **15, 20, 30, 45, 60**.
 
 ### 7.4 Update Single Day Schedule
 
@@ -1750,7 +1770,50 @@ Record a new vitals snapshot for the patient.
 - `temperature` defaults to Fahrenheit validation; pass `temperatureUnit: "C"` if sending Celsius.
 - The `patient_vitals` table is now created by startup migration. A `VITALS_TABLE_NOT_READY` response should be treated as a deployment/migration issue, not a normal mobile fallback.
 
-### 9.9 Add Medical History Entry
+### 9.10 Get Patient Vitals History
+
+> **New — verified 2026-06-17**
+
+```
+GET /api/doctors/my-patients/:patientId/vitals-history?limit=20
+Authorization: Bearer <token>
+```
+
+Returns vitals snapshots for the patient, newest first. Requires an existing doctor–patient relationship (same guard as POST).
+
+**Response (200):**
+
+```json
+{
+  "success": true,
+  "patientId": "42",
+  "count": 2,
+  "vitals": [
+    {
+      "id": 101,
+      "patient_id": 42,
+      "recorded_by_doctor_id": 7,
+      "bp": "120/80",
+      "heart_rate": 72,
+      "temperature": "98.60",
+      "spo2": 98,
+      "weight": "70.00",
+      "height": "170.00",
+      "blood_glucose": "110.00",
+      "notes": "Post-consultation check",
+      "recorded_at": "2026-06-17T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+| Query | Type | Default | Notes |
+|---|---|---|---|
+| `limit` | integer | `20` | Max rows returned |
+
+**Mobile refresh pattern:** after `POST .../vitals` succeeds, refetch this endpoint (or invalidate the vitals query) before updating UI. Do not rely on optimistic-only updates — the list is server-authoritative.
+
+### 9.11 Add Medical History Entry
 
 > **New — verified May 2026**
 
@@ -1782,47 +1845,6 @@ Add a clinical history entry for the patient.
 }
 ```
 
-### 9.10 Get Patient Vitals History
-
-> **New — verified July 2026**
-
-```
-GET /api/doctors/my-patients/:patientId/vitals-history
-Authorization: Bearer <token>
-```
-
-| Param | Type | Default | Description |
-|---|---|---|---|
-| `limit` | integer | 20 | Max records to return (newest first) |
-
-Returns a chronological list of vitals snapshots from `patient_vitals`. There is **no** separate doctor-app endpoint for vitals **trend charts** (e.g. sparklines over 30 days). Build charts client-side from this history list, or use Remote Health Monitoring trends (`GET /api/doctors/health-monitoring/patients/:patientId/trends`) for enrolled monitoring patients only.
-
-**Response (200):**
-
-```json
-{
-  "success": true,
-  "patientId": "42",
-  "count": 2,
-  "vitals": [
-    {
-      "id": 101,
-      "patient_id": 42,
-      "recorded_by_doctor_id": 7,
-      "bp": "120/80",
-      "heart_rate": 72,
-      "temperature": "98.60",
-      "spo2": 98,
-      "weight": "70.00",
-      "height": "170.00",
-      "blood_glucose": "110.00",
-      "notes": "Post-consultation check",
-      "recorded_at": "2026-06-13T10:30:00.000Z"
-    }
-  ]
-}
-```
-
 **Mobile App API (`api.js`):**
 
 ```javascript
@@ -1832,8 +1854,8 @@ export const Patients = {
   update:         (id, d)  => api.put(`/doctors/my-patients/${id}`, d),
   getDetails:     (id)     => api.get(`/doctors/patients/${id}`),
   getMedicalHistory:(id)   => api.get(`/doctors/patients/${id}/history`),
+  getVitalsHistory: (id, params) => api.get(`/doctors/my-patients/${id}/vitals-history`, { params }),
   recordVitals:   (id, d)  => api.post(`/doctors/my-patients/${id}/vitals`, d),
-  getVitalsHistory:(id, p) => api.get(`/doctors/my-patients/${id}/vitals-history`, { params: p }),
   addHistory:     (id, d)  => api.post(`/doctors/my-patients/${id}/history`, d),
 };
 ```
@@ -2809,10 +2831,14 @@ Process multiple dictations at once (max 10).
 
 ### 14.10 Doctor iSHA Assistant (Text / Voice Agent)
 
-Use this endpoint for the doctor assistant chat/voice command layer. The same endpoint handles navigation, patient search, tasks, clinical Q&A, and appointment read/write actions.
+**Initiative:** AI-PLATFORM-001 — unified doctor copilot gateway.
+
+Use **one endpoint** for all doctor AI chat: scheduling, navigation, tasks, and clinical Q&A. The gateway enriches context (doctor name, screen, patient, 15-turn history) and auto-routes to the agent layer or clinical consult.
+
+#### 14.10.1 Primary Chat Endpoint
 
 ```
-POST /api/voice-assistant/agent
+POST /api/doctor-copilot/chat
 Authorization: Bearer <token>
 Content-Type: application/json
 ```
@@ -2821,17 +2847,30 @@ Content-Type: application/json
 
 ```json
 {
-  "text": "Show today's appointments",
-  "context": { "currentScreen": "dashboard" },
-  "history": []
+  "message": "Show today's appointments",
+  "context": {
+    "currentScreen": "dashboard",
+    "currentPatient": { "id": 42, "name": "Arjun Kumar" }
+  },
+  "history": [
+    { "role": "user", "text": "List pending tasks" },
+    { "role": "assistant", "text": "You have 3 pending tasks." }
+  ],
+  "sessionId": "copilot_optional_session_id",
+  "language": "en",
+  "mode": "auto"
 }
 ```
 
-**Appointment-list behavior:**
+| Field | Required | Notes |
+|---|---|---|
+| `message` | Yes | Primary text field (preferred over legacy `text`) |
+| `context.currentScreen` | Recommended | e.g. `dashboard`, `patient_details`, `SetTimeSlots` |
+| `context.currentPatient` | When on chart | Enables patient-aware clinical answers |
+| `history` | Optional | Up to 15 prior turns `{ role, text }` |
+| `mode` | Optional | `auto` (default), `agent`, or `clinical` |
 
-For appointment listing commands such as `Show today's appointments`, `List upcoming appointments`, `Show pending appointments`, or `Show completed appointments`, the backend bypasses LLM-generated content and queries the live `appointments` table for the authenticated doctor. The response must not be treated as sample data.
-
-**Response (200):**
+**Agent response (200)** — appointments, navigation, tasks:
 
 ```json
 {
@@ -2851,9 +2890,119 @@ For appointment listing commands such as `Show today's appointments`, `List upco
       "reason": "consultation"
     }
   ],
-  "requiresConfirmation": false
+  "requiresConfirmation": false,
+  "traceId": "copilot_1718640000000_a1b2c3d4",
+  "gateway": "doctor-copilot",
+  "path": "agent"
 }
 ```
+
+**Clinical response (200)** — drug info, DDx, treatment questions (`path: "clinical"`):
+
+```json
+{
+  "success": true,
+  "response": "Metformin commonly causes GI upset. Monitor renal function and vitamin B12 with long-term use. Contraindicated in eGFR <30.",
+  "speak": "Metformin commonly causes GI upset. Monitor renal function and vitamin B12.",
+  "traceId": "copilot_1718640000000_b2c3d4e5",
+  "gateway": "doctor-copilot",
+  "path": "clinical"
+}
+```
+
+#### 14.10.2 Auto-Routing (`mode: "auto"`)
+
+| Query type | Examples | Routed to | `path` in response |
+|---|---|---|---|
+| Operational / agent | "Show today's appointments", "Open patient list", "Any updates?" | Voice assistant agent | `agent` |
+| Clinical | "Metformin side effects", "DDx for chest pain", "Warfarin INR target" | Medical AI consult | `clinical` |
+| Mixed (both keywords) | Rare edge cases | Defaults to agent | `agent` |
+
+Force routing with `mode: "agent"` or `mode: "clinical"` when needed.
+
+#### 14.10.3 Companion Endpoints
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/doctor-copilot/health` | GET | Gateway health + initiative metadata |
+| `/api/doctor-copilot/layer-map` | GET | AI layer map summary (governance) |
+| `/api/voice-assistant/stt` | POST | Voice → text (`multipart/form-data`, field `audio`) |
+| `/api/voice-assistant/briefing` | GET | Morning briefing (appointments + alerts) |
+| `/api/voice-assistant/livekit-token` | GET | Live voice session token (if enabled) |
+
+#### 14.10.4 Web doctor portal (React)
+
+Route: **`/doctor/assistant`** (`DoctorVoiceAssistant.tsx`)
+
+- Sidebar: **iSHA Assistant** · floating orb (bottom-right on all doctor pages)
+- API client: `client/src/services/doctorCopilot.ts` → `POST /api/doctor-copilot/chat`
+- Patient context: when a chart is open in Patient EMR, `sessionStorage.doctorCopilotPatient` is set automatically
+
+```typescript
+import doctorCopilotService from '@/services/doctorCopilot';
+
+const data = await doctorCopilotService.chat({
+  message: text,
+  history: priorTurns,
+  context: { currentScreen: 'isha_assistant', currentPatient },
+});
+```
+
+Voice (web): `doctorCopilotService.speechToText(formData)` → chat. Briefing poll uses `getBriefing()`.
+
+#### 14.10.5 Mobile client (msh_d_app)
+
+Copy `shared/doctor-mobile-api/` from the Mediczy repo into the mobile app:
+
+```
+msh_d_app/src/api/mediczy/doctor-mobile-api/
+```
+
+```typescript
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createDoctorCopilotClient } from './api/mediczy/doctor-mobile-api';
+
+const copilot = createDoctorCopilotClient({
+  baseUrl: 'https://app.mediqzy.com/api',
+  getToken: () => AsyncStorage.getItem('doctorToken'),
+  timeoutMs: 30000,
+});
+
+// Text chat
+const result = await copilot.chat({
+  message: "Show today's appointments",
+  context: {
+    currentScreen: 'dashboard',
+    currentPatient: selectedPatient
+      ? { id: selectedPatient.id, name: selectedPatient.name }
+      : null,
+  },
+  history: priorTurns,
+});
+
+const displayText = result.response || result.speak;
+
+// Voice: STT → chat
+const form = new FormData();
+form.append('audio', { uri: recordingUri, type: 'audio/m4a', name: 'audio.m4a' });
+const { text } = await copilot.speechToText(form);
+const reply = await copilot.chat({ message: text, context: { currentScreen: 'isha' } });
+```
+
+See `shared/doctor-mobile-api/README.md` for full API surface.
+
+#### 14.10.6 Migration from Legacy Endpoints
+
+| Before (legacy) | After (preferred) |
+|---|---|
+| `POST /api/voice-assistant/agent` with `{ text }` | `POST /api/doctor-copilot/chat` with `{ message }` |
+| `POST /api/medical-ai/consult` (doctor clinical) | Same `copilot.chat()` — gateway routes clinical queries |
+
+Legacy `/voice-assistant/agent` remains supported. New msh_d_app builds should use the copilot client only.
+
+#### 14.10.7 Appointment-List Behavior
+
+For appointment listing commands such as `Show today's appointments`, `List upcoming appointments`, `Show pending appointments`, or `Show completed appointments`, the backend bypasses LLM-generated content and queries the live `appointments` table for the authenticated doctor. The response must not be treated as sample data.
 
 **Supported appointment filters:**
 
@@ -2865,7 +3014,25 @@ For appointment listing commands such as `Show today's appointments`, `List upco
 | `completed appointments`, `past appointments` | `completed` |
 | `all appointments` | `all` |
 
-Other iSHA actions continue through the assistant router. For navigation and search actions, execute the returned `action` and `parameters` on the mobile client after playing `speak` if needed.
+#### 14.10.8 Client Action Handling
+
+When `requiresConfirmation` is `true`, show a confirm dialog before executing `action` + `parameters`.
+
+For navigation actions (`navigate_to`, `search_patient`), play `speak` first, then navigate after TTS completes to avoid audio cut-off on screen unmount.
+
+Log `traceId` on errors for support and governance audit.
+
+**Error (400):**
+
+```json
+{ "success": false, "error": "message or text is required", "traceId": "copilot_..." }
+```
+
+**Error (500):**
+
+```json
+{ "success": false, "error": "Doctor copilot temporarily unavailable", "traceId": "copilot_..." }
+```
 
 ---
 
@@ -2908,6 +3075,7 @@ Authorization: Bearer <token>
 ```
 GET /api/doctor/clinical-workflow/notes/patient/:patientId
 Authorization: Bearer <token>
+```
 ```
 
 ### 15.2 ICD-10 Code Search
@@ -3893,12 +4061,10 @@ Returns imaging studies referred to or associated with this doctor's patients.
 | Param | Type | Description |
 |---|---|---|
 | `modality` | string | Filter: `CT` · `MRI` · `USG` · `ECHO` · `XRAY` · `PET` |
-| `status` | string | Study status in `ris_studies.status` |
-| `patientName` | string | Partial match on `patient_name` |
-| `from` | string | `study_date` on or after (YYYY-MM-DD) |
-| `to` | string | `study_date` on or before (YYYY-MM-DD) |
+| `status` | string | `pending` · `reported` · `reviewed` |
+| `patientId` | integer | Filter by patient |
 | `page` | integer | Default: 1 |
-| `limit` | integer | Default: 50 |
+| `limit` | integer | Default: 20 |
 
 **Response (200):**
 
@@ -3908,30 +4074,22 @@ Returns imaging studies referred to or associated with this doctor's patients.
   "studies": [
     {
       "id": 101,
-      "patient_name": "Jane Doe",
+      "patientName": "Jane Doe",
+      "patientId": 42,
       "modality": "CT",
-      "body_part": "Chest",
-      "study_description": "CT Chest with contrast — rule out PE",
-      "report_status": "reported",
-      "report_text": "No evidence of pulmonary embolism. Mild bilateral pleural effusion.",
-      "reported_at": "2026-04-30T14:30:00.000Z",
-      "study_date": "2026-04-29",
-      "accession_number": "RIS-2026-101",
-      "referring_doctor_id": 7,
-      "referring_doctor_name": "Dr. Smith",
-      "status": "reported",
-      "file_name": "report.pdf",
-      "mime_type": "application/pdf",
-      "is_dicom": false
+      "bodyPart": "Chest",
+      "description": "CT Chest with contrast — rule out PE",
+      "reportStatus": "reported",
+      "reportText": "No evidence of pulmonary embolism. Mild bilateral pleural effusion.",
+      "reportedAt": "2026-04-30T14:30:00.000Z",
+      "referredAt": "2026-04-29T10:00:00.000Z",
+      "fileId": 55,
+      "accessionNumber": "RIS-2026-101"
     }
   ],
-  "total": 12,
-  "page": 1,
-  "limit": 50
+  "pagination": { "total": 12, "page": 1, "limit": 20, "pages": 1 }
 }
 ```
-
-> **Field note:** Use study `id` (not a separate `fileId`) when calling the file endpoint below.
 
 ### 28.2 Get Study Detail
 
@@ -3945,29 +4103,16 @@ Authorization: Bearer <token>
 ```json
 {
   "success": true,
-  "study": {
-    "id": 101,
-    "patient_name": "Jane Doe",
-    "modality": "CT",
-    "body_part": "Chest",
-    "study_description": "CT Chest with contrast",
-    "report_text": "No evidence of pulmonary embolism.",
-    "report_status": "reported",
-    "reported_at": "2026-04-30T14:30:00.000Z",
-    "study_date": "2026-04-29",
-    "accession_number": "RIS-2026-101"
-  }
+  "study": { "id": 101, "patientName": "Jane Doe", "modality": "CT", "reportText": "...", "fileId": 55, ... }
 }
 ```
 
 ### 28.3 Get Study File (DICOM / PDF Report)
 
 ```
-GET /api/doctors/ris-referred/file/:studyId
+GET /api/doctors/ris-referred/file/:fileId
 Authorization: Bearer <token>
 ```
-
-`:studyId` is the study `id` from list/detail responses (same row used for authorization).
 
 Returns the study file (DICOM viewer link or PDF report). In the mobile app, this URL is opened via `Linking.openURL()` for external viewer or download.
 
@@ -3982,8 +4127,8 @@ import { Linking } from 'react-native';
 const res = await DoctorImaging.list({ modality: selectedModality });
 setStudies(res.data.studies);
 
-// Open/download report (study id, not a separate fileId)
-const fileUrl = DoctorImaging.getFileUrl(study.id);
+// Open/download report
+const fileUrl = DoctorImaging.getFileUrl(study.fileId);
 await Linking.openURL(fileUrl);
 ```
 
@@ -3993,7 +4138,7 @@ await Linking.openURL(fileUrl);
 export const DoctorImaging = {
   list:       (params) => api.get('/doctors/ris-referred', { params }),
   getById:    (id)     => api.get(`/doctors/ris-referred/${id}`),
-  getFileUrl: (studyId)=> `${BASE_URL}/doctors/ris-referred/file/${studyId}`,
+  getFileUrl: (id)     => `${BASE_URL}/doctors/ris-referred/file/${id}`,
 };
 ```
 
@@ -4073,10 +4218,11 @@ export const DoctorImaging = {
 
 ```
 1. GET  /api/doctors/availability/dashboard       → Load weekly schedule on screen open
-   Response: { dashboard: { weeklyAvailability: { monday: { isAvailable, slots }, ... } } }
-2. (Doctor edits days, times, slot duration, consultation type)
+   Response: { dashboard: { slotDuration, weeklyAvailability: { monday: { isAvailable, slots }, ... } } }
+2. (Doctor edits days, times, slot duration per slot, consultation type)
 3. POST /api/doctors/availability/bulk-update     → Save on tap "Save Schedule"
    Body: { monday: { isAvailable: true, slots: [{startTime, endTime, consultationType, slotDuration, maxPatients}] }, ... }
+4. GET  /api/doctors/availability/dashboard       → Verify slotDuration persisted after save
 ```
 
 ### A.7 Walk-in Patient Registration & Vitals
@@ -4087,9 +4233,10 @@ export const DoctorImaging = {
 2. GET  /api/doctors/my-patients                  → Confirm patient appears in list
 3. POST /api/doctors/my-patients/:id/vitals       → Record initial vitals
    Body: { bp, heartRate, temperature, spo2, weight, height }
-4. POST /api/doctors/my-patients/:id/history      → Add presenting condition
+4. GET  /api/doctors/my-patients/:id/vitals-history → Refresh vitals timeline in Patient Details
+5. POST /api/doctors/my-patients/:id/history      → Add presenting condition
    Body: { condition, onset, status, notes }
-5. POST /api/prescriptions                        → Issue prescription if needed
+6. POST /api/prescriptions                        → Issue prescription if needed
 ```
 
 ### A.8 Emergency Triage with AI Image Analysis
@@ -4111,6 +4258,24 @@ export const DoctorImaging = {
    Params: ?modality=CT|MRI|USG|ECHO|XRAY (optional filter)
 2. GET  /api/doctors/ris-referred/:studyId        → Load study detail on tap
 3. GET  /api/doctors/ris-referred/file/:fileId    → Open/download report (via Linking.openURL)
+```
+
+### A.10 Dr. iSHA Copilot (Text / Voice)
+
+```
+1. (Optional) GET /api/voice-assistant/briefing   → Morning briefing on dashboard open
+2. User speaks or types in iSHA screen
+3a. Voice path:
+    POST /api/voice-assistant/stt (multipart audio) → { text }
+3b. Text path: skip STT
+4. POST /api/doctor-copilot/chat
+   Body: { message, context: { currentScreen, currentPatient }, history }
+5. Display result.response (or result.speak for TTS)
+6. If result.action present:
+   - requiresConfirmation=true → show confirm dialog
+   - navigate_to / search_patient → execute after TTS completes
+   - list_appointments → render result.data (live DB rows, not samples)
+7. Log result.traceId on errors for support
 ```
 
 ---
@@ -4205,6 +4370,15 @@ Script validates:
 - weekly schedule save and restore (`POST /api/doctors/availability/bulk-update`)
 - prescription create and cleanup (`POST/DELETE /api/prescriptions`)
 
+Doctor AI + availability contract tests (CI / pre-release):
+
+```bash
+cd server
+npm run test:doctor-ai-contracts          # vitals POST→GET, copilot routing, slot duration
+npm run test:clinical-golden-regression     # 200-prompt offline golden set
+npm run test:fix-regression-smoke         # 15-check availability/vitals/iSHA smoke
+```
+
 Review consultation policy smoke (one free review per new consultation):
 
 ```bash
@@ -4269,7 +4443,7 @@ The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with se
 
 - Lists RIS-referred studies: `GET /api/doctors/ris-referred`
 - Filter chips (CT/MRI/USG/ECHO/XRAY) pass `?modality=` query param
-- Open DICOM/PDF: `Linking.openURL(DoctorImaging.getFileUrl(study.id))`
+- Open DICOM/PDF: `Linking.openURL(DoctorImaging.getFileUrl(study.fileId))`
 - Accessible via Sidebar → **Lab Imaging**
 
 ### Emergency Triage
@@ -4284,13 +4458,29 @@ The doctor app (`MSH_D_App`) uses Firebase project **`doctorapp-6c768`** with se
 - **PatientsList** screen: `GET /api/doctors/my-patients` (search + pagination)
 - **PatientDetails** screen: `GET /api/doctors/patients/:id` + `GET /api/doctors/patients/:id/history`
 - Record vitals inline: `POST /api/doctors/my-patients/:id/vitals`
+- **After vitals save:** refetch `GET /api/doctors/my-patients/:id/vitals-history` before updating UI
 - Edit patient demographics: `PUT /api/doctors/my-patients/:id`
 - Add history entry: `POST /api/doctors/my-patients/:id/history`
 
+### Dr. iSHA Copilot (AI-PLATFORM-001)
+
+- **Primary:** `POST /api/doctor-copilot/chat` via `createDoctorCopilotClient()` (see §14.10)
+- Copy `shared/doctor-mobile-api/` from Mediczy repo into `msh_d_app/app/api/mediczy/`
+- Run `MSH_D_APP_PATH=/path/to/msh_d_app node scripts/integrate-msh-d-app-copilot.mjs`
+- See [MSH_D_APP_ISHA_COPILOT_MIGRATION.md](../doctor/MSH_D_APP_ISHA_COPILOT_MIGRATION.md) for full steps
+- Replace direct calls to `/voice-assistant/agent` and `/medical-ai/consult`
+- Always pass `context.currentScreen` and `context.currentPatient` when on Patient Details
+- Keep last 10–15 turns in `history` for follow-up questions
+- Voice flow: `speechToText()` → `chat()` → TTS on `speak` field
+- Morning briefing: `getBriefing()` on dashboard mount (optional)
+
 ### SetTimeSlots (Weekly Schedule)
 
-- On screen open: `GET /api/doctors/availability/dashboard` → `res.data.dashboard.weeklyAvailability`
+- On screen open: `GET /api/doctors/availability/dashboard`
+  - Global default: `res.data.dashboard.slotDuration`
+  - Weekly grid: `res.data.dashboard.weeklyAvailability`
 - On save: `POST /api/doctors/availability/bulk-update` with full day-keyed payload
+- **Include `slotDuration` on each slot** — value persists and reloads on next open
 - Supports online/walkIn mode toggle, slot duration (15/20/30/45/60 min), max patients (1–10)
 
 ### Offline Support

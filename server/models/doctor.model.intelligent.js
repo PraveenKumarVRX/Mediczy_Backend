@@ -176,11 +176,23 @@ const normalizeAvailabilitySlot = (slot) => {
     ? 'walkIn'
     : (rawType === 'online' || rawType === 'walkin' || rawType === 'walkIn' || rawType === 'both' ? rawType : 'both');
 
-  return {
+  const normalized = {
     startTime,
     endTime,
     consultationType: consultationType === 'walkin' ? 'walkIn' : consultationType,
   };
+
+  const slotDuration = parseInt(slot.slotDuration, 10);
+  if ([15, 20, 30, 45, 60].includes(slotDuration)) {
+    normalized.slotDuration = slotDuration;
+  }
+
+  const maxPatients = parseInt(slot.maxPatients, 10);
+  if (Number.isFinite(maxPatients) && maxPatients > 0) {
+    normalized.maxPatients = maxPatients;
+  }
+
+  return normalized;
 };
 
 const doctorModel = {

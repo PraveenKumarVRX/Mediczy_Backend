@@ -339,7 +339,7 @@ let _sibOpenUntil = 0;
 async function callSib(params) {
   if (Date.now() < _sibOpenUntil) throw new Error('sib circuit open');
 
-  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8005';
+  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8001';
   const url = `${baseUrl.replace(/\/$/, '')}/chat`;
   // Default 8s matches the long-standing working behavior; SIB_TIMEOUT_MS lets ops
   // tune it without code changes. Do NOT shorten blindly — SIB proxies to iSHA
@@ -353,15 +353,8 @@ async function callSib(params) {
     .filter(m => m?.role === 'system' && typeof m?.content === 'string')
     .map(m => m.content.trim())
     .filter(Boolean);
-
   const conversationMessages = messages
     .filter(m => m?.role !== 'system' && typeof m?.content === 'string' && m.content.trim());
-
-  // Preserve turn structure so follow-ups like "what do you mean?" retain context
-  const labeledTurns = conversationMessages.map(m => {
-    const label = m.role === 'assistant' ? 'Assistant' : 'User';
-    return `${label}: ${m.content.trim()}`;
-  });
 
   const history = conversationMessages.slice(0, -1).map(m => ({
     role: m.role === 'assistant' ? 'assistant' : 'user',
@@ -369,6 +362,11 @@ async function callSib(params) {
   }));
 
   const latestUser = [...conversationMessages].reverse().find(m => m.role === 'user');
+  const labeledTurns = conversationMessages.map(m => {
+    const label = m.role === 'assistant' ? 'Assistant' : 'User';
+    return `${label}: ${m.content.trim()}`;
+  });
+
   const messageBody = labeledTurns.length
     ? labeledTurns.join('\n')
     : (latestUser?.content?.trim() || '');
@@ -385,7 +383,7 @@ async function callSib(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
-        history,
+        history: history.slice(-15),
         patient_id: params.patientId || params.userId || 'mediczy-backend',
         user_id: params.userId || 'mediczy-backend',
         context: {

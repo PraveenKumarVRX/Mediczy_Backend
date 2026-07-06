@@ -2524,17 +2524,11 @@ router.get('/my-patients/:patientId/vitals-history', authDoctor, async (req, res
       return res.status(403).json({ success: false, message: 'No appointment relationship with this patient' });
     }
 
-    // Try to get from patient_vitals table
-    let vitals = [];
-    try {
-      const { rows } = await req.app.locals.pgPool?.query(
-        `SELECT * FROM patient_vitals WHERE patient_id = $1 ORDER BY recorded_at DESC LIMIT $2`,
-        [parseInt(patientId), parseInt(limit)]
-      ) || { rows: [] };
-      vitals = rows;
-    } catch (_) {
-      vitals = [];
-    }
+    const { rows } = await pool.query(
+      `SELECT * FROM patient_vitals WHERE patient_id = $1 ORDER BY recorded_at DESC LIMIT $2`,
+      [parseInt(patientId), parseInt(limit)]
+    );
+    const vitals = rows;
 
     res.json({ success: true, patientId, count: vitals.length, vitals });
   } catch (error) {

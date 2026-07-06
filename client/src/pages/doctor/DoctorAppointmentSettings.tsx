@@ -393,7 +393,7 @@ const DoctorAppointmentSettings = () => {
                 Slot Duration
               </Label>
               <Select 
-                value={config.slotDuration.toString()} 
+                value={[15, 20, 30, 45, 60].includes(config.slotDuration) ? config.slotDuration.toString() : '30'} 
                 onValueChange={handleSlotDurationChange}
               >
                 <SelectTrigger>
@@ -401,6 +401,7 @@ const DoctorAppointmentSettings = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="15">15 minutes</SelectItem>
+                  <SelectItem value="20">20 minutes</SelectItem>
                   <SelectItem value="30">30 minutes</SelectItem>
                   <SelectItem value="45">45 minutes</SelectItem>
                   <SelectItem value="60">60 minutes (1 hour)</SelectItem>
