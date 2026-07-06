@@ -286,7 +286,7 @@ const ProfileEnhanced = () => {
     const formData = new FormData();
     formData.append("profilePicture", file);
     try {
-      const res = await api.post("/users/profile-picture", formData, { headers: { "Content-Type": "multipart/form-data" } });
+      const res = await api.post("/users/profile-picture", formData);
       setProfileImage(res.data.profileImage);
       queryClient.invalidateQueries({ queryKey: ["currentUser"] });
       toast({ title: "Photo updated" });

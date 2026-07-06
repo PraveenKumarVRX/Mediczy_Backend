@@ -32,6 +32,8 @@ const DoctorSettings = () => {
     socialLinks: { facebook: '', instagram: '', youtube: '' } as { facebook: string; instagram: string; youtube: string }
   });
   const [socialImportLoading, setSocialImportLoading] = useState<string | null>(null);
+  const [uploadingProfileImage, setUploadingProfileImage] = useState(false);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
 
   const [practice, setPractice] = useState({
     consultationFee: 500,
@@ -237,6 +239,39 @@ const DoctorSettings = () => {
       toast({ variant: 'destructive', title: 'Import failed', description: err.response?.data?.message || 'Could not fetch profile image from that URL.' });
     } finally {
       setSocialImportLoading(null);
+    }
+  };
+
+  const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast({ variant: 'destructive', title: 'File too large', description: 'Profile photo must be under 5MB.' });
+      return;
+    }
+
+    setUploadingProfileImage(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const resp = await api.post('/doctors/upload/profilePicture', formData);
+      const imageUrl = resp.data?.url || resp.data?.profileImage;
+      if (!imageUrl) {
+        throw new Error('Upload succeeded but no image URL was returned');
+      }
+      setProfile((prev) => ({ ...prev, profileImage: imageUrl }));
+      queryClient.invalidateQueries({ queryKey: ['doctor-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['currentDoctor'] });
+      toast({ title: 'Photo updated', description: 'Your profile picture has been uploaded.' });
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Upload failed',
+        description: err.response?.data?.message || 'Could not upload profile picture.',
+      });
+    } finally {
+      setUploadingProfileImage(false);
+      if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
     }
   };
 
@@ -511,6 +546,57 @@ const DoctorSettings = () => {
                     placeholder="Tell patients about yourself..."
                     rows={4}
                   />
+                </div>
+
+                <div className="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 p-4 bg-white dark:bg-slate-900/40">
+                  <Label>Profile Photo</Label>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Upload a photo from your device. JPEG, PNG, GIF, or WebP up to 5MB.
+                  </p>
+                  <div className="flex items-center gap-4">
+                    {profile.profileImage ? (
+                      <img
+                        src={profile.profileImage}
+                        alt="Profile"
+                        className="h-16 w-16 rounded-full object-cover border-2 border-slate-200"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    ) : (
+                      <div className="h-16 w-16 rounded-full bg-slate-200 dark:bg-slate-700" />
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={uploadingProfileImage}
+                        onClick={() => profilePhotoInputRef.current?.click()}
+                      >
+                        {uploadingProfileImage ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        Upload Photo
+                      </Button>
+                      {profile.profileImage && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="text-red-500"
+                          onClick={() => setProfile((prev) => ({ ...prev, profileImage: '' }))}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <input
+                      ref={profilePhotoInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={handleProfileImageUpload}
+                    />
+                  </div>
                 </div>
 
                 {/* Social Media Links */}
