@@ -470,6 +470,11 @@ export default function DoctorVoiceAssistant() {
       const wav = float32ToWav(audio);
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
+      // The wake phrase and doctor web commands are English-first. Without this,
+      // Whisper often auto-detects ambient noise as another language and the
+      // assistant never reaches the agent step.
+      form.append('language', 'en');
+      form.append('prompt', 'Hey iSHA. Open appointments. Show today appointments. Open patients. Open prescriptions.');
       try {
         const r = await doctorCopilotService.speechToText(form);
         return { text: (r?.text || '').trim(), serviceDown: false };

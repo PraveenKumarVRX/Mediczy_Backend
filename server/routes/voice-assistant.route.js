@@ -922,6 +922,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
   // 'auto' lets Whisper auto-detect the spoken language (Tamil/Telugu/Hindi/etc.)
   // instead of forcing English transcription and garbling non-English speech.
   const language = req.body.language || 'auto';
+  const prompt = typeof req.body.prompt === 'string' ? req.body.prompt.slice(0, 224) : '';
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
   // ── Primary: Groq Whisper (whisper-large-v3-turbo, ~300ms) ──────────────────
@@ -934,6 +935,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
       });
       groqForm.append('model', 'whisper-large-v3-turbo');
       if (language !== 'auto') groqForm.append('language', language);
+      if (prompt) groqForm.append('prompt', prompt);
       groqForm.append('response_format', 'json');
 
       const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {

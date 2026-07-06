@@ -89,19 +89,37 @@ export const doctorCopilotService = {
     const message = String(payload.message || payload.text || '').trim();
     if (!message) throw new Error('message is required');
 
-    const { data } = await api.post<DoctorCopilotChatResponse>('/doctor-copilot/chat', {
+    const requestBody = {
       message,
       history: normalizeHistory(payload.history),
       context: payload.context || {},
       sessionId: payload.sessionId,
       language: payload.language || 'en',
       mode: payload.mode || 'auto',
-    });
-
-    return {
-      ...data,
-      response: pickResponseText(data) || data.response,
     };
+
+    try {
+      const { data } = await api.post<DoctorCopilotChatResponse>('/doctor-copilot/chat', requestBody);
+      return {
+        ...data,
+        response: pickResponseText(data) || data.response,
+      };
+    } catch (error) {
+      // DoctorVoiceAssistant must remain usable even if the unified gateway is
+      // down or stale in production. The legacy voice agent is the same doctor
+      // auth surface and supports the commands this screen depends on.
+      const { data } = await api.post<DoctorCopilotChatResponse>('/voice-assistant/agent', {
+        text: message,
+        history: requestBody.history,
+        context: requestBody.context,
+      });
+      return {
+        ...data,
+        gateway: data.gateway || 'doctor-copilot',
+        path: data.path || 'agent',
+        response: pickResponseText(data) || data.response,
+      };
+    }
   },
 
   async getBriefing(): Promise<DoctorCopilotBriefingResponse> {
