@@ -39,6 +39,7 @@ export function buildClinicalPaths(portal: ClinicalPortal = getClinicalPortal())
     commandCenter: `${HOSPITAL_ONLY_BASE}/command-center`,
     copilot: `${base}/copilot`,
     patientHealthos: (patientId: string | number) => `${base}/patient/${patientId}/healthos`,
+    patientAiTeam: (patientId: string | number) => `${base}/patient/${patientId}/healthos/ai-team`,
     patientCareos: (patientId: string | number) => `${base}/patient/${patientId}/careos`,
     patientWorkspace: (patientId: string | number) => `${base}/patient/${patientId}/workspace`,
     globalBoard: (patientId: string | number) => `${base}/healthos/board/${patientId}`,

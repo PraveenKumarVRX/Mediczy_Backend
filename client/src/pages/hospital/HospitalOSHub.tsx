@@ -56,7 +56,7 @@ const SECTIONS: Section[] = [
       { title: 'QR Wristband Print', description: 'Patient ID band after admission', path: '/hospital/adt/wristband?patientId=1&name=Priya%20Singh&admissionNumber=IP2026000001&bed=GEN-11&ward=General%20Ward%20A', icon: QrCode, gradient: 'from-slate-600 to-zinc-800' },
       { title: 'Ward Dashboard', description: 'Bed map & nurse tasks', path: '/hospital/ward', icon: Activity, gradient: 'from-emerald-500 to-teal-600' },
       { title: 'Live Bed Map', description: 'Reserve & allocate beds', path: '/hospital/beds/map', icon: Bed, gradient: 'from-green-500 to-emerald-600' },
-      { title: 'Inpatient Workspace', description: 'Vitals, meds, notes', path: '/hospital/patient/1/workspace', icon: Stethoscope, gradient: 'from-teal-600 to-green-600' },
+      { title: 'Inpatient Workspace', description: 'Vitals, meds, notes', path: '/hospital/patient/1/healthos', icon: Stethoscope, gradient: 'from-teal-600 to-green-600' },
       { title: 'Discharge Workflow', description: 'Readiness + summary', path: '/hospital/admission/1/discharge', icon: FileText, gradient: 'from-amber-500 to-orange-600' },
     ],
   },
@@ -90,7 +90,7 @@ const SECTIONS: Section[] = [
     modules: [
       { title: 'HealthOS Platform', description: 'Living patient workspace & care network', path: '/hospital/healthos', icon: HeartPulse, gradient: 'from-teal-500 to-emerald-600', badge: 'NEW' },
       { title: 'Living Patient Workspace', description: 'Unified patient timeline & care team', path: '/hospital/patient/1/healthos', icon: Stethoscope, gradient: 'from-cyan-500 to-teal-600' },
-      { title: 'Hospital Copilot', description: 'AI assistant for hospital workflows', path: '/hospital/hospital-copilot', icon: Sparkles, gradient: 'from-violet-500 to-purple-600', badge: 'AI' },
+      { title: 'Hospital Copilot', description: 'AI assistant for hospital workflows', path: '/hospital/copilot', icon: Sparkles, gradient: 'from-violet-500 to-purple-600', badge: 'AI' },
       { title: 'Care Command Center', description: 'Real-time ops & clinical KPIs', path: '/hospital/command-center', icon: LayoutGrid, gradient: 'from-teal-600 to-cyan-700' },
     ],
   },

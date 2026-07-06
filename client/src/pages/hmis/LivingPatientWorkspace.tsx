@@ -7,10 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import {
-  ArrowLeft, RefreshCw, Activity, Users, ListTodo, Brain, Route, PlayCircle,
+  RefreshCw, Activity, Users, ListTodo, Brain, Route, PlayCircle,
   Video, Sparkles, Clock, AlertTriangle, CheckCircle2, Loader2,
 } from 'lucide-react';
 import { HEALTH_OS } from '@/config/brand';
+import ClinicalShell from '@/layouts/ClinicalShell';
 import {
   getLivingWorkspace,
   runCoordinatorAnalysis,
@@ -227,19 +228,20 @@ export default function LivingPatientWorkspace() {
   const alerts = workspace?.sections?.ai?.coordinatorAlerts || [];
   const team = workspace?.careTeam?.members || [];
 
+  const railClass = "flex md:flex-col flex-wrap md:flex-nowrap h-auto w-full gap-1 bg-transparent p-0 items-stretch justify-start";
+  const railTriggerClass = "justify-start w-full";
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 p-4 md:p-6">
-      <div className="max-w-7xl mx-auto space-y-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}><ArrowLeft className="h-4 w-4" /></Button>
-          <div className="flex-1 min-w-[200px]">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-800">{patientName}</h1>
-              <Badge className="bg-teal-600">{HEALTH_OS.brandLine}</Badge>
-            </div>
-            <p className="text-sm text-slate-500">Living Patient Workspace</p>
-          </div>
-          <div className="flex gap-2 flex-wrap">
+    <Tabs defaultValue="overview">
+      <ClinicalShell
+        onBack={() => navigate(-1)}
+        title={patientName}
+        subtitle="Living Patient Workspace"
+        badges={<Badge className="bg-teal-600">{HEALTH_OS.brandLine}</Badge>}
+        loading={loading && !workspace}
+        loadingLabel="Loading workspace…"
+        actions={
+          <>
             <Button variant="outline" size="sm" onClick={load} disabled={loading}>
               <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Refresh
             </Button>
@@ -251,37 +253,36 @@ export default function LivingPatientWorkspace() {
                 <Brain className="h-4 w-4 mr-1" /> HealthOS Platform
               </Link>
             </Button>
-          </div>
-        </div>
-
-        {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
-        {callInfo && (
-          <Card className="border-teal-200 bg-teal-50">
-            <CardContent className="pt-4 text-sm">
-              {callInfo.configured
-                ? <span>LiveKit room <strong>{callInfo.room}</strong> ready — connect with your video client.</span>
-                : <span>{callInfo.message}</span>}
-            </CardContent>
-          </Card>
-        )}
-
-        {loading && !workspace ? (
-          <div className="flex items-center justify-center py-20 text-slate-500">
-            <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading workspace…
-          </div>
-        ) : (
-          <Tabs defaultValue="overview">
-            <TabsList className="flex flex-wrap h-auto gap-1">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="timeline">Clinical Timeline</TabsTrigger>
-              <TabsTrigger value="team">Care Team</TabsTrigger>
-              <TabsTrigger value="pathway">Treatment Pathway</TabsTrigger>
-              <TabsTrigger value="tasks">Tasks</TabsTrigger>
-              <TabsTrigger value="playback">Clinical Playback</TabsTrigger>
-              <TabsTrigger value="ecosystem" onClick={() => listPatientImaging(pid).then((r) => setImagingStudies(r?.data || [])).catch(() => {})}>Ecosystem</TabsTrigger>
-              <TabsTrigger value="mdt">Clinical Board</TabsTrigger>
-              <TabsTrigger value="family" onClick={() => loadFamily()}>Family</TabsTrigger>
-            </TabsList>
+          </>
+        }
+        banner={
+          <>
+            {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">{error}</div>}
+            {callInfo && (
+              <Card className="border-teal-200 bg-teal-50">
+                <CardContent className="pt-4 text-sm">
+                  {callInfo.configured
+                    ? <span>LiveKit room <strong>{callInfo.room}</strong> ready — connect with your video client.</span>
+                    : <span>{callInfo.message}</span>}
+                </CardContent>
+              </Card>
+            )}
+          </>
+        }
+        rail={
+          <TabsList className={railClass}>
+            <TabsTrigger className={railTriggerClass} value="overview">Overview</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="timeline">Clinical Timeline</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="team">Care Team</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="pathway">Treatment Pathway</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="tasks">Tasks</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="playback">Clinical Playback</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="ecosystem" onClick={() => listPatientImaging(pid).then((r) => setImagingStudies(r?.data || [])).catch(() => {})}>Ecosystem</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="mdt">Clinical Board</TabsTrigger>
+            <TabsTrigger className={railTriggerClass} value="family" onClick={() => loadFamily()}>Family</TabsTrigger>
+          </TabsList>
+        }
+      >
 
             <TabsContent value="overview" className="space-y-4">
               <div className="grid md:grid-cols-3 gap-4">
@@ -587,9 +588,7 @@ export default function LivingPatientWorkspace() {
                 </CardContent>
               </Card>
             </TabsContent>
-          </Tabs>
-        )}
-      </div>
-    </div>
+      </ClinicalShell>
+    </Tabs>
   );
 }

@@ -198,7 +198,7 @@ export default function DoctorInpatientNotesPage() {
         {resolvedPatientId && (
           <div className="flex gap-2">
             <Button variant="outline" size="sm" asChild>
-              <Link to={`/hospital/patient/${resolvedPatientId}/workspace`}>
+              <Link to={`/hospital/patient/${resolvedPatientId}/healthos`}>
                 <User className="h-4 w-4 mr-1" /> Inpatient workspace
               </Link>
             </Button>

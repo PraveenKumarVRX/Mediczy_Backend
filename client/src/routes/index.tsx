@@ -808,6 +808,7 @@ const DischargeBoard        = lazy(() => import("@/pages/hmis/DischargeBoard"));
 const InpatientWorkspace    = lazy(() => import("@/pages/hmis/InpatientWorkspace"));
 const CommandCenter         = lazy(() => import("@/pages/hmis/CommandCenter"));
 const LivingPatientWorkspace = lazy(() => import("@/pages/hmis/LivingPatientWorkspace"));
+const WorkspaceAICareTeam   = lazy(() => import("@/pages/hmis/WorkspaceAICareTeam"));
 const CareOSEcosystem       = lazy(() => import("@/pages/hmis/CareOSEcosystem"));
 const GlobalClinicalBoard   = lazy(() => import("@/pages/hmis/GlobalClinicalBoard"));
 const MedicalPassportPortal = lazy(() => import("@/pages/hmis/MedicalPassportPortal"));
@@ -837,6 +838,7 @@ const CLINICAL_PAGES = {
   GlobalClinicalBoard,
   MedicalPassportPortal,
   LivingPatientWorkspace,
+  WorkspaceAICareTeam,
   InpatientWorkspace,
   CommandCenter,
   HospitalCopilot,
@@ -1101,8 +1103,20 @@ const AppRoutes = () => {
         <Route path="/hospital/support"                    element={<HospitalSupportPage />} />
         <Route path="/hospital/healthos" element={<CareOSEcosystem />} />
         <Route path="/hospital/careos" element={<CareOSEcosystem />} />
+        <Route path="/hospital/federation" element={<CareOSEcosystem />} />
+        <Route path="/hospital/referrals" element={<CareOSEcosystem />} />
+        <Route path="/hospital/global-board" element={<CareOSEcosystem />} />
+        <Route path="/hospital/marketplace" element={<CareOSEcosystem />} />
+        <Route path="/hospital/research" element={<CareOSEcosystem />} />
+        <Route path="/hospital/home-care" element={<Navigate to="/admin/homecare" replace />} />
+        <Route path="/hospital/population" element={<CareOSEcosystem />} />
         <Route path="/hospital/copilot" element={<HospitalCopilot />} />
         <Route path="/hospital/command-center" element={<CommandCenter />} />
+        <Route path="/hospital/command-center/ed" element={<ERQueuePage />} />
+        <Route path="/hospital/command-center/icu" element={<HospitalICUBoard />} />
+        <Route path="/hospital/command-center/ot" element={<OTCommandCenter />} />
+        <Route path="/hospital/command-center/diagnostics" element={<HospitalLabReportsPage />} />
+        <Route path="/hospital/command-center/ai" element={<AIOperationsHub />} />
         <Route path="/hospital/patient/:patientId/healthos" element={<LivingPatientWorkspace />} />
         {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
@@ -1370,6 +1384,7 @@ const AppRoutes = () => {
         <Route path="/admin/tpa"                 element={<AdminRoute><TPAManagement /></AdminRoute>} />
         <Route path="/admin/brokers"             element={<AdminRoute><BrokerManagement /></AdminRoute>} />
         <Route path="/admin/api-credentials"     element={<AdminRoute><ApiCredentialsManagement /></AdminRoute>} />
+        <Route path="/admin/developers"          element={<AdminRoute><ApiCredentialsManagement /></AdminRoute>} />
         <Route path="/admin/hospitals"           element={<AdminRoute><HospitalsManagement /></AdminRoute>} />
         <Route path="/admin/pending-registrations" element={<AdminRoute><PendingRegistrations /></AdminRoute>} />
         <Route path="/admin/clinics"             element={<AdminRoute><ClinicsManagement /></AdminRoute>} />
@@ -1882,6 +1897,13 @@ const AppRoutes = () => {
         <Route path="/smart-health"            element={<SmartHealthDashboard />} />
         <Route path="/benefits"               element={<SmartBenefitsHub />} />
         <Route path="/family-hub"             element={<FamilyHealthHub />} />
+        <Route path="/family/login"            element={<Navigate to="/login" replace />} />
+        <Route path="/family/link/:token"      element={<Navigate to="/login" replace />} />
+        <Route path="/family/patient/:patientId" element={<FamilyCareUpdates />} />
+        <Route path="/family/patient/:patientId/progress" element={<FamilyCareUpdates />} />
+        <Route path="/family/patient/:patientId/education" element={<FamilyCareUpdates />} />
+        <Route path="/family/patient/:patientId/discharge" element={<FamilyCareUpdates />} />
+        <Route path="/family/patient/:patientId/messages" element={<FamilyCareUpdates />} />
         <Route path="/wellness-rewards"       element={<WellnessRewards />} />
         <Route path="/smart-opd"              element={<SmartOPD />} />
         <Route path="/claims-express"         element={<ClaimsExpress />} />
@@ -1909,6 +1931,10 @@ const AppRoutes = () => {
         <Route path="/hospital/queue-console"   element={<QueueConsole />} />
         <Route path="/display/signage"           element={<LobbySignageDisplay />} />
         <Route path="/display/command"          element={<CommandCentreDisplay />} />
+        <Route path="/display/command-center" element={<CommandCentreDisplay />} />
+        <Route path="/display/ward/:wardId" element={<WardNursingDisplay />} />
+        <Route path="/display/icu/:unitId" element={<ICUBoardDisplay />} />
+        <Route path="/display/room/:bedId" element={<BedsideDisplay />} />
         <Route path="/display/floor-map"        element={<HospitalFloorMapDisplay />} />
         <Route path="/kiosk/family-video"       element={<FamilyVideoKiosk />} />
         <Route path="/kiosk/er-triage"           element={<ERTriageKiosk />} />

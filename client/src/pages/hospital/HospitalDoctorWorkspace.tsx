@@ -18,7 +18,7 @@ const TOOLS = [
   { title: 'Video Consult', desc: 'Teleconsultation with patients', path: '/doctor/video', icon: Video, color: 'bg-sky-600' },
   { title: 'Prescriptions', desc: 'e-Prescribing & drug checks', path: '/doctor/prescriptions', icon: FileText, color: 'bg-emerald-600' },
   { title: 'Patient Imaging', desc: 'RIS/PACS viewer', path: '/doctor/imaging', icon: Activity, color: 'bg-slate-700' },
-  { title: 'IP Workspace', desc: 'Inpatient clinical view', path: '/hospital/patient/1/workspace', icon: User, color: 'bg-teal-600' },
+  { title: 'IP Workspace', desc: 'Inpatient clinical view', path: '/hospital/patient/1/healthos', icon: User, color: 'bg-teal-600' },
 ];
 
 export default function HospitalDoctorWorkspace() {
@@ -40,7 +40,7 @@ export default function HospitalDoctorWorkspace() {
               <p className="font-semibold text-slate-800">Demo patient: Priya Singh</p>
               <p className="text-sm text-slate-600">Bed GEN-11 · Acute appendicitis · Post-op Day 2</p>
             </div>
-            <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/hospital/patient/1/workspace')}>
+            <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/hospital/patient/1/healthos')}>
               Open IP Workspace <ArrowRight className="h-4 w-4 ml-1" />
             </Button>
           </CardContent>

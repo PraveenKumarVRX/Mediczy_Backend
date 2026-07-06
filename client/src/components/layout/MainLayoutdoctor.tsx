@@ -38,8 +38,7 @@ import {
   Briefcase,
   Mic,
   Calculator,
-  Sparkles,
-  Network
+  Sparkles
 } from "lucide-react";
 import { BRAND } from "@/config/brand";
 import { memo, useEffect, useState, useRef } from "react";
@@ -61,6 +60,7 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import ChatApplet from '@/components/chat/ChatApplet';
+import { getHealthOsNavForPortal, clinicalNavHref } from '@/config/clinicalNav.config';
 
 interface NavItem {
   icon: React.ComponentType<any>;
@@ -70,6 +70,16 @@ interface NavItem {
   highlight?: boolean;
   subItems?: { label: string; path: string }[];
 }
+
+// Sourced from clinicalNav.config.ts so this list and HospitalSidebar's
+// can't independently drift on HealthOS/Command Center/Copilot again.
+const doctorHealthOsItems: NavItem[] = getHealthOsNavForPortal("doctor").map((item) => ({
+  icon: item.icon,
+  label: item.label,
+  path: clinicalNavHref(item, "doctor"),
+  category: "Clinical Tools",
+  highlight: true,
+}));
 
 const doctorNavItems: NavItem[] = [
   // Main
@@ -99,7 +109,7 @@ const doctorNavItems: NavItem[] = [
   },
   { icon: BrainCircuit, label: "AI Doctor Assist", path: "/doctor/assist", category: "Clinical Tools", highlight: true },
   { icon: Sparkles, label: "iSHA Assistant", path: "/doctor/assistant", category: "Clinical Tools", highlight: true },
-  { icon: Network, label: "HealthOS", path: "/doctor/healthos", category: "Clinical Tools", highlight: true },
+  ...doctorHealthOsItems,
   { icon: Mic, label: "Voice Scribe", path: "/doctor/voice-scribe", category: "Clinical Tools", highlight: true },
   { icon: Calculator, label: "Medical Calculators", path: "/doctor/calculators", category: "Clinical Tools" },
   
