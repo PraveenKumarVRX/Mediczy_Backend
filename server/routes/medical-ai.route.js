@@ -424,6 +424,7 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
           ],
           maxTokens: 512,
           temperature: 0.3,
+          skipCache: true, // medical consult may include patient context — do not share across users
         });
         const fallbackText = llmResult?.content || llmResult?.text || llmResult?.response;
         if (!fallbackText) throw new Error('LLM fallback also returned empty');
@@ -528,7 +529,7 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
     }
     if (!analysis) {
       try {
-        const lr = await llmProvider.chat({ messages: [{ role: 'system', content: 'You are Dr. iSHA, a symptom analysis assistant.' }, { role: 'user', content: analysisPrompt }], maxTokens: 512, temperature: 0.3 });
+        const lr = await llmProvider.chat({ messages: [{ role: 'system', content: 'You are Dr. iSHA, a symptom analysis assistant.' }, { role: 'user', content: analysisPrompt }], maxTokens: 512, temperature: 0.3, skipCache: true });
         const t = lr?.content || lr?.text || '';
         if (!t) throw new Error('empty');
         analysis = { success: true, response: t.trim(), primary_response: t.trim(), doctor: SIB_DOCTOR_NAME, sessionId, timestamp: new Date().toISOString(), language, provider: 'llm-fallback', model: lr?.model || 'fallback', fallbackUsed: true };

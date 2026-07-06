@@ -1013,21 +1013,26 @@ router.get('/status', authUser, requireDoctor, async (req, res) => {
     status.components.stt = { ...status.components.stt, status: 'unhealthy', error: error.message };
   }
 
-  if (LIVEKIT_USES_CLOUD && !LIVEKIT_HEALTH_URL) {
+  if (LIVEKIT_USES_CLOUD) {
+    // LiveKit Cloud has no public self-hosted-style health endpoint; treat a
+    // fully-configured project as healthy rather than pinging a non-existent path.
     status.components.livekit = {
       ...status.components.livekit,
-      status: status.components.livekit.configured ? 'configured' : 'unconfigured',
+      status: status.components.livekit.configured ? 'healthy' : 'unconfigured',
       cloud: true,
-      healthUrl: null,
+      mode: 'cloud',
+      healthUrl: LIVEKIT_HEALTH_URL,
     };
+    if (!status.components.livekit.configured) status.success = false;
   } else if (LIVEKIT_HEALTH_URL) {
     try {
       const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
       status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
       status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
+      status.components.livekit.mode = 'self-hosted';
     } catch (error) {
       status.success = false;
-      status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, error: error.message };
+      status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, mode: 'self-hosted', error: error.message };
     }
   } else {
     status.components.livekit = { ...status.components.livekit, status: 'unconfigured', healthUrl: null };

@@ -293,7 +293,8 @@ Only include clinically significant interactions. Do not repeat interactions alr
     const result = await llmProvider.chat({
       messages: [{ role: 'user', content: prompt }],
       tools: null,
-      conversationId: `drug-check-${Date.now()}`
+      conversationId: `drug-check-${Date.now()}`,
+      skipCache: true, // patient meds/allergies are patient-specific — never serve from a shared cache
     });
 
     const content = result.content || '';

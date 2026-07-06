@@ -266,21 +266,6 @@ router.get('/instances', authAnyDicom, async (req, res) => {
 router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
   try {
     const pool = await connectPostgres();
-<<<<<<< HEAD
-    const tenantId = req.user.tenantId || req.user.id;
-    const r = await pool.query(
-      `SELECT * FROM hg_dicom_studies
-       WHERE study_uid = $1 AND tenant_id = $2`,
-      [req.params.studyUID, tenantId]
-    );
-    if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Study not found' });
-    const instances = await pool.query(
-      `SELECT i.* FROM hg_dicom_instances i
-       WHERE i.study_id = $1`,
-      [r.rows[0].id]
-    );
-    res.json({ success: true, study: r.rows[0], instances: instances.rows });
-=======
     const tid = tenantId(req);
     const study = await loadStudy(pool, req.params.studyUID, tid);
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
@@ -290,7 +275,6 @@ router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
       return res.json([studyToDicomJson(study, instances.length)]);
     }
     res.json({ success: true, study, instances });
->>>>>>> origin/cursor/dicom-modality-port-fix-c94d
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve study' });
   }
