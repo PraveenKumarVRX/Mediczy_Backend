@@ -62,7 +62,8 @@ import {
   ChevronLeft,
   Sparkles,
   Bot,
-  MessageSquare
+  MessageSquare,
+  LogIn,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -774,6 +775,7 @@ const TeamCorporateManagement = () => {
   const [resendingWelcomeDeliveryId, setResendingWelcomeDeliveryId] = useState<number | null>(null);
   const [showReminderConfirmDialog, setShowReminderConfirmDialog] = useState(false);
   const [isSendingReminders, setIsSendingReminders] = useState(false);
+  const [reactivatingEmployeeId, setReactivatingEmployeeId] = useState<number | null>(null);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -2453,6 +2455,35 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       hasAssociation: emp.hasAssociation,
       corporateEmployeeRowId: emp.corporate_employee_row_id || null,
     };
+  };
+
+  const handleReactivateEmployeeLogin = async (emp: Employee) => {
+    if (!selectedCorporate?.id) return;
+    try {
+      setReactivatingEmployeeId(emp.id);
+      const { data } = await api.post('/admin/corporate-employees/reactivate', {
+        userId: emp.id,
+        email: emp.email,
+        employeeId: emp.employeeId,
+        corporateId: selectedCorporate.id,
+      });
+      if (!data?.success) {
+        throw new Error(data?.message || 'Reactivation failed');
+      }
+      toast({
+        title: 'Login enabled',
+        description: `${emp.firstName || emp.email} can try logging in again.`,
+      });
+      await fetchEmployees(selectedCorporate.id);
+    } catch (error: any) {
+      toast({
+        title: 'Could not enable login',
+        description: error?.response?.data?.message || error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReactivatingEmployeeId(null);
+    }
   };
 
   const fetchEmployees = async (corporateId: number) => {
@@ -6341,6 +6372,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                 <Button variant="ghost" size="sm" onClick={() => openWelcomeDeliveryAuditForEmployee(emp)} title="View welcome email delivery audit for this employee">
                                   <Clock className="h-4 w-4" />
                                 </Button>
+                                {!emp.lastLoginAt && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Enable app login (fix inactive account)"
+                                    disabled={reactivatingEmployeeId === emp.id}
+                                    onClick={() => handleReactivateEmployeeLogin(emp)}
+                                  >
+                                    <LogIn className={`h-4 w-4 ${reactivatingEmployeeId === emp.id ? 'animate-pulse' : ''}`} />
+                                  </Button>
+                                )}
                                 <Button variant="ghost" size="sm" onClick={() => {
                                   setViewingEmployee(emp);
                                   setShowViewEmployeeDialog(true);

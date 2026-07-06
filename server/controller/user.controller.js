@@ -13,6 +13,7 @@ import Nurse from "../models/nurse.model.intelligent.js";
 import Assistant from "../models/assistant.model.intelligent.js";
 import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
+import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
 
 const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
   String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
@@ -455,6 +456,8 @@ export async function signInUser(req, res) {
     }
 
     const isRenewalExemptUser = isMembershipRenewalExemptEmail(user.email);
+
+    await tryAutoActivateCorporateEmployeeForLogin(user);
 
     // Account guard for suspended/inactive users
     if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
