@@ -385,13 +385,9 @@ async function callSib(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
-<<<<<<< HEAD
-        patient_id: params.patientId || params.userId || 'mediczy-backend',
-        user_id: params.userId,
-=======
         history,
-        user_id: 'mediczy-backend',
->>>>>>> origin/cursor/fix-isha-assistant-responses-758c
+        patient_id: params.patientId || params.userId || 'mediczy-backend',
+        user_id: params.userId || 'mediczy-backend',
         context: {
           source: 'llm-provider',
           model_hint: params.model,
