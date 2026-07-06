@@ -229,6 +229,7 @@ const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
 const CRMEmailPage = lazy(() => import("@/pages/crm/CRMEmailPage"));
 const CRMCampaignAnalyticsPage = lazy(() => import("@/pages/crm/CRMCampaignAnalyticsPage"));
 const CRMAIInsightsPage        = lazy(() => import("@/pages/crm/CRMAIInsightsPage"));
+const CRMMarketingCopilotPage  = lazy(() => import("@/pages/crm/CRMMarketingCopilotPage"));
 const _CRMMarketingPages = () => import("@/pages/crm/CRMMarketingPages");
 const CRMCampaignsPage = lazyNamed(_CRMMarketingPages, "CRMCampaignsPage");
 const CRMCampaignBuilderPage = lazyNamed(_CRMMarketingPages, "CRMCampaignBuilderPage");
@@ -1298,6 +1299,7 @@ const AppRoutes = () => {
         <Route path="/crm/campaigns/:id"       element={<CRMCampaignBuilderPage />} />
         <Route path="/crm/campaigns/:id/analytics" element={<CRMCampaignAnalyticsPage />} />
         <Route path="/crm/ai-insights"         element={<CRMAIInsightsPage />} />
+        <Route path="/crm/marketing-copilot"   element={<CRMMarketingCopilotPage />} />
         <Route path="/crm/lists"               element={<CRMListsPage />} />
         <Route path="/crm/lists/:id"           element={<CRMListDetailPage />} />
         <Route path="/crm/templates"           element={<CRMTemplatesPage />} />

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertCircle, Check, ChevronRight, Clock, Copy, Download,
-  Mail, Pause, Play, Plus, Save, Send, Settings2, Shield, Trash2,
+  Mail, Pause, Play, Plus, Save, Send, Settings2, Shield, Sparkles, Trash2,
   Upload, Users, X, ZapOff,
 } from 'lucide-react';
 import api from '@/utils/api';
@@ -77,6 +77,9 @@ export function CRMCampaignsPage() {
         <div className="flex items-center gap-3">
           <input className={`${inp} max-w-xs`} placeholder="Search campaigns…" value={search} onChange={(e) => setSearch(e.target.value)} />
           <div className="flex-1" />
+          <button onClick={() => navigate('/crm/marketing-copilot')} className={btn()}>
+            <Sparkles className="h-4 w-4 text-violet-400" /> AI Copilot
+          </button>
           <button onClick={() => navigate('/crm/campaigns/new')} className={btn('primary')}>
             <Plus className="h-4 w-4" />New Campaign
           </button>
