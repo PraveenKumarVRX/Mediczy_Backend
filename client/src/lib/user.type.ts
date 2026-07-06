@@ -70,5 +70,11 @@ interface doctorProfileProps {
   experience?: number;
   profileImage?: string;
   rating?: number;
+  organization_id?: number;
+  organizationId?: number;
+  organization_type?: string;
+  organizationType?: string;
+  hospitalId?: number;
+  hospital_id?: number;
 }
 export type { UserProps, cardsProps, profileProps, doctorProfileProps };

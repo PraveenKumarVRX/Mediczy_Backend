@@ -2,9 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
@@ -29,20 +26,20 @@ import {
   Wifi,
   WifiOff,
   Pill,
-  UserCheck,
   CalendarCheck,
   DollarSign,
   ChevronRight,
   Sparkles,
   Zap,
   Award,
-  Phone,
   Siren,
   LayoutGrid,
   ClipboardList,
   Wallet,
   ScanLine,
-  Star
+  Star,
+  BrainCircuit,
+  Mic,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -51,6 +48,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import socketService from '@/services/socket.service';
 import { IncomingCallNotification } from '@/components/IncomingCallNotification';
+import { isDoctorHospitalAffiliated } from '@/utils/doctorAffiliation';
 
 const DoctorDashboard = () => {
   const navigate = useNavigate();
@@ -299,185 +297,8 @@ const DoctorDashboard = () => {
     }
   };
 
-  // Stats cards data
-  const displayStats = [
-    {
-      title: "Total Patients",
-      value: stats?.totalPatients ?? "—",
-      icon: Users,
-      trend: stats?.patientGrowth ?? 0,
-      trendLabel: "vs last month",
-      bgColor: "bg-blue-500/10",
-      iconColor: "text-blue-500",
-    },
-    {
-      title: "Today's Appointments",
-      value: stats?.todayAppointments ?? "—",
-      icon: CalendarCheck,
-      trend: null,
-      trendLabel: `${stats?.completedToday ?? "—"} completed`,
-      bgColor: "bg-teal-500/10",
-      iconColor: "text-teal-500",
-    },
-    {
-      title: "Revenue",
-      value: stats?.revenue != null ? `₹${(stats.revenue / 1000).toFixed(1)}K` : "—",
-      icon: DollarSign,
-      trend: 15,
-      trendLabel: "vs last month",
-      bgColor: "bg-emerald-500/10",
-      iconColor: "text-emerald-500",
-    },
-  ];
+  const hospitalAffiliated = isDoctorHospitalAffiliated(currentDoctor);
 
-  // Quick actions
-  const quickActions = [
-    {
-      title: "New Appointment",
-      description: "Schedule a consultation",
-      icon: Calendar,
-      link: "/doctor/appointments",
-      bgColor: "bg-blue-500/10 dark:bg-blue-500/20",
-      iconColor: "text-blue-500",
-    },
-    {
-      title: "Prescriptions",
-      description: "Write & manage prescriptions",
-      icon: Pill,
-      link: "/doctor/prescriptions",
-      bgColor: "bg-teal-500/10 dark:bg-teal-500/20",
-      iconColor: "text-teal-500",
-    },
-    {
-      title: "Video Consultation",
-      description: "Start video call",
-      icon: Video,
-      link: "/doctor/video",
-      bgColor: "bg-purple-500/10 dark:bg-purple-500/20",
-      iconColor: "text-purple-500",
-    },
-    {
-      title: "View Patients",
-      description: "Patient records",
-      icon: UserCheck,
-      link: "/doctor/patients",
-      bgColor: "bg-orange-500/10 dark:bg-orange-500/20",
-      iconColor: "text-orange-500",
-    },
-    {
-      title: "HealthOS",
-      description: "Living patient workspace",
-      icon: HeartPulse,
-      link: "/doctor/healthos",
-      bgColor: "bg-emerald-500/10 dark:bg-emerald-500/20",
-      iconColor: "text-emerald-600",
-    },
-  ];
-
-  // Features grid
-  const features = [
-    {
-      title: "Appointments",
-      description: "Manage your schedule",
-      icon: Calendar,
-      link: "/doctor/appointments",
-      badge: stats?.pendingAppointments ? `${stats.pendingAppointments} pending` : null,
-      color: "text-blue-500",
-      bgColor: "bg-blue-500/10",
-    },
-    {
-      title: "Patients",
-      description: "View patient records",
-      icon: Users,
-      link: "/doctor/patients",
-      badge: null,
-      color: "text-teal-500",
-      bgColor: "bg-teal-500/10",
-    },
-    {
-      title: "Clinical Notes",
-      description: "SOAP notes & IPD documentation",
-      icon: ClipboardList,
-      link: "/doctor/clinical-workspace",
-      badge: "SOAP",
-      color: "text-purple-500",
-      bgColor: "bg-purple-500/10",
-    },
-    {
-      title: "Voice Scribe",
-      description: "AI ambient documentation",
-      icon: Sparkles,
-      link: "/doctor/voice-scribe",
-      badge: "AI",
-      color: "text-violet-500",
-      bgColor: "bg-violet-500/10",
-    },
-    {
-      title: "Prescriptions",
-      description: "Write & manage prescriptions",
-      icon: FileText,
-      link: "/doctor/prescriptions",
-      badge: null,
-      color: "text-green-500",
-      bgColor: "bg-green-500/10",
-    },
-    {
-      title: "Health Monitor",
-      description: "Patient vitals & trends",
-      icon: HeartPulse,
-      link: "/doctor/health-monitoring",
-      badge: null,
-      color: "text-red-500",
-      bgColor: "bg-red-500/10",
-    },
-    {
-      title: "Messages",
-      description: "Patients & Nurses",
-      icon: MessageSquare,
-      link: "/doctor/messages",
-      badge: null,
-      color: "text-indigo-500",
-      bgColor: "bg-indigo-500/10",
-    },
-    {
-      title: "Analytics",
-      description: "Practice insights",
-      icon: BarChart3,
-      link: "/doctor/analytics",
-      badge: null,
-      color: "text-cyan-500",
-      bgColor: "bg-cyan-500/10",
-    },
-    {
-      title: "Availability",
-      description: "Set time slots",
-      icon: Clock,
-      link: "/doctor/availability",
-      badge: null,
-      color: "text-orange-500",
-      bgColor: "bg-orange-500/10",
-    },
-    {
-      title: "Document Templates",
-      description: "Prescriptions & forms",
-      icon: FileSearch,
-      link: "/doctor/templates",
-      badge: null,
-      color: "text-violet-500",
-      bgColor: "bg-violet-500/10",
-    },
-    {
-      title: "Medical Imaging",
-      description: "CT, MRI, USG, Echo, X-Ray",
-      icon: ScanLine,
-      link: "/doctor/imaging",
-      badge: null,
-      color: "text-teal-500",
-      bgColor: "bg-teal-500/10",
-    },
-  ];
-
-  // Derived values
   const sortedAppointments = (todayAppointments || []).slice().sort((a: any, b: any) => {
     const toMin = (t: string) => {
       if (!t) return 9999;
@@ -492,16 +313,31 @@ const DoctorDashboard = () => {
   const totalToday = stats?.todayAppointments || (todayAppointments || []).length || 8;
   const completionPct = totalToday > 0 ? Math.round((completedCount / totalToday) * 100) : 0;
 
-  // Compact quick-launch grid (6 tiles)
+  // Primary command actions — always visible
+  const commandActions = [
+    { label: "Emergency", icon: Siren, link: "/doctor/triage", gradient: "from-rose-500 to-red-600", shadow: "shadow-rose-500/30" },
+    { label: "Start Consult", icon: Video, link: "/doctor/video", gradient: "from-teal-500 to-cyan-500", shadow: "shadow-teal-500/30" },
+    { label: "My Patients", icon: Users, link: "/doctor/patients", gradient: "from-blue-500 to-indigo-600", shadow: "shadow-blue-500/25" },
+    { label: "Voice Scribe", icon: Mic, link: "/doctor/voice-scribe", gradient: "from-violet-500 to-purple-600", shadow: "shadow-violet-500/25" },
+  ];
+
   const quickLaunch = [
-    { label: "Patients",      icon: Users,         link: "/doctor/patients",       bgColor: "bg-teal-500/10",      iconColor: "text-teal-600 dark:text-teal-400" },
-    { label: "Prescriptions", icon: Pill,          link: "/doctor/prescriptions",  bgColor: "bg-purple-500/10",    iconColor: "text-purple-600 dark:text-purple-400" },
-    { label: "Video Call",    icon: Video,         link: "/doctor/video",          bgColor: "bg-blue-500/10",      iconColor: "text-blue-600 dark:text-blue-400" },
-    { label: "Webinars",      icon: CalendarCheck, link: "/doctor/webinars",       bgColor: "bg-indigo-500/10",    iconColor: "text-indigo-600 dark:text-indigo-400" },
-    { label: "Health Mon.",   icon: HeartPulse,    link: "/doctor/health-monitoring", bgColor: "bg-red-500/10",   iconColor: "text-red-500" },
-    { label: "Analytics",     icon: BarChart3,     link: "/doctor/analytics",      bgColor: "bg-cyan-500/10",      iconColor: "text-cyan-600 dark:text-cyan-400" },
-    { label: "Billing",       icon: Wallet,        link: "/doctor/billing",        bgColor: "bg-emerald-500/10",   iconColor: "text-emerald-600 dark:text-emerald-400" },
-    { label: "Imaging",      icon: ScanLine,      link: "/doctor/imaging",        bgColor: "bg-violet-500/10",    iconColor: "text-violet-600 dark:text-violet-400" },
+    { label: "Prescriptions", icon: Pill, link: "/doctor/prescriptions", bgColor: "bg-purple-500/10", iconColor: "text-purple-600 dark:text-purple-400" },
+    { label: "Messages", icon: MessageSquare, link: "/doctor/messages", bgColor: "bg-indigo-500/10", iconColor: "text-indigo-600 dark:text-indigo-400" },
+    { label: "AI Assist", icon: BrainCircuit, link: "/doctor/assist", bgColor: "bg-cyan-500/10", iconColor: "text-cyan-600 dark:text-cyan-400" },
+    { label: "iSHA", icon: Sparkles, link: "/doctor/assistant", bgColor: "bg-amber-500/10", iconColor: "text-amber-600 dark:text-amber-400" },
+    { label: "Health Mon.", icon: HeartPulse, link: "/doctor/health-monitoring", bgColor: "bg-red-500/10", iconColor: "text-red-500" },
+    { label: "Analytics", icon: BarChart3, link: "/doctor/analytics", bgColor: "bg-teal-500/10", iconColor: "text-teal-600 dark:text-teal-400" },
+  ];
+
+  const clinicalArsenal = [
+    { title: "Appointments", description: "Schedule & queue", icon: Calendar, link: "/doctor/appointments", badge: stats?.pendingAppointments ? `${stats.pendingAppointments} pending` : null, color: "text-blue-500", bgColor: "bg-blue-500/10" },
+    { title: "Patient Workspace", description: "Living clinical record", icon: HeartPulse, link: "/doctor/patients", badge: "HealthOS", color: "text-teal-500", bgColor: "bg-teal-500/10" },
+    { title: "Clinical Notes", description: "SOAP & IPD docs", icon: ClipboardList, link: "/doctor/clinical-workspace", badge: "SOAP", color: "text-purple-500", bgColor: "bg-purple-500/10" },
+    { title: "Templates", description: "Forms & Rx layouts", icon: FileSearch, link: "/doctor/templates", badge: null, color: "text-violet-500", bgColor: "bg-violet-500/10" },
+    { title: "Imaging", description: "CT, MRI, X-Ray", icon: ScanLine, link: "/doctor/imaging", badge: null, color: "text-cyan-500", bgColor: "bg-cyan-500/10" },
+    { title: "Availability", description: "Manage slots", icon: Clock, link: "/doctor/availability", badge: null, color: "text-orange-500", bgColor: "bg-orange-500/10" },
+    { title: "Billing", description: "Payments & invoices", icon: Wallet, link: "/doctor/billing", badge: null, color: "text-emerald-500", bgColor: "bg-emerald-500/10" },
   ];
 
   return (
@@ -517,16 +353,29 @@ const DoctorDashboard = () => {
       )}
 
       {/* ═══════════════════════════════════════════
-          WORLD-CLASS MOBILE-FIRST DOCTOR HOME PAGE
+          CLINICAL COMMAND CENTER — Doctor Home
           ═══════════════════════════════════════════ */}
-      <div className="mx-auto max-w-2xl lg:max-w-7xl space-y-4 pb-24 lg:pb-6 px-4 md:px-0 animate-in fade-in duration-500">
+      <div className="relative mx-auto max-w-2xl lg:max-w-7xl space-y-5 pb-24 lg:pb-8 px-4 md:px-0 animate-in fade-in duration-500">
+        {/* Ambient page backdrop */}
+        <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+          <div className="absolute -top-40 right-0 w-[480px] h-[480px] rounded-full bg-teal-400/8 blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-[360px] h-[360px] rounded-full bg-cyan-500/6 blur-3xl" />
+        </div>
 
         {/* ── HERO HEADER ── */}
-        <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-gradient-to-br from-[#0a1628] via-[#0f2d4a] to-[#0d2540] text-white shadow-2xl">
+        <div className="relative overflow-hidden rounded-2xl lg:rounded-3xl bg-gradient-to-br from-[#060d18] via-[#0c1f35] to-[#0a1628] text-white shadow-2xl ring-1 ring-white/10">
+          {/* Futuristic grid overlay */}
+          <div
+            className="pointer-events-none absolute inset-0 opacity-[0.07]"
+            style={{
+              backgroundImage: 'linear-gradient(rgba(45,212,191,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(45,212,191,0.5) 1px, transparent 1px)',
+              backgroundSize: '32px 32px',
+            }}
+          />
           {/* Ambient glow orbs */}
-          <div className="pointer-events-none absolute -top-12 -right-12 w-64 h-64 rounded-full bg-teal-500/20 blur-3xl" />
-          <div className="pointer-events-none absolute -bottom-10 -left-10 w-52 h-52 rounded-full bg-blue-600/15 blur-3xl" />
-          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-32 rounded-full bg-cyan-500/5 blur-2xl" />
+          <div className="pointer-events-none absolute -top-12 -right-12 w-64 h-64 rounded-full bg-teal-500/25 blur-3xl animate-pulse" style={{ animationDuration: '4s' }} />
+          <div className="pointer-events-none absolute -bottom-10 -left-10 w-52 h-52 rounded-full bg-blue-600/20 blur-3xl" />
+          <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-32 rounded-full bg-cyan-500/8 blur-2xl" />
 
           {/* Top bar */}
           <div className="relative px-5 pt-5">
@@ -549,7 +398,11 @@ const DoctorDashboard = () => {
                   </span>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-widest text-teal-300/80 font-semibold">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-teal-300/90 font-bold flex items-center gap-1.5">
+                    <Zap className="w-3 h-3" />
+                    Clinical Command Center
+                  </p>
+                  <p className="text-[10px] uppercase tracking-widest text-slate-400 font-medium mt-0.5">
                     {getGreeting()}
                   </p>
                   <h1 className="text-xl font-extrabold text-white leading-tight">
@@ -635,6 +488,42 @@ const DoctorDashboard = () => {
           </div>
         </div>
 
+        {/* ── PRIMARY COMMAND STRIP ── */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {commandActions.map((action) => (
+            <Link key={action.label} to={action.link} className="group">
+              <div className={cn(
+                "relative overflow-hidden flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-gradient-to-r text-white font-bold text-sm shadow-lg active:scale-[0.98] transition-all duration-200",
+                action.gradient,
+                action.shadow
+              )}>
+                <div className="p-2 rounded-xl bg-white/15 group-hover:bg-white/25 transition-colors">
+                  <action.icon className="w-4 h-4" />
+                </div>
+                <span>{action.label}</span>
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+              </div>
+            </Link>
+          ))}
+        </div>
+
+        {hospitalAffiliated && (
+          <Link to="/doctor/copilot" className="block group">
+            <div className="flex items-center justify-between gap-4 px-5 py-4 rounded-2xl bg-gradient-to-r from-indigo-950/80 via-slate-900/90 to-teal-950/80 border border-indigo-500/20 backdrop-blur-xl shadow-lg hover:border-indigo-400/40 transition-all">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-500/20 ring-1 ring-indigo-400/30">
+                  <Sparkles className="w-5 h-5 text-indigo-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white">Hospital Copilot</p>
+                  <p className="text-xs text-slate-400">AI ops briefing for your affiliated hospital</p>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-indigo-300 group-hover:translate-x-1 transition-transform" />
+            </div>
+          </Link>
+        )}
+
         {/* ── FALLBACK WARNING ── */}
         {dashboardHasFallbackData && (
           <div className="flex items-start gap-3 p-3.5 rounded-xl bg-amber-50/80 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
@@ -697,11 +586,14 @@ const DoctorDashboard = () => {
 
         {/* ── QUICK LAUNCH GRID ── */}
         <div>
-          <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3">Quick Access</h2>
+          <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+            <Zap className="w-3.5 h-3.5 text-teal-500" />
+            Quick Tools
+          </h2>
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
             {quickLaunch.map((item, i) => (
               <Link key={i} to={item.link} className="group">
-                <div className="flex flex-col items-center text-center gap-2 py-3.5 px-2 rounded-2xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 hover:border-teal-200 dark:hover:border-teal-600/50 hover:shadow-lg hover:shadow-teal-500/10 active:scale-95 transition-all duration-200 cursor-pointer">
+                <div className="flex flex-col items-center text-center gap-2 py-3.5 px-2 rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-slate-100/80 dark:border-slate-700/60 backdrop-blur-sm hover:border-teal-200 dark:hover:border-teal-600/50 hover:shadow-lg hover:shadow-teal-500/10 active:scale-95 transition-all duration-200 cursor-pointer">
                   <div className={cn("p-2.5 rounded-xl transition-transform duration-200 group-hover:scale-110", item.bgColor)}>
                     <item.icon className={cn("w-5 h-5", item.iconColor)} />
                   </div>
@@ -718,7 +610,7 @@ const DoctorDashboard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* ── TODAY'S SCHEDULE (VISUAL TIMELINE) ── */}
-          <div className="lg:col-span-2 rounded-2xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 overflow-hidden">
+          <div className="lg:col-span-2 rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-slate-100/80 dark:border-slate-700/60 backdrop-blur-sm overflow-hidden shadow-sm">
             <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100 dark:border-slate-700/50">
               <h2 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm">
                 <CalendarCheck className="w-4 h-4 text-teal-500" />
@@ -855,7 +747,7 @@ const DoctorDashboard = () => {
           <div className="space-y-4">
 
             {/* Today's Progress */}
-            <div className="rounded-2xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 p-4">
+            <div className="rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-slate-100/80 dark:border-slate-700/60 backdrop-blur-sm p-4 shadow-sm">
               <h2 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2 mb-4">
                 <Activity className="w-4 h-4 text-teal-500" />
                 Today's Progress
@@ -920,7 +812,7 @@ const DoctorDashboard = () => {
             </div>
 
             {/* Alerts */}
-            <div className="rounded-2xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 p-4">
+            <div className="rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-slate-100/80 dark:border-slate-700/60 backdrop-blur-sm p-4 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="font-bold text-slate-800 dark:text-white text-sm flex items-center gap-2">
                   <Bell className="w-4 h-4 text-amber-500" />
@@ -974,16 +866,16 @@ const DoctorDashboard = () => {
           </div>
         </div>
 
-        {/* ── PRACTICE MANAGEMENT GRID ── */}
+        {/* ── CLINICAL ARSENAL (horizontal scroll) ── */}
         <div>
           <h2 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-            <LayoutGrid className="w-3.5 h-3.5" />
-            Practice Management
+            <LayoutGrid className="w-3.5 h-3.5 text-teal-500" />
+            Clinical Arsenal
           </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {features.map((f, i) => (
-              <Link key={i} to={f.link} className="group">
-                <div className="flex flex-col p-4 rounded-2xl bg-white dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/60 hover:border-teal-200 dark:hover:border-teal-700/50 hover:shadow-lg hover:shadow-teal-500/10 active:scale-[0.98] transition-all duration-200 h-full">
+          <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
+            {clinicalArsenal.map((f, i) => (
+              <Link key={i} to={f.link} className="group snap-start shrink-0 w-[168px] sm:w-[180px]">
+                <div className="flex flex-col p-4 rounded-2xl bg-white/70 dark:bg-slate-800/50 border border-slate-100/80 dark:border-slate-700/60 backdrop-blur-sm hover:border-teal-200 dark:hover:border-teal-700/50 hover:shadow-lg hover:shadow-teal-500/10 active:scale-[0.98] transition-all duration-200 h-full">
                   <div className={cn("self-start p-2.5 rounded-xl mb-3 group-hover:scale-110 transition-transform duration-200", f.bgColor)}>
                     <f.icon className={cn("w-5 h-5", f.color)} />
                   </div>
@@ -992,7 +884,7 @@ const DoctorDashboard = () => {
                   </p>
                   <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">{f.description}</p>
                   {f.badge && (
-                    <span className="mt-2 self-start text-[10px] font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 px-2 py-0.5 rounded-full">
+                    <span className="mt-2 self-start text-[10px] font-bold bg-teal-50 dark:bg-teal-900/30 text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-800/50 px-2 py-0.5 rounded-full">
                       {f.badge}
                     </span>
                   )}
@@ -1001,6 +893,31 @@ const DoctorDashboard = () => {
             ))}
           </div>
         </div>
+
+        {/* ── AI BRIEFING STRIP ── */}
+        <Link to="/doctor/assistant" className="block group">
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-[#0f2847] to-slate-900 border border-cyan-500/20 p-5 shadow-xl">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(45,212,191,0.15),_transparent_60%)]" />
+            <div className="relative flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="p-3 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-teal-500/20 ring-1 ring-cyan-400/30">
+                  <BrainCircuit className="w-6 h-6 text-cyan-300" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-white flex items-center gap-2">
+                    iSHA Clinical Briefing
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full">AI</span>
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">Summarize today&apos;s cases, draft notes, and get decision support</p>
+                </div>
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 text-xs text-cyan-300 font-semibold group-hover:gap-2.5 transition-all">
+                Open assistant
+                <ArrowRight className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+        </Link>
 
         {/* ── PERFORMANCE SNAPSHOT ── */}
         <div className="rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 p-5 text-white shadow-xl overflow-hidden relative">

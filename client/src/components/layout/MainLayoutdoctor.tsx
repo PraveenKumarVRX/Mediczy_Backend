@@ -64,6 +64,7 @@ import ChatApplet from '@/components/chat/ChatApplet';
 
 import { DOCTOR_NAV_ITEMS, DOCTOR_NAV_CATEGORIES } from '@/config/doctorNav.config';
 import type { DoctorNavItem } from '@/config/doctorNav.config';
+import { filterDoctorNavItems } from '@/utils/doctorAffiliation';
 
 const MainLayoutdoctor = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -161,7 +162,7 @@ const MainLayoutdoctor = ({ children }) => {
     );
   };
 
-  // Group items by category
+  const navItems = filterDoctorNavItems(DOCTOR_NAV_ITEMS, currentDoctor);
   const categories = DOCTOR_NAV_CATEGORIES;
 
   const renderNavItem = (item: DoctorNavItem) => {
@@ -386,7 +387,7 @@ const MainLayoutdoctor = ({ children }) => {
           <TooltipProvider delayDuration={0}>
             <div className="space-y-1">
               {categories.map((category, idx) => {
-                const categoryItems = DOCTOR_NAV_ITEMS.filter(item => item.category === category);
+                const categoryItems = navItems.filter(item => item.category === category);
                 if (categoryItems.length === 0) return null;
                 
                 return (

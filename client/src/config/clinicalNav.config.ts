@@ -67,13 +67,6 @@ export const HOSPITAL_HEALTHOS_NAV: ClinicalNavSection[] = [
   },
 ];
 
-/** Doctor portal — collaborative HealthOS surfaces */
-export const DOCTOR_HEALTHOS_NAV: ClinicalNavItem[] = [
-  { label: 'HealthOS Platform', href: '/doctor/healthos', icon: HeartPulse },
-  { label: 'Hospital Copilot', href: '/doctor/copilot', icon: Sparkles },
-  { label: 'My Patients', href: '/doctor/patients', icon: Users },
-];
-
 export interface WorkspaceNavItem {
   key: string;
   label: string;

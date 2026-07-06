@@ -55,7 +55,7 @@ const TABS = [
   { id: "home",         label: "Home",         icon: Home,         path: "/doctor/home" },
   { id: "schedule",     label: "Schedule",     icon: Calendar,     path: "/doctor/appointments" },
   { id: "patients",     label: "Patients",     icon: Users,        path: "/doctor/patients" },
-  { id: "chat",         label: "Messages",     icon: MessageSquare, path: "/doctor/chat" },
+  { id: "chat",         label: "Messages",     icon: MessageSquare, path: "/doctor/messages" },
   { id: "profile",      label: "Profile",      icon: User,         path: "/doctor/settings" },
 ];
 
