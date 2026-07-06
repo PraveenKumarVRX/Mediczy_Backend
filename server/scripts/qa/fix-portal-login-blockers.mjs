@@ -9,6 +9,7 @@ import Lab from '../../models/postgres/lab.model.postgres.js';
 import Pharmacy from '../../models/postgres/pharmacy.model.postgres.js';
 import Hospital from '../../models/hospital.model.intelligent.js';
 import nurseModel from '../../models/nurse.model.intelligent.js';
+import { resetDoctorQaAccount } from './reset-doctor-qa-account.mjs';
 
 dotenv.config({ path: '/home/ubuntu/Mediczy/server/.env' });
 
@@ -150,6 +151,10 @@ async function main() {
   await connectToPostgresDB();
 
   const results = {};
+  results.doctor = await resetDoctorQaAccount({
+    email: QA_ACCOUNTS.doctor.email,
+    password: QA_ACCOUNTS.doctor.password,
+  });
   results.lab = await upsertLab();
   results.pharmacy = await upsertPharmacy();
   results.nurse = await upsertNurse();

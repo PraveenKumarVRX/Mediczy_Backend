@@ -1,0 +1,34 @@
+{
+  "version": "1.0.0",
+  "description": "Validated CV model weights per modality. Place files under MODEL_WEIGHTS_DIR after clinical validation.",
+  "backends": {
+    "torchxrayvision": {
+      "modality": ["XR", "CR"],
+      "weights": "auto-download (DenseNet NIH+RSNA)",
+      "model_version": "torchxrayvision-densenet121-nih-rsna-v1",
+      "clinical_validation_required": true
+    },
+    "monai-unet": {
+      "modality": ["CT", "MRI"],
+      "weights": {
+        "CT": "ct_lung_nodule_unet.pt",
+        "MRI": "mri_brain_unet.pt"
+      },
+      "model_version": "monai-unet-{modality}-v1",
+      "clinical_validation_required": true
+    },
+    "nnunetv2": {
+      "modality": ["CT"],
+      "weights": "NNUNET_MODEL_FOLDER checkpoint_final.pth",
+      "dataset": "Dataset001_Lung",
+      "model_version": "nnunetv2-Dataset001_Lung",
+      "clinical_validation_required": true
+    },
+    "heuristic": {
+      "modality": ["*"],
+      "weights": "none",
+      "model_version": "heuristic-screening-v1",
+      "clinical_validation_required": false
+    }
+  }
+}

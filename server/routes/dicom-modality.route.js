@@ -1,0 +1,223 @@
+/**
+ * DICOM modality device registry — lab-managed scanner peers synced to Orthanc.
+ *
+ * GET    /api/dicom/modalities
+ * POST   /api/dicom/modalities
+ * GET    /api/dicom/modalities/:name
+ * PUT    /api/dicom/modalities/:name
+ * DELETE /api/dicom/modalities/:name
+ */
+import express from 'express';
+import pool from '../db/pgPool.js';
+import { authLab } from '../middleware/authLab.middleware.js';
+import {
+  upsertOrthancModality,
+  deleteOrthancModality,
+  listOrthancModalities,
+} from '../services/orthanc-modality.service.js';
+
+const router = express.Router();
+
+router.use(authLab);
+
+function tenantId(req) {
+  return req.lab?.id;
+}
+
+function normalizePort(port) {
+  const n = parseInt(String(port), 10);
+  if (!Number.isFinite(n) || n < 1 || n > 65535) {
+    throw new Error('port must be an integer between 1 and 65535');
+  }
+  return n;
+}
+
+function rowToModality(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    ae_title: row.ae_title,
+    host: row.host,
+    port: Number(row.port),
+    modality_type: row.modality_type,
+    manufacturer: row.manufacturer,
+    model: row.model,
+    location: row.location,
+    status: row.status,
+    orthanc_synced: row.orthanc_synced,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+router.get('/modalities', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const r = await pool.query(
+      `SELECT * FROM dicom_modalities
+       WHERE tenant_id = $1
+       ORDER BY name ASC`,
+      [tid],
+    );
+    const orthancPeers = await listOrthancModalities().catch(() => []);
+    res.json({
+      success: true,
+      modalities: r.rows.map(rowToModality),
+      orthanc_peers: orthancPeers,
+    });
+  } catch (err) {
+    console.error('[DicomModality] list error:', err);
+    res.status(500).json({ success: false, message: 'Failed to list modalities' });
+  }
+});
+
+router.get('/modalities/:name', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const r = await pool.query(
+      `SELECT * FROM dicom_modalities WHERE tenant_id = $1 AND name = $2 LIMIT 1`,
+      [tid, req.params.name],
+    );
+    if (!r.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Modality not found' });
+    }
+    return res.json({ success: true, modality: rowToModality(r.rows[0]) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to fetch modality' });
+  }
+});
+
+router.post('/modalities', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const {
+      name,
+      ae_title: aeTitle,
+      host,
+      port,
+      modality_type: modalityType,
+      manufacturer,
+      model,
+      location,
+    } = req.body || {};
+
+    if (!name || !aeTitle || !host || port == null || !modalityType) {
+      return res.status(400).json({
+        success: false,
+        message: 'name, ae_title, host, port, modality_type required',
+      });
+    }
+
+    const portNum = normalizePort(port);
+
+    const r = await pool.query(
+      `INSERT INTO dicom_modalities
+         (tenant_id, name, ae_title, host, port, modality_type, manufacturer, model, location, status, orthanc_synced)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', false)
+       RETURNING *`,
+      [tid, name, aeTitle, host, portNum, modalityType, manufacturer || null, model || null, location || null],
+    );
+
+    let modality = r.rows[0];
+    try {
+      await upsertOrthancModality({
+        name,
+        aeTitle,
+        host,
+        port: portNum,
+        manufacturer,
+      });
+      const synced = await pool.query(
+        `UPDATE dicom_modalities SET orthanc_synced = true, updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [modality.id],
+      );
+      modality = synced.rows[0];
+    } catch (orthancErr) {
+      console.warn('[DicomModality] Orthanc sync failed (DB row kept):', orthancErr.message);
+    }
+
+    return res.status(201).json({ success: true, modality: rowToModality(modality) });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ success: false, message: 'Modality name already registered' });
+    }
+    console.error('[DicomModality] create error:', err);
+    res.status(500).json({ success: false, message: err.message || 'Failed to register modality' });
+  }
+});
+
+router.put('/modalities/:name', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const existing = await pool.query(
+      `SELECT * FROM dicom_modalities WHERE tenant_id = $1 AND name = $2 LIMIT 1`,
+      [tid, req.params.name],
+    );
+    if (!existing.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Modality not found' });
+    }
+
+    const row = existing.rows[0];
+    const aeTitle = req.body.ae_title ?? row.ae_title;
+    const host = req.body.host ?? row.host;
+    const portNum = req.body.port != null ? normalizePort(req.body.port) : Number(row.port);
+    const modalityType = req.body.modality_type ?? row.modality_type;
+    const manufacturer = req.body.manufacturer ?? row.manufacturer;
+    const model = req.body.model ?? row.model;
+    const location = req.body.location ?? row.location;
+
+    const r = await pool.query(
+      `UPDATE dicom_modalities
+       SET ae_title = $3, host = $4, port = $5, modality_type = $6,
+           manufacturer = $7, model = $8, location = $9, updated_at = NOW(), orthanc_synced = false
+       WHERE tenant_id = $1 AND name = $2
+       RETURNING *`,
+      [tid, req.params.name, aeTitle, host, portNum, modalityType, manufacturer, model, location],
+    );
+
+    let modality = r.rows[0];
+    try {
+      await upsertOrthancModality({
+        name: req.params.name,
+        aeTitle,
+        host,
+        port: portNum,
+        manufacturer,
+      });
+      const synced = await pool.query(
+        `UPDATE dicom_modalities SET orthanc_synced = true, updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [modality.id],
+      );
+      modality = synced.rows[0];
+    } catch (orthancErr) {
+      console.warn('[DicomModality] Orthanc sync failed on update:', orthancErr.message);
+    }
+
+    return res.json({ success: true, modality: rowToModality(modality) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message || 'Failed to update modality' });
+  }
+});
+
+router.delete('/modalities/:name', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const r = await pool.query(
+      `DELETE FROM dicom_modalities WHERE tenant_id = $1 AND name = $2 RETURNING *`,
+      [tid, req.params.name],
+    );
+    if (!r.rows[0]) {
+      return res.status(404).json({ success: false, message: 'Modality not found' });
+    }
+    await deleteOrthancModality(req.params.name).catch((err) => {
+      console.warn('[DicomModality] Orthanc delete failed:', err.message);
+    });
+    return res.json({ success: true, deleted: req.params.name });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to delete modality' });
+  }
+});
+
+export default router;

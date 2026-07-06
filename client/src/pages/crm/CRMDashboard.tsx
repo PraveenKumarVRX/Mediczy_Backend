@@ -59,6 +59,7 @@ const sidebarNav = [
     { icon: Mail, label: 'Email Inbox', path: '/crm/emails' },
   ]},
   { section: 'MARKETING', items: [
+    { icon: Sparkles, label: 'AI Copilot', path: '/crm/marketing-copilot' },
     { icon: Mail, label: 'Campaigns', path: '/crm/campaigns' },
     { icon: Users, label: 'Lists', path: '/crm/lists' },
     { icon: FileText, label: 'Templates', path: '/crm/templates' },
@@ -311,22 +312,22 @@ const CRMDashboard = () => {
 
         <main className="p-6 space-y-6 pb-24">
 
-          {/* ── AI Insights Banner ────────────────────────────────────── */}
+          {/* ── Marketing AI Copilot Banner ───────────────────────────── */}
           <button
-            onClick={() => navigate('/crm/ai-insights')}
+            onClick={() => navigate('/crm/marketing-copilot')}
             className="w-full rounded-2xl bg-gradient-to-r from-violet-600/15 via-purple-600/10 to-blue-600/15 border border-violet-500/20 px-5 py-3.5 flex items-center justify-between group hover:border-violet-500/40 transition-colors"
           >
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-violet-500/20 flex items-center justify-center">
-                <BrainCircuit className="h-5 w-5 text-violet-400" />
+                <Sparkles className="h-5 w-5 text-violet-400" />
               </div>
               <div className="text-left">
-                <div className="text-sm font-semibold text-white">AI Sales & Marketing Intelligence</div>
-                <div className="text-xs text-slate-500">Lead scoring · Deal health · Revenue forecast · Campaign optimiser</div>
+                <div className="text-sm font-semibold text-white">Marketing AI Copilot</div>
+                <div className="text-xs text-slate-500">Chat with AI to manage campaigns, prioritize leads, and close deals faster</div>
               </div>
             </div>
             <div className="flex items-center gap-2 text-violet-400 text-xs font-medium">
-              Open Insights <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
+              Open Copilot <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
             </div>
           </button>
 

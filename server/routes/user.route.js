@@ -23,6 +23,7 @@ import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import OTP from "../models/otp.model.intelligent.js";
+import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
 import { cache } from "../db/redis.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
 import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
@@ -1494,6 +1495,9 @@ router.post(
       }
 
       const isRenewalExemptUser = isMembershipRenewalExemptEmail(user.email);
+
+      await tryAutoActivateCorporateEmployeeForLogin(user);
+
       if ((user.status !== 'active' || user.isActive === false) && !isRenewalExemptUser) {
         await auditLoginAttempt(req, user.id, user.email, false, 'Inactive user attempted OTP login');
         const details = await buildInactiveAccountContext(user.id);
@@ -1625,7 +1629,9 @@ router.post("/profile-picture/presign", authUser, [
     return res.status(200).json({
       success: true,
       message: 'Presigned upload URL generated',
-      data: presign
+      data: presign,
+      uploadUrl: presign.uploadUrl,
+      fileKey: presign.fileKey,
     });
   } catch (error) {
     console.error('Profile picture presign error:', error);
@@ -1642,19 +1648,20 @@ router.post("/profile-picture/presign", authUser, [
  * @desc    Save profile picture after S3 upload
  * @access  Private
  */
-router.post("/profile-picture/confirm", authUser, [
-  body('fileKey').notEmpty().withMessage('fileKey is required'),
-  body('fileName').notEmpty().withMessage('fileName is required'),
-  body('fileSize').isInt({ min: 1 }).withMessage('fileSize must be a number'),
-  body('mimeType').notEmpty().withMessage('mimeType is required')
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ success: false, errors: errors.array() });
+router.post("/profile-picture/confirm", authUser, async (req, res) => {
+  const fileKey = req.body.fileKey || req.body.key;
+  const fileName = req.body.fileName || req.body.name;
+  const fileSize = req.body.fileSize ?? req.body.size;
+  const mimeType = req.body.mimeType || req.body.contentType;
+
+  if (!fileKey || !mimeType) {
+    return res.status(400).json({
+      success: false,
+      message: 'fileKey and mimeType are required'
+    });
   }
 
   try {
-    const { fileKey, mimeType } = req.body;
     if (!validateProfileImageType(mimeType)) {
       return res.status(400).json({
         success: false,
@@ -1681,7 +1688,13 @@ router.post("/profile-picture/confirm", authUser, [
     return res.status(200).json({
       success: true,
       message: 'Profile picture saved successfully',
-      profileImage: user.profileImage
+      profileImage: user.profileImage,
+      data: {
+        profileImage: user.profileImage,
+        fileKey,
+        fileName,
+        fileSize,
+      }
     });
   } catch (error) {
     console.error('Profile picture confirm error:', error);
@@ -1700,14 +1713,13 @@ router.post("/profile-picture/confirm", authUser, [
  */
 router.post("/profile-picture", authUser, async (req, res) => {
   try {
-    if (!req.files || !req.files.profilePicture) {
+    const profilePicture = req.files?.profilePicture || req.files?.file;
+    if (!profilePicture) {
       return res.status(400).json({
         success: false,
         message: "No file uploaded"
       });
     }
-    
-    const profilePicture = req.files.profilePicture;
     
     // Validate file type
     if (!profileImageTypes.includes(profilePicture.mimetype)) {

@@ -172,7 +172,27 @@ router.get('/coordinator/:patientId/admission-briefing', ...clinical, async (req
   }
 });
 
+router.post('/coordinator/:patientId/alerts/:alertId/ack', ...clinical, async (req, res) => {
+  try {
+    const row = await careos.acknowledgeCoordinatorAlert(pid(req), orgId(req), req.params.alertId, {
+      action: req.body.action || 'approve',
+      userId: req.user?.id,
+      note: req.body.note,
+    });
+    if (!row) return res.status(404).json({ success: false, error: 'Alert not found' });
+    res.json({ success: true, data: row });
+  } catch (e) {
+    console.error('[CareOS] coordinator ack:', e);
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // ── Instant MDT / Clinical Board ─────────────────────────────────────────────
+router.get('/mdt/inbox', ...clinical, async (req, res) => {
+  const rows = await careos.listMdtSessions(orgId(req));
+  res.json({ success: true, data: rows });
+});
+
 router.post('/mdt/start', ...doctorOnly, async (req, res) => {
   const session = await careos.startClinicalBoard({
     patientId: Number(req.body.patientId),
@@ -191,6 +211,16 @@ router.post('/mdt/:sessionId/join', ...clinical, async (req, res) => {
     role: req.body.role,
   });
   res.json({ success: true, data: result });
+});
+
+router.post('/mdt/:sessionId/token', ...clinical, async (req, res) => {
+  const data = await careos.createMdtCallToken({
+    sessionId: Number(req.params.sessionId),
+    userId: req.user.id,
+    userName: req.user.name || req.user.email,
+    role: req.body.role || 'specialist',
+  });
+  res.json({ success: true, data });
 });
 
 router.post('/mdt/:sessionId/opinion', ...clinical, async (req, res) => {
@@ -249,6 +279,18 @@ router.post('/memory/:caseId/outcome', ...doctorOnly, async (req, res) => {
 });
 
 // ── Family Portal ──────────────────────────────────────────────────────────────
+router.post('/family/verify', async (req, res) => {
+  try {
+    const result = await careos.verifyFamilyAccess(Number(req.body.patientId), req.body.accessCode);
+    if (!result.valid) {
+      return res.status(401).json({ success: false, message: result.reason });
+    }
+    res.json({ success: true, data: { patientId: result.patientId } });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 router.get('/family/:patientId/updates', authUser, async (req, res) => {
   const familyOnly = req.user.role === 'patient' || req.query.family === 'true';
   // A patient/family user may only ever read their OWN updates — the

@@ -59,16 +59,21 @@ const DOCTOR_SENSITIVE_FIELDS = [
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
-    const mimeType = allowedTypes.test(file.mimetype);
-    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-
-    if (mimeType && extname) {
+  fileFilter: (_req, file, cb) => {
+    const allowedMimes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (allowedMimes.includes(file.mimetype)) {
       return cb(null, true);
-    } else {
-      cb(new Error('Only images and documents are allowed'));
     }
+    cb(new Error('Only images and documents are allowed'));
   }
 });
 
@@ -81,8 +86,41 @@ const doctorMediaMimeTypes = [
   'image/webp',
   'application/pdf',
   'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
+
+const authenticateDoctorUpload = (req, res, next) => {
+  authUser(req, res, () => {
+    if (req.user?.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.',
+      });
+    }
+    return next();
+  });
+};
+
+const resolveDoctorUploadId = async (req) => {
+  if (req.doctor?.id) return req.doctor.id;
+  if (req.user?.role !== 'doctor') return null;
+
+  const byId = await Doctor.findByPk(req.user.id, { attributes: ['id'] });
+  if (byId?.id) return byId.id;
+
+  if (req.user.email) {
+    const byEmail = await Doctor.findOne({
+      where: { email: req.user.email },
+      attributes: ['id'],
+    });
+    if (byEmail?.id) return byEmail.id;
+  }
+
+  return req.user.id;
+};
+
+const resolveDoctorUploadTenantId = (req) =>
+  req.tenantId || req.doctor?.organization_id || req.user?.organization_id || null;
 
 const toFiniteNumber = (value) => {
   const n = Number(value);
@@ -777,7 +815,8 @@ router.post('/login', authLimiter, async (req, res) => {
         email: doctor.email,
         specialization: doctor.specialization,
         isVerified: doctor.isVerified,
-        profilePicture: doctor.profilePicture
+        profileImage: doctor.profileImage || null,
+        profilePicture: doctor.profileImage || null,
       },
       token
     });
@@ -920,7 +959,8 @@ router.post('/session/bootstrap', async (req, res) => {
         email: resolvedDoctor.email,
         specialization: resolvedDoctor.specialization,
         isVerified: !!resolvedDoctor.isVerified,
-        profilePicture: resolvedDoctor.profilePicture || null,
+        profileImage: resolvedDoctor.profileImage || null,
+        profilePicture: resolvedDoctor.profileImage || null,
       },
     });
   } catch (error) {
@@ -1350,16 +1390,16 @@ router.get('/:doctorId/slots', [
  * @desc    Upload doctor media (profile, signature, seal, clinic images)
  * @access  Private (Doctor)
  */
-router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, res) => {
+router.post('/upload/:mediaType', authenticateDoctorUpload, upload.single('file'), async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
+    const { mediaType } = req.params;
+    const doctorId = await resolveDoctorUploadId(req);
+    if (!doctorId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Doctor role required.'
       });
     }
-
-    const { mediaType } = req.params;
 
     if (!req.file) {
       return res.status(400).json({
@@ -1380,16 +1420,17 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
       buffer: req.file.buffer,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
-      keyPrefix: `uploads/doctors/${req.user.id}/${mediaType}`,
+      keyPrefix: `uploads/doctors/${doctorId}/${mediaType}`,
     });
 
-    await doctorModel.updateMedia(req.user.id, mediaType, minioUrl);
+    await doctorModel.updateMedia(doctorId, mediaType, minioUrl);
 
     res.json({
       success: true,
       message: 'Media uploaded successfully',
       mediaType,
-      url: minioUrl
+      url: minioUrl,
+      profileImage: mediaType === 'profilePicture' ? minioUrl : undefined,
     });
   } catch (error) {
     if (error.code === 'MALWARE_DETECTED') {
@@ -1416,19 +1457,20 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
  * @desc    Create presigned URL for doctor media upload
  * @access  Private (Doctor)
  */
-router.post('/upload/:mediaType/presign', authUser, [
+router.post('/upload/:mediaType/presign', authenticateDoctorUpload, [
   body('fileName').notEmpty().withMessage('fileName is required'),
   body('contentType').notEmpty().withMessage('contentType is required')
 ], async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
+    const { mediaType } = req.params;
+    const doctorId = await resolveDoctorUploadId(req);
+    if (!doctorId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Doctor role required.'
       });
     }
 
-    const { mediaType } = req.params;
     const { fileName, contentType } = req.body;
 
     if (!validMediaTypes.includes(mediaType)) {
@@ -1445,22 +1487,24 @@ router.post('/upload/:mediaType/presign', authUser, [
       });
     }
 
-    const tenantId = req.tenantId || req.user.organization_id || null;
-    const keyPrefix = buildDoctorMediaKeyPrefix(tenantId, req.user.id, mediaType).replace(/\/$/, '');
+    const tenantId = resolveDoctorUploadTenantId(req);
+    const keyPrefix = buildDoctorMediaKeyPrefix(tenantId, doctorId, mediaType).replace(/\/$/, '');
 
     const presign = await createPresignedUpload({
       keyPrefix,
       fileName,
       contentType,
       tenantId,
-      userId: req.user.id,
+      userId: doctorId,
       metadata: { media_type: mediaType }
     });
 
     return res.status(200).json({
       success: true,
       message: 'Presigned upload URL generated',
-      data: presign
+      data: presign,
+      uploadUrl: presign.uploadUrl,
+      fileKey: presign.fileKey,
     });
   } catch (error) {
     console.error('Doctor media presign error:', error);
@@ -1477,20 +1521,22 @@ router.post('/upload/:mediaType/presign', authUser, [
  * @desc    Save doctor media after S3 upload
  * @access  Private (Doctor)
  */
-router.post('/upload/:mediaType/confirm', authUser, [
+router.post('/upload/:mediaType/confirm', authenticateDoctorUpload, [
   body('fileKey').notEmpty().withMessage('fileKey is required'),
   body('mimeType').notEmpty().withMessage('mimeType is required')
 ], async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
+    const { mediaType } = req.params;
+    const doctorId = await resolveDoctorUploadId(req);
+    if (!doctorId) {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Doctor role required.'
       });
     }
 
-    const { mediaType } = req.params;
-    const { fileKey, mimeType } = req.body;
+    const fileKey = req.body.fileKey || req.body.key;
+    const mimeType = req.body.mimeType || req.body.contentType;
 
     if (!validMediaTypes.includes(mediaType)) {
       return res.status(400).json({
@@ -1506,8 +1552,8 @@ router.post('/upload/:mediaType/confirm', authUser, [
       });
     }
 
-    const tenantId = req.tenantId || req.user.organization_id || null;
-    const expectedPrefix = buildDoctorMediaKeyPrefix(tenantId, req.user.id, mediaType);
+    const tenantId = resolveDoctorUploadTenantId(req);
+    const expectedPrefix = buildDoctorMediaKeyPrefix(tenantId, doctorId, mediaType);
     if (!fileKey.startsWith(expectedPrefix)) {
       return res.status(400).json({
         success: false,
@@ -1518,13 +1564,14 @@ router.post('/upload/:mediaType/confirm', authUser, [
     const bucket = getUploadsBucket();
     const fileUrl = buildPublicFileUrl(fileKey, bucket);
 
-    await doctorModel.updateMedia(req.user.id, mediaType, fileUrl);
+    await doctorModel.updateMedia(doctorId, mediaType, fileUrl);
 
     return res.json({
       success: true,
       message: 'Media saved successfully',
       mediaType,
-      url: fileUrl
+      url: fileUrl,
+      profileImage: mediaType === 'profilePicture' ? fileUrl : undefined,
     });
   } catch (error) {
     console.error('Doctor media confirm error:', error);
@@ -2277,7 +2324,7 @@ router.post('/smart-route', async (req, res) => {
 
     const rawDoctors = await Doctor.findAll({
       where,
-      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'isAvailable', 'profilePicture'],
+      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'isAvailable', 'profileImage'],
       order: [['consultationFees', 'ASC'], ['firstName', 'ASC']],
       limit: parseInt(limit, 10) > 20 ? 20 : parseInt(limit, 10),
     });
@@ -2288,7 +2335,8 @@ router.post('/smart-route', async (req, res) => {
       specialization: d.specialization,
       consultationFees: d.consultationFees,
       availableToday: d.isAvailable !== false,
-      profilePicture: d.profilePicture || null,
+      profileImage: d.profileImage || null,
+      profilePicture: d.profileImage || null,
       recommendedReason: targetSpecialty
         ? `Best match for ${targetSpecialty}`
         : 'Available doctor',

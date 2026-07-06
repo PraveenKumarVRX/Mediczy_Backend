@@ -1,70 +1,79 @@
-import type { ReactNode } from "react";
-import { Activity, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { BarChart2, RefreshCw } from 'lucide-react';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
+import { COMMAND_CENTER_NAV } from '@/config/commandNav.config';
+import { useCommandCenterData } from '@/features/command/hooks/useCommandCenterData';
+import { useCommandCenterRealtime } from '@/features/command/hooks/useCommandCenterRealtime';
+import { LiveIndicator } from '@/components/clinical/LiveIndicator';
 
-export interface CommandCenterShellProps {
-  title: string;
-  subtitle?: string;
-  live?: boolean;
-  alerts?: number;
-  filters?: ReactNode;
-  recommendations?: ReactNode;
-  actions?: ReactNode;
-  children: ReactNode;
-  loading?: boolean;
+const BASE = '/hospital/command-center';
+
+function sectionPath(segment: string) {
+  if (!segment) return BASE;
+  return `${BASE}/${segment}`;
 }
 
-export default function CommandCenterShell({
-  title,
-  subtitle,
-  live = true,
-  alerts = 0,
-  filters,
-  recommendations,
-  actions,
-  children,
-  loading,
-}: CommandCenterShellProps) {
+function isActive(pathname: string, segment: string) {
+  const target = sectionPath(segment);
+  if (!segment) return pathname === BASE || pathname === `${BASE}/`;
+  return pathname === target || pathname.startsWith(`${target}/`);
+}
+
+export default function CommandCenterShell() {
+  const location = useLocation();
+  const { loading, lastUpdated, refresh } = useCommandCenterData();
+  useCommandCenterRealtime(refresh);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-[1800px] p-4 md:p-6 space-y-4">
-        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-normal">{title}</h1>
-              <Badge className={cn(live ? "bg-emerald-500" : "bg-slate-600", "text-white")}>
-                <Activity className="h-3.5 w-3.5 mr-1" />
-                {live ? "Live" : "Paused"}
-              </Badge>
-              {alerts > 0 && <Badge className="bg-red-500 text-white">{alerts} alerts</Badge>}
-            </div>
-            {subtitle && <p className="text-sm text-slate-400 mt-1">{subtitle}</p>}
-          </div>
-          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-        </header>
-
-        <div className="grid gap-4 lg:grid-cols-[220px_1fr_320px]">
-          <aside className="rounded-lg border border-white/10 bg-white/5 p-3 lg:sticky lg:top-6 lg:self-start">
-            {filters || <p className="text-sm text-slate-400">No filters configured.</p>}
-          </aside>
-
-          <main className="min-w-0">
-            {loading ? (
-              <div className="flex min-h-[420px] items-center justify-center text-slate-400">
-                <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                Loading command center...
+    <HospitalLayout>
+      <div className="min-h-screen bg-slate-50">
+        <div className="border-b bg-white sticky top-0 z-20">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+            <BarChart2 className="h-5 w-5 text-teal-600 shrink-0" />
+            <div className="flex-1 min-w-[200px]">
+              <h1 className="text-lg font-bold text-slate-800">Leadership Command Center</h1>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <LiveIndicator live={!loading} />
+                {lastUpdated && <span>Updated {lastUpdated.toLocaleTimeString('en-IN')}</span>}
               </div>
-            ) : (
-              children
-            )}
-          </main>
+            </div>
+            <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+              <RefreshCw className={cn('h-4 w-4 mr-1', loading && 'animate-spin')} />
+              Refresh
+            </Button>
+          </div>
+        </div>
 
-          <aside className="rounded-lg border border-teal-400/20 bg-teal-400/10 p-3 lg:sticky lg:top-6 lg:self-start">
-            {recommendations || <p className="text-sm text-slate-300">No AI recommendations.</p>}
-          </aside>
+        <div className="max-w-7xl mx-auto p-4 md:p-6 flex flex-col lg:flex-row gap-4">
+          <nav className="lg:w-52 shrink-0">
+            <div className="bg-white rounded-lg border p-2 space-y-0.5 sticky top-28">
+              {COMMAND_CENTER_NAV.map((item) => {
+                const Icon = item.icon;
+                const href = sectionPath(item.segment);
+                const active = isActive(location.pathname, item.segment);
+                return (
+                  <Link
+                    key={item.key}
+                    to={href}
+                    className={cn(
+                      'flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
+                      active ? 'bg-teal-50 text-teal-800 font-medium' : 'text-slate-600 hover:bg-slate-50'
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+          <main className="flex-1 min-w-0">
+            <Outlet />
+          </main>
         </div>
       </div>
-    </div>
+    </HospitalLayout>
   );
 }

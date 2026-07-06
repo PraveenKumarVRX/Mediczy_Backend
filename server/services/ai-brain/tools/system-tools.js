@@ -1,298 +1,255 @@
 /**
- * System Tools — Admin Agent only (EXEC_SYSTEM_TOOLS capability required)
- *
- * Tools:
- *   list_agents          — return agent registry with access metadata
- *   get_system_status    — pool stats, SIB status, PM2-style uptime
- *   get_audit_logs       — recent api_audit_logs entries (tenant-scoped)
- *   get_agent_metrics    — aggregated ai_agent_runs stats
- *   get_governance_queue — pending model changes from ai_model_change_log
- *
- * All read-only. Write/configure tools are Phase 5 and require a pending-
- * actions table + human approval modal in the UI.
+ * System tools for Admin Agent (ops copilot).
+ * Read-only by default; write tools require approval when ADMIN_COPILOT_WRITE_ACTIONS !== 'true'.
  */
 
-import pool from '../../../db/pgPool.js';
 import { register } from './index.js';
+import pool from '../../../db/pgPool.js';
+import sharedPool from '../../../db/pgPool.js';
 import { getAllAgents } from '../agent-registry.js';
+import { listTools } from './index.js';
+import { getRoutingStats } from '../cognitive-router.js';
+import { getTelemetryStats } from '../evaluation-engine.js';
 import sibControlLayer from '../../sib-control-layer.service.js';
+import { flushFeedbackCache } from '../../../utils/quality-cache.js';
+import { ROLES } from '../agent-permission-engine.js';
 
-// ── list_agents ───────────────────────────────────────────────────────────────
+function isPlatformAdmin(identity) {
+  return identity?.role === ROLES.PLATFORM_ADMIN;
+}
+
 register({
-  name:        'list_agents',
-  description: 'List all registered AI agents, their capabilities, allowed tools, and whether the requesting admin can invoke them.',
-  category:    'system',
-  isSystem:    true,
+  name: 'list_agents',
+  description: 'List registered AI agents with id, name, description, and required capability. Does not expose internal prompts.',
+  category: 'system',
+  isWrite: false,
+  isSystem: true,
   parameters: {
     type: 'object',
-    properties: {
-      include_tools: {
-        type: 'boolean',
-        description: 'If true, include the full allowed-tool list for each agent (verbose). Default false.',
-      },
-    },
+    properties: {},
     required: [],
   },
-  async execute({ include_tools = false } = {}, context = {}) {
-    const agents = getAllAgents();
-
-    const summary = agents.map(a => ({
-      id:               a.id,
-      name:             a.name,
-      description:      a.description,
-      llmTier:          a.llmTier,
-      maxTokens:        a.maxTokens,
-      maxIterations:    a.maxIterations,
-      requiredCapability: a.requiredCapability,
-      accessible:       context.capabilities?.includes(a.requiredCapability) ?? null,
-      ...(include_tools ? { allowedTools: a.allowedTools } : {}),
-    }));
-
+  async execute() {
     return {
-      total: summary.length,
-      agents: summary,
-      requestingRole: context.role ?? 'unknown',
+      agents: getAllAgents().map((a) => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+        requiredCapability: a.requiredCapability,
+        llmTier: a.llmTier,
+        toolCount: a.allowedTools?.length || 0,
+      })),
+      count: getAllAgents().length,
     };
   },
 });
 
-// ── get_system_status ─────────────────────────────────────────────────────────
 register({
-  name:        'get_system_status',
-  description: 'Return system health: DB pool stats, SIB AI Guard status (kill switch, circuit breakers, rate limits), and server uptime.',
-  category:    'system',
-  isSystem:    true,
+  name: 'get_system_status',
+  description: 'Return non-sensitive platform health: database pool, uptime, SIB guard status, AI brain tool/agent counts.',
+  category: 'system',
+  isWrite: false,
+  isSystem: true,
   parameters: {
-    type:       'object',
+    type: 'object',
     properties: {},
-    required:   [],
+    required: [],
   },
-  async execute(_params = {}, _context = {}) {
-    // DB pool stats
-    let poolStats = null;
-    try {
-      const { rows } = await pool.query(`
-        SELECT count(*) AS total,
-               sum(CASE WHEN state = 'active' THEN 1 ELSE 0 END)  AS active,
-               sum(CASE WHEN state = 'idle'   THEN 1 ELSE 0 END)  AS idle,
-               sum(CASE WHEN wait_event IS NOT NULL THEN 1 ELSE 0 END) AS waiting
-        FROM pg_stat_activity
-        WHERE application_name ILIKE '%node%' OR application_name ILIKE '%mediczy%'
-      `);
-      poolStats = rows[0];
-    } catch (e) {
-      poolStats = { error: e.message };
-    }
+  async execute() {
+    const sibStatus = typeof sibControlLayer.getStatus === 'function'
+      ? sibControlLayer.getStatus()
+      : { killSwitchActive: !!sibControlLayer.killSwitchActive };
 
-    // SIB status
-    let sibStatus = null;
+    let poolStats = { healthy: false };
     try {
-      sibStatus = {
-        killSwitchActive: sibControlLayer.killSwitchActive ?? false,
-        circuitBreakers:  Object.fromEntries(sibControlLayer.circuitBreakers ?? new Map()),
+      const { rows } = await sharedPool.query('SELECT 1 AS ok');
+      poolStats = {
+        healthy: rows[0]?.ok === 1,
+        total: sharedPool.totalCount,
+        idle: sharedPool.idleCount,
+        waiting: sharedPool.waitingCount,
       };
     } catch {
-      sibStatus = { error: 'SIB control layer unavailable' };
+      poolStats = { healthy: false };
     }
 
+    const tools = listTools();
     return {
-      timestamp:    new Date().toISOString(),
-      uptimeSeconds: Math.floor(process.uptime()),
-      memoryMB:     {
-        heapUsed:  Math.round(process.memoryUsage().heapUsed  / 1024 / 1024),
-        heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
-        rss:       Math.round(process.memoryUsage().rss       / 1024 / 1024),
+      database: poolStats,
+      uptime_seconds: Math.floor(process.uptime()),
+      sib: {
+        killSwitchActive: !!sibStatus.killSwitchActive,
+        circuitBreakerOpen: !!sibStatus.circuitBreakerOpen,
       },
-      nodeVersion: process.version,
-      environment: process.env.NODE_ENV ?? 'unknown',
-      database:    poolStats,
-      sib:         sibStatus,
+      ai_brain: {
+        registeredTools: tools.length,
+        registeredAgents: getAllAgents().length,
+        systemTools: tools.filter((t) => t.isSystem).length,
+      },
+      environment: process.env.NODE_ENV || 'development',
     };
   },
 });
 
-// ── get_audit_logs ────────────────────────────────────────────────────────────
 register({
-  name:        'get_audit_logs',
-  description: 'Retrieve recent audit log entries for this tenant. Returns actor, action, resource, and timestamp. Scoped to the requesting user\'s tenant.',
-  category:    'system',
-  isSystem:    true,
+  name: 'get_audit_logs',
+  description: 'Fetch recent AI agent runs and admin activity. Tenant-scoped for hospital admins.',
+  category: 'system',
+  isWrite: false,
+  isSystem: true,
   parameters: {
     type: 'object',
     properties: {
-      limit: {
-        type:        'integer',
-        description: 'Number of entries to return (default 20, max 100).',
-        default:     20,
-      },
-      action_filter: {
-        type:        'string',
-        description: 'Optional: filter by action keyword (e.g. "appointment", "login", "risk_score").',
-      },
-      actor_type_filter: {
-        type:        'string',
-        enum:        ['user', 'system', 'admin', 'cron'],
-        description: 'Optional: filter by actor type.',
-      },
+      limit: { type: 'integer', description: 'Max rows (default 20, max 100)' },
+      category: { type: 'string', enum: ['ai_agent', 'admin_action', 'governance', 'all'] },
+      since_hours: { type: 'integer', description: 'Look back hours (default 24)' },
     },
     required: [],
   },
-  async execute({ limit = 20, action_filter, actor_type_filter } = {}, context = {}) {
-    const safeLimit = Math.min(Math.max(1, parseInt(limit) || 20), 100);
-    const tenantId  = context.tenantId ? parseInt(context.tenantId) : null;
+  async execute(params, ctx) {
+    const limit = Math.min(Number(params.limit) || 20, 100);
+    const sinceHours = Math.min(Number(params.since_hours) || 24, 168);
+    const category = params.category || 'all';
+    const identity = ctx.identity || {};
+    const orgId = identity.orgId || identity.tenantId;
 
-    if (!tenantId) {
-      return { error: 'Tenant context required for audit log access' };
+    const agentRuns = [];
+    if (category === 'all' || category === 'ai_agent') {
+      const values = [limit, sinceHours];
+      let orgClause = '';
+      if (!isPlatformAdmin(identity) && orgId) {
+        values.push(orgId);
+        orgClause = ` AND org_id = $${values.length}`;
+      }
+      const { rows } = await pool.query(
+        `SELECT run_id, user_id, role, LEFT(input_message, 200) AS input_preview,
+                agents_used, status, total_tokens, latency_ms, metadata, created_at
+           FROM ai_agent_runs
+          WHERE created_at >= NOW() - make_interval(hours => $2)
+          ${orgClause}
+          ORDER BY created_at DESC
+          LIMIT $1`,
+        values
+      );
+      agentRuns.push(...rows.map((r) => ({
+        type: 'ai_agent_run',
+        ...r,
+        metadata: r.metadata || {},
+      })));
     }
 
-    const conditions = ['tenant_id = $1'];
-    const params     = [tenantId];
-    let   i          = 2;
-
-    if (action_filter) {
-      conditions.push(`action ILIKE $${i++}`);
-      params.push(`%${action_filter}%`);
+    let adminActions = [];
+    if (category === 'all' || category === 'admin_action') {
+      try {
+        const { rows } = await pool.query(
+          `SELECT id, user_id, action, module, details, created_at
+             FROM user_activity_logs
+            WHERE created_at >= NOW() - make_interval(hours => $1)
+            ORDER BY created_at DESC
+            LIMIT $2`,
+          [sinceHours, Math.min(limit, 50)]
+        );
+        adminActions = rows.map((r) => ({
+          type: 'admin_action',
+          id: r.id,
+          userId: r.user_id,
+          action: r.action,
+          module: r.module,
+          createdAt: r.created_at,
+        }));
+      } catch {
+        adminActions = [];
+      }
     }
-    if (actor_type_filter) {
-      conditions.push(`actor_type = $${i++}`);
-      params.push(actor_type_filter);
-    }
-
-    const { rows } = await pool.query(
-      `SELECT log_id, actor_id, actor_type, action, resource_type, resource_id,
-              created_at, ip_address
-       FROM api_audit_logs
-       WHERE ${conditions.join(' AND ')}
-       ORDER BY created_at DESC
-       LIMIT $${i}`,
-      [...params, safeLimit]
-    );
 
     return {
-      tenantId,
-      count:  rows.length,
-      entries: rows.map(r => ({
-        id:           r.log_id,
-        actor:        r.actor_id,
-        actorType:    r.actor_type,
-        action:       r.action,
-        resourceType: r.resource_type,
-        resourceId:   r.resource_id,
-        timestamp:    r.created_at,
-        ip:           r.ip_address,
-      })),
+      category,
+      sinceHours,
+      aiAgentRuns: agentRuns,
+      adminActions,
+      count: agentRuns.length + adminActions.length,
     };
   },
 });
 
-// ── get_agent_metrics ─────────────────────────────────────────────────────────
 register({
-  name:        'get_agent_metrics',
-  description: 'Return aggregated AI agent run statistics: total runs, success rate, average latency, and tool usage breakdown for each agent over the past 24 hours.',
-  category:    'system',
-  isSystem:    true,
+  name: 'get_agent_metrics',
+  description: 'Return cognitive routing and agent telemetry summary for the last N days.',
+  category: 'system',
+  isWrite: false,
+  isSystem: true,
   parameters: {
     type: 'object',
     properties: {
-      hours: {
-        type:        'integer',
-        description: 'Lookback window in hours (default 24, max 168).',
-        default:     24,
-      },
+      days: { type: 'integer', description: 'Days of history (default 7, max 90)' },
     },
     required: [],
   },
-  async execute({ hours = 24 } = {}, _context = {}) {
-    const safeHours = Math.min(Math.max(1, parseInt(hours) || 24), 168);
-
-    try {
-      const { rows } = await pool.query(`
-        SELECT
-          agent_id,
-          COUNT(*)                                        AS total_runs,
-          SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS successes,
-          SUM(CASE WHEN status = 'failed'    THEN 1 ELSE 0 END) AS failures,
-          ROUND(AVG(latency_ms))                          AS avg_latency_ms,
-          SUM(total_tokens)                               AS total_tokens,
-          MAX(created_at)                                 AS last_run
-        FROM ai_agent_runs
-        WHERE created_at >= NOW() - INTERVAL '${safeHours} hours'
-        GROUP BY agent_id
-        ORDER BY total_runs DESC
-      `);
-
-      const global = {
-        totalRuns:    rows.reduce((s, r) => s + parseInt(r.total_runs),  0),
-        successes:    rows.reduce((s, r) => s + parseInt(r.successes),    0),
-        failures:     rows.reduce((s, r) => s + parseInt(r.failures),     0),
-        totalTokens:  rows.reduce((s, r) => s + parseInt(r.total_tokens || 0), 0),
-      };
-      global.successRate = global.totalRuns
-        ? `${Math.round((global.successes / global.totalRuns) * 100)}%`
-        : 'N/A';
-
-      return {
-        windowHours: safeHours,
-        global,
-        byAgent: rows.map(r => ({
-          agentId:      r.agent_id,
-          totalRuns:    parseInt(r.total_runs),
-          successes:    parseInt(r.successes),
-          failures:     parseInt(r.failures),
-          successRate:  parseInt(r.total_runs)
-            ? `${Math.round((parseInt(r.successes) / parseInt(r.total_runs)) * 100)}%`
-            : 'N/A',
-          avgLatencyMs: parseInt(r.avg_latency_ms) || 0,
-          totalTokens:  parseInt(r.total_tokens) || 0,
-          lastRun:      r.last_run,
-        })),
-      };
-    } catch (err) {
-      return { error: `Could not query agent metrics: ${err.message}` };
-    }
+  async execute(params) {
+    const days = Math.min(Number(params.days) || 7, 90);
+    const [routing, telemetry] = await Promise.all([
+      getRoutingStats(days).catch(() => null),
+      getTelemetryStats(days).catch(() => null),
+    ]);
+    return { days, routing, telemetry };
   },
 });
 
-// ── get_governance_queue ──────────────────────────────────────────────────────
 register({
-  name:        'get_governance_queue',
-  description: 'List pending AI model change proposals awaiting medical director review (PCCP governance queue).',
-  category:    'system',
-  isSystem:    true,
+  name: 'configure_agent',
+  description: 'Read agent configuration (allowlisted tools, tiers, iteration limits). Read-only in v1.',
+  category: 'system',
+  isWrite: false,
+  isSystem: true,
   parameters: {
     type: 'object',
     properties: {
-      status: {
-        type:        'string',
-        enum:        ['pending', 'approved', 'rejected', 'all'],
-        description: 'Filter by change status (default: pending).',
-        default:     'pending',
-      },
+      agent_id: { type: 'string', description: 'Agent id e.g. admin, clinical, analyst' },
+    },
+    required: ['agent_id'],
+  },
+  async execute(params) {
+    const agent = getAllAgents().find((a) => a.id === params.agent_id);
+    if (!agent) {
+      return { error: `Unknown agent: ${params.agent_id}` };
+    }
+    return {
+      id: agent.id,
+      name: agent.name,
+      description: agent.description,
+      llmTier: agent.llmTier,
+      maxTokens: agent.maxTokens,
+      maxIterations: agent.maxIterations,
+      allowedTools: agent.allowedTools,
+      requiredCapability: agent.requiredCapability,
+      readOnly: true,
+    };
+  },
+});
+
+register({
+  name: 'reload_prompts',
+  description: 'Invalidate prompt / feedback cache so orchestrator picks up latest prompt versions. Requires human approval.',
+  category: 'system',
+  isWrite: true,
+  isSystem: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', description: 'Reason for cache reload' },
     },
     required: [],
   },
-  async execute({ status = 'pending' } = {}, _context = {}) {
-    try {
-      const where = status === 'all' ? '' : `WHERE status = '${status}'`;
-      const { rows } = await pool.query(`
-        SELECT id, model_component, change_type, description, status,
-               proposed_by, proposed_at, reviewed_by, reviewed_at
-        FROM ai_model_change_log
-        ${where}
-        ORDER BY proposed_at DESC
-        LIMIT 50
-      `);
-
-      return {
-        status,
-        count: rows.length,
-        changes: rows,
-        note: rows.length > 0
-          ? `Use /api/ai-governance/changes/:id/approve to approve a change`
-          : 'No changes matching the filter',
-      };
-    } catch (err) {
-      return { error: `Could not query governance queue: ${err.message}` };
+  async execute(params, ctx) {
+    if (ctx?.skipWriteExecution) {
+      return { error: 'Write execution skipped — awaiting approval' };
     }
+    const keysDeleted = await flushFeedbackCache();
+    return {
+      success: true,
+      message: 'Prompt cache flushed',
+      keysDeleted,
+      reason: params.reason || 'Admin copilot reload',
+    };
   },
 });

@@ -2,6 +2,10 @@ import express from 'express';
 import crypto from 'crypto';
 import axios from 'axios';
 import sharedPool from '../db/pgPool.js';
+import {
+  findExistingLead,
+  runPostCaptureAutomation,
+} from '../services/crm-lead-automation.service.js';
 
 const router = express.Router();
 
@@ -9,7 +13,6 @@ const FB_APP_SECRET        = process.env.FB_APP_SECRET || '';
 const FB_VERIFY_TOKEN      = process.env.FB_VERIFY_TOKEN || '';
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN || '';
 const GRAPH_API_VERSION    = 'v19.0';
-const N8N_WEBHOOK_URL      = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/fb-lead-intake';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -46,13 +49,6 @@ function cleanPhone(raw = '') {
 function toE164(phone) {
   if (!phone) return null;
   return phone.startsWith('+') ? phone : `+91${phone.replace(/^0/, '')}`;
-}
-
-// Fire-and-forget: trigger n8n automation sequence (Day 0 WA → Day 2 → Day 4)
-function triggerN8nAutomation(payload) {
-  axios.post(N8N_WEBHOOK_URL, payload, { timeout: 5000 })
-    .then(() => console.info('[FB Leads] n8n automation triggered', { leadId: payload.leadId }))
-    .catch((err) => console.warn('[FB Leads] n8n trigger failed (non-fatal):', err.message));
 }
 
 // ─── Webhook verification (GET) ───────────────────────────────────────────────
@@ -117,7 +113,6 @@ router.post(
 async function processLead({ leadgen_id, page_id, form_id, ad_id, adset_id, campaign_id }) {
   console.info('[FB Leads] Processing lead', { leadgen_id, page_id, form_id });
 
-  // 1. Fetch field data from Graph API
   let graphData;
   try {
     graphData = await fetchLeadFromGraph(leadgen_id);
@@ -153,7 +148,23 @@ async function processLead({ leadgen_id, page_id, form_id, ad_id, adset_id, camp
     capturedAt: new Date().toISOString(),
   });
 
-  // 2. Store in CRM (always — reliable even if n8n is down)
+  // Dedup: skip if same leadgen_id or recent email/phone match
+  const existing = await findExistingLead({ leadgenId: leadgen_id, email, phone });
+  if (existing) {
+    console.info('[FB Leads] Duplicate lead — updating existing', { leadId: existing.id, leadgen_id });
+    await sharedPool.query(
+      `UPDATE crm_leads SET
+         name = COALESCE($1, name), email = COALESCE($2, email), phone = COALESCE($3, phone),
+         company = COALESCE($4, company),
+         custom_fields = COALESCE(custom_fields, '{}'::jsonb) || $5::jsonb,
+         updated_at = NOW()
+       WHERE id = $6`,
+      [name, email, phone, company, customFields, existing.id]
+    );
+    runPostCaptureAutomation(existing.id, { phoneE164, leadgenId: leadgen_id }).catch(() => {});
+    return;
+  }
+
   let leadId = null;
   try {
     const result = await sharedPool.query(
@@ -167,14 +178,11 @@ async function processLead({ leadgen_id, page_id, form_id, ad_id, adset_id, camp
     console.info('[FB Leads] Lead stored in CRM', { leadId, name, phone });
   } catch (err) {
     console.error('[FB Leads] Failed to store CRM lead', { leadgen_id, error: err.message });
+    return;
   }
 
-  // 3. Trigger n8n automation sequence (WhatsApp Day 0 → Day 2 → Day 4)
-  //    fire-and-forget — CRM capture is already done above
-  if (phoneE164) {
-    triggerN8nAutomation({ name, email, phone: phoneE164, company, leadId, leadgen_id, form_id });
-  } else {
-    console.info('[FB Leads] No phone — skipping n8n automation', { leadId });
+  if (leadId) {
+    runPostCaptureAutomation(leadId, { phoneE164, leadgenId: leadgen_id }).catch(() => {});
   }
 }
 
@@ -193,6 +201,7 @@ router.post('/test-lead', async (req, res) => {
   const customFields = JSON.stringify({
     source: 'facebook-lead-ads',
     testMode: true,
+    leadgen_id: `test_${Date.now()}`,
     capturedAt: new Date().toISOString(),
   });
 
@@ -206,11 +215,11 @@ router.post('/test-lead', async (req, res) => {
     );
     const leadId = result.rows[0]?.id;
 
-    if (phoneE164) {
-      triggerN8nAutomation({ name, email, phone: phoneE164, company, leadId, leadgen_id: 'test' });
+    if (leadId) {
+      runPostCaptureAutomation(leadId, { phoneE164, leadgenId: 'test' }).catch(() => {});
     }
 
-    return res.json({ success: true, leadId, n8nTriggered: !!phoneE164 });
+    return res.json({ success: true, leadId, automationTriggered: !!leadId });
   } catch (err) {
     console.error('[FB Leads test] Error:', err.message);
     return res.status(500).json({ success: false, error: err.message });

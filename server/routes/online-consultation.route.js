@@ -15,6 +15,9 @@ import {
 } from '../utils/videoProvider.js';
 import { Op } from 'sequelize';
 import { normalizeDoctorProfile, toArray } from '../utils/doctorNormalizer.js';
+import { canonicalizeAppointmentTime, isSlotBooked } from '../utils/appointmentSlotTime.js';
+import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const router = express.Router();
 
@@ -277,8 +280,6 @@ router.get('/doctors/:id/slots', async (req, res) => {
     });
 
     const bookedSlots = existingAppointments.map(apt => apt.appointmentTime);
-
-    // Generate available slots (9 AM to 9 PM, 30 min intervals)
     const allSlots = [];
     const startHour = 9;
     const endHour = 21;
@@ -286,7 +287,7 @@ router.get('/doctors/:id/slots', async (req, res) => {
     for (let hour = startHour; hour < endHour; hour++) {
       for (let min = 0; min < 60; min += 30) {
         const timeStr = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
-        const isBooked = bookedSlots.some(slot => slot.startsWith(timeStr));
+        const isBooked = isSlotBooked(timeStr, bookedSlots);
         
         // Check if slot is in the past for today
         const slotDate = new Date(`${date}T${timeStr}:00`);
@@ -382,17 +383,11 @@ router.post('/book', authUser, [
       });
     }
 
-    // Check if doctor has an appointment at this time (prevent doctor double-booking)
-    const doctorConflict = await Appointment.findOne({
-      where: {
-        doctorId,
-        appointmentDate,
-        appointmentTime,
-        status: ['pending', 'accepted', 'confirmed', 'in-progress', 'scheduled']
-      }
-    });
+    const canonicalTime = canonicalizeAppointmentTime(appointmentTime);
 
-    if (doctorConflict) {
+    const doctorConflictResult = await checkDoctorConflict(doctorId, appointmentDate, canonicalTime);
+
+    if (doctorConflictResult.conflict) {
       return res.status(409).json({
         success: false,
         message: 'This doctor is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.',
@@ -400,23 +395,11 @@ router.post('/book', authUser, [
       });
     }
 
-    // Check if patient has an appointment at this time (prevent patient double-booking)
-    const patientConflict = await Appointment.findOne({
-      where: {
-        userId: patientId,
-        appointmentDate,
-        appointmentTime,
-        status: ['pending', 'accepted', 'confirmed', 'in-progress', 'scheduled']
-      }
-    });
+    const patientConflictResult = await checkPatientConflict(patientId, appointmentDate, canonicalTime);
 
-    if (patientConflict) {
-      const conflictDoctor = await Doctor.findByPk(patientConflict.doctorId, {
-        attributes: ['firstName', 'lastName', 'specialization', 'prefix']
-      });
-      const conflictDoctorName = conflictDoctor 
-        ? `${conflictDoctor.prefix || 'Dr.'} ${conflictDoctor.firstName} ${conflictDoctor.lastName} (${conflictDoctor.specialization})`
-        : 'another doctor';
+    if (patientConflictResult.conflict) {
+      const conflictDoctorName = patientConflictResult.conflictDoctorName || 'another doctor';
+      const patientConflict = patientConflictResult.existingAppointment;
 
       return res.status(409).json({
         success: false,
@@ -484,6 +467,13 @@ router.post('/book', authUser, [
       paymentStatus: initialPaymentStatus,
       symptoms: symptomsArray,
       reason
+    });
+
+    notifyCareTeamOfBooking({
+      appointment,
+      patient,
+      doctor,
+      bookingSource: 'online-consultation'
     });
 
     // Process HC payment immediately after appointment creation if requested

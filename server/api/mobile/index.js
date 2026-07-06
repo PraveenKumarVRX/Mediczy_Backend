@@ -20,6 +20,9 @@ import { apiLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { requestLogger } from '../../middleware/logging.middleware.js';
 import { errorHandler, notFoundHandler, asyncHandler } from '../../middleware/errorHandler.middleware.js';
 import { multitenancyMiddleware as extractTenant } from '../../middleware/multitenancy.middleware.js';
+import { ConflictError } from '../../shared/errors/AppError.js';
+import { generateOAuthPassword } from '../../utils/oauth-security.js';
+import { notifyCareTeamOfBooking } from '../../services/care-team-notification.service.js';
 
 const router = express.Router();
 
@@ -1406,6 +1409,17 @@ async function findOrCreateSocialUser({ db, provider, providerId, email, firstNa
 
   if (result.rows.length > 0) {
     const row = result.rows[0];
+    // SECURITY: only auto-link a social identity to an existing account when the
+    // provider asserts the email is verified. Without this an attacker could
+    // create a provider account carrying a victim's email and take over the
+    // victim's account on first social sign-in. Facebook does not assert email
+    // verification, so such links are refused here.
+    if (!emailVerified) {
+      throw new ConflictError(
+        'An account with this email already exists. Please sign in with your email and password, then link your social account from settings.',
+        { code: 'OAUTH_EMAIL_UNVERIFIED', provider }
+      );
+    }
     await db.query(
       `UPDATE users SET ${providerCol} = $1, "oauthProvider" = $2,
         "emailVerified" = TRUE,
@@ -1419,9 +1433,7 @@ async function findOrCreateSocialUser({ db, provider, providerId, email, firstNa
   }
 
   // 3. Create new user
-  const randomPassword = Math.random().toString(36).slice(-12) + 'Aa1!';
-  const bcrypt = (await import('bcrypt')).default;
-  const hashedPassword = await bcrypt.hash(randomPassword, 10);
+  const hashedPassword = await bcrypt.hash(generateOAuthPassword(), 10);
 
   const insertResult = await db.query(
     `INSERT INTO users (email, password, "firstName", "lastName", ${providerCol}, "oauthProvider",
@@ -1760,7 +1772,10 @@ router.post('/auth/facebook', asyncHandler(async (req, res) => {
     firstName: fbProfile.first_name || fbProfile.name?.split(' ')[0] || 'User',
     lastName: fbProfile.last_name || fbProfile.name?.split(' ').slice(1).join(' ') || '',
     avatarUrl: fbProfile.picture?.data?.url || null,
-    emailVerified: true
+    // Facebook's Graph API does not assert email verification, so we cannot
+    // treat the address as verified for the purpose of linking to an existing
+    // account (prevents account takeover via an unverified email).
+    emailVerified: false
   });
 
   if (deviceId) {
@@ -2331,15 +2346,11 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
       AND status NOT IN ($3, $4, $5, $6)
   `, [req.params.id, targetDate, 'cancelled', 'completed', 'rejected', 'no-show']);
 
-  const bookedTimes = new Set(
-    bookedResult.rows
-      .map((row) => normalizeTime(row.appointmentTime))
-      .filter(Boolean)
-  );
+  const bookedTimes = bookedResult.rows.map((row) => getSlotStartTime(row.appointmentTime)).filter(Boolean);
 
   const slots = baseSlots.map((slot) => ({
     slot_time: slot.slot_time,
-    is_available: !bookedTimes.has(slot.slot_time),
+    is_available: !bookedTimes.some((booked) => isSlotBooked(slot.slot_time, [booked])),
     consultation_type: slot.consultation_type
   }));
   
@@ -2355,6 +2366,8 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
 // ============== Video Consultation ==============
 
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../../utils/videoProvider.js';
+import { canonicalizeAppointmentTime, getSlotStartTime, isSlotBooked } from '../../utils/appointmentSlotTime.js';
+import { checkDoctorConflict, checkPatientConflict } from '../../services/appointmentEligibility.service.js';
 
 const MOBILE_TURN_HOST = process.env.TURN_SERVER_HOST || '13.127.125.93';
 const MOBILE_TURN_USERNAME = process.env.TURN_USERNAME || 'livekit';
@@ -2832,7 +2845,8 @@ router.get('/appointments', authenticate(), asyncHandler(async (req, res) => {
 }));
 
 router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
-  const { doctorId, appointmentDate, appointmentTime, type, symptoms, notes } = req.body;
+  const { doctorId, appointmentDate, appointmentTime: rawAppointmentTime, type, symptoms, notes } = req.body;
+  const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
   
   if (!doctorId || !appointmentDate || !appointmentTime) {
     return res.status(400).json({
@@ -2878,20 +2892,11 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     WHERE id = $1
   `, [req.userId]);
 
-  const patientConflictPromise = db.query(
-    `SELECT id, "doctorId", "appointmentDate", "appointmentTime" FROM appointments
-     WHERE "userId" = $1
-       AND "appointmentDate" = $2
-       AND "appointmentTime" = $3
-       AND status NOT IN ($4, $5, $6, $7)
-     LIMIT 1`,
-    [req.userId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
-  );
+  const patientConflictResult = await checkPatientConflict(req.userId, appointmentDate, appointmentTime);
 
-  const [doctorResult, userResult, patientConflict] = await Promise.all([
+  const [doctorResult, userResult] = await Promise.all([
     doctorLookupPromise,
     userLookupPromise,
-    patientConflictPromise
   ]);
 
   if (doctorResult.rows.length === 0) {
@@ -2910,7 +2915,7 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     });
   }
 
-  if (patientConflict.rows.length > 0) {
+  if (patientConflictResult.conflict) {
     return res.status(409).json({
       success: false,
       message: 'You already have an appointment at this time. Please choose a different slot.',
@@ -2920,22 +2925,18 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
       },
       conflict: {
         type: 'patient_busy',
-        appointmentId: patientConflict.rows[0].id
+        appointmentId: patientConflictResult.existingAppointment?.id
       }
     });
   }
 
-  // Check doctor slot availability
-  const slotCheck = await db.query(
-    `SELECT id FROM appointments
-     WHERE "doctorId" = $1
-       AND "appointmentDate" = $2
-       AND "appointmentTime" = $3
-       AND status NOT IN ($4, $5, $6, $7)`,
-    [resolvedDoctorId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
+  const doctorConflictResult = await checkDoctorConflict(
+    resolvedDoctorId,
+    appointmentDate,
+    appointmentTime
   );
   
-  if (slotCheck.rows.length > 0) {
+  if (doctorConflictResult.conflict) {
     return res.status(409).json({
       success: false,
       message: 'This time slot is no longer available. Please select a different slot.',
@@ -3007,6 +3008,25 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     'pending'
   ]);
   
+  const bookedAppointment = result.rows[0];
+  notifyCareTeamOfBooking({
+    appointment: {
+      id: bookedAppointment.id,
+      patientName,
+      patientEmail: patient.email,
+      patientPhone: patient.phone,
+      doctorName,
+      specialization: doctor.specialization,
+      appointmentDate,
+      appointmentTime,
+      consultationType,
+      symptoms: symptomList,
+      notes: notes || null,
+      status: 'pending'
+    },
+    bookingSource: 'mobile'
+  });
+
   res.status(201).json({
     success: true,
     message: 'Appointment booked successfully',

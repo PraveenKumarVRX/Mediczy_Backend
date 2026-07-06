@@ -55,6 +55,8 @@ import {
   RefreshCw,
   Key,
   BrainCircuit,
+  Bot,
+  MessageSquareText,
   Globe,
   Radio,
   Cpu,

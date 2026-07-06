@@ -63,6 +63,26 @@ interface GateLogEntry {
   checked_at: string;
 }
 
+interface LayerMapService {
+  layer: string;
+  service: string;
+  route?: string;
+  function: string;
+  samdClass: string;
+  owner: string;
+  slo: string;
+  modelCard?: string;
+}
+
+interface LayerMapSummary {
+  operatingLayers: string;
+  agiInScope: boolean;
+  overallSamdReadiness: string;
+  layers: Array<{ id: string; name: string; description: string; serviceCount: number; services: LayerMapService[] }>;
+  priorities: Array<{ priority: string; layer: string; initiative: string; owner: string; status: string }>;
+  incidentPatterns: Array<{ symptom: string; layer: string; fix: string }>;
+}
+
 interface ModelCard {
   key: string;
   componentName: string;
@@ -215,6 +235,7 @@ const AIGovernanceDashboard: React.FC = () => {
   const [driftResults, setDriftResults] = useState<DriftResult[]>([]);
   const [gateLog, setGateLog] = useState<GateLogEntry[]>([]);
   const [modelCards, setModelCards] = useState<ModelCard[]>([]);
+  const [layerMap, setLayerMap] = useState<LayerMapSummary | null>(null);
   const [driftRunning, setDriftRunning] = useState(false);
 
   const fetchAll = useCallback(async () => {
@@ -229,7 +250,10 @@ const AIGovernanceDashboard: React.FC = () => {
         api.get('/ai-governance/samd-readiness'),
       ]);
 
-      if (dashRes.status === 'fulfilled')  setDashboard(dashRes.value.data?.data);
+      if (dashRes.status === 'fulfilled') {
+        setDashboard(dashRes.value.data?.data);
+        setLayerMap(dashRes.value.data?.data?.aiLayerMap ?? null);
+      }
       if (pendRes.status === 'fulfilled')  setPendingChanges(pendRes.value.data?.changes ?? []);
       if (driftRes.status === 'fulfilled') setDriftResults(driftRes.value.data?.results ?? []);
       if (gateRes.status === 'fulfilled')  setGateLog(gateRes.value.data?.entries ?? []);
@@ -377,6 +401,9 @@ const AIGovernanceDashboard: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value="cards" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
               <FileText className="h-3.5 w-3.5" />Model Cards
+            </TabsTrigger>
+            <TabsTrigger value="layers" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+              <Sparkles className="h-3.5 w-3.5" />AI Layer Map
             </TabsTrigger>
           </TabsList>
 
@@ -572,6 +599,67 @@ const AIGovernanceDashboard: React.FC = () => {
                 </Card>
               ))}
             </div>
+          </TabsContent>
+
+          {/* ── AI Layer Map ── */}
+          <TabsContent value="layers" className="mt-4 space-y-4">
+            <Card className="border-slate-200">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Mediczy AI Layer Map</CardTitle>
+                  <a
+                    href="https://github.com/MySmartHealth/Mediczy/blob/main/docs/ai/MEDICZY_AI_LAYER_MAP.md"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    Full document →
+                  </a>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Operating layers {layerMap?.operatingLayers ?? 'L1–L6'} · SaMD readiness {layerMap?.overallSamdReadiness ?? '22/27'} · AGI in scope: {layerMap?.agiInScope ? 'yes' : 'no'}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(layerMap?.layers ?? []).map((layer) => (
+                  <div key={layer.id} className="rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-semibold text-slate-800">{layer.id} — {layer.name}</p>
+                      <Badge variant="outline" className="text-xs">{layer.serviceCount} services</Badge>
+                    </div>
+                    <p className="text-xs text-slate-500 mb-2">{layer.description}</p>
+                    <div className="space-y-1">
+                      {layer.services.slice(0, 4).map((svc) => (
+                        <div key={`${layer.id}-${svc.service}`} className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                          <span className="font-medium">{svc.service}</span>
+                          <span className="text-slate-400">·</span>
+                          <span>{svc.owner}</span>
+                          <span className="text-slate-400">·</span>
+                          <span>{svc.slo}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-200">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Q3 Engineering Priorities</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(layerMap?.priorities ?? []).map((item) => (
+                  <div key={item.initiative} className="flex items-start gap-2 text-sm">
+                    <Badge variant="outline" className="text-xs shrink-0">{item.priority}</Badge>
+                    <div>
+                      <p className="font-medium text-slate-700">{item.initiative}</p>
+                      <p className="text-xs text-slate-500">{item.layer} · {item.owner} · {item.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

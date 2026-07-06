@@ -134,6 +134,66 @@ class AIQualityGatesService {
   }
 
   /**
+   * Run quality gates on AI-generated radiology report drafts (Level 1 assisted reporting).
+   * SaMD Class IIb — physician sign-off required before clinical use.
+   */
+  async checkImagingReport({ studyId, modality, draftText, structuredFindings, confidence, triageStatus }) {
+    const result = this._newResult('imaging_report_draft', studyId);
+
+    if (!draftText || String(draftText).trim().length < 20) {
+      result.blockers.push({
+        code: 'EMPTY_DRAFT',
+        message: 'AI draft is empty or too short to review',
+        action: 'Regenerate draft or write report manually',
+      });
+    }
+
+    if (confidence != null && confidence < 0.35) {
+      result.warnings.push({
+        code: 'LOW_CONFIDENCE_DRAFT',
+        message: `AI draft confidence ${Math.round(confidence * 100)}% — limited structured findings`,
+        action: 'Mandatory radiologist review before sign-off',
+      });
+    }
+
+    const criticalTerms = /pneumothorax|intracranial.?bleed|stroke|pulmonary.?embol|aortic.?dissection/i;
+    if (criticalTerms.test(draftText) && triageStatus !== 'reviewed') {
+      result.requiredActions.push({
+        code: 'CRITICAL_FINDING_REVIEW',
+        message: 'Draft mentions critical finding — expedited radiologist review required',
+        action: 'Acknowledge critical alert and verify finding before finalizing',
+        blocking: false,
+      });
+    }
+
+    const inventedDose = /(\d{3,})\s*mg|(\d+)\s*Gy/i;
+    if (inventedDose.test(draftText)) {
+      result.warnings.push({
+        code: 'UNEXPECTED_DOSAGE_IN_REPORT',
+        message: 'Draft contains dosage/radiation values — verify accuracy',
+        action: 'Radiologist must confirm all numeric values',
+      });
+    }
+
+    if (!structuredFindings?.items?.length && !(Array.isArray(structuredFindings) && structuredFindings.length)) {
+      result.warnings.push({
+        code: 'NO_STRUCTURED_FINDINGS',
+        message: 'Draft generated without structured findings backbone',
+        action: 'Prefer drafts built from AI findings or measurements',
+      });
+    }
+
+    result.requiredActions.push({
+      code: 'PHYSICIAN_SIGNOFF_MANDATORY',
+      message: 'AI draft is advisory only — radiologist sign-off required',
+      action: 'Edit draft as needed, pass QC, then finalize report',
+      blocking: false,
+    });
+
+    return this._finalize(result);
+  }
+
+  /**
    * Run quality gates on a drug interaction check output.
    */
   async checkDrugInteraction({ patientId, drugs, interactions, recommendation, patient }) {

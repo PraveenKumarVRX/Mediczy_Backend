@@ -1,13 +1,66 @@
 /**
  * CareOS — Instant MDT / Clinical Board + AI Consensus
  */
+import { AccessToken } from 'livekit-server-sdk';
 import pool from '../../db/pgPool.js';
 import { up as migrate } from '../../migrations/careos-phase1.migration.js';
 import { appendClinicalEvent } from './clinical-timeline.service.js';
 import llmProvider from '../ai-brain/llm-provider.js';
 
+const livekitUrl = () => process.env.LIVEKIT_URL || 'wss://msh-kw9tvxa9.livekit.cloud';
+
+export async function createMdtCallToken({ sessionId, userId, userName, role = 'specialist' }) {
+  await ensure();
+  const { rows } = await pool.query(`SELECT * FROM careos_mdt_sessions WHERE id = $1`, [sessionId]);
+  const session = rows[0];
+  if (!session) {
+    return { configured: false, message: 'MDT session not found' };
+  }
+
+  const apiKey = process.env.LIVEKIT_API_KEY;
+  const apiSecret = process.env.LIVEKIT_API_SECRET;
+  const url = livekitUrl();
+
+  if (!apiKey || !apiSecret) {
+    return {
+      configured: false,
+      room: session.livekit_room,
+      message: 'LiveKit not configured — set LIVEKIT_API_KEY and LIVEKIT_API_SECRET',
+    };
+  }
+
+  const room = session.livekit_room;
+  const token = new AccessToken(apiKey, apiSecret, {
+    identity: `${role}-${userId}`,
+    name: userName || `User ${userId}`,
+    ttl: '2h',
+  });
+  token.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true });
+
+  return {
+    configured: true,
+    token: await token.toJwt(),
+    room,
+    livekitUrl: url,
+    sessionId,
+  };
+}
+
 let ready = false;
 async function ensure() { if (!ready) { await migrate(); ready = true; } }
+
+export async function listMdtSessions(organizationId, limit = 25) {
+  await ensure();
+  const { rows } = await pool.query(
+    `SELECT id, patient_id, title, status, livekit_room, created_at
+     FROM careos_mdt_sessions
+     WHERE organization_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [organizationId, limit]
+  );
+  return rows;
+}
 
 export async function startClinicalBoard({ patientId, organizationId, title, startedBy }) {
   await ensure();
@@ -104,4 +157,4 @@ export async function getAIConsensus(sessionId) {
   return { opinions, consensus: parsed, disclaimer: 'AI consensus is assistive — MDT lead makes final decision' };
 }
 
-export default { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus };
+export default { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus, createMdtCallToken, listMdtSessions };

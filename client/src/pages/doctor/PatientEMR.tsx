@@ -243,7 +243,7 @@ export default function PatientEMR() {
   const patients = patientsData?.patients || [];
 
   const { data: vitalsRecords = [], isLoading: loadingVitals, refetch: refetchVitals } = useQuery({
-    queryKey: ['patient-vitals', selectedPatient?.id],
+    queryKey: ['patient-vitals', selectedPatient?.id ?? null],
     queryFn: async () => {
       const response = await api.get(`/doctors/my-patients/${selectedPatient!.id}/vitals-history?limit=50`);
       return (response.data?.vitals ?? []) as VitalsRecord[];
@@ -259,6 +259,20 @@ export default function PatientEMR() {
     const patient = patients.find((p: Patient) => String(p.id) === patientId);
     if (patient) setSelectedPatient(patient);
   }, [searchParams, patients]);
+
+  useEffect(() => {
+    if (!selectedPatient) {
+      sessionStorage.removeItem('doctorCopilotPatient');
+      return;
+    }
+    sessionStorage.setItem(
+      'doctorCopilotPatient',
+      JSON.stringify({
+        id: selectedPatient.id,
+        name: [selectedPatient.firstName, selectedPatient.lastName].filter(Boolean).join(' '),
+      })
+    );
+  }, [selectedPatient]);
 
   // Filter patients based on search
   const filteredPatients = patients.filter((p: Patient) => {
@@ -398,7 +412,7 @@ export default function PatientEMR() {
       setSavingVitals(true);
       await api.post(`/doctors/my-patients/${selectedPatient.id}/vitals`, payload);
 
-      await queryClient.invalidateQueries({ queryKey: ['patient-vitals', selectedPatient.id] });
+      await queryClient.invalidateQueries({ queryKey: ['patient-vitals'] });
 
       toast({
         title: 'Success',

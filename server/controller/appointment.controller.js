@@ -15,18 +15,12 @@ import n8nService from '../services/n8n.service.js';
 import notificationService from '../services/notification.service.js';
 import kafkaEvents from '../services/kafka-events.service.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
-
-const normalizeTimeHHMM = (value = '') => {
-  const trimmed = String(value || '').trim();
-  // If it's a time range like "12:30 - 13:00" or "12:30-13:00", extract just the start time
-  if (trimmed.includes('-')) {
-    const startTime = trimmed.split('-')[0].trim();
-    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return startTime;
-  }
-  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) return trimmed;
-  if (/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(trimmed)) return trimmed.slice(0, 5);
-  return trimmed;
-};
+import {
+  canonicalizeAppointmentTime,
+  findSlotConflict,
+  normalizeTimeHHMM,
+} from '../utils/appointmentSlotTime.js';
+import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 
 const getAppointmentDateTime = (appointment) => {
   if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
@@ -204,7 +198,7 @@ export const createAppointment = async (req, res) => {
       reason
     } = req.body;
 
-    const appointmentTime = normalizeTimeHHMM(rawAppointmentTime);
+    const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
     const userId = req.user.id;
     const requestedConsultationType = normalizeRequestedConsultationType(rawConsultationType);
     const dbConsultationType = mapConsultationTypeForDb(requestedConsultationType);
@@ -283,12 +277,10 @@ export const createAppointment = async (req, res) => {
         }
       }
 
-      // Check if doctor has an appointment at this time (prevent doctor double-booking)
-      const doctorConflict = await Appointment.findOne({
+      const activeDoctorAppointments = await Appointment.findAll({
         where: {
           doctorId: resolvedDoctorId,
           appointmentDate,
-          appointmentTime,
           status: {
             [Op.notIn]: ['cancelled', 'no-show']
           }
@@ -296,6 +288,7 @@ export const createAppointment = async (req, res) => {
         transaction,
         lock: transaction.LOCK.UPDATE
       });
+      const doctorConflict = findSlotConflict(activeDoctorAppointments, appointmentTime);
 
       if (doctorConflict) {
         fail(409, {
@@ -307,12 +300,10 @@ export const createAppointment = async (req, res) => {
         });
       }
 
-      // Check if patient has an appointment at this time (prevent patient double-booking)
-      const patientConflict = await Appointment.findOne({
+      const activePatientAppointments = await Appointment.findAll({
         where: {
           userId,
           appointmentDate,
-          appointmentTime,
           status: {
             [Op.notIn]: ['cancelled', 'no-show']
           }
@@ -320,6 +311,7 @@ export const createAppointment = async (req, res) => {
         transaction,
         lock: transaction.LOCK.UPDATE
       });
+      const patientConflict = findSlotConflict(activePatientAppointments, appointmentTime);
 
       if (patientConflict) {
         const conflictDoctor = await Doctor.findByPk(patientConflict.doctorId, {
@@ -727,6 +719,13 @@ export const createAppointment = async (req, res) => {
       console.error('❌ Failed to send patient confirmation:', patientNotificationError);
     }
 
+    notifyCareTeamOfBooking({
+      appointment,
+      patient: user,
+      doctor,
+      bookingSource: 'web'
+    });
+
     // Mirror to intelligent DB (fire-and-forget style)
     (async () => {
       try {
@@ -1021,7 +1020,8 @@ export const rescheduleAppointment = async (req, res) => {
 
     const { id } = req.params;
     const userId = req.user.id;
-    const { appointmentDate, appointmentTime } = req.body;
+    const { appointmentDate, appointmentTime: rawAppointmentTime } = req.body;
+    const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
 
     const appointment = await Appointment.findByPk(id);
 
@@ -1043,16 +1043,17 @@ export const rescheduleAppointment = async (req, res) => {
       });
     }
 
-    // Check if new slot is available
-    const existingAppointment = await Appointment.findOne({
+    const doctorAppointments = await Appointment.findAll({
       where: {
         doctorId: appointment.doctorId,
         appointmentDate,
-        appointmentTime,
         status: {
           [Op.notIn]: ['cancelled', 'no-show']
         }
       }
+    });
+    const existingAppointment = findSlotConflict(doctorAppointments, appointmentTime, {
+      excludeId: appointment.id,
     });
 
     if (existingAppointment) {

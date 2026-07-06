@@ -14,6 +14,7 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import { User } from '../models/user.model.intelligent.js';
 import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
+import { generateOAuthPassword, isOAuthEmailVerified } from '../utils/oauth-security.js';
 
 /**
  * OAuth2 Configuration for Mediczy
@@ -56,17 +57,27 @@ async function findOrCreateUser(profile, provider) {
       throw new Error(`No email provided by ${provider}`);
     }
     
+    const emailVerified = isOAuthEmailVerified(profile);
+
     // Check if user exists with this OAuth ID
     const oauthIdField = `${provider}Id`;
     let user = await User.findOne({ where: { [oauthIdField]: profile.id } });
     
     // If not, check if user exists with this email
     if (!user) {
-      user = await User.findOne({ where: { email } });
-      
-      if (user) {
-        // Link OAuth account to existing user
+      const existingByEmail = await User.findOne({ where: { email } });
+
+      if (existingByEmail) {
+        // SECURITY: only auto-link a social identity to an existing account when
+        // the provider asserts the email is verified — otherwise an attacker
+        // could take over the account via an unverified provider email.
+        if (!emailVerified) {
+          throw new Error(
+            `${provider} did not verify this email, so it cannot be linked to the existing account. Please sign in with your password and link ${provider} from settings.`
+          );
+        }
         console.log(`🔗 Linking ${provider} account to existing user: ${email}`);
+        user = existingByEmail;
         await user.update({ [oauthIdField]: profile.id });
       }
     }
@@ -88,8 +99,8 @@ async function findOrCreateUser(profile, provider) {
       const firstName = profile.name?.givenName || profile.displayName?.split(' ')[0] || 'User';
       const lastName = profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' ') || '';
       
-      // Generate a random password (user won't use it, can reset if needed)
-      const randomPassword = Math.random().toString(36).slice(-12) + 'A1!';
+      // Cryptographically strong placeholder password (login is via OAuth)
+      const randomPassword = generateOAuthPassword();
       
       user = await User.create({
         email,
@@ -98,7 +109,7 @@ async function findOrCreateUser(profile, provider) {
         lastName,
         [oauthIdField]: profile.id,
         oauthProvider: provider,
-        emailVerified: true, // OAuth emails are pre-verified
+        emailVerified, // reflect the provider's verified assertion
         phoneNumber: '', // Will be added by user later
         dateOfBirth: new Date('1990-01-01'), // Placeholder, will be updated by user
         gender: 'Other', // Will be updated by user

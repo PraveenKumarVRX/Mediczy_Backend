@@ -88,6 +88,7 @@ const SECTIONS: Section[] = [
   {
     label: 'HealthOS',
     modules: [
+      { title: 'Hospital OS 2035', description: 'Voice, twins, smart rooms & spatial ops', path: '/hospital/os/voice', icon: Sparkles, gradient: 'from-violet-600 to-indigo-700', badge: '2035' },
       { title: 'HealthOS Platform', description: 'Living patient workspace & care network', path: '/hospital/healthos', icon: HeartPulse, gradient: 'from-teal-500 to-emerald-600', badge: 'NEW' },
       { title: 'Living Patient Workspace', description: 'Unified patient timeline & care team', path: '/hospital/patient/1/healthos', icon: Stethoscope, gradient: 'from-cyan-500 to-teal-600' },
       { title: 'Hospital Copilot', description: 'AI assistant for hospital workflows', path: '/hospital/copilot', icon: Sparkles, gradient: 'from-violet-500 to-purple-600', badge: 'AI' },

@@ -1,69 +1,100 @@
-/**
- * Single source of truth for the HealthOS nav cluster that used to be
- * hand-duplicated (and drift) across HospitalSidebar.tsx and
- * MainLayoutdoctor.tsx — see the /doctor/command-center 404 fixed earlier
- * this exact way. Scoped deliberately narrow: only the three destinations
- * that both hospital and doctor navs need to agree on (Living Workspace hub,
- * Command Center, Hospital Copilot). Ward/department links (Bed Map, ICU
- * Board, etc.) already live correctly in HospitalSidebar's hospital-only
- * arrays and aren't duplicated here — pulling them into a portal-aware
- * config with no doctor/nurse equivalent would just add risk for no
- * unification benefit.
- *
- * Every href below points at a route verified to exist in routes/index.tsx
- * or portalClinicalRoutes.tsx.
- */
-import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, Network, Sparkles } from "lucide-react";
-
-export type ClinicalNavPortal = "hospital" | "doctor" | "nurse";
+import type { LucideIcon } from 'lucide-react';
+import {
+  LayoutDashboard,
+  HeartPulse,
+  Users,
+  Sparkles,
+  Bed,
+  ClipboardList,
+  Activity,
+  Stethoscope,
+  Pill,
+  ScanLine,
+  Siren,
+  BookOpen,
+  Cpu,
+} from 'lucide-react';
 
 export interface ClinicalNavItem {
-  id: string;
   label: string;
-  /** Hospital-only surfaces always resolve under /hospital regardless of
-   *  the active portal (see clinicalPortalPaths.ts's HOSPITAL_ONLY_BASE) —
-   *  set hospitalOnly to reuse that same fixed base instead of duplicating
-   *  the path per portal. */
-  hospitalOnly?: boolean;
-  /** Path segment after the portal base, e.g. "command-center" */
-  path: string;
+  href: string;
   icon: LucideIcon;
-  portals: ClinicalNavPortal[];
+  capability?: string;
+  hospitalOnly?: boolean;
 }
 
-export const HEALTHOS_NAV_ITEMS: ClinicalNavItem[] = [
+export interface ClinicalNavSection {
+  section: string;
+  items: ClinicalNavItem[];
+}
+
+/** Hospital portal — HealthOS + ward ops (§9 clinicalNav.config) */
+export const HOSPITAL_HEALTHOS_NAV: ClinicalNavSection[] = [
   {
-    id: "healthos-hub",
-    label: "HealthOS",
-    path: "healthos",
-    icon: Network,
-    portals: ["hospital", "doctor", "nurse"],
+    section: 'HealthOS',
+    items: [
+      { label: 'Command Center', href: '/hospital/command-center', icon: LayoutDashboard, capability: 'opd_ipd', hospitalOnly: true },
+      { label: 'HealthOS Platform', href: '/hospital/healthos', icon: HeartPulse, capability: 'ehr' },
+      { label: 'MDT Inbox', href: '/hospital/mdt/inbox', icon: Users, capability: 'ehr', hospitalOnly: true },
+      { label: 'Hospital Copilot', href: '/hospital/copilot', icon: Sparkles, capability: 'ehr' },
+      { label: 'Hospital OS 2035', href: '/hospital/os/voice', icon: Cpu, capability: 'ehr', hospitalOnly: true },
+      { label: 'Case Library', href: '/hospital/knowledge/cases', icon: BookOpen, capability: 'ehr', hospitalOnly: true },
+      { label: 'Federation', href: '/hospital/federation', icon: HeartPulse, capability: 'ehr', hospitalOnly: true },
+      { label: 'Referrals', href: '/hospital/referrals', icon: Users, capability: 'ehr', hospitalOnly: true },
+      { label: 'Marketplace', href: '/hospital/marketplace', icon: Sparkles, capability: 'ehr', hospitalOnly: true },
+      { label: 'Research Hub', href: '/hospital/research', icon: Activity, capability: 'ehr', hospitalOnly: true },
+      { label: 'Home Care / RPM', href: '/hospital/home-care', icon: HeartPulse, capability: 'ehr', hospitalOnly: true },
+    ],
   },
   {
-    id: "command-center",
-    label: "Command Center",
-    hospitalOnly: true,
-    path: "command-center",
-    icon: LayoutDashboard,
-    portals: ["hospital", "doctor", "nurse"],
+    section: 'Ward Operations',
+    items: [
+      { label: 'Bed Map', href: '/hospital/beds/map', icon: Bed, capability: 'bed_management', hospitalOnly: true },
+      { label: 'eMAR', href: '/hospital/emar', icon: Pill, capability: 'pharmacy', hospitalOnly: true },
+      { label: 'Discharge Board', href: '/hospital/discharge-board', icon: ClipboardList, capability: 'opd_ipd', hospitalOnly: true },
+      { label: 'Nursing Tasks', href: '/hospital/patients', icon: ClipboardList, capability: 'patients' },
+    ],
   },
   {
-    id: "copilot",
-    label: "Hospital Copilot",
-    path: "copilot",
-    icon: Sparkles,
-    portals: ["hospital", "doctor", "nurse"],
+    section: 'Departments',
+    items: [
+      { label: 'ICU Board', href: '/hospital/icu-board', icon: Activity, capability: 'opd_ipd', hospitalOnly: true },
+      { label: 'OT Command', href: '/hospital/ot/command-center', icon: Stethoscope, capability: 'opd_ipd', hospitalOnly: true },
+      { label: 'ER Queue', href: '/hospital/er/queue', icon: Siren, capability: 'opd_ipd', hospitalOnly: true },
+      { label: 'Radiology', href: '/hospital/radiology', icon: ScanLine, capability: 'ehr', hospitalOnly: true },
+      { label: 'Pharmacy Dispense', href: '/hospital/pharmacy-dispense', icon: Pill, capability: 'pharmacy', hospitalOnly: true },
+    ],
   },
 ];
 
-/** Resolve an item's href for a given active portal. */
-export function clinicalNavHref(item: ClinicalNavItem, portal: ClinicalNavPortal): string {
-  const base = item.hospitalOnly ? "/hospital" : `/${portal}`;
-  return `${base}/${item.path}`;
+/** Doctor portal — collaborative HealthOS surfaces */
+export const DOCTOR_HEALTHOS_NAV: ClinicalNavItem[] = [
+  { label: 'HealthOS Platform', href: '/doctor/healthos', icon: HeartPulse },
+  { label: 'Hospital Copilot', href: '/doctor/copilot', icon: Sparkles },
+  { label: 'My Patients', href: '/doctor/patients', icon: Users },
+];
+
+export interface WorkspaceNavItem {
+  key: string;
+  label: string;
+  segment: string;
+  icon: LucideIcon;
 }
 
-/** HealthOS nav items visible to a given portal. */
-export function getHealthOsNavForPortal(portal: ClinicalNavPortal): ClinicalNavItem[] {
-  return HEALTHOS_NAV_ITEMS.filter((item) => item.portals.includes(portal));
-}
+/** Left rail inside ClinicalShell — patient workspace sections */
+export const WORKSPACE_NAV: WorkspaceNavItem[] = [
+  { key: 'overview', label: 'Overview', segment: '', icon: LayoutDashboard },
+  { key: 'timeline', label: 'Clinical Timeline', segment: 'timeline', icon: Activity },
+  { key: 'team', label: 'Care Team', segment: 'team', icon: Users },
+  { key: 'ai-team', label: 'AI Care Team', segment: 'ai-team', icon: Sparkles },
+  { key: 'tasks', label: 'Tasks', segment: 'tasks', icon: ClipboardList },
+  { key: 'pathway', label: 'Treatment Pathway', segment: 'pathway', icon: HeartPulse },
+  { key: 'monitoring', label: 'Monitoring', segment: 'monitoring', icon: Activity },
+  { key: 'results', label: 'Labs & Imaging', segment: 'results', icon: ScanLine },
+  { key: 'playback', label: 'Clinical Playback', segment: 'playback', icon: Activity },
+  { key: 'mdt', label: 'Clinical Board', segment: 'mdt', icon: Users },
+  { key: 'family', label: 'Family', segment: 'family', icon: HeartPulse },
+  { key: 'documents', label: 'Documents', segment: 'documents', icon: ClipboardList },
+  { key: 'similar-cases', label: 'Similar Cases', segment: 'similar-cases', icon: BookOpen },
+  { key: 'ecosystem', label: 'Ecosystem', segment: 'ecosystem', icon: HeartPulse },
+];

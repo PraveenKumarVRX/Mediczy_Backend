@@ -49,8 +49,14 @@ const hasNamedPermission = (permissions = [], required = []) => {
     .map(normalizeName)
     .filter(Boolean);
 
+  // Match when a granted permission equals or fully contains a required name
+  // (e.g. "Corporate Management - Full" satisfies "Corporate Management").
+  // SECURITY: we deliberately do NOT match `needle.includes(permission)` — that
+  // reverse-substring direction let an overly-broad short permission (e.g.
+  // "all" or "corporate") satisfy a longer required permission, over-granting
+  // cross-corporate access.
   return needles.some((needle) => granted.some((permission) =>
-    permission === needle || permission.includes(needle) || needle.includes(permission)
+    permission === needle || permission.includes(needle)
   ));
 };
 

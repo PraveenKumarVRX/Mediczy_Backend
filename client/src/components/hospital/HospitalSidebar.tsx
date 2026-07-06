@@ -18,6 +18,8 @@ import {
   Stethoscope,
   FolderOpen,
   FileHeart,
+  HeartPulse,
+  ClipboardList,
   BriefcaseMedical,
   Receipt,
   Bell,
@@ -38,7 +40,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getHealthOsNavForPortal, clinicalNavHref } from "@/config/clinicalNav.config";
 
 interface SidebarItem {
   icon: React.ElementType;
@@ -80,24 +81,15 @@ const mainNavItems: SidebarItem[] = [
   { icon: MessageSquare, label: "Communication Hub", href: "/hospital/communication", capability: "communication" },
 ];
 
-// The three destinations hospital + doctor + nurse navs all need to agree
-// on — sourced from the shared config so this list and MainLayoutdoctor's
-// can't drift apart again.
-const HEALTHOS_ITEM_CAPABILITY: Record<string, string> = {
-  "healthos-hub": "ehr",
-  "command-center": "opd_ipd",
-  copilot: "ehr",
-};
-const healthOsSidebarItems: SidebarItem[] = getHealthOsNavForPortal("hospital").map((item) => ({
-  icon: item.icon,
-  label: item.label,
-  href: clinicalNavHref(item, "hospital"),
-  capability: HEALTHOS_ITEM_CAPABILITY[item.id],
-}));
-
 const clinicalItems: SidebarItem[] = [
   { icon: FileHeart, label: "EHR", href: "/hospital/ehr", capability: "ehr" },
-  ...healthOsSidebarItems,
+  { icon: HeartPulse, label: "HealthOS", href: "/hospital/healthos", capability: "ehr" },
+  { icon: LayoutGrid, label: "Command Center", href: "/hospital/command-center", capability: "opd_ipd" },
+  { icon: Users, label: "MDT Inbox", href: "/hospital/mdt/inbox", capability: "ehr" },
+  { icon: Network, label: "Hospital Copilot", href: "/hospital/copilot", capability: "ehr" },
+  { icon: Bed, label: "Bed Map", href: "/hospital/beds/map", capability: "bed_management" },
+  { icon: Pill, label: "eMAR", href: "/hospital/emar", capability: "pharmacy" },
+  { icon: ClipboardList, label: "Discharge Board", href: "/hospital/discharge-board", capability: "opd_ipd" },
   { icon: FolderOpen, label: "MRD", href: "/hospital/mrd", capability: "mrd" },
   { icon: ClipboardCheck, label: "IP Sheets", href: "/hospital/ip-sheets", capability: "ip_sheets" },
   { icon: FileCheck, label: "Discharge Summary", href: "/hospital/discharge-summary", capability: "discharge_summary" },

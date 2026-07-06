@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { MicVAD } from "@ricky0123/vad-web";
 import { Room } from "livekit-client";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import api from "@/lib/api";
+import doctorCopilotService from "@/services/doctorCopilot";
 import { getToken } from "@/hooks/auth";
 import {
   Send, Volume2, VolumeX, Loader2, Sparkles,
@@ -29,16 +30,6 @@ interface Message {
   parameters?: Record<string, unknown> | null;
   requiresConfirmation?: boolean;
   timestamp: Date;
-}
-
-interface AgentResponse {
-  intent: string;
-  action: string | null;
-  parameters: Record<string, unknown> | null;
-  response: string;
-  speak: string;
-  data?: Record<string, unknown> | null;
-  requiresConfirmation: boolean;
 }
 
 // Screen path map for navigation actions
@@ -112,9 +103,25 @@ const extractCommand = (t: string): string =>
 
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { currentDoctor } = useAuth();
   const doctorFirstName = currentDoctor?.firstName || "Doctor";
+
+  const copilotContext = useMemo(() => {
+    const segment = location.pathname.replace(/^\/doctor\/?/, "").split("/")[0] || "dashboard";
+    let currentPatient: { id?: number | string; name?: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem("doctorCopilotPatient");
+      if (raw) currentPatient = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return {
+      currentScreen: segment === "assistant" ? "isha_assistant" : segment,
+      currentPatient,
+    };
+  }, [location.pathname]);
 
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -464,11 +471,9 @@ export default function DoctorVoiceAssistant() {
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
       try {
-        const r = await api.post('/voice-assistant/stt', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-        return { text: (r.data?.text || '').trim(), serviceDown: false };
+        const r = await doctorCopilotService.speechToText(form);
+        return { text: (r?.text || '').trim(), serviceDown: false };
       } catch (err: unknown) {
-        // 503 / stt_unavailable means the transcription backend is down — surface it
-        // instead of silently dropping the command (which looks like "not responding").
         const status = (err as { response?: { status?: number } })?.response?.status;
         return { text: '', serviceDown: status === 503 || status === 502 || status === 500 || status === undefined };
       }
@@ -497,8 +502,6 @@ export default function DoctorVoiceAssistant() {
 
         const { text: transcript, serviceDown } = await transcribeAudio(audio);
         if (serviceDown) {
-          // Server transcription is down — fall back to on-device browser STT if
-          // available so voice keeps working; otherwise tell the doctor to type.
           if (browserSttSupported && sttModeRef.current === 'server') {
             switchToBrowserStt();
           } else {
@@ -506,6 +509,7 @@ export default function DoctorVoiceAssistant() {
           }
           return;
         }
+        if (!transcript) return;
         processTranscriptRef.current?.(transcript);
       },
     }).then(v => {
@@ -544,7 +548,7 @@ export default function DoctorVoiceAssistant() {
       if (isSpeaking || isListening || isProcessing) return;
       if (Date.now() - lastSpokenAlertRef.current < 5 * 60 * 1000) return;
       try {
-        const { data } = await api.get("/voice-assistant/briefing");
+        const data = await doctorCopilotService.getBriefing();
         if (data?.hasUpdates && data?.speakText) {
           if (data.speakText === lastBriefingTextRef.current) return;
           lastBriefingTextRef.current = data.speakText;
@@ -605,32 +609,32 @@ export default function DoctorVoiceAssistant() {
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
 
-    const history = messagesRef.current
+    const history = [...messagesRef.current, userMsg]
       .filter(m => m.id !== "welcome")
       .filter(m => !(m.id.startsWith("briefing-") && m.action === "get_doctor_briefing"))
       .slice(-8)
       .map(m => ({ role: m.role, text: m.text }));
 
     try {
-      const { data } = await api.post<AgentResponse>("/voice-assistant/agent", {
-        text,
+      const data = await doctorCopilotService.chat({
+        message: text,
         history,
-        context: { currentScreen: window.location.pathname.split("/").pop() || "dashboard" },
-        // Pass pending action so server can execute it directly when user says "yes/confirm"
+        context: copilotContext,
         pendingAction: pendingAction
           ? { action: pendingAction.action, parameters: pendingAction.parameters }
           : null,
       });
 
+      const responseText = data.response || data.speak || "I'm not sure how to help with that.";
       const displayText = (data.speak && data.response && data.response.length > data.speak.length + 40)
         ? data.speak
-        : data.response;
+        : responseText;
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         text: displayText,
-        intent: data.intent,
+        intent: data.intent || (data.path === 'clinical' ? 'medical_query' : data.intent),
         action: data.action,
         parameters: data.parameters,
         requiresConfirmation: data.requiresConfirmation,
@@ -640,13 +644,13 @@ export default function DoctorVoiceAssistant() {
       setMessages(prev => [...prev, assistantMsg]);
 
       if (data.requiresConfirmation) {
-        speak(data.speak || data.response);
+        speak(data.speak || responseText);
         setPendingAction(assistantMsg);
       } else if (data.action === 'navigate_to' || data.action === 'search_patient') {
         // Speak first, navigate only after TTS finishes so audio isn't cut off by unmount
-        speak(data.speak || data.response, () => executeAction(data.action, data.parameters));
+        speak(data.speak || responseText, () => executeAction(data.action, data.parameters));
       } else {
-        speak(data.speak || data.response);
+        speak(data.speak || responseText);
         executeAction(data.action, data.parameters);
       }
     } catch (err: unknown) {
@@ -663,7 +667,7 @@ export default function DoctorVoiceAssistant() {
     } finally {
       setIsProcessing(false);
     }
-  }, [speak, executeAction, pendingAction]);
+  }, [speak, executeAction, copilotContext, pendingAction]);
 
   // Keep sendToAgentRef in sync
   useEffect(() => { sendToAgentRef.current = sendToAgent; }, [sendToAgent]);

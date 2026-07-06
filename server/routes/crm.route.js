@@ -11,6 +11,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import sharedPool from '../db/pgPool.js';
+import { handleLeadStatusChange } from '../services/crm-lead-automation.service.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
 import nodemailer from 'nodemailer';
 
@@ -189,6 +190,12 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_leads_assigned     ON crm_leads(assigned_to);
       CREATE INDEX IF NOT EXISTS idx_leads_source       ON crm_leads(source);
       CREATE INDEX IF NOT EXISTS idx_leads_next_followup ON crm_leads(next_followup);
+
+      ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_leads_score ON crm_leads(score);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_leadgen_id
+        ON crm_leads ((custom_fields->>'leadgen_id'))
+        WHERE custom_fields->>'leadgen_id' IS NOT NULL AND custom_fields->>'leadgen_id' != '';
 
       CREATE TABLE IF NOT EXISTS crm_deals (
         id              BIGSERIAL    PRIMARY KEY,
@@ -918,6 +925,11 @@ router.get('/leads/:id', authCRM, async (req, res) => {
 router.put('/leads/:id', authCRM, async (req, res) => {
   try {
     const { name, email, phone, company, designation, source, status, priority, notes, tags, assigned_to, next_followup } = req.body;
+
+    const prevRes = await sharedPool.query(`SELECT status FROM crm_leads WHERE id = $1`, [req.params.id]);
+    if (!prevRes.rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
+    const previousStatus = prevRes.rows[0].status;
+
     const { rows } = await sharedPool.query(
       `UPDATE crm_leads SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone),
        company=COALESCE($4,company), designation=COALESCE($5,designation), source=COALESCE($6,source),
@@ -928,6 +940,12 @@ router.put('/leads/:id', authCRM, async (req, res) => {
       [name, email, phone, company, designation, source, status, priority, notes, tags?JSON.stringify(tags):null, assigned_to, next_followup, req.params.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
+
+    const newStatus = rows[0].status;
+    if (status && newStatus !== previousStatus) {
+      handleLeadStatusChange(rows[0].id, previousStatus, newStatus).catch(() => {});
+    }
+
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to update lead' }); }
 });

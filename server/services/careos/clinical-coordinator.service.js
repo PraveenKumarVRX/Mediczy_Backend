@@ -286,4 +286,39 @@ export async function listCoordinatorAlerts(patientId, organizationId) {
   return rows;
 }
 
-export default { analyzePatient, listCoordinatorAlerts, generateAdmissionBriefing };
+export async function acknowledgeCoordinatorAlert(patientId, organizationId, alertId, { action, userId, note } = {}) {
+  await ensure();
+  const status = action === 'approve' ? 'approved' : action === 'dismiss' ? 'dismissed' : 'acknowledged';
+  const { rows } = await pool.query(
+    `UPDATE careos_coordinator_alerts
+     SET status = $1, acknowledged_at = NOW(), acknowledged_by = $2,
+         evidence = evidence || $3::jsonb
+     WHERE id = $4 AND patient_id = $5 AND ($6::bigint IS NULL OR organization_id = $6)
+     RETURNING *`,
+    [
+      status,
+      userId || null,
+      JSON.stringify({ ack_action: action, ack_note: note || null }),
+      Number(alertId),
+      patientId,
+      organizationId || null,
+    ]
+  );
+  if (!rows[0]) return null;
+
+  await appendClinicalEvent({
+    organizationId,
+    patientId,
+    eventType: 'ai_insight_ack',
+    title: `AI alert ${status}`,
+    body: rows[0].message,
+    actorType: 'user',
+    actorId: userId,
+    severity: 'info',
+    metadata: { alertId, action },
+  });
+
+  return rows[0];
+}
+
+export default { analyzePatient, listCoordinatorAlerts, generateAdmissionBriefing, acknowledgeCoordinatorAlert };

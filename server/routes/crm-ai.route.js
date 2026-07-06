@@ -24,6 +24,11 @@ import {
   generateAssistedEmailDraft,
   analyzeEmailCommunication,
 } from '../services/ai-email-arg.service.js';
+import {
+  getMarketingContext,
+  marketingCopilotChat,
+  executeMarketingAction,
+} from '../services/crm-marketing-copilot.service.js';
 
 const router = express.Router();
 
@@ -654,6 +659,44 @@ router.get("/email/arg-dashboard", authCRM, async (req, res) => {
       stageSuggestions,
     };
     res.json({ data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Marketing AI Copilot ─────────────────────────────────────────────────────
+
+router.get('/marketing/context', authCRM, async (req, res) => {
+  try {
+    const context = await getMarketingContext();
+    res.json({ data: context });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/marketing/chat', authCRM, async (req, res) => {
+  try {
+    const { messages = [] } = req.body;
+    if (!Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages array required' });
+    }
+    const result = await marketingCopilotChat({
+      messages,
+      crmUser: req.crmUser || {},
+    });
+    res.json({ data: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/marketing/action', authCRM, async (req, res) => {
+  try {
+    const { tool, params = {} } = req.body;
+    if (!tool) return res.status(400).json({ error: 'tool required' });
+    const result = await executeMarketingAction(tool, params, req.crmUser || {});
+    res.json({ data: result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

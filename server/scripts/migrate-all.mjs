@@ -39,6 +39,10 @@ async function runHmisExtended() {
     './migrations/20260617000001-create-er-visits.js',
     './migrations/20260617000002-create-charge-master.js',
     './migrations/20260617000003-create-pharmacy-dispense-queue.js',
+    './migrations/20260623000001-align-hg-dicom-schema.js',
+    './migrations/20260624000001-imaging-platform-phases.js',
+    './migrations/20260625000001-imaging-ai-reporting.js',
+    './migrations/20260626000001-imaging-interpretability-complete.js',
   ];
   for (const file of extra) {
     const name = path.basename(file);

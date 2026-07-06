@@ -1,114 +1,161 @@
-import { Bot, BarChart3, DollarSign, ShieldCheck } from 'lucide-react';
+import api from '@/utils/api';
 
-export type Persona = 'ops' | 'analytics' | 'revenue' | 'quality';
+export type CopilotPersona = 'ops' | 'analytics' | 'revenue' | 'quality' | 'clinical';
+export type ForceAgent = 'admin' | 'analyst' | 'insurance' | 'clinical';
 
-export interface ConversationMessage {
+export interface CopilotMessage {
   role: 'user' | 'assistant';
   content: string;
 }
 
-export interface CopilotResponse {
+export interface AgentProcessRequest {
+  message: string;
+  conversationId?: number;
+  contextMessages?: CopilotMessage[];
+  forceAgent?: ForceAgent;
+  copilotType?: string;
+  persona?: CopilotPersona;
+}
+
+export interface AgentProcessResponse {
   success: boolean;
   response: string;
-  agentsUsed: string[];
-  taskPlan: any;
-  totalTokens: number;
-  latencyMs: number;
-  requiresApproval?: boolean;
-  pendingAction?: any;
-  conversationId?: number;
+  agentsUsed: Array<{ id: string; tokens?: number; tools?: string[]; latencyMs?: number }>;
+  taskPlan?: Record<string, unknown>;
+  identity?: { role?: string; source?: string };
+  meta?: { totalTokens?: number; latencyMs?: number; isMultiAgent?: boolean };
+  error?: string;
+  code?: string;
 }
 
-export interface PersonaConfig {
-  label: string;
-  icon: typeof Bot;
-  forceAgent: string;
-  description: string;
-  quickPrompts: string[];
+export interface CopilotConfig {
+  enabled: boolean;
+  streaming: boolean;
+  writeActions: boolean;
 }
 
-export const PERSONA_CONFIG: Record<Persona, PersonaConfig> = {
-  ops: {
-    label: 'Operations',
-    icon: Bot,
-    forceAgent: 'admin',
-    description: 'System health, agent status, audit logs, governance queue',
-    quickPrompts: [
-      'Show system status',
-      'List all registered agents',
-      'Show recent audit log entries',
-      'Get governance queue',
-    ],
-  },
-  analytics: {
-    label: 'Analytics',
-    icon: BarChart3,
-    forceAgent: 'analyst',
-    description: 'Tenant stats, LLM performance, error trends, revenue summary',
-    quickPrompts: [
-      'Show tenant stats',
-      'Which agents had the most errors today?',
-      'Show LLM provider performance',
-      'Revenue summary for this month',
-    ],
-  },
-  revenue: {
-    label: 'Revenue & TPA',
-    icon: DollarSign,
-    forceAgent: 'insurance',
-    description: 'Pre-auth requests, insurance claims, billing anomalies',
-    quickPrompts: [
-      'Show pending pre-auth requests',
-      'Insurance claims summary',
-      'Billing anomalies this week',
-    ],
-  },
-  quality: {
-    label: 'Quality & Safety',
-    icon: ShieldCheck,
-    forceAgent: 'clinical',
-    description: 'Quality gates, SaMD governance, triage escalations, demographic parity',
-    quickPrompts: [
-      'Show quality gate failures today',
-      'Recent SaMD governance changes',
-      'Triage escalation patterns',
-      'Demographic parity status',
-    ],
-  },
+export interface PendingApproval {
+  actionId: string;
+  summary: string;
+  toolName?: string;
+}
+
+const PERSONA_AGENT: Record<CopilotPersona, ForceAgent> = {
+  ops: 'admin',
+  analytics: 'analyst',
+  revenue: 'insurance',
+  quality: 'analyst',
+  clinical: 'clinical',
 };
 
-export async function sendCopilotMessage(params: {
-  message: string;
-  persona: Persona;
-  conversationId: number | null;
-  contextMessages: ConversationMessage[];
-}): Promise<CopilotResponse> {
-  const { message, persona, conversationId, contextMessages } = params;
-  const adminToken = localStorage.getItem('adminToken');
+export function personaToForceAgent(persona: CopilotPersona): ForceAgent {
+  return PERSONA_AGENT[persona] || 'admin';
+}
 
-  const body: Record<string, any> = {
-    message,
-    forceAgent: PERSONA_CONFIG[persona].forceAgent,
-    conversationHistory: contextMessages,
+export async function getCopilotConfig(): Promise<CopilotConfig> {
+  const { data } = await api.get('/v3/ai-brain/agents/copilot-config');
+  return {
+    enabled: data.enabled !== false,
+    streaming: data.streaming !== false,
+    writeActions: data.writeActions === true,
   };
-  if (conversationId !== null) {
-    body.conversationId = conversationId;
-  }
+}
 
-  const res = await fetch('/api/v3/ai-brain/agents/process', {
+export async function getAvailableAgents() {
+  const { data } = await api.get('/v3/ai-brain/agents/available');
+  return data.agents || [];
+}
+
+export async function getAgentHistory(limit = 10) {
+  const { data } = await api.get('/v3/ai-brain/agents/history', { params: { limit } });
+  return data.history || [];
+}
+
+export async function processMessage(req: AgentProcessRequest): Promise<AgentProcessResponse> {
+  const { data } = await api.post('/v3/ai-brain/agents/process', req);
+  return data;
+}
+
+export async function approveAction(actionId: string, reject = false) {
+  const { data } = await api.post('/v3/ai-brain/agents/approve-action', { actionId, reject });
+  return data;
+}
+
+export type StreamEvent =
+  | { type: 'status'; message?: string }
+  | { type: 'agent_switch'; agents?: string[] }
+  | { type: 'tool_start'; tool?: string }
+  | { type: 'tool_end'; tool?: string; pendingApproval?: boolean }
+  | { type: 'token'; content?: string }
+  | { type: 'response' } & AgentProcessResponse
+  | { type: 'done' }
+  | { type: 'error'; error?: string; code?: string };
+
+export async function processMessageStream(
+  req: AgentProcessRequest,
+  onEvent: (event: StreamEvent) => void
+): Promise<AgentProcessResponse | null> {
+  const baseURL = api.defaults.baseURL || '/api';
+  const token =
+    localStorage.getItem('adminToken') ||
+    localStorage.getItem('teamToken') ||
+    localStorage.getItem('token');
+
+  const res = await fetch(`${baseURL}/v3/ai-brain/agents/process/stream`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${adminToken}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(req),
   });
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => res.statusText);
-    throw new Error(`API error ${res.status}: ${errText}`);
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Stream failed (${res.status})`);
   }
 
-  const data = await res.json();
-  return data as CopilotResponse;
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let finalResponse: AgentProcessResponse | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (payload === '[DONE]') return finalResponse;
+      try {
+        const event = JSON.parse(payload) as StreamEvent;
+        onEvent(event);
+        if (event.type === 'response') {
+          finalResponse = event as AgentProcessResponse;
+        }
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }
+
+  return finalResponse;
+}
+
+export function extractPendingApproval(text: string): PendingApproval | null {
+  try {
+    const match = text.match(/"actionId"\s*:\s*"([a-f0-9-]{36})"/i);
+    if (!match) return null;
+    const summaryMatch = text.match(/"summary"\s*:\s*"([^"]+)"/);
+    return {
+      actionId: match[1],
+      summary: summaryMatch?.[1] || 'Pending write action',
+    };
+  } catch {
+    return null;
+  }
 }

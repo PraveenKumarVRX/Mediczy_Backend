@@ -289,7 +289,8 @@ Assess and respond with ONLY a JSON object:
     const result = await llmProvider.chat({
       messages: [{ role: 'user', content: prompt }],
       tools: null,
-      conversationId: `triage-${Date.now()}`
+      conversationId: `triage-${Date.now()}`,
+      skipCache: true, // patient-specific clinical input — never serve from a shared cache
     });
 
     const content = result.content || '';

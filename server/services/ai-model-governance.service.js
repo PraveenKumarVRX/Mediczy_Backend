@@ -19,6 +19,7 @@
  */
 
 import pool from '../db/pgPool.js';
+import { getAiLayerMapSummary } from './ai-layer-map.service.js';
 
 // ─── Model Card Registry ─────────────────────────────────────────────────────
 // Static model cards for each AI decision component.
@@ -62,6 +63,30 @@ export const MODEL_CARDS = {
     changeControlPlan: 'Any change to scoring weights, thresholds, or feature set requires (a) clinical review, (b) shadow-run on historical data, (c) medical director approval, (d) staged rollout with monitoring.',
     lastValidatedAt:   null,
     regulatoryNotes:   'Requires clinical validation study before use as primary decision input. Currently approved for decision support only with physician review.'
+  },
+
+  'admin-copilot': {
+    componentName:      'Admin AI Copilot',
+    version:            '1.0.0',
+    regulatoryClass:    'NOT SaMD',
+    intendedUse:        'Privileged ops assistant for hospital/platform administrators. Default mode: configuration, analytics, audit — not clinical decision support.',
+    notIntendedFor:     'Autonomous clinical decisions; patient-facing triage; unsupervised write operations on production configuration.',
+    inputFeatures:      ['Admin natural language query', 'Conversation context', 'Ops RAG documents (admin-ops category)'],
+    outputDescription:  'Natural language response, tool call results, governance deep links. Write/system actions require human approval.',
+    modelType:          'Multi-agent orchestrator (admin/analyst/insurance agents) + llm-provider.js cascade',
+    trainingDataSource: 'No population training — retrieval from internal ops docs and live system tools.',
+    validationStatus:   'Internal QA and permission-engine integration tests.',
+    knownLimitations: [
+      'May hallucinate governance steps without RAG corpus coverage',
+      'Hospital admins are tenant-scoped — platform-wide ops require super_admin',
+      'Write tools blocked until explicit human approval',
+    ],
+    performanceMetrics: { note: 'Ops assistant — no clinical performance metrics' },
+    demographicPerformance: { note: 'N/A — not a clinical model' },
+    updateCadence:     'Continuous deployment via feature flags ADMIN_COPILOT_*',
+    changeControlPlan: 'Prompt and tool changes via ai-model-governance PCCP; no autonomous weight changes.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Classified NOT SaMD for default ops persona. Clinical oversight route inherits source SaMD controls.',
   },
 
   'emergency-triage-esi-v1': {
@@ -181,6 +206,58 @@ export const MODEL_CARDS = {
       'Safety check on generated content before presenting to physician'
     ],
     regulatoryNotes:   'If physician always reviews and modifies before committing, this is a documentation productivity tool, not SaMD. If notes are committed without physician review, it crosses into SaMD territory.'
+  },
+
+  'imaging-report-drafter-v1': {
+    componentName:      'Imaging AI Report Drafter',
+    version:            'v1-llm-assisted',
+    regulatoryClass:    'Class IIb SaMD (moderate-high risk)',
+    intendedUse:        'Generate draft radiology report text (Findings + Impression) from structured AI findings, triage output, and prior study comparison. Radiologist must review, edit, and sign before clinical use.',
+    notIntendedFor:     'Autonomous final reporting without radiologist sign-off; replacing radiologist interpretation; pediatric-specific protocols without validation.',
+    inputFeatures:      ['Structured findings JSON', 'AI triage output', 'Prior study reports', 'Modality/body part metadata', 'Report templates'],
+    outputDescription:  'Draft report text with confidence score, quality gate result, and mandatory physician review flag.',
+    modelType:          'Structured findings → LLM prose (iSHA/Groq/OpenAI cascade via llm-provider.js)',
+    knownLimitations: [
+      'LLM may generate plausible but incorrect findings if structured input is incomplete',
+      'Prior comparison quality depends on prior report availability',
+      'Not validated per-modality for diagnostic accuracy',
+      'Image analysis models not yet integrated for all modalities'
+    ],
+    safetyControls: [
+      'Quality gate checkImagingReport() on every draft',
+      'Mandatory PHYSICIAN_SIGNOFF_MANDATORY required action',
+      'Draft status only — cannot auto-finalize report',
+      'All drafts logged to imaging_ai_report_drafts and ai_quality_gate_log'
+    ],
+    changeControlPlan: 'Prompt or model changes require governanceService.proposeChange() and medical director approval.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Level 1 AI-assisted reporting. Physician is clinical actor. Draft must not be presented as final diagnosis.'
+  },
+
+  'imaging-triage-v1': {
+    componentName:      'Imaging AI Triage',
+    version:            'v1.3-cv-pipeline',
+    regulatoryClass:    'Class IIb SaMD (moderate risk)',
+    intendedUse:        'Screen imaging studies for review priorities and flag suspicious regions for radiologist attention. Informs worklist prioritization only.',
+    notIntendedFor:     'Autonomous diagnosis; final clinical disposition without radiologist review.',
+    inputFeatures:      ['StudyInstanceUID', 'Modality', 'Orthanc DICOM pixels', 'Orthanc study reference'],
+    outputDescription:  'Findings with severity, confidence, inference_backend, feature_attributions, critical alert triggers.',
+    modelType:          'TorchXRayVision (CXR) + MONAI UNet (CT/MRI when weights mounted) + nnU-Net v2 (optional) + heuristic/LLM fallback',
+    knownLimitations: [
+      'MONAI/nnU-Net weights require per-site clinical validation before production use',
+      'CT proxy via TorchXRayVision axial slice is screening-only — not a dedicated CT model',
+      'False negatives possible for critical findings',
+      'Heuristic fallback when DICOM unavailable or weights not mounted'
+    ],
+    safetyControls: [
+      'Critical findings trigger STAT queue bump + alert',
+      'reviewTriage() endpoint for physician acknowledgment',
+      'Quality gates on downstream report drafting',
+      'Model weight changes require governanceService.proposeChange() approval'
+    ],
+    changeControlPlan: 'Model weight or threshold changes require medical director approval via governance pipeline.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Advisory triage only. CV backends emit feature_attributions for interpretability; radiologist sign-off mandatory.'
   },
 
   'admin-copilot-v1': {
@@ -619,6 +696,7 @@ class AIModelGovernanceService {
         regulatoryClass: MODEL_CARDS[k].regulatoryClass,
         lastValidated: MODEL_CARDS[k].lastValidatedAt ?? 'NOT VALIDATED'
       })),
+      aiLayerMap: getAiLayerMapSummary(),
       samdReadiness: await this._samdReadinessChecklist()
     };
   }

@@ -50,6 +50,15 @@ export async function s3PresignedUrl(key, expiresIn = 3600) {
   return getSignedUrl(s3Client, cmd, { expiresIn });
 }
 
+/** Stream DICOM/object bytes from S3 for WADO-RS. */
+export async function s3GetObjectBuffer(key) {
+  const cmd = new GetObjectCommand({ Bucket: BUCKET, Key: key });
+  const res = await s3Client.send(cmd);
+  const chunks = [];
+  for await (const chunk of res.Body) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
 /** Direct HTTPS URL (only works if bucket/object is public — not recommended for PHI). */
 export function s3FileUrl(key) {
   return `https://${BUCKET}.s3.${REGION}.amazonaws.com/${key}`;

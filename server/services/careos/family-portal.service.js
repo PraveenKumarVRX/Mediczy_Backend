@@ -101,4 +101,33 @@ export async function generateFamilyUpdateDraft(patientId, organizationId) {
   }
 }
 
-export default { listFamilyUpdates, publishFamilyUpdate, generateFamilyUpdateDraft };
+export async function verifyFamilyAccess(patientId, accessCode) {
+  await ensure();
+  const pid = Number(patientId);
+  if (!pid || !accessCode?.trim()) {
+    return { valid: false, reason: 'Patient ID and access code required' };
+  }
+
+  const { rows: patients } = await pool.query(
+    `SELECT id, phone, mobile FROM patients WHERE id = $1 LIMIT 1`,
+    [pid]
+  );
+  const patient = patients[0];
+  if (!patient) {
+    return { valid: false, reason: 'Patient not found' };
+  }
+
+  const code = accessCode.trim();
+  const phone = String(patient.phone || patient.mobile || '').replace(/\D/g, '');
+  const last4 = phone.slice(-4);
+  const idSuffix = String(pid).slice(-4).padStart(4, '0');
+
+  const valid = code === last4 || code === idSuffix || code === String(pid);
+  return {
+    valid,
+    patientId: pid,
+    reason: valid ? undefined : 'Invalid access code — use the code shared by your care team',
+  };
+}
+
+export default { listFamilyUpdates, publishFamilyUpdate, generateFamilyUpdateDraft, verifyFamilyAccess };

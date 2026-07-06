@@ -291,6 +291,11 @@ export async function publishFamilyUpdate(patientId: number, body: { title: stri
   return res.data;
 }
 
+export async function verifyFamilyAccess(patientId: number, accessCode: string) {
+  const res = await api.post('/v3/healthos/family/verify', { patientId, accessCode });
+  return res.data;
+}
+
 export async function listFamilyUpdates(patientId: number, family = false) {
   const res = await api.get(`/v3/healthos/family/${patientId}/updates`, { params: family ? { family: 'true' } : undefined });
   return res.data;
@@ -308,6 +313,11 @@ export async function recordMDTOpinion(sessionId: number, body: { specialistRole
 
 export async function joinMDT(sessionId: number, role?: string) {
   const res = await api.post(`/v3/healthos/mdt/${sessionId}/join`, { role });
+  return res.data;
+}
+
+export async function getMDTCallToken(sessionId: number, role?: string) {
+  const res = await api.post(`/v3/healthos/mdt/${sessionId}/token`, { role });
   return res.data;
 }
 

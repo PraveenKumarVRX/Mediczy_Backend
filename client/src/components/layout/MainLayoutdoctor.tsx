@@ -38,7 +38,8 @@ import {
   Briefcase,
   Mic,
   Calculator,
-  Sparkles
+  Sparkles,
+  HeartPulse,
 } from "lucide-react";
 import { BRAND } from "@/config/brand";
 import { memo, useEffect, useState, useRef } from "react";
@@ -60,75 +61,8 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import ChatApplet from '@/components/chat/ChatApplet';
-import { getHealthOsNavForPortal, clinicalNavHref } from '@/config/clinicalNav.config';
-
-interface NavItem {
-  icon: React.ComponentType<any>;
-  label: string;
-  path: string;
-  category: string;
-  highlight?: boolean;
-  subItems?: { label: string; path: string }[];
-}
-
-// Sourced from clinicalNav.config.ts so this list and HospitalSidebar's
-// can't independently drift on HealthOS/Command Center/Copilot again.
-const doctorHealthOsItems: NavItem[] = getHealthOsNavForPortal("doctor").map((item) => ({
-  icon: item.icon,
-  label: item.label,
-  path: clinicalNavHref(item, "doctor"),
-  category: "Clinical Tools",
-  highlight: true,
-}));
-
-const doctorNavItems: NavItem[] = [
-  // Main
-  { icon: Home, label: "Dashboard", path: "/doctor/dashboard", category: "Main" },
-  { icon: UserCircle, label: "My Profile", path: "/doctor/settings", category: "Main" },
-  { icon: Bell, label: "Notifications", path: "/doctor/alerts", category: "Main" },
-  
-  // Patient Care
-  { icon: Users, label: "My Patients", path: "/doctor/patients", category: "Patient Care" },
-  { icon: Calendar, label: "Appointments", path: "/doctor/appointments", category: "Patient Care" },
-  { icon: FileText, label: "Health Records", path: "/doctor/health-records", category: "Patient Care" },
-  { icon: AlertTriangle, label: "Emergency Triage", path: "/doctor/triage", category: "Patient Care", highlight: true },
-  
-  // Clinical Tools
-  { icon: Pill, label: "Write Prescription", path: "/doctor/prescription-writer", category: "Clinical Tools" },
-  { icon: FileText, label: "Prescriptions", path: "/doctor/prescriptions", category: "Clinical Tools" },
-  { 
-    icon: FilePlus2, 
-    label: "Document Templates", 
-    path: "/doctor/templates",
-    category: "Clinical Tools",
-    subItems: [
-      { label: "All Templates", path: "/doctor/templates" },
-      { label: "Specialty Templates", path: "/doctor/specialty-templates" },
-      { label: "Template Settings", path: "/doctor/template-settings" }
-    ]
-  },
-  { icon: BrainCircuit, label: "AI Doctor Assist", path: "/doctor/assist", category: "Clinical Tools", highlight: true },
-  { icon: Sparkles, label: "iSHA Assistant", path: "/doctor/assistant", category: "Clinical Tools", highlight: true },
-  ...doctorHealthOsItems,
-  { icon: Mic, label: "Voice Scribe", path: "/doctor/voice-scribe", category: "Clinical Tools", highlight: true },
-  { icon: Calculator, label: "Medical Calculators", path: "/doctor/calculators", category: "Clinical Tools" },
-  
-  // Communication
-  { icon: MessageSquare, label: "Messages", path: "/doctor/messages", category: "Communication" },
-  { icon: Video, label: "Video Consultation", path: "/doctor/video", category: "Communication" },
-  { icon: Phone, label: "Contact", path: "/doctor/contact", category: "Communication" },
-  
-  // Monitoring
-  { icon: Radio, label: "Remote Monitoring", path: "/doctor/remote-monitoring", category: "Monitoring", highlight: true },
-  
-  // Management
-  { icon: Briefcase, label: "Services", path: "/doctor/services", category: "Management", highlight: true },
-  { icon: Wallet, label: "Billing & Payments", path: "/doctor/billing", category: "Management" },
-  { icon: Clock, label: "Availability", path: "/doctor/availability", category: "Management" },
-  { icon: BarChart3, label: "Analytics", path: "/doctor/analytics", category: "Management" },
-  { icon: FileSearch, label: "Reports", path: "/doctor/reports", category: "Management" },
-  { icon: Settings, label: "Settings", path: "/doctor/settings", category: "Management" },
-];
+import { DOCTOR_NAV_ITEMS, DOCTOR_NAV_CATEGORIES } from '@/config/doctorNav.config';
+import type { DoctorNavItem } from '@/config/doctorNav.config';
 
 const MainLayoutdoctor = ({ children }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -227,9 +161,9 @@ const MainLayoutdoctor = ({ children }) => {
   };
 
   // Group items by category
-  const categories = ['Main', 'Patient Care', 'Clinical Tools', 'Communication', 'Monitoring', 'Management'];
+  const categories = DOCTOR_NAV_CATEGORIES;
 
-  const renderNavItem = (item: NavItem) => {
+  const renderNavItem = (item: DoctorNavItem) => {
     const hasSubItems = item.subItems && item.subItems.length > 0;
     const isExpanded = expandedMenus.includes(item.path);
     const isActive = location.pathname === item.path || 
@@ -451,7 +385,7 @@ const MainLayoutdoctor = ({ children }) => {
           <TooltipProvider delayDuration={0}>
             <div className="space-y-1">
               {categories.map((category, idx) => {
-                const categoryItems = doctorNavItems.filter(item => item.category === category);
+                const categoryItems = DOCTOR_NAV_ITEMS.filter(item => item.category === category);
                 if (categoryItems.length === 0) return null;
                 
                 return (

@@ -26,28 +26,9 @@ import FormData from 'form-data';
 import { AccessToken, AgentDispatchClient } from 'livekit-server-sdk';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
-import {
-  composeBriefingResponse,
-  GREETING_RESPONSE,
-  inferBriefingRequest,
-  inferNavigationScreen,
-  inferTodaySummaryRequest,
-  isDoubtFollowUp,
-  isIdentityOrGreeting,
-  isSibPlaceholderResponse,
-  isSubstantiveAnswer,
-  lastAssistantText,
-  stripRedundantIshaIntro,
-  toSpokenText,
-} from '../services/voice-assistant-response.service.js';
 import logger from '../config/logger.js';
 import pool from '../db/pgPool.js';
 import { getAIServiceConfig } from '../config/ai-services.config.js';
-import {
-  draftLabOrderFromVoice,
-  draftImagingOrderFromVoice,
-  draftTeamNotification,
-} from '../services/hospital-os/voice-commands.service.js';
 
 const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
@@ -352,6 +333,20 @@ const ASSISTANT_TOOLS = [
   {
     type: 'function',
     function: {
+      name: 'accept_appointment',
+      description: 'Confirm/accept a pending appointment request from a patient. Use when doctor says "confirm the appointment", "accept booking", "approve appointment request".',
+      parameters: {
+        type: 'object',
+        properties: {
+          patient_name: { type: 'string', description: 'Patient name if specified' },
+          appointment_id: { type: 'string', description: 'Appointment ID if known' },
+        },
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'complete_task',
       description: 'Mark a task as completed or done. Use when doctor says "done", "completed", "mark as done", "finished", "task complete", "checked off".',
       parameters: {
@@ -361,62 +356,6 @@ const ASSISTANT_TOOLS = [
           title: { type: 'string', description: 'Task title or keywords to find the task if ID not known' }
         }
       }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'draft_lab_order',
-      description: 'Draft a lab order (e.g. CBC, LFT) for clinician approval. Use for "order CBC", "order blood tests".',
-      parameters: {
-        type: 'object',
-        properties: {
-          tests: { type: 'array', items: { type: 'string' } },
-          priority: { type: 'string', enum: ['routine', 'urgent', 'stat'] },
-          patient_id: { type: 'integer' }
-        },
-        required: ['tests']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'draft_imaging_order',
-      description: 'Draft imaging order (MRI, CT, X-ray) for approval.',
-      parameters: {
-        type: 'object',
-        properties: {
-          modality: { type: 'string', enum: ['X-Ray', 'CT', 'MRI', 'USG', 'Echo'] },
-          body_part: { type: 'string' },
-          patient_id: { type: 'integer' }
-        },
-        required: ['modality']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'notify_clinical_team',
-      description: 'Notify clinical team (cardiology, nursing, lab, pharmacy, icu, er).',
-      parameters: {
-        type: 'object',
-        properties: {
-          team: { type: 'string', enum: ['cardiology', 'nursing', 'lab', 'pharmacy', 'icu', 'er'] },
-          message: { type: 'string' },
-          patient_id: { type: 'integer' }
-        },
-        required: ['team', 'message']
-      }
-    }
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'show_icu_admissions',
-      description: 'Show ICU admissions / open ICU dashboard.',
-      parameters: { type: 'object', properties: {} }
     }
   }
 ];
@@ -455,6 +394,7 @@ TOOL ROUTING (strict):
 | "my appointments / today / pending / upcoming" | list_appointments |
 | "book / schedule / fix appointment for X on DATE at TIME" | book_appointment |
 | "cancel appointment for X" | cancel_appointment |
+| "confirm / accept / approve appointment (for X)" | accept_appointment |
 | "reschedule / move / shift / change appointment for X to DATE TIME" | reschedule_appointment (NOT list_appointments) |
 | "health / vitals / status of X" | get_patient_health |
 | "today's summary / how many patients today / appointment count" | get_today_summary (counts only — NOT for messages/alerts) |
@@ -462,6 +402,7 @@ TOOL ROUTING (strict):
 | "open / go to / show [screen]" | navigate_to |
 | "any updates / messages / alerts / urgent / emergencies / what's new / briefing / what did I miss / any notifications" | get_doctor_briefing (NOT get_today_summary) |
 | "are you sure / is that right / really / confirm that" | NO tool — restate last answer verbally |
+| "what do you mean / explain that / clarify / what does that mean" | NO tool — clarify or simplify your previous answer from history |
 | "dose / dosage / side effects / indication / contraindication of [drug]" | get_drug_info |
 | "interaction / combine / mix [drug1] with [drug2]" | check_drug_interactions |
 | any other clinical/medical question (diagnosis, symptoms, treatment, physiology) | medical_query |
@@ -473,6 +414,22 @@ RESPONSE FORMAT:
 - Medical answers: lead with the answer, end with "Verify with clinical judgment."
 - Greetings/who-are-you: briefly state you are iSHA and name 1-2 key capabilities. One sentence only.
 - All other responses: no greeting, no sign-off, no filler — answer the task directly.`;
+}
+
+// ─── TTS text helper — convert long formatted text to short spoken version ────
+function toSpokenText(text, maxSentences = 3) {
+  if (!text) return '';
+  // Strip bullet chars and action badge prefix lines
+  const cleaned = text
+    .replace(/^[•\-]\s*/gm, '')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+  // Split on sentence boundaries
+  const sentences = cleaned
+    .split(/(?<=[.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+  return sentences.slice(0, maxSentences).join(' ');
 }
 
 // ─── Execute server-side tools ─────────────────────────────────────────────
@@ -538,7 +495,7 @@ async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
       // Upcoming = future/today, not yet cancelled or completed
       whereClause += ` AND a."appointmentDate" >= CURRENT_DATE AND a.status NOT IN ('cancelled', 'completed')`;
     } else if (filter === 'pending') {
-      whereClause += ` AND a.status IN ('pending', 'confirmed', 'scheduled')`;
+      whereClause += ` AND a.status = 'pending'`;
     } else if (filter === 'completed') {
       whereClause += ` AND a.status = 'completed' AND DATE(a."appointmentDate") = $2`;
       params.push(today);
@@ -571,68 +528,6 @@ async function executeListAppointments(doctorId, filter = 'today', limit = 10) {
     return null;
   }
 }
-
-const normalizeAppointmentFilter = (rawFilter = 'today') => {
-  const VALID_FILTERS = ['today', 'upcoming', 'pending', 'completed', 'all'];
-  let filter = String(rawFilter || 'today').toLowerCase();
-  if (VALID_FILTERS.includes(filter)) return filter;
-  if (['confirmed', 'scheduled', 'booked'].includes(filter)) return 'upcoming';
-  if (['done', 'finished', 'past'].includes(filter)) return 'completed';
-  return 'today';
-};
-
-const inferAppointmentListFilter = (text) => {
-  const normalized = String(text || '').toLowerCase();
-  const mentionsAppointments = /\b(appointments?|bookings?|schedule)\b/.test(normalized);
-  if (!mentionsAppointments) return null;
-
-  if (/\b(open|go to|navigate|take me to)\b/.test(normalized)) return null;
-  if (/\b(reschedule|cancel|book|create|fix)\b/.test(normalized)) return null;
-
-  const asksToList = /\b(show|list|view|see|display|what|tell)\b/.test(normalized) ||
-    /\b(today[’']?s?|todays|upcoming|pending|completed|all)\b/.test(normalized);
-  if (!asksToList) return null;
-
-  if (/\b(today[’']?s?|todays)\b/.test(normalized)) return 'today';
-  if (/\b(upcoming|future|next)\b/.test(normalized)) return 'upcoming';
-  if (/\b(pending|requests?)\b/.test(normalized)) return 'pending';
-  if (/\b(completed|done|finished|past)\b/.test(normalized)) return 'completed';
-  if (/\b(all)\b/.test(normalized)) return 'all';
-  return 'today';
-};
-
-const buildAppointmentListPayload = async (doctorId, args = {}) => {
-  const filter = normalizeAppointmentFilter(args.filter || 'today');
-  const limit = args.limit ? (parseInt(args.limit, 10) || 10) : 10;
-  const rows = await executeListAppointments(doctorId, filter, limit);
-
-  if (!rows || rows.length === 0) {
-    const msg = filter === 'today'
-      ? 'You have no appointments scheduled for today.'
-      : `No ${filter} appointments found.`;
-    return { intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak: msg, data: [], requiresConfirmation: false };
-  }
-
-  const lines = rows.map(a => {
-    const time = a.appointmentTime ? String(a.appointmentTime).slice(0, 5) : '';
-    const status = a.status || '';
-    const name = a.patientName || 'Unknown';
-    const reason = a.reason || a.symptoms || '';
-    return `• ${time} — ${name} (${status})${reason ? ': ' + reason : ''}`;
-  });
-  const heading = filter === 'today'
-    ? `You have ${rows.length} appointment${rows.length !== 1 ? 's' : ''} today:`
-    : `${rows.length} ${filter} appointment${rows.length !== 1 ? 's' : ''}:`;
-  const msg = `${heading}\n${lines.join('\n')}`;
-  const firstFew = rows.slice(0, 3).map(a =>
-    `${String(a.appointmentTime || '').slice(0, 5)} ${a.patientName || 'unknown'}`
-  ).join(', ');
-  const speak = rows.length <= 3
-    ? `${heading.replace(':', '.')} ${firstFew}.`
-    : `${heading.replace(':', '.')} First: ${firstFew}${rows.length > 3 ? `, and ${rows.length - 3} more.` : '.'}`;
-
-  return { intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak, data: rows, requiresConfirmation: false };
-};
 
 async function executeGetPatientHealth(doctorId, patientName, patientId) {
   try {
@@ -781,6 +676,56 @@ async function executeCancelAppointment(doctorId, appointmentId, patientName, re
     return { success: true, cancelled: result.rows };
   } catch (err) {
     logger.warn('[VoiceAssistant] cancel_appointment error', { error: err.message });
+    return { success: false, error: err.message };
+  }
+}
+
+async function executeAcceptAppointment(doctorId, appointmentId, patientName) {
+  try {
+    if (appointmentId || patientName) {
+      let where = `"doctorId" = $1 AND status = 'pending'`;
+      const params = [doctorId];
+
+      if (appointmentId) {
+        params.push(String(appointmentId));
+        where += ` AND ("appointmentId" = $${params.length} OR id::text = $${params.length})`;
+      } else if (patientName) {
+        params.push(`%${patientName}%`);
+        where += ` AND "patientName" ILIKE $${params.length}`;
+      }
+
+      const result = await pool.query(`
+        UPDATE appointments
+        SET status = 'confirmed', "updatedAt" = NOW()
+        WHERE ${where}
+        RETURNING "appointmentId", "patientName", "appointmentDate", "appointmentTime"
+      `, params);
+
+      if (result.rows.length === 0) {
+        return { success: false, error: 'No pending appointment request found for that patient.' };
+      }
+      return { success: true, confirmed: result.rows };
+    }
+
+    // No name/ID — confirm the earliest pending request
+    const result = await pool.query(`
+      UPDATE appointments
+      SET status = 'confirmed', "updatedAt" = NOW()
+      WHERE id = (
+        SELECT id FROM appointments
+        WHERE "doctorId" = $1 AND status = 'pending'
+        ORDER BY "appointmentDate" ASC, "appointmentTime" ASC
+        LIMIT 1
+      )
+      RETURNING "appointmentId", "patientName", "appointmentDate", "appointmentTime"
+    `, [doctorId]);
+
+    if (result.rows.length === 0) {
+      return { success: false, error: 'No pending appointment requests to confirm.' };
+    }
+    return { success: true, confirmed: result.rows };
+  } catch (err) {
+    logger.warn('[VoiceAssistant] accept_appointment error', { error: err.message });
     return { success: false, error: err.message };
   }
 }
@@ -976,11 +921,9 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
 
   const language = req.body.language || 'en';
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-  const attempted = [];
 
   // ── Primary: Groq Whisper (whisper-large-v3-turbo, ~300ms) ──────────────────
-  if (GROQ_API_KEY && GROQ_API_KEY !== 'your_groq_api_key_here') {
+  if (GROQ_API_KEY) {
     try {
       const groqForm = new FormData();
       groqForm.append('file', req.file.buffer, {
@@ -1004,47 +947,13 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
         logger.info(`[STT] Groq Whisper: "${text.slice(0, 80)}"`);
         return res.json({ text, language, provider: 'groq-whisper' });
       }
-      attempted.push('groq');
-      logger.warn('[STT] Groq Whisper failed, falling back', { status: groqResp.status });
+      logger.warn('[STT] Groq Whisper failed, falling back to local', { status: groqResp.status });
     } catch (err) {
-      attempted.push('groq');
-      logger.warn('[STT] Groq Whisper error, falling back', { error: err.message });
+      logger.warn('[STT] Groq Whisper error, falling back to local', { error: err.message });
     }
   }
 
-  // ── Fallback 1: OpenAI Whisper (whisper-1) ──────────────────────────────────
-  if (OPENAI_API_KEY && !OPENAI_API_KEY.startsWith('sk-proj-test') && OPENAI_API_KEY !== 'your-openai-api-key') {
-    try {
-      const oaForm = new FormData();
-      oaForm.append('file', req.file.buffer, {
-        filename: req.file.originalname || 'audio.wav',
-        contentType: req.file.mimetype || 'audio/wav',
-      });
-      oaForm.append('model', 'whisper-1');
-      if (language && language !== 'auto') oaForm.append('language', language);
-
-      const oaResp = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { ...oaForm.getHeaders(), 'Authorization': `Bearer ${OPENAI_API_KEY}` },
-        body: oaForm,
-        timeout: 15000,
-      });
-
-      if (oaResp.ok) {
-        const data = await oaResp.json();
-        const text = (data.text || '').trim();
-        logger.info(`[STT] OpenAI Whisper: "${text.slice(0, 80)}"`);
-        return res.json({ text, language, provider: 'openai-whisper' });
-      }
-      attempted.push('openai');
-      logger.warn('[STT] OpenAI Whisper failed, falling back to local', { status: oaResp.status });
-    } catch (err) {
-      attempted.push('openai');
-      logger.warn('[STT] OpenAI Whisper error, falling back to local', { error: err.message });
-    }
-  }
-
-  // ── Fallback 2: local Whisper (offline scribe, port 8006) ───────────────────
+  // ── Fallback: local Whisper (offline scribe, port 8006) ─────────────────────
   try {
     const form = new FormData();
     form.append('file', req.file.buffer, {
@@ -1062,31 +971,19 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
 
     if (!response.ok) {
       const errText = await response.text().catch(() => '');
-      attempted.push('local-whisper');
-      logger.error('[VoiceAssistant] STT all providers failed', { attempted, localStatus: response.status });
-      return res.status(503).json({
-        error: 'Speech transcription is temporarily unavailable.',
-        code: 'stt_unavailable',
-        attempted,
-        detail: errText.slice(0, 200),
-      });
+      return res.status(502).json({ error: `STT service error: ${errText.slice(0, 200)}` });
     }
 
     const data = await response.json();
     return res.json({
-      text: data.transcription || data.transcript || data.text || '',
+      text: data.transcription || data.text || '',
       language: data.detected_language || language,
       duration: data.duration_seconds || null,
       provider: 'local-whisper',
     });
   } catch (err) {
-    attempted.push('local-whisper');
-    logger.error('[VoiceAssistant] STT error — all providers exhausted', { error: err.message, attempted });
-    return res.status(503).json({
-      error: 'Speech transcription is temporarily unavailable. Please type your command.',
-      code: 'stt_unavailable',
-      attempted,
-    });
+    logger.error('[VoiceAssistant] STT error', { error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
@@ -1116,21 +1013,26 @@ router.get('/status', authUser, requireDoctor, async (req, res) => {
     status.components.stt = { ...status.components.stt, status: 'unhealthy', error: error.message };
   }
 
-  if (LIVEKIT_USES_CLOUD && !LIVEKIT_HEALTH_URL) {
+  if (LIVEKIT_USES_CLOUD) {
+    // LiveKit Cloud has no public self-hosted-style health endpoint; treat a
+    // fully-configured project as healthy rather than pinging a non-existent path.
     status.components.livekit = {
       ...status.components.livekit,
-      status: status.components.livekit.configured ? 'configured' : 'unconfigured',
+      status: status.components.livekit.configured ? 'healthy' : 'unconfigured',
       cloud: true,
-      healthUrl: null,
+      mode: 'cloud',
+      healthUrl: LIVEKIT_HEALTH_URL,
     };
+    if (!status.components.livekit.configured) status.success = false;
   } else if (LIVEKIT_HEALTH_URL) {
     try {
       const livekit = await fetchJsonOrText(LIVEKIT_HEALTH_URL, {}, 5000);
       status.components.livekit.status = livekit.ok ? 'healthy' : 'degraded';
       status.components.livekit.healthUrl = LIVEKIT_HEALTH_URL;
+      status.components.livekit.mode = 'self-hosted';
     } catch (error) {
       status.success = false;
-      status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, error: error.message };
+      status.components.livekit = { ...status.components.livekit, status: 'unhealthy', healthUrl: LIVEKIT_HEALTH_URL, mode: 'self-hosted', error: error.message };
     }
   } else {
     status.components.livekit = { ...status.components.livekit, status: 'unconfigured', healthUrl: null };
@@ -1195,28 +1097,48 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
   }
 });
 
-// ─── POST /agent — Text → Intent + Action/Answer ─────────────────────────────
+// ─── Follow-up / misclassification helpers ───────────────────────────────────
 
-// Extract a patient name from recent appointment-list assistant messages in history.
-// Used by the deterministic cancel/reschedule path when the doctor says "cancel that".
-function extractPatientFromHistory(history) {
-  const lines = Array.isArray(history) ? history : [];
-  // Walk backwards through assistant messages looking for the appointment list format
-  // e.g. "09:00 — MR kumar (scheduled): ..." or "› HH:MM — Name (status)"
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const m = lines[i];
-    if (m.role !== 'assistant') continue;
-    const text = String(m.text || '');
-    const match = text.match(/[›•\-–]\s*\d{1,2}:\d{2}[^—]*—\s*([A-Za-z][A-Za-z\s.'-]{1,40})\s*\(/);
-    if (match) return match[1].trim();
-    const match2 = text.match(/([A-Z][A-Za-z\s.'-]{2,40})\s*\((?:scheduled|confirmed|pending|completed)\)/i);
-    if (match2) return match2[1].trim();
+const META_MEDICAL_RE = /I understood this as|health intelligence request|please confirm before I take action/i;
+const CLARIFY_RE = /\b(what do you mean|what does that mean|explain (that|this)|clarify|can you explain|i don'?t understand)\b/i;
+const DOUBT_RE = /\b(are you sure|is that (right|correct)|really\??|confirm that)\b/i;
+const CONFIRM_APPT_RE = /\b(confirm|accept|approve)\s+(the\s+)?(appointment|booking|request)s?\b/i;
+
+function tryConversationShortcuts(text, historyMessages) {
+  const trimmed = text.trim();
+
+  if (CLARIFY_RE.test(trimmed) && historyMessages.length) {
+    const lastAssistant = [...historyMessages].reverse().find(m => m.role === 'assistant' && m.content);
+    if (lastAssistant) {
+      const simplified = toSpokenText(lastAssistant.content, 4);
+      const response = simplified
+        ? `Let me clarify: ${simplified}`
+        : "I was referring to your previous question. Could you tell me which part you'd like me to explain?";
+      return { intent: 'general', action: null, parameters: null, response, speak: response, requiresConfirmation: false };
+    }
   }
+
+  if (DOUBT_RE.test(trimmed) && historyMessages.length) {
+    const lastAssistant = [...historyMessages].reverse().find(m => m.role === 'assistant' && m.content);
+    if (lastAssistant) {
+      const response = `Yes — ${toSpokenText(lastAssistant.content, 3)}`;
+      return { intent: 'general', action: null, parameters: null, response, speak: response, requiresConfirmation: false };
+    }
+  }
+
+  if (CONFIRM_APPT_RE.test(trimmed)) {
+    const nameMatch = trimmed.match(/\bfor\s+([a-z][a-z\s.'-]{1,40})/i);
+    const patientName = nameMatch?.[1]?.trim().replace(/\s+(please|now|today)$/i, '') || '';
+    return { shortcut: 'accept_appointment', parameters: { patient_name: patientName } };
+  }
+
   return null;
 }
 
+// ─── POST /agent — Text → Intent + Action/Answer ─────────────────────────────
+
 router.post('/agent', authUser, requireDoctor, async (req, res) => {
-  const { text, context = {}, history = [], pendingAction = null } = req.body;
+  const { text, context = {}, history = [] } = req.body;
   if (!text || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text is required' });
   }
@@ -1225,163 +1147,6 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
   const enrichedContext = { ...context, doctorName: req.user?.firstName || req.user?.name };
   const systemPrompt = buildSystemPrompt(enrichedContext);
   const currentPatientId = context.currentPatient?.id || context.currentPatient?._id;
-  const trimmedText = text.trim();
-
-  // Restate last answer for "are you sure?" — avoid redundant LLM round-trip
-  if (isDoubtFollowUp(trimmedText)) {
-    const prior = lastAssistantText(history);
-    if (prior) {
-      const speak = toSpokenText(prior, 4);
-      return res.json({
-        intent: 'general',
-        action: null,
-        parameters: null,
-        response: prior,
-        speak,
-        requiresConfirmation: false,
-      });
-    }
-  }
-
-  if (isIdentityOrGreeting(trimmedText)) {
-    return res.json({
-      intent: 'general',
-      action: null,
-      parameters: null,
-      response: GREETING_RESPONSE,
-      speak: GREETING_RESPONSE,
-      requiresConfirmation: false,
-    });
-  }
-
-  // Appointment-list intent must be checked BEFORE generic navigation: a phrase
-  // like "show today's appointments" should LIST appointments (with data), not
-  // just navigate to the appointments screen. inferAppointmentListFilter already
-  // excludes "open/go to/navigate" so pure navigation still falls through below.
-  const deterministicAppointmentFilter = inferAppointmentListFilter(trimmedText);
-  if (deterministicAppointmentFilter) {
-    const payload = await buildAppointmentListPayload(doctorId, { filter: deterministicAppointmentFilter });
-    return res.json(payload);
-  }
-
-  const navScreen = inferNavigationScreen(trimmedText);
-  if (navScreen) {
-    const screenLabels = {
-      appointments: 'Appointments', patients: 'Patients', prescriptions: 'Prescriptions',
-      dashboard: 'Dashboard', analytics: 'Analytics', billing: 'Billing',
-      'health-records': 'Health Records', 'er-dashboard': 'ER Dashboard',
-      'icu-dashboard': 'ICU Dashboard', 'voice-scribe': 'Voice Scribe',
-      calculators: 'Medical Calculators', 'ai-assist': 'AI Assist',
-      templates: 'Document Templates', monitoring: 'Remote Monitoring',
-      queue: 'Queue', staff: 'Staff',
-    };
-    const label = screenLabels[navScreen] || navScreen;
-    const msg = `Opening ${label}`;
-    return res.json({
-      intent: 'action',
-      action: 'navigate_to',
-      parameters: { screen: navScreen },
-      response: msg,
-      speak: msg,
-      requiresConfirmation: false,
-    });
-  }
-
-  if (inferBriefingRequest(trimmedText)) {
-    const briefing = await executeGetDoctorBriefing(doctorId, 'all');
-    const { response, speak } = composeBriefingResponse(briefing);
-    return res.json({
-      intent: 'action',
-      action: 'get_doctor_briefing',
-      parameters: {},
-      response,
-      speak,
-      data: briefing,
-      requiresConfirmation: false,
-    });
-  }
-
-  if (inferTodaySummaryRequest(trimmedText)) {
-    const summary = await executeGetTodaySummary(doctorId);
-    const spoken = summary
-      ? `Today you have ${summary.todayAppointments} appointments: ${summary.completed} completed, ${summary.pending} pending.`
-      : "Unable to fetch today's summary right now.";
-    return res.json({
-      intent: 'action',
-      action: 'get_today_summary',
-      parameters: null,
-      response: spoken,
-      speak: spoken,
-      data: summary,
-      requiresConfirmation: false,
-    });
-  }
-
-  // ── Confirmation short-circuit ─────────────────────────────────────────────
-  // If the client sent a pendingAction and the user confirmed it, execute directly.
-  const CONFIRM_STARTS = /^(yes|yeah|yep|ok|okay|sure|proceed|go ahead|do it|please do|absolutely|affirmative|cancel it)\b/i;
-  const CONFIRM_NON_COMMAND = /^[a-z,.'!\s]*(confirmed?|please|it'?s?|that'?s?|right|fine|correct|proceed|go|ahead|done|great|perfect)?[,.'!\s]*$/i;
-  const isConfirmation = pendingAction?.action &&
-    CONFIRM_STARTS.test(trimmedText) &&
-    CONFIRM_NON_COMMAND.test(trimmedText.replace(CONFIRM_STARTS, '').trim());
-  if (isConfirmation) {
-    const { action: pendingTool, parameters: pendingArgs = {} } = pendingAction;
-    if (pendingTool === 'cancel_appointment') {
-      const result = await executeCancelAppointment(doctorId, pendingArgs.appointment_id, pendingArgs.patient_name, pendingArgs.reason || 'Cancelled by doctor');
-      const msg = result.success
-        ? `Appointment for ${result.cancelled[0].patientName} has been cancelled.`
-        : `Could not cancel: ${result.error}`;
-      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: pendingArgs, response: msg, speak: msg, requiresConfirmation: false });
-    }
-    if (pendingTool === 'reschedule_appointment') {
-      const result = await executeRescheduleAppointment(doctorId, pendingArgs.appointment_id, pendingArgs.patient_name, pendingArgs.new_date, pendingArgs.new_time);
-      const msg = result.success
-        ? `Appointment for ${result.rescheduled.patientName} rescheduled to ${result.newDate} at ${result.newTime}.`
-        : `Could not reschedule: ${result.error}`;
-      return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: pendingArgs, response: msg, speak: msg, requiresConfirmation: false });
-    }
-    if (pendingTool === 'schedule_followup') {
-      const days = parseInt(pendingArgs.days, 10) || 7;
-      const followUpDate = new Date();
-      followUpDate.setDate(followUpDate.getDate() + days);
-      const dateStr = followUpDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-      const msg = `Follow-up scheduled in ${days} days (${dateStr}).`;
-      return res.json({ intent: 'action', action: 'schedule_followup', parameters: pendingArgs, response: msg, speak: msg, requiresConfirmation: false });
-    }
-  }
-
-  // ── Deterministic cancel detection ────────────────────────────────────────
-  // "cancel that", "cancel the appointment", "cancel it", "cancel mr kumar" etc.
-  // Resolved from conversation history — avoids LLM misclassification entirely.
-  const CANCEL_RE = /\b(cancel|cancell?ing|undo)\b/i;
-  const APPOINTMENT_REF_RE = /\b(appointment|booking|slot|visit|that|it|the|this|him|her)\b/i;
-  const CANCEL_WITH_NAME_RE = /\bcancel(?:l?ing)?\s+(?:the\s+)?(?:mr\.?\s+|dr\.?\s+|ms\.?\s+)?[A-Za-z][A-Za-z\s.'-]{2,}/i;
-  if (CANCEL_RE.test(trimmedText) && (APPOINTMENT_REF_RE.test(trimmedText) || CANCEL_WITH_NAME_RE.test(trimmedText) || extractPatientFromHistory(history))) {
-    let patientName = null;
-    const nameFromText = trimmedText.match(/\bcancel(?:l?ing)?\s+(?:the\s+)?(?:appointment\s+(?:for|of)\s+)?(?:mr\.?\s+|dr\.?\s+|ms\.?\s+)?([A-Za-z][A-Za-z\s.'-]{2,40}?)(?:\s*['']s)?\s*(?:appointment|booking)?\s*$/i);
-    if (nameFromText) patientName = nameFromText[1].trim();
-    // Reference/filler words ("that", "it", "the appointment"…) are not patient names —
-    // fall back to resolving the patient from the recent appointment list in history.
-    const REFERENCE_WORDS = /^(that|it|this|the|him|her|appointment|booking|slot|visit|the appointment|my appointment)$/i;
-    if (patientName && REFERENCE_WORDS.test(patientName)) patientName = null;
-    if (!patientName) patientName = extractPatientFromHistory(history);
-
-    if (patientName) {
-      const result = await executeCancelAppointment(doctorId, null, patientName, 'Cancelled by doctor via voice');
-      let msg;
-      if (result.success && result.cancelled.length > 0) {
-        const c = result.cancelled[0];
-        msg = `Appointment for ${c.patientName} on ${new Date(c.appointmentDate).toLocaleDateString('en-IN')} at ${c.appointmentTime} has been cancelled.`;
-      } else {
-        msg = result.error === 'No matching active appointment found.'
-          ? `No active appointment found for ${patientName}. It may already be cancelled or completed.`
-          : `Could not cancel: ${result.error}`;
-      }
-      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: { patient_name: patientName }, response: msg, speak: msg, data: result, requiresConfirmation: false });
-    }
-    const askMsg = "Who should I cancel the appointment for? Please say the patient's name.";
-    return res.json({ intent: 'action', action: 'cancel_appointment', parameters: {}, response: askMsg, speak: askMsg, requiresConfirmation: false });
-  }
 
   // Build conversation messages with history for continuity (last 10 turns)
   const historyMessages = Array.isArray(history)
@@ -1390,6 +1155,12 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
         content: String(m.text || '').slice(0, 500),
       }))
     : [];
+
+  // Fast path: clarifications, doubt-checks, appointment confirmations
+  const shortcut = tryConversationShortcuts(text, historyMessages);
+  if (shortcut && !shortcut.shortcut) {
+    return res.json(shortcut);
+  }
 
   // ── iSHA JSON intent prompt — sent to iSHA instead of function-calling ─────
   const ishaIntentPrompt = `You are iSHA, an AI medical assistant for Dr. ${enrichedContext.doctorName || 'Doctor'} on the SmartHealth platform.
@@ -1403,6 +1174,7 @@ Available actions and their parameters:
 - "get_today_summary"       → {}
 - "book_appointment"        → {"patient_name":"","date":"YYYY-MM-DD","time":"HH:MM","reason":"","patient_phone":""}
 - "cancel_appointment"      → {"patient_name":"","appointment_id":"","reason":""}
+- "accept_appointment"      → {"patient_name":"","appointment_id":""}
 - "reschedule_appointment"  → {"patient_name":"","appointment_id":"","new_date":"YYYY-MM-DD","new_time":"HH:MM"}
 - "schedule_followup"       → {"days":7,"reason":""}
 - "search_patient"          → {"query":"name/phone/ID"}
@@ -1418,37 +1190,34 @@ Available actions and their parameters:
 - "medical_query"           → {"query":"the clinical question"}
 - "general"                 → {}
 
-STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointment/booking/task actions):
-- CANCEL / UNDO appointment → cancel_appointment (NEVER medical_query)
-- BOOK / SCHEDULE appointment → book_appointment (NEVER medical_query)
-- RESCHEDULE / MOVE appointment → reschedule_appointment (NEVER medical_query)
-- CONFIRM / YES / PROCEED → if previous assistant message shows a pending action, use general with response "Executing…" (the server handles execution via pendingAction)
-- IDENTITY / GREETING (who are you, hello, hi, good morning) → general
-- NON-CLINICAL QUERY (geography, capitals, sports, weather, coding, trivia) → general with response "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."
-- TASK / REMINDER / TO-DO (remind me, add task, note to self) → add_task
-- SHOW TASKS / MY LIST → list_tasks
-- DONE / MARK AS DONE → complete_task
-- RESCHEDULE → always reschedule_appointment
-- ALERTS / BRIEFING / WHAT'S NEW → get_doctor_briefing
-- HOW MANY PATIENTS / TODAY'S SUMMARY → get_today_summary
-- DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION → get_drug_info with {"drug":"<name>","question":"<aspect>"}
-- DRUG INTERACTIONS → check_drug_interactions with {"drugs":["drug1","drug2"]}
-- CLINICAL/MEDICAL QUESTION (diagnosis, symptoms, treatment, physiology — NOT appointments or tasks) → medical_query with {"query":"<question>"}
-- For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer in "response". For all others: 1-sentence spoken confirmation.
-- NEVER respond with "I understood this as a health intelligence request" or ask for confirmation — just classify and respond.`;
+Rules:
+- IDENTITY / GREETING (who are you, what can you do, hello, hi, good morning, introduce yourself) → {"action":"general","parameters":{},"response":"I'm iSHA, your AI clinical assistant. I can manage appointments, tasks, patient health, drug questions, and clinical notes — just speak naturally."}
+- NON-CLINICAL QUERY (geography, capital cities, history, sports, weather, trivia, coding, general knowledge, politics, entertainment) → respond ONLY: {"action":"general","parameters":{},"response":"I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks."}
+- TASK / REMINDER / TO-DO (remind me, add task, note to self, don't forget, I need to, add to my list) → add_task with title extracted from speech
+- SHOW TASKS / MY LIST / WHAT DO I NEED TO DO → list_tasks
+- DONE / COMPLETED / MARK AS DONE / FINISHED TASK → complete_task
+- "reschedule" → always reschedule_appointment
+- "confirm / accept / approve appointment" → accept_appointment (NOT medical_query). If no patient named, confirm the next pending request.
+- "what do you mean / explain that / clarify" → general: restate or simplify your PREVIOUS assistant message from conversation history
+- "are you sure / confirm that / is that right" (doubting prior answer) → general: restate previous answer, NO tool
+- WORKFLOW QUESTIONS about appointments, briefing, tasks, patients, navigation → use the matching action tool, NEVER medical_query
+- "alerts / messages / updates / notifications / briefing / what's new" → always get_doctor_briefing (NOT get_today_summary)
+- "how many patients / appointment count / today's summary" → get_today_summary
+- DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION (e.g. "dose of metformin", "side effects of aspirin", "when to use lisinopril") → get_drug_info with {"drug":"<name>","question":"<specific aspect>"}
+- DRUG INTERACTIONS (e.g. "interaction between X and Y", "can I combine X with Y") → check_drug_interactions with {"drugs":["X","Y"]}
+- CLINICAL / MEDICAL QUESTION without a specific drug (diagnosis criteria, treatment protocol, symptoms, physiology) → medical_query with {"query":"<question>"}
+- NEVER use medical_query for appointment confirmation, briefing follow-ups, or "what do you mean" clarifications
+- For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer directly in "response"
+- For all other actions: write a 1-sentence spoken confirmation in "response"`;
 
   try {
-    // ── Step 1: Call LLM router for JSON intent classification ─────
-    let toolName = null;
-    let args = {};
+    // ── Step 1: Call central LLM router (SIB-first) for JSON intent ─────
+    let toolName = shortcut?.shortcut || null;
+    let args = shortcut?.parameters || {};
     let directContent = null;
     let ishaOk = false;
 
-    try {
-      // Use Groq for intent JSON classification (instruction-following, JSON-reliable).
-      // iSHA (sib) is a medical knowledge model — good for medical_query answers, poor
-      // for command routing — so command classification goes to Groq, while medical
-      // answers still cascade through SIB/iSHA below.
+    if (!toolName) try {
       const ishaResp = await llmProvider.chat({
         messages: [
           { role: 'system', content: ishaIntentPrompt },
@@ -1458,7 +1227,7 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
         maxTokens: 600,
         temperature: 0.1,
         skipCache: true,
-        forceProvider: 'groq',
+        forceProvider: 'sib',
       });
 
       const raw = (ishaResp.content || '').trim();
@@ -1481,13 +1250,8 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
       }
 
       toolName = parsed.action || 'general';
-      args = parsed.parameters || {};
+      args = { ...args, ...(parsed.parameters || {}) };
       directContent = parsed.response || null;
-
-      if (isSibPlaceholderResponse(directContent)) {
-        throw new Error('SIB placeholder response — fallback to cascade');
-      }
-
       ishaOk = true;
     } catch (ishaErr) {
       logger.warn('[VoiceAssistant] SIB intent path failed, falling back to cascade', { error: ishaErr.message });
@@ -1538,19 +1302,8 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
     // No action / general — check if iSHA answered a medical question via 'general'
     if (!toolName || toolName === 'general') {
       const SCOPE_REJECT   = "I'm iSHA, your clinical assistant. I can only help";
-      const GREETING_RESP  = GREETING_RESPONSE;
+      const GREETING_RESP  = "I'm iSHA, your AI clinical assistant. I can manage";
       const OFF_TOPIC_MSG  = "I'm iSHA, your clinical assistant. I can only help with patient care and medical tasks.";
-
-      if (isIdentityOrGreeting(trimmedText)) {
-        return res.json({
-          intent: 'general',
-          action: null,
-          parameters: null,
-          response: GREETING_RESP,
-          speak: GREETING_RESP,
-          requiresConfirmation: false,
-        });
-      }
 
       // Detect if iSHA slipped and answered a non-clinical question anyway
       const NON_CLINICAL_RE = /\b(python|javascript|typescript|java\b|golang|rust|c\+\+|programming|for\s+loop|while\s+loop|\bvariable\b|\barray\b|\bfunction\s*\(|console\.|print\(|def\s+\w|capital\s+of|president\s+of|ipl\b|cricket\s+world|football\s+match|photosynthesis|geography)\b/i;
@@ -1558,19 +1311,18 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
 
       // Re-route: BiMediX2 used 'general' but wrote a substantive clinical answer
       const isClinicalFallthrough = directContent &&
-        isSubstantiveAnswer(directContent, 80) &&
+        directContent.length > 80 &&
         !directContent.startsWith(SCOPE_REJECT) &&
         !directContent.startsWith(GREETING_RESP) &&
         !hasNonClinicalContent;
 
       if (isClinicalFallthrough) {
-        const answer = stripRedundantIshaIntro(directContent);
         return res.json({
           intent: 'medical_query',
           action: 'medical_query',
           parameters: null,
-          response: answer,
-          speak: toSpokenText(answer, 4),
+          response: directContent,
+          speak: directContent,
           requiresConfirmation: false,
         });
       }
@@ -1578,64 +1330,85 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
       // Non-clinical content answered by model — substitute rejection phrase
       const responseText = hasNonClinicalContent
         ? OFF_TOPIC_MSG
-        : stripRedundantIshaIntro(directContent || "How can I help with your clinic today?");
+        : (directContent || "I'm your SmartHealth assistant. How can I help?");
 
       return res.json({
         intent: 'general',
         action: null,
         parameters: null,
         response: responseText,
-        speak: toSpokenText(responseText, 2),
+        speak: responseText,
         requiresConfirmation: false,
       });
     }
 
     // ── Step 3: Execute or relay ───────────────────────────────────────────
 
-    // medical_query — use substantive iSHA answer or fetch once
+    // medical_query — iSHA already answered in directContent; fall back to answerMedicalQuery
     if (toolName === 'medical_query') {
-      const answer = isSubstantiveAnswer(directContent, 40)
-        ? stripRedundantIshaIntro(directContent)
-        : await answerMedicalQuery(args.query || trimmedText, args.context || '');
+      // SIB sometimes misclassifies workflow questions as medical_query with a meta placeholder
+      if (META_MEDICAL_RE.test(directContent || '') || CONFIRM_APPT_RE.test(text)) {
+        const pending = await executeListAppointments(doctorId, 'pending', 5);
+        if (pending?.length) {
+          const names = pending.map(a => a.patientName || 'Unknown').join(', ');
+          const msg = `You have ${pending.length} pending appointment request${pending.length > 1 ? 's' : ''}: ${names}. Say "confirm the appointment" to accept the next one, or name the patient.`;
+          return res.json({
+            intent: 'action',
+            action: 'list_appointments',
+            parameters: { filter: 'pending' },
+            response: msg,
+            speak: toSpokenText(msg),
+            data: pending,
+            requiresConfirmation: false,
+          });
+        }
+        const msg = "I can help with appointments, patient records, drug questions, and your daily briefing. What would you like to do?";
+        return res.json({
+          intent: 'general',
+          action: null,
+          parameters: null,
+          response: msg,
+          speak: msg,
+          requiresConfirmation: false,
+        });
+      }
+
+      const answer = directContent || await answerMedicalQuery(args.query || text, args.context || '');
       return res.json({
         intent: 'medical_query',
         action: 'medical_query',
         parameters: args,
         response: answer,
-        speak: toSpokenText(answer, 4),
+        speak: answer,
         requiresConfirmation: false,
       });
     }
 
-    // get_drug_info — avoid filler directContent; fetch clinical answer once
+    // get_drug_info — iSHA may have answered directly; fall back to answerMedicalQuery
     if (toolName === 'get_drug_info') {
       const q = `${args.question ? args.question + ' for ' : 'Complete information about '}${args.drug}`;
-      const answer = isSubstantiveAnswer(directContent, 40)
-        ? stripRedundantIshaIntro(directContent)
-        : await answerMedicalQuery(q, '', 'Focus on: dosage, indications, side effects, contraindications. Be concise.');
+      const answer = directContent || await answerMedicalQuery(q, '', `Focus on: dosage, indications, side effects, contraindications.`);
       return res.json({
         intent: 'medical_query',
         action: 'get_drug_info',
         parameters: args,
         response: answer,
-        speak: toSpokenText(answer, 4),
+        speak: answer,
         requiresConfirmation: false,
       });
     }
 
-    // check_drug_interactions
+    // check_drug_interactions — iSHA may have answered directly; fall back to answerMedicalQuery
     if (toolName === 'check_drug_interactions') {
       const drugs = (args.drugs || []).join(', ');
       const q = `What are the clinically significant interactions between: ${drugs}?`;
-      const answer = isSubstantiveAnswer(directContent, 40)
-        ? stripRedundantIshaIntro(directContent)
-        : await answerMedicalQuery(q, '', 'Be specific about severity levels (major/moderate/minor). Be concise.');
+      const answer = directContent || await answerMedicalQuery(q, '', 'Be specific about severity levels (major/moderate/minor).');
       return res.json({
         intent: 'medical_query',
         action: 'check_drug_interactions',
         parameters: args,
         response: answer,
-        speak: toSpokenText(answer, 4),
+        speak: answer,
         requiresConfirmation: false,
       });
     }
@@ -1732,7 +1505,43 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
 
     // list_appointments — execute server-side
     if (toolName === 'list_appointments') {
-      return res.json(await buildAppointmentListPayload(doctorId, args));
+      // Normalize filter — LLM sometimes uses non-enum values like "confirmed", "scheduled", "booked"
+      const VALID_FILTERS = ['today', 'upcoming', 'pending', 'completed', 'all'];
+      let rawFilter = (args.filter || 'today').toLowerCase();
+      if (!VALID_FILTERS.includes(rawFilter)) {
+        // Map common synonyms
+        if (['confirmed', 'scheduled', 'booked', 'upcoming'].includes(rawFilter)) rawFilter = 'upcoming';
+        else if (['done', 'finished', 'past'].includes(rawFilter)) rawFilter = 'completed';
+        else rawFilter = 'today';
+      }
+      const filter = rawFilter;
+      const limit = args.limit ? (parseInt(args.limit, 10) || 10) : 10;
+      const rows = await executeListAppointments(doctorId, filter, limit);
+      if (!rows || rows.length === 0) {
+        const msg = filter === 'today'
+          ? 'You have no appointments scheduled for today.'
+          : `No ${filter} appointments found.`;
+        return res.json({ intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak: msg, data: [], requiresConfirmation: false });
+      }
+      const lines = rows.map(a => {
+        const time = a.appointmentTime ? String(a.appointmentTime).slice(0, 5) : '';
+        const status = a.status || '';
+        const name = a.patientName || 'Unknown';
+        const reason = a.reason || a.symptoms || '';
+        return `• ${time} — ${name} (${status})${reason ? ': ' + reason : ''}`;
+      });
+      const heading = filter === 'today'
+        ? `You have ${rows.length} appointment${rows.length !== 1 ? 's' : ''} today:`
+        : `${rows.length} ${filter} appointment${rows.length !== 1 ? 's' : ''}:`;
+      const msg = `${heading}\n${lines.join('\n')}`;
+      // Spoken version — concise summary
+      const firstFew = rows.slice(0, 3).map(a =>
+        `${String(a.appointmentTime || '').slice(0, 5)} ${a.patientName || 'unknown'}`
+      ).join(', ');
+      const speak = rows.length <= 3
+        ? `${heading.replace(':', '.')} ${firstFew}.`
+        : `${heading.replace(':', '.')} First: ${firstFew}${rows.length > 3 ? `, and ${rows.length - 3} more.` : '.'}`;
+      return res.json({ intent: 'action', action: 'list_appointments', parameters: args, response: msg, speak, data: rows, requiresConfirmation: false });
     }
 
     // get_patient_health — execute server-side
@@ -1779,6 +1588,28 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
       return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
     }
 
+    // accept_appointment — confirm pending patient request
+    if (toolName === 'accept_appointment') {
+      const result = await executeAcceptAppointment(doctorId, args.appointment_id, args.patient_name);
+      let msg;
+      if (result.success) {
+        const c = result.confirmed[0];
+        const dateStr = c.appointmentDate ? new Date(c.appointmentDate).toLocaleDateString('en-IN') : '';
+        msg = `Confirmed appointment for ${c.patientName}${dateStr ? ` on ${dateStr}` : ''}${c.appointmentTime ? ` at ${String(c.appointmentTime).slice(0, 5)}` : ''}.`;
+      } else {
+        msg = result.error || 'Could not confirm the appointment.';
+      }
+      return res.json({
+        intent: 'action',
+        action: 'accept_appointment',
+        parameters: args,
+        response: msg,
+        speak: msg,
+        data: result,
+        requiresConfirmation: false,
+      });
+    }
+
     // cancel_appointment — execute server-side
     if (toolName === 'cancel_appointment') {
       const result = await executeCancelAppointment(doctorId, args.appointment_id, args.patient_name, args.reason);
@@ -1812,8 +1643,46 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
     // get_doctor_briefing — execute server-side
     if (toolName === 'get_doctor_briefing') {
       const briefing = await executeGetDoctorBriefing(doctorId, args.priority || 'all');
-      const { response, speak } = composeBriefingResponse(briefing);
-      return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response, speak, data: briefing, requiresConfirmation: false });
+      const { unreadNotifications, pendingRequests, upcomingSoon, pendingTasks = [] } = briefing;
+
+      const parts = [];
+
+      if (upcomingSoon.length > 0) {
+        parts.push(`⏰ **Upcoming in 2 hours:** ${upcomingSoon.map(a => `${a.appointmentTime} — ${a.patientName}`).join(', ')}`);
+      }
+      if (pendingRequests.length > 0) {
+        parts.push(`📋 **${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''}:** ${pendingRequests.map(a => `${a.patientName} on ${a.appointmentDate}`).join(', ')}`);
+      }
+      if (unreadNotifications.length > 0) {
+        const urgentItems = unreadNotifications.filter(n => n.priority === 'urgent');
+        const highItems   = unreadNotifications.filter(n => n.priority === 'high');
+        const normalItems = unreadNotifications.filter(n => !['urgent','high'].includes(n.priority));
+        if (urgentItems.length > 0) parts.push(`🚨 **URGENT (${urgentItems.length}):** ${urgentItems.map(n => n.title).join(' | ')}`);
+        if (highItems.length > 0)   parts.push(`🔴 **High priority (${highItems.length}):** ${highItems.map(n => n.title).join(' | ')}`);
+        if (normalItems.length > 0) parts.push(`📬 **${normalItems.length} unread notification${normalItems.length > 1 ? 's' : ''}`);
+      }
+      if (pendingTasks.length > 0) {
+        parts.push(`✅ **${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}:** ${pendingTasks.map(t => t.title).join(' | ')}`);
+      }
+
+      if (parts.length === 0) {
+        const msg = 'No new updates, alerts, or pending tasks at the moment.';
+        return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: msg, speak: msg, data: briefing, requiresConfirmation: false });
+      }
+
+      const fullText = parts.join('\n');
+      const spokenParts = [];
+      if (upcomingSoon.length > 0)   spokenParts.push(`${upcomingSoon.length} appointment${upcomingSoon.length > 1 ? 's' : ''} coming up soon.`);
+      if (pendingRequests.length > 0) spokenParts.push(`${pendingRequests.length} pending appointment request${pendingRequests.length > 1 ? 's' : ''}.`);
+      const urgentNotifs = unreadNotifications.filter(n => n.priority === 'urgent');
+      const highNotifs   = unreadNotifications.filter(n => n.priority === 'high');
+      if (urgentNotifs.length > 0)   spokenParts.push(`Urgent alert: ${urgentNotifs[0].title}.`);
+      else if (highNotifs.length > 0) spokenParts.push(`${highNotifs.length} high-priority notification${highNotifs.length > 1 ? 's' : ''}.`);
+      else if (unreadNotifications.length > 0) spokenParts.push(`${unreadNotifications.length} unread notifications.`);
+      if (pendingTasks.length > 0)   spokenParts.push(`You also have ${pendingTasks.length} pending task${pendingTasks.length > 1 ? 's' : ''}.`);
+      const spokenText = spokenParts.join(' ') || fullText;
+
+      return res.json({ intent: 'action', action: 'get_doctor_briefing', parameters: args, response: fullText, speak: spokenText, data: briefing, requiresConfirmation: false });
     }
 
     // add_task — create a doctor task from voice
@@ -1852,75 +1721,6 @@ STRICT ROUTING RULES (follow exactly — do NOT use medical_query for appointmen
         ? `Done! Task "${result.task?.title || args.title || 'task'}" marked as completed.`
         : `Couldn't find that task. Try saying "show my tasks" to see what's pending.`;
       return res.json({ intent: 'action', action: 'complete_task', parameters: args, response: msg, speak: msg, data: result.task || null, requiresConfirmation: false });
-    }
-
-    // draft_lab_order — Hospital OS approval inbox (T1)
-    if (toolName === 'draft_lab_order') {
-      const patientId = args.patient_id || currentPatientId;
-      if (!patientId) {
-        const msg = 'Please select a patient before ordering labs.';
-        return res.json({ intent: 'action', action: 'draft_lab_order', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
-      }
-      const tests = (args.tests || []).map((t) => ({ name: String(t), price: 0 }));
-      const result = await draftLabOrderFromVoice({
-        utterance: text,
-        patientId: Number(patientId),
-        doctorId,
-        hospitalId: req.user?.organization_id || req.user?.hospital_id || 1,
-        tests,
-        priority: args.priority || 'routine',
-      });
-      const msg = `Lab order drafted for ${tests.map((t) => t.name).join(', ')}. Please approve in the approval inbox.`;
-      return res.json({
-        intent: 'action',
-        action: 'draft_lab_order',
-        parameters: args,
-        response: msg,
-        speak: msg,
-        data: result,
-        requiresConfirmation: true,
-      });
-    }
-
-    if (toolName === 'draft_imaging_order') {
-      const patientId = args.patient_id || currentPatientId;
-      if (!patientId) {
-        const msg = 'Please select a patient before ordering imaging.';
-        return res.json({ intent: 'action', action: 'draft_imaging_order', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
-      }
-      const result = await draftImagingOrderFromVoice({
-        utterance: text,
-        patientId: Number(patientId),
-        doctorId,
-        hospitalId: req.user?.organization_id || req.user?.hospital_id || 1,
-        modality: args.modality,
-        bodyPart: args.body_part,
-      });
-      const msg = `${args.modality} order drafted. Approve in the approval inbox.`;
-      return res.json({ intent: 'action', action: 'draft_imaging_order', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: true });
-    }
-
-    if (toolName === 'notify_clinical_team') {
-      const result = await draftTeamNotification({
-        utterance: text,
-        team: args.team,
-        patientId: args.patient_id || currentPatientId,
-        requestedBy: doctorId,
-      });
-      const msg = `Notification queued for ${args.team} team.`;
-      return res.json({ intent: 'action', action: 'notify_clinical_team', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
-    }
-
-    if (toolName === 'show_icu_admissions') {
-      const msg = 'Opening ICU dashboard';
-      return res.json({
-        intent: 'action',
-        action: 'navigate_to',
-        parameters: { screen: 'icu-dashboard' },
-        response: msg,
-        speak: msg,
-        requiresConfirmation: false,
-      });
     }
 
     // Unknown tool — fallback

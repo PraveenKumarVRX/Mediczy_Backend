@@ -3,6 +3,13 @@ import bcrypt from 'bcrypt';
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import {
+  buildCorporateEmployeeTemplateVars,
+  formatCorporateEmployeePlan,
+  renderTemplate,
+} from './welcome-email-template.util.js';
+
+export { buildCorporateEmployeeTemplateVars, renderTemplate } from './welcome-email-template.util.js';
 
 dotenv.config();
 
@@ -278,18 +285,6 @@ async function getCustomTemplate(eventType, options = {}) {
   } catch {
     return null; // Fall through to hardcoded default
   }
-}
-
-/**
- * Render template variables in subject/html using a values map.
- */
-function renderTemplate(template, values) {
-  let result = template;
-  for (const [key, val] of Object.entries(values)) {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    result = result.replace(new RegExp(escaped, 'g'), val ?? '');
-  }
-  return result;
 }
 
 /**
@@ -646,23 +641,6 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
   }
 }
 
-function formatCorporateEmployeePlan(employeeData = {}) {
-  const planName = employeeData.planName || employeeData.insurancePlan || employeeData.packageType || `${employeeData.companyName || 'Corporate'} Employee Health Plan`;
-  const coverageAmount = employeeData.coverageAmount || employeeData.sumInsured || employeeData.sum_insured || employeeData.coverage || "As per corporate plan eligibility";
-  const startDate = employeeData.planStartDate || employeeData.startDate || employeeData.coverageStartDate || "";
-  const endDate = employeeData.planEndDate || employeeData.endDate || employeeData.coverageEndDate || "";
-  const validity = employeeData.planValidity || employeeData.validity || ([startDate, endDate].filter(Boolean).join(" to ") || "Active as per Nijacart HR policy");
-  const sponsor = employeeData.sponsor || employeeData.employerContribution || "Nijacart sponsored corporate health benefit";
-  const copay = employeeData.copay || employeeData.employeeShare || "As per approved plan terms";
-  const benefits = Array.isArray(employeeData.planBenefits)
-    ? employeeData.planBenefits
-    : String(employeeData.planBenefits || employeeData.benefits || "Doctor consultations, lab tests, health records, pharmacy benefits, care navigation")
-        .split(/[|,;]\s*/)
-        .map(item => item.trim())
-        .filter(Boolean);
-
-  return { planName, coverageAmount, validity, sponsor, copay, benefits };
-}
 
 function renderPlanBenefitsList(benefits = []) {
   return benefits.map(benefit => `<li style="padding: 6px 0; color: #374151;">${benefit}</li>`).join("");
@@ -754,41 +732,7 @@ export async function buildCorporateEmployeeWelcomeEmail(employeeData, temporary
   // Apply custom template override if configured
   const customTplEmp = await getCustomTemplate('corporate_employee_welcome', options);
   if (customTplEmp) {
-    const vars = {
-      "{{employeeName}}": employeeName,
-      "{{firstName}}": firstName,
-      "{{lastName}}": lastName,
-      "{{email}}": email,
-      "{{companyName}}": companyName,
-      "{{employeeId}}": employeeId || "",
-      "{{department}}": department || "",
-      "{{temporaryPassword}}": temporaryPassword,
-      "{{password}}": temporaryPassword,
-      "{{username}}": loginIdentifier,
-      "{{userId}}": loginIdentifier,
-      "{{loginIdentifier}}": loginIdentifier,
-      "{{loginUrl}}": "https://app.mediqzy.com/login",
-      "{{planName}}": plan.planName,
-      "{{coverageAmount}}": plan.coverageAmount,
-      "{{planValidity}}": plan.validity,
-      "{{planSponsor}}": plan.sponsor,
-      "{{planCopay}}": plan.copay,
-      "{{planBenefits}}": planBenefitsText,
-
-      // Support legacy or manually-written bracket placeholders from HTML editors.
-      "[First Name]": firstName,
-      "[Last Name]": lastName,
-      "[Employee Name]": employeeName,
-      "[Employee Email ID / Mobile Number]": loginIdentifier,
-      "[Username]": loginIdentifier,
-      "[User ID]": loginIdentifier,
-      "[Employee ID]": employeeId || "",
-      "[Temporary Password]": temporaryPassword,
-      "[Password]": temporaryPassword,
-      "[Company Name]": companyName,
-      "[Department]": department || "",
-      "[Login URL]": "https://app.mediqzy.com/login"
-    };
+    const vars = buildCorporateEmployeeTemplateVars(employeeData, temporaryPassword);
     msg.subject = renderTemplate(customTplEmp.subject, vars);
     msg.html = renderTemplate(customTplEmp.html_content, vars);
   }
@@ -900,38 +844,7 @@ export async function buildCorporateEmployeeReminderEmail(employeeData, temporar
   // Apply custom template override if configured (same placeholder set as the welcome email)
   const customTplReminder = await getCustomTemplate('corporate_employee_reminder', options);
   if (customTplReminder) {
-    const vars = {
-      "{{firstName}}": firstName,
-      "{{lastName}}": lastName,
-      "{{email}}": email,
-      "{{companyName}}": companyName,
-      "{{employeeId}}": employeeId || "",
-      "{{department}}": department || "",
-      "{{temporaryPassword}}": temporaryPassword,
-      "{{password}}": temporaryPassword,
-      "{{username}}": loginIdentifier,
-      "{{userId}}": loginIdentifier,
-      "{{loginIdentifier}}": loginIdentifier,
-      "{{loginUrl}}": "https://app.mediqzy.com/login",
-      "{{planName}}": plan.planName,
-      "{{coverageAmount}}": plan.coverageAmount,
-      "{{planValidity}}": plan.validity,
-      "{{planSponsor}}": plan.sponsor,
-      "{{planCopay}}": plan.copay,
-      "{{planBenefits}}": planBenefitsText,
-      "[First Name]": firstName,
-      "[Last Name]": lastName,
-      "[Employee Name]": `${firstName || ""} ${lastName || ""}`.trim(),
-      "[Employee Email ID / Mobile Number]": loginIdentifier,
-      "[Username]": loginIdentifier,
-      "[User ID]": loginIdentifier,
-      "[Employee ID]": employeeId || "",
-      "[Temporary Password]": temporaryPassword,
-      "[Password]": temporaryPassword,
-      "[Company Name]": companyName,
-      "[Department]": department || "",
-      "[Login URL]": "https://app.mediqzy.com/login"
-    };
+    const vars = buildCorporateEmployeeTemplateVars(employeeData, temporaryPassword);
     msg.subject = renderTemplate(customTplReminder.subject, vars);
     msg.html = renderTemplate(customTplReminder.html_content, vars);
   }

@@ -27,6 +27,7 @@ import jwt from 'jsonwebtoken';
 export const ROLES = {
   PLATFORM_ADMIN: 'platform_admin',
   HOSPITAL_ADMIN: 'hospital_admin',
+  MEDICAL_DIRECTOR: 'medical_director',
   DOCTOR:         'doctor',
   NURSE:          'nurse',
   ANALYST:        'analyst',
@@ -83,8 +84,15 @@ const ROLE_CAPABILITIES = {
     CAPS.LLM_HIGH_REASONING, CAPS.LLM_STANDARD, CAPS.LLM_BASIC,
     CAPS.READ_PATIENT_DATA, CAPS.WRITE_PATIENT_DATA,
     CAPS.READ_ANALYTICS, CAPS.READ_FINANCIAL, CAPS.WRITE_FINANCIAL,
-    CAPS.EXEC_READ_TOOLS, CAPS.EXEC_WRITE_TOOLS,
+    CAPS.EXEC_READ_TOOLS, CAPS.EXEC_WRITE_TOOLS, CAPS.EXEC_SYSTEM_TOOLS,
     CAPS.VIEW_AUDIT_LOGS, CAPS.MANAGE_AGENTS,
+  ],
+
+  [ROLES.MEDICAL_DIRECTOR]: [
+    CAPS.INVOKE_ANALYST_AGENT, CAPS.INVOKE_CLINICAL_AGENT, CAPS.INVOKE_RESEARCH_AGENT,
+    CAPS.LLM_HIGH_REASONING, CAPS.LLM_STANDARD,
+    CAPS.READ_PATIENT_DATA, CAPS.READ_ANALYTICS,
+    CAPS.EXEC_READ_TOOLS, CAPS.VIEW_AUDIT_LOGS,
   ],
 
   [ROLES.DOCTOR]: [
@@ -134,6 +142,7 @@ const ROLE_CAPABILITIES = {
 const TOKEN_BUDGETS = {
   [ROLES.PLATFORM_ADMIN]: 16000,
   [ROLES.HOSPITAL_ADMIN]: 12000,
+  [ROLES.MEDICAL_DIRECTOR]: 10000,
   [ROLES.DOCTOR]:          8000,
   [ROLES.NURSE]:           4000,
   [ROLES.ANALYST]:         6000,
@@ -187,7 +196,7 @@ export async function resolveIdentity(req) {
     const userId   = decoded.id || decoded.userId || decoded.sub;
     const orgId    = decoded.orgId || decoded.hospitalId || decoded.tenantId;
     const rawRole  = decoded.role || decoded.userType || decoded.userRole || 'patient';
-    const role     = _mapToAgentRole(rawRole);
+    const role     = _mapToAgentRole(rawRole, decoded);
     const caps     = [...(ROLE_CAPABILITIES[role] || ROLE_CAPABILITIES[ROLES.VIEWER])];
 
     // Load extra DB-granted capabilities
@@ -211,10 +220,26 @@ export async function resolveIdentity(req) {
   }
 }
 
-function _mapToAgentRole(rawRole) {
-  if (!rawRole) return ROLES.PATIENT;
-  const r = String(rawRole).toLowerCase();
+function _mapToAgentRole(rawRole, decoded = {}) {
+  if (!rawRole && !decoded) return ROLES.PATIENT;
+  const r = String(rawRole || '').toLowerCase();
+  const isTeamCaller =
+    decoded.isTeam === true ||
+    decoded.userType === 'team' ||
+    ['team', 'team_member', 'team_lead'].includes(r);
+
+  if (isTeamCaller) {
+    const teamAdmin =
+      decoded.isAdmin === true ||
+      r === 'admin' ||
+      r === 'super_admin' ||
+      r === 'super admin' ||
+      r === 'superadmin';
+    return teamAdmin ? ROLES.HOSPITAL_ADMIN : ROLES.ANALYST;
+  }
+
   if (r.includes('platform') || r === 'superadmin' || r === 'super_admin') return ROLES.PLATFORM_ADMIN;
+  if (r === 'medical_director') return ROLES.MEDICAL_DIRECTOR;
   if (r.includes('hospital_admin') || r === 'admin' || r === 'manager') return ROLES.HOSPITAL_ADMIN;
   if (r === 'medical_director' || r === 'medicaldirector') return ROLES.HOSPITAL_ADMIN;
   if (['hospital', 'ceo', 'coo', 'cfo', 'ms', 'medical_superintendent', 'cmo',

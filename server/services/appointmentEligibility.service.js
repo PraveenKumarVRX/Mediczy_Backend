@@ -15,6 +15,10 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import tenantPartnerService from './tenant-partner.service.js';
+import {
+  canonicalizeAppointmentTime,
+  findSlotConflict,
+} from '../utils/appointmentSlotTime.js';
 
 // ─── Tenant-partner eligibility ───────────────────────────────────────────────
 /**
@@ -47,14 +51,21 @@ export async function checkTenantPartnerEligibility(corporateTenantId, clinicTen
  * @param {string} appointmentTime - HH:MM
  * @returns {Promise<{ conflict: boolean, appointment?: object }>}
  */
-export async function checkDoctorConflict(doctorId, appointmentDate, appointmentTime) {
-  const conflict = await Appointment.findOne({
+export async function checkDoctorConflict(doctorId, appointmentDate, appointmentTime, options = {}) {
+  const canonicalTime = canonicalizeAppointmentTime(appointmentTime);
+  const appointments = await Appointment.findAll({
     where: {
       doctorId,
       appointmentDate,
-      appointmentTime,
       status: { [Op.notIn]: ['cancelled', 'no-show'] },
+      ...(options.excludeAppointmentId ? { id: { [Op.ne]: options.excludeAppointmentId } } : {}),
     },
+    ...(options.transaction
+      ? { transaction: options.transaction, lock: options.transaction.LOCK.UPDATE }
+      : {}),
+  });
+  const conflict = findSlotConflict(appointments, canonicalTime, {
+    excludeId: options.excludeAppointmentId,
   });
   return { conflict: !!conflict, appointment: conflict || undefined };
 }
@@ -69,14 +80,21 @@ export async function checkDoctorConflict(doctorId, appointmentDate, appointment
  * @param {string} appointmentTime - HH:MM
  * @returns {Promise<{ conflict: boolean, conflictDoctorName?: string, existingAppointment?: object }>}
  */
-export async function checkPatientConflict(userId, appointmentDate, appointmentTime) {
-  const conflict = await Appointment.findOne({
+export async function checkPatientConflict(userId, appointmentDate, appointmentTime, options = {}) {
+  const canonicalTime = canonicalizeAppointmentTime(appointmentTime);
+  const appointments = await Appointment.findAll({
     where: {
       userId,
       appointmentDate,
-      appointmentTime,
       status: { [Op.notIn]: ['cancelled', 'no-show'] },
+      ...(options.excludeAppointmentId ? { id: { [Op.ne]: options.excludeAppointmentId } } : {}),
     },
+    ...(options.transaction
+      ? { transaction: options.transaction, lock: options.transaction.LOCK.UPDATE }
+      : {}),
+  });
+  const conflict = findSlotConflict(appointments, canonicalTime, {
+    excludeId: options.excludeAppointmentId,
   });
 
   if (!conflict) return { conflict: false };

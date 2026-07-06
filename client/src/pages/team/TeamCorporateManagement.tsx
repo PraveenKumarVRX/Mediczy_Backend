@@ -62,7 +62,8 @@ import {
   ChevronLeft,
   Sparkles,
   Bot,
-  MessageSquare
+  MessageSquare,
+  LogIn,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -774,6 +775,7 @@ const TeamCorporateManagement = () => {
   const [resendingWelcomeDeliveryId, setResendingWelcomeDeliveryId] = useState<number | null>(null);
   const [showReminderConfirmDialog, setShowReminderConfirmDialog] = useState(false);
   const [isSendingReminders, setIsSendingReminders] = useState(false);
+  const [reactivatingEmployeeId, setReactivatingEmployeeId] = useState<number | null>(null);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -2455,6 +2457,35 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     };
   };
 
+  const handleReactivateEmployeeLogin = async (emp: Employee) => {
+    if (!selectedCorporate?.id) return;
+    try {
+      setReactivatingEmployeeId(emp.id);
+      const { data } = await api.post('/admin/corporate-employees/reactivate', {
+        userId: emp.id,
+        email: emp.email,
+        employeeId: emp.employeeId,
+        corporateId: selectedCorporate.id,
+      });
+      if (!data?.success) {
+        throw new Error(data?.message || 'Reactivation failed');
+      }
+      toast({
+        title: 'Login enabled',
+        description: `${emp.firstName || emp.email} can try logging in again.`,
+      });
+      await fetchEmployees(selectedCorporate.id);
+    } catch (error: any) {
+      toast({
+        title: 'Could not enable login',
+        description: error?.response?.data?.message || error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReactivatingEmployeeId(null);
+    }
+  };
+
   const fetchEmployees = async (corporateId: number) => {
     try {
       setEmployeesLoading(true);
@@ -3776,7 +3807,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
   <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Login Credentials</h3>
   <p><strong>Username:</strong> {{email}}<br/>
-  <strong>Password:</strong> [Temporary Password]</p>
+  <strong>Password:</strong> {{temporaryPassword}}</p>
 
   <h3 style="margin: 18px 0 8px; color: #0A6EBD;">Download the My SmartHealth App</h3>
   <p><strong>Android:</strong> <a href="https://play.google.com/store/apps/details?id=com.mysmarthealth" target="_blank" rel="noopener noreferrer">https://play.google.com/store/apps/details?id=com.mysmarthealth</a></p>
@@ -3924,12 +3955,26 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
 
         replaceAllLiteral(selectedCorporate?.companyName || '', '{{companyName}}');
         replaceAllLiteral(selectedCorporate?.uniqueId || '', '{{corporateId}}');
+        replaceAllLiteral('[generated securely at send time]', '{{temporaryPassword}}');
 
-        const passwordPattern = /(Temporary Password\s*[:<\/strong>\-\s]*)([^<\s][^<\n]*)/gi;
-        const passwordSanitized = safeHtml.replace(passwordPattern, (_, prefix: string) => `${prefix}{{temporaryPassword}}`);
-        if (passwordSanitized !== safeHtml) {
+        const passwordPatterns = [
+          /(<strong>Password:<\/strong>\s*)([^<\n]+)/gi,
+          /(Temporary Password\s*[:<\/strong>\-\s]*)([^<\n]+)/gi,
+          /(Password\s*:\s*)([^<\n]+)/gi,
+        ];
+        for (const passwordPattern of passwordPatterns) {
+          const passwordSanitized = safeHtml.replace(passwordPattern, (_, prefix: string) => `${prefix}{{temporaryPassword}}`);
+          if (passwordSanitized !== safeHtml) {
+            changed = true;
+            safeHtml = passwordSanitized;
+          }
+        }
+
+        const usernamePattern = /(<strong>Username:<\/strong>\s*)([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})/gi;
+        const usernameSanitized = safeHtml.replace(usernamePattern, '$1{{email}}');
+        if (usernameSanitized !== safeHtml) {
           changed = true;
-          safeHtml = passwordSanitized;
+          safeHtml = usernameSanitized;
         }
 
         return { safeSubject, safeHtml, changed };
@@ -6341,6 +6386,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                 <Button variant="ghost" size="sm" onClick={() => openWelcomeDeliveryAuditForEmployee(emp)} title="View welcome email delivery audit for this employee">
                                   <Clock className="h-4 w-4" />
                                 </Button>
+                                {!emp.lastLoginAt && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    title="Enable app login (fix inactive account)"
+                                    disabled={reactivatingEmployeeId === emp.id}
+                                    onClick={() => handleReactivateEmployeeLogin(emp)}
+                                  >
+                                    <LogIn className={`h-4 w-4 ${reactivatingEmployeeId === emp.id ? 'animate-pulse' : ''}`} />
+                                  </Button>
+                                )}
                                 <Button variant="ghost" size="sm" onClick={() => {
                                   setViewingEmployee(emp);
                                   setShowViewEmployeeDialog(true);

@@ -176,11 +176,23 @@ const normalizeAvailabilitySlot = (slot) => {
     ? 'walkIn'
     : (rawType === 'online' || rawType === 'walkin' || rawType === 'walkIn' || rawType === 'both' ? rawType : 'both');
 
-  return {
+  const normalized = {
     startTime,
     endTime,
     consultationType: consultationType === 'walkin' ? 'walkIn' : consultationType,
   };
+
+  const slotDuration = parseInt(slot.slotDuration, 10);
+  if ([15, 20, 30, 45, 60].includes(slotDuration)) {
+    normalized.slotDuration = slotDuration;
+  }
+
+  const maxPatients = parseInt(slot.maxPatients, 10);
+  if (Number.isFinite(maxPatients) && maxPatients > 0) {
+    normalized.maxPatients = maxPatients;
+  }
+
+  return normalized;
 };
 
 const doctorModel = {
@@ -504,7 +516,37 @@ const doctorModel = {
 
         return true;
       });
-  }
+  },
+
+  /**
+   * Persist uploaded doctor media URL to the correct column/JSONB field.
+   * profilePicture → doctors.profileImage
+   * digitalSignature / medicalSeal / clinicImage → templateSettings
+   */
+  updateMedia: async (doctorId, mediaType, url) => {
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      throw new Error('Doctor not found');
+    }
+
+    if (mediaType === 'profilePicture') {
+      doctor.profileImage = url;
+      await doctor.save();
+      return doctor;
+    }
+
+    const templateSettings = parseJsonField(doctor.templateSettings, {});
+    const templateFieldMap = {
+      digitalSignature: 'signature',
+      medicalSeal: 'seal',
+      clinicImage: 'clinicLogo',
+    };
+    const settingsKey = templateFieldMap[mediaType] || mediaType;
+    templateSettings[settingsKey] = url;
+    doctor.templateSettings = templateSettings;
+    await doctor.save();
+    return doctor;
+  },
 };
 
 export default doctorModel;

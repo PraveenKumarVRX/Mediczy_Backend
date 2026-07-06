@@ -1,48 +1,72 @@
-import type { ReactNode } from "react";
-import { HeartHandshake, ShieldCheck } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { cn } from '@/lib/utils';
+import { HeartPulse, LogOut } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-export interface FamilyPortalShellProps {
-  title: string;
-  subtitle?: string;
-  actions?: ReactNode;
-  children: ReactNode;
+const FAMILY_NAV = [
+  { label: 'Home', segment: '' },
+  { label: 'Progress', segment: 'progress' },
+  { label: 'Education', segment: 'education' },
+  { label: 'Discharge', segment: 'discharge' },
+  { label: 'Messages', segment: 'messages' },
+];
+
+function basePath(patientId: string) {
+  return `/family/patient/${patientId}`;
 }
 
-export default function FamilyPortalShell({
-  title,
-  subtitle,
-  actions,
-  children,
-}: FamilyPortalShellProps) {
+export default function FamilyPortalShell() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const match = location.pathname.match(/\/family\/patient\/(\d+)/);
+  const patientId = match?.[1];
+
+  const logout = () => {
+    sessionStorage.removeItem('family_patient_id');
+    sessionStorage.removeItem('family_access');
+    navigate('/family/login');
+  };
+
+  if (!patientId) {
+    return <Outlet />;
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-teal-50 via-white to-slate-50">
-      <div className="mx-auto max-w-3xl px-4 py-5 md:py-8 space-y-5">
-        <header className="space-y-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <div className="rounded-xl bg-teal-600 p-2 text-white">
-                  <HeartHandshake className="h-5 w-5" />
-                </div>
-                <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-              </div>
-              {subtitle && <p className="mt-2 text-sm text-slate-600">{subtitle}</p>}
-            </div>
-            {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+    <div className="min-h-screen bg-gradient-to-b from-rose-50 to-white">
+      <header className="border-b bg-white/90 backdrop-blur sticky top-0 z-20">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+          <HeartPulse className="h-6 w-6 text-rose-500" />
+          <div className="flex-1">
+            <h1 className="font-semibold text-slate-800">Family Care Portal</h1>
+            <p className="text-xs text-muted-foreground">Plain-language updates from your care team</p>
           </div>
-
-          <div className="rounded-lg border border-teal-200 bg-white p-3 text-sm text-slate-700 shadow-sm">
-            <Badge variant="secondary" className="mr-2 bg-teal-100 text-teal-800">
-              <ShieldCheck className="h-3.5 w-3.5 mr-1" />
-              Consent gated
-            </Badge>
-            You only see updates approved by the care team.
-          </div>
-        </header>
-
-        <main>{children}</main>
-      </div>
+          <Button variant="ghost" size="sm" onClick={logout}>
+            <LogOut className="h-4 w-4 mr-1" />
+            Sign out
+          </Button>
+        </div>
+        <nav className="max-w-3xl mx-auto px-4 pb-2 flex gap-1 overflow-x-auto">
+          {FAMILY_NAV.map((item) => {
+            const href = item.segment ? `${basePath(patientId)}/${item.segment}` : basePath(patientId);
+            const active = location.pathname === href || location.pathname.startsWith(`${href}/`);
+            return (
+              <Link
+                key={item.segment}
+                to={href}
+                className={cn(
+                  'px-3 py-1.5 rounded-full text-sm whitespace-nowrap',
+                  active ? 'bg-rose-100 text-rose-800 font-medium' : 'text-slate-600 hover:bg-slate-100'
+                )}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+      </header>
+      <main className="max-w-3xl mx-auto p-4 md:p-6">
+        <Outlet />
+      </main>
     </div>
   );
 }

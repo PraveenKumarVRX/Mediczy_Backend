@@ -42,6 +42,14 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 190 95% 42%;
 
+    --clinical-critical: 0 84% 60%;
+    --clinical-warning: 38 92% 50%;
+    --clinical-stable: 142 76% 36%;
+    --ai-surface: 270 50% 98%;
+    --ai-border: 270 40% 80%;
+    --ai-agent-active: 142 76% 36%;
+    --ai-agent-idle: 215 16% 65%;
+
     /* Sidebar Colors */
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 222.2 84% 4.9%;

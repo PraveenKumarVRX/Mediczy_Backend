@@ -28,6 +28,10 @@ import { checkQuota, recordSent, getQuotaStatus } from '../utils/emailQuota.js';
 import cimsService from '../services/cims-medicine.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import {
+  reactivateCorporateEmployeeAccount,
+  reactivateCorporateEmployeeByIdentifier,
+} from '../services/corporate-employee-activation.service.js';
+import {
   adminLogin,
   adminRefresh,
   adminLogout,
@@ -3134,7 +3138,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           const corpAggregatorType = corporate.dataValues?.aggregator_type ?? corporate.aggregator_type ?? null;
           const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
           await postgresSequelize.query(
-            `UPDATE users SET "isVerified" = true, "isCorporate" = true, status = 'active',
+            `UPDATE users SET status = 'active', "isVerified" = true, "isCorporate" = true,
               password = :password,
               metadata = COALESCE(metadata, '{}'::jsonb) || '{"requirePasswordChange": true}'::jsonb,
               aggregator_id = COALESCE(aggregator_id, :aggregatorId),
@@ -3297,6 +3301,12 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           corporatePlan: activeCorporatePlan,
           transaction: tx,
         });
+
+        await postgresSequelize.query(
+          `UPDATE users SET status = 'active', "isCorporate" = true, "isVerified" = true, "updatedAt" = NOW()
+           WHERE id = :userId`,
+          { replacements: { userId }, type: postgresSequelize.QueryTypes.UPDATE, transaction: tx }
+        );
 
         await tx.commit();
         tx = null;
@@ -4599,6 +4609,43 @@ router.get('/corporate-employees/:corporateId/activation-stats', authUser, requi
 });
 
 /**
+ * POST /api/admin/corporate-employees/reactivate
+ * Reactivate login for a corporate employee stuck on "Account is inactive".
+ * Body: { email?, employeeId?, userId? }
+ */
+router.post('/corporate-employees/reactivate', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
+  try {
+    const corporateId = req.resolvedCorporate?.id;
+    const { email, employeeId, userId } = req.body || {};
+
+    let result;
+    if (userId) {
+      result = await reactivateCorporateEmployeeAccount(parseInt(userId, 10));
+    } else {
+      result = await reactivateCorporateEmployeeByIdentifier({
+        email: email || null,
+        employeeId: employeeId || null,
+        corporateId,
+      });
+    }
+
+    if (!result.success) {
+      const status = result.reason === 'user_not_found' ? 404 : 400;
+      return res.status(status).json({ success: false, message: result.reason, ...result });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Employee account activated for login',
+      ...result,
+    });
+  } catch (error) {
+    console.error('Corporate employee reactivate error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /api/admin/corporate-employees/:corporateId
  */
 router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
@@ -4680,6 +4727,13 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
     if (pinCode !== undefined) { userUpdates.push('"address_zipCode" = :addressZip'); userReplacements.addressZip = pinCode; }
     if (department !== undefined) { userUpdates.push('department_name = :deptName'); userReplacements.deptName = department; }
     if (employeeId !== undefined) { userUpdates.push('employee_id = :employeeId'); userReplacements.employeeId = employeeId; }
+    if (status === 'active') {
+      userUpdates.push("status = 'active'");
+      userUpdates.push('"isCorporate" = true');
+    } else if (status === 'inactive' || status === 'suspended') {
+      userUpdates.push('status = :userStatus');
+      userReplacements.userStatus = status;
+    }
     await postgresSequelize.query(
       `UPDATE users SET ${userUpdates.join(', ')} WHERE id = :userId`,
       { replacements: userReplacements, type: postgresSequelize.QueryTypes.UPDATE }

@@ -22,7 +22,6 @@ export interface PortalClinicalPages {
   GlobalClinicalBoard: LazyComponent;
   MedicalPassportPortal: LazyComponent;
   LivingPatientWorkspace: LazyComponent;
-  WorkspaceAICareTeam: LazyComponent;
   InpatientWorkspace: LazyComponent;
   CommandCenter: LazyComponent;
   HospitalCopilot: LazyComponent;
@@ -55,7 +54,6 @@ type RouteKey =
   | "globalBoard"
   | "passport"
   | "patientHealthos"
-  | "patientAiTeam"
   | "patientCareos"
   | "patientWorkspace"
   | "commandCenter"
@@ -110,9 +108,8 @@ function routeDefs(p: PortalClinicalPages): Record<RouteKey, { path: string; el:
     careosHub: { path: "careos", el: p.CareOSEcosystem },
     globalBoard: { path: "healthos/board/:patientId", el: p.GlobalClinicalBoard },
     passport: { path: "healthos/passport/:patientId", el: p.MedicalPassportPortal },
-    patientHealthos: { path: "patient/:patientId/healthos", el: p.LivingPatientWorkspace },
-    patientAiTeam: { path: "patient/:patientId/healthos/ai-team", el: p.WorkspaceAICareTeam },
-    patientCareos: { path: "patient/:patientId/careos", el: p.LivingPatientWorkspace },
+    patientHealthos: { path: "patient/:patientId/healthos/*", el: p.LivingPatientWorkspace },
+    patientCareos: { path: "patient/:patientId/careos/*", el: p.LivingPatientWorkspace },
     patientWorkspace: { path: "patient/:patientId/workspace", el: LegacyPatientWorkspaceRedirect },
     commandCenter: { path: "command-center", el: p.CommandCenter },
     copilot: { path: "copilot", el: p.HospitalCopilot },

@@ -1,11 +1,11 @@
 import { appendClinicalEvent, getClinicalTimeline } from './clinical-timeline.service.js';
 import { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists } from './care-team.service.js';
-import { analyzePatient, listCoordinatorAlerts, generateAdmissionBriefing } from './clinical-coordinator.service.js';
+import { analyzePatient, listCoordinatorAlerts, generateAdmissionBriefing, acknowledgeCoordinatorAlert } from './clinical-coordinator.service.js';
 import { getPathway, updatePathway, autoAdvancePathway } from './treatment-pathway.service.js';
-import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus } from './mdt-board.service.js';
+import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus, createMdtCallToken, listMdtSessions } from './mdt-board.service.js';
 import { buildClinicalPlayback } from './clinical-playback.service.js';
 import { findSimilarCases, archiveCase, recordCaseOutcome } from './hospital-memory.service.js';
-import { listFamilyUpdates, publishFamilyUpdate, generateFamilyUpdateDraft } from './family-portal.service.js';
+import { listFamilyUpdates, publishFamilyUpdate, generateFamilyUpdateDraft, verifyFamilyAccess } from './family-portal.service.js';
 import { createPatientCallToken } from './one-touch-call.service.js';
 import { listTasks, createTask, updateTaskStatus } from './task-management.service.js';
 import { getLivingWorkspace } from './living-patient-workspace.service.js';
@@ -70,6 +70,7 @@ export {
   analyzePatient,
   listCoordinatorAlerts,
   generateAdmissionBriefing,
+  acknowledgeCoordinatorAlert,
   getPathway,
   updatePathway,
   autoAdvancePathway,
@@ -77,6 +78,8 @@ export {
   joinClinicalBoard,
   recordOpinion,
   getAIConsensus,
+  createMdtCallToken,
+  listMdtSessions,
   buildClinicalPlayback,
   findSimilarCases,
   archiveCase,
@@ -84,6 +87,7 @@ export {
   listFamilyUpdates,
   publishFamilyUpdate,
   generateFamilyUpdateDraft,
+  verifyFamilyAccess,
   createPatientCallToken,
   listTasks,
   createTask,
@@ -187,6 +191,7 @@ export default {
   analyzePatient,
   listCoordinatorAlerts,
   generateAdmissionBriefing,
+  acknowledgeCoordinatorAlert,
   getPathway,
   updatePathway,
   autoAdvancePathway,
@@ -194,6 +199,8 @@ export default {
   joinClinicalBoard,
   recordOpinion,
   getAIConsensus,
+  createMdtCallToken,
+  listMdtSessions,
   buildClinicalPlayback,
   findSimilarCases,
   archiveCase,
@@ -201,6 +208,7 @@ export default {
   listFamilyUpdates,
   publishFamilyUpdate,
   generateFamilyUpdateDraft,
+  verifyFamilyAccess,
   createPatientCallToken,
   listTasks,
   createTask,

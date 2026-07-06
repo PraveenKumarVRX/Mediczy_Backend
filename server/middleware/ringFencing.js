@@ -704,6 +704,10 @@ const PUBLIC_ENDPOINTS = [
   '/api/broker-integrations/health',
   '/api/broker-integrations/claims/submit',
   '/api/broker-integrations/webhooks',
+  '/api/orthanc/webhook',
+  '/api/orthanc/health',
+  '/api/imaging/session/validate',
+  '/api/imaging/health',
   '/api/homecare/login',
   '/api/homecare/book',    // Patient homecare booking (public — no auth required)
   '/api/corporate/login',
@@ -753,8 +757,9 @@ const PUBLIC_ENDPOINTS = [
   '/api/cdss/knowledge/search', // Semantic search in knowledge base
   '/api/cdss/knowledge/stats', // Knowledge base statistics
   '/api/cdss/knowledge/sources', // Available knowledge sources
-  '/api/public/', // Public signed-token download endpoints (report PDFs, etc.)
+  '/api/public/', // Public signed-token download endpoints (report PDFs, marketing leads, etc.)
   '/api/downloads', // Public APKs, hospital docs, offline collateral (no auth)
+  '/api/fb-leads/', // Meta Lead Ads webhook (verify token + HMAC at route level)
   '/api/notifications/send-internal', // n8n internal workflow notification endpoint (token-auth at route level)
   '/api/webhooks/n8n-callback/', // n8n workflow callbacks (server-to-server, token-auth at route level)
   '/api/pharmacy/medicines', // Public medicine search from master database
@@ -778,6 +783,7 @@ const ringFencingMiddleware = (req, res, next) => {
   if (requestPath.startsWith('/api/whatsapp-production/webhook') ||
       requestPath.startsWith('/api/whatsapp-production/fallback') ||
       requestPath.startsWith('/api/whatsapp-production/status-callback') ||
+      requestPath.startsWith('/api/fb-leads/') ||
       requestPath === '/api/payments/webhook' ||
       requestPath === '/api/payments/config') {
     console.log('✅ Twilio WhatsApp webhook bypass (public, no auth required):', requestPath);
