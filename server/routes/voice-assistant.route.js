@@ -919,7 +919,9 @@ ${context ? `Patient context: ${context}` : ''}${extra}`
 router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No audio file provided' });
 
-  const language = req.body.language || 'en';
+  // 'auto' lets Whisper auto-detect the spoken language (Tamil/Telugu/Hindi/etc.)
+  // instead of forcing English transcription and garbling non-English speech.
+  const language = req.body.language || 'auto';
   const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
   // ── Primary: Groq Whisper (whisper-large-v3-turbo, ~300ms) ──────────────────
@@ -931,7 +933,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
         contentType: req.file.mimetype || 'audio/wav',
       });
       groqForm.append('model', 'whisper-large-v3-turbo');
-      groqForm.append('language', language);
+      if (language !== 'auto') groqForm.append('language', language);
       groqForm.append('response_format', 'json');
 
       const groqResp = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
@@ -960,7 +962,7 @@ router.post('/stt', authUser, requireDoctor, upload.single('audio'), async (req,
       filename: req.file.originalname || 'recording.wav',
       contentType: req.file.mimetype || 'audio/wav',
     });
-    form.append('language', language);
+    if (language !== 'auto') form.append('language', language);
 
     const response = await fetch(`${OFFLINE_SCRIBE_URL}/api/scribe/transcribe`, {
       method: 'POST',
