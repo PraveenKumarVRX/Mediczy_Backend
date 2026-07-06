@@ -30,6 +30,11 @@ if [ "$AUTO_STASH_ON_SYNC" = true ]; then
 fi
 
 if [ "$RESET_TO_ORIGIN_MAIN" = true ]; then
+  if [ -f .git/MERGE_HEAD ] || [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; then
+    echo "Aborting in-progress merge/rebase before hard reset..."
+    git merge --abort 2>/dev/null || true
+    git rebase --abort 2>/dev/null || true
+  fi
   echo "RESET_TO_ORIGIN_MAIN=true — resetting hard to ${REMOTE_REF}"
   git checkout "${TARGET_BRANCH}" 2>/dev/null || git checkout -B "${TARGET_BRANCH}" "${REMOTE_REF}"
   # Remove untracked files that would block checkout of files from main
@@ -64,6 +69,7 @@ else
     echo ""
     echo "❌ Automatic merge failed."
     echo "   Inspect: git status && git log --oneline --graph -10 HEAD ${REMOTE_REF}"
+    echo "   Abort stuck merge:  git merge --abort"
     echo "   To discard local server-only commits and match GitHub main exactly:"
     echo "   RESET_TO_ORIGIN_MAIN=true bash scripts/deploy/deploy-full-prod-s3.sh"
     if [ "$STASHED" = true ]; then
