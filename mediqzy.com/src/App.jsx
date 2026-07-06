@@ -510,6 +510,14 @@ function App() {
         throw new Error(result.message || 'Lead capture failed')
       }
 
+      if (typeof window.fbq === 'function') {
+        window.fbq('track', 'Lead', {
+          content_name: 'Mediqzy Demo Request',
+          content_category: data.entityType || 'demo',
+          source: 'mediqzy.com',
+        })
+      }
+
       window.open(`https://wa.me/917826911911?text=${encodeURIComponent(message)}`, '_blank', 'noopener,noreferrer')
       setDemoSubmitted(true)
       e.currentTarget.reset()
