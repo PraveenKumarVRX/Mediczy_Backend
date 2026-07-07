@@ -27,6 +27,19 @@ const ROLE_TOKEN_KEYS: Record<string, string> = {
   hospitalInsurance: "hospitalInsuranceToken",
   crm: "crmToken",
   scm: "scmToken",
+  // Hospital department portals (DeptLoginTemplate.tsx) — userType is set to
+  // the literal deptKey, but until now none of these had a ROLE_TOKEN_KEYS
+  // entry, so getToken() could never find their token: every /hospital/*
+  // API call from these portals went out with no Authorization header at all.
+  "insurance-desk": "insurance-deskToken",
+  mrd: "mrdToken",
+  hr: "hrToken",
+  "it-edp": "it-edpToken",
+  ot: "otToken",
+  icu: "icuToken",
+  quality: "qualityToken",
+  accounts: "accountsToken",
+  security: "securityToken",
 };
 
 const DEPT_TOKEN_KEYS = [

@@ -1625,26 +1625,28 @@ router.get('/documents/missing', authUser, requireRole(['hospital', 'admin']), a
     const where = { documentsStatus: 'incomplete' };
     if (hospitalId) where.hospitalId = hospitalId;
 
-    const claims = await InsuranceClaim.findAll({
-      where,
-      include: [
-        { 
-          model: User, 
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName'] 
-        }
-      ]
-    });
+    const claims = await InsuranceClaim.findAll({ where });
+
+    // Same unregistered-association gap as PreAuthorization — batch-fetch
+    // patients by id instead of relying on InsuranceClaim's `patient` include.
+    const patientIds = [...new Set(claims.map((c) => c.patientId).filter(Boolean))];
+    const patients = patientIds.length
+      ? await User.findAll({ where: { id: patientIds }, attributes: ['id', 'firstName', 'lastName'] })
+      : [];
+    const patientById = new Map(patients.map((p) => [p.id, p]));
 
     res.json({
       success: true,
-      missingDocuments: claims.map(c => ({
-        claimId: c.id,
-        claimNumber: c.claimNumber,
-        patientName: `${c.patient.firstName} ${c.patient.lastName}`,
-        requiredDocuments: c.requiredDocuments || [],
-        uploadedDocuments: (c.documents || []).map(d => d.type)
-      }))
+      missingDocuments: claims.map(c => {
+        const patient = patientById.get(c.patientId);
+        return {
+          claimId: c.id,
+          claimNumber: c.claimNumber,
+          patientName: patient ? `${patient.firstName} ${patient.lastName}` : 'Unknown patient',
+          requiredDocuments: c.requiredDocuments || [],
+          uploadedDocuments: (c.documents || []).map(d => d.type)
+        };
+      })
     });
   } catch (error) {
     console.error('Missing documents error:', error);
@@ -1678,20 +1680,26 @@ router.post('/patient/search', authUser, requireRole(['hospital', 'admin']), [
     } else if (searchType === 'mobile') {
       where.phoneNumber = searchTerm;
     } else if (searchType === 'policy') {
-      // Search in claims
-      const claims = await InsuranceClaim.findAll({
-        where: { policyNumber: searchTerm },
-        include: [{ model: User, as: 'patient' }]
-      });
+      // Search in claims — batch-fetch patients rather than relying on
+      // InsuranceClaim's unregistered `patient` association (same gap as
+      // PreAuthorization; see attachPatients() below).
+      const claims = await InsuranceClaim.findAll({ where: { policyNumber: searchTerm } });
+      const claimPatientIds = [...new Set(claims.map((c) => c.patientId).filter(Boolean))];
+      const claimPatients = claimPatientIds.length
+        ? await User.findAll({ where: { id: claimPatientIds } })
+        : [];
+      const patientByClaimId = new Map(claimPatients.map((p) => [p.id, p]));
+
       const seenPatientIds = new Set();
       const patients = claims
         .map((claim) => {
-          if (!claim.patient || seenPatientIds.has(claim.patient.id)) {
+          const patient = patientByClaimId.get(claim.patientId);
+          if (!patient || seenPatientIds.has(patient.id)) {
             return null;
           }
-          seenPatientIds.add(claim.patient.id);
+          seenPatientIds.add(patient.id);
           return {
-            ...claim.patient.toJSON(),
+            ...patient.toJSON(),
             policyNumber: claim.policyNumber,
             insurerName: claim.insuranceProvider || null,
             insuranceProviderId: claim.insuranceProviderId || null,

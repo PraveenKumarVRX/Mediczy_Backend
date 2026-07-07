@@ -739,11 +739,13 @@ const MRDSupportPage      = lazyNamed(_MRDModulePages, "MRDSupportPage");
 const InsuranceDeskLogin     = lazy(() => import("@/pages/insurance-desk/InsuranceDeskLogin"));
 const InsuranceDeskDashboard = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDashboard"));
 const _InsuranceDeskModulePages = () => import("@/pages/insurance-desk/InsuranceDeskModulePages");
-const InsuranceDeskPreAuthPage         = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskPreAuthPage");
-const InsuranceDeskClaimsPage          = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskClaimsPage");
-const InsuranceDeskDocumentsPage       = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskDocumentsPage");
+// Real, API-backed pages (wired to the hospital-insurance backend):
+const InsuranceDeskPreAuthPage         = lazy(() => import("@/pages/insurance-desk/InsuranceDeskPreAuth"));
+const InsuranceDeskClaimsPage          = lazy(() => import("@/pages/insurance-desk/InsuranceDeskClaims"));
+const InsuranceDeskDocumentsPage       = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDocuments"));
+const InsuranceDeskPatientInsurancePage= lazy(() => import("@/pages/insurance-desk/InsuranceDeskPatientInsurance"));
+// Still placeholders — not yet wired to a backend:
 const InsuranceDeskTPAPage             = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskTPAPage");
-const InsuranceDeskPatientInsurancePage= lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskPatientInsurancePage");
 const InsuranceDeskSearchPage          = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSearchPage");
 const InsuranceDeskAnalyticsPage       = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskAnalyticsPage");
 const InsuranceDeskSettingsPage        = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSettingsPage");
