@@ -9,10 +9,12 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, ArrowRightCircle,
-  ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, MinusCircle,
+  ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, MinusCircle, Plus, Download,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -54,9 +56,10 @@ const CHECK_ICON: Record<AuditCheck['status'], JSX.Element> = {
   not_applicable: <MinusCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />,
 };
 
-function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convertingId, onAudit }: {
+function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convertingId, onAudit, onDownload, downloadingId }: {
   rows: PreAuth[]; loading: boolean; emptyLabel: string; dateField: 'submittedAt' | 'approvedAt' | 'rejectedAt';
   onConvert?: (row: PreAuth) => void; convertingId?: number | null; onAudit?: (row: PreAuth) => void;
+  onDownload: (row: PreAuth) => void; downloadingId: number | null;
 }) {
   if (loading) {
     return (
@@ -86,7 +89,7 @@ function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convert
             <TableHead className="text-right">Approved</TableHead>
             <TableHead>Status</TableHead>
             <TableHead>Date</TableHead>
-            {(onConvert || onAudit) && <TableHead />}
+            <TableHead />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -102,23 +105,24 @@ function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convert
                 <Badge className={STATUS_STYLES[row.status] || ''} variant="outline">{row.status}</Badge>
               </TableCell>
               <TableCell>{formatDate(row[dateField])}</TableCell>
-              {(onConvert || onAudit) && (
-                <TableCell>
-                  <div className="flex gap-1.5">
-                    {onAudit && (
-                      <Button size="sm" variant="outline" className="gap-1" onClick={() => onAudit(row)}>
-                        <ClipboardCheck className="h-3.5 w-3.5" /> Discharge Audit
-                      </Button>
-                    )}
-                    {onConvert && (
-                      <Button size="sm" variant="outline" className="gap-1" disabled={convertingId === row.id} onClick={() => onConvert(row)}>
-                        {convertingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightCircle className="h-3.5 w-3.5" />}
-                        Convert to Claim
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              )}
+              <TableCell>
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant="ghost" className="h-7 px-2" disabled={downloadingId === row.id} onClick={() => onDownload(row)}>
+                    {downloadingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  </Button>
+                  {onAudit && (
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => onAudit(row)}>
+                      <ClipboardCheck className="h-3.5 w-3.5" /> Discharge Audit
+                    </Button>
+                  )}
+                  {onConvert && (
+                    <Button size="sm" variant="outline" className="gap-1" disabled={convertingId === row.id} onClick={() => onConvert(row)}>
+                      {convertingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowRightCircle className="h-3.5 w-3.5" />}
+                      Convert to Claim
+                    </Button>
+                  )}
+                </div>
+              </TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -144,6 +148,15 @@ const InsuranceDeskPreAuth = () => {
   const [overrideReason, setOverrideReason] = useState('');
   const [clearing, setClearing] = useState(false);
   const [clearedMessage, setClearedMessage] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
+
+  const [showNew, setShowNew] = useState(false);
+  const [newPreAuth, setNewPreAuth] = useState({
+    patientId: '', policyNumber: '', insurer: '', ward: '', admissionDate: '',
+    estimatedAmount: '', estimatedDuration: '', diagnosis: '', plannedProcedures: '', remarks: '',
+  });
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const load = useCallback(async (which: 'pending' | 'approved' | 'rejected') => {
     setLoading(true);
@@ -160,6 +173,62 @@ const InsuranceDeskPreAuth = () => {
   }, []);
 
   useEffect(() => { load(tab); }, [tab, load]);
+
+  const createPreAuth = async () => {
+    const patientId = parseInt(newPreAuth.patientId, 10);
+    const estimatedAmount = parseFloat(newPreAuth.estimatedAmount);
+    if (!patientId || !newPreAuth.policyNumber.trim() || !(estimatedAmount >= 0)) {
+      setCreateError('Patient ID, policy number, and a valid estimated amount are required.');
+      return;
+    }
+    setCreating(true);
+    setCreateError(null);
+    try {
+      await api.post('/hospital/insurance/pre-auth/new', {
+        patientId,
+        policyNumber: newPreAuth.policyNumber.trim(),
+        estimatedAmount,
+        diagnosis: newPreAuth.diagnosis.trim() || undefined,
+        estimatedDuration: newPreAuth.estimatedDuration ? parseInt(newPreAuth.estimatedDuration, 10) : undefined,
+        plannedProcedures: newPreAuth.plannedProcedures.trim()
+          ? newPreAuth.plannedProcedures.split(',').map((p) => p.trim()).filter(Boolean)
+          : undefined,
+        remarks: newPreAuth.remarks.trim() || undefined,
+        admissionDetails: {
+          insurer: newPreAuth.insurer.trim() || undefined,
+          ward: newPreAuth.ward.trim() || 'General',
+          admissionDate: newPreAuth.admissionDate || undefined,
+        },
+      });
+      setShowNew(false);
+      setNewPreAuth({ patientId: '', policyNumber: '', insurer: '', ward: '', admissionDate: '', estimatedAmount: '', estimatedDuration: '', diagnosis: '', plannedProcedures: '', remarks: '' });
+      setTab('pending');
+      load('pending');
+    } catch (err: any) {
+      setCreateError(err?.response?.data?.message || 'Could not submit pre-authorization request.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const downloadPdf = async (row: PreAuth) => {
+    setDownloadingId(row.id);
+    try {
+      const response = await api.get(`/hospital/insurance/pre-auth/${row.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${row.preAuthNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not download PDF.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   const convertToClaim = async (row: PreAuth) => {
     if (!window.confirm(`Convert pre-auth ${row.preAuthNumber} into a claim for ${formatCurrency(row.approvedAmount ?? row.estimatedAmount)}?`)) {
@@ -229,9 +298,14 @@ const InsuranceDeskPreAuth = () => {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-3">
           <CardTitle className="text-base">Pre-Authorization Requests</CardTitle>
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => load(tab)}>
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => setShowNew(true)}>
+              <Plus className="h-4 w-4" /> Request Pre-Auth
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1" onClick={() => load(tab)}>
+              <RefreshCw className="h-4 w-4" /> Refresh
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {error && <p className="text-sm text-amber-600 mb-3">{error}</p>}
@@ -243,16 +317,17 @@ const InsuranceDeskPreAuth = () => {
               <TabsTrigger value="rejected">Rejected</TabsTrigger>
             </TabsList>
             <TabsContent value="pending">
-              <PreAuthTable rows={rowsByTab.pending} loading={loading} emptyLabel="No pending pre-authorizations." dateField="submittedAt" />
+              <PreAuthTable rows={rowsByTab.pending} loading={loading} emptyLabel="No pending pre-authorizations." dateField="submittedAt" onDownload={downloadPdf} downloadingId={downloadingId} />
             </TabsContent>
             <TabsContent value="approved">
               <PreAuthTable
                 rows={rowsByTab.approved} loading={loading} emptyLabel="No approved pre-authorizations yet." dateField="approvedAt"
                 onConvert={convertToClaim} convertingId={convertingId} onAudit={openAudit}
+                onDownload={downloadPdf} downloadingId={downloadingId}
               />
             </TabsContent>
             <TabsContent value="rejected">
-              <PreAuthTable rows={rowsByTab.rejected} loading={loading} emptyLabel="No rejected pre-authorizations." dateField="rejectedAt" />
+              <PreAuthTable rows={rowsByTab.rejected} loading={loading} emptyLabel="No rejected pre-authorizations." dateField="rejectedAt" onDownload={downloadPdf} downloadingId={downloadingId} />
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -321,6 +396,65 @@ const InsuranceDeskPreAuth = () => {
               )}
             </DialogFooter>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showNew} onOpenChange={(open) => { setShowNew(open); if (!open) setCreateError(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Request Pre-Authorization</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {createError && <p className="text-sm text-red-600">{createError}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Patient ID</Label>
+                <Input value={newPreAuth.patientId} onChange={(e) => setNewPreAuth((p) => ({ ...p, patientId: e.target.value }))} placeholder="e.g. 9" />
+              </div>
+              <div>
+                <Label>Policy Number</Label>
+                <Input value={newPreAuth.policyNumber} onChange={(e) => setNewPreAuth((p) => ({ ...p, policyNumber: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Insurer / TPA</Label>
+                <Input value={newPreAuth.insurer} onChange={(e) => setNewPreAuth((p) => ({ ...p, insurer: e.target.value }))} placeholder="e.g. Star Health" />
+              </div>
+              <div>
+                <Label>Ward / Room Category</Label>
+                <Input value={newPreAuth.ward} onChange={(e) => setNewPreAuth((p) => ({ ...p, ward: e.target.value }))} placeholder="General" />
+              </div>
+              <div>
+                <Label>Admission Date</Label>
+                <Input type="date" value={newPreAuth.admissionDate} onChange={(e) => setNewPreAuth((p) => ({ ...p, admissionDate: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Expected Duration (days)</Label>
+                <Input type="number" value={newPreAuth.estimatedDuration} onChange={(e) => setNewPreAuth((p) => ({ ...p, estimatedDuration: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label>Diagnosis</Label>
+                <Input value={newPreAuth.diagnosis} onChange={(e) => setNewPreAuth((p) => ({ ...p, diagnosis: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label>Planned Procedure(s)</Label>
+                <Input value={newPreAuth.plannedProcedures} onChange={(e) => setNewPreAuth((p) => ({ ...p, plannedProcedures: e.target.value }))} placeholder="Comma-separated, e.g. Laparoscopic Cholecystectomy" />
+              </div>
+              <div className="col-span-2">
+                <Label>Estimated Amount</Label>
+                <Input type="number" value={newPreAuth.estimatedAmount} onChange={(e) => setNewPreAuth((p) => ({ ...p, estimatedAmount: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label>Remarks</Label>
+                <Textarea rows={2} value={newPreAuth.remarks} onChange={(e) => setNewPreAuth((p) => ({ ...p, remarks: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowNew(false)}>Cancel</Button>
+            <Button className="bg-teal-600 hover:bg-teal-700" onClick={createPreAuth} disabled={creating}>
+              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Submit Request'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </HospDeptLayout>

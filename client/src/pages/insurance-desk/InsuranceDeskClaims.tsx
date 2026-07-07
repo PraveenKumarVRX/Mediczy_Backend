@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Wallet,
+  Download, Upload,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -50,11 +53,23 @@ const emptyNewClaim = {
   patientId: '', policyNumber: '', insuranceProvider: '', claimAmount: '', diagnosis: '', ward: '',
 };
 
+const STATUS_TABS = [
+  { key: 'all', label: 'All' },
+  { key: 'draft', label: 'Drafts' },
+  { key: 'submitted', label: 'Submitted' },
+  { key: 'pending', label: 'Pending' },
+  { key: 'approved', label: 'Approved' },
+  { key: 'rejected', label: 'Rejected' },
+  { key: 'paid', label: 'Paid' },
+];
+
 const InsuranceDeskClaims = () => {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [statusTab, setStatusTab] = useState('all');
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const [showNewClaim, setShowNewClaim] = useState(false);
   const [newClaim, setNewClaim] = useState(emptyNewClaim);
@@ -63,12 +78,18 @@ const InsuranceDeskClaims = () => {
   const [importingBilling, setImportingBilling] = useState(false);
   const [billingImported, setBillingImported] = useState<{ total: number; chargeCount: number } | null>(null);
 
-  const load = useCallback(async (searchTerm?: string) => {
+  const [showBulk, setShowBulk] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkUploading, setBulkUploading] = useState(false);
+  const [bulkResult, setBulkResult] = useState<{ success: number; failed: number } | null>(null);
+  const [bulkError, setBulkError] = useState<string | null>(null);
+
+  const load = useCallback(async (searchTerm?: string, status?: string) => {
     setLoading(true);
     setError(null);
     try {
       const { data } = await api.get('/hospital/insurance/claims', {
-        params: { page: 1, limit: 50, ...(searchTerm ? { search: searchTerm } : {}) },
+        params: { page: 1, limit: 50, ...(searchTerm ? { search: searchTerm } : {}), ...(status && status !== 'all' ? { status } : {}) },
       });
       setClaims(data.claims || []);
       if (data.degraded) setError('Some claim data may be unavailable right now.');
@@ -79,7 +100,43 @@ const InsuranceDeskClaims = () => {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(search, statusTab); }, [statusTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const downloadPdf = async (claim: Claim) => {
+    setDownloadingId(claim.id);
+    try {
+      const response = await api.get(`/hospital/insurance/claims/${claim.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${claim.claimNumber}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not download PDF.');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const submitBulk = async () => {
+    setBulkUploading(true);
+    setBulkError(null);
+    setBulkResult(null);
+    try {
+      const rows = JSON.parse(bulkText);
+      if (!Array.isArray(rows)) throw new Error('Expected a JSON array of claim objects.');
+      const { data } = await api.post('/hospital/insurance/claims/bulk-upload', { claims: rows });
+      setBulkResult({ success: data.results?.success?.length || 0, failed: data.results?.failed?.length || 0 });
+      load(search, statusTab);
+    } catch (err: any) {
+      setBulkError(err?.response?.data?.message || err.message || 'Bulk upload failed — check the JSON format.');
+    } finally {
+      setBulkUploading(false);
+    }
+  };
 
   const importFromBilling = async () => {
     const patientId = newClaim.patientId.trim();
@@ -126,7 +183,7 @@ const InsuranceDeskClaims = () => {
       setShowNewClaim(false);
       setNewClaim(emptyNewClaim);
       setBillingImported(null);
-      load(search);
+      load(search, statusTab);
     } catch (err: any) {
       setCreateError(err?.response?.data?.message || 'Could not create claim.');
     } finally {
@@ -139,25 +196,33 @@ const InsuranceDeskClaims = () => {
       loginPath="/insurance-desk/login" DeptIcon={ShieldCheck} navSections={navSections}
       title="Active Claims" subtitle="Monitor claim lifecycle" copilotModule="insurance">
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-3 gap-3">
+        <CardHeader className="flex flex-row items-center justify-between pb-3 gap-3 flex-wrap">
           <CardTitle className="text-base whitespace-nowrap">Insurance Claims</CardTitle>
-          <div className="flex items-center gap-2 flex-1 max-w-sm">
+          <div className="flex items-center gap-2 flex-1 max-w-sm min-w-[200px]">
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search by claim # or policy #"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') load(search); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') load(search, statusTab); }}
             />
           </div>
           <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={() => setShowNewClaim(true)}>
             <Plus className="h-4 w-4" /> New Claim
           </Button>
-          <Button variant="outline" size="sm" className="gap-1" onClick={() => load(search)}>
+          <Button size="sm" variant="outline" className="gap-1" onClick={() => { setShowBulk(true); setBulkResult(null); setBulkError(null); }}>
+            <Upload className="h-4 w-4" /> Bulk Upload
+          </Button>
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => load(search, statusTab)}>
             <RefreshCw className="h-4 w-4" /> Refresh
           </Button>
         </CardHeader>
         <CardContent>
+          <Tabs value={statusTab} onValueChange={setStatusTab} className="mb-3">
+            <TabsList>
+              {STATUS_TABS.map((t) => <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>)}
+            </TabsList>
+          </Tabs>
           {error && <p className="text-sm text-amber-600 mb-3">{error}</p>}
           {loading ? (
             <div className="h-48 flex items-center justify-center text-muted-foreground">
@@ -181,6 +246,7 @@ const InsuranceDeskClaims = () => {
                     <TableHead className="text-right">Approved</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Date</TableHead>
+                    <TableHead />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -196,6 +262,11 @@ const InsuranceDeskClaims = () => {
                         <Badge className={STATUS_STYLES[claim.status] || ''} variant="outline">{claim.status}</Badge>
                       </TableCell>
                       <TableCell>{formatDate(claim.createdAt)}</TableCell>
+                      <TableCell>
+                        <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" onClick={() => downloadPdf(claim)} disabled={downloadingId === claim.id}>
+                          {downloadingId === claim.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -254,6 +325,39 @@ const InsuranceDeskClaims = () => {
             <Button variant="outline" onClick={() => setShowNewClaim(false)}>Cancel</Button>
             <Button className="bg-teal-600 hover:bg-teal-700" onClick={createClaim} disabled={creating}>
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create Claim'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulk} onOpenChange={setShowBulk}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Claims</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Paste a JSON array of claim objects — each needs at least <code className="text-xs bg-muted px-1 rounded">patientId</code>, <code className="text-xs bg-muted px-1 rounded">policyNumber</code>, and <code className="text-xs bg-muted px-1 rounded">claimAmount</code>.
+            </p>
+            <Textarea
+              rows={10}
+              className="font-mono text-xs"
+              placeholder={'[\n  { "patientId": 9, "policyNumber": "POL123", "claimAmount": 15000, "insuranceProvider": "Star Health" }\n]'}
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+            />
+            {bulkError && <p className="text-sm text-red-600">{bulkError}</p>}
+            {bulkResult && (
+              <p className="text-sm text-emerald-600">
+                {bulkResult.success} claim(s) created{bulkResult.failed > 0 ? `, ${bulkResult.failed} failed — check values and retry those rows.` : '.'}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulk(false)}>Close</Button>
+            <Button className="bg-teal-600 hover:bg-teal-700 gap-1" onClick={submitBulk} disabled={bulkUploading || !bulkText.trim()}>
+              {bulkUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+              Upload
             </Button>
           </DialogFooter>
         </DialogContent>

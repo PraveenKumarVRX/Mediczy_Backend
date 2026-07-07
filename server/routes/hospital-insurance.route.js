@@ -4,6 +4,8 @@
  */
 
 import { Router } from 'express';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { body, query, param } from 'express-validator';
 import InsuranceClaim from '../models/postgres/insuranceClaim.model.postgres.js';
@@ -24,6 +26,9 @@ import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = Router();
 
@@ -340,7 +345,6 @@ const buildDefaultPortalWorkspace = () => ({
 
 const buildDefaultMessageThreads = () => ([
   {
-    id: 'thread-1',
     claimNo: 'CL-2024-5501',
     patientName: 'Rajesh Kumar',
     insurer: 'Star Health',
@@ -357,7 +361,6 @@ const buildDefaultMessageThreads = () => ([
     metadata: {},
   },
   {
-    id: 'thread-2',
     claimNo: 'PA-5502',
     patientName: 'Meena Devi',
     insurer: 'Care Health',
@@ -374,7 +377,6 @@ const buildDefaultMessageThreads = () => ([
     metadata: {},
   },
   {
-    id: 'thread-3',
     claimNo: 'CL-2024-5498',
     patientName: 'Sunita Rao',
     insurer: 'HDFC ERGO',
@@ -393,14 +395,14 @@ const buildDefaultMessageThreads = () => ([
 ]);
 
 const buildDefaultNotifications = () => ([
-  { id: 'notification-1', type: 'claim', title: 'Pre-Auth Approved', message: 'PA-2025-0089 for Amit Verma has been approved by HDFC Ergo. Amount: Rs 1,50,000', priority: 'high', isRead: false, occurredAt: getRelativeDate({ hours: 1 }), actionRoute: '/pre-auth' },
-  { id: 'notification-2', type: 'query', title: 'Query on CLM-2025-0042', message: 'Star Health has raised a query regarding room rent charges. Respond within 24 hours.', priority: 'high', isRead: false, occurredAt: getRelativeDate({ hours: 2 }), actionRoute: '/messages' },
-  { id: 'notification-3', type: 'document', title: 'Missing Document Alert', message: 'Discharge summary pending for CLM-2025-0041 (Priya Singh). Upload before 6 PM today.', priority: 'medium', isRead: false, occurredAt: getRelativeDate({ hours: 3 }), actionRoute: '/documents' },
-  { id: 'notification-4', type: 'settlement', title: 'Settlement Received', message: 'Settlement of Rs 1,20,000 received for CLM-2025-0035 via UTR: UTIB202506180012345', priority: 'low', isRead: true, occurredAt: getRelativeDate({ hours: 5 }), actionRoute: '/reconciliation' },
-  { id: 'notification-5', type: 'escalation', title: 'Claim Escalated', message: 'CLM-2025-0028 (Meera Devi) has been auto-escalated due to 35-day settlement delay.', priority: 'high', isRead: true, occurredAt: getRelativeDate({ hours: 7 }), actionRoute: '/claims?status=query' },
-  { id: 'notification-6', type: 'deadline', title: 'Submission Deadline Tomorrow', message: '3 claim submissions due tomorrow. Review and submit before EOD.', priority: 'medium', isRead: true, occurredAt: getRelativeDate({ hours: 9 }), actionRoute: '/tasks' },
-  { id: 'notification-7', type: 'system', title: 'NHCX Maintenance Window', message: 'NHCX sandbox will be under maintenance on June 22, 2025 from 2 AM to 6 AM IST.', priority: 'low', isRead: true, occurredAt: getRelativeDate({ days: 1 }), actionRoute: '/nhcx' },
-  { id: 'notification-8', type: 'claim', title: 'New Pre-Auth Request', message: 'Pre-auth submitted for Suresh Patel - Total Knee Replacement - Rs 2,50,000', priority: 'low', isRead: true, occurredAt: getRelativeDate({ days: 1 }), actionRoute: '/pre-auth/new' },
+  { type: 'claim', title: 'Pre-Auth Approved', message: 'PA-2025-0089 for Amit Verma has been approved by HDFC Ergo. Amount: Rs 1,50,000', priority: 'high', isRead: false, occurredAt: getRelativeDate({ hours: 1 }), actionRoute: '/pre-auth' },
+  { type: 'query', title: 'Query on CLM-2025-0042', message: 'Star Health has raised a query regarding room rent charges. Respond within 24 hours.', priority: 'high', isRead: false, occurredAt: getRelativeDate({ hours: 2 }), actionRoute: '/messages' },
+  { type: 'document', title: 'Missing Document Alert', message: 'Discharge summary pending for CLM-2025-0041 (Priya Singh). Upload before 6 PM today.', priority: 'medium', isRead: false, occurredAt: getRelativeDate({ hours: 3 }), actionRoute: '/documents' },
+  { type: 'settlement', title: 'Settlement Received', message: 'Settlement of Rs 1,20,000 received for CLM-2025-0035 via UTR: UTIB202506180012345', priority: 'low', isRead: true, occurredAt: getRelativeDate({ hours: 5 }), actionRoute: '/reconciliation' },
+  { type: 'escalation', title: 'Claim Escalated', message: 'CLM-2025-0028 (Meera Devi) has been auto-escalated due to 35-day settlement delay.', priority: 'high', isRead: true, occurredAt: getRelativeDate({ hours: 7 }), actionRoute: '/claims?status=query' },
+  { type: 'deadline', title: 'Submission Deadline Tomorrow', message: '3 claim submissions due tomorrow. Review and submit before EOD.', priority: 'medium', isRead: true, occurredAt: getRelativeDate({ hours: 9 }), actionRoute: '/tasks' },
+  { type: 'system', title: 'NHCX Maintenance Window', message: 'NHCX sandbox will be under maintenance on June 22, 2025 from 2 AM to 6 AM IST.', priority: 'low', isRead: true, occurredAt: getRelativeDate({ days: 1 }), actionRoute: '/nhcx' },
+  { type: 'claim', title: 'New Pre-Auth Request', message: 'Pre-auth submitted for Suresh Patel - Total Knee Replacement - Rs 2,50,000', priority: 'low', isRead: true, occurredAt: getRelativeDate({ days: 1 }), actionRoute: '/pre-auth/new' },
 ]);
 
 const mergeSectionDefaults = (sectionName, value) => {
@@ -1435,17 +1437,17 @@ router.get('/claims/:claimId/pdf', authUser, requireRole(['hospital', 'admin']),
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
 
-    // Generate PDF using pdfkit
+    // Generate PDF using pdfkit, then stream it back directly — pdfPath
+    // (e.g. "/pdfs/claims/x.pdf") was never mounted as a static route, and
+    // mounting it as one would expose PHI-bearing claim PDFs with no auth
+    // check. Streaming through this already-authenticated, RLS-scoped route
+    // avoids ever creating a public path to these files.
     const pdfPath = await pdfGenerator.generateClaimPDF(claim, claim.patient);
-
-    res.json({
-      success: true,
-      message: 'PDF generated successfully',
-      pdfUrl: pdfPath,
-      claim: {
-        claimNumber: claim.claimNumber,
-        claimAmount: claim.claimAmount,
-        status: claim.status
+    const filePath = path.join(__dirname, 'public', pdfPath);
+    res.download(filePath, `${claim.claimNumber}.pdf`, (err) => {
+      if (err && !res.headersSent) {
+        console.error('PDF download error:', err.message);
+        res.status(500).json({ success: false, message: 'Could not send PDF file.' });
       }
     });
   } catch (error) {
@@ -1481,7 +1483,13 @@ router.get('/pre-auth/:id/pdf', authUser, requireRole(['hospital', 'admin']), [
     };
 
     const pdfPath = await pdfGenerator.generateTPAPreAuthFormPDF(preAuth.toJSON ? preAuth.toJSON() : preAuth, hospital);
-    res.json({ success: true, pdfUrl: pdfPath, preAuthNumber: preAuth.preAuthNumber });
+    const filePath = path.join(__dirname, 'public', pdfPath);
+    res.download(filePath, `${preAuth.preAuthNumber}.pdf`, (err) => {
+      if (err && !res.headersSent) {
+        console.error('Pre-auth PDF download error:', err.message);
+        res.status(500).json({ success: false, message: 'Could not send PDF file.' });
+      }
+    });
   } catch (error) {
     console.error('Pre-auth form PDF error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -2224,7 +2232,7 @@ router.get('/revenue/settlement-status', authUser, requireRole(['hospital', 'adm
       success: true,
       settlements: claims.map(c => ({
         claimNumber: c.claimNumber,
-        patientName: `${c.patient.firstName} ${c.patient.lastName}`,
+        patientName: c.patient ? `${c.patient.firstName} ${c.patient.lastName}` : 'Unknown',
         insurer: c.insuranceProvider || 'Unknown',
         billedAmount: Number(c.claimAmount) || 0,
         approvedAmount: c.approvedAmount,

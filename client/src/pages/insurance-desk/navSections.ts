@@ -1,7 +1,8 @@
 import type { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
-  Search, BarChart3, Settings, HelpCircle, Mail,
+  Search, BarChart3, Settings, HelpCircle, Mail, Scale, Landmark,
+  ShieldQuestion, MessageSquare,
 } from 'lucide-react';
 
 export const navSections: DeptNavSection[] = [
@@ -10,12 +11,16 @@ export const navSections: DeptNavSection[] = [
     { icon: ClipboardList, label: 'Pre-Authorization',   href: '/insurance-desk/pre-auth' },
     { icon: FileText,      label: 'Active Claims',       href: '/insurance-desk/claims' },
     { icon: FileText,      label: 'Documents',           href: '/insurance-desk/documents' },
+    { icon: Scale,         label: 'Appeals',             href: '/insurance-desk/appeals' },
     { icon: Mail,          label: 'Email Inbox',         href: '/insurance-desk/email-inbox' },
+    { icon: MessageSquare, label: 'Messages',            href: '/insurance-desk/messages' },
   ]},
   { title: 'Management', items: [
     { icon: Building2,  label: 'TPA Management',      href: '/insurance-desk/tpa' },
     { icon: UserCheck,  label: 'Patient Insurance',   href: '/insurance-desk/patient-insurance' },
     { icon: Search,     label: 'Claim Search',        href: '/insurance-desk/search' },
+    { icon: Landmark,   label: 'Settlements',         href: '/insurance-desk/settlements' },
+    { icon: ShieldQuestion, label: 'Compliance',      href: '/insurance-desk/compliance' },
   ]},
   { title: 'Reports', items: [
     { icon: BarChart3,  label: 'Analytics', href: '/insurance-desk/analytics' },
