@@ -93,13 +93,15 @@ function float32ToWav(samples: Float32Array, sampleRate = 16000): Blob {
 
 /** Match "Hey iSHA" and common speech-recognition variants */
 const isWakePhrase = (t: string) =>
-  t.includes("hey isha") || t.includes("hey esha") || t.includes("hey yesha") ||
-  t.includes("hi isha")  || t.includes("hi esha")  || t.includes("hay isha")  ||
-  t.includes("hey eesha") || /\bisha\b/.test(t);
+  // Whisper frequently runs "Hey" into "iSHA" with no gap ("Eisha", "Aisha"),
+  // which a word-boundary regex like /\bisha\b/ silently rejects (no boundary
+  // between "e"/"a" and "i"). A plain substring check catches those too —
+  // false positives just wake the assistant for nothing, which is cheap.
+  t.includes("isha") || t.includes("esha") || t.includes("yesha") || t.includes("eesha");
 
 /** Strip the wake phrase from a transcript and return the command (if any) */
 const extractCommand = (t: string): string =>
-  t.replace(/\b(hey|hi|hay)\s+(isha|esha|yesha|eesha)\b[,\s]*/i, '').trim();
+  t.replace(/\b(hey|hi|hay)?\s*(e?isha|esha|yesha|eesha)\b[,.\s]*/i, '').trim();
 
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
