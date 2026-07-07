@@ -100,8 +100,11 @@ const isWakePhrase = (t: string) =>
   t.includes("isha") || t.includes("esha") || t.includes("yesha") || t.includes("eesha");
 
 /** Strip the wake phrase from a transcript and return the command (if any) */
+// Whisper commonly punctuates the wake phrase ("Hey, Isha.") — [,\s]* (not \s*)
+// between the greeting and the name so that leading "Hey," doesn't leak through
+// as leftover "command" text sent verbatim to the agent.
 const extractCommand = (t: string): string =>
-  t.replace(/\b(hey|hi|hay)?\s*(e?isha|esha|yesha|eesha)\b[,.\s]*/i, '').trim();
+  t.replace(/\b(hey|hi|hay)?[,\s]*(e?isha|esha|yesha|eesha)\b[,.\s]*/i, '').trim();
 
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
