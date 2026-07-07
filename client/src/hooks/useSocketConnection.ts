@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/auth/AuthProvider';
 import { io } from 'socket.io-client';
 import type { Socket } from 'socket.io-client';
-
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { getSocketUrl } from '@/utils/socket';
 
 // Extend window type for socket
 declare global {
@@ -37,7 +36,7 @@ export function useSocketConnection() {
     isConnectingRef.current = true;
 
     // Create socket connection
-    const socket = io(SOCKET_URL, {
+    const socket = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,

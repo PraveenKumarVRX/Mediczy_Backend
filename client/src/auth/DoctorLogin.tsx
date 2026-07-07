@@ -100,21 +100,31 @@ const DoctorLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem("doctorToken");
     const userType = localStorage.getItem("userType");
-    if (userType === "user" && localStorage.getItem("token")) {
-      navigate("/profile", { replace: true });
+
+    if (userType && userType !== "doctor") {
+      clearAuthTokens();
+      setIsCheckingAuth(false);
       return;
     }
+
+    if (!token && localStorage.getItem("token")) {
+      clearAuthTokens();
+      setIsCheckingAuth(false);
+      return;
+    }
+
     if (token) {
       // Validate token is still accepted by the server before auto-redirecting
       api.get('/doctors/profile')
         .then(() => {
+          localStorage.setItem("token", token);
+          localStorage.setItem("userType", "doctor");
+          window.dispatchEvent(new CustomEvent('authChange'));
           navigate("/doctor/dashboard", { replace: true });
         })
         .catch(() => {
           // Token rejected (expired/invalid) — clear and show login form
-          localStorage.removeItem("doctorToken");
-          localStorage.removeItem("token");
-          localStorage.removeItem("userType");
+          clearAuthTokens();
           setIsCheckingAuth(false);
         });
       return;

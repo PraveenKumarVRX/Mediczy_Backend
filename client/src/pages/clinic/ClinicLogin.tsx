@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Building2, Eye, EyeOff, Loader2, Lock, ArrowRight, Clock, ShieldCheck, Stethoscope, HeartPulse } from 'lucide-react';
 import api from '@/utils/api';
+import { clearAuthTokens, setAuthData } from '@/hooks/auth';
 
 const ClinicLogin = () => {
   const [email, setEmail] = useState('');
@@ -17,8 +18,15 @@ const ClinicLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('clinicToken');
     if (token) {
-      navigate('/clinic/dashboard');
+      localStorage.setItem('token', token);
+      localStorage.setItem('userType', 'clinic');
+      window.dispatchEvent(new CustomEvent('authChange'));
+      navigate('/clinic/dashboard', { replace: true });
       return;
+    }
+
+    if (localStorage.getItem('token') || localStorage.getItem('userType')) {
+      clearAuthTokens();
     }
     
     setIsCheckingAuth(false);
@@ -37,11 +45,10 @@ const ClinicLogin = () => {
 
       clearTimeout(timeoutId);
 
-      localStorage.setItem('userType', 'clinic');
-      localStorage.setItem('clinicToken', data.token);
+      setAuthData(data.token, 'clinic', data.clinic?.id);
       localStorage.setItem('clinicData', JSON.stringify(data.clinic));
       
-      navigate('/clinic/dashboard');
+      navigate('/clinic/dashboard', { replace: true });
     } catch (err: any) {
       console.error('Clinic login error:', err);
       if (err?.response?.data?.pending) { setIsPending(true); return; }

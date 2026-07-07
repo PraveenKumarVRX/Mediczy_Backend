@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { io, Socket } from 'socket.io-client';
+import { getSocketUrl } from '@/utils/socket';
 import api from '@/utils/api';
 import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
@@ -241,7 +242,7 @@ const HospitalInsuranceBilling = () => {
     if (!token) return;
 
     // Connect to WebSocket server
-    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:8000', {
+    const newSocket = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       auth: { token }
     });

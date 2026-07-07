@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from 
 import { useNavigate } from "react-router-dom";
 import { io, Socket } from "socket.io-client";
 import api from "@/utils/api";
+import { getSocketUrl } from "@/utils/socket";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -96,13 +97,7 @@ const NurseChat: React.FC = () => {
     const nurseId = getNurseId();
     if (!nurseToken || !nurseId) return;
 
-    const socketOrigin =
-      (import.meta.env.VITE_API_BASE_URL ||
-       (import.meta.env.VITE_API_URL
-         ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
-         : window.location.origin));
-
-    const sock = io(socketOrigin, {
+    const sock = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       path: '/socket.io',
       query: { userId: nurseId, userType: 'nurse' },

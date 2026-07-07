@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Home, Eye, EyeOff, Loader2, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from '@/utils/api';
+import { clearAuthTokens, setAuthData } from '@/hooks/auth';
 
 const HomecareLogin = () => {
   const [email, setEmail] = useState("");
@@ -20,20 +21,17 @@ const HomecareLogin = () => {
 
   // Check if already authenticated
   useEffect(() => {
-    // Clear any other role tokens that might interfere
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('teamToken');
-    localStorage.removeItem('nurseToken');
-    localStorage.removeItem('assistantToken');
-    localStorage.removeItem('corporateToken');
-    localStorage.removeItem('doctorToken');
-    localStorage.removeItem('token');
-    localStorage.removeItem('userType');
-
     const token = localStorage.getItem('homecareToken');
     if (token) {
-      navigate('/homecare/dashboard');
+      localStorage.setItem('token', token);
+      localStorage.setItem('userType', 'homecare');
+      window.dispatchEvent(new CustomEvent('authChange'));
+      navigate('/homecare/dashboard', { replace: true });
       return;
+    }
+
+    if (localStorage.getItem('token') || localStorage.getItem('userType')) {
+      clearAuthTokens();
     }
 
     setIsCheckingAuth(false);
@@ -49,24 +47,15 @@ const HomecareLogin = () => {
       const { data } = await api.post('/homecare/login', { email, password }, { skipAuth: true });
 
       if (data.token) {
-        // Store homecare token and data
-        localStorage.setItem("homecareToken", data.token);
+        setAuthData(data.token, 'homecare', data.homecare?.id);
         localStorage.setItem("homecareData", JSON.stringify(data.homecare));
-
-        // Clear all other tokens for ring-fencing
-        const otherTokens = [
-          'token', 'doctorToken', 'adminToken', 'teamToken', 
-          'nurseToken', 'assistantToken', 'corporateToken',
-          'hospitalToken', 'clinicToken', 'labToken', 'pharmacyToken', 'ambulanceToken'
-        ];
-        otherTokens.forEach(token => localStorage.removeItem(token));
 
         toast({
           title: "Login Successful",
           description: `Welcome back, ${data.homecare?.name || 'Homecare Provider'}!`,
         });
 
-        navigate("/homecare/dashboard");
+        navigate("/homecare/dashboard", { replace: true });
       } else {
         toast({
           title: "Login Failed",

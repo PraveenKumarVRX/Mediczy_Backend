@@ -60,6 +60,36 @@ describe('AuthProvider public route guards', () => {
     }
   });
 
+  test('does not redirect unauthenticated users away from portal login routes', async () => {
+    const routes = [
+      '/doctor/login',
+      '/hospital/login',
+      '/clinic/login',
+      '/lab/login',
+      '/ambulance/login',
+      '/homecare/login',
+    ];
+
+    for (const route of routes) {
+      const queryClient = new QueryClient();
+      mockNavigate.mockClear();
+      render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[route]}>
+            <AuthProvider>
+              <div>portal-login-screen</div>
+            </AuthProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      );
+
+      await waitFor(() => {
+        expect(mockNavigate).not.toHaveBeenCalledWith('/login', { replace: true });
+        expect(mockNavigate).not.toHaveBeenCalledWith('/', { replace: true });
+      });
+    }
+  });
+
   test('does not redirect unauthenticated users away from /reset-password', async () => {
     const queryClient = new QueryClient();
 

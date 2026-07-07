@@ -340,7 +340,7 @@ export const AuthProvider = ({ children }) => {
     }
     
     if (isHomecareRoute) {
-      const homecareToken = localStorage.getItem('homecareToken');
+      const homecareToken = getValidPortalToken('homecareToken');
       if (!homecareToken && location.pathname !== '/homecare/login' && location.pathname !== '/homecare/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/homecare/login", { replace: true });

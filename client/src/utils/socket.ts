@@ -36,9 +36,15 @@ export function normalizeSocketUrl(url: string): string {
  * Get the socket URL for the current environment
  */
 export function getSocketUrl(): string {
+  // Deliberately does NOT fall back to VITE_API_URL: that's an axios baseURL
+  // and is commonly a relative path like "/api" (fine for HTTP requests).
+  // socket.io-client treats any pathname in the connection URL as a
+  // *namespace* to join, not a path prefix — "/api" becomes a request to
+  // join the "/api" namespace, which the server never registers, producing
+  // "Invalid namespace" and an endless reconnect loop. window.location.origin
+  // has no pathname, so it's always a safe same-origin fallback.
   const socketUrl =
     import.meta.env.VITE_SOCKET_URL ||
-    import.meta.env.VITE_API_URL ||
     window.location.origin;
 
   return normalizeSocketUrl(socketUrl);

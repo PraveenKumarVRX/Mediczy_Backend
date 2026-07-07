@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useRef } from "react";
 import io, { Socket } from "socket.io-client";
 import { useAuth } from "@/auth/AuthProvider";
+import { getSocketUrl } from "@/utils/socket";
 
 declare global {
   interface Window { socket: Socket | null; }
@@ -27,14 +28,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     if (!currentId) return;
 
-    const socketOrigin =
-      import.meta.env.VITE_API_BASE_URL ||
-      (import.meta.env.VITE_API_URL
-        ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
-        : window.location.origin);
-
     // Connect to socket server
-    socketRef.current = io(socketOrigin, {
+    socketRef.current = io(getSocketUrl(), {
       transports: ['websocket', 'polling'],
       path: '/socket.io',
       query: {
