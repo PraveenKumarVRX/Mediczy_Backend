@@ -8,7 +8,20 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 const sessions = new Map();
 
 export function attachScribeWebSocket(httpServer) {
-  const wss = new WebSocketServer({ server: httpServer, path: '/api/scribe/stream' });
+  // noServer + a pathname-filtered 'upgrade' listener: the `{ server, path }` form
+  // registers its own 'upgrade' listener that actively aborts (raw 400 + destroy)
+  // any request whose path doesn't match — since Node invokes every 'upgrade'
+  // listener on the shared httpServer for every request, that killed socket.io's
+  // own upgrades (and any other websocket) with a spurious mid-handshake 400.
+  const wss = new WebSocketServer({ noServer: true });
+
+  httpServer.on('upgrade', (req, socket, head) => {
+    const { pathname } = new URL(req.url, 'http://localhost');
+    if (pathname !== '/api/scribe/stream') return;
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  });
 
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url, 'http://localhost');

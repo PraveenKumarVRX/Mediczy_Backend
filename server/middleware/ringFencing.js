@@ -211,6 +211,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/fhir',  // FHIR R4 interoperability endpoints
       '/api/fcm',  // FCM push notification token registration
       '/api/voice-assistant',  // iSHA Voice Assistant agent
+      '/api/doctor-copilot',  // AI-PLATFORM-001 unified doctor copilot gateway
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'

@@ -5,21 +5,10 @@
 
 import express from 'express';
 import { AccessToken } from 'livekit-server-sdk';
-import { Sequelize, QueryTypes } from 'sequelize';
+import { QueryTypes } from 'sequelize';
+import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 
 const router = express.Router();
-
-// Database connection
-const sequelize = new Sequelize(
-  process.env.POSTGRES_DATABASE || 'mediczy_ai',
-  process.env.POSTGRES_USER || 'mediczy_helper',
-  process.env.POSTGRES_PASSWORD || (process.env.POSTGRES_PRIMARY_PASSWORD || process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD || process.env.DB_PASS || undefined),
-  {
-    host: process.env.POSTGRES_HOST || '127.0.0.1',
-    dialect: 'postgres',
-    logging: false
-  }
-);
 
 // Middleware to verify doctor
 const verifyDoctor = (req, res, next) => {

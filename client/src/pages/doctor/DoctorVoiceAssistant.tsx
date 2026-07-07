@@ -149,6 +149,7 @@ export default function DoctorVoiceAssistant() {
   const [micVolume, setMicVolume]        = useState(0);       // 0-1 orb animation input
   const [sttMode, setSttMode]            = useState<'server' | 'browser'>('server'); // active transcription engine
   const sttDownNotifiedRef               = useRef<number>(0); // throttle "STT down" feedback
+  const noWakeNotifiedRef                = useRef<number>(0); // throttle "heard you, but no wake word" feedback
 
   // Browser-native Web Speech API is a zero-dependency STT fallback (Chrome/Edge).
   // It runs entirely on-device, so voice commands keep working even when the
@@ -354,6 +355,12 @@ export default function DoctorVoiceAssistant() {
         } else {
           speakRef.current?.(`Yes, Dr. ${doctorFirstName}?`);
         }
+      } else if (Date.now() - noWakeNotifiedRef.current > 10_000) {
+        // Heard real speech, transcribed it fine, but it's not the wake phrase —
+        // without this the mic silently "ignores" the doctor with zero feedback,
+        // which is indistinguishable from the assistant being broken.
+        noWakeNotifiedRef.current = Date.now();
+        toast({ title: `Heard: "${transcript}"`, description: 'Say "Hey iSHA" first to give a command.' });
       }
     } else {
       // Active mode — send to agent
@@ -470,10 +477,11 @@ export default function DoctorVoiceAssistant() {
       const wav = float32ToWav(audio);
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
-      // The wake phrase and doctor web commands are English-first. Without this,
-      // Whisper often auto-detects ambient noise as another language and the
-      // assistant never reaches the agent step.
-      form.append('language', 'en');
+      // Auto language detection (Tamil/Telugu/Hindi/etc.) — forcing 'en' here was
+      // tried to help wake-phrase capture, but a controlled Groq Whisper test
+      // (same clip, forced-en vs auto, both with this prompt) transcribed "Hey
+      // iSHA" identically either way, so forcing English bought nothing and only
+      // broke non-English commands. The prompt alone does the biasing work.
       form.append('prompt', 'Hey iSHA. Open appointments. Show today appointments. Open patients. Open prescriptions.');
       try {
         const r = await doctorCopilotService.speechToText(form);
