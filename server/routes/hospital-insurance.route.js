@@ -21,6 +21,23 @@ import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = Router();
 
+// InsuranceClaim.associate()/PreAuthorization.associate() declare a `patient`
+// belongsTo(User), but nothing in the codebase ever calls .associate() —
+// models/index.js has no central association-wiring step for either model
+// (unlike Appointment/Doctor/etc., which get wired via
+// userHierarchy.associations.js). Every `include: [{ model: User, as:
+// 'patient' }]` in this file was therefore hitting an unregistered alias:
+// either a hard crash ("User is not associated to ...") or, at call sites
+// guarded with `Model.associations?.patient ? [...] : []`, a silent skip
+// that always came back with no patient data. Registering it once here,
+// at module load, makes every include in this file resolve correctly.
+if (!InsuranceClaim.associations?.patient) {
+  InsuranceClaim.belongsTo(User, { foreignKey: 'patientId', as: 'patient' });
+}
+if (!PreAuthorization.associations?.patient) {
+  PreAuthorization.belongsTo(User, { foreignKey: 'patientId', as: 'patient' });
+}
+
 const CLAIM_STATUS_ALIASES = {
   pa_draft: 'draft',
   claim_draft: 'draft',
@@ -716,13 +733,17 @@ router.post('/dashboard/search', authUser, requireRole(['hospital', 'admin']), [
 ], async (req, res) => {
   try {
     const { searchTerm } = req.body;
+    const searchTermAsInt = parseInt(searchTerm, 10);
 
     const claims = await InsuranceClaim.findAll({
       where: {
         [Op.or]: [
           { claimNumber: { [Op.like]: `%${searchTerm}%` } },
           { policyNumber: { [Op.like]: `%${searchTerm}%` } },
-          { patientId: searchTerm }
+          // patientId is an integer column — comparing it against a
+          // non-numeric search term throws a Postgres type error and 500s
+          // the whole search, so only include this clause when it's numeric.
+          ...(Number.isNaN(searchTermAsInt) ? [] : [{ patientId: searchTermAsInt }])
         ]
       },
       limit: 20,

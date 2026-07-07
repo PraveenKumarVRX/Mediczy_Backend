@@ -738,18 +738,16 @@ const MRDSupportPage      = lazyNamed(_MRDModulePages, "MRDSupportPage");
 
 const InsuranceDeskLogin     = lazy(() => import("@/pages/insurance-desk/InsuranceDeskLogin"));
 const InsuranceDeskDashboard = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDashboard"));
-const _InsuranceDeskModulePages = () => import("@/pages/insurance-desk/InsuranceDeskModulePages");
 // Real, API-backed pages (wired to the hospital-insurance backend):
 const InsuranceDeskPreAuthPage         = lazy(() => import("@/pages/insurance-desk/InsuranceDeskPreAuth"));
 const InsuranceDeskClaimsPage          = lazy(() => import("@/pages/insurance-desk/InsuranceDeskClaims"));
 const InsuranceDeskDocumentsPage       = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDocuments"));
 const InsuranceDeskPatientInsurancePage= lazy(() => import("@/pages/insurance-desk/InsuranceDeskPatientInsurance"));
-// Still placeholders — not yet wired to a backend:
-const InsuranceDeskTPAPage             = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskTPAPage");
-const InsuranceDeskSearchPage          = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSearchPage");
-const InsuranceDeskAnalyticsPage       = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskAnalyticsPage");
-const InsuranceDeskSettingsPage        = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSettingsPage");
-const InsuranceDeskSupportPage         = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSupportPage");
+const InsuranceDeskTPAPage             = lazy(() => import("@/pages/insurance-desk/InsuranceDeskTPA"));
+const InsuranceDeskSearchPage          = lazy(() => import("@/pages/insurance-desk/InsuranceDeskSearch"));
+const InsuranceDeskAnalyticsPage       = lazy(() => import("@/pages/insurance-desk/InsuranceDeskAnalytics"));
+const InsuranceDeskSettingsPage        = lazy(() => import("@/pages/insurance-desk/InsuranceDeskSettings"));
+const InsuranceDeskSupportPage         = lazy(() => import("@/pages/insurance-desk/InsuranceDeskSupport"));
 
 const HRLogin     = lazy(() => import("@/pages/hr/HRLogin"));
 const HRDashboard = lazy(() => import("@/pages/hr/HRDashboard"));
