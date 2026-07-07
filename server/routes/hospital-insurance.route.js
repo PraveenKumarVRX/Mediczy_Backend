@@ -1385,6 +1385,28 @@ router.post('/pre-auth/new', authUser, requireRole(['hospital', 'admin']), [
 });
 
 /**
+ * Attach a `patient` (id/firstName/lastName/email) field to each pre-auth row.
+ * PreAuthorization declares a `patient` belongsTo(User) in its .associate(),
+ * but that method is never invoked anywhere in the codebase (models/index.js
+ * has no central association-wiring step for this model), so Sequelize's
+ * `include: [{ model: User, as: 'patient' }]` always threw "User is not
+ * associated to PreAuthorization!". A plain batch-fetch avoids depending on
+ * that unregistered association entirely.
+ */
+async function attachPatients(preAuths) {
+  const patientIds = [...new Set(preAuths.map((p) => p.patientId).filter(Boolean))];
+  if (patientIds.length === 0) return preAuths.map((p) => ({ ...p.toJSON(), patient: null }));
+
+  const patients = await User.findAll({
+    where: { id: patientIds },
+    attributes: ['id', 'firstName', 'lastName', 'email']
+  });
+  const byId = new Map(patients.map((u) => [u.id, u]));
+
+  return preAuths.map((p) => ({ ...p.toJSON(), patient: byId.get(p.patientId) || null }));
+}
+
+/**
  * GET /hospital/insurance/pre-auth/pending
  * List of pre-auth requests waiting for insurer action
  */
@@ -1396,24 +1418,16 @@ router.get('/pre-auth/pending', authUser, requireRole(['hospital', 'admin']), as
 
     const offset = (page - 1) * limit;
 
-    const { count, rows: preAuths } = await PreAuthorization.findAndCountAll({
+    const { count, rows } = await PreAuthorization.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset,
-      order: [['submittedAt', 'DESC']],
-      include: [
-        { 
-          model: User, 
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email'] 
-        },
-        {
-          association: 'insuranceProvider',
-          attributes: ['id', 'name'],
-          required: false
-        }
-      ]
+      order: [['submittedAt', 'DESC']]
+      // insurance_provider_id is a plain provider-name string (see
+      // services/insurance-provider.service.js's static `providers` config),
+      // not a foreign key — there's no InsuranceProvider model to include.
     });
+    const preAuths = await attachPatients(rows);
 
     res.json({
       success: true,
@@ -1454,24 +1468,13 @@ router.get('/pre-auth/approved', authUser, requireRole(['hospital', 'admin']), a
 
     const offset = (page - 1) * limit;
 
-    const { count, rows: preAuths } = await PreAuthorization.findAndCountAll({
+    const { count, rows } = await PreAuthorization.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset,
-      order: [['approvedAt', 'DESC']],
-      include: [
-        { 
-          model: User, 
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email'] 
-        },
-        {
-          association: 'insuranceProvider',
-          attributes: ['id', 'name'],
-          required: false
-        }
-      ]
+      order: [['approvedAt', 'DESC']]
     });
+    const preAuths = await attachPatients(rows);
 
     res.json({
       success: true,
@@ -1501,24 +1504,13 @@ router.get('/pre-auth/rejected', authUser, requireRole(['hospital', 'admin']), a
 
     const offset = (page - 1) * limit;
 
-    const { count, rows: preAuths } = await PreAuthorization.findAndCountAll({
+    const { count, rows } = await PreAuthorization.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset,
-      order: [['rejectedAt', 'DESC']],
-      include: [
-        { 
-          model: User, 
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email'] 
-        },
-        {
-          association: 'insuranceProvider',
-          attributes: ['id', 'name'],
-          required: false
-        }
-      ]
+      order: [['rejectedAt', 'DESC']]
     });
+    const preAuths = await attachPatients(rows);
 
     res.json({
       success: true,
