@@ -52,10 +52,18 @@ const DeptLoginTemplate = ({
       const controller = new AbortController();
       const timeoutId  = setTimeout(() => controller.abort(), 10000);
 
-      // Try department-specific staff endpoint first, then fall back to legacy hospital auth
+      // The real route for every department is under /hospital/staff/{deptKey}/login
+      // (see unified-hospital-staff.routes.js) — that MUST be tried first. Any
+      // undefined /api/* path in this app returns 401 "Authentication required"
+      // rather than a 404 (a global auth guard intercepts it before routing even
+      // gets a chance to 404), so a bare `/${deptKey}/login` attempt ahead of the
+      // real one always "succeeds" at 401 and the retry loop — which only
+      // advances past 404/405 — stops right there and never reaches the real
+      // endpoint. Legacy hospital-auth fallbacks stay last for departments that
+      // predate the unified staff router.
       const attempts = [
-        { endpoint: `/${deptKey}/login`,                 body: { email, password } },
         { endpoint: `/hospital/staff/${deptKey}/login`,  body: { email, password } },
+        { endpoint: `/${deptKey}/login`,                 body: { email, password } },
         { endpoint: `/hospital/dept/${deptKey}/login`,   body: { email, password } },
         { endpoint: '/hospital/auth/login',              body: { email, password } },
         { endpoint: '/hospital/login',                   body: { email, password } },
