@@ -3,45 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  ShieldCheck, LayoutDashboard, FileText, ClipboardList,
+  ShieldCheck, FileText, ClipboardList,
   Building2, BarChart3, Settings, HelpCircle, PlusCircle,
   Clock, CheckCircle2, XCircle, AlertCircle, Search,
   Users, FileSearch, Download, CalendarClock,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-const navSections: DeptNavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { icon: LayoutDashboard, label: 'Dashboard',           href: '/insurance-desk/dashboard' },
-    ],
-  },
-  {
-    title: 'Claims & Auth',
-    items: [
-      { icon: ShieldCheck,    label: 'Pre-Authorization',    href: '/insurance-desk/pre-auth' },
-      { icon: ClipboardList,  label: 'Active Claims',        href: '/insurance-desk/claims' },
-      { icon: FileText,       label: 'Documents',            href: '/insurance-desk/documents' },
-    ],
-  },
-  {
-    title: 'Management',
-    items: [
-      { icon: Building2,      label: 'TPA Management',       href: '/insurance-desk/tpa' },
-      { icon: Users,          label: 'Patient Insurance',    href: '/insurance-desk/patient-insurance' },
-      { icon: FileSearch,     label: 'Claim Search',         href: '/insurance-desk/search' },
-    ],
-  },
-  {
-    title: 'Reports',
-    items: [
-      { icon: BarChart3,      label: 'Analytics',     href: '/insurance-desk/analytics' },
-      { icon: Settings,       label: 'Settings',      href: '/insurance-desk/settings' },
-      { icon: HelpCircle,     label: 'Support',       href: '/insurance-desk/support' },
-    ],
-  },
-];
+import { navSections } from './navSections';
 
 const kpis = [
   { label: 'Active Pre-Auths',   value: '23', sub: '8 pending response', icon: CalendarClock, color: 'text-teal-600' },

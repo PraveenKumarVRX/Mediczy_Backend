@@ -15,6 +15,7 @@ import {
   generateReplyDraft,
   batchReparse,
   syncImapInbox,
+  reparseOne,
 } from '../../services/insuranceEmailAI.service.js';
 import logger from '../../config/logger.js';
 
@@ -34,7 +35,10 @@ function insuranceAuth(req, res, next) {
     const secret = JWT_CONFIG.SECRET;
     const decoded = jwt.verify(token, secret);
     req.insuranceUser = decoded;
-    req.hospitalId    = decoded.hospitalId || decoded.hospital_id;
+    // hospital_id column on insurance_email_inbox is STRING(100); JWTs from the
+    // unified hospital-staff login carry it as an integer, which Postgres
+    // refuses to compare against varchar without an explicit cast.
+    req.hospitalId = String(decoded.hospitalId || decoded.hospital_id || '');
     next();
   } catch (err) {
     return res.status(401).json({ success: false, message: 'Invalid or expired token' });
@@ -48,14 +52,75 @@ InsuranceEmailInbox.sync({ alter: false }).catch(() => {
   );
 });
 
+// ─── GET /settings — saved SMTP/IMAP config for this insurance-desk user ─────
+router.get('/settings', insuranceAuth, async (req, res) => {
+  try {
+    const settings = await InsuranceEmailSettings.findOne({
+      where: { userId: req.insuranceUser.id || req.hospitalId },
+      order: [['isDefault', 'DESC'], ['createdAt', 'DESC']],
+    });
+    if (!settings) return res.json({ success: true, data: null });
+
+    const { smtpPassword, imapPassword, ...safe } = settings.toJSON();
+    res.json({ success: true, data: { ...safe, hasSmtpPassword: !!smtpPassword, hasImapPassword: !!imapPassword } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── PUT /settings — save SMTP/IMAP config ───────────────────────────────────
+router.put('/settings', insuranceAuth, async (req, res) => {
+  try {
+    const {
+      email, displayName, provider,
+      smtpHost, smtpPort, smtpUsername, smtpPassword,
+      imapHost, imapPort, imapUsername, imapPassword,
+    } = req.body;
+    if (!email) return res.status(400).json({ success: false, message: 'email is required' });
+
+    const userId = req.insuranceUser.id || req.hospitalId;
+    const [settings] = await InsuranceEmailSettings.findOrCreate({
+      where: { userId },
+      defaults: { userId, email },
+    });
+
+    await settings.update({
+      email,
+      displayName: displayName ?? settings.displayName,
+      provider: provider ?? settings.provider,
+      smtpHost, smtpPort, smtpUsername,
+      // Only overwrite a password field if a new one was actually submitted —
+      // the GET /settings response never sends passwords back to the client,
+      // so an empty resubmit would otherwise wipe out saved credentials.
+      ...(smtpPassword ? { smtpPassword } : {}),
+      imapHost, imapPort, imapUsername,
+      ...(imapPassword ? { imapPassword } : {}),
+      isActive: true,
+      isDefault: true,
+    });
+
+    const { smtpPassword: _sp, imapPassword: _ip, ...safe } = settings.toJSON();
+    res.json({ success: true, data: safe });
+  } catch (err) {
+    logger.error('[InsuranceEmail] settings save error:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ─── GET /inbox ───────────────────────────────────────────────────────────────
 router.get('/inbox', insuranceAuth, async (req, res) => {
   try {
-    const { page = 1, limit = 30, label, unreadOnly, search } = req.query;
+    const { page = 1, limit = 30, label, unreadOnly, starredOnly, includeArchived, search } = req.query;
     const where = { hospitalId: req.hospitalId };
 
-    if (label && label !== 'all') where.label = label;
+    if (label === 'archived') {
+      where.isArchived = true;
+    } else {
+      if (includeArchived !== 'true') where.isArchived = false;
+      if (label && label !== 'all') where.label = label;
+    }
     if (unreadOnly === 'true') where.isRead = false;
+    if (starredOnly === 'true') where.isStarred = true;
     if (search) {
       where[Op.or] = [
         { subject:   { [Op.iLike]: `%${search}%` } },
@@ -122,9 +187,25 @@ router.get('/captures', insuranceAuth, async (req, res) => {
 // ─── POST /sync — trigger IMAP fetch ─────────────────────────────────────────
 router.post('/sync', insuranceAuth, async (req, res) => {
   try {
-    const { email, password, imapHost, imapPort, daysBack = 30 } = req.body;
+    let { email, password, imapHost, imapPort, daysBack = 30 } = req.body;
+
+    // Fall back to saved IMAP settings so staff don't have to paste the
+    // mailbox password on every sync.
     if (!email || !password || !imapHost) {
-      return res.status(400).json({ success: false, message: 'email, password and imapHost are required for IMAP sync' });
+      const settings = await InsuranceEmailSettings.findOne({
+        where: { userId: req.insuranceUser.id || req.hospitalId, isActive: true },
+        order: [['isDefault', 'DESC'], ['createdAt', 'DESC']],
+      }).catch(() => null);
+      if (settings?.imapHost && settings?.imapUsername && settings?.imapPassword) {
+        email = email || settings.imapUsername;
+        password = password || settings.imapPassword;
+        imapHost = imapHost || settings.imapHost;
+        imapPort = imapPort || settings.imapPort;
+      }
+    }
+
+    if (!email || !password || !imapHost) {
+      return res.status(400).json({ success: false, message: 'No IMAP credentials provided and none saved in settings.' });
     }
 
     const result = await syncImapInbox({
@@ -202,19 +283,45 @@ router.put('/:id/star', insuranceAuth, async (req, res) => {
   }
 });
 
+// ─── PUT /:id/archive ─────────────────────────────────────────────────────────
+router.put('/:id/archive', insuranceAuth, async (req, res) => {
+  try {
+    const email = await InsuranceEmailInbox.findOne({ where: { id: req.params.id, hospitalId: req.hospitalId } });
+    if (!email) return res.status(404).json({ success: false, message: 'Not found' });
+    await email.update({ isArchived: !email.isArchived });
+    res.json({ success: true, data: { isArchived: email.isArchived } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── PUT /:id/label — manual folder override when AI misclassifies ──────────
+router.put('/:id/label', insuranceAuth, async (req, res) => {
+  try {
+    const { label } = req.body;
+    const validLabels = ['pre-auth', 'payment', 'query', 'rejection', 'general'];
+    if (!validLabels.includes(label)) {
+      return res.status(400).json({ success: false, message: `label must be one of: ${validLabels.join(', ')}` });
+    }
+    const email = await InsuranceEmailInbox.findOne({ where: { id: req.params.id, hospitalId: req.hospitalId } });
+    if (!email) return res.status(404).json({ success: false, message: 'Not found' });
+    await email.update({ label });
+    res.json({ success: true, data: { label } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ─── POST /:id/ai-parse — re-parse a specific email with AI ──────────────────
 router.post('/:id/ai-parse', insuranceAuth, async (req, res) => {
   try {
     const email = await InsuranceEmailInbox.findOne({ where: { id: req.params.id, hospitalId: req.hospitalId } });
     if (!email) return res.status(404).json({ success: false, message: 'Not found' });
 
-    const results = await batchReparse(req.hospitalId, 1);
-    // Force re-parse this specific one
-    const { parseAndStoreEmail: _, generateReplyDraft: __, batchReparse: ___, syncImapInbox: ____, ...ai } = await import('../../services/insuranceEmailAI.service.js');
-    // inline: call AI and update
-    const { default: svc } = await import('../../services/insuranceEmailAI.service.js');
-    res.json({ success: true, message: 'AI re-parse queued', data: email });
+    const updated = await reparseOne(email);
+    res.json({ success: true, message: 'Re-parsed.', data: updated });
   } catch (err) {
+    logger.error('[InsuranceEmail] ai-parse error:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -254,10 +361,10 @@ router.post('/send', insuranceAuth, async (req, res) => {
       });
       if (settings && settings.isActive) {
         smtpOpts = {
-          host:   settings.host,
-          port:   settings.port,
-          secure: settings.port === 465,
-          auth:   { user: settings.username, pass: settings.password },
+          host:   settings.smtpHost,
+          port:   settings.smtpPort,
+          secure: settings.smtpPort === 465,
+          auth:   { user: settings.smtpUsername, pass: settings.smtpPassword },
         };
       }
     } catch (_) { /* use env SMTP */ }

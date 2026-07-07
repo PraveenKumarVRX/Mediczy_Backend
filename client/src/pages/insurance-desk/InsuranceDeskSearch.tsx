@@ -6,29 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
-  Search, BarChart3, Settings, HelpCircle, Loader2, X,
+  Search, BarChart3, Settings, HelpCircle, Loader2, X, Bot, Sparkles, Send,
 } from 'lucide-react';
 import api from '@/utils/api';
 
-const navSections: DeptNavSection[] = [
-  { title: 'Overview', items: [{ icon: ShieldCheck, label: 'Dashboard', href: '/insurance-desk/dashboard' }] },
-  { title: 'Claims & Auth', items: [
-    { icon: ClipboardList, label: 'Pre-Authorization',   href: '/insurance-desk/pre-auth' },
-    { icon: FileText,      label: 'Active Claims',       href: '/insurance-desk/claims' },
-    { icon: FileText,      label: 'Documents',           href: '/insurance-desk/documents' },
-  ]},
-  { title: 'Management', items: [
-    { icon: Building2,  label: 'TPA Management',      href: '/insurance-desk/tpa' },
-    { icon: UserCheck,  label: 'Patient Insurance',   href: '/insurance-desk/patient-insurance' },
-    { icon: Search,     label: 'Claim Search',        href: '/insurance-desk/search' },
-  ]},
-  { title: 'Reports', items: [
-    { icon: BarChart3,  label: 'Analytics', href: '/insurance-desk/analytics' },
-    { icon: Settings,   label: 'Settings',  href: '/insurance-desk/settings' },
-    { icon: HelpCircle, label: 'Support',   href: '/insurance-desk/support' },
-  ]},
-];
+import { navSections } from './navSections';
 
 interface ClaimResult {
   id: number;
@@ -71,6 +59,15 @@ const InsuranceDeskSearch = () => {
   const [history, setHistory] = useState<HistoryEvent[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [appealOpen, setAppealOpen] = useState(false);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState('');
+  const [drafting, setDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
+  const [draftSubject, setDraftSubject] = useState('');
+  const [draftBody, setDraftBody] = useState('');
+  const [submittingAppeal, setSubmittingAppeal] = useState(false);
+  const [appealSubmitted, setAppealSubmitted] = useState<string | null>(null);
+
   const search = async () => {
     if (!term.trim()) return;
     setSearching(true);
@@ -100,6 +97,53 @@ const InsuranceDeskSearch = () => {
       setHistory([]);
     } finally {
       setLoadingHistory(false);
+    }
+  };
+
+  const openAppealDialog = () => {
+    setAppealOpen(true);
+    setRejectionReasonInput('');
+    setDraftError(null);
+    setDraftSubject('');
+    setDraftBody('');
+    setAppealSubmitted(null);
+  };
+
+  const draftAppeal = async () => {
+    if (!selected || !rejectionReasonInput.trim()) {
+      setDraftError('Enter the denial/query reason stated by the insurer first.');
+      return;
+    }
+    setDrafting(true);
+    setDraftError(null);
+    try {
+      const { data } = await api.post(`/hospital/insurance/claims/${selected.id}/copilot/draft-appeal`, {
+        rejectionReason: rejectionReasonInput.trim(),
+      });
+      setDraftSubject(data.draft.subject || '');
+      setDraftBody(data.draft.body || '');
+    } catch (err: any) {
+      setDraftError(err?.response?.data?.message || 'Could not draft appeal letter.');
+    } finally {
+      setDrafting(false);
+    }
+  };
+
+  const submitAppeal = async () => {
+    if (!selected || !draftBody.trim()) return;
+    setSubmittingAppeal(true);
+    setDraftError(null);
+    try {
+      await api.post(`/hospital/insurance/claims/${selected.id}/appeal`, {
+        appealReason: draftBody.trim(),
+        supportingNotes: `AI-drafted appeal — subject: ${draftSubject}`,
+      });
+      setAppealSubmitted('Appeal submitted. Claim moved to pending review.');
+      openHistory(selected);
+    } catch (err: any) {
+      setDraftError(err?.response?.data?.message || 'Could not submit appeal.');
+    } finally {
+      setSubmittingAppeal(false);
     }
   };
 
@@ -174,7 +218,14 @@ const InsuranceDeskSearch = () => {
         <Card className="mt-4">
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-base">Timeline — {selected.claimNumber}</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button>
+            <div className="flex items-center gap-2">
+              {(selected.status === 'rejected' || selected.status === 'query') && (
+                <Button size="sm" variant="outline" className="gap-1" onClick={openAppealDialog}>
+                  <Bot className="h-4 w-4 text-teal-600" /> Draft Appeal (AI)
+                </Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => setSelected(null)}><X className="h-4 w-4" /></Button>
+            </div>
           </CardHeader>
           <CardContent>
             {loadingHistory ? (
@@ -197,6 +248,54 @@ const InsuranceDeskSearch = () => {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={appealOpen} onOpenChange={setAppealOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Bot className="h-4 w-4 text-teal-600" /> AI-Drafted Appeal — {selected?.claimNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Denial/query reason (as stated by insurer)</Label>
+              <Textarea rows={2} value={rejectionReasonInput} onChange={(e) => setRejectionReasonInput(e.target.value)}
+                placeholder="e.g. Room rent exceeds policy sub-limit; alleged non-disclosure of pre-existing condition." />
+            </div>
+            {draftError && <p className="text-sm text-red-600">{draftError}</p>}
+            {appealSubmitted ? (
+              <p className="text-sm text-emerald-600">{appealSubmitted}</p>
+            ) : (
+              <>
+                <Button size="sm" variant="outline" className="gap-1" onClick={draftAppeal} disabled={drafting}>
+                  {drafting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {draftBody ? 'Regenerate Draft' : 'Generate Draft'}
+                </Button>
+                {draftBody && (
+                  <div className="space-y-2 border rounded-lg p-3 bg-muted/30">
+                    <div>
+                      <Label className="text-xs">Subject</Label>
+                      <Input value={draftSubject} onChange={(e) => setDraftSubject(e.target.value)} />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Body (edit before submitting)</Label>
+                      <Textarea rows={10} value={draftBody} onChange={(e) => setDraftBody(e.target.value)} className="font-sans text-sm" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">AI-generated draft — review and edit before submitting. Nothing is sent to the insurer until you click Submit.</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {!appealSubmitted && draftBody && (
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setAppealOpen(false)}>Cancel</Button>
+              <Button className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={submitAppeal} disabled={submittingAppeal}>
+                {submittingAppeal ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                Submit Appeal
+              </Button>
+            </DialogFooter>
+          )}
+        </DialogContent>
+      </Dialog>
     </HospDeptLayout>
   );
 };

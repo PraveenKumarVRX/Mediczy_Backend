@@ -15,9 +15,15 @@ import { User } from '../models/index.js';
 import { Op } from 'sequelize';
 import pdfGenerator from '../services/pdf-generator.service.js';
 import insuranceProvider from '../services/insurance-provider.service.js';
+import tpaAggregator from '../services/tpa-aggregator.service.js';
+import { validateClaimForSubmission } from '../services/claims-rules-engine.service.js';
+import { extractClaimFields } from '../services/insurance-document-ai.service.js';
+import { runPreDischargeAudit } from '../services/insurance-pre-discharge-audit.service.js';
+import { draftAppealLetter, checkDocumentationGaps } from '../services/insurance-ai-copilot.service.js';
 import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = Router();
 
@@ -88,6 +94,27 @@ const resolvePortalScope = (req) => {
 };
 
 const serializeModel = (model) => (model?.toJSON ? model.toJSON() : model);
+
+// insurance_claims has row-level security keyed on organization_id/patient_id
+// (see current_org_id()/current_app_user_id() Postgres functions). Those GUCs
+// are transaction-local and are NOT set anywhere else in this file, so every
+// query against InsuranceClaim below was silently matching zero rows on
+// SELECT and hard-failing with "new row violates row-level security policy"
+// on INSERT/UPDATE. withClaimsRls() opens one transaction per request, sets
+// the context from the authenticated user via req.setSequelizeRlsContext(),
+// runs the callback with that transaction, and commits/rolls back around it.
+async function withClaimsRls(req, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext(transaction);
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
 
 const buildDefaultPayerManagement = () => ({
   payerEmails: [
@@ -629,14 +656,14 @@ router.get('/dashboard', authUser, requireRole(['hospital', 'admin']), async (re
     }
 
     // Get counts by status
-    const [pending, approved, rejected, query_pending, totalAmount, approvedAmount, pendingAmount, recentClaims, insurerClaims] = await Promise.all([
-      InsuranceClaim.count({ where: { ...where, status: 'pending' } }),
-      InsuranceClaim.count({ where: { ...where, status: 'approved' } }),
-      InsuranceClaim.count({ where: { ...where, status: 'rejected' } }),
-      InsuranceClaim.count({ where: { ...where, status: 'query' } }),
-      InsuranceClaim.sum('claimAmount', { where }),
-      InsuranceClaim.sum('approvedAmount', { where }),
-      InsuranceClaim.sum('claimAmount', { where: { ...where, status: 'pending' } }),
+    const [pending, approved, rejected, query_pending, totalAmount, approvedAmount, pendingAmount, recentClaims, insurerClaims, pendingDocuments, expiringSoon] = await withClaimsRls(req, async (transaction) => Promise.all([
+      InsuranceClaim.count({ where: { ...where, status: 'pending' }, transaction }),
+      InsuranceClaim.count({ where: { ...where, status: 'approved' }, transaction }),
+      InsuranceClaim.count({ where: { ...where, status: 'rejected' }, transaction }),
+      InsuranceClaim.count({ where: { ...where, status: 'query' }, transaction }),
+      InsuranceClaim.sum('claimAmount', { where, transaction }),
+      InsuranceClaim.sum('approvedAmount', { where, transaction }),
+      InsuranceClaim.sum('claimAmount', { where: { ...where, status: 'pending' }, transaction }),
       InsuranceClaim.findAll({
         where,
         limit: 10,
@@ -646,27 +673,33 @@ router.get('/dashboard', authUser, requireRole(['hospital', 'admin']), async (re
           model: User,
           as: 'patient',
           attributes: ['id', 'firstName', 'lastName']
-        }] : []
+        }] : [],
+        transaction
       }),
       InsuranceClaim.findAll({
         where,
-        attributes: ['insuranceProvider']
-      })
-    ]);
-
-    // Alerts & action items
-    const alerts = {
-      queriesNeedingResponse: query_pending,
-      pendingDocuments: await InsuranceClaim.count({
-        where: { ...where, documents_status: 'incomplete' }
+        attributes: ['insuranceProvider'],
+        transaction
       }),
-      expiringSoon: await PreAuthorization.count({
+      InsuranceClaim.count({
+        where: { ...where, documents_status: 'incomplete' },
+        transaction
+      }),
+      PreAuthorization.count({
         where: {
           ...where,
           status: 'approved',
           expires_at: { [Op.lte]: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }
-        }
+        },
+        transaction
       })
+    ]));
+
+    // Alerts & action items
+    const alerts = {
+      queriesNeedingResponse: query_pending,
+      pendingDocuments,
+      expiringSoon
     };
 
     const dashboardData = {
@@ -735,7 +768,7 @@ router.post('/dashboard/search', authUser, requireRole(['hospital', 'admin']), [
     const { searchTerm } = req.body;
     const searchTermAsInt = parseInt(searchTerm, 10);
 
-    const claims = await InsuranceClaim.findAll({
+    const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({
       where: {
         [Op.or]: [
           { claimNumber: { [Op.like]: `%${searchTerm}%` } },
@@ -748,13 +781,14 @@ router.post('/dashboard/search', authUser, requireRole(['hospital', 'admin']), [
       },
       limit: 20,
       include: [
-        { 
-          model: User, 
+        {
+          model: User,
           as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] 
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
         }
-      ]
-    });
+      ],
+      transaction
+    }));
 
     res.json({ success: true, results: claims });
   } catch (error) {
@@ -790,7 +824,7 @@ router.get('/claims', authUser, requireRole(['hospital', 'admin']), async (req, 
     }
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
-    const { count, rows } = await InsuranceClaim.findAndCountAll({
+    const { count, rows } = await withClaimsRls(req, (transaction) => InsuranceClaim.findAndCountAll({
       where,
       attributes: [
         'id', 'claimNumber', 'claimAmount', 'approvedAmount', 'settledAmount', 'status', 'policyNumber',
@@ -804,8 +838,9 @@ router.get('/claims', authUser, requireRole(['hospital', 'admin']), async (req, 
         model: User,
         as: 'patient',
         attributes: ['id', 'firstName', 'lastName']
-      }] : []
-    });
+      }] : [],
+      transaction
+    }));
 
     const claims = rows.map((claim) => {
       const plain = claim.toJSON ? claim.toJSON() : claim;
@@ -865,7 +900,7 @@ router.post('/claims/new', authUser, requireRole(['hospital', 'admin']), [
     // Generate claim number
     const claimNumber = `CLM${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
 
-    const claim = await InsuranceClaim.create({
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.create({
       claimNumber,
       patientId,
       hospitalId: resolvedHospitalId,
@@ -885,7 +920,7 @@ router.post('/claims/new', authUser, requireRole(['hospital', 'admin']), [
       },
       submittedBy: req.user.id,
       createdAt: new Date()
-    });
+    }, { transaction }));
 
     res.status(201).json({
       success: true,
@@ -910,19 +945,20 @@ router.get('/claims/drafts', authUser, requireRole(['hospital', 'admin']), async
 
     const offset = (page - 1) * limit;
 
-    const { count, rows: drafts } = await InsuranceClaim.findAndCountAll({
+    const { count, rows: drafts } = await withClaimsRls(req, (transaction) => InsuranceClaim.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset,
       order: [['updatedAt', 'DESC']],
       include: [
-        { 
-          model: User, 
+        {
+          model: User,
           as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email'] 
+          attributes: ['id', 'firstName', 'lastName', 'email']
         }
-      ]
-    });
+      ],
+      transaction
+    }));
 
     res.json({
       success: true,
@@ -970,7 +1006,7 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
     const hasPatientAssociation = !!(InsuranceClaim.associations && InsuranceClaim.associations.patient);
 
     try {
-      result = await ClaimsModel.findAndCountAll({
+      result = await withClaimsRls(req, (transaction) => ClaimsModel.findAndCountAll({
         where,
         attributes: ['id', 'claimNumber', 'claimAmount', 'status', 'submittedAt', 'createdAt'],
         limit: parseInt(limit),
@@ -986,17 +1022,19 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
                 }
               ]
             }
-          : {})
-      });
+          : {}),
+        transaction
+      }));
     } catch (includeError) {
       console.warn('Submitted claims include fallback triggered:', includeError.message);
-      result = await ClaimsModel.findAndCountAll({
+      result = await withClaimsRls(req, (transaction) => ClaimsModel.findAndCountAll({
         where,
         attributes: ['id', 'claimNumber', 'claimAmount', 'status', 'submittedAt', 'createdAt'],
         limit: parseInt(limit),
         offset,
-        order: [['submittedAt', 'DESC']]
-      });
+        order: [['submittedAt', 'DESC']],
+        transaction
+      }));
     }
 
     const { count, rows: claims } = result;
@@ -1037,31 +1075,37 @@ router.post('/claims/:claimId/submit', authUser, requireRole(['hospital', 'admin
   param('claimId').isInt()
 ], async (req, res) => {
   try {
-    const claim = await InsuranceClaim.findByPk(req.params.claimId);
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) {
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
 
     if (claim.status !== 'draft') {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Only draft claims can be submitted' 
-      });
-    }
-
-    // Validate required documents
-    if (!claim.documents || claim.documents.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Please upload required documents before submission'
+        message: 'Only draft claims can be submitted'
       });
     }
 
-    await claim.update({
+    // Rules engine: required-field + policy-limit checks (see
+    // claims-rules-engine.service.js). A dry-run of the same check is
+    // available at GET /claims/:claimId/validate for a live pre-submit checklist.
+    const preAuth = claim.preAuthId ? await PreAuthorization.findByPk(claim.preAuthId) : null;
+    const validation = validateClaimForSubmission(claim, { preAuth });
+    if (!validation.canSubmit) {
+      return res.status(400).json({
+        success: false,
+        message: 'This claim has issues that will likely cause the insurer to reject or query it.',
+        errors: validation.errors,
+        warnings: validation.warnings
+      });
+    }
+
+    await withClaimsRls(req, (transaction) => claim.update({
       status: 'submitted',
       submittedAt: new Date(),
       submittedBy: req.user.id
-    });
+    }, { transaction }));
 
     // Invalidate cache
     await cacheService.invalidateClaimCaches(claim.hospital_id);
@@ -1078,10 +1122,33 @@ router.post('/claims/:claimId/submit', authUser, requireRole(['hospital', 'admin
     res.json({
       success: true,
       message: 'Claim submitted successfully',
-      claim
+      claim,
+      warnings: validation.warnings
     });
   } catch (error) {
     console.error('Submit claim error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /hospital/insurance/claims/:claimId/validate
+ * Dry-run of the rules engine (see claims-rules-engine.service.js) so the
+ * UI can show a live pre-submit checklist without actually submitting.
+ */
+router.get('/claims/:claimId/validate', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt()
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+    const preAuth = claim.preAuthId ? await PreAuthorization.findByPk(claim.preAuthId) : null;
+    const validation = validateClaimForSubmission(claim, { preAuth });
+    res.json({ success: true, ...validation });
+  } catch (error) {
+    console.error('Claim validation error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -1096,7 +1163,7 @@ router.post('/claims/:claimId/enhance', authUser, requireRole(['hospital', 'admi
   body('queryResponse').optional().isString()
 ], async (req, res) => {
   try {
-    const claim = await InsuranceClaim.findByPk(req.params.claimId);
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) {
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
@@ -1126,7 +1193,7 @@ router.post('/claims/:claimId/enhance', authUser, requireRole(['hospital', 'admi
       updateData.status = 'pending'; // Back to pending after query response
     }
 
-    await claim.update(updateData);
+    await withClaimsRls(req, (transaction) => claim.update(updateData, { transaction }));
 
     res.json({
       success: true,
@@ -1163,13 +1230,14 @@ router.post('/claims/bulk-upload', authUser, requireRole(['hospital', 'admin']),
       try {
         const claimNumber = `CLM${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
         
-        const claim = await InsuranceClaim.create({
+        const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.create({
           ...claimData,
           claimNumber,
           status: 'draft',
           submittedBy: req.user.id,
-          hospitalId: req.user.hospitalId || claimData.hospitalId
-        });
+          hospitalId: req.user.hospitalId || claimData.hospitalId,
+          organizationId: req.user.organization_id || claimData.organizationId || req.user.hospitalId || claimData.hospitalId
+        }, { transaction }));
 
         results.success.push({ claimNumber, id: claim.id });
       } catch (error) {
@@ -1199,15 +1267,16 @@ router.get('/claims/:claimId/history', authUser, requireRole(['hospital', 'admin
   param('claimId').isInt()
 ], async (req, res) => {
   try {
-    const claim = await InsuranceClaim.findByPk(req.params.claimId, {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, {
       include: [
-        { 
-          model: User, 
+        {
+          model: User,
           as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email'] 
+          attributes: ['id', 'firstName', 'lastName', 'email']
         }
-      ]
-    });
+      ],
+      transaction
+    }));
 
     if (!claim) {
       return res.status(404).json({ success: false, message: 'Claim not found' });
@@ -1258,6 +1327,92 @@ router.get('/claims/:claimId/history', authUser, requireRole(['hospital', 'admin
 });
 
 /**
+ * GET /hospital/insurance/tpa/providers
+ * Directory of integrated TPAs/insurers with their live-lookup capabilities.
+ * Ring-fencing scopes hospital-role tokens to /api/hospital/*, so this proxies
+ * tpaAggregator (mounted under /api/tpa, a different ring-fence key) rather
+ * than having the frontend call /api/tpa directly.
+ */
+router.get('/tpa/providers', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const providers = tpaAggregator.getAvailableProviders();
+    res.json({ success: true, providers });
+  } catch (error) {
+    console.error('TPA provider directory error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /hospital/insurance/claims/:claimId/tpa-status
+ * Look up a claim's live status directly from its TPA/insurer, instead of
+ * relying solely on Mediczy's own last-known status field. The 17 TPA
+ * integrations in tpa-aggregator.service.js make real HTTP calls to real
+ * partner endpoints, but need partner-issued credentials (env vars) per TPA;
+ * without them this call fails honestly rather than returning fabricated data.
+ */
+router.post('/claims/:claimId/tpa-status', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt()
+], async (req, res) => {
+  try {
+    const scope = resolvePortalScope(req);
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findOne({
+      where: { id: req.params.claimId, hospital_id: scope.hospitalId },
+      transaction
+    }));
+
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    if (!claim.insuranceProvider) {
+      return res.json({
+        success: true,
+        supported: false,
+        message: 'No insurer/TPA recorded on this claim yet.'
+      });
+    }
+
+    let provider;
+    try {
+      provider = tpaAggregator.getProvider(claim.insuranceProvider);
+    } catch {
+      return res.json({
+        success: true,
+        supported: false,
+        message: `"${claim.insuranceProvider}" is not one of Mediczy's ${Object.keys(tpaAggregator.providers).length} integrated TPA/insurer connections yet.`
+      });
+    }
+
+    if (!provider.getClaimStatus) {
+      return res.json({
+        success: true,
+        supported: false,
+        message: `${claim.insuranceProvider} does not expose a live claim-status API in this integration.`
+      });
+    }
+
+    try {
+      const liveStatus = await provider.getClaimStatus({
+        claimNumber: claim.claimNumber,
+        policyNumber: claim.policyNumber
+      });
+      res.json({ success: true, supported: true, live: true, status: liveStatus });
+    } catch (tpaError) {
+      res.json({
+        success: true,
+        supported: true,
+        live: false,
+        message: `Could not reach ${claim.insuranceProvider}'s live claim-status API: ${tpaError.message}. Verify partner credentials are configured for this TPA.`
+      });
+    }
+  } catch (error) {
+    console.error('TPA claim status error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /hospital/insurance/claims/:claimId/pdf
  * Download claim PDF with attached documents
  */
@@ -1265,15 +1420,16 @@ router.get('/claims/:claimId/pdf', authUser, requireRole(['hospital', 'admin']),
   param('claimId').isInt()
 ], async (req, res) => {
   try {
-    const claim = await InsuranceClaim.findByPk(req.params.claimId, {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, {
       include: [
-        { 
-          model: User, 
+        {
+          model: User,
           as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] 
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
         }
-      ]
-    });
+      ],
+      transaction
+    }));
 
     if (!claim) {
       return res.status(404).json({ success: false, message: 'Claim not found' });
@@ -1581,6 +1737,11 @@ router.post('/documents/upload', authUser, requireRole(['hospital', 'admin']), a
       });
     }
 
+    // Document-AI extraction runs only for the two document types the
+    // rules engine actually checks fields against; extraction is never
+    // written to the claim automatically — see /apply-extracted-fields.
+    const extractableTypes = new Set(['discharge_summary', 'bills']);
+
     for (const file of uploadedFiles) {
       const uploadResult = await uploadToMinio({
         buffer: file.data,
@@ -1589,6 +1750,11 @@ router.post('/documents/upload', authUser, requireRole(['hospital', 'admin']), a
         mimeType: file.mimetype,
         keyPrefix: `hospital-insurance/${claimId ? `claim-${claimId}` : preAuthId ? `preauth-${preAuthId}` : 'documents'}`,
       });
+
+      let extraction = null;
+      if (extractableTypes.has(documentType)) {
+        extraction = await extractClaimFields(file.data, file.mimetype, documentType);
+      }
 
       documents.push({
         type: documentType,
@@ -1599,20 +1765,21 @@ router.post('/documents/upload', authUser, requireRole(['hospital', 'admin']), a
         mimeType: file.mimetype,
         tags: tags || [],
         uploadedAt: new Date(),
-        uploadedBy: req.user.id
+        uploadedBy: req.user.id,
+        ...(extraction ? { extraction } : {})
       });
     }
 
     if (claimId) {
-      const claim = await InsuranceClaim.findByPk(claimId);
+      const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(claimId, { transaction }));
       if (!claim) {
         return res.status(404).json({ success: false, message: 'Claim not found' });
       }
-      
-      await claim.update({
+
+      await withClaimsRls(req, (transaction) => claim.update({
         documents: [...(claim.documents || []), ...documents],
         documentsStatus: 'pending_verification'
-      });
+      }, { transaction }));
     } else if (preAuthId) {
       const preAuth = await PreAuthorization.findByPk(preAuthId);
       if (!preAuth) {
@@ -1637,6 +1804,42 @@ router.post('/documents/upload', authUser, requireRole(['hospital', 'admin']), a
 });
 
 /**
+ * POST /hospital/insurance/claims/:claimId/apply-extracted-fields
+ * Human-reviewed apply step for document-AI extraction (see
+ * insurance-document-ai.service.js). The frontend shows extracted fields
+ * next to a checkbox per field; only what the reviewing staff member ticks
+ * and submits here is ever written to the claim — nothing is auto-applied
+ * at upload time.
+ */
+router.post('/claims/:claimId/apply-extracted-fields', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  body('fields').isObject()
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const { fields } = req.body;
+    const updateData = { lastModifiedBy: req.user.id, updatedAt: new Date() };
+
+    if (fields.diagnosis) updateData.diagnosis = fields.diagnosis;
+    if (fields.claimAmount != null && Number(fields.claimAmount) > 0) updateData.claimAmount = Number(fields.claimAmount);
+    if (fields.hospitalizationDetails && typeof fields.hospitalizationDetails === 'object') {
+      updateData.hospitalizationDetails = { ...(claim.hospitalizationDetails || {}), ...fields.hospitalizationDetails };
+    }
+
+    await withClaimsRls(req, (transaction) => claim.update(updateData, { transaction }));
+
+    res.json({ success: true, message: 'Extracted fields applied to claim.', claim });
+  } catch (error) {
+    console.error('Apply extracted fields error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * GET /hospital/insurance/documents/missing
  * Get alerts for missing documents
  */
@@ -1646,7 +1849,7 @@ router.get('/documents/missing', authUser, requireRole(['hospital', 'admin']), a
     const where = { documentsStatus: 'incomplete' };
     if (hospitalId) where.hospitalId = hospitalId;
 
-    const claims = await InsuranceClaim.findAll({ where });
+    const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({ where, transaction }));
 
     // Same unregistered-association gap as PreAuthorization — batch-fetch
     // patients by id instead of relying on InsuranceClaim's `patient` include.
@@ -1704,7 +1907,7 @@ router.post('/patient/search', authUser, requireRole(['hospital', 'admin']), [
       // Search in claims — batch-fetch patients rather than relying on
       // InsuranceClaim's unregistered `patient` association (same gap as
       // PreAuthorization; see attachPatients() below).
-      const claims = await InsuranceClaim.findAll({ where: { policyNumber: searchTerm } });
+      const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({ where: { policyNumber: searchTerm }, transaction }));
       const claimPatientIds = [...new Set(claims.map((c) => c.patientId).filter(Boolean))];
       const claimPatients = claimPatientIds.length
         ? await User.findAll({ where: { id: claimPatientIds } })
@@ -1804,6 +2007,71 @@ router.get('/patient/:patientId/eligibility', authUser, requireRole(['hospital',
   }
 });
 
+/**
+ * GET /hospital/insurance/patient/:patientId/billing-summary
+ * Pull the patient's real billing ledger (hospital_billing_charges — the same
+ * table billing/pharmacy/lab post to) so a new claim's amount can be imported
+ * from what was actually charged instead of typed in by hand. hospital_billing_charges
+ * has no RLS (rowsecurity=false), so this is a plain scoped query.
+ */
+router.get('/patient/:patientId/billing-summary', authUser, requireRole(['hospital', 'admin']), [
+  param('patientId').isInt(),
+  query('admissionId').optional().isInt(),
+], async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { admissionId } = req.query;
+    const hospitalId = req.user.hospitalId || req.user.hospital_id;
+
+    const replacements = { patientId, hospitalId };
+    let admissionFilter = '';
+    if (admissionId) {
+      admissionFilter = 'AND admission_id = :admissionId';
+      replacements.admissionId = admissionId;
+    }
+
+    const [charges] = await postgresSequelize.query(
+      `SELECT id, charge_type, source_type, source_id, description, amount, currency, status, admission_id, posted_at
+       FROM hospital_billing_charges
+       WHERE patient_id = :patientId AND hospital_id = :hospitalId ${admissionFilter}
+       ORDER BY posted_at DESC NULLS LAST, id DESC
+       LIMIT 200`,
+      { replacements }
+    );
+
+    const total = charges.reduce((sum, c) => sum + (Number(c.amount) || 0), 0);
+    const byChargeType = Array.from(
+      charges.reduce((map, c) => {
+        const key = c.charge_type || 'other';
+        map.set(key, (map.get(key) || 0) + (Number(c.amount) || 0));
+        return map;
+      }, new Map())
+    ).map(([chargeType, amount]) => ({ chargeType, amount }));
+
+    res.json({
+      success: true,
+      billingSummary: {
+        total,
+        chargeCount: charges.length,
+        byChargeType,
+        charges: charges.map((c) => ({
+          id: c.id,
+          chargeType: c.charge_type,
+          sourceType: c.source_type,
+          description: c.description,
+          amount: Number(c.amount) || 0,
+          status: c.status,
+          admissionId: c.admission_id,
+          postedAt: c.posted_at,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error('Billing summary error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ==================== 5.5. RECONCILIATION UPLOAD ====================
 
 /**
@@ -1857,15 +2125,18 @@ router.get('/revenue/receivables', authUser, requireRole(['hospital', 'admin']),
     const { hospitalId } = req.query;
     const where = hospitalId ? { hospitalId } : {};
 
-    const [approved, settled, pending, claims] = await Promise.all([
-      InsuranceClaim.sum('approvedAmount', { 
-        where: { ...where, status: 'approved', settlementStatus: 'pending' } 
+    const [approved, settled, pending, claims] = await withClaimsRls(req, async (transaction) => Promise.all([
+      InsuranceClaim.sum('approvedAmount', {
+        where: { ...where, status: 'approved', settlementStatus: 'pending' },
+        transaction
       }),
-      InsuranceClaim.sum('settledAmount', { 
-        where: { ...where, settlementStatus: 'settled' } 
+      InsuranceClaim.sum('settledAmount', {
+        where: { ...where, settlementStatus: 'settled' },
+        transaction
       }),
-      InsuranceClaim.sum('claimAmount', { 
-        where: { ...where, status: 'pending' } 
+      InsuranceClaim.sum('claimAmount', {
+        where: { ...where, status: 'pending' },
+        transaction
       }),
       InsuranceClaim.findAll({
         where,
@@ -1874,9 +2145,10 @@ router.get('/revenue/receivables', authUser, requireRole(['hospital', 'admin']),
           model: User,
           as: 'patient',
           attributes: ['id', 'firstName', 'lastName']
-        }] : []
+        }] : [],
+        transaction
       })
-    ]);
+    ]));
 
     const normalizedClaims = claims.map((claim) => {
       const plain = claim.toJSON ? claim.toJSON() : claim;
@@ -1933,19 +2205,20 @@ router.get('/revenue/settlement-status', authUser, requireRole(['hospital', 'adm
 
     const offset = (page - 1) * limit;
 
-    const { count, rows: claims } = await InsuranceClaim.findAndCountAll({
+    const { count, rows: claims } = await withClaimsRls(req, (transaction) => InsuranceClaim.findAndCountAll({
       where,
       limit: parseInt(limit),
       offset,
       order: [['approvedAt', 'DESC']],
       include: [
-        { 
-          model: User, 
+        {
+          model: User,
           as: 'patient',
-          attributes: ['id', 'firstName', 'lastName'] 
+          attributes: ['id', 'firstName', 'lastName']
         }
-      ]
-    });
+      ],
+      transaction
+    }));
 
     res.json({
       success: true,
@@ -1987,7 +2260,7 @@ router.get('/reports/claims-aging', authUser, requireRole(['hospital', 'admin'])
     const where = { status: { [Op.in]: ['pending', 'query'] } };
     if (hospitalId) where.hospitalId = hospitalId;
 
-    const claims = await InsuranceClaim.findAll({ where, attributes: ['claimAmount', 'approvedAmount', 'submittedAt', 'createdAt'] });
+    const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({ where, attributes: ['claimAmount', 'approvedAmount', 'submittedAt', 'createdAt'], transaction }));
 
     const now = new Date();
     const aging = {
@@ -2054,7 +2327,7 @@ router.get('/reports/tat', authUser, requireRole(['hospital', 'admin']), async (
         : { [Op.lte]: new Date(endDate) };
     }
 
-    const claims = await InsuranceClaim.findAll({ where, attributes: ['claimNumber', 'status', 'submittedAt', 'approvedAt', 'rejectedAt', 'updatedAt', 'insuranceProvider'] });
+    const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({ where, attributes: ['claimNumber', 'status', 'submittedAt', 'approvedAt', 'rejectedAt', 'updatedAt', 'insuranceProvider'], transaction }));
 
     const tatData = claims.map(claim => {
       const submittedAt = new Date(claim.submittedAt);
@@ -2103,7 +2376,7 @@ router.get('/reports/query-rejection-trends', authUser, requireRole(['hospital',
     startDate.setMonth(startDate.getMonth() - parseInt(months));
     where.createdAt = { [Op.gte]: startDate };
 
-    const claims = await InsuranceClaim.findAll({ where, attributes: ['status', 'rejectionReason', 'createdAt', 'submittedAt', 'updatedAt'] });
+    const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({ where, attributes: ['status', 'rejectionReason', 'createdAt', 'submittedAt', 'updatedAt'], transaction }));
 
     const trends = {
       queries: claims.filter(c => c.status === 'query').length,
@@ -2164,7 +2437,7 @@ router.get('/tasks/inbox', authUser, requireRole(['hospital', 'admin']), async (
     const preAuthWhere = { status: 'pending' };
     if (hospitalId) preAuthWhere.hospitalId = hospitalId;
 
-    const [claims, preAuths] = await Promise.all([
+    const [claims, preAuths] = await withClaimsRls(req, async (transaction) => Promise.all([
       InsuranceClaim.findAll({
         where: claimWhere,
         order: [['updatedAt', 'DESC']],
@@ -2175,7 +2448,8 @@ router.get('/tasks/inbox', authUser, requireRole(['hospital', 'admin']), async (
             attributes: ['id', 'firstName', 'lastName']
           }
         ],
-        limit: 200
+        limit: 200,
+        transaction
       }),
       PreAuthorization.findAll({
         where: preAuthWhere,
@@ -2187,9 +2461,10 @@ router.get('/tasks/inbox', authUser, requireRole(['hospital', 'admin']), async (
             attributes: ['id', 'firstName', 'lastName']
           }
         ],
-        limit: 100
+        limit: 100,
+        transaction
       })
-    ]);
+    ]));
 
     const claimTasks = [];
 
@@ -2318,7 +2593,7 @@ router.get('/claims/escalations', authUser, requireRole(['hospital', 'admin']), 
 
     if (hospitalId) where.hospitalId = hospitalId;
 
-    const claims = await InsuranceClaim.findAll({
+    const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({
       where,
       order: [['submittedAt', 'ASC']],
       include: [
@@ -2328,8 +2603,9 @@ router.get('/claims/escalations', authUser, requireRole(['hospital', 'admin']), 
           attributes: ['id', 'firstName', 'lastName']
         }
       ],
-      limit: 300
-    });
+      limit: 300,
+      transaction
+    }));
 
     const escalations = claims
       .map((claim) => {
@@ -2380,13 +2656,66 @@ router.get('/claims/escalations', authUser, requireRole(['hospital', 'admin']), 
  * POST /hospital/insurance/claims/:claimId/appeal
  * Denial appeal workflow (capture reason and move back to pending)
  */
+/**
+ * POST /hospital/insurance/claims/:claimId/copilot/draft-appeal
+ * AI co-pilot: drafts an editable appeal letter from the claim's denial/query
+ * reason. This never submits anything itself — the draft is meant to be
+ * reviewed/edited and then sent via the existing POST /claims/:claimId/appeal.
+ */
+router.post('/claims/:claimId/copilot/draft-appeal', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  body('rejectionReason').optional().isString(),
+  body('additionalContext').optional().isString(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const draft = await draftAppealLetter(claim, {
+      rejectionReason: req.body.rejectionReason,
+      additionalContext: req.body.additionalContext,
+    });
+    res.json({ success: true, draft });
+  } catch (error) {
+    console.error('AI appeal draft error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /hospital/insurance/claims/:claimId/copilot/check-gaps
+ * AI co-pilot: semantic coherence check across the claim's stated
+ * diagnosis/treatment vs whatever insurance-document-ai.service.js already
+ * extracted from uploaded documents — catches things
+ * claims-rules-engine.service.js's deterministic checks can't (e.g. a
+ * surgery diagnosis with no OT charges on the bill).
+ */
+router.post('/claims/:claimId/copilot/check-gaps', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const result = await checkDocumentationGaps(claim);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('AI documentation gap check error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.post('/claims/:claimId/appeal', authUser, requireRole(['hospital', 'admin']), [
   param('claimId').isInt(),
   body('appealReason').notEmpty().withMessage('Appeal reason is required'),
   body('supportingNotes').optional().isString()
 ], async (req, res) => {
   try {
-    const claim = await InsuranceClaim.findByPk(req.params.claimId);
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) {
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
@@ -2401,13 +2730,13 @@ router.post('/claims/:claimId/appeal', authUser, requireRole(['hospital', 'admin
       supportingNotes: supportingNotes || ''
     };
 
-    await claim.update({
+    await withClaimsRls(req, (transaction) => claim.update({
       status: 'pending',
       queryHistory: [...(claim.queryHistory || []), appealEntry],
       notes: `${claim.notes || ''}\n[APPEAL ${new Date().toISOString()}] ${appealReason}`.trim(),
       updatedAt: new Date(),
       lastModifiedBy: req.user.id
-    });
+    }, { transaction }));
 
     res.json({
       success: true,
@@ -2435,7 +2764,7 @@ router.get('/claims/appeals', authUser, requireRole(['hospital', 'admin']), asyn
 
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const { count, rows: claims } = await InsuranceClaim.findAndCountAll({
+    const { count, rows: claims } = await withClaimsRls(req, (transaction) => InsuranceClaim.findAndCountAll({
       where,
       order: [['updatedAt', 'DESC']],
       include: [
@@ -2446,8 +2775,9 @@ router.get('/claims/appeals', authUser, requireRole(['hospital', 'admin']), asyn
         }
       ],
       offset,
-      limit: parseInt(limit)
-    });
+      limit: parseInt(limit),
+      transaction
+    }));
 
     const appealedClaims = claims
       .map((claim) => {
@@ -2598,6 +2928,82 @@ router.post('/admissions', authUser, requireRole(['hospital', 'admin']), [
  * POST /hospital/insurance/discharge/:preAuthId
  * Process discharge and submit final claim
  */
+/**
+ * GET /hospital/insurance/pre-auth/:preAuthId/discharge-audit
+ * Dry-run of the pre-discharge audit (see insurance-pre-discharge-audit.service.js):
+ * advance paid, non-medical expenses cleared, excess-over-approval cleared,
+ * within hospital credit limit, and claim admissibility — the five things
+ * an insurance desk has to confirm before telling the ward it's OK to
+ * discharge a cashless patient.
+ */
+router.get('/pre-auth/:preAuthId/discharge-audit', authUser, requireRole(['hospital', 'admin']), [
+  param('preAuthId').isInt(),
+], async (req, res) => {
+  try {
+    const preAuth = await PreAuthorization.findByPk(req.params.preAuthId);
+    if (!preAuth) return res.status(404).json({ success: false, message: 'Pre-auth not found' });
+
+    const hospitalId = preAuth.hospitalId || req.user.hospitalId || req.user.organizationId;
+    const audit = await runPreDischargeAudit(hospitalId, preAuth);
+    res.json({ success: true, audit });
+  } catch (error) {
+    console.error('Pre-discharge audit error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /hospital/insurance/pre-auth/:preAuthId/discharge-clearance
+ * Issues (or records an overridden) discharge clearance for the ward, based
+ * on the audit above. Stored on the pre-auth record itself so it's visible
+ * to whoever looks the pre-auth up next — this is the actual sign-off, not
+ * just a read-only check.
+ */
+router.post('/pre-auth/:preAuthId/discharge-clearance', authUser, requireRole(['hospital', 'admin']), [
+  param('preAuthId').isInt(),
+  body('override').optional().isBoolean(),
+  body('overrideReason').optional().isString(),
+], async (req, res) => {
+  try {
+    const preAuth = await PreAuthorization.findByPk(req.params.preAuthId);
+    if (!preAuth) return res.status(404).json({ success: false, message: 'Pre-auth not found' });
+
+    const hospitalId = preAuth.hospitalId || req.user.hospitalId || req.user.organizationId;
+    const audit = await runPreDischargeAudit(hospitalId, preAuth);
+    const { override, overrideReason } = req.body;
+
+    if (!audit.canClearDischarge && !override) {
+      return res.status(400).json({
+        success: false,
+        message: 'Discharge cannot be cleared — one or more audit checks failed. Resolve them, or resubmit with override + a documented reason.',
+        audit
+      });
+    }
+    if (!audit.canClearDischarge && override && !overrideReason?.trim()) {
+      return res.status(400).json({ success: false, message: 'An override reason is required when clearing discharge over failed audit checks.' });
+    }
+
+    const clearance = {
+      clearedBy: req.user.id,
+      clearedByName: req.user.name || req.user.fullName || req.user.email || null,
+      clearedAt: new Date().toISOString(),
+      canClearDischarge: audit.canClearDischarge,
+      overridden: !audit.canClearDischarge && !!override,
+      overrideReason: !audit.canClearDischarge && override ? overrideReason.trim() : null,
+      checks: audit.checks,
+    };
+
+    await preAuth.update({
+      admissionDetails: { ...(preAuth.admissionDetails || {}), dischargeClearance: clearance }
+    });
+
+    res.json({ success: true, message: 'Discharge clearance recorded.', clearance });
+  } catch (error) {
+    console.error('Discharge clearance error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 router.post('/discharge/:preAuthId', authUser, requireRole(['hospital', 'admin']), [
   param('preAuthId').isInt(),
 ], async (req, res) => {
@@ -2607,29 +3013,51 @@ router.post('/discharge/:preAuthId', authUser, requireRole(['hospital', 'admin']
     });
     if (!preAuth) return res.status(404).json({ success: false, message: 'Pre-auth not found' });
 
+    if (preAuth.status !== 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: `Only approved pre-authorizations can be converted to a claim (current status: ${preAuth.status}).`
+      });
+    }
+
     const { billItems, totalAmount, dischargeNote, dischargeDate } = req.body;
     const hospitalId = req.user.hospitalId || req.user.organizationId;
+    const organizationId = req.user.organization_id || req.user.organizationId || hospitalId;
 
-    // Create the final claim from this pre-auth
+    // Create the final claim from this pre-auth, carrying over patient/policy/
+    // amount/diagnosis already on file instead of a second manual entry.
     const claimNumber = `CL-${Date.now()}`;
-    const patientName = preAuth.patient ? `${preAuth.patient.firstName} ${preAuth.patient.lastName}` : 'Unknown';
-    const claim = await InsuranceClaim.create({
-      claimNumber,
-      patientId: preAuth.patientId,
-      hospitalId,
-      preAuthId: preAuth.id,
-      policyNumber: preAuth.policyNumber,
-      claimedAmount: totalAmount || parseFloat(preAuth.approvedAmount) || 0,
-      diagnosis: preAuth.diagnosis,
-      status: 'submitted',
-      submittedAt: new Date(),
-      notes: dischargeNote || '',
-      billItems: billItems || [],
-      submittedBy: req.user.id
-    });
+    const claim = await withClaimsRls(req, async (transaction) => {
+      const created = await InsuranceClaim.create({
+        claimNumber,
+        patientId: preAuth.patientId,
+        hospitalId,
+        organizationId,
+        preAuthId: preAuth.id,
+        policyNumber: preAuth.policyNumber,
+        insuranceProvider: preAuth.admissionDetails?.insurer || null,
+        claimAmount: totalAmount || parseFloat(preAuth.approvedAmount) || parseFloat(preAuth.estimatedAmount) || 0,
+        diagnosis: preAuth.diagnosis,
+        status: 'submitted',
+        submittedAt: new Date(),
+        notes: dischargeNote || '',
+        hospitalizationDetails: {
+          ...(preAuth.admissionDetails || {}),
+          billItems: billItems || [],
+          dischargeDate: dischargeDate || new Date().toISOString(),
+        },
+        submittedBy: req.user.id
+      }, { transaction });
 
-    // Mark pre-auth as complete
-    await preAuth.update({ status: 'cancelled', notes: `Discharged ${dischargeDate || new Date().toISOString()}` });
+      // Mark pre-auth as complete in the same transaction so a failure here
+      // rolls back the claim too, instead of leaving a duplicate on retry.
+      await preAuth.update({
+        status: 'cancelled',
+        notes: `Discharged ${dischargeDate || new Date().toISOString()} — converted to claim ${claimNumber}`
+      }, { transaction });
+
+      return created;
+    });
 
     res.json({ success: true, message: 'Discharge processed. Claim submitted to insurer.', claim });
   } catch (error) {

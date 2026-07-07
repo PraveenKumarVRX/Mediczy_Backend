@@ -11,7 +11,10 @@
  *  3. Update InsuranceClaim / PreAuthorization tables when status changes
  *  4. Generate AI smart replies and suggested actions
  *
- * Uses Groq (llama-3.3-70b-versatile) with regex fallback.
+ * Uses Mediczy's unified LLM cascade (ai-brain/llm-provider.js — iSHA → Groq →
+ * OpenAI) with regex fallback if every provider is unavailable. Per CLAUDE.md,
+ * LLM calls always go through llm-provider.js rather than calling a vendor
+ * SDK directly from a service/route.
  */
 
 import InsuranceEmailInbox from '../models/postgres/insuranceEmailInbox.model.postgres.js';
@@ -19,32 +22,36 @@ import InsuranceClaim      from '../models/postgres/insuranceClaim.model.postgre
 import PreAuthorization    from '../models/postgres/preAuthorization.model.postgres.js';
 import { Op } from 'sequelize';
 import logger from '../config/logger.js';
+import llmProvider from './ai-brain/llm-provider.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL   = 'llama-3.3-70b-versatile';
+// insurance_claims has row-level security keyed on organization_id (see
+// current_org_id() in Postgres). This function runs from a background email
+// parse, not a request, so there's no req.setSequelizeRlsContext available —
+// set the same GUCs directly on a dedicated transaction instead. Without
+// this, every InsuranceClaim query below silently matches zero rows.
+async function withEmailClaimsRls(hospitalId, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(transaction, { orgId: hospitalId, userId: 0, isPlatformAdmin: false });
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback();
+    throw error;
+  }
+}
 
-// ─── Groq helper ─────────────────────────────────────────────────────────────
-async function callGroq(prompt, maxTokens = 600, temperature = 0.1) {
-  const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey) throw new Error('GROQ_API_KEY not configured');
-
-  const res = await fetch(GROQ_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: maxTokens,
-      temperature,
-    }),
+// ─── LLM helper (unified cascade) ────────────────────────────────────────────
+async function callLLM(prompt, maxTokens = 600, temperature = 0.1) {
+  const result = await llmProvider.chat({
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens,
+    temperature,
   });
-
-  const data = await res.json();
-  if (!res.ok) throw new Error(data?.error?.message || 'Groq API error');
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  return result.content?.trim() || '';
 }
 
 // ─── Regex-based extraction (fast fallback, no API cost) ─────────────────────
@@ -124,7 +131,7 @@ function regexExtract(text) {
   };
 }
 
-// ─── Full AI parse with Groq ──────────────────────────────────────────────────
+// ─── Full AI parse via the LLM cascade ────────────────────────────────────────
 async function aiParse(subject, body, fromEmail) {
   const snippet = `${subject}\n\n${body}`.slice(0, 3000);
 
@@ -154,9 +161,10 @@ async function aiParse(subject, body, fromEmail) {
     `}\n\n` +
     `Email from: ${fromEmail}\nSubject: ${subject}\n\n${snippet}`;
 
-  const raw = await callGroq(prompt, 700, 0.05);
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Groq returned no JSON');
+  const raw = await callLLM(prompt, 700, 0.05);
+  const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('LLM returned no parseable JSON');
   return JSON.parse(jsonMatch[0]);
 }
 
@@ -172,66 +180,87 @@ function categoryToLabel(category, preAuthStatus) {
 // ─── Update claim/pre-auth tables based on parsed data ───────────────────────
 async function applyPortalUpdates(parsed, hospitalId) {
   const log = [];
+  const claimNos = parsed.claimNumbers || [];
+  if (claimNos.length === 0) return log;
 
   try {
-    const claimNos = parsed.claimNumbers || [];
-
-    // 1. Payment advice → update InsuranceClaim with UTR / settlement data
-    if (parsed.category === 'payment_advice' && parsed.utr && claimNos.length > 0) {
-      for (const claimNo of claimNos) {
-        const claim = await InsuranceClaim.findOne({
-          where: { claimNumber: claimNo, ...(hospitalId ? { hospital_id: hospitalId } : {}) },
-        });
-        if (claim) {
-          await claim.update({
-            status: 'settled',
-            settlementAmount: parsed.paymentAmount || claim.settlementAmount,
-            settlementDate:   parsed.paymentDate ? new Date(parsed.paymentDate) : new Date(),
-            paymentReference: parsed.utr,
+    await withEmailClaimsRls(hospitalId, async (transaction) => {
+      // 1. Payment advice → update InsuranceClaim with UTR / settlement data
+      if (parsed.category === 'payment_advice' && parsed.utr) {
+        for (const claimNo of claimNos) {
+          const claim = await InsuranceClaim.findOne({
+            where: { claimNumber: claimNo, ...(hospitalId ? { hospital_id: hospitalId } : {}) },
+            transaction,
           });
-          log.push({ type: 'claim_settled', claimNumber: claimNo, utr: parsed.utr });
+          if (claim) {
+            const totalDeductions = ['nmeAmount', 'tdsAmount', 'discountAmount', 'disallowanceAmount']
+              .reduce((sum, key) => sum + (Number(parsed[key]) || 0), 0);
+            await claim.update({
+              status: 'paid',
+              settlementStatus: 'settled',
+              settledAmount: parsed.paymentAmount || claim.settledAmount,
+              settlementDate: parsed.paymentDate ? new Date(parsed.paymentDate) : new Date(),
+              deductedAmount: totalDeductions || claim.deductedAmount,
+              notes: `${claim.notes || ''}\n[EMAIL AI ${new Date().toISOString()}] Payment advice received — UTR ${parsed.utr}, amount Rs.${parsed.paymentAmount || 0}${totalDeductions ? `, deductions Rs.${totalDeductions}` : ''}.`.trim(),
+            }, { transaction });
+            log.push({ type: 'claim_settled', claimNumber: claimNo, utr: parsed.utr, deductions: totalDeductions });
+          }
         }
       }
-    }
 
-    // 2. Pre-auth approval → update PreAuthorization
-    if (parsed.preAuthStatus === 'approved' && claimNos.length > 0) {
-      for (const claimNo of claimNos) {
-        const preAuth = await PreAuthorization.findOne({
-          where: { pre_auth_number: { [Op.iLike]: `%${claimNo}%` } },
-        }).catch(() => null);
-        if (preAuth) {
-          await preAuth.update({
-            status: 'approved',
-            approvedAmount: parsed.approvedAmount || preAuth.approvedAmount,
-            approvedAt: new Date(),
-          });
-          log.push({ type: 'preauth_approved', claimNo, amount: parsed.approvedAmount });
+      // 2. Pre-auth approval → update PreAuthorization (no RLS on pre_authorizations)
+      if (parsed.preAuthStatus === 'approved') {
+        for (const claimNo of claimNos) {
+          const preAuth = await PreAuthorization.findOne({
+            where: { pre_auth_number: { [Op.iLike]: `%${claimNo}%` } },
+          }).catch(() => null);
+          if (preAuth) {
+            await preAuth.update({
+              status: 'approved',
+              approvedAmount: parsed.approvedAmount || preAuth.approvedAmount,
+              approvedAt: new Date(),
+            });
+            log.push({ type: 'preauth_approved', claimNo, amount: parsed.approvedAmount });
+          }
         }
       }
-    }
 
-    // 3. Pre-auth rejection / repudiation → update status
-    if ((parsed.preAuthStatus === 'rejected' || parsed.category === 'claim_repudiation') && claimNos.length > 0) {
-      for (const claimNo of claimNos) {
-        const claim = await InsuranceClaim.findOne({ where: { claimNumber: claimNo } }).catch(() => null);
-        if (claim) {
-          await claim.update({ status: 'rejected' });
-          log.push({ type: 'claim_rejected', claimNumber: claimNo });
+      // 3. Pre-auth rejection / repudiation → update status
+      if (parsed.preAuthStatus === 'rejected' || parsed.category === 'claim_repudiation') {
+        for (const claimNo of claimNos) {
+          const claim = await InsuranceClaim.findOne({
+            where: { claimNumber: claimNo, ...(hospitalId ? { hospital_id: hospitalId } : {}) },
+            transaction,
+          }).catch(() => null);
+          if (claim) {
+            await claim.update({
+              status: 'rejected',
+              rejectionReason: parsed.summary || claim.rejectionReason,
+            }, { transaction });
+            log.push({ type: 'claim_rejected', claimNumber: claimNo });
+          }
         }
       }
-    }
 
-    // 4. Query → mark claim as "query"
-    if (parsed.category === 'pre_auth_query' && claimNos.length > 0) {
-      for (const claimNo of claimNos) {
-        const claim = await InsuranceClaim.findOne({ where: { claimNumber: claimNo } }).catch(() => null);
-        if (claim && claim.status === 'pending') {
-          await claim.update({ status: 'query' });
-          log.push({ type: 'claim_query', claimNumber: claimNo });
+      // 4. Query → mark claim as "query"
+      if (parsed.category === 'pre_auth_query') {
+        for (const claimNo of claimNos) {
+          const claim = await InsuranceClaim.findOne({
+            where: { claimNumber: claimNo, ...(hospitalId ? { hospital_id: hospitalId } : {}) },
+            transaction,
+          }).catch(() => null);
+          if (claim && ['pending', 'submitted'].includes(claim.status)) {
+            await claim.update({
+              status: 'query',
+              queryHistory: [...(claim.queryHistory || []), {
+                receivedAt: new Date(), source: 'email_ai', summary: parsed.summary || null,
+              }],
+            }, { transaction });
+            log.push({ type: 'claim_query', claimNumber: claimNo });
+          }
         }
       }
-    }
+    });
   } catch (err) {
     logger.error('[InsuranceEmailAI] applyPortalUpdates error:', err.message);
     log.push({ type: 'error', message: err.message });
@@ -315,6 +344,35 @@ export async function parseAndStoreEmail({
   return record;
 }
 
+// ─── Re-parse a single, specific email record ────────────────────────────────
+export async function reparseOne(email) {
+  const parsed = await aiParse(email.subject, email.bodyText || '', email.fromEmail);
+  const label = categoryToLabel(parsed.category, parsed.preAuthStatus);
+  await email.update({
+    aiCategory: parsed.category || 'general',
+    aiSummary: parsed.summary,
+    aiPriority: parsed.priority || 'medium',
+    aiSuggestedAction: parsed.suggestedAction,
+    aiConfidence: parsed.confidence || 0.7,
+    utr: parsed.utr || email.utr,
+    paymentAmount: parsed.paymentAmount || email.paymentAmount,
+    preAuthStatus: parsed.preAuthStatus || email.preAuthStatus,
+    insurerName: parsed.insurer || email.insurerName,
+    claimNumbers: parsed.claimNumbers?.length ? parsed.claimNumbers : email.claimNumbers,
+    nmeAmount: parsed.nmeAmount ?? email.nmeAmount,
+    tdsAmount: parsed.tdsAmount ?? email.tdsAmount,
+    discountAmount: parsed.discountAmount ?? email.discountAmount,
+    disallowanceAmount: parsed.disallowanceAmount ?? email.disallowanceAmount,
+    label,
+  });
+
+  const updateLog = await applyPortalUpdates(parsed, email.hospitalId);
+  if (updateLog.length > 0) {
+    await email.update({ portalUpdated: true, portalUpdateLog: [...(email.portalUpdateLog || []), ...updateLog] });
+  }
+  return email;
+}
+
 // ─── Batch: re-parse all non-AI-processed emails ─────────────────────────────
 export async function batchReparse(hospitalId, limit = 20) {
   const emails = await InsuranceEmailInbox.findAll({
@@ -367,7 +425,7 @@ export async function generateReplyDraft(email) {
     `${contextHints ? `Context:\n${contextHints}\n\n` : ''}` +
     `Original email — From: ${email.fromEmail}\nSubject: ${email.subject}\n\n${body.slice(0, 2000)}`;
 
-  return callGroq(prompt, 500, 0.55);
+  return callLLM(prompt, 500, 0.55);
 }
 
 // ─── IMAP sync helper ─────────────────────────────────────────────────────────

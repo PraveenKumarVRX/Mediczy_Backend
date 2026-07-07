@@ -342,7 +342,19 @@ class TPAAggregator {
       mdindia: 'MD India TPA',
       healthindia: 'Health India TPA',
       care: 'Care Health Insurance',
-      fgi: 'Future Generali India'
+      fgi: 'Future Generali India',
+      godigit: 'GoDigit General Insurance',
+      icici: 'ICICI Lombard',
+      mediassist: 'MediAssist TPA',
+      starhealth: 'Star Health Insurance',
+      fhpl: 'Family Health Plan (FHPL)',
+      medsave: 'MedSave TPA',
+      nivabupa: 'Niva Bupa Health Insurance',
+      paramount: 'Paramount TPA',
+      raksha: 'Raksha TPA',
+      vidal: 'Vidal Health TPA',
+      volo: 'Volo TPA',
+      ewat: 'EWAT (Employee Welfare) TPA'
     };
     return names[providerId] || providerId;
   }

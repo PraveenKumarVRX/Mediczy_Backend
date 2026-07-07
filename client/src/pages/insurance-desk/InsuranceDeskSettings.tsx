@@ -12,24 +12,7 @@ import {
 } from 'lucide-react';
 import api from '@/utils/api';
 
-const navSections: DeptNavSection[] = [
-  { title: 'Overview', items: [{ icon: ShieldCheck, label: 'Dashboard', href: '/insurance-desk/dashboard' }] },
-  { title: 'Claims & Auth', items: [
-    { icon: ClipboardList, label: 'Pre-Authorization',   href: '/insurance-desk/pre-auth' },
-    { icon: FileText,      label: 'Active Claims',       href: '/insurance-desk/claims' },
-    { icon: FileText,      label: 'Documents',           href: '/insurance-desk/documents' },
-  ]},
-  { title: 'Management', items: [
-    { icon: Building2,  label: 'TPA Management',      href: '/insurance-desk/tpa' },
-    { icon: UserCheck,  label: 'Patient Insurance',   href: '/insurance-desk/patient-insurance' },
-    { icon: Search,     label: 'Claim Search',        href: '/insurance-desk/search' },
-  ]},
-  { title: 'Reports', items: [
-    { icon: BarChart3,  label: 'Analytics', href: '/insurance-desk/analytics' },
-    { icon: Settings,   label: 'Settings',  href: '/insurance-desk/settings' },
-    { icon: HelpCircle, label: 'Support',   href: '/insurance-desk/support' },
-  ]},
-];
+import { navSections } from './navSections';
 
 interface HospitalBasic {
   name: string; registrationNo: string; address: string; city: string; state: string; pin: string;
