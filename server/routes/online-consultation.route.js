@@ -14,6 +14,7 @@ import {
   getProviderLabel
 } from '../utils/videoProvider.js';
 import { Op } from 'sequelize';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { normalizeDoctorProfile, toArray } from '../utils/doctorNormalizer.js';
 import { canonicalizeAppointmentTime, isSlotBooked } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
@@ -74,32 +75,34 @@ const isMembershipRenewalExemptUser = async ({ userId, email }) => {
  * @param {string|number} appointmentId - The ID to lookup
  * @returns {Promise<Appointment|null>}
  */
-async function findAppointmentFlexible(appointmentId) {
+async function findAppointmentFlexible(appointmentId, { transaction } = {}) {
   if (!appointmentId) return null;
-  
+
   const idStr = String(appointmentId);
   const idAsNumber = parseInt(idStr, 10);
-  
+
   // Try direct lookup if it's a valid integer within PostgreSQL INTEGER range
   if (!isNaN(idAsNumber) && idAsNumber <= 2147483647) {
-    const appointment = await Appointment.findByPk(idAsNumber);
+    const appointment = await Appointment.findByPk(idAsNumber, { transaction });
     if (appointment) return appointment;
   }
-  
+
   // Try looking up by meetingId pattern (apt-{timestamp})
   const meetingIdPattern = `apt-${idStr}`;
-  let appointment = await Appointment.findOne({ 
-    where: { meetingId: meetingIdPattern }
+  let appointment = await Appointment.findOne({
+    where: { meetingId: meetingIdPattern },
+    transaction
   });
   if (appointment) return appointment;
-  
+
   // Also try direct meetingId match (in case full meetingId is passed)
   if (idStr.startsWith('apt-')) {
-    appointment = await Appointment.findOne({ 
-      where: { meetingId: idStr }
+    appointment = await Appointment.findOne({
+      where: { meetingId: idStr },
+      transaction
     });
   }
-  
+
   return appointment;
 }
 
@@ -1371,9 +1374,20 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    // ✅ FIX: Use flexible lookup helper for both numeric ID and meetingId patterns
-    const appointment = await findAppointmentFlexible(appointmentId);
-    
+    // appointments has RLS enforced — without setting the session context,
+    // this lookup silently sees zero rows and always 404s, even for the
+    // requester's own appointment (same class of bug as the appointments list).
+    const rlsTransaction = await postgresSequelize.transaction();
+    let appointment;
+    try {
+      await req.setSequelizeRlsContext?.(rlsTransaction);
+      appointment = await findAppointmentFlexible(appointmentId, { transaction: rlsTransaction });
+      await rlsTransaction.commit();
+    } catch (err) {
+      await rlsTransaction.rollback();
+      throw err;
+    }
+
     if (!appointment) {
       return res.status(404).json({
         success: false,

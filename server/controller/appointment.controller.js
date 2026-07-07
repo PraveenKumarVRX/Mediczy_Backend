@@ -833,13 +833,26 @@ export const getUserAppointments = async (req, res) => {
       };
     }
 
-    const appointments = await Appointment.findAll({
-      where: whereClause,
-      order: [
-        ['appointmentDate', 'DESC'],
-        ['appointmentTime', 'DESC']
-      ]
-    });
+    // appointments has RLS enforced ("userId" = current_app_user_id() OR ...) —
+    // without setting the session context, every row is silently filtered out
+    // and this always returns an empty list, even for the row's own owner.
+    const rlsTransaction = await postgresSequelize.transaction();
+    let appointments;
+    try {
+      await req.setSequelizeRlsContext?.(rlsTransaction);
+      appointments = await Appointment.findAll({
+        where: whereClause,
+        order: [
+          ['appointmentDate', 'DESC'],
+          ['appointmentTime', 'DESC']
+        ],
+        transaction: rlsTransaction
+      });
+      await rlsTransaction.commit();
+    } catch (err) {
+      await rlsTransaction.rollback();
+      throw err;
+    }
 
     return res.status(200).json({
       success: true,
@@ -883,13 +896,25 @@ export const getDoctorAppointments = async (req, res) => {
       };
     }
 
-    const appointments = await Appointment.findAll({
-      where: whereClause,
-      order: [
-        ['appointmentDate', 'ASC'],
-        ['appointmentTime', 'ASC']
-      ]
-    });
+    // Same RLS gap as getUserAppointments — must set app.current_user_id
+    // (= this doctor's id) before querying, or every row is filtered out.
+    const rlsTransaction = await postgresSequelize.transaction();
+    let appointments;
+    try {
+      await req.setSequelizeRlsContext?.(rlsTransaction);
+      appointments = await Appointment.findAll({
+        where: whereClause,
+        order: [
+          ['appointmentDate', 'ASC'],
+          ['appointmentTime', 'ASC']
+        ],
+        transaction: rlsTransaction
+      });
+      await rlsTransaction.commit();
+    } catch (err) {
+      await rlsTransaction.rollback();
+      throw err;
+    }
 
     return res.status(200).json({
       count: appointments.length,
@@ -1253,21 +1278,34 @@ export const updatePaymentStatus = async (req, res) => {
     const { id } = req.params;
     const { paymentStatus, paymentMethod, transactionId } = req.body;
 
-    const appointment = await Appointment.findByPk(id);
+    // Same RLS gap as the read paths — must set app.current_user_id before
+    // touching the RLS-protected appointments table or the row is invisible.
+    const rlsTransaction = await postgresSequelize.transaction();
+    let appointment;
+    try {
+      await req.setSequelizeRlsContext?.(rlsTransaction);
+      appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
 
-    if (!appointment) {
-      return res.status(404).json({ message: 'Appointment not found' });
-    }
+      if (!appointment) {
+        await rlsTransaction.rollback();
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
 
-    await appointment.update({
-      paymentStatus,
-      paymentMethod,
-      transactionId
-    });
+      await appointment.update({
+        paymentStatus,
+        paymentMethod,
+        transactionId
+      }, { transaction: rlsTransaction });
 
-    // If payment is successful, confirm the appointment
-    if (paymentStatus === 'paid' && appointment.status === 'scheduled') {
-      await appointment.update({ status: 'confirmed' });
+      // If payment is successful, confirm the appointment
+      if (paymentStatus === 'paid' && appointment.status === 'scheduled') {
+        await appointment.update({ status: 'confirmed' }, { transaction: rlsTransaction });
+      }
+
+      await rlsTransaction.commit();
+    } catch (err) {
+      await rlsTransaction.rollback();
+      throw err;
     }
 
     return res.status(200).json({
