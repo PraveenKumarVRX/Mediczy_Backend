@@ -11,6 +11,7 @@ import emergencyTriageService from '../services/ai-emergency-triage.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import { pushToZone } from '../services/display-sse-broker.service.js';
 import { assessKioskLiveness } from '../services/kiosk-liveness.service.js';
+import { parseAadhaarQr } from '../services/aadhaar-qr.service.js';
 import { Op } from 'sequelize';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -87,6 +88,32 @@ router.post('/parse-qr', async (req, res) => {
     return res.json({ success: true, parsed, nextStep: 'token-lookup', token: parsed.token });
   }
   res.json({ success: true, parsed, nextStep: 'manual', raw: parsed.raw || payload.slice(0, 200) });
+});
+
+// POST /api/display/kiosk/parse-aadhaar-qr — decode the QR printed on an
+// Aadhaar card into demographic fields to prefill walk-in registration.
+// Body: { qrBytesBase64 } — the scanner's RAW bytes (not decoded text —
+// Aadhaar's Secure QR is a binary/deflate payload and reinterpreting it as
+// UTF-8 text corrupts it), base64-encoded for JSON transport.
+// Never returns/logs the full Aadhaar number — only the last 4 digits.
+router.post('/parse-aadhaar-qr', async (req, res) => {
+  try {
+    const { qrBytesBase64 } = req.body;
+    if (!qrBytesBase64) {
+      return res.status(400).json({ success: false, message: 'qrBytesBase64 required' });
+    }
+    let rawBytes;
+    try {
+      rawBytes = Buffer.from(qrBytesBase64, 'base64');
+    } catch {
+      return res.status(400).json({ success: false, message: 'Invalid base64 payload' });
+    }
+    const result = parseAadhaarQr(rawBytes);
+    if (!result.success) return res.json(result);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Could not process this QR code' });
+  }
 });
 
 // POST /api/display/kiosk/register — walk-in new patient + queue token

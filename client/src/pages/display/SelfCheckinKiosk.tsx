@@ -2,11 +2,13 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import DisplayShell from './DisplayShell';
 import KioskQrScanner from '@/components/display/KioskQrScanner';
 import KioskPhotoCapture from '@/components/display/KioskPhotoCapture';
+import KioskAadhaarScanner from '@/components/display/KioskAadhaarScanner';
 
 type Step =
   | 'idle'
   | 'choose'
   | 'scan-qr'
+  | 'scan-aadhaar'
   | 'enter-phone'
   | 'walk-in'
   | 'walk-in-photo'
@@ -55,7 +57,8 @@ function printToken(token: IssuedToken) {
 export default function SelfCheckinKiosk() {
   const [step, setStep] = useState<Step>('idle');
   const [phone, setPhone] = useState('');
-  const [reg, setReg] = useState({ firstName: '', lastName: '', gender: 'other', chiefComplaint: '' });
+  const [reg, setReg] = useState({ firstName: '', lastName: '', gender: 'other', dateOfBirth: '', chiefComplaint: '' });
+  const [aadhaarLast4, setAadhaarLast4] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [token, setToken] = useState<IssuedToken | null>(null);
@@ -72,7 +75,8 @@ export default function SelfCheckinKiosk() {
   const resetToIdle = useCallback(() => {
     setStep('idle');
     setPhone('');
-    setReg({ firstName: '', lastName: '', gender: 'other', chiefComplaint: '' });
+    setReg({ firstName: '', lastName: '', gender: 'other', dateOfBirth: '', chiefComplaint: '' });
+    setAadhaarLast4(null);
     setAppointments([]);
     setSelected(null);
     setToken(null);
@@ -139,6 +143,37 @@ export default function SelfCheckinKiosk() {
       }
     } catch (_) {
       setError('Connection error while reading QR.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAadhaarScan = async (qrBytesBase64: string) => {
+    setStep('walk-in');
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/display/kiosk/parse-aadhaar-qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qrBytesBase64 }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message || 'Could not read the Aadhaar QR code. Please enter details manually.');
+        return;
+      }
+      const f = json.fields || {};
+      setReg(r => ({
+        ...r,
+        firstName: f.firstName || r.firstName,
+        lastName: f.lastName || r.lastName,
+        gender: f.gender || r.gender,
+        dateOfBirth: f.dateOfBirth || r.dateOfBirth,
+      }));
+      if (f.aadhaarLast4) setAadhaarLast4(f.aadhaarLast4);
+    } catch (_) {
+      setError('Connection error while reading Aadhaar QR.');
     } finally {
       setLoading(false);
     }
@@ -281,6 +316,7 @@ export default function SelfCheckinKiosk() {
           firstName: reg.firstName,
           lastName: reg.lastName,
           gender: reg.gender,
+          dateOfBirth: reg.dateOfBirth || null,
           chiefComplaint: reg.chiefComplaint,
           consentVersion: 'kiosk-v1',
           photoKey,
@@ -317,6 +353,10 @@ export default function SelfCheckinKiosk() {
         <KioskQrScanner onScan={handleQrScan} onClose={() => setStep('choose')} />
       )}
 
+      {step === 'scan-aadhaar' && (
+        <KioskAadhaarScanner onScan={handleAadhaarScan} onClose={() => setStep('choose')} />
+      )}
+
       <div className="h-full flex flex-col items-center justify-center p-8 select-none" onClick={step === 'idle' ? () => setStep('choose') : undefined}>
 
         {step === 'idle' && (
@@ -333,6 +373,7 @@ export default function SelfCheckinKiosk() {
             <button onClick={() => { setStep('scan-qr'); resetIdleTimer(); }} className="w-full py-6 bg-purple-800 hover:bg-purple-700 rounded-2xl text-2xl font-bold">📷 Scan QR Code</button>
             <button onClick={() => { setStep('enter-phone'); resetIdleTimer(); }} className="w-full py-6 bg-teal-700 hover:bg-teal-600 rounded-2xl text-2xl font-bold">📅 I have an appointment</button>
             <button onClick={() => { setStep('walk-in'); resetIdleTimer(); }} className="w-full py-6 bg-blue-800 hover:bg-blue-700 rounded-2xl text-2xl font-bold">🆕 Walk-in (new visit)</button>
+            <button onClick={() => { setStep('scan-aadhaar'); resetIdleTimer(); }} className="w-full py-5 bg-orange-800 hover:bg-orange-700 rounded-2xl text-xl font-bold">🪪 Register with Aadhaar</button>
             <button onClick={() => { setStep('abha-flow'); resetIdleTimer(); }} className="w-full py-5 bg-indigo-900 hover:bg-indigo-800 rounded-2xl text-xl font-bold">🪪 Link ABHA</button>
             <button onClick={resetToIdle} className="w-full py-3 text-gray-500 text-sm">Cancel</button>
           </div>
@@ -373,8 +414,19 @@ export default function SelfCheckinKiosk() {
               onChange={e => setReg(r => ({ ...r, firstName: e.target.value }))} />
             <input className="w-full p-4 rounded-xl bg-gray-800 border border-gray-700" placeholder="Last name" value={reg.lastName}
               onChange={e => setReg(r => ({ ...r, lastName: e.target.value }))} />
+            <div className="flex gap-3">
+              <input type="date" className="flex-1 p-4 rounded-xl bg-gray-800 border border-gray-700" value={reg.dateOfBirth}
+                onChange={e => setReg(r => ({ ...r, dateOfBirth: e.target.value }))} />
+              <select className="flex-1 p-4 rounded-xl bg-gray-800 border border-gray-700" value={reg.gender}
+                onChange={e => setReg(r => ({ ...r, gender: e.target.value }))}>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
             <input className="w-full p-4 rounded-xl bg-gray-800 border border-gray-700" placeholder="Chief complaint" value={reg.chiefComplaint}
               onChange={e => setReg(r => ({ ...r, chiefComplaint: e.target.value }))} />
+            {aadhaarLast4 && <p className="text-orange-300 text-sm">Aadhaar scanned ✓ (···· ···· {aadhaarLast4}) — please review details above</p>}
             {abhaId && <p className="text-teal-300 text-sm">ABHA linked: {abhaId}</p>}
             {photoKey && <p className="text-gray-400 text-sm">Photo captured ✓</p>}
             <label className="flex items-start gap-3 text-sm text-gray-300">
