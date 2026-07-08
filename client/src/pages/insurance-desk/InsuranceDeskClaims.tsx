@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Wallet,
-  Download, Upload, MessageCircle, Send,
+  Download, Upload, MessageCircle, Send, Eye,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -65,6 +66,7 @@ const STATUS_TABS = [
 ];
 
 const InsuranceDeskClaims = () => {
+  const navigate = useNavigate();
   const [claims, setClaims] = useState<Claim[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -307,6 +309,9 @@ const InsuranceDeskClaims = () => {
                       <TableCell>{formatDate(claim.createdAt)}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" onClick={() => navigate(`/insurance-desk/claims/${claim.id}`)} title="View claim details">
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
                           <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" onClick={() => downloadPdf(claim)} disabled={downloadingId === claim.id}>
                             {downloadingId === claim.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                           </Button>
