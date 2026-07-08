@@ -15,13 +15,14 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
-  Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Wallet,
+  Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus,
   Download, Upload, MessageCircle, Send, Eye,
   CalendarClock, AlertCircle, CheckCircle2, XCircle, Truck, Landmark, X,
 } from 'lucide-react';
 import api from '@/utils/api';
 
 import { navSections } from './navSections';
+import NewClaimWizard from './NewClaimWizard';
 
 interface Claim {
   id: number;
@@ -52,9 +53,6 @@ const formatCurrency = (amount?: number | null) =>
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleDateString('en-IN') : '—');
 
-const emptyNewClaim = {
-  patientId: '', policyNumber: '', insuranceProvider: '', claimAmount: '', diagnosis: '', ward: '',
-};
 
 const STATUS_TABS = [
   { key: 'all', label: 'All' },
@@ -77,11 +75,6 @@ const InsuranceDeskClaims = () => {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const [showNewClaim, setShowNewClaim] = useState(false);
-  const [newClaim, setNewClaim] = useState(emptyNewClaim);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [importingBilling, setImportingBilling] = useState(false);
-  const [billingImported, setBillingImported] = useState<{ total: number; chargeCount: number } | null>(null);
 
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -304,59 +297,6 @@ const InsuranceDeskClaims = () => {
     }
   };
 
-  const importFromBilling = async () => {
-    const patientId = newClaim.patientId.trim();
-    if (!patientId || !/^\d+$/.test(patientId)) {
-      setCreateError('Enter a numeric Patient ID first, then import their billing charges.');
-      return;
-    }
-    setImportingBilling(true);
-    setCreateError(null);
-    setBillingImported(null);
-    try {
-      const { data } = await api.get(`/hospital/insurance/patient/${patientId}/billing-summary`);
-      const summary = data.billingSummary;
-      setNewClaim((c) => ({ ...c, claimAmount: String(summary.total) }));
-      setBillingImported({ total: summary.total, chargeCount: summary.chargeCount });
-      if (summary.chargeCount === 0) {
-        setCreateError('No posted billing charges found for this patient yet — enter the amount manually.');
-      }
-    } catch (err: any) {
-      setCreateError(err?.response?.data?.message || 'Could not import billing charges.');
-    } finally {
-      setImportingBilling(false);
-    }
-  };
-
-  const createClaim = async () => {
-    const patientId = parseInt(newClaim.patientId, 10);
-    const claimAmount = parseFloat(newClaim.claimAmount);
-    if (!patientId || !newClaim.policyNumber.trim() || !(claimAmount >= 0)) {
-      setCreateError('Patient ID, policy number, and a valid claim amount are required.');
-      return;
-    }
-    setCreating(true);
-    setCreateError(null);
-    try {
-      await api.post('/hospital/insurance/claims/new', {
-        patientId,
-        policyNumber: newClaim.policyNumber.trim(),
-        insuranceProvider: newClaim.insuranceProvider.trim() || undefined,
-        claimAmount,
-        diagnosis: newClaim.diagnosis.trim() || undefined,
-        hospitalizationDetails: { ward: newClaim.ward.trim() || 'General', diagnosis: newClaim.diagnosis.trim() || undefined },
-      });
-      setShowNewClaim(false);
-      setNewClaim(emptyNewClaim);
-      setBillingImported(null);
-      load(search, statusTab);
-      loadKpiStats();
-    } catch (err: any) {
-      setCreateError(err?.response?.data?.message || 'Could not create claim.');
-    } finally {
-      setCreating(false);
-    }
-  };
 
   return (
     <HospDeptLayout deptKey="insurance-desk" deptName="Insurance Desk" badgeLabel="Ins. Desk"
@@ -490,59 +430,11 @@ const InsuranceDeskClaims = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={showNewClaim} onOpenChange={(open) => { setShowNewClaim(open); if (!open) { setCreateError(null); setBillingImported(null); } }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>New Claim</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {createError && <p className="text-sm text-red-600">{createError}</p>}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Patient ID</Label>
-                <Input value={newClaim.patientId} onChange={(e) => setNewClaim((c) => ({ ...c, patientId: e.target.value }))} placeholder="e.g. 9" />
-              </div>
-              <div>
-                <Label>Policy Number</Label>
-                <Input value={newClaim.policyNumber} onChange={(e) => setNewClaim((c) => ({ ...c, policyNumber: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Insurer / TPA</Label>
-                <Input value={newClaim.insuranceProvider} onChange={(e) => setNewClaim((c) => ({ ...c, insuranceProvider: e.target.value }))} placeholder="e.g. Star Health" />
-              </div>
-              <div>
-                <Label>Ward</Label>
-                <Input value={newClaim.ward} onChange={(e) => setNewClaim((c) => ({ ...c, ward: e.target.value }))} placeholder="General" />
-              </div>
-              <div className="col-span-2">
-                <Label>Diagnosis</Label>
-                <Input value={newClaim.diagnosis} onChange={(e) => setNewClaim((c) => ({ ...c, diagnosis: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label>Claim Amount</Label>
-                <div className="flex gap-2">
-                  <Input type="number" value={newClaim.claimAmount} onChange={(e) => setNewClaim((c) => ({ ...c, claimAmount: e.target.value }))} />
-                  <Button type="button" variant="outline" size="sm" className="gap-1 whitespace-nowrap" onClick={importFromBilling} disabled={importingBilling}>
-                    {importingBilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-                    Import from Billing
-                  </Button>
-                </div>
-                {billingImported && billingImported.chargeCount > 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Imported {formatCurrency(billingImported.total)} across {billingImported.chargeCount} posted billing {billingImported.chargeCount === 1 ? 'charge' : 'charges'}.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewClaim(false)}>Cancel</Button>
-            <Button className="bg-teal-600 hover:bg-teal-700" onClick={createClaim} disabled={creating}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create Claim'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NewClaimWizard
+        open={showNewClaim}
+        onOpenChange={setShowNewClaim}
+        onCreated={() => { load(search, statusTab); loadKpiStats(); }}
+      />
 
       <Dialog open={showBulk} onOpenChange={setShowBulk}>
         <DialogContent className="sm:max-w-xl">
