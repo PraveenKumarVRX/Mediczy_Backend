@@ -19,6 +19,7 @@ import {
 } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
@@ -89,7 +90,7 @@ const parseAppointmentMetadata = (value) => {
   }
 };
 
-const findEligibleFreeReviewSourceAppointment = async ({ userId, doctorId }) => {
+const findEligibleFreeReviewSourceAppointment = async ({ userId, doctorId, transaction }) => {
   const priorAppointments = await Appointment.findAll({
     where: {
       userId,
@@ -101,7 +102,8 @@ const findEligibleFreeReviewSourceAppointment = async ({ userId, doctorId }) => 
     order: [
       ['createdAt', 'DESC'],
       ['id', 'DESC']
-    ]
+    ],
+    ...(transaction ? { transaction, lock: transaction.LOCK.UPDATE } : {}),
   });
 
   return priorAppointments.find((apt) => {
@@ -213,9 +215,10 @@ router.post('/book', authUser, [
   body('patientAddress').optional().isObject(),
   body('insuranceDetails').optional().isObject()
 ], async (req, res) => {
+  let transaction = null;
   try {
     const {
-      doctorId, 
+      doctorId,
       appointmentDate, 
       timeSlot, 
       consultationType: requestedConsultationTypeRaw,
@@ -323,13 +326,23 @@ router.post('/book', authUser, [
       });
     }
 
+    // appointments has FORCE ROW LEVEL SECURITY (policy requires organization_id/
+    // tenant_id/userId/doctorId to match session GUCs) — every query against it
+    // from here on needs a transaction with req.setSequelizeRlsContext() applied,
+    // or conflict checks silently see zero rows and the final INSERT is rejected
+    // outright ("new row violates row-level security policy").
+    transaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(transaction);
+
     const doctorConflictResult = await checkDoctorConflict(
       resolvedDoctorId,
       appointmentDate,
-      canonicalStartTime
+      canonicalStartTime,
+      { transaction }
     );
 
     if (doctorConflictResult.conflict) {
+      await transaction.rollback();
       return res.status(409).json({
         success: false,
         message: `Dr. ${doctor.firstName} ${doctor.lastName} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
@@ -342,10 +355,12 @@ router.post('/book', authUser, [
     const patientConflictResult = await checkPatientConflict(
       req.user.id,
       appointmentDate,
-      canonicalStartTime
+      canonicalStartTime,
+      { transaction }
     );
 
     if (patientConflictResult.conflict) {
+      await transaction.rollback();
       const conflictDoctorName = patientConflictResult.conflictDoctorName || 'another doctor';
       const patientConflict = patientConflictResult.existingAppointment;
 
@@ -367,6 +382,7 @@ router.post('/book', authUser, [
       attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender']
     });
     if (!patientInstance) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Patient not found'
@@ -394,7 +410,8 @@ router.post('/book', authUser, [
     if (consultationType === 'review') {
       const eligibleSource = await findEligibleFreeReviewSourceAppointment({
         userId: req.user.id,
-        doctorId: resolvedDoctorId
+        doctorId: resolvedDoctorId,
+        transaction
       });
 
       if (eligibleSource) {
@@ -495,10 +512,10 @@ router.post('/book', authUser, [
           roomCreated: false
         }
       }
-    });
+    }, { transaction });
 
     if (freeReviewApplied && freeReviewSourceAppointmentId) {
-      const sourceAppointment = await Appointment.findByPk(freeReviewSourceAppointmentId);
+      const sourceAppointment = await Appointment.findByPk(freeReviewSourceAppointmentId, { transaction });
       if (sourceAppointment) {
         const sourceMetadata = parseAppointmentMetadata(sourceAppointment.metadata);
         const sourceReviewBenefit = sourceMetadata.reviewBenefit || {};
@@ -514,7 +531,7 @@ router.post('/book', authUser, [
               sourceConsultationId: sourceAppointment.id
             }
           }
-        });
+        }, { transaction });
       }
     }
 
@@ -546,9 +563,11 @@ router.post('/book', authUser, [
         platform: 'LiveKit',
         roomId: canonicalMeetingId
       };
-      await dbAppointment.save();
+      await dbAppointment.save({ transaction });
       console.log(`📞 Appointment #${dbAppointment.id} created with canonical room: ${canonicalMeetingId}`);
     }
+
+    await transaction.commit();
 
     // Build enhanced view object (keeps previous response shape as much as possible)
     const appointment = {
@@ -687,6 +706,9 @@ router.post('/book', authUser, [
       }
     });
   } catch (error) {
+    if (transaction && !transaction.finished) {
+      await transaction.rollback().catch(() => {});
+    }
     console.error('Book appointment error:', error);
     res.status(500).json({
       success: false,
@@ -869,19 +891,26 @@ router.get('/my-appointments', authUser, [
   query('page').optional().isInt({ min: 1 }),
   query('upcoming').optional().isBoolean()
 ], async (req, res) => {
+  let rlsTransaction = null;
   try {
     const { status, consultationType, limit = 10, page = 1, upcoming } = req.query;
-    
+
     console.log(`📅 Fetching appointments for user ID: ${req.user.id}`);
-    
-    // Filter appointments for this user (DB-backed)
+
+    // appointments has FORCE ROW LEVEL SECURITY — without RLS context this
+    // silently matched zero rows regardless of the where clause, so a
+    // successful booking would still show up as "no appointments" here.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
     let userAppointments = await Appointment.findAll({
       where: { userId: req.user.id },
       order: [
         ['appointmentDate', 'ASC'],
         ['appointmentTime', 'ASC']
-      ]
+      ],
+      transaction: rlsTransaction,
     });
+    await rlsTransaction.commit();
     
     console.log(`📅 Found ${userAppointments.length} appointments for user ${req.user.id}`);
 
@@ -975,6 +1004,9 @@ router.get('/my-appointments', authUser, [
       }
     });
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Get my appointments error:', error);
     res.status(500).json({
       success: false,
@@ -994,6 +1026,7 @@ router.get('/doctor-appointments', authUser, [
   query('status').optional().isIn(['scheduled', 'confirmed', 'completed', 'cancelled', 'in-progress']),
   query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit'])
 ], async (req, res) => {
+  let rlsTransaction = null;
   try {
     if (req.user.role !== 'doctor') {
       return res.status(403).json({
@@ -1022,14 +1055,18 @@ router.get('/doctor-appointments', authUser, [
       where.consultationType = mapEnhancedConsultationTypeToDb(consultationType);
     }
 
-    // Filter appointments for this doctor
+    // appointments has FORCE ROW LEVEL SECURITY — same fix as /my-appointments.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
     const doctorAppointments = await Appointment.findAll({
       where,
       order: [
         ['appointmentDate', 'ASC'],
         ['appointmentTime', 'ASC']
-      ]
+      ],
+      transaction: rlsTransaction,
     });
+    await rlsTransaction.commit();
 
     const patientIds = [...new Set(doctorAppointments.map((apt) => apt.userId).filter(Boolean))];
     const patientRows = patientIds.length
@@ -1116,6 +1153,9 @@ router.get('/doctor-appointments', authUser, [
       }
     });
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Get doctor appointments error:', error);
     res.status(500).json({
       success: false,
