@@ -12,13 +12,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
   ShieldCheck, ArrowLeft, Loader2, Send, QrCode, Truck, FileText, History,
-  Landmark, Plus, CheckCircle2, Package, RefreshCw,
+  Landmark, Plus, CheckCircle2, Package, RefreshCw, Receipt,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { navSections } from './navSections';
 
 interface ClaimDetail {
   id: number;
+  patientId: number;
   claimNumber: string;
   claimAmount: number;
   approvedAmount?: number | null;
@@ -29,6 +30,13 @@ interface ClaimDetail {
   insuranceProvider?: string | null;
   patient?: { firstName: string; lastName: string; email?: string; phoneNumber?: string };
   documents?: Array<{ fileName: string; type: string; url: string; size?: number }>;
+}
+
+interface BillingSummary {
+  total: number;
+  chargeCount: number;
+  byChargeType: Array<{ chargeType: string; amount: number }>;
+  charges: Array<{ id: number; chargeType: string; description?: string; amount: number; status?: string; postedAt?: string }>;
 }
 
 interface TimelineEvent {
@@ -117,6 +125,9 @@ const InsuranceDeskClaimDetail = () => {
   const [shipmentError, setShipmentError] = useState<string | null>(null);
   const [updatingShipmentId, setUpdatingShipmentId] = useState<string | null>(null);
 
+  const [billing, setBilling] = useState<BillingSummary | null>(null);
+  const [loadingBilling, setLoadingBilling] = useState(false);
+
   const load = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -128,6 +139,13 @@ const InsuranceDeskClaimDetail = () => {
       setShipments(data.courierTracking || []);
       setNotificationLog(data.notificationLog || []);
       setPostings(data.reconciliationPostings || []);
+      if (data.claim?.patientId) {
+        setLoadingBilling(true);
+        api.get(`/hospital/insurance/patient/${data.claim.patientId}/billing-summary`)
+          .then((res) => setBilling(res.data.billingSummary))
+          .catch(() => setBilling(null))
+          .finally(() => setLoadingBilling(false));
+      }
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not load claim details.');
     } finally {
@@ -270,6 +288,7 @@ const InsuranceDeskClaimDetail = () => {
             <TabsList>
               <TabsTrigger value="timeline" className="gap-1"><History className="h-3.5 w-3.5" /> Timeline</TabsTrigger>
               <TabsTrigger value="documents" className="gap-1"><FileText className="h-3.5 w-3.5" /> Documents</TabsTrigger>
+              <TabsTrigger value="bill" className="gap-1"><Receipt className="h-3.5 w-3.5" /> Bill Details</TabsTrigger>
               <TabsTrigger value="courier" className="gap-1"><Truck className="h-3.5 w-3.5" /> Courier Tracking</TabsTrigger>
               <TabsTrigger value="reconciliation" className="gap-1"><Landmark className="h-3.5 w-3.5" /> Reconciliation</TabsTrigger>
             </TabsList>
@@ -290,6 +309,43 @@ const InsuranceDeskClaimDetail = () => {
                       </div>
                     </div>
                   ))}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="bill" className="mt-4">
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Itemized Bill Breakdown</CardTitle></CardHeader>
+                <CardContent>
+                  {loadingBilling ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center"><Loader2 className="h-4 w-4 animate-spin" /> Loading billing data…</div>
+                  ) : !billing || billing.chargeCount === 0 ? (
+                    <p className="text-sm text-muted-foreground py-6 text-center">No posted billing charges found for this patient yet.</p>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Category</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {billing.byChargeType.map((c) => (
+                            <TableRow key={c.chargeType}>
+                              <TableCell className="capitalize">{c.chargeType.replace(/_/g, ' ')}</TableCell>
+                              <TableCell className="text-right">{formatCurrency(c.amount)}</TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow>
+                            <TableCell className="font-semibold">Total</TableCell>
+                            <TableCell className="text-right font-semibold">{formatCurrency(billing.total)}</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                      <p className="text-xs text-muted-foreground mt-3">{billing.chargeCount} individual line item{billing.chargeCount === 1 ? '' : 's'} across all posted charges for this patient.</p>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

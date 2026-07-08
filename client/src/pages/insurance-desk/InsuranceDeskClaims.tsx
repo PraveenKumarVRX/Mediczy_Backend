@@ -8,18 +8,21 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
-  Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Wallet,
+  Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus,
   Download, Upload, MessageCircle, Send, Eye,
+  CalendarClock, AlertCircle, CheckCircle2, XCircle, Truck, Landmark, X,
 } from 'lucide-react';
 import api from '@/utils/api';
 
 import { navSections } from './navSections';
+import NewClaimWizard from './NewClaimWizard';
 
 interface Claim {
   id: number;
@@ -50,9 +53,6 @@ const formatCurrency = (amount?: number | null) =>
 
 const formatDate = (value?: string) => (value ? new Date(value).toLocaleDateString('en-IN') : '—');
 
-const emptyNewClaim = {
-  patientId: '', policyNumber: '', insuranceProvider: '', claimAmount: '', diagnosis: '', ward: '',
-};
 
 const STATUS_TABS = [
   { key: 'all', label: 'All' },
@@ -75,11 +75,6 @@ const InsuranceDeskClaims = () => {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const [showNewClaim, setShowNewClaim] = useState(false);
-  const [newClaim, setNewClaim] = useState(emptyNewClaim);
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [importingBilling, setImportingBilling] = useState(false);
-  const [billingImported, setBillingImported] = useState<{ total: number; chargeCount: number } | null>(null);
 
   const [showBulk, setShowBulk] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -93,6 +88,21 @@ const InsuranceDeskClaims = () => {
   const [responseText, setResponseText] = useState('');
   const [respondingQuery, setRespondingQuery] = useState(false);
   const [queryError, setQueryError] = useState<string | null>(null);
+
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const [showBulkCourier, setShowBulkCourier] = useState(false);
+  const [bulkCourier, setBulkCourier] = useState({ courierName: '', trackingNumber: '', sentTo: '', documentType: 'claim_documents', notes: '' });
+  const [dispatchingCourier, setDispatchingCourier] = useState(false);
+  const [bulkCourierError, setBulkCourierError] = useState<string | null>(null);
+  const [bulkCourierResult, setBulkCourierResult] = useState<{ success: number; failed: number } | null>(null);
+
+  const [showBulkSettle, setShowBulkSettle] = useState(false);
+  const [settleAmounts, setSettleAmounts] = useState<Record<number, string>>({});
+  const [settlePayer, setSettlePayer] = useState({ payerName: '', checkNumber: '' });
+  const [settling, setSettling] = useState(false);
+  const [bulkSettleError, setBulkSettleError] = useState<string | null>(null);
+  const [bulkSettleResult, setBulkSettleResult] = useState<{ success: number; failed: number } | null>(null);
 
   const load = useCallback(async (searchTerm?: string, status?: string) => {
     setLoading(true);
@@ -111,6 +121,22 @@ const InsuranceDeskClaims = () => {
   }, []);
 
   useEffect(() => { load(search, statusTab); }, [statusTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [kpiStats, setKpiStats] = useState<{ pending: number; query: number; approved: number; rejected: number } | null>(null);
+  const loadKpiStats = useCallback(async () => {
+    try {
+      const { data } = await api.get('/hospital/insurance/dashboard');
+      setKpiStats({
+        pending: data.dashboard?.stats?.pending ?? 0,
+        query: data.dashboard?.stats?.query ?? 0,
+        approved: data.dashboard?.stats?.approved ?? 0,
+        rejected: data.dashboard?.stats?.rejected ?? 0,
+      });
+    } catch {
+      setKpiStats(null);
+    }
+  }, []);
+  useEffect(() => { loadKpiStats(); }, [loadKpiStats]);
 
   const downloadPdf = async (claim: Claim) => {
     setDownloadingId(claim.id);
@@ -159,6 +185,7 @@ const InsuranceDeskClaims = () => {
       });
       setQueryClaim(null);
       load(search, statusTab);
+      loadKpiStats();
     } catch (err: any) {
       setQueryError(err?.response?.data?.message || 'Could not submit query response.');
     } finally {
@@ -176,6 +203,7 @@ const InsuranceDeskClaims = () => {
       const { data } = await api.post('/hospital/insurance/claims/bulk-upload', { claims: rows });
       setBulkResult({ success: data.results?.success?.length || 0, failed: data.results?.failed?.length || 0 });
       load(search, statusTab);
+      loadKpiStats();
     } catch (err: any) {
       setBulkError(err?.response?.data?.message || err.message || 'Bulk upload failed — check the JSON format.');
     } finally {
@@ -183,58 +211,92 @@ const InsuranceDeskClaims = () => {
     }
   };
 
-  const importFromBilling = async () => {
-    const patientId = newClaim.patientId.trim();
-    if (!patientId || !/^\d+$/.test(patientId)) {
-      setCreateError('Enter a numeric Patient ID first, then import their billing charges.');
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => (prev.size === claims.length ? new Set() : new Set(claims.map((c) => c.id))));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectedClaims = claims.filter((c) => selectedIds.has(c.id));
+
+  const openBulkCourier = () => {
+    setBulkCourier({ courierName: '', trackingNumber: '', sentTo: '', documentType: 'claim_documents', notes: '' });
+    setBulkCourierError(null);
+    setBulkCourierResult(null);
+    setShowBulkCourier(true);
+  };
+
+  const submitBulkCourier = async () => {
+    if (!bulkCourier.courierName.trim() || !bulkCourier.trackingNumber.trim() || !bulkCourier.sentTo.trim()) {
+      setBulkCourierError('Courier name, tracking number, and recipient are required.');
       return;
     }
-    setImportingBilling(true);
-    setCreateError(null);
-    setBillingImported(null);
+    setDispatchingCourier(true);
+    setBulkCourierError(null);
     try {
-      const { data } = await api.get(`/hospital/insurance/patient/${patientId}/billing-summary`);
-      const summary = data.billingSummary;
-      setNewClaim((c) => ({ ...c, claimAmount: String(summary.total) }));
-      setBillingImported({ total: summary.total, chargeCount: summary.chargeCount });
-      if (summary.chargeCount === 0) {
-        setCreateError('No posted billing charges found for this patient yet — enter the amount manually.');
-      }
+      const results = await Promise.allSettled(
+        selectedClaims.map((c) => api.post(`/hospital/insurance/claims/${c.id}/courier`, bulkCourier))
+      );
+      const success = results.filter((r) => r.status === 'fulfilled').length;
+      setBulkCourierResult({ success, failed: results.length - success });
+      clearSelection();
     } catch (err: any) {
-      setCreateError(err?.response?.data?.message || 'Could not import billing charges.');
+      setBulkCourierError(err?.response?.data?.message || 'Could not log courier shipment.');
     } finally {
-      setImportingBilling(false);
+      setDispatchingCourier(false);
     }
   };
 
-  const createClaim = async () => {
-    const patientId = parseInt(newClaim.patientId, 10);
-    const claimAmount = parseFloat(newClaim.claimAmount);
-    if (!patientId || !newClaim.policyNumber.trim() || !(claimAmount >= 0)) {
-      setCreateError('Patient ID, policy number, and a valid claim amount are required.');
+  const openBulkSettle = () => {
+    const amounts: Record<number, string> = {};
+    selectedClaims.forEach((c) => { amounts[c.id] = String(c.approvedAmount ?? c.claimAmount ?? ''); });
+    setSettleAmounts(amounts);
+    setSettlePayer({ payerName: '', checkNumber: '' });
+    setBulkSettleError(null);
+    setBulkSettleResult(null);
+    setShowBulkSettle(true);
+  };
+
+  const submitBulkSettle = async () => {
+    if (!settlePayer.payerName.trim()) {
+      setBulkSettleError('Payer name is required.');
       return;
     }
-    setCreating(true);
-    setCreateError(null);
+    const remittances = selectedClaims.map((c) => ({
+      claimNumber: c.claimNumber,
+      paidAmount: parseFloat(settleAmounts[c.id] || '0'),
+      payerName: settlePayer.payerName.trim(),
+      checkNumber: settlePayer.checkNumber.trim() || undefined,
+    })).filter((r) => r.paidAmount > 0);
+
+    if (remittances.length === 0) {
+      setBulkSettleError('Enter a paid amount greater than zero for at least one claim.');
+      return;
+    }
+
+    setSettling(true);
+    setBulkSettleError(null);
     try {
-      await api.post('/hospital/insurance/claims/new', {
-        patientId,
-        policyNumber: newClaim.policyNumber.trim(),
-        insuranceProvider: newClaim.insuranceProvider.trim() || undefined,
-        claimAmount,
-        diagnosis: newClaim.diagnosis.trim() || undefined,
-        hospitalizationDetails: { ward: newClaim.ward.trim() || 'General', diagnosis: newClaim.diagnosis.trim() || undefined },
-      });
-      setShowNewClaim(false);
-      setNewClaim(emptyNewClaim);
-      setBillingImported(null);
+      const { data } = await api.post('/hospital/insurance/reconciliation/upload', { remittances });
+      setBulkSettleResult({ success: data.matched || 0, failed: data.unmatched || 0 });
+      clearSelection();
       load(search, statusTab);
+      loadKpiStats();
     } catch (err: any) {
-      setCreateError(err?.response?.data?.message || 'Could not create claim.');
+      setBulkSettleError(err?.response?.data?.message || 'Could not post settlement.');
     } finally {
-      setCreating(false);
+      setSettling(false);
     }
   };
+
 
   return (
     <HospDeptLayout deptKey="insurance-desk" deptName="Insurance Desk" badgeLabel="Ins. Desk"
@@ -263,12 +325,47 @@ const InsuranceDeskClaims = () => {
           </Button>
         </CardHeader>
         <CardContent>
+          {/* KPI tiles double as quick filters — click to jump to that status tab */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <button onClick={() => setStatusTab('pending')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'pending' ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-amber-600 mb-1"><CalendarClock className="h-3.5 w-3.5" /><span className="text-xs font-medium">Pending</span></div>
+              <p className="text-xl font-bold">{kpiStats?.pending ?? '—'}</p>
+            </button>
+            <button onClick={() => setStatusTab('query')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'query' ? 'border-purple-400 bg-purple-50 dark:bg-purple-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-purple-600 mb-1"><AlertCircle className="h-3.5 w-3.5" /><span className="text-xs font-medium">Query</span></div>
+              <p className="text-xl font-bold">{kpiStats?.query ?? '—'}</p>
+            </button>
+            <button onClick={() => setStatusTab('approved')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'approved' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-emerald-600 mb-1"><CheckCircle2 className="h-3.5 w-3.5" /><span className="text-xs font-medium">Approved</span></div>
+              <p className="text-xl font-bold">{kpiStats?.approved ?? '—'}</p>
+            </button>
+            <button onClick={() => setStatusTab('rejected')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'rejected' ? 'border-red-400 bg-red-50 dark:bg-red-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-red-500 mb-1"><XCircle className="h-3.5 w-3.5" /><span className="text-xs font-medium">Rejected</span></div>
+              <p className="text-xl font-bold">{kpiStats?.rejected ?? '—'}</p>
+            </button>
+          </div>
+
           <Tabs value={statusTab} onValueChange={setStatusTab} className="mb-3">
             <TabsList>
               {STATUS_TABS.map((t) => <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>)}
             </TabsList>
           </Tabs>
           {error && <p className="text-sm text-amber-600 mb-3">{error}</p>}
+
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2 mb-3 p-2.5 rounded-lg border bg-teal-50 dark:bg-teal-950/20 flex-wrap">
+              <Badge className="bg-teal-600 border-0">{selectedIds.size} selected</Badge>
+              <Button size="sm" variant="outline" className="gap-1 h-7 text-xs" onClick={openBulkCourier}>
+                <Truck className="h-3.5 w-3.5" /> Enter Courier Details
+              </Button>
+              <Button size="sm" variant="outline" className="gap-1 h-7 text-xs" onClick={openBulkSettle}>
+                <Landmark className="h-3.5 w-3.5" /> Initiate Settlement
+              </Button>
+              <Button size="sm" variant="ghost" className="gap-1 h-7 text-xs ml-auto" onClick={clearSelection}>
+                <X className="h-3.5 w-3.5" /> Clear
+              </Button>
+            </div>
+          )}
           {loading ? (
             <div className="h-48 flex items-center justify-center text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading…
@@ -283,6 +380,7 @@ const InsuranceDeskClaims = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-8"><Checkbox checked={claims.length > 0 && selectedIds.size === claims.length} onCheckedChange={toggleSelectAll} aria-label="Select all" /></TableHead>
                     <TableHead>Claim #</TableHead>
                     <TableHead>Patient</TableHead>
                     <TableHead>Insurer</TableHead>
@@ -296,7 +394,8 @@ const InsuranceDeskClaims = () => {
                 </TableHeader>
                 <TableBody>
                   {claims.map((claim) => (
-                    <TableRow key={claim.id}>
+                    <TableRow key={claim.id} data-state={selectedIds.has(claim.id) ? 'selected' : undefined}>
+                      <TableCell><Checkbox checked={selectedIds.has(claim.id)} onCheckedChange={() => toggleSelect(claim.id)} aria-label={`Select ${claim.claimNumber}`} /></TableCell>
                       <TableCell className="font-mono text-xs">{claim.claimNumber}</TableCell>
                       <TableCell>{claim.patientName || '—'}</TableCell>
                       <TableCell>{claim.insurerName || '—'}</TableCell>
@@ -331,59 +430,11 @@ const InsuranceDeskClaims = () => {
         </CardContent>
       </Card>
 
-      <Dialog open={showNewClaim} onOpenChange={(open) => { setShowNewClaim(open); if (!open) { setCreateError(null); setBillingImported(null); } }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>New Claim</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            {createError && <p className="text-sm text-red-600">{createError}</p>}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Patient ID</Label>
-                <Input value={newClaim.patientId} onChange={(e) => setNewClaim((c) => ({ ...c, patientId: e.target.value }))} placeholder="e.g. 9" />
-              </div>
-              <div>
-                <Label>Policy Number</Label>
-                <Input value={newClaim.policyNumber} onChange={(e) => setNewClaim((c) => ({ ...c, policyNumber: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Insurer / TPA</Label>
-                <Input value={newClaim.insuranceProvider} onChange={(e) => setNewClaim((c) => ({ ...c, insuranceProvider: e.target.value }))} placeholder="e.g. Star Health" />
-              </div>
-              <div>
-                <Label>Ward</Label>
-                <Input value={newClaim.ward} onChange={(e) => setNewClaim((c) => ({ ...c, ward: e.target.value }))} placeholder="General" />
-              </div>
-              <div className="col-span-2">
-                <Label>Diagnosis</Label>
-                <Input value={newClaim.diagnosis} onChange={(e) => setNewClaim((c) => ({ ...c, diagnosis: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label>Claim Amount</Label>
-                <div className="flex gap-2">
-                  <Input type="number" value={newClaim.claimAmount} onChange={(e) => setNewClaim((c) => ({ ...c, claimAmount: e.target.value }))} />
-                  <Button type="button" variant="outline" size="sm" className="gap-1 whitespace-nowrap" onClick={importFromBilling} disabled={importingBilling}>
-                    {importingBilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-                    Import from Billing
-                  </Button>
-                </div>
-                {billingImported && billingImported.chargeCount > 0 && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Imported {formatCurrency(billingImported.total)} across {billingImported.chargeCount} posted billing {billingImported.chargeCount === 1 ? 'charge' : 'charges'}.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowNewClaim(false)}>Cancel</Button>
-            <Button className="bg-teal-600 hover:bg-teal-700" onClick={createClaim} disabled={creating}>
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Create Claim'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NewClaimWizard
+        open={showNewClaim}
+        onOpenChange={setShowNewClaim}
+        onCreated={() => { load(search, statusTab); loadKpiStats(); }}
+      />
 
       <Dialog open={showBulk} onOpenChange={setShowBulk}>
         <DialogContent className="sm:max-w-xl">
@@ -444,6 +495,95 @@ const InsuranceDeskClaims = () => {
             <Button className="bg-teal-600 hover:bg-teal-700 gap-1" onClick={submitQueryResponse} disabled={respondingQuery || !responseText.trim()}>
               {respondingQuery ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               Submit Response
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulkCourier} onOpenChange={setShowBulkCourier}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Truck className="h-4 w-4 text-teal-600" /> Enter Courier Details — {selectedClaims.length} claim{selectedClaims.length === 1 ? '' : 's'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Logs one shipment record against each selected claim.</p>
+            {bulkCourierError && <p className="text-sm text-red-600">{bulkCourierError}</p>}
+            {bulkCourierResult && (
+              <p className="text-sm text-emerald-600">
+                Logged for {bulkCourierResult.success} claim(s){bulkCourierResult.failed > 0 ? `, ${bulkCourierResult.failed} failed.` : '.'}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Courier</Label>
+                <Input value={bulkCourier.courierName} onChange={(e) => setBulkCourier((s) => ({ ...s, courierName: e.target.value }))} placeholder="Bluedart, DTDC, etc." />
+              </div>
+              <div>
+                <Label>Tracking / AWB #</Label>
+                <Input value={bulkCourier.trackingNumber} onChange={(e) => setBulkCourier((s) => ({ ...s, trackingNumber: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label>Sent To (TPA/Insurer office)</Label>
+                <Input value={bulkCourier.sentTo} onChange={(e) => setBulkCourier((s) => ({ ...s, sentTo: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label>Notes</Label>
+                <Textarea rows={2} value={bulkCourier.notes} onChange={(e) => setBulkCourier((s) => ({ ...s, notes: e.target.value }))} />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkCourier(false)}>Close</Button>
+            <Button className="bg-teal-600 hover:bg-teal-700" onClick={submitBulkCourier} disabled={dispatchingCourier}>
+              {dispatchingCourier ? <Loader2 className="h-4 w-4 animate-spin" /> : `Log for ${selectedClaims.length} claim(s)`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulkSettle} onOpenChange={setShowBulkSettle}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><Landmark className="h-4 w-4 text-teal-600" /> Initiate Settlement — {selectedClaims.length} claim{selectedClaims.length === 1 ? '' : 's'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">Posts a remittance for each claim below — this settles real claims via reconciliation, same as the Reconciliation page.</p>
+            {bulkSettleError && <p className="text-sm text-red-600">{bulkSettleError}</p>}
+            {bulkSettleResult && (
+              <p className="text-sm text-emerald-600">
+                Posted {bulkSettleResult.success} of {bulkSettleResult.success + bulkSettleResult.failed}.
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Payer Name</Label>
+                <Input value={settlePayer.payerName} onChange={(e) => setSettlePayer((s) => ({ ...s, payerName: e.target.value }))} placeholder="e.g. Care Health" />
+              </div>
+              <div>
+                <Label>Check / UTR Number</Label>
+                <Input value={settlePayer.checkNumber} onChange={(e) => setSettlePayer((s) => ({ ...s, checkNumber: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {selectedClaims.map((c) => (
+                <div key={c.id} className="flex items-center gap-3 border rounded-lg px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{c.claimNumber}</p>
+                    <p className="text-xs text-muted-foreground">{c.patientName || '—'}</p>
+                  </div>
+                  <Input
+                    type="number" className="w-32"
+                    value={settleAmounts[c.id] ?? ''}
+                    onChange={(e) => setSettleAmounts((s) => ({ ...s, [c.id]: e.target.value }))}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkSettle(false)}>Close</Button>
+            <Button className="bg-teal-600 hover:bg-teal-700" onClick={submitBulkSettle} disabled={settling}>
+              {settling ? <Loader2 className="h-4 w-4 animate-spin" /> : `Post Settlement`}
             </Button>
           </DialogFooter>
         </DialogContent>

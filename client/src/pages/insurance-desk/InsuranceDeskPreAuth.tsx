@@ -15,6 +15,7 @@ import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, ArrowRightCircle,
   ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, MinusCircle, Plus, Download,
+  CalendarClock,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -133,6 +134,7 @@ function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convert
 
 const InsuranceDeskPreAuth = () => {
   const [tab, setTab] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [kpiStats, setKpiStats] = useState<{ pending: number; approved: number; rejected: number; expiringSoon: number } | null>(null);
   const [rowsByTab, setRowsByTab] = useState<Record<string, PreAuth[]>>({ pending: [], approved: [], rejected: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +176,27 @@ const InsuranceDeskPreAuth = () => {
 
   useEffect(() => { load(tab); }, [tab, load]);
 
+  const loadKpiStats = useCallback(async () => {
+    try {
+      const [pendingRes, approvedRes, rejectedRes, dashRes] = await Promise.all([
+        api.get('/hospital/insurance/pre-auth/pending', { params: { limit: 1 } }),
+        api.get('/hospital/insurance/pre-auth/approved', { params: { limit: 1 } }),
+        api.get('/hospital/insurance/pre-auth/rejected', { params: { limit: 1 } }),
+        api.get('/hospital/insurance/dashboard'),
+      ]);
+      setKpiStats({
+        pending: pendingRes.data.pagination?.total ?? 0,
+        approved: approvedRes.data.pagination?.total ?? 0,
+        rejected: rejectedRes.data.pagination?.total ?? 0,
+        expiringSoon: dashRes.data.dashboard?.alerts?.expiringSoon ?? 0,
+      });
+    } catch {
+      setKpiStats(null);
+    }
+  }, []);
+
+  useEffect(() => { loadKpiStats(); }, [loadKpiStats]);
+
   const createPreAuth = async () => {
     const patientId = parseInt(newPreAuth.patientId, 10);
     const estimatedAmount = parseFloat(newPreAuth.estimatedAmount);
@@ -204,6 +227,7 @@ const InsuranceDeskPreAuth = () => {
       setNewPreAuth({ patientId: '', policyNumber: '', insurer: '', ward: '', admissionDate: '', estimatedAmount: '', estimatedDuration: '', diagnosis: '', plannedProcedures: '', remarks: '' });
       setTab('pending');
       load('pending');
+      loadKpiStats();
     } catch (err: any) {
       setCreateError(err?.response?.data?.message || 'Could not submit pre-authorization request.');
     } finally {
@@ -243,6 +267,7 @@ const InsuranceDeskPreAuth = () => {
       });
       setConvertMessage(`Claim ${data.claim?.claimNumber || ''} created from ${row.preAuthNumber}.`);
       load('approved');
+      loadKpiStats();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not convert pre-authorization to a claim.');
     } finally {
@@ -310,6 +335,27 @@ const InsuranceDeskPreAuth = () => {
         <CardContent>
           {error && <p className="text-sm text-amber-600 mb-3">{error}</p>}
           {convertMessage && <p className="text-sm text-emerald-600 mb-3">{convertMessage}</p>}
+
+          {/* KPI tiles double as quick filters — click to jump to that tab */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <button onClick={() => setTab('pending')} className={`text-left rounded-xl border p-3 transition-colors ${tab === 'pending' ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-amber-600 mb-1"><CalendarClock className="h-3.5 w-3.5" /><span className="text-xs font-medium">Pending</span></div>
+              <p className="text-xl font-bold">{kpiStats?.pending ?? '—'}</p>
+            </button>
+            <button onClick={() => setTab('approved')} className={`text-left rounded-xl border p-3 transition-colors ${tab === 'approved' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-emerald-600 mb-1"><CheckCircle2 className="h-3.5 w-3.5" /><span className="text-xs font-medium">Approved</span></div>
+              <p className="text-xl font-bold">{kpiStats?.approved ?? '—'}</p>
+            </button>
+            <button onClick={() => setTab('rejected')} className={`text-left rounded-xl border p-3 transition-colors ${tab === 'rejected' ? 'border-red-400 bg-red-50 dark:bg-red-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-red-500 mb-1"><XCircle className="h-3.5 w-3.5" /><span className="text-xs font-medium">Rejected</span></div>
+              <p className="text-xl font-bold">{kpiStats?.rejected ?? '—'}</p>
+            </button>
+            <div className="text-left rounded-xl border p-3">
+              <div className="flex items-center gap-1.5 text-violet-600 mb-1"><AlertTriangle className="h-3.5 w-3.5" /><span className="text-xs font-medium">Expiring Soon</span></div>
+              <p className="text-xl font-bold">{kpiStats?.expiringSoon ?? '—'}</p>
+            </div>
+          </div>
+
           <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
             <TabsList>
               <TabsTrigger value="pending">Pending</TabsTrigger>
