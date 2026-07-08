@@ -3,10 +3,12 @@ import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  ShieldCheck, RefreshCw, Loader2, Landmark, Globe2, Fingerprint, Receipt, BadgeCheck, CheckCircle2, XCircle, Clock,
+  ShieldCheck, RefreshCw, Loader2, Landmark, Globe2, Fingerprint, Receipt, BadgeCheck, CheckCircle2, XCircle, Clock, Send,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { navSections } from './navSections';
@@ -18,11 +20,16 @@ const formatDate = (v?: string | null) => (v ? new Date(v).toLocaleDateString('e
 interface GovtScheme { id: string; name: string; fullName: string; empaneled: boolean; panelCode?: string | null; patientEligibility: string; coverage: string; claimProcess: string }
 interface GovtClaim { id: string; scheme: string; claimNo: string; patient: string; amount: number; status: string; date: string; procedure: string }
 interface NhcxData {
-  activationStatus: string; environment: string;
+  activationStatus: string; environment: string; onboardingStep?: number;
   requirements: { item: string; done: boolean }[];
   timeline: { date: string; milestone: string; status: string }[];
   flows: { name: string; status: string; desc: string }[];
+  hfrData?: { facilityId: string; [key: string]: any };
+  participantData?: { participantName: string; [key: string]: any };
+  [key: string]: any;
 }
+interface AbdmRegistration { facilityId: string; status: string; submittedAt?: string }
+interface AbdmData { linkedRecords: AbdmRecord[]; consents: Consent[]; registration?: AbdmRegistration; [key: string]: any }
 interface AbdmRecord { id: string; abhaId: string; name: string; mobile: string; status: string; linkedDate: string }
 interface Consent { id: string; patient: string; purpose: string; hiu: string; status: string; expiry: string }
 interface TariffItem { id: string; payerName: string; payerType: string; category: string; serviceName: string; unit: string; grossRate: number; contractedRate: number; validTo: string }
@@ -44,11 +51,20 @@ const InsuranceDeskCompliance = () => {
   const [govtSchemes, setGovtSchemes] = useState<GovtScheme[]>([]);
   const [govtClaims, setGovtClaims] = useState<GovtClaim[]>([]);
   const [nhcx, setNhcx] = useState<NhcxData | null>(null);
+  const [abdm, setAbdm] = useState<AbdmData | null>(null);
   const [abdmRecords, setAbdmRecords] = useState<AbdmRecord[]>([]);
   const [consents, setConsents] = useState<Consent[]>([]);
   const [tariffItems, setTariffItems] = useState<TariffItem[]>([]);
   const [empanelments, setEmpanelments] = useState<Empanelment[]>([]);
   const [complianceItems, setComplianceItems] = useState<ComplianceItem[]>([]);
+
+  const [nhcxForm, setNhcxForm] = useState({ facilityId: '', mobile: '', email: '' });
+  const [submittingNhcx, setSubmittingNhcx] = useState(false);
+  const [nhcxSubmitError, setNhcxSubmitError] = useState<string | null>(null);
+
+  const [abdmFacilityId, setAbdmFacilityId] = useState('');
+  const [submittingAbdm, setSubmittingAbdm] = useState(false);
+  const [abdmSubmitError, setAbdmSubmitError] = useState<string | null>(null);
 
   const load = useCallback(async (which: string) => {
     setLoading(true);
@@ -57,8 +73,8 @@ const InsuranceDeskCompliance = () => {
       const { data } = await api.get(`/hospital/insurance/portal/compliance/${which}`);
       const d = data.data || {};
       if (which === 'govt-schemes') { setGovtSchemes(d.schemes || []); setGovtClaims(d.claims || []); }
-      else if (which === 'nhcx') { setNhcx(d); }
-      else if (which === 'abdm') { setAbdmRecords(d.linkedRecords || []); setConsents(d.consents || []); }
+      else if (which === 'nhcx') { setNhcx(d); setNhcxForm({ facilityId: d.hfrData?.facilityId || '', mobile: d.participantData?.mobile || '', email: d.participantData?.email || '' }); }
+      else if (which === 'abdm') { setAbdm(d); setAbdmRecords(d.linkedRecords || []); setConsents(d.consents || []); setAbdmFacilityId(d.registration?.facilityId || ''); }
       else if (which === 'tariff') { setTariffItems(d.items || []); }
       else if (which === 'empanelment') { setEmpanelments(d.empanelments || []); setComplianceItems(d.complianceItems || []); }
     } catch (err: any) {
@@ -69,6 +85,53 @@ const InsuranceDeskCompliance = () => {
   }, []);
 
   useEffect(() => { load(tab); }, [tab, load]);
+
+  const submitNhcxOnboarding = async () => {
+    if (!nhcx) return;
+    if (!nhcxForm.facilityId.trim()) {
+      setNhcxSubmitError('HFR (Health Facility Registry) ID is required.');
+      return;
+    }
+    setSubmittingNhcx(true);
+    setNhcxSubmitError(null);
+    try {
+      const payload = {
+        ...nhcx,
+        hfrData: { ...nhcx.hfrData, facilityId: nhcxForm.facilityId.trim() },
+        participantData: { ...nhcx.participantData, mobile: nhcxForm.mobile.trim(), email: nhcxForm.email.trim() },
+        activationStatus: 'Pending Verification',
+        onboardingStep: Math.max(nhcx.onboardingStep || 0, 1),
+      };
+      const { data } = await api.put('/hospital/insurance/portal/compliance/nhcx', { data: payload });
+      setNhcx(data.data);
+    } catch (err: any) {
+      setNhcxSubmitError(err?.response?.data?.message || 'Could not submit NHCX onboarding request.');
+    } finally {
+      setSubmittingNhcx(false);
+    }
+  };
+
+  const submitAbdmRegistration = async () => {
+    if (!abdm) return;
+    if (!abdmFacilityId.trim()) {
+      setAbdmSubmitError('Facility ID is required.');
+      return;
+    }
+    setSubmittingAbdm(true);
+    setAbdmSubmitError(null);
+    try {
+      const payload = {
+        ...abdm,
+        registration: { facilityId: abdmFacilityId.trim(), status: 'pending', submittedAt: new Date().toISOString() },
+      };
+      const { data } = await api.put('/hospital/insurance/portal/compliance/abdm', { data: payload });
+      setAbdm(data.data);
+    } catch (err: any) {
+      setAbdmSubmitError(err?.response?.data?.message || 'Could not submit HIP/HIU registration.');
+    } finally {
+      setSubmittingAbdm(false);
+    }
+  };
 
   return (
     <HospDeptLayout deptKey="insurance-desk" deptName="Insurance Desk" badgeLabel="Ins. Desk"
@@ -145,6 +208,33 @@ const InsuranceDeskCompliance = () => {
                         <Badge variant="outline" className="text-sm">{nhcx.environment}</Badge>
                         <Badge className="bg-amber-100 text-amber-700">{nhcx.activationStatus}</Badge>
                       </div>
+
+                      <Card>
+                        <CardHeader className="pb-3"><CardTitle className="text-sm">Participant Onboarding</CardTitle></CardHeader>
+                        <CardContent className="space-y-3">
+                          <p className="text-xs text-muted-foreground">Submit facility details to initiate NHCX participant creation — this records the request for the National Health Authority's verification process; it does not itself grant live NHCX access.</p>
+                          {nhcxSubmitError && <p className="text-sm text-red-600">{nhcxSubmitError}</p>}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <Label>Health Facility Registry (HFR) ID</Label>
+                              <Input value={nhcxForm.facilityId} onChange={(e) => setNhcxForm((f) => ({ ...f, facilityId: e.target.value }))} placeholder="e.g. IN2910000123" />
+                            </div>
+                            <div>
+                              <Label>Registered Mobile Number</Label>
+                              <Input value={nhcxForm.mobile} onChange={(e) => setNhcxForm((f) => ({ ...f, mobile: e.target.value }))} placeholder="Registered in HFR" />
+                            </div>
+                            <div className="col-span-2">
+                              <Label>Hospital Email Address</Label>
+                              <Input value={nhcxForm.email} onChange={(e) => setNhcxForm((f) => ({ ...f, email: e.target.value }))} placeholder="Registered in HFR" />
+                            </div>
+                          </div>
+                          <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" onClick={submitNhcxOnboarding} disabled={submittingNhcx}>
+                            {submittingNhcx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                            Submit for NHCX Onboarding
+                          </Button>
+                        </CardContent>
+                      </Card>
+
                       <div>
                         <p className="text-sm font-medium mb-2">Onboarding Requirements</p>
                         <div className="space-y-1.5">
@@ -184,6 +274,28 @@ const InsuranceDeskCompliance = () => {
                 </TabsContent>
 
                 <TabsContent value="abdm" className="space-y-4 mt-4">
+                  <Card>
+                    <CardHeader className="pb-3"><CardTitle className="text-sm">Health Repository Provider</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {abdm?.registration ? (
+                        <div className="flex items-center gap-2 text-sm">
+                          <Badge className={STATUS_DOT[abdm.registration.status] || ''} variant="outline">{abdm.registration.status}</Badge>
+                          <span className="font-mono text-xs text-muted-foreground">{abdm.registration.facilityId}</span>
+                          {abdm.registration.submittedAt && <span className="text-xs text-muted-foreground">submitted {formatDate(abdm.registration.submittedAt)}</span>}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Not yet registered as a Health Information Provider/User (HIP/HIU) with ABDM.</p>
+                      )}
+                      {abdmSubmitError && <p className="text-sm text-red-600">{abdmSubmitError}</p>}
+                      <div className="flex gap-2">
+                        <Input value={abdmFacilityId} onChange={(e) => setAbdmFacilityId(e.target.value)} placeholder="Enter Facility ID" className="max-w-xs" />
+                        <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700 whitespace-nowrap" onClick={submitAbdmRegistration} disabled={submittingAbdm}>
+                          {submittingAbdm ? <Loader2 className="h-4 w-4 animate-spin" /> : <Fingerprint className="h-4 w-4" />}
+                          Register as HIP/HIU
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
                   <div>
                     <p className="text-sm font-medium mb-2">Linked ABHA Records</p>
                     <div className="overflow-x-auto">
