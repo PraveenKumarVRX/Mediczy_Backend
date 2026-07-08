@@ -182,6 +182,7 @@ import sibChatbotsRouter from './routes/sib-chatbots.route.js';
 import providerNetworkBotRouter from './routes/provider-network-bot.route.js';
 import { ringFencingMiddleware } from './middleware/ringFencing.js';
 import publicReportRouter from './routes/public-report.route.js';
+import publicClaimStatusRouter from './routes/public-claim-status.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import myupcharRouter from './routes/myupchar.route.js';
 import notificationRouter from './routes/notification.route.js';
@@ -1031,6 +1032,8 @@ import responseShapeLinter from './middleware/responseShape.middleware.js';
 app.use(responseShapeLinter);
 // Public signed-token report download (no auth required — handled by JWT verification)
 app.use('/api/public', publicReportRouter);
+// Public signed-token insurance claim status lookup (QR-code target, no auth required)
+app.use('/api/public/claim-status', publicClaimStatusRouter);
 // Department login modules must stay before ring-fencing because login is public.
 app.use('/api/asset', assetRouter);
 app.use('/api/biomedical', biomedicalRouter);
