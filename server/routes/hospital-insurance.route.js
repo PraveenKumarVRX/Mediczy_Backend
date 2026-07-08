@@ -26,6 +26,7 @@ import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { notifyClaimStatusChange, generateStatusQrCode } from '../services/insurance-claim-notify.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1121,6 +1122,10 @@ router.post('/claims/:claimId/submit', authUser, requireRole(['hospital', 'admin
       hospitalId: claim.hospital_id
     });
 
+    // Patient-facing WhatsApp/SMS update — fire-and-forget, doesn't block the response
+    notifyClaimStatusChange({ claimId: claim.id, hospitalId: claim.hospital_id, status: 'submitted', actor: req.user.name })
+      .catch((e) => console.warn('[claims/submit] patient notify failed:', e.message));
+
     res.json({
       success: true,
       message: 'Claim submitted successfully',
@@ -1265,6 +1270,41 @@ router.post('/claims/bulk-upload', authUser, requireRole(['hospital', 'admin']),
  * GET /hospital/insurance/claims/:claimId/history
  * Shows all events, queries, responses, and status changes
  */
+function buildClaimTimeline(claim) {
+  return [
+    {
+      event: 'Created',
+      timestamp: claim.createdAt,
+      status: 'draft',
+      user: claim.submittedBy
+    },
+    ...(claim.submittedAt ? [{
+      event: 'Submitted',
+      timestamp: claim.submittedAt,
+      status: 'submitted',
+      user: claim.submittedBy
+    }] : []),
+    ...(claim.queryHistory || []).map(q => ({
+      event: 'Query Response',
+      timestamp: q.respondedAt,
+      details: q.response,
+      user: q.respondedBy
+    })),
+    ...(claim.approvedAt ? [{
+      event: 'Approved',
+      timestamp: claim.approvedAt,
+      approvedAmount: claim.approvedAmount,
+      status: 'approved'
+    }] : []),
+    ...(claim.rejectedAt ? [{
+      event: 'Rejected',
+      timestamp: claim.rejectedAt,
+      reason: claim.rejectionReason,
+      status: 'rejected'
+    }] : [])
+  ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+}
+
 router.get('/claims/:claimId/history', authUser, requireRole(['hospital', 'admin']), [
   param('claimId').isInt()
 ], async (req, res) => {
@@ -1284,46 +1324,208 @@ router.get('/claims/:claimId/history', authUser, requireRole(['hospital', 'admin
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
 
-    const timeline = [
-      {
-        event: 'Created',
-        timestamp: claim.createdAt,
-        status: 'draft',
-        user: claim.submittedBy
-      },
-      ...(claim.submittedAt ? [{
-        event: 'Submitted',
-        timestamp: claim.submittedAt,
-        status: 'submitted',
-        user: claim.submittedBy
-      }] : []),
-      ...(claim.queryHistory || []).map(q => ({
-        event: 'Query Response',
-        timestamp: q.respondedAt,
-        details: q.response,
-        user: q.respondedBy
-      })),
-      ...(claim.approvedAt ? [{
-        event: 'Approved',
-        timestamp: claim.approvedAt,
-        approvedAmount: claim.approvedAmount,
-        status: 'approved'
-      }] : []),
-      ...(claim.rejectedAt ? [{
-        event: 'Rejected',
-        timestamp: claim.rejectedAt,
-        reason: claim.rejectionReason,
-        status: 'rejected'
-      }] : [])
-    ].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    res.json({
+      success: true,
+      claim,
+      timeline: buildClaimTimeline(claim)
+    });
+  } catch (error) {
+    console.error('Claim history error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /hospital/insurance/claims/:claimId/detail
+ * Unified single-screen view: claim header, timeline, courier shipments,
+ * patient-notification log, and any reconciliation postings linked to this
+ * claim — consolidates what was previously spread across Claims/Documents/
+ * Messages/Reconciliation into one call (ClaimBook-parity gap).
+ */
+router.get('/claims/:claimId/detail', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt()
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, {
+      include: [
+        { model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] }
+      ],
+      transaction
+    }));
+
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const hospitalId = req.user.hospital_id || req.user.tenant_id || req.user.id;
+    const eraService = (await import('../services/hospital-era.service.js')).default;
+    const postings = await eraService.listEraPostings(hospitalId, {
+      claimId: claim.id,
+      userId: req.user.id,
+    }).catch(() => []);
 
     res.json({
       success: true,
       claim,
-      timeline
+      timeline: buildClaimTimeline(claim),
+      courierTracking: claim.courierTracking || [],
+      notificationLog: claim.notificationLog || [],
+      reconciliationPostings: postings,
     });
   } catch (error) {
-    console.error('Claim history error:', error);
+    console.error('Claim detail error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /hospital/insurance/claims/:claimId/notify
+ * Manually (re)send a WhatsApp/SMS status update to the patient for the
+ * claim's current status.
+ */
+router.post('/claims/:claimId/notify', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt()
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const result = await notifyClaimStatusChange({
+      claimId: claim.id,
+      hospitalId: claim.hospital_id,
+      status: claim.status,
+      actor: req.user.name || 'insurance_desk_staff',
+    });
+
+    if (!result.success) {
+      return res.status(200).json({ success: false, message: result.error || 'Could not send notification', channel: null });
+    }
+
+    res.json({ success: true, message: `Status update sent via ${result.channel}`, channel: result.channel });
+  } catch (error) {
+    console.error('Claim notify error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /hospital/insurance/claims/:claimId/status-qr
+ * QR code (data URL) linking to the public, unauthenticated patient
+ * status-lookup page — for printing on discharge paperwork or displaying
+ * at the insurance desk.
+ */
+router.get('/claims/:claimId/status-qr', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt()
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const { url, dataUrl } = await generateStatusQrCode(claim);
+    res.json({ success: true, url, dataUrl });
+  } catch (error) {
+    console.error('Claim status QR error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * Courier tracking — physical documents couriered to TPAs/insurers
+ * (ClaimBook-parity gap: "Courier Tracking — Logs and monitors physical
+ * documents sent to TPAs.")
+ */
+router.get('/claims/:claimId/courier', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt()
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+    res.json({ success: true, shipments: claim.courierTracking || [] });
+  } catch (error) {
+    console.error('Courier list error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/claims/:claimId/courier', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  body('courierName').notEmpty().withMessage('Courier name is required'),
+  body('trackingNumber').notEmpty().withMessage('Tracking/AWB number is required'),
+  body('sentTo').notEmpty().withMessage('Recipient (TPA/insurer) is required'),
+  body('documentType').optional().isString(),
+  body('notes').optional().isString(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const { courierName, trackingNumber, sentTo, documentType, notes } = req.body;
+    const shipment = {
+      id: `courier-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      courierName,
+      trackingNumber,
+      sentTo,
+      documentType: documentType || 'claim_documents',
+      notes: notes || '',
+      status: 'in_transit',
+      sentDate: new Date().toISOString(),
+      deliveredDate: null,
+      createdBy: req.user.id,
+      createdByName: req.user.name || null,
+    };
+
+    await withClaimsRls(req, (transaction) => claim.update({
+      courierTracking: [...(claim.courierTracking || []), shipment],
+    }, { transaction }));
+
+    res.json({ success: true, shipment });
+  } catch (error) {
+    console.error('Courier create error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.patch('/claims/:claimId/courier/:entryId', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  body('status').isIn(['in_transit', 'delivered', 'returned']).withMessage('Invalid status'),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const existing = claim.courierTracking || [];
+    const idx = existing.findIndex((s) => s.id === req.params.entryId);
+    if (idx === -1) {
+      return res.status(404).json({ success: false, message: 'Courier shipment not found' });
+    }
+
+    const { status, notes } = req.body;
+    const updatedEntry = {
+      ...existing[idx],
+      status,
+      notes: notes !== undefined ? notes : existing[idx].notes,
+      deliveredDate: status === 'delivered' ? new Date().toISOString() : existing[idx].deliveredDate,
+    };
+    // Build a new array (not a mutated copy of claim.courierTracking) —
+    // Sequelize's changed-field detection compares by reference, so handing
+    // back the same array object silently skips the UPDATE entirely.
+    const shipments = existing.map((s, i) => (i === idx ? updatedEntry : s));
+
+    await withClaimsRls(req, (transaction) => claim.update({ courierTracking: shipments }, { transaction }));
+
+    res.json({ success: true, shipment: updatedEntry });
+  } catch (error) {
+    console.error('Courier update error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -1443,7 +1645,7 @@ router.get('/claims/:claimId/pdf', authUser, requireRole(['hospital', 'admin']),
     // check. Streaming through this already-authenticated, RLS-scoped route
     // avoids ever creating a public path to these files.
     const pdfPath = await pdfGenerator.generateClaimPDF(claim, claim.patient);
-    const filePath = path.join(__dirname, 'public', pdfPath);
+    const filePath = path.join(__dirname, '..', 'public', pdfPath);
     res.download(filePath, `${claim.claimNumber}.pdf`, (err) => {
       if (err && !res.headersSent) {
         console.error('PDF download error:', err.message);
@@ -1466,7 +1668,7 @@ router.get('/pre-auth/:id/pdf', authUser, requireRole(['hospital', 'admin']), [
   try {
     const preAuth = await PreAuthorization.findOne({
       where: { id: req.params.id },
-      include: [{ model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'dateOfBirth', 'gender', 'abhaId'] }]
+      include: [{ model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'dateOfBirth', 'gender', ['abhaHealthId', 'abhaId']] }]
     });
     if (!preAuth) return res.status(404).json({ success: false, message: 'Pre-auth not found' });
 
@@ -1483,7 +1685,7 @@ router.get('/pre-auth/:id/pdf', authUser, requireRole(['hospital', 'admin']), [
     };
 
     const pdfPath = await pdfGenerator.generateTPAPreAuthFormPDF(preAuth.toJSON ? preAuth.toJSON() : preAuth, hospital);
-    const filePath = path.join(__dirname, 'public', pdfPath);
+    const filePath = path.join(__dirname, '..', 'public', pdfPath);
     res.download(filePath, `${preAuth.preAuthNumber}.pdf`, (err) => {
       if (err && !res.headersSent) {
         console.error('Pre-auth PDF download error:', err.message);
@@ -1905,7 +2107,7 @@ router.post('/patient/search', authUser, requireRole(['hospital', 'admin']), [
 
     let where = {};
     if (searchType === 'abha') {
-      where.abhaId = searchTerm;
+      where.abhaHealthId = searchTerm;
     } else if (searchType === 'uhid') {
       const numericId = parseInt(String(searchTerm).replace(/^UH-?/i, ''), 10);
       where.id = Number.isNaN(numericId) ? -1 : numericId;
@@ -2132,6 +2334,7 @@ router.get('/reconciliation/postings', authUser, requireRole(['hospital', 'admin
     const eraService = (await import('../services/hospital-era.service.js')).default;
     const postings = await eraService.listEraPostings(hospitalId, {
       limit: parseInt(req.query.limit) || 50,
+      claimId: req.query.claimId ? parseInt(req.query.claimId) : undefined,
       userId: req.user.id,
     });
     res.json({ success: true, postings });
