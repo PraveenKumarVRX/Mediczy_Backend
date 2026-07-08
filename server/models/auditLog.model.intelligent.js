@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { maskPhi } from '../utils/phi-masker.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 let intelligentDB = null;
 let auditLogsTableEnsured = false;
@@ -174,10 +175,29 @@ const AuditLog = {
         logData.timestamp
       ].map((value) => (value === undefined ? null : value));
 
-      const [result] = await db.query(query, {
-        bind: values,
-        type: db.QueryTypes.INSERT
-      });
+      // audit_logs has FORCE ROW LEVEL SECURITY (tenant-isolation + platform-admin
+      // policies). This writer runs outside any per-request RLS context (it's a
+      // background audit sink, invoked for anonymous/system requests too), so
+      // without explicitly setting a context first every insert was silently
+      // rejected — "new row violates row-level security policy" — since 2026-07-03.
+      // The audit log itself is a trusted system writer, not tenant-scoped user
+      // data, so it runs under the platform-admin RLS bypass rather than trying
+      // to derive a per-tenant org/user context that may not exist (e.g. health
+      // checks, unauthenticated requests).
+      const transaction = await db.transaction();
+      let result;
+      try {
+        await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+        [result] = await db.query(query, {
+          bind: values,
+          type: db.QueryTypes.INSERT,
+          transaction,
+        });
+        await transaction.commit();
+      } catch (err) {
+        await transaction.rollback();
+        throw err;
+      }
 
       return result;
     } catch (error) {
