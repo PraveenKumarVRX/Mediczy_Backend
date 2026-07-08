@@ -2122,6 +2122,25 @@ router.post('/reconciliation/upload', authUser, requireRole(['hospital', 'admin'
   }
 });
 
+/**
+ * GET /hospital/insurance/reconciliation/postings
+ * List posted ERA/bank-statement remittances for this hospital
+ */
+router.get('/reconciliation/postings', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = req.user.hospital_id || req.user.tenant_id || req.user.id;
+    const eraService = (await import('../services/hospital-era.service.js')).default;
+    const postings = await eraService.listEraPostings(hospitalId, {
+      limit: parseInt(req.query.limit) || 50,
+      userId: req.user.id,
+    });
+    res.json({ success: true, postings });
+  } catch (error) {
+    console.error('Reconciliation postings list error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ==================== 6. REVENUE / FINANCIALS ====================
 
 /**

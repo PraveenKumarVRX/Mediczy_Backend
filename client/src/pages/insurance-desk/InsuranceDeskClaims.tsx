@@ -14,7 +14,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Wallet,
-  Download, Upload,
+  Download, Upload, MessageCircle, Send,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -58,6 +58,7 @@ const STATUS_TABS = [
   { key: 'draft', label: 'Drafts' },
   { key: 'submitted', label: 'Submitted' },
   { key: 'pending', label: 'Pending' },
+  { key: 'query', label: 'Query' },
   { key: 'approved', label: 'Approved' },
   { key: 'rejected', label: 'Rejected' },
   { key: 'paid', label: 'Paid' },
@@ -83,6 +84,13 @@ const InsuranceDeskClaims = () => {
   const [bulkUploading, setBulkUploading] = useState(false);
   const [bulkResult, setBulkResult] = useState<{ success: number; failed: number } | null>(null);
   const [bulkError, setBulkError] = useState<string | null>(null);
+
+  const [queryClaim, setQueryClaim] = useState<Claim | null>(null);
+  const [queryText, setQueryText] = useState<string | null>(null);
+  const [loadingQuery, setLoadingQuery] = useState(false);
+  const [responseText, setResponseText] = useState('');
+  const [respondingQuery, setRespondingQuery] = useState(false);
+  const [queryError, setQueryError] = useState<string | null>(null);
 
   const load = useCallback(async (searchTerm?: string, status?: string) => {
     setLoading(true);
@@ -118,6 +126,41 @@ const InsuranceDeskClaims = () => {
       setError(err?.response?.data?.message || 'Could not download PDF.');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const openQuery = async (claim: Claim) => {
+    setQueryClaim(claim);
+    setQueryText(null);
+    setResponseText('');
+    setQueryError(null);
+    setLoadingQuery(true);
+    try {
+      const { data } = await api.get(`/hospital/insurance/claims/${claim.id}/history`);
+      const timeline = data.timeline || data.history || [];
+      const lastQuery = [...timeline].reverse().find((e: any) => e.event === 'Query Response' || e.details);
+      setQueryText(lastQuery?.details || "No query text on file — check the insurer's original email/portal message.");
+    } catch {
+      setQueryText(null);
+    } finally {
+      setLoadingQuery(false);
+    }
+  };
+
+  const submitQueryResponse = async () => {
+    if (!queryClaim || !responseText.trim()) return;
+    setRespondingQuery(true);
+    setQueryError(null);
+    try {
+      await api.post(`/hospital/insurance/claims/${queryClaim.id}/enhance`, {
+        queryResponse: responseText.trim(),
+      });
+      setQueryClaim(null);
+      load(search, statusTab);
+    } catch (err: any) {
+      setQueryError(err?.response?.data?.message || 'Could not submit query response.');
+    } finally {
+      setRespondingQuery(false);
     }
   };
 
@@ -263,9 +306,16 @@ const InsuranceDeskClaims = () => {
                       </TableCell>
                       <TableCell>{formatDate(claim.createdAt)}</TableCell>
                       <TableCell>
-                        <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" onClick={() => downloadPdf(claim)} disabled={downloadingId === claim.id}>
-                          {downloadingId === claim.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                        </Button>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" className="gap-1 h-7 px-2" onClick={() => downloadPdf(claim)} disabled={downloadingId === claim.id}>
+                            {downloadingId === claim.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                          </Button>
+                          {claim.status === 'query' && (
+                            <Button size="sm" variant="outline" className="gap-1 h-7 text-xs" onClick={() => openQuery(claim)}>
+                              <MessageCircle className="h-3.5 w-3.5" /> Respond
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -358,6 +408,37 @@ const InsuranceDeskClaims = () => {
             <Button className="bg-teal-600 hover:bg-teal-700 gap-1" onClick={submitBulk} disabled={bulkUploading || !bulkText.trim()}>
               {bulkUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
               Upload
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!queryClaim} onOpenChange={(open) => { if (!open) setQueryClaim(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2"><MessageCircle className="h-4 w-4 text-teal-600" /> Respond to Query — {queryClaim?.claimNumber}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {loadingQuery ? (
+              <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Loading query details…</div>
+            ) : (
+              <div className="rounded-lg border bg-amber-50 dark:bg-amber-950/20 p-3 text-sm">
+                <p className="font-medium text-amber-700 dark:text-amber-300 mb-1">Insurer's query</p>
+                <p className="text-muted-foreground">{queryText}</p>
+              </div>
+            )}
+            <div>
+              <Label>Your Response</Label>
+              <Textarea rows={4} value={responseText} onChange={(e) => setResponseText(e.target.value)} placeholder="Describe how the query is being addressed — e.g. additional documents uploaded via the Documents page, clarification on room category, etc." />
+            </div>
+            <p className="text-xs text-muted-foreground">If the insurer asked for documents, upload them on the Documents page first, then submit this response — the claim moves back to Pending.</p>
+            {queryError && <p className="text-sm text-red-600">{queryError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setQueryClaim(null)}>Cancel</Button>
+            <Button className="bg-teal-600 hover:bg-teal-700 gap-1" onClick={submitQueryResponse} disabled={respondingQuery || !responseText.trim()}>
+              {respondingQuery ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              Submit Response
             </Button>
           </DialogFooter>
         </DialogContent>

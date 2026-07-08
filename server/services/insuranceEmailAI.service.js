@@ -252,8 +252,12 @@ async function applyPortalUpdates(parsed, hospitalId) {
           if (claim && ['pending', 'submitted'].includes(claim.status)) {
             await claim.update({
               status: 'query',
+              // response/respondedAt mirror the summary/receivedAt so this entry
+              // renders correctly in GET /claims/:id/history's timeline, which
+              // reads q.response/q.respondedAt regardless of who wrote the entry.
               queryHistory: [...(claim.queryHistory || []), {
-                receivedAt: new Date(), source: 'email_ai', summary: parsed.summary || null,
+                receivedAt: new Date(), respondedAt: new Date(), source: 'email_ai',
+                summary: parsed.summary || null, response: parsed.summary || 'Query received from insurer — see original email.',
               }],
             }, { transaction });
             log.push({ type: 'claim_query', claimNumber: claimNo });

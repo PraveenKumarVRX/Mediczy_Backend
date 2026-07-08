@@ -2,7 +2,7 @@ import type { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, Mail, Scale, Landmark,
-  ShieldQuestion, MessageSquare,
+  ShieldQuestion, MessageSquare, ArrowLeftRight,
 } from 'lucide-react';
 
 export const navSections: DeptNavSection[] = [
@@ -20,6 +20,7 @@ export const navSections: DeptNavSection[] = [
     { icon: UserCheck,  label: 'Patient Insurance',   href: '/insurance-desk/patient-insurance' },
     { icon: Search,     label: 'Claim Search',        href: '/insurance-desk/search' },
     { icon: Landmark,   label: 'Settlements',         href: '/insurance-desk/settlements' },
+    { icon: ArrowLeftRight, label: 'Reconciliation',  href: '/insurance-desk/reconciliation' },
     { icon: ShieldQuestion, label: 'Compliance',      href: '/insurance-desk/compliance' },
   ]},
   { title: 'Reports', items: [
