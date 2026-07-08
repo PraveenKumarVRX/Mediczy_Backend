@@ -228,6 +228,20 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
     field: 'query_history',
     comment: 'Track all queries and responses from insurance company'
   },
+  courierTracking: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: [],
+    field: 'courier_tracking',
+    comment: 'Physical documents couriered to TPAs/insurers, with delivery status'
+  },
+  notificationLog: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: [],
+    field: 'notification_log',
+    comment: 'WhatsApp/SMS patient status-update send log'
+  },
   notes: {
     type: DataTypes.TEXT,
     allowNull: true
