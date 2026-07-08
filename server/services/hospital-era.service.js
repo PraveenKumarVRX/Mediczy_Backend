@@ -4,6 +4,7 @@
 import pool from '../db/pgPool.js';
 import * as hospitalBilling from './hospital-billing.service.js';
 import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
+import { notifyClaimStatusChange } from './insurance-claim-notify.service.js';
 
 export async function postEraRemittance(hospitalId, era, actor) {
   const parsed = typeof era === 'string' ? JSON.parse(era) : (era || {});
@@ -18,7 +19,7 @@ export async function postEraRemittance(hospitalId, era, actor) {
   // below, which were previously silent no-ops (RLS-blocked SELECT always
   // returned zero rows) and, worse, referenced total_paid/total_claimed
   // columns that don't exist on insurance_claims at all.
-  const { claim, eraRow, insurancePaid } = await withRlsTransaction(
+  const { claim, eraRow, insurancePaid, updatedStatus } = await withRlsTransaction(
     pool,
     { orgId: hospitalId, userId: actor?.id || actor?.actorId || 0, isPlatformAdmin: false },
     async (client) => {
@@ -49,23 +50,31 @@ export async function postEraRemittance(hospitalId, era, actor) {
         ]
       );
 
+      let newStatus = null;
       if (claimRow?.id && paid > 0) {
-        await client.query(
+        const updated = await client.query(
           `UPDATE insurance_claims
            SET settled_amount = COALESCE(settled_amount,0) + $2,
                status = CASE WHEN COALESCE(settled_amount,0) + $2 >= COALESCE(claim_amount,0) THEN 'paid' ELSE status END,
                settlement_status = CASE WHEN COALESCE(settled_amount,0) + $2 >= COALESCE(claim_amount,0) THEN 'settled' ELSE 'partial' END,
                updated_at = NOW()
-           WHERE id = $1`,
+           WHERE id = $1
+           RETURNING status`,
           [claimRow.id, paid]
         );
+        newStatus = updated.rows[0]?.status || null;
       }
 
-      return { claim: claimRow, eraRow: era, insurancePaid: paid };
+      return { claim: claimRow, eraRow: era, insurancePaid: paid, updatedStatus: newStatus };
     }
   );
 
   const resolvedInvoiceId = invoiceId || claim?.invoice_id || null;
+
+  if (claim?.id && updatedStatus === 'paid') {
+    notifyClaimStatusChange({ claimId: claim.id, hospitalId, status: 'paid', actor: actor?.name || 'era_posting' })
+      .catch((e) => console.warn('[hospital-era] patient notify failed:', e.message));
+  }
 
   if (insurancePaid > 0 && resolvedInvoiceId) {
     await hospitalBilling.recordPayment(hospitalId, resolvedInvoiceId, {
@@ -110,7 +119,7 @@ export async function postEraRemittance(hospitalId, era, actor) {
   };
 }
 
-export async function listEraPostings(hospitalId, { limit = 50, patientId, userId = 0 } = {}) {
+export async function listEraPostings(hospitalId, { limit = 50, patientId, claimId, userId = 0 } = {}) {
   // The LEFT JOIN touches insurance_claims (RLS), so without context this
   // always came back with c.patient_id = NULL — silently defeating the
   // patientId filter and losing claim linkage in the response.
@@ -118,9 +127,9 @@ export async function listEraPostings(hospitalId, { limit = 50, patientId, userI
     const r = await client.query(
       `SELECT e.*, c.patient_id, c.claim_number FROM era_remittances e
        LEFT JOIN insurance_claims c ON c.id = e.claim_id
-       WHERE e.hospital_id = $1 AND ($2::int IS NULL OR c.patient_id = $2)
+       WHERE e.hospital_id = $1 AND ($2::int IS NULL OR c.patient_id = $2) AND ($4::int IS NULL OR e.claim_id = $4)
        ORDER BY e.posted_at DESC LIMIT $3`,
-      [hospitalId, patientId || null, limit]
+      [hospitalId, patientId || null, limit, claimId || null]
     );
     return r.rows;
   });
