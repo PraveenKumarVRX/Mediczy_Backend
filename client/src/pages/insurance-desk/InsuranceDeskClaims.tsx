@@ -16,6 +16,7 @@ import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Wallet,
   Download, Upload, MessageCircle, Send, Eye,
+  CalendarClock, AlertCircle, CheckCircle2, XCircle,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -112,6 +113,22 @@ const InsuranceDeskClaims = () => {
 
   useEffect(() => { load(search, statusTab); }, [statusTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [kpiStats, setKpiStats] = useState<{ pending: number; query: number; approved: number; rejected: number } | null>(null);
+  const loadKpiStats = useCallback(async () => {
+    try {
+      const { data } = await api.get('/hospital/insurance/dashboard');
+      setKpiStats({
+        pending: data.dashboard?.stats?.pending ?? 0,
+        query: data.dashboard?.stats?.query ?? 0,
+        approved: data.dashboard?.stats?.approved ?? 0,
+        rejected: data.dashboard?.stats?.rejected ?? 0,
+      });
+    } catch {
+      setKpiStats(null);
+    }
+  }, []);
+  useEffect(() => { loadKpiStats(); }, [loadKpiStats]);
+
   const downloadPdf = async (claim: Claim) => {
     setDownloadingId(claim.id);
     try {
@@ -159,6 +176,7 @@ const InsuranceDeskClaims = () => {
       });
       setQueryClaim(null);
       load(search, statusTab);
+      loadKpiStats();
     } catch (err: any) {
       setQueryError(err?.response?.data?.message || 'Could not submit query response.');
     } finally {
@@ -176,6 +194,7 @@ const InsuranceDeskClaims = () => {
       const { data } = await api.post('/hospital/insurance/claims/bulk-upload', { claims: rows });
       setBulkResult({ success: data.results?.success?.length || 0, failed: data.results?.failed?.length || 0 });
       load(search, statusTab);
+      loadKpiStats();
     } catch (err: any) {
       setBulkError(err?.response?.data?.message || err.message || 'Bulk upload failed — check the JSON format.');
     } finally {
@@ -229,6 +248,7 @@ const InsuranceDeskClaims = () => {
       setNewClaim(emptyNewClaim);
       setBillingImported(null);
       load(search, statusTab);
+      loadKpiStats();
     } catch (err: any) {
       setCreateError(err?.response?.data?.message || 'Could not create claim.');
     } finally {
@@ -263,6 +283,26 @@ const InsuranceDeskClaims = () => {
           </Button>
         </CardHeader>
         <CardContent>
+          {/* KPI tiles double as quick filters — click to jump to that status tab */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <button onClick={() => setStatusTab('pending')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'pending' ? 'border-amber-400 bg-amber-50 dark:bg-amber-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-amber-600 mb-1"><CalendarClock className="h-3.5 w-3.5" /><span className="text-xs font-medium">Pending</span></div>
+              <p className="text-xl font-bold">{kpiStats?.pending ?? '—'}</p>
+            </button>
+            <button onClick={() => setStatusTab('query')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'query' ? 'border-purple-400 bg-purple-50 dark:bg-purple-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-purple-600 mb-1"><AlertCircle className="h-3.5 w-3.5" /><span className="text-xs font-medium">Query</span></div>
+              <p className="text-xl font-bold">{kpiStats?.query ?? '—'}</p>
+            </button>
+            <button onClick={() => setStatusTab('approved')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'approved' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-emerald-600 mb-1"><CheckCircle2 className="h-3.5 w-3.5" /><span className="text-xs font-medium">Approved</span></div>
+              <p className="text-xl font-bold">{kpiStats?.approved ?? '—'}</p>
+            </button>
+            <button onClick={() => setStatusTab('rejected')} className={`text-left rounded-xl border p-3 transition-colors ${statusTab === 'rejected' ? 'border-red-400 bg-red-50 dark:bg-red-950/30' : 'hover:bg-muted/50'}`}>
+              <div className="flex items-center gap-1.5 text-red-500 mb-1"><XCircle className="h-3.5 w-3.5" /><span className="text-xs font-medium">Rejected</span></div>
+              <p className="text-xl font-bold">{kpiStats?.rejected ?? '—'}</p>
+            </button>
+          </div>
+
           <Tabs value={statusTab} onValueChange={setStatusTab} className="mb-3">
             <TabsList>
               {STATUS_TABS.map((t) => <TabsTrigger key={t.key} value={t.key}>{t.label}</TabsTrigger>)}
