@@ -25,6 +25,7 @@ import logger from '../config/logger.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { notifyClaimStatusChange } from './insurance-claim-notify.service.js';
 
 // insurance_claims has row-level security keyed on organization_id (see
 // current_org_id() in Postgres). This function runs from a background email
@@ -183,6 +184,10 @@ async function applyPortalUpdates(parsed, hospitalId) {
   const claimNos = parsed.claimNumbers || [];
   if (claimNos.length === 0) return log;
 
+  // Collected inside the transaction, sent afterward — WhatsApp/SMS sends
+  // must not run inside an open DB transaction.
+  const notifyTargets = [];
+
   try {
     await withEmailClaimsRls(hospitalId, async (transaction) => {
       // 1. Payment advice → update InsuranceClaim with UTR / settlement data
@@ -204,6 +209,7 @@ async function applyPortalUpdates(parsed, hospitalId) {
               notes: `${claim.notes || ''}\n[EMAIL AI ${new Date().toISOString()}] Payment advice received — UTR ${parsed.utr}, amount Rs.${parsed.paymentAmount || 0}${totalDeductions ? `, deductions Rs.${totalDeductions}` : ''}.`.trim(),
             }, { transaction });
             log.push({ type: 'claim_settled', claimNumber: claimNo, utr: parsed.utr, deductions: totalDeductions });
+            notifyTargets.push({ claimId: claim.id, hospitalId, status: 'paid' });
           }
         }
       }
@@ -238,6 +244,7 @@ async function applyPortalUpdates(parsed, hospitalId) {
               rejectionReason: parsed.summary || claim.rejectionReason,
             }, { transaction });
             log.push({ type: 'claim_rejected', claimNumber: claimNo });
+            notifyTargets.push({ claimId: claim.id, hospitalId, status: 'rejected' });
           }
         }
       }
@@ -261,6 +268,7 @@ async function applyPortalUpdates(parsed, hospitalId) {
               }],
             }, { transaction });
             log.push({ type: 'claim_query', claimNumber: claimNo });
+            notifyTargets.push({ claimId: claim.id, hospitalId, status: 'query' });
           }
         }
       }
@@ -268,6 +276,15 @@ async function applyPortalUpdates(parsed, hospitalId) {
   } catch (err) {
     logger.error('[InsuranceEmailAI] applyPortalUpdates error:', err.message);
     log.push({ type: 'error', message: err.message });
+  }
+
+  for (const target of notifyTargets) {
+    try {
+      const result = await notifyClaimStatusChange({ ...target, actor: 'email_ai' });
+      log.push({ type: 'patient_notified', claimId: target.claimId, status: target.status, channel: result.channel || null, success: result.success });
+    } catch (err) {
+      logger.warn('[InsuranceEmailAI] patient notification failed:', err.message);
+    }
   }
 
   return log;
