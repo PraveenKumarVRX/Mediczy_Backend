@@ -748,6 +748,8 @@ const InsuranceDeskSettlementsPage     = lazy(() => import("@/pages/insurance-de
 const InsuranceDeskCompliancePage      = lazy(() => import("@/pages/insurance-desk/InsuranceDeskCompliance"));
 const InsuranceDeskMessagesPage        = lazy(() => import("@/pages/insurance-desk/InsuranceDeskMessages"));
 const InsuranceDeskReconciliationPage  = lazy(() => import("@/pages/insurance-desk/InsuranceDeskReconciliation"));
+const InsuranceDeskClaimDetailPage     = lazy(() => import("@/pages/insurance-desk/InsuranceDeskClaimDetail"));
+const ClaimStatusPublicPage            = lazy(() => import("@/pages/ClaimStatusPublic"));
 const InsuranceDeskPatientInsurancePage= lazy(() => import("@/pages/insurance-desk/InsuranceDeskPatientInsurance"));
 const InsuranceDeskTPAPage             = lazy(() => import("@/pages/insurance-desk/InsuranceDeskTPA"));
 const InsuranceDeskSearchPage          = lazy(() => import("@/pages/insurance-desk/InsuranceDeskSearch"));
@@ -1023,6 +1025,7 @@ const AppRoutes = () => {
         {/* ── Home / auth ─────────────────────────────────────────────── */}
         <Route path="/"                element={<MainLayout><Index /></MainLayout>} />
         <Route path="/login"           element={<Login />} />
+        <Route path="/claim-status/:token" element={<ClaimStatusPublicPage />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/user/forgot-password" element={<ForgotPassword initialUserType="user" lockUserType />} />
@@ -1692,6 +1695,7 @@ const AppRoutes = () => {
         <Route path="/insurance-desk/dashboard"         element={<InsuranceDeskDashboard />} />
         <Route path="/insurance-desk/pre-auth"          element={<InsuranceDeskPreAuthPage />} />
         <Route path="/insurance-desk/claims"            element={<InsuranceDeskClaimsPage />} />
+        <Route path="/insurance-desk/claims/:id"        element={<InsuranceDeskClaimDetailPage />} />
         <Route path="/insurance-desk/documents"         element={<InsuranceDeskDocumentsPage />} />
         <Route path="/insurance-desk/email-inbox"       element={<InsuranceDeskEmailInboxPage />} />
         <Route path="/insurance-desk/appeals"           element={<InsuranceDeskAppealsPage />} />
