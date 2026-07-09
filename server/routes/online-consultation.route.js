@@ -19,6 +19,7 @@ import { normalizeDoctorProfile, toArray } from '../utils/doctorNormalizer.js';
 import { canonicalizeAppointmentTime, isSlotBooked } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
 
@@ -104,6 +105,37 @@ async function findAppointmentFlexible(appointmentId, { transaction } = {}) {
   }
 
   return appointment;
+}
+
+// appointments (and prescriptions) enforce FORCE ROW LEVEL SECURITY — every
+// read/write must run inside a transaction with the session GUCs set, or
+// Sequelize silently sees zero rows (reads) / gets rejected (writes).
+async function withAppointmentsRls(req, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext?.(transaction);
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
+
+// For genuinely public/unauthenticated routes (no req.user) that only need a
+// narrow, existence-check-only, non-PII read from appointments.
+async function withAppointmentsRlsBypass(work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
 }
 
 // ============================================
@@ -273,14 +305,15 @@ router.get('/doctors/:id/slots', async (req, res) => {
     }
 
     // Get existing appointments for this doctor on this date
-    const existingAppointments = await Appointment.findAll({
+    const existingAppointments = await withAppointmentsRlsBypass((transaction) => Appointment.findAll({
       where: {
         doctorId,
         appointmentDate: date,
         status: ['pending', 'accepted', 'confirmed', 'in-progress']
       },
-      attributes: ['appointmentTime', 'duration']
-    });
+      attributes: ['appointmentTime', 'duration'],
+      transaction,
+    }));
 
     const bookedSlots = existingAppointments.map(apt => apt.appointmentTime);
     const allSlots = [];
@@ -647,13 +680,14 @@ router.get('/doctor/requests', authUser, async (req, res) => {
       });
     }
 
-    const requests = await Appointment.findAll({
+    const requests = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: {
         doctorId,
         status: 'pending'
       },
-      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']]
-    });
+      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']],
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -705,34 +739,43 @@ router.post('/doctor/accept/:appointmentId', authUser, [
     const { notes } = req.body;
     const doctorId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const acceptResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (Number(appointment.doctorId) !== Number(doctorId)) return { forbidden: true };
+      if (appointment.status !== 'pending') return { badStatus: appointment.status };
+
+      // Update appointment status to 'accepted' (payment pending)
+      await appointment.update({
+        status: 'accepted',
+        notes: notes || 'Appointment accepted by doctor. Please complete payment to confirm.'
+      }, { transaction });
+
+      return { appointment };
+    });
+
+    if (acceptResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (Number(appointment.doctorId) !== Number(doctorId)) {
+    if (acceptResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to accept this appointment'
       });
     }
 
-    if (appointment.status !== 'pending') {
+    if (acceptResult.badStatus) {
       return res.status(400).json({
         success: false,
-        message: `Appointment is already ${appointment.status}`
+        message: `Appointment is already ${acceptResult.badStatus}`
       });
     }
 
-    // Update appointment status to 'accepted' (payment pending)
-    await appointment.update({
-      status: 'accepted',
-      notes: notes || 'Appointment accepted by doctor. Please complete payment to confirm.'
-    });
+    const appointment = acceptResult.appointment;
 
     // Get doctor info for notification
     const doctor = await Doctor.findByPk(doctorId);
@@ -790,36 +833,45 @@ router.post('/doctor/reject/:appointmentId', authUser, [
     const { reason } = req.body;
     const doctorId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const rejectResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (Number(appointment.doctorId) !== Number(doctorId)) return { forbidden: true };
+      if (appointment.status !== 'pending') return { badStatus: appointment.status };
+
+      // Update appointment status to 'rejected'
+      await appointment.update({
+        status: 'cancelled',
+        cancelledBy: appointment.doctorId,
+        cancellationReason: reason,
+        cancelledAt: new Date()
+      }, { transaction });
+
+      return { appointment };
+    });
+
+    if (rejectResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (Number(appointment.doctorId) !== Number(doctorId)) {
+    if (rejectResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to reject this appointment'
       });
     }
 
-    if (appointment.status !== 'pending') {
+    if (rejectResult.badStatus) {
       return res.status(400).json({
         success: false,
-        message: `Cannot reject appointment with status: ${appointment.status}`
+        message: `Cannot reject appointment with status: ${rejectResult.badStatus}`
       });
     }
 
-    // Update appointment status to 'rejected'
-    await appointment.update({
-      status: 'cancelled',
-      cancelledBy: appointment.doctorId,
-      cancellationReason: reason,
-      cancelledAt: new Date()
-    });
+    const appointment = rejectResult.appointment;
 
     // Get doctor info for notification
     const doctor = await Doctor.findByPk(doctorId);
@@ -865,35 +917,44 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
     const { appointmentId } = req.params;
     const patientId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const initiateResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (appointment.userId !== patientId) return { forbidden: true };
+      if (!['accepted', 'scheduled'].includes(appointment.status)) return { badStatus: appointment.status };
+      if (appointment.paymentStatus === 'paid') return { alreadyPaid: true };
+      return { appointment };
+    });
+
+    if (initiateResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (appointment.userId !== patientId) {
+    if (initiateResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to pay for this appointment'
       });
     }
 
-    if (!['accepted', 'scheduled'].includes(appointment.status)) {
+    if (initiateResult.badStatus) {
       return res.status(400).json({
         success: false,
-        message: `Cannot pay for appointment with status: ${appointment.status}.`
+        message: `Cannot pay for appointment with status: ${initiateResult.badStatus}.`
       });
     }
 
-    if (appointment.paymentStatus === 'paid') {
+    if (initiateResult.alreadyPaid) {
       return res.status(400).json({
         success: false,
         message: 'Payment already completed'
       });
     }
+
+    const appointment = initiateResult.appointment;
 
     // Create Razorpay order
     const amount = parseFloat(appointment.paymentAmount || appointment.consultationFee || 0); // PaymentService converts INR to paise
@@ -917,9 +978,9 @@ router.post('/payment/initiate/:appointmentId', authUser, async (req, res) => {
       }
 
       // Store order ID in appointment
-      await appointment.update({
+      await withAppointmentsRls(req, (transaction) => appointment.update({
         transactionId: orderResult.order.id
-      });
+      }, { transaction }));
 
       res.json({
         success: true,
@@ -981,21 +1042,28 @@ router.post('/payment/verify/:appointmentId', authUser, [
     
     const patientId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const fetchResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (appointment.userId !== patientId) return { forbidden: true };
+      return { appointment };
+    });
+
+    if (fetchResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (appointment.userId !== patientId) {
+    if (fetchResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized'
       });
     }
+
+    const appointment = fetchResult.appointment;
 
     // Verify payment signature
     const isValid = paymentService.verifyPaymentSignature({
@@ -1005,9 +1073,9 @@ router.post('/payment/verify/:appointmentId', authUser, [
     });
 
     if (!isValid) {
-      await appointment.update({
+      await withAppointmentsRls(req, (transaction) => appointment.update({
         paymentStatus: 'failed'
-      });
+      }, { transaction }));
 
       return res.status(400).json({
         success: false,
@@ -1028,7 +1096,7 @@ router.post('/payment/verify/:appointmentId', authUser, [
     }
 
     // Update appointment as confirmed with payment
-    await appointment.update({
+    await withAppointmentsRls(req, (transaction) => appointment.update({
       status: 'confirmed',
       paymentStatus: 'paid',
       paymentMethod: 'razorpay',
@@ -1037,7 +1105,7 @@ router.post('/payment/verify/:appointmentId', authUser, [
       ...(meetingLink && { meetingLink }),
       ...(meetingDetails && { meetingDetails }),
       notes: isOnlineConsult ? 'Payment received. Video consultation enabled.' : 'Payment received. In-person appointment confirmed.'
-    });
+    }, { transaction }));
 
     // Get doctor info for notifications
     const doctor = await Doctor.findByPk(appointment.doctorId);
@@ -1094,48 +1162,59 @@ router.post('/payment/manual/:appointmentId', authUser, [
       req.user.dataValues?._id;
     const userRole = req.user.role || req.userRole;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const manualResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+
+      // Check if user is the doctor or admin
+      const isDoctor = appointment.doctorId === userId;
+      const isAdmin = userRole === 'admin' || userRole === 'super_admin';
+      if (!isDoctor && !isAdmin) return { forbidden: true };
+
+      if (appointment.status !== 'accepted') return { badStatus: appointment.status };
+
+      // Generate meeting link
+      const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+      const { meetingId, meetingLink, meetingDetails } = meetingInfo;
+
+      // Update appointment
+      await appointment.update({
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        paymentMethod,
+        transactionId: transactionRef || `MANUAL-${Date.now()}`,
+        meetingId,
+        meetingLink,
+        meetingDetails,
+        notes: `Payment confirmed manually via ${paymentMethod}. Video consultation enabled.`
+      }, { transaction });
+
+      return { appointment, meetingId, meetingLink, meetingDetails };
+    });
+
+    if (manualResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    // Check if user is the doctor or admin
-    const isDoctor = appointment.doctorId === userId;
-    const isAdmin = userRole === 'admin' || userRole === 'super_admin';
-
-    if (!isDoctor && !isAdmin) {
+    if (manualResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Only doctor or admin can confirm manual payment'
       });
     }
 
-    if (appointment.status !== 'accepted') {
+    if (manualResult.badStatus) {
       return res.status(400).json({
         success: false,
-        message: `Cannot confirm payment for appointment with status: ${appointment.status}`
+        message: `Cannot confirm payment for appointment with status: ${manualResult.badStatus}`
       });
     }
 
-    // Generate meeting link
-    const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
-    const { meetingId, meetingLink, meetingDetails } = meetingInfo;
-
-    // Update appointment
-    await appointment.update({
-      status: 'confirmed',
-      paymentStatus: 'paid',
-      paymentMethod,
-      transactionId: transactionRef || `MANUAL-${Date.now()}`,
-      meetingId,
-      meetingLink,
-      meetingDetails,
-      notes: `Payment confirmed manually via ${paymentMethod}. Video consultation enabled.`
-    });
+    const appointment = manualResult.appointment;
+    const { meetingId, meetingLink, meetingDetails } = manualResult;
 
     // Get doctor info for notifications
     const doctor = await Doctor.findByPk(appointment.doctorId);
@@ -1183,21 +1262,28 @@ router.get('/payment/hc-check/:appointmentId', authUser, async (req, res) => {
     const { appointmentId } = req.params;
     const patientId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const hcCheckResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (appointment.userId !== patientId) return { forbidden: true };
+      return { appointment };
+    });
+
+    if (hcCheckResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (appointment.userId !== patientId) {
+    if (hcCheckResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to view this appointment'
       });
     }
+
+    const appointment = hcCheckResult.appointment;
 
     const consultationFee = parseFloat(
       appointment.paymentAmount ?? appointment.consultationFee ?? appointment.paymentDetails?.amountINR ?? 0
@@ -1241,35 +1327,44 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
     const { appointmentId } = req.params;
     const patientId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const hcPayFetch = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (appointment.userId !== patientId) return { forbidden: true };
+      if (!['accepted', 'pending', 'scheduled'].includes(appointment.status)) return { badStatus: appointment.status };
+      if (appointment.paymentStatus === 'paid') return { alreadyPaid: true };
+      return { appointment };
+    });
+
+    if (hcPayFetch.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (appointment.userId !== patientId) {
+    if (hcPayFetch.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to pay for this appointment'
       });
     }
 
-    if (!['accepted', 'pending', 'scheduled'].includes(appointment.status)) {
+    if (hcPayFetch.badStatus) {
       return res.status(400).json({
         success: false,
-        message: `Cannot pay for appointment with status: ${appointment.status}`
+        message: `Cannot pay for appointment with status: ${hcPayFetch.badStatus}`
       });
     }
 
-    if (appointment.paymentStatus === 'paid') {
+    if (hcPayFetch.alreadyPaid) {
       return res.status(400).json({
         success: false,
         message: 'Payment already completed'
       });
     }
+
+    const appointment = hcPayFetch.appointment;
 
     const consultationFee = parseFloat(
       appointment.paymentAmount ?? appointment.consultationFee ?? appointment.paymentDetails?.amountINR ?? 0
@@ -1305,7 +1400,7 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
     const { meetingId, meetingLink, meetingDetails } = meetingInfo;
 
     // Update appointment
-    await appointment.update({
+    await withAppointmentsRls(req, (transaction) => appointment.update({
       status: 'confirmed',
       paymentStatus: 'paid',
       paymentDetails: {
@@ -1319,7 +1414,7 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
       meetingLink,
       meetingDetails,
       notes: `Paid with ${paymentResult.hcPaid} Health Coins (₹${consultationFee} value). Video consultation enabled.`
-    });
+    }, { transaction }));
 
     // Get doctor info for notifications
     const doctor = await Doctor.findByPk(appointment.doctorId);
@@ -1554,12 +1649,12 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     let { meetingId, meetingLink, meetingDetails, provider } = meetingInfo;
 
     if (meetingInfo.needsUpdate) {
-      await appointment.update({ meetingId, meetingLink, meetingDetails });
+      await withAppointmentsRls(req, (transaction) => appointment.update({ meetingId, meetingLink, meetingDetails }, { transaction }));
     }
 
     // Update status to in-progress if first join
     if (appointment.status === 'confirmed') {
-      await appointment.update({ status: 'in-progress' });
+      await withAppointmentsRls(req, (transaction) => appointment.update({ status: 'in-progress' }, { transaction }));
       
       // Send consultation started notification
       try {
@@ -1630,27 +1725,35 @@ router.post('/video/end/:appointmentId', authUser, [
     const { notes, prescription } = req.body;
     const doctorId = req.user.id || req.user.dataValues?.id;
 
-    const appointment = await Appointment.findByPk(appointmentId);
-    
-    if (!appointment) {
+    const videoEndResult = await withAppointmentsRls(req, async (transaction) => {
+      const appointment = await Appointment.findByPk(appointmentId, { transaction });
+      if (!appointment) return { notFound: true };
+      if (appointment.doctorId !== doctorId) return { forbidden: true };
+
+      await appointment.update({
+        status: 'completed',
+        notes: notes || appointment.notes,
+        prescription
+      }, { transaction });
+
+      return { appointment };
+    });
+
+    if (videoEndResult.notFound) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
 
-    if (appointment.doctorId !== doctorId) {
+    if (videoEndResult.forbidden) {
       return res.status(403).json({
         success: false,
         message: 'Only the doctor can end the consultation'
       });
     }
 
-    await appointment.update({
-      status: 'completed',
-      notes: notes || appointment.notes,
-      prescription
-    });
+    const appointment = videoEndResult.appointment;
 
     // Send consultation completed notification
     try {
@@ -1699,10 +1802,11 @@ router.get('/my-appointments', authUser, async (req, res) => {
       where.status = status;
     }
 
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where,
-      order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
-    });
+      order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']],
+      transaction,
+    }));
 
     // Categorize appointments
     const now = new Date();
@@ -1805,10 +1909,11 @@ router.get('/doctor/appointments', authUser, async (req, res) => {
       where.appointmentDate = date;
     }
 
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where,
-      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']]
-    });
+      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']],
+      transaction,
+    }));
 
     // Categorize
     const now = new Date();
@@ -1933,12 +2038,13 @@ router.get('/chat/conversations', authUser, async (req, res) => {
       ? { doctorId: userId }
       : { patientId: userId };
     
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where,
       attributes: ['id', 'doctorId', 'patientId', 'patientName', 'doctorName', 'status', 'appointmentDate', 'appointmentTime'],
       order: [['updatedAt', 'DESC']],
-      limit: 50
-    });
+      limit: 50,
+      transaction,
+    }));
     
     // Build conversations from appointments with chat enabled
     const conversations = await Promise.all(appointments.map(async (apt) => {
@@ -2012,7 +2118,7 @@ router.get('/chat/:appointmentId/messages', authUser, async (req, res) => {
     const { limit = 50, before } = req.query;
     
     // Verify user has access to this appointment
-    const appointment = await Appointment.findByPk(appointmentId);
+    const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
     if (!appointment) {
       return res.status(404).json({
         success: false,
@@ -2116,7 +2222,7 @@ router.post('/chat/:appointmentId/messages', authUser, [
     const userRole = req.user.role;
     
     // Verify user has access
-    const appointment = await Appointment.findByPk(appointmentId);
+    const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
     if (!appointment) {
       return res.status(404).json({
         success: false,
@@ -2180,7 +2286,7 @@ router.post('/chat/:appointmentId/read', authUser, async (req, res) => {
     const userId = req.user.id;
     
     // Verify access
-    const appointment = await Appointment.findByPk(appointmentId);
+    const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
     if (!appointment) {
       return res.status(404).json({
         success: false,
@@ -2238,11 +2344,12 @@ router.get('/chat/unread-count', authUser, async (req, res) => {
       ? { doctorId: userId }
       : { patientId: userId };
     
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where,
       attributes: ['id'],
-      limit: 100
-    });
+      limit: 100,
+      transaction,
+    }));
     
     let totalUnread = 0;
     appointments.forEach(apt => {

@@ -934,11 +934,17 @@ export const getDoctorAppointments = async (req, res) => {
  * GET /api/appointments/:id
  */
 export const getAppointmentById = async (req, res) => {
+  let rlsTransaction = null;
   try {
     const { id } = req.params;
     const userId = req.user.id;
 
-    const appointment = await Appointment.findByPk(id);
+    // appointments has FORCE ROW LEVEL SECURITY — without RLS context this
+    // always matched zero rows regardless of whether the appointment existed.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
+    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
+    await rlsTransaction.commit();
 
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
@@ -951,6 +957,9 @@ export const getAppointmentById = async (req, res) => {
 
     return res.status(200).json({ appointment });
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Get appointment error:', error);
     return res.status(500).json({
       message: 'Failed to fetch appointment',
@@ -964,6 +973,7 @@ export const getAppointmentById = async (req, res) => {
  * DELETE /api/appointments/:id
  */
 export const cancelAppointment = async (req, res) => {
+  let rlsTransaction = null;
   try {
     const { id } = req.params;
     const userId = req.user.id;
@@ -972,19 +982,26 @@ export const cancelAppointment = async (req, res) => {
     // Use either reason or cancellationReason field
     const cancelReason = reason || cancellationReason;
 
-    const appointment = await Appointment.findByPk(id);
+    // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix
+    // as getAppointmentById above.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
+    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
 
     if (!appointment) {
+      await rlsTransaction.rollback();
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
     // Check authorization
     if (String(appointment.userId) !== String(userId) && String(appointment.doctorId) !== String(userId)) {
+      await rlsTransaction.rollback();
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
     // Check if appointment can be cancelled
     if (!canCancelOrReschedule(appointment, 2)) {
+      await rlsTransaction.rollback();
       return res.status(400).json({
         message: 'Appointment cannot be cancelled. Must be cancelled at least 2 hours before the scheduled time.'
       });
@@ -1005,7 +1022,8 @@ export const cancelAppointment = async (req, res) => {
       cancelledBy: cancelledById,
       cancellationReason: cancelReason || defaultReason,
       cancelledAt: new Date()
-    });
+    }, { transaction: rlsTransaction });
+    await rlsTransaction.commit();
 
     // Publish Kafka event
     try {
@@ -1024,6 +1042,9 @@ export const cancelAppointment = async (req, res) => {
       appointment
     });
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Cancel appointment error:', error);
     return res.status(500).json({
       message: 'Failed to cancel appointment',
@@ -1037,6 +1058,7 @@ export const cancelAppointment = async (req, res) => {
  * PATCH /api/appointments/:id/reschedule
  */
 export const rescheduleAppointment = async (req, res) => {
+  let rlsTransaction = null;
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1048,9 +1070,14 @@ export const rescheduleAppointment = async (req, res) => {
     const { appointmentDate, appointmentTime: rawAppointmentTime } = req.body;
     const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
 
-    const appointment = await Appointment.findByPk(id);
+    // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix as
+    // getAppointmentById/cancelAppointment above.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
+    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
 
     if (!appointment) {
+      await rlsTransaction.rollback();
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
@@ -1058,11 +1085,13 @@ export const rescheduleAppointment = async (req, res) => {
     const isPatient = String(appointment.userId) === String(userId);
     const isDoctor = String(appointment.doctorId) === String(userId);
     if (!isPatient && !isDoctor) {
+      await rlsTransaction.rollback();
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
     // Check if appointment can be rescheduled
     if (!canCancelOrReschedule(appointment, 2)) {
+      await rlsTransaction.rollback();
       return res.status(400).json({
         message: 'Appointment cannot be rescheduled at this time.'
       });
@@ -1075,13 +1104,15 @@ export const rescheduleAppointment = async (req, res) => {
         status: {
           [Op.notIn]: ['cancelled', 'no-show']
         }
-      }
+      },
+      transaction: rlsTransaction,
     });
     const existingAppointment = findSlotConflict(doctorAppointments, appointmentTime, {
       excludeId: appointment.id,
     });
 
     if (existingAppointment) {
+      await rlsTransaction.rollback();
       return res.status(409).json({
         message: 'This time slot is already booked. Please select another slot.'
       });
@@ -1096,7 +1127,8 @@ export const rescheduleAppointment = async (req, res) => {
       appointmentDate,
       appointmentTime,
       status: 'rescheduled'
-    });
+    }, { transaction: rlsTransaction });
+    await rlsTransaction.commit();
 
     // Publish Kafka event
     try {
@@ -1115,6 +1147,9 @@ export const rescheduleAppointment = async (req, res) => {
       appointment
     });
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Reschedule appointment error:', error);
     return res.status(500).json({
       message: 'Failed to reschedule appointment',
@@ -1128,19 +1163,26 @@ export const rescheduleAppointment = async (req, res) => {
  * POST /api/appointments/:id/complete
  */
 export const completeAppointment = async (req, res) => {
+  let rlsTransaction = null;
   try {
     const { id } = req.params;
     const doctorId = req.user.id;
     const { notes, prescription, autoCreatePrescription } = req.body;
 
-    const appointment = await Appointment.findByPk(id);
+    // appointments AND prescriptions both have FORCE ROW LEVEL SECURITY — same
+    // missing-context fix as cancelAppointment/rescheduleAppointment above.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
+    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
 
     if (!appointment) {
+      await rlsTransaction.rollback();
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
     // Check authorization
     if (String(appointment.doctorId) !== String(doctorId)) {
+      await rlsTransaction.rollback();
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
@@ -1153,7 +1195,8 @@ export const completeAppointment = async (req, res) => {
 
         // Check if prescription already exists
         const existingPrescription = await Prescription.findOne({
-          where: { appointmentId: parseInt(id) }
+          where: { appointmentId: parseInt(id) },
+          transaction: rlsTransaction,
         });
 
         if (!existingPrescription) {
@@ -1215,7 +1258,7 @@ export const completeAppointment = async (req, res) => {
               validityDays: 30,
               notes: notes || `${appointment.consultationType} consultation completed`,
               status: 'draft'
-            });
+            }, { transaction: rlsTransaction });
 
             prescriptionData = {
               prescriptionId: newPrescription.prescriptionId,
@@ -1241,7 +1284,8 @@ export const completeAppointment = async (req, res) => {
       status: 'completed',
       notes: notes || appointment.notes,
       prescription: prescription || prescriptionData?.prescriptionId || appointment.prescription
-    });
+    }, { transaction: rlsTransaction });
+    await rlsTransaction.commit();
 
     // Publish Kafka event
     try {
@@ -1261,6 +1305,9 @@ export const completeAppointment = async (req, res) => {
       prescription: prescriptionData
     });
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Complete appointment error:', error);
     return res.status(500).json({
       message: 'Failed to complete appointment',

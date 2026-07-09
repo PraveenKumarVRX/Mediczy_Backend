@@ -14,6 +14,8 @@ import { authLimiter, otpLimiter } from "../middleware/rateLimiter.middleware.js
 import { addOtpRoutes } from './shared/registrationHelpers.js';
 import googlePlacesService from '../services/google-places.service.js';
 import { Doctor, Appointment, User } from "../models/index.js";
+import { postgresSequelize } from "../db/postgres-sequelize.js";
+import { setRlsContext } from "../middleware/rls-context.middleware.js";
 import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
 import { Notification, FCMToken } from '../services/notification.service.js';
@@ -37,6 +39,41 @@ const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
+
+// appointments has FORCE ROW LEVEL SECURITY (organization_id/tenant_id/
+// userId/doctorId must match session GUCs set via req.setSequelizeRlsContext).
+// Every Appointment.* query in this file needs to run inside one of these —
+// a bare Sequelize call silently matches zero rows instead of erroring, so
+// this class of bug is easy to introduce and easy to miss in review.
+async function withAppointmentsRls(req, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext?.(transaction);
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
+
+// Variant for genuinely public, unauthenticated routes (e.g. checking a
+// doctor's open slots before login) — there's no req.user/req.doctor to scope
+// a session context by, so this bypasses RLS outright for a narrow,
+// non-sensitive read (appointment times/types only, no patient PII selected).
+async function withAppointmentsRlsBypass(work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
 
 const MEMBERSHIP_RENEWAL_EXEMPT_EMAILS = new Set(
   String(process.env.MEMBERSHIP_RENEWAL_EXEMPT_EMAILS || 'user@mediczy.com')
@@ -350,7 +387,7 @@ router.get("/appointments", authDoctor, async (req, res) => {
       where.status = { [Op.in]: ['pending', 'scheduled', 'confirmed', 'in-progress'] };
     }
 
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where,
       include: [
         {
@@ -359,15 +396,16 @@ router.get("/appointments", authDoctor, async (req, res) => {
           attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
         }
       ],
-      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']]
-    });
+      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']],
+      transaction,
+    }));
 
     res.json({
       success: true,
       appointments: appointments.map(apt => ({
         id: apt.id,
         patientId: apt.userId,
-        patientName: apt.patient 
+        patientName: apt.patient
           ? `${apt.patient.firstName} ${apt.patient.lastName}`
           : apt.patientName || 'Unknown',
         patientEmail: apt.patient?.email,
@@ -423,38 +461,41 @@ router.get("/analytics", authDoctor, async (req, res) => {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    // Appointments by status
-    const appointmentsByStatus = await Appointment.findAll({
-      where: {
-        doctorId,
-        appointmentDate: { [Op.gte]: startDate }
-      },
-      attributes: ['status', [Appointment.sequelize.fn('COUNT', '*'), 'count']],
-      group: ['status']
-    });
-
-    // Appointments by day
-    const appointmentsByDay = await Appointment.findAll({
-      where: {
-        doctorId,
-        appointmentDate: { [Op.gte]: startDate }
-      },
-      attributes: [
-        [Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate')), 'date'],
-        [Appointment.sequelize.fn('COUNT', '*'), 'count']
-      ],
-      group: [Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate'))],
-      order: [[Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate')), 'ASC']]
-    });
-
-    // Revenue (from completed consultations)
-    const completedAppointments = await Appointment.findAll({
-      where: {
-        doctorId,
-        status: 'completed',
-        appointmentDate: { [Op.gte]: startDate }
-      },
-      attributes: ['paymentAmount']
+    // Sequential (not Promise.all): all three queries share one RLS transaction,
+    // and a single pg connection cannot run concurrent queries.
+    const [appointmentsByStatus, appointmentsByDay, completedAppointments] = await withAppointmentsRls(req, async (transaction) => {
+      const byStatus = await Appointment.findAll({
+        where: {
+          doctorId,
+          appointmentDate: { [Op.gte]: startDate }
+        },
+        attributes: ['status', [Appointment.sequelize.fn('COUNT', '*'), 'count']],
+        group: ['status'],
+        transaction,
+      });
+      const byDay = await Appointment.findAll({
+        where: {
+          doctorId,
+          appointmentDate: { [Op.gte]: startDate }
+        },
+        attributes: [
+          [Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate')), 'date'],
+          [Appointment.sequelize.fn('COUNT', '*'), 'count']
+        ],
+        group: [Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate'))],
+        order: [[Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate')), 'ASC']],
+        transaction,
+      });
+      const completed = await Appointment.findAll({
+        where: {
+          doctorId,
+          status: 'completed',
+          appointmentDate: { [Op.gte]: startDate }
+        },
+        attributes: ['paymentAmount'],
+        transaction,
+      });
+      return [byStatus, byDay, completed];
     });
 
     const totalRevenue = completedAppointments.reduce((sum, apt) => sum + (parseFloat(apt.paymentAmount) || 0), 0);
@@ -819,15 +860,16 @@ router.get("/patients", authDoctor, async (req, res) => {
     // Get unique patients from appointments
     const whereClause = { doctorId };
 
-    let appointments = await Appointment.findAll({
+    let appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: whereClause,
       include: [{
         model: User,
         as: 'patient',
         attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'gender', 'dateOfBirth', 'profileImage']
       }],
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
 
     // Get unique patients
     const patientMap = new Map();
@@ -953,7 +995,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       };
 
       // Get booked appointments for this date
-      const bookedAppointments = await Appointment.findAll({
+      const bookedAppointments = await withAppointmentsRlsBypass((transaction) => Appointment.findAll({
         where: {
           doctorId: resolvedDoctorId,
           appointmentDate: date,
@@ -961,8 +1003,9 @@ router.get("/:doctorId/user-slots", async (req, res) => {
             [Op.notIn]: ['cancelled', 'no-show']
           }
         },
-        attributes: ['appointmentTime', 'consultationType']
-      });
+        attributes: ['appointmentTime', 'consultationType'],
+        transaction,
+      }));
 
       const bookedSlotTimes = bookedAppointments.map(apt => apt.appointmentTime);
       const blockedSlots = daySchedule.blockedSlots || [];
@@ -1318,11 +1361,12 @@ router.get('/my-patients', authDoctor, async (req, res) => {
     };
 
     // Get all appointments for this doctor to find unique patients
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: whereClause,
       attributes: ['userId'],
-      raw: true
-    });
+      raw: true,
+      transaction,
+    }));
 
     // Get unique patient IDs from appointments
     const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
@@ -1377,22 +1421,27 @@ router.get('/my-patients', authDoctor, async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
-    // Get appointment counts for each patient
-    const patientsWithStats = await Promise.all(
-      patients.map(async (patient) => {
+    // Get appointment counts for each patient.
+    // Sequential (not Promise.all): every query below shares one RLS
+    // transaction, and a single pg connection cannot run concurrent queries.
+    const patientsWithStats = await withAppointmentsRls(req, async (transaction) => {
+      const results = [];
+      for (const patient of patients) {
         const appointmentStats = await Appointment.count({
           where: {
             doctorId: parseInt(doctorId),
             userId: patient.id
           },
-          group: ['status']
+          group: ['status'],
+          transaction,
         });
 
         const totalAppointments = await Appointment.count({
           where: {
             doctorId: parseInt(doctorId),
             userId: patient.id
-          }
+          },
+          transaction,
         });
 
         const lastAppointment = await Appointment.findOne({
@@ -1401,7 +1450,8 @@ router.get('/my-patients', authDoctor, async (req, res) => {
             userId: patient.id
           },
           order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']],
-          attributes: ['appointmentDate', 'appointmentTime', 'status', 'consultationType']
+          attributes: ['appointmentDate', 'appointmentTime', 'status', 'consultationType'],
+          transaction,
         });
 
         // Calculate age if dateOfBirth exists
@@ -1416,7 +1466,7 @@ router.get('/my-patients', authDoctor, async (req, res) => {
           }
         }
 
-        return {
+        results.push({
           id: patient.id,
           firstName: patient.firstName,
           lastName: patient.lastName,
@@ -1443,9 +1493,10 @@ router.get('/my-patients', authDoctor, async (req, res) => {
             type: lastAppointment.consultationType
           } : null,
           createdAt: patient.createdAt
-        };
-      })
-    );
+        });
+      }
+      return results;
+    });
 
     res.json({
       success: true,
@@ -1554,13 +1605,16 @@ const hasDoctorPatientRelationship = async (doctorId, patientId) => {
     return false;
   }
 
-  const appointmentCount = await Appointment.count({
+  // Standalone helper, no req object available — this is an existence-check
+  // only (boolean result, no data leak), so the platform-admin bypass is safe.
+  const appointmentCount = await withAppointmentsRlsBypass((transaction) => Appointment.count({
     where: {
       doctorId: normalizedDoctorId,
       userId: normalizedPatientId,
       status: { [Op.notIn]: ['cancelled'] }
-    }
-  });
+    },
+    transaction,
+  }));
 
   if (appointmentCount > 0) {
     return true;
@@ -1758,28 +1812,34 @@ router.get("/video-consultations/stats", authDoctor, async (req, res) => {
       consultationType: { [Op.in]: ['online', 'video'] }
     };
 
-    const [totalConsultations, todayConsultations, completedConsultations] = await Promise.all([
-      Appointment.count({
+    // Sequential (not Promise.all): all three counts share one RLS
+    // transaction, and a single pg connection cannot run concurrent queries.
+    const [totalConsultations, todayConsultations, completedConsultations] = await withAppointmentsRls(req, async (transaction) => {
+      const total = await Appointment.count({
         where: {
           doctorId,
           ...videoFilter
-        }
-      }),
-      Appointment.count({
+        },
+        transaction,
+      });
+      const todayCount = await Appointment.count({
         where: {
           doctorId,
           ...videoFilter,
           createdAt: { [Op.gte]: today }
-        }
-      }),
-      Appointment.count({
+        },
+        transaction,
+      });
+      const completed = await Appointment.count({
         where: {
           doctorId,
           ...videoFilter,
           status: 'completed'
-        }
-      })
-    ]);
+        },
+        transaction,
+      });
+      return [total, todayCount, completed];
+    });
 
     res.json({
       success: true,
@@ -1811,7 +1871,7 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
       return Number.isNaN(date.getTime()) ? null : date;
     };
 
-    const consultations = await Appointment.findAll({
+    const consultations = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: {
         doctorId,
         consultationType: { [Op.in]: ['online', 'video'] }
@@ -1824,8 +1884,9 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
         }
       ],
       order: [['createdAt', 'DESC']],
-      limit
-    });
+      limit,
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -1885,7 +1946,7 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
         : 'Not scheduled';
     };
 
-    const consultations = await Appointment.findAll({
+    const consultations = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: {
         doctorId,
         consultationType: { [Op.in]: ['online', 'video'] },
@@ -1903,8 +1964,9 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
         }
       ],
       order: [['appointmentDate', 'ASC'], ['createdAt', 'ASC']],
-      limit: 20
-    });
+      limit: 20,
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -2328,12 +2390,13 @@ router.get('/reports', authDoctor, async (req, res) => {
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - days);
 
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: { doctorId: parseInt(doctorId), createdAt: { [Op.gte]: fromDate } },
       attributes: ['id', 'status', 'appointmentDate', 'paymentAmount', 'consultationType', 'createdAt'],
       include: [{ model: User, as: 'patient', attributes: ['firstName', 'lastName'] }],
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
 
     const total = appointments.length;
     const completed = appointments.filter(a => a.status === 'completed').length;
@@ -2443,7 +2506,10 @@ router.get('/my-patients/:patientId/profile', authDoctor, async (req, res) => {
     }
 
     // Get appointment count for this patient
-    const aptCount = await Appointment.count({ where: { doctorId: parseInt(doctorId), userId: parseInt(patientId) } });
+    const aptCount = await withAppointmentsRls(req, (transaction) => Appointment.count({
+      where: { doctorId: parseInt(doctorId), userId: parseInt(patientId) },
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -2478,12 +2544,13 @@ router.get('/my-patients/:patientId/records', authDoctor, async (req, res) => {
     const { patientId } = req.params;
     const doctorId = req.doctor.id;
 
-    const appointments = await Appointment.findAll({
+    const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
       where: { doctorId: parseInt(doctorId), userId: parseInt(patientId) },
       include: [{ model: User, as: 'patient', attributes: ['firstName', 'lastName'] }],
       order: [['appointmentDate', 'DESC']],
-      limit: 20
-    });
+      limit: 20,
+      transaction,
+    }));
 
     const records = appointments.map(apt => {
       let notes = {};
