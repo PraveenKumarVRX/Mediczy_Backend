@@ -593,6 +593,8 @@ router.get('/organizations/:slug', asyncHandler(async (req, res) => {
 // ============== Device Management ==============
 
 import db from '../v2/db.js';
+import { getPostgresPool } from '../../db/postgres.js';
+import { withRlsTransaction } from '../../middleware/rls-context.middleware.js';
 
 router.post('/devices/register', authenticate({ optional: true }), asyncHandler(async (req, res) => {
   const { deviceId, pushToken, platform, model, osVersion } = req.body;
@@ -2413,49 +2415,72 @@ router.post('/video/token', authenticate(), asyncHandler(async (req, res) => {
   let meetingId = roomName || null;
 
   if (appointmentId) {
-    const aptResult = await db.query(
-      `SELECT id, "userId", "doctorId", "meetingId"
-       FROM appointments
-       WHERE id = $1
-       LIMIT 1`,
-      [appointmentId]
-    );
+    // appointments has FORCE ROW LEVEL SECURITY (organization_id/tenant_id/
+    // userId/doctorId must match session GUCs) — a bare db.query() here always
+    // matched zero rows regardless of whether the appointment existed, so
+    // every join attempt failed with "Appointment not found". Setting
+    // current_app_user_id() to the calling user is sufficient since the
+    // policy's userId/doctorId OR-clause covers "it's my own appointment".
+    const pool = getPostgresPool();
+    const result = await withRlsTransaction(pool, { orgId: 0, userId, isPlatformAdmin: false }, async (client) => {
+      const aptResult = await client.query(
+        `SELECT id, "userId", "doctorId", "meetingId"
+         FROM appointments
+         WHERE id = $1
+         LIMIT 1`,
+        [appointmentId]
+      );
 
-    if (aptResult.rows.length === 0) {
+      if (aptResult.rows.length === 0) {
+        return { notFound: true };
+      }
+
+      const appointment = aptResult.rows[0];
+      const isParticipant = String(appointment.userId) === String(userId) || String(appointment.doctorId) === String(userId);
+      if (!isParticipant) {
+        return { forbidden: true };
+      }
+
+      const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
+      const resolvedMeetingId = appointment.meetingId || canonicalMeetingId;
+      const legacyMeetingId = `apt-${appointment.id}`;
+
+      let resolvedRoomMeetingId = meetingId;
+      if (!resolvedRoomMeetingId || resolvedRoomMeetingId === legacyMeetingId || verifyCanonicalMeetingId(appointment.id, resolvedRoomMeetingId)) {
+        resolvedRoomMeetingId = resolvedMeetingId;
+      } else if (resolvedRoomMeetingId !== resolvedMeetingId) {
+        return { invalidRoom: true };
+      }
+
+      if (!appointment.meetingId) {
+        await client.query(
+          `UPDATE appointments SET "meetingId" = $1, "updatedAt" = NOW() WHERE id = $2`,
+          [resolvedMeetingId, appointment.id]
+        );
+      }
+
+      return { meetingId: resolvedRoomMeetingId };
+    });
+
+    if (result.notFound) {
       return res.status(404).json({
         success: false,
         error: { code: 'APPOINTMENT_NOT_FOUND', message: 'Appointment not found' }
       });
     }
-
-    const appointment = aptResult.rows[0];
-    const isParticipant = String(appointment.userId) === String(userId) || String(appointment.doctorId) === String(userId);
-    if (!isParticipant) {
+    if (result.forbidden) {
       return res.status(403).json({
         success: false,
         error: { code: 'FORBIDDEN', message: 'Not authorized to join this appointment room' }
       });
     }
-
-    const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
-    const resolvedMeetingId = appointment.meetingId || canonicalMeetingId;
-    const legacyMeetingId = `apt-${appointment.id}`;
-
-    if (!meetingId || meetingId === legacyMeetingId || verifyCanonicalMeetingId(appointment.id, meetingId)) {
-      meetingId = resolvedMeetingId;
-    } else if (meetingId !== resolvedMeetingId) {
+    if (result.invalidRoom) {
       return res.status(403).json({
         success: false,
         error: { code: 'INVALID_ROOM', message: 'Invalid room for this appointment' }
       });
     }
-
-    if (!appointment.meetingId) {
-      await db.query(
-        `UPDATE appointments SET "meetingId" = $1, "updatedAt" = NOW() WHERE id = $2`,
-        [resolvedMeetingId, appointment.id]
-      );
-    }
+    meetingId = result.meetingId;
   }
 
   if (!meetingId) {

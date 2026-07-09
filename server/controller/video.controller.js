@@ -3,6 +3,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, resolveLiveKitApiUrl, resolveLiveKitWsUrl, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
 import { RoomServiceClient } from 'livekit-server-sdk';
 import { redisClient } from '../config/redis.js';
@@ -168,7 +169,12 @@ class VideoController {
       let resolvedRoomId = roomId;
 
       if (appointmentId) {
-        const appointment = await Appointment.findByPk(appointmentId);
+        // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix
+        // as generateLiveKitTokenFromQuery/joinRoom above.
+        const rlsTransaction = await postgresSequelize.transaction();
+        await req.setSequelizeRlsContext?.(rlsTransaction);
+        const appointment = await Appointment.findByPk(appointmentId, { transaction: rlsTransaction });
+        await rlsTransaction.commit();
         if (!appointment) {
           return res.status(404).json({
             success: false,
@@ -270,7 +276,13 @@ class VideoController {
 
       let meetingId = roomIdFromQuery || createMeetingInfo({}).meetingId;
       if (effectiveAppointmentId) {
-        const appointment = await Appointment.findByPk(effectiveAppointmentId);
+        // appointments has FORCE ROW LEVEL SECURITY — a bare findByPk() with no
+        // RLS context always matched zero rows, so every join attempt failed
+        // with "Appointment not found" regardless of whether it existed.
+        const rlsTransaction = await postgresSequelize.transaction();
+        await req.setSequelizeRlsContext?.(rlsTransaction);
+        const appointment = await Appointment.findByPk(effectiveAppointmentId, { transaction: rlsTransaction });
+        await rlsTransaction.commit();
         if (!appointment) {
           return res.status(404).json({
             success: false,
@@ -481,8 +493,13 @@ class VideoController {
         appointmentId = roomParts[0]; // First numeric part is the appointment ID
         isAppointmentRoom = true;
         
-        // Verify appointment exists and user is authorized
-        const appointment = await Appointment.findByPk(appointmentId);
+        // Verify appointment exists and user is authorized.
+        // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix
+        // as generateLiveKitTokenFromQuery above.
+        const rlsTransaction = await postgresSequelize.transaction();
+        await req.setSequelizeRlsContext?.(rlsTransaction);
+        const appointment = await Appointment.findByPk(appointmentId, { transaction: rlsTransaction });
+        await rlsTransaction.commit();
         if (!appointment) {
           return res.status(404).json({
             success: false,
@@ -635,13 +652,21 @@ class VideoController {
 
       // If doctor is leaving and appointmentId is provided, auto-create prescription draft
       if (userRole === 'doctor' && appointmentId) {
+        // appointments AND prescriptions both have FORCE ROW LEVEL SECURITY —
+        // without RLS context this whole block silently found "no appointment"
+        // every time, so completed video calls never got marked completed and
+        // never got an auto-drafted prescription.
+        let rlsTransaction;
         try {
-          const appointment = await Appointment.findByPk(appointmentId);
-          
+          rlsTransaction = await postgresSequelize.transaction();
+          await req.setSequelizeRlsContext?.(rlsTransaction);
+          const appointment = await Appointment.findByPk(appointmentId, { transaction: rlsTransaction });
+
           if (appointment && appointment.doctorId === userId) {
             // Check if consultation was online and no prescription exists yet
             const existingPrescription = await Prescription.findOne({
-              where: { appointmentId: parseInt(appointmentId) }
+              where: { appointmentId: parseInt(appointmentId) },
+              transaction: rlsTransaction,
             });
 
             if (!existingPrescription && ['video', 'audio', 'chat'].includes(appointment.consultationType)) {
@@ -704,14 +729,14 @@ class VideoController {
                   validityDays: 30,
                   notes: duration ? `Video consultation duration: ${duration}` : 'Consultation completed via video call',
                   status: 'draft'
-                });
+                }, { transaction: rlsTransaction });
 
                 // Update appointment status
                 await appointment.update({
                   status: 'completed',
                   prescription: prescription.prescriptionId,
                   notes: duration ? `Video consultation completed (${duration})` : 'Video consultation completed'
-                });
+                }, { transaction: rlsTransaction });
 
                 prescriptionCreated = true;
                 prescriptionData = {
@@ -723,7 +748,11 @@ class VideoController {
               }
             }
           }
+          await rlsTransaction.commit();
         } catch (prescriptionError) {
+          if (rlsTransaction && !rlsTransaction.finished) {
+            await rlsTransaction.rollback().catch(() => {});
+          }
           console.error('Auto-prescription creation failed:', prescriptionError);
           // Don't fail the leave request if prescription creation fails
         }
