@@ -7,7 +7,37 @@ export const COUPON_SCOPES = {
   PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
   CONSULTATION: 'CONSULTATION',
   GYM_MEMBERSHIP: 'GYM_MEMBERSHIP',
-  MEMBERSHIP: 'MEMBERSHIP'
+  MEMBERSHIP: 'MEMBERSHIP',
+  USG_SCAN: 'USG_SCAN',
+  CT_SCAN: 'CT_SCAN',
+  MRI_SCAN: 'MRI_SCAN'
+};
+
+export const DIAGNOSTIC_SCOPES = [
+  COUPON_SCOPES.USG_SCAN,
+  COUPON_SCOPES.CT_SCAN,
+  COUPON_SCOPES.MRI_SCAN
+];
+
+export const testTypeToDiagnosticScope = (testType) => {
+  const normalized = String(testType || '').toLowerCase();
+  const map = {
+    ultrasound: COUPON_SCOPES.USG_SCAN,
+    usg: COUPON_SCOPES.USG_SCAN,
+    ct_scan: COUPON_SCOPES.CT_SCAN,
+    ct: COUPON_SCOPES.CT_SCAN,
+    mri: COUPON_SCOPES.MRI_SCAN
+  };
+  return map[normalized] || null;
+};
+
+export const diagnosticScopeLabel = (scope) => {
+  const labels = {
+    [COUPON_SCOPES.USG_SCAN]: 'USG scan',
+    [COUPON_SCOPES.CT_SCAN]: 'CT scan',
+    [COUPON_SCOPES.MRI_SCAN]: 'MRI scan'
+  };
+  return labels[scope] || scope;
 };
 
 const DEFAULT_COUPON_SCOPE = COUPON_SCOPES.COINS_PURCHASE;
@@ -70,6 +100,8 @@ export const isCouponEligibleForScope = (coupon, scope) => parseCouponScopes(cou
 
 export const isFixedInrCoupon = (coupon) => coupon?.metadata?.grantType === 'FIXED_INR';
 
+export const isFixedBookingPriceCoupon = (coupon) => coupon?.metadata?.grantType === 'FIXED_BOOKING_PRICE';
+
 export const isFreeMembershipCoupon = (coupon) => coupon?.metadata?.grantType === 'FREE_MEMBERSHIP';
 
 export const findActiveCoupon = async (code) => {
@@ -121,7 +153,23 @@ export const calculateCouponPricing = ({
     throw new Error('Use the free membership coupon redemption flow for this code');
   }
 
-  if (isFixedInrCoupon(coupon)) {
+  if (isFixedBookingPriceCoupon(coupon)) {
+    if (coupon.type !== 'PERCENTAGE') {
+      throw new Error('Invalid fixed booking price coupon configuration');
+    }
+
+    const bookingPrice = Number(coupon.value || 0);
+    if (!Number.isFinite(bookingPrice) || bookingPrice <= 0) {
+      throw new Error('Invalid fixed booking price on coupon');
+    }
+
+    if (baseAmount > 0) {
+      discount = Math.max(0, baseAmount - bookingPrice);
+      finalPrice = Math.min(baseAmount, bookingPrice);
+    } else {
+      finalPrice = bookingPrice;
+    }
+  } else if (isFixedInrCoupon(coupon)) {
     if (coupon.type !== 'PERCENTAGE') {
       throw new Error('Invalid fixed-amount coupon configuration');
     }
@@ -158,12 +206,31 @@ export const calculateCouponPricing = ({
   };
 };
 
+export const validateDiagnosticCouponForBooking = async ({
+  code,
+  userId,
+  testType
+}) => {
+  const scope = testTypeToDiagnosticScope(testType);
+  if (!scope) {
+    throw new Error('This coupon can only be used for USG, CT scan, or MRI bookings');
+  }
+
+  return validateOrderCoupon({
+    code,
+    userId,
+    scope,
+    orderAmount: 0
+  });
+};
+
 export const validateOrderCoupon = async ({
   code,
   userId,
   scope,
   orderAmount = 0,
-  packagePrice = 0
+  packagePrice = 0,
+  testType = null
 }) => {
   if (!code) return null;
 
@@ -173,6 +240,16 @@ export const validateOrderCoupon = async ({
   }
 
   const coupon = await findActiveCoupon(code);
+
+  if (DIAGNOSTIC_SCOPES.includes(normalizedScope)) {
+    const expectedScope = testTypeToDiagnosticScope(testType);
+    if (!expectedScope) {
+      throw new Error('A valid diagnostic test type is required for this coupon');
+    }
+    if (expectedScope !== normalizedScope) {
+      throw new Error(`This coupon is only valid for ${diagnosticScopeLabel(normalizedScope)} bookings`);
+    }
+  }
 
   if (!isCouponEligibleForUser(coupon, userId)) {
     throw new Error('This coupon is not assigned to your account');

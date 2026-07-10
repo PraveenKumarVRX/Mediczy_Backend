@@ -9,6 +9,12 @@ import { authUser } from '../middleware/auth.middleware.js';
 import { LabTest } from '../models/index.js';
 import { Op } from 'sequelize';
 import pool from '../db/pgPool.js';
+import {
+  testTypeToDiagnosticScope,
+  validateOrderCoupon,
+  recordCouponUsage,
+  diagnosticScopeLabel
+} from '../services/coupon-validation.service.js';
 
 const router = express.Router();
 
@@ -86,6 +92,54 @@ router.get('/catalog', async (req, res) => {
 });
 
 /**
+ * POST /api/lab-tests/validate-coupon
+ * Validate a diagnostic scan coupon before booking
+ */
+router.post('/validate-coupon', authUser, async (req, res) => {
+  try {
+    const { couponCode, testType, orderAmount } = req.body;
+
+    if (!couponCode || !testType) {
+      return res.status(400).json({
+        success: false,
+        message: 'couponCode and testType are required'
+      });
+    }
+
+    const scope = testTypeToDiagnosticScope(testType);
+    if (!scope) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coupon validation is supported for USG, CT scan, and MRI bookings only'
+      });
+    }
+
+    const validation = await validateOrderCoupon({
+      code: couponCode,
+      userId: req.user.id,
+      scope,
+      orderAmount: Number(orderAmount || 0),
+      testType
+    });
+
+    return res.json({
+      success: true,
+      message: `Coupon is valid for ${diagnosticScopeLabel(scope)}`,
+      coupon: {
+        code: validation.coupon.code,
+        scope,
+        grantType: validation.grantType,
+        bookingPrice: Number(validation.coupon.value),
+        discount: validation.discount,
+        finalPrice: validation.finalPrice || Number(validation.coupon.value)
+      }
+    });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * POST /api/lab-tests
  * Book a new lab test
  */
@@ -106,7 +160,8 @@ router.post('/', authUser, async (req, res) => {
       price = null,
       currency = 'INR',
       discount = 0,
-      total_amount = null
+      total_amount = null,
+      coupon_code = null
     } = req.body;
 
     const userId = req.user.id;
@@ -163,6 +218,36 @@ router.post('/', authUser, async (req, res) => {
       }
     }
 
+    let couponValidation = null;
+    let discountVal = parseFloat(discount) || 0;
+    let totalAmountVal = total_amount !== null && total_amount !== undefined
+      ? parseFloat(total_amount)
+      : (resolvedPrice !== null ? resolvedPrice - discountVal : null);
+
+    if (coupon_code) {
+      const diagnosticScope = testTypeToDiagnosticScope(testType);
+      if (!diagnosticScope) {
+        return res.status(400).json({
+          success: false,
+          message: 'Diagnostic coupons are only valid for USG, CT scan, or MRI bookings'
+        });
+      }
+
+      couponValidation = await validateOrderCoupon({
+        code: coupon_code,
+        userId,
+        scope: diagnosticScope,
+        orderAmount: resolvedPrice || 0,
+        testType
+      });
+
+      discountVal = couponValidation.discount;
+      totalAmountVal = couponValidation.finalPrice;
+      if (resolvedPrice === null && couponValidation.coupon?.value) {
+        resolvedPrice = Number(couponValidation.coupon.value) + discountVal;
+      }
+    }
+
     // Prepare lab test data
     const labTestData = {
       userId,
@@ -177,17 +262,22 @@ router.post('/', authUser, async (req, res) => {
       fastingHours: fastingHours || null,
       price: resolvedPrice,
       currency: currency || 'INR',
-      discount: discount !== null && discount !== undefined ? parseFloat(discount) : 0,
-      total_amount: total_amount !== null && total_amount !== undefined
-        ? parseFloat(total_amount)
-        : (resolvedPrice !== null ? resolvedPrice - parseFloat(discount || 0) : null),
+      discount: discountVal,
+      total_amount: totalAmountVal,
       status: 'pending_confirmation',
       confirmationStatus: 'pending',
       resultStatus: 'pending',
       metadata: {
         createdFrom: 'patient_portal',
         browser: req.get('user-agent'),
-        ...(catalogTestId ? { catalogTestId, priceSource: 'catalog' } : {})
+        ...(catalogTestId ? { catalogTestId, priceSource: 'catalog' } : {}),
+        ...(couponValidation?.coupon ? {
+          couponCode: couponValidation.coupon.code,
+          couponScope: couponValidation.scope,
+          couponGrantType: couponValidation.grantType,
+          originalPrice: couponValidation.baseAmount,
+          couponDiscount: couponValidation.discount
+        } : {})
       }
     };
     
@@ -203,6 +293,18 @@ router.post('/', authUser, async (req, res) => {
     console.log('🔍 Lab test data before create:', labTestData);
     
     const labTest = await LabTest.create(labTestData);
+
+    if (couponValidation?.coupon) {
+      await recordCouponUsage({
+        coupon: couponValidation.coupon,
+        userId,
+        discountAmount: couponValidation.discount,
+        amountPaid: totalAmountVal || 0,
+        hcPurchased: 0,
+        hcBonus: 0,
+        paymentId: `LABTEST_${labTest.id}`
+      });
+    }
 
     console.log('✅ Lab test booked successfully:', {
       id: labTest.id,
@@ -223,6 +325,12 @@ router.post('/', authUser, async (req, res) => {
       body: req.body,
       userId: req.user?.id
     });
+    if (error.message?.includes('coupon') || error.message?.includes('Coupon') || error.message?.includes('valid for')) {
+      return res.status(400).json({
+        success: false,
+        message: error.message
+      });
+    }
     return res.status(500).json({
       success: false,
       message: 'Failed to book lab test',

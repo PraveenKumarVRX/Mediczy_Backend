@@ -98,12 +98,40 @@ const COUPON_CATEGORIES = {
     minPurchaseHint: 'Minimum medicine order amount in INR',
     minPurchaseLabel: 'Min Order (INR)',
   },
+  USG_SCAN: {
+    label: 'USG Scan Fixed Price',
+    type: 'PERCENTAGE',
+    scopes: ['USG_SCAN'],
+    grantType: 'FIXED_BOOKING_PRICE',
+    valueHint: 'Fixed booking price in INR (e.g. 1000)',
+    minPurchaseHint: 'Not used for fixed scan price coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  CT_SCAN: {
+    label: 'CT Scan Fixed Price',
+    type: 'PERCENTAGE',
+    scopes: ['CT_SCAN'],
+    grantType: 'FIXED_BOOKING_PRICE',
+    valueHint: 'Fixed booking price in INR (e.g. 2000)',
+    minPurchaseHint: 'Not used for fixed scan price coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  MRI_SCAN: {
+    label: 'MRI Scan Fixed Price',
+    type: 'PERCENTAGE',
+    scopes: ['MRI_SCAN'],
+    grantType: 'FIXED_BOOKING_PRICE',
+    valueHint: 'Fixed booking price in INR (e.g. 3000)',
+    minPurchaseHint: 'Not used for fixed scan price coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
 } as const;
 
 type CouponCategory = keyof typeof COUPON_CATEGORIES;
 
 const MEMBERSHIP_SCOPES = new Set(['GYM_MEMBERSHIP', 'MEMBERSHIP']);
 const PHARMACY_SCOPES = new Set(['PHARMACY_PURCHASE']);
+const DIAGNOSTIC_SCOPES = new Set(['USG_SCAN', 'CT_SCAN', 'MRI_SCAN']);
 
 const categoryFromCoupon = (coupon: any): CouponCategory => {
   if (coupon?.metadata?.grantType === 'FREE_MEMBERSHIP') {
@@ -115,6 +143,19 @@ const categoryFromCoupon = (coupon: any): CouponCategory => {
   }
 
   const scopes = Array.isArray(coupon?.metadata?.scopes) ? coupon.metadata.scopes : [];
+
+  if (coupon?.metadata?.grantType === 'FIXED_BOOKING_PRICE') {
+    if (scopes.includes('USG_SCAN')) return 'USG_SCAN';
+    if (scopes.includes('CT_SCAN')) return 'CT_SCAN';
+    if (scopes.includes('MRI_SCAN')) return 'MRI_SCAN';
+  }
+
+  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => DIAGNOSTIC_SCOPES.has(scope))) {
+    if (scopes.includes('USG_SCAN')) return 'USG_SCAN';
+    if (scopes.includes('CT_SCAN')) return 'CT_SCAN';
+    return 'MRI_SCAN';
+  }
+
   if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => PHARMACY_SCOPES.has(scope))) {
     return 'PHARMACY_PERCENT';
   }
@@ -150,7 +191,7 @@ const buildCouponPayload = (formData: {
     ...(category.grantType ? { grantType: category.grantType } : {}),
     ...(parsedPlanId ? { planId: parsedPlanId } : {}),
     value: formData.value,
-    minPurchase: formData.category === 'MEMBERSHIP_FREE' ? '0' : formData.minPurchase,
+    minPurchase: ['MEMBERSHIP_FREE', 'USG_SCAN', 'CT_SCAN', 'MRI_SCAN'].includes(formData.category) ? '0' : formData.minPurchase,
     maxUsage: formData.maxUsage,
     maxUsagePerUser: formData.maxUsagePerUser,
     validUntil: formData.validUntil,
@@ -192,6 +233,7 @@ export default function CouponManagement() {
   const selectedCategory = COUPON_CATEGORIES[formData.category];
   const isMembershipCoupon = formData.category === 'MEMBERSHIP' || formData.category === 'MEMBERSHIP_FREE';
   const isPharmacyCoupon = formData.category === 'PHARMACY_FIXED' || formData.category === 'PHARMACY_PERCENT';
+  const isDiagnosticCoupon = formData.category === 'USG_SCAN' || formData.category === 'CT_SCAN' || formData.category === 'MRI_SCAN';
   const isFreeMembershipCoupon = formData.category === 'MEMBERSHIP_FREE';
   const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || formData.category === 'MEMBERSHIP' || formData.category === 'PHARMACY_PERCENT';
   const usesInrMinPurchase = isPercentageCoupon || formData.category === 'PHARMACY_FIXED';
@@ -379,6 +421,9 @@ export default function CouponManagement() {
       MEMBERSHIP_FREE: { label: 'Membership Free', color: 'bg-rose-500' },
       PHARMACY_FIXED: { label: 'Pharmacy ₹ Discount', color: 'bg-cyan-500' },
       PHARMACY_PERCENT: { label: 'Pharmacy Discount %', color: 'bg-sky-500' },
+      USG_SCAN: { label: 'USG Fixed Price', color: 'bg-teal-500' },
+      CT_SCAN: { label: 'CT Fixed Price', color: 'bg-indigo-500' },
+      MRI_SCAN: { label: 'MRI Fixed Price', color: 'bg-violet-500' },
     };
     return types[category] || types.FIXED_HC;
   };
@@ -391,6 +436,9 @@ export default function CouponManagement() {
     }
     if (category === 'PHARMACY_FIXED') {
       return `₹${coupon.value} off`;
+    }
+    if (category === 'USG_SCAN' || category === 'CT_SCAN' || category === 'MRI_SCAN') {
+      return `₹${coupon.metadata?.bookingPrice ?? coupon.value} booking`;
     }
     if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP' || category === 'PHARMACY_PERCENT') {
       return `${coupon.value}%`;
@@ -687,6 +735,9 @@ export default function CouponManagement() {
                     <SelectItem value="MEMBERSHIP_FREE">Membership Free</SelectItem>
                     <SelectItem value="PHARMACY_FIXED">Pharmacy ₹ Discount</SelectItem>
                     <SelectItem value="PHARMACY_PERCENT">Pharmacy Discount %</SelectItem>
+                    <SelectItem value="USG_SCAN">USG Scan Fixed Price</SelectItem>
+                    <SelectItem value="CT_SCAN">CT Scan Fixed Price</SelectItem>
+                    <SelectItem value="MRI_SCAN">MRI Scan Fixed Price</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -699,7 +750,14 @@ export default function CouponManagement() {
                   type="number"
                   value={formData.value}
                   onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                  placeholder={isFreeMembershipCoupon ? '6' : formData.category === 'PHARMACY_FIXED' ? '500' : isPercentageCoupon ? '10' : '100'}
+                  placeholder={
+                    isFreeMembershipCoupon ? '6'
+                    : formData.category === 'USG_SCAN' ? '1000'
+                    : formData.category === 'CT_SCAN' ? '2000'
+                    : formData.category === 'MRI_SCAN' ? '3000'
+                    : formData.category === 'PHARMACY_FIXED' ? '500'
+                    : isPercentageCoupon ? '10' : '100'
+                  }
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-1">
@@ -721,6 +779,12 @@ export default function CouponManagement() {
                 </p>
               </div>
             </div>
+
+            {isDiagnosticCoupon && (
+              <div className="rounded-lg border border-teal-500/30 bg-teal-500/5 p-3 text-sm text-muted-foreground">
+                Patient books the matching scan type at the fixed INR price in Value. Example: USG coupon code <strong>USG</strong> with Value <strong>1000</strong> books ultrasound at ₹1000.
+              </div>
+            )}
 
             {isPharmacyCoupon && (
               <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-sm text-muted-foreground">

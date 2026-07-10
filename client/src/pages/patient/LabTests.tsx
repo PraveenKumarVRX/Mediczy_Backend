@@ -150,6 +150,11 @@ const availableTests: AvailableTest[] = [
   { id: 'cardiac-profile', name: 'Cardiac Risk Profile', category: 'Health Packages', description: 'Lipid Profile, CRP, Homocysteine', price: '₹3000', preparationRequired: true, turnaroundTime: '48 hours' },
   { id: 'senior-citizen', name: 'Senior Citizen Package', category: 'Health Packages', description: 'Comprehensive health screening for seniors', price: '₹5000', preparationRequired: true, turnaroundTime: '72 hours' },
   { id: 'women-wellness', name: 'Women Wellness Package', category: 'Health Packages', description: 'CBC, Thyroid, Vitamin D, Iron, Calcium', price: '₹3500', preparationRequired: true, turnaroundTime: '48 hours' },
+
+  // Diagnostic Imaging
+  { id: 'usg-abdomen', name: 'USG Abdomen', category: 'Imaging', description: 'Ultrasound scan of abdomen and pelvis', price: '₹1500', preparationRequired: false, turnaroundTime: '24 hours' },
+  { id: 'ct-scan', name: 'CT Scan', category: 'Imaging', description: 'Computed tomography scan as advised', price: '₹3500', preparationRequired: false, turnaroundTime: '24 hours' },
+  { id: 'mri-brain', name: 'MRI Brain', category: 'Imaging', description: 'Magnetic resonance imaging of brain', price: '₹5500', preparationRequired: false, turnaroundTime: '48 hours' },
 ];
 
 const LabTests = () => {
@@ -193,7 +198,8 @@ const LabTests = () => {
     appointmentDate: '',
     testType: 'blood_test',
     notes: '',
-    labId: ''
+    labId: '',
+    couponCode: ''
   });
   const [showBookDialog, setShowBookDialog] = useState(false);
   const [selectedTest, setSelectedTest] = useState<AvailableTest | null>(null);
@@ -314,12 +320,15 @@ const LabTests = () => {
     try {
       setIsBooking(true);
       const response = await api.post('/lab-tests', {
-        testType: mapTestToType(selectedTest.category),
+        testType: resolveTestType(selectedTest),
         testName: selectedTest.name,
         hospitalId: actualLabId,
         appointmentDate: bookingForm.appointmentDate,
         notes: `${collectionType === 'home' ? '[Home Collection] ' : '[Visit Lab] '}${bookingForm.notes}`,
-        urgency: 'routine'
+        urgency: 'routine',
+        ...(isImagingTest(selectedTest) && bookingForm.couponCode.trim()
+          ? { coupon_code: bookingForm.couponCode.trim().toUpperCase() }
+          : {})
       });
 
       const data = response.data;
@@ -370,10 +379,23 @@ const LabTests = () => {
       'Allergy': 'blood_test',
       'Autoimmune': 'blood_test',
       'Stool Analysis': 'pathology',
-      'Health Packages': 'blood_test'
+      'Health Packages': 'blood_test',
+      'Imaging': 'radiology'
     };
     return typeMap[category] || 'other';
   };
+
+  const resolveTestType = (test: AvailableTest) => {
+    const imagingMap: Record<string, string> = {
+      'usg-abdomen': 'ultrasound',
+      'ct-scan': 'ct_scan',
+      'mri-brain': 'mri',
+    };
+    if (imagingMap[test.id]) return imagingMap[test.id];
+    return mapTestToType(test.category);
+  };
+
+  const isImagingTest = (test: AvailableTest) => ['ultrasound', 'ct_scan', 'mri'].includes(resolveTestType(test));
 
   // Fetch data on mount — instrumented with telemetry
   const refetchLabTests = () => {
@@ -554,7 +576,7 @@ const LabTests = () => {
                       
                       {/* Category Filter */}
                       <div className="flex gap-2 flex-wrap">
-                        {['All', 'Hematology', 'Biochemistry', 'Diabetes', 'Cardiac', 'Hormones', 'Health Packages'].map(cat => (
+                        {['All', 'Hematology', 'Biochemistry', 'Diabetes', 'Cardiac', 'Hormones', 'Health Packages', 'Imaging'].map(cat => (
                           <Button
                             key={cat}
                             variant={searchCategory === cat.toLowerCase() || (cat === 'All' && searchCategory === 'all') ? 'default' : 'outline'}
@@ -881,6 +903,22 @@ const LabTests = () => {
                             </div>
                           </div>
                           
+                          {/* Scan coupon */}
+                          {cart.some((item) => isImagingTest(item.test)) && (
+                            <div>
+                              <Label className="text-gray-900 dark:text-white font-medium">Scan Coupon (USG / CT / MRI)</Label>
+                              <Input
+                                placeholder="e.g. USG, CTSCAN, MRI"
+                                value={bookingForm.couponCode}
+                                onChange={(e) => setBookingForm((prev) => ({ ...prev, couponCode: e.target.value.toUpperCase() }))}
+                                className="mt-1 bg-white dark:bg-slate-800 dark:border-slate-700 dark:text-white"
+                              />
+                              <p className="text-xs text-muted-foreground mt-1">
+                                Use USG for ₹1000 ultrasound, CTSCAN for ₹2000 CT, MRI for ₹3000 MRI when coupons are configured.
+                              </p>
+                            </div>
+                          )}
+
                           {/* Special Instructions */}
                           <div>
                             <Label className="text-gray-900 dark:text-white font-medium">Special Instructions (Optional)</Label>
@@ -963,13 +1001,19 @@ const LabTests = () => {
 
                             // Step 1: Book all tests in cart
                             let hasError = false;
+                            let couponUsed = false;
                             for (const item of cart) {
+                              const testType = resolveTestType(item.test);
+                              const imaging = isImagingTest(item.test);
                               const requestBody = {
-                                testType: mapTestToType(item.test.category),
+                                testType,
                                 testName: item.test.name,
                                 appointmentDate: bookingForm.appointmentDate,
                                 notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes} [Req:${checkoutKey}]`,
-                                urgency: 'routine'
+                                urgency: 'routine',
+                                ...(imaging && bookingForm.couponCode.trim() && !couponUsed
+                                  ? { coupon_code: bookingForm.couponCode.trim().toUpperCase() }
+                                  : {})
                               };
                               const response = await api.post('/lab-tests', requestBody, {
                                 headers: { 'X-Idempotency-Key': `${checkoutKey}-${item.test.id}` }
@@ -982,6 +1026,9 @@ const LabTests = () => {
                                 });
                                 hasError = true;
                                 break;
+                              }
+                              if (imaging && bookingForm.couponCode.trim()) {
+                                couponUsed = true;
                               }
                             }
                             if (hasError) return;

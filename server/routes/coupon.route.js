@@ -62,10 +62,14 @@ const COUPON_SCOPES = {
   PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
   CONSULTATION: 'CONSULTATION',
   GYM_MEMBERSHIP: 'GYM_MEMBERSHIP',
-  MEMBERSHIP: 'MEMBERSHIP'
+  MEMBERSHIP: 'MEMBERSHIP',
+  USG_SCAN: 'USG_SCAN',
+  CT_SCAN: 'CT_SCAN',
+  MRI_SCAN: 'MRI_SCAN'
 };
 
 const MEMBERSHIP_SCOPES = [COUPON_SCOPES.GYM_MEMBERSHIP, COUPON_SCOPES.MEMBERSHIP];
+const DIAGNOSTIC_SCOPES = [COUPON_SCOPES.USG_SCAN, COUPON_SCOPES.CT_SCAN, COUPON_SCOPES.MRI_SCAN];
 
 const SAMPLE_COUPON_DEFINITIONS = [
   {
@@ -116,6 +120,33 @@ const SAMPLE_COUPON_DEFINITIONS = [
     description: '₹500 off on online medicine orders',
     scopes: [COUPON_SCOPES.PHARMACY_PURCHASE],
     grantType: 'FIXED_INR'
+  },
+  {
+    code: 'USG',
+    type: 'PERCENTAGE',
+    value: 1000,
+    minPurchase: 0,
+    description: 'Book USG scan at ₹1000',
+    scopes: [COUPON_SCOPES.USG_SCAN],
+    grantType: 'FIXED_BOOKING_PRICE'
+  },
+  {
+    code: 'CTSCAN',
+    type: 'PERCENTAGE',
+    value: 2000,
+    minPurchase: 0,
+    description: 'Book CT scan at ₹2000',
+    scopes: [COUPON_SCOPES.CT_SCAN],
+    grantType: 'FIXED_BOOKING_PRICE'
+  },
+  {
+    code: 'MRI',
+    type: 'PERCENTAGE',
+    value: 3000,
+    minPurchase: 0,
+    description: 'Book MRI scan at ₹3000',
+    scopes: [COUPON_SCOPES.MRI_SCAN],
+    grantType: 'FIXED_BOOKING_PRICE'
   }
 ];
 
@@ -174,6 +205,7 @@ const assignSampleCouponsToUser = async (targetUserId, createdBy) => {
           scopes: definition.scopes,
           ...(definition.grantType ? { grantType: definition.grantType } : {}),
           ...(definition.grantType === 'FIXED_INR' ? { discountInr: definition.value } : {}),
+          ...(definition.grantType === 'FIXED_BOOKING_PRICE' ? { bookingPrice: definition.value } : {}),
           assignedUserIds: [uid],
           sample: true,
           sampleBaseCode: definition.code
@@ -427,6 +459,30 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       }
     }
 
+    if (normalizedGrantType === 'FIXED_BOOKING_PRICE') {
+      const bookingPrice = parseFloat(value);
+      if (!Number.isFinite(bookingPrice) || bookingPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons require a positive INR amount in value'
+        });
+      }
+
+      if (normalizedType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons must use PERCENTAGE storage type'
+        });
+      }
+
+      if (!normalizedScopes.some((scope) => DIAGNOSTIC_SCOPES.includes(scope))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons must include USG_SCAN, CT_SCAN, or MRI_SCAN scope'
+        });
+      }
+    }
+
     if (normalizedScopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && normalizedType !== 'PERCENTAGE') {
       return res.status(400).json({
         success: false,
@@ -467,6 +523,7 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
         ...(normalizedGrantType ? { grantType: normalizedGrantType } : {}),
         ...(normalizedGrantType === 'FREE_MEMBERSHIP' ? { freeMonths: parseInt(value, 10) } : {}),
         ...(normalizedGrantType === 'FIXED_INR' ? { discountInr: parseFloat(value) } : {}),
+        ...(normalizedGrantType === 'FIXED_BOOKING_PRICE' ? { bookingPrice: parseFloat(value) } : {}),
         ...(parsedPlanId ? { planId: parsedPlanId } : {}),
         ...(normalizedAssignedUserIds.length ? { assignedUserIds: normalizedAssignedUserIds } : {})
       }
@@ -576,6 +633,17 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
         });
       }
       nextMetadata.discountInr = discountInr;
+    }
+
+    if (nextMetadata.grantType === 'FIXED_BOOKING_PRICE') {
+      const bookingPrice = parseFloat(updates.value ?? coupon.value);
+      if (!Number.isFinite(bookingPrice) || bookingPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons require a positive INR amount in value'
+        });
+      }
+      nextMetadata.bookingPrice = bookingPrice;
     }
 
     if (requestedPlanId !== undefined) {
