@@ -65,11 +65,20 @@ const COUPON_CATEGORIES = {
     minPurchaseLabel: 'Min Purchase',
   },
   MEMBERSHIP: {
-    label: 'Membership',
+    label: 'Membership Discount %',
     type: 'PERCENTAGE',
     scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
     valueHint: 'Discount percentage on plan price',
     minPurchaseHint: 'Minimum membership order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  MEMBERSHIP_FREE: {
+    label: 'Membership Free',
+    type: 'PERCENTAGE',
+    scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
+    grantType: 'FREE_MEMBERSHIP',
+    valueHint: 'Number of free months (e.g. 6)',
+    minPurchaseHint: 'Not used for free membership coupons',
     minPurchaseLabel: 'Min Order (INR)',
   },
 } as const;
@@ -79,6 +88,10 @@ type CouponCategory = keyof typeof COUPON_CATEGORIES;
 const MEMBERSHIP_SCOPES = new Set(['GYM_MEMBERSHIP', 'MEMBERSHIP']);
 
 const categoryFromCoupon = (coupon: any): CouponCategory => {
+  if (coupon?.metadata?.grantType === 'FREE_MEMBERSHIP') {
+    return 'MEMBERSHIP_FREE';
+  }
+
   const scopes = Array.isArray(coupon?.metadata?.scopes) ? coupon.metadata.scopes : [];
   if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => MEMBERSHIP_SCOPES.has(scope))) {
     return 'MEMBERSHIP';
@@ -98,17 +111,21 @@ const buildCouponPayload = (formData: {
   validUntil: string;
   corporateName: string;
   assignedUserIds: string;
+  planId: string;
   description: string;
   termsAndConditions: string;
 }) => {
   const category = COUPON_CATEGORIES[formData.category];
+  const parsedPlanId = formData.planId.trim() ? parseInt(formData.planId.trim(), 10) : undefined;
 
   return {
     code: formData.code,
     type: category.type,
     scopes: category.scopes,
+    ...(category.grantType ? { grantType: category.grantType } : {}),
+    ...(parsedPlanId ? { planId: parsedPlanId } : {}),
     value: formData.value,
-    minPurchase: formData.minPurchase,
+    minPurchase: formData.category === 'MEMBERSHIP_FREE' ? '0' : formData.minPurchase,
     maxUsage: formData.maxUsage,
     maxUsagePerUser: formData.maxUsagePerUser,
     validUntil: formData.validUntil,
@@ -142,13 +159,15 @@ export default function CouponManagement() {
     validUntil: '',
     corporateName: '',
     assignedUserIds: '',
+    planId: '',
     description: '',
     termsAndConditions: ''
   });
 
   const selectedCategory = COUPON_CATEGORIES[formData.category];
-  const isMembershipCoupon = formData.category === 'MEMBERSHIP';
-  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || isMembershipCoupon;
+  const isMembershipCoupon = formData.category === 'MEMBERSHIP' || formData.category === 'MEMBERSHIP_FREE';
+  const isFreeMembershipCoupon = formData.category === 'MEMBERSHIP_FREE';
+  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || formData.category === 'MEMBERSHIP';
 
   // Fetch coupons
   const { data: couponsData, isLoading } = useQuery({
@@ -286,6 +305,7 @@ export default function CouponManagement() {
       validUntil: '',
       corporateName: '',
       assignedUserIds: '',
+      planId: '',
       description: '',
       termsAndConditions: ''
     });
@@ -315,6 +335,7 @@ export default function CouponManagement() {
       validUntil: coupon.validUntil ? format(new Date(coupon.validUntil), 'yyyy-MM-dd') : '',
       corporateName: coupon.corporateName || '',
       assignedUserIds: Array.isArray(coupon.metadata?.assignedUserIds) ? coupon.metadata.assignedUserIds.join(', ') : '',
+      planId: coupon.metadata?.planId ? String(coupon.metadata.planId) : '',
       description: coupon.description || '',
       termsAndConditions: coupon.termsAndConditions || ''
     });
@@ -327,13 +348,18 @@ export default function CouponManagement() {
       PERCENTAGE_HC: { label: 'Discount % (HC)', color: 'bg-blue-500' },
       FIXED_HC: { label: 'Bonus HC', color: 'bg-green-500' },
       FREE_HC: { label: 'Free HC', color: 'bg-purple-500' },
-      MEMBERSHIP: { label: 'Membership', color: 'bg-amber-500' },
+      MEMBERSHIP: { label: 'Membership Discount %', color: 'bg-amber-500' },
+      MEMBERSHIP_FREE: { label: 'Membership Free', color: 'bg-rose-500' },
     };
     return types[category] || types.FIXED_HC;
   };
 
   const formatCouponValue = (coupon: any) => {
     const category = categoryFromCoupon(coupon);
+    if (category === 'MEMBERSHIP_FREE') {
+      const months = coupon.metadata?.freeMonths ?? coupon.value;
+      return `${months} month${Number(months) === 1 ? '' : 's'} free`;
+    }
     if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP') {
       return `${coupon.value}%`;
     }
@@ -625,7 +651,8 @@ export default function CouponManagement() {
                     <SelectItem value="FIXED_HC">Bonus HC</SelectItem>
                     <SelectItem value="FREE_HC">Free HC</SelectItem>
                     <SelectItem value="PERCENTAGE_HC">Discount % (HC)</SelectItem>
-                    <SelectItem value="MEMBERSHIP">Membership</SelectItem>
+                    <SelectItem value="MEMBERSHIP">Membership Discount %</SelectItem>
+                    <SelectItem value="MEMBERSHIP_FREE">Membership Free</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -638,7 +665,7 @@ export default function CouponManagement() {
                   type="number"
                   value={formData.value}
                   onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                  placeholder={isPercentageCoupon ? '10' : '100'}
+                  placeholder={isFreeMembershipCoupon ? '6' : isPercentageCoupon ? '10' : '100'}
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-1">
@@ -661,7 +688,29 @@ export default function CouponManagement() {
               </div>
             </div>
 
+            {isFreeMembershipCoupon && (
+              <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-muted-foreground">
+                Grants the selected membership plan free for the number of months entered in Value (e.g. 6 = six months free, no payment).
+              </div>
+            )}
+
             {isMembershipCoupon && (
+              <div>
+                <Label>Membership Plan ID</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={formData.planId}
+                  onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
+                  placeholder="Optional — lock coupon to one plan"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leave empty to allow redemption on any active membership plan.
+                </p>
+              </div>
+            )}
+
+            {formData.category === 'MEMBERSHIP' && (
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
                 Membership coupons apply a percentage discount when users purchase or upgrade a health membership plan.
               </div>

@@ -349,6 +349,8 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       termsAndConditions,
       assignedUserIds,
       scopes,
+      grantType,
+      planId,
       metadata
     } = req.body;
     
@@ -368,7 +370,27 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
     }
 
     const normalizedType = String(type).toUpperCase();
+    const normalizedGrantType = String(grantType || metadata?.grantType || '').toUpperCase();
     const normalizedScopes = defaultScopesForType(normalizedType, scopes ?? metadata?.scopes);
+    const normalizedPlanId = planId ?? metadata?.planId;
+    const parsedPlanId = normalizedPlanId ? parseInt(normalizedPlanId, 10) : null;
+
+    if (normalizedGrantType === 'FREE_MEMBERSHIP') {
+      const freeMonths = parseInt(value, 10);
+      if (!Number.isInteger(freeMonths) || freeMonths < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Free membership coupons require a positive whole number of months in value'
+        });
+      }
+
+      if (normalizedType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Free membership coupons must use PERCENTAGE storage type'
+        });
+      }
+    }
 
     if (normalizedScopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && normalizedType !== 'PERCENTAGE') {
       return res.status(400).json({
@@ -407,6 +429,9 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       metadata: {
         ...(metadata || {}),
         scopes: normalizedScopes,
+        ...(normalizedGrantType ? { grantType: normalizedGrantType } : {}),
+        ...(normalizedGrantType === 'FREE_MEMBERSHIP' ? { freeMonths: parseInt(value, 10) } : {}),
+        ...(parsedPlanId ? { planId: parsedPlanId } : {}),
         ...(normalizedAssignedUserIds.length ? { assignedUserIds: normalizedAssignedUserIds } : {})
       }
     });
@@ -437,8 +462,12 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
     const updates = { ...req.body };
     const normalizedAssignedUserIds = normalizeAssignedUserIds(updates.assignedUserIds);
     const requestedScopes = updates.scopes ?? updates.metadata?.scopes;
+    const requestedGrantType = updates.grantType ?? updates.metadata?.grantType;
+    const requestedPlanId = updates.planId ?? updates.metadata?.planId;
     delete updates.assignedUserIds;
     delete updates.scopes;
+    delete updates.grantType;
+    delete updates.planId;
     
     const coupon = await Coupon.findByPk(id);
     if (!coupon) {
@@ -478,6 +507,36 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
           success: false,
           message: 'Membership coupons must use the Discount % type'
         });
+      }
+    }
+
+    if (requestedGrantType !== undefined) {
+      const grantType = String(requestedGrantType || '').toUpperCase();
+      if (grantType) {
+        nextMetadata.grantType = grantType;
+      } else {
+        delete nextMetadata.grantType;
+        delete nextMetadata.freeMonths;
+      }
+    }
+
+    if (nextMetadata.grantType === 'FREE_MEMBERSHIP') {
+      const freeMonths = parseInt(updates.value ?? coupon.value, 10);
+      if (!Number.isInteger(freeMonths) || freeMonths < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Free membership coupons require a positive whole number of months in value'
+        });
+      }
+      nextMetadata.freeMonths = freeMonths;
+    }
+
+    if (requestedPlanId !== undefined) {
+      const parsedPlanId = requestedPlanId ? parseInt(requestedPlanId, 10) : null;
+      if (parsedPlanId) {
+        nextMetadata.planId = parsedPlanId;
+      } else {
+        delete nextMetadata.planId;
       }
     }
 
