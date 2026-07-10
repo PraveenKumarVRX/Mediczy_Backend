@@ -18,7 +18,7 @@ const Coupon = postgresSequelize.define('Coupon', {
     unique: true,
     validate: {
       isUppercase: true,
-      len: [4, 50]
+      len: [3, 50]
     }
   },
   type: {

@@ -89,55 +89,64 @@ export async function seedPromoCoupons({ execute = false, createdBy = null } = {
   const results = [];
 
   for (const definition of PROMO_COUPON_DEFINITIONS) {
-    const existing = await Coupon.findOne({ where: { code: definition.code } });
+    try {
+      const existing = await Coupon.findOne({ where: { code: definition.code } });
 
-    if (existing) {
-      const next = {
+      if (existing) {
+        const next = {
+          type: definition.type,
+          value: definition.value,
+          minPurchase: definition.minPurchase,
+          maxUsage: definition.maxUsage,
+          maxUsagePerUser: definition.maxUsagePerUser,
+          validUntil,
+          isActive: true,
+          corporateName: definition.corporateName,
+          description: definition.description,
+          ...(createdBy ? { createdBy } : {}),
+          metadata: {
+            ...(existing.metadata || {}),
+            ...definition.metadata
+          }
+        };
+
+        results.push({ code: definition.code, action: 'update', next });
+
+        if (execute) {
+          await existing.update(next);
+        }
+        continue;
+      }
+
+      const payload = {
+        code: definition.code,
         type: definition.type,
         value: definition.value,
         minPurchase: definition.minPurchase,
         maxUsage: definition.maxUsage,
         maxUsagePerUser: definition.maxUsagePerUser,
+        usageCount: 0,
+        validFrom: new Date(),
         validUntil,
         isActive: true,
         corporateName: definition.corporateName,
         description: definition.description,
         ...(createdBy ? { createdBy } : {}),
-        metadata: {
-          ...(existing.metadata || {}),
-          ...definition.metadata
-        }
+        metadata: definition.metadata
       };
 
-      results.push({ code: definition.code, action: 'update', next });
+      results.push({ code: definition.code, action: 'create', next: payload });
 
       if (execute) {
-        await existing.update(next);
+        await Coupon.create(payload);
       }
-      continue;
-    }
-
-    const payload = {
-      code: definition.code,
-      type: definition.type,
-      value: definition.value,
-      minPurchase: definition.minPurchase,
-      maxUsage: definition.maxUsage,
-      maxUsagePerUser: definition.maxUsagePerUser,
-      usageCount: 0,
-      validFrom: new Date(),
-      validUntil,
-      isActive: true,
-      corporateName: definition.corporateName,
-      description: definition.description,
-      ...(createdBy ? { createdBy } : {}),
-      metadata: definition.metadata
-    };
-
-    results.push({ code: definition.code, action: 'create', next: payload });
-
-    if (execute) {
-      await Coupon.create(payload);
+    } catch (error) {
+      results.push({
+        code: definition.code,
+        action: 'error',
+        error: error.message
+      });
+      if (execute) throw error;
     }
   }
 
