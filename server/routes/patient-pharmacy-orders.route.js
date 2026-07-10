@@ -16,6 +16,11 @@ import multer from 'multer';
 import { authUser } from '../middleware/auth.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import {
+  COUPON_SCOPES,
+  validateOrderCoupon,
+  recordCouponUsage
+} from '../services/coupon-validation.service.js';
 
 const router = express.Router();
 
@@ -127,6 +132,39 @@ router.get('/', authUser, async (req, res) => {
   }
 });
 
+/* ── POST /api/pharmacy-orders/validate-coupon ─────────────────────────────── */
+
+router.post('/validate-coupon', authUser, async (req, res) => {
+  try {
+    const { couponCode, orderAmount } = req.body;
+
+    if (!couponCode) {
+      return res.status(400).json({ success: false, message: 'Coupon code is required' });
+    }
+
+    const validation = await validateOrderCoupon({
+      code: couponCode,
+      userId: req.user.id,
+      scope: COUPON_SCOPES.PHARMACY_PURCHASE,
+      orderAmount: Number(orderAmount || 0)
+    });
+
+    return res.json({
+      success: true,
+      message: 'Coupon is valid for this pharmacy order',
+      coupon: {
+        code: validation.coupon.code,
+        grantType: validation.grantType,
+        discount: validation.discount,
+        finalPrice: validation.finalPrice,
+        minPurchase: Number(validation.coupon.minPurchase || 0)
+      }
+    });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+});
+
 /* ── POST /api/pharmacy-orders ────────────────────────────────────────────── */
 /* Accepts multipart/form-data with optional `prescription` file field.
    The `items` field must be a JSON string when sending multipart. */
@@ -155,6 +193,7 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
       prescription_note  = null,
       delivery_charge    = 0,
       discount           = 0,
+      coupon_code        = null,
       customer_notes     = null,
     } = req.body;
 
@@ -212,8 +251,25 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     // ── Calculate totals ───────────────────────────────────────────────────
     const subtotal          = parseFloat(enrichedItems.reduce((s, i) => s + i.line_total, 0).toFixed(2));
     const deliveryChargeVal = parseFloat(delivery_charge) || 0;
-    const discountVal       = parseFloat(discount) || 0;
-    const totalAmount       = parseFloat((subtotal + deliveryChargeVal - discountVal).toFixed(2));
+
+    let couponValidation = null;
+    let discountVal = 0;
+    let appliedCouponCode = null;
+
+    if (coupon_code) {
+      couponValidation = await validateOrderCoupon({
+        code: coupon_code,
+        userId,
+        scope: COUPON_SCOPES.PHARMACY_PURCHASE,
+        orderAmount: subtotal
+      });
+      discountVal = couponValidation.discount;
+      appliedCouponCode = couponValidation.coupon.code;
+    } else {
+      discountVal = parseFloat(discount) || 0;
+    }
+
+    const totalAmount       = parseFloat(Math.max(0, subtotal + deliveryChargeVal - discountVal).toFixed(2));
 
     const initialHistory = JSON.stringify([statusEvent('pending', 'Order placed')]);
 
@@ -238,10 +294,24 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
         deliveryChargeVal,
         discountVal,
         totalAmount,
-        customer_notes     || null,
+        appliedCouponCode
+          ? [customer_notes, `Coupon: ${appliedCouponCode}`].filter(Boolean).join(' | ')
+          : (customer_notes || null),
         initialHistory,
       ]
     );
+
+    if (couponValidation?.coupon) {
+      await recordCouponUsage({
+        coupon: couponValidation.coupon,
+        userId,
+        discountAmount: discountVal,
+        amountPaid: totalAmount,
+        hcPurchased: 0,
+        hcBonus: 0,
+        paymentId: `PHARMACY_${result.rows[0].order_id}`
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -250,6 +320,9 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     });
   } catch (err) {
     console.error('[patient-pharmacy-orders] POST create error:', err);
+    if (err.message?.includes('coupon') || err.message?.includes('Coupon') || err.message?.includes('Minimum order')) {
+      return res.status(400).json({ success: false, message: err.message });
+    }
     return res.status(500).json({ success: false, message: 'Failed to place order' });
   }
 });

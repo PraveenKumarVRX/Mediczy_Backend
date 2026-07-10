@@ -107,6 +107,15 @@ const SAMPLE_COUPON_DEFINITIONS = [
     minPurchase: 499,
     description: '20% off on membership plan purchase',
     scopes: MEMBERSHIP_SCOPES
+  },
+  {
+    code: 'MED500',
+    type: 'PERCENTAGE',
+    value: 500,
+    minPurchase: 500,
+    description: '₹500 off on online medicine orders',
+    scopes: [COUPON_SCOPES.PHARMACY_PURCHASE],
+    grantType: 'FIXED_INR'
   }
 ];
 
@@ -163,6 +172,8 @@ const assignSampleCouponsToUser = async (targetUserId, createdBy) => {
         createdBy,
         metadata: {
           scopes: definition.scopes,
+          ...(definition.grantType ? { grantType: definition.grantType } : {}),
+          ...(definition.grantType === 'FIXED_INR' ? { discountInr: definition.value } : {}),
           assignedUserIds: [uid],
           sample: true,
           sampleBaseCode: definition.code
@@ -392,6 +403,30 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       }
     }
 
+    if (normalizedGrantType === 'FIXED_INR') {
+      const discountInr = parseFloat(value);
+      if (!Number.isFinite(discountInr) || discountInr <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons require a positive discount amount in value'
+        });
+      }
+
+      if (normalizedType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons must use PERCENTAGE storage type'
+        });
+      }
+
+      if (!normalizedScopes.includes(COUPON_SCOPES.PHARMACY_PURCHASE)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons must include the PHARMACY_PURCHASE scope'
+        });
+      }
+    }
+
     if (normalizedScopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && normalizedType !== 'PERCENTAGE') {
       return res.status(400).json({
         success: false,
@@ -431,6 +466,7 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
         scopes: normalizedScopes,
         ...(normalizedGrantType ? { grantType: normalizedGrantType } : {}),
         ...(normalizedGrantType === 'FREE_MEMBERSHIP' ? { freeMonths: parseInt(value, 10) } : {}),
+        ...(normalizedGrantType === 'FIXED_INR' ? { discountInr: parseFloat(value) } : {}),
         ...(parsedPlanId ? { planId: parsedPlanId } : {}),
         ...(normalizedAssignedUserIds.length ? { assignedUserIds: normalizedAssignedUserIds } : {})
       }
@@ -529,6 +565,17 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
         });
       }
       nextMetadata.freeMonths = freeMonths;
+    }
+
+    if (nextMetadata.grantType === 'FIXED_INR') {
+      const discountInr = parseFloat(updates.value ?? coupon.value);
+      if (!Number.isFinite(discountInr) || discountInr <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons require a positive discount amount in value'
+        });
+      }
+      nextMetadata.discountInr = discountInr;
     }
 
     if (requestedPlanId !== undefined) {

@@ -81,18 +81,43 @@ const COUPON_CATEGORIES = {
     minPurchaseHint: 'Not used for free membership coupons',
     minPurchaseLabel: 'Min Order (INR)',
   },
+  PHARMACY_FIXED: {
+    label: 'Pharmacy ₹ Discount',
+    type: 'PERCENTAGE',
+    scopes: ['PHARMACY_PURCHASE'],
+    grantType: 'FIXED_INR',
+    valueHint: 'Flat discount in INR (e.g. 500)',
+    minPurchaseHint: 'Minimum medicine order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  PHARMACY_PERCENT: {
+    label: 'Pharmacy Discount %',
+    type: 'PERCENTAGE',
+    scopes: ['PHARMACY_PURCHASE'],
+    valueHint: 'Discount percentage on medicine order',
+    minPurchaseHint: 'Minimum medicine order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
 } as const;
 
 type CouponCategory = keyof typeof COUPON_CATEGORIES;
 
 const MEMBERSHIP_SCOPES = new Set(['GYM_MEMBERSHIP', 'MEMBERSHIP']);
+const PHARMACY_SCOPES = new Set(['PHARMACY_PURCHASE']);
 
 const categoryFromCoupon = (coupon: any): CouponCategory => {
   if (coupon?.metadata?.grantType === 'FREE_MEMBERSHIP') {
     return 'MEMBERSHIP_FREE';
   }
 
+  if (coupon?.metadata?.grantType === 'FIXED_INR') {
+    return 'PHARMACY_FIXED';
+  }
+
   const scopes = Array.isArray(coupon?.metadata?.scopes) ? coupon.metadata.scopes : [];
+  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => PHARMACY_SCOPES.has(scope))) {
+    return 'PHARMACY_PERCENT';
+  }
   if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => MEMBERSHIP_SCOPES.has(scope))) {
     return 'MEMBERSHIP';
   }
@@ -166,8 +191,10 @@ export default function CouponManagement() {
 
   const selectedCategory = COUPON_CATEGORIES[formData.category];
   const isMembershipCoupon = formData.category === 'MEMBERSHIP' || formData.category === 'MEMBERSHIP_FREE';
+  const isPharmacyCoupon = formData.category === 'PHARMACY_FIXED' || formData.category === 'PHARMACY_PERCENT';
   const isFreeMembershipCoupon = formData.category === 'MEMBERSHIP_FREE';
-  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || formData.category === 'MEMBERSHIP';
+  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || formData.category === 'MEMBERSHIP' || formData.category === 'PHARMACY_PERCENT';
+  const usesInrMinPurchase = isPercentageCoupon || formData.category === 'PHARMACY_FIXED';
 
   // Fetch coupons
   const { data: couponsData, isLoading } = useQuery({
@@ -350,6 +377,8 @@ export default function CouponManagement() {
       FREE_HC: { label: 'Free HC', color: 'bg-purple-500' },
       MEMBERSHIP: { label: 'Membership Discount %', color: 'bg-amber-500' },
       MEMBERSHIP_FREE: { label: 'Membership Free', color: 'bg-rose-500' },
+      PHARMACY_FIXED: { label: 'Pharmacy ₹ Discount', color: 'bg-cyan-500' },
+      PHARMACY_PERCENT: { label: 'Pharmacy Discount %', color: 'bg-sky-500' },
     };
     return types[category] || types.FIXED_HC;
   };
@@ -360,7 +389,10 @@ export default function CouponManagement() {
       const months = coupon.metadata?.freeMonths ?? coupon.value;
       return `${months} month${Number(months) === 1 ? '' : 's'} free`;
     }
-    if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP') {
+    if (category === 'PHARMACY_FIXED') {
+      return `₹${coupon.value} off`;
+    }
+    if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP' || category === 'PHARMACY_PERCENT') {
       return `${coupon.value}%`;
     }
     return `${coupon.value} HC`;
@@ -653,6 +685,8 @@ export default function CouponManagement() {
                     <SelectItem value="PERCENTAGE_HC">Discount % (HC)</SelectItem>
                     <SelectItem value="MEMBERSHIP">Membership Discount %</SelectItem>
                     <SelectItem value="MEMBERSHIP_FREE">Membership Free</SelectItem>
+                    <SelectItem value="PHARMACY_FIXED">Pharmacy ₹ Discount</SelectItem>
+                    <SelectItem value="PHARMACY_PERCENT">Pharmacy Discount %</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -665,7 +699,7 @@ export default function CouponManagement() {
                   type="number"
                   value={formData.value}
                   onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                  placeholder={isFreeMembershipCoupon ? '6' : isPercentageCoupon ? '10' : '100'}
+                  placeholder={isFreeMembershipCoupon ? '6' : formData.category === 'PHARMACY_FIXED' ? '500' : isPercentageCoupon ? '10' : '100'}
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-1">
@@ -680,13 +714,21 @@ export default function CouponManagement() {
                   value={formData.minPurchase}
                   onChange={(e) => setFormData({ ...formData, minPurchase: e.target.value })}
                   placeholder="0"
-                  disabled={!isPercentageCoupon}
+                  disabled={!usesInrMinPurchase && !isPharmacyCoupon}
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  {isPercentageCoupon ? selectedCategory.minPurchaseHint : 'Only used for percentage-based coupons'}
+                  {usesInrMinPurchase || isPharmacyCoupon ? selectedCategory.minPurchaseHint : 'Only used for percentage-based coupons'}
                 </p>
               </div>
             </div>
+
+            {isPharmacyCoupon && (
+              <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-sm text-muted-foreground">
+                {formData.category === 'PHARMACY_FIXED'
+                  ? 'Example: Value 500 + Min Order 500 gives ₹500 off online medicine orders of ₹500 or more (₹500 cart becomes free before delivery).'
+                  : 'Applies a percentage discount to the medicine subtotal on online pharmacy orders.'}
+              </div>
+            )}
 
             {isFreeMembershipCoupon && (
               <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-muted-foreground">
