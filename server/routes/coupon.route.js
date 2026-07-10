@@ -6,6 +6,7 @@
 import express from 'express';
 import { authTeam } from '../middleware/team.middleware.js';
 import { Coupon, CouponUsage } from '../models/index.js';
+import { seedPromoCoupons } from '../services/promo-coupon-seed.service.js';
 import { Op } from 'sequelize';
 
 const router = express.Router();
@@ -326,6 +327,33 @@ router.get('/stats', authTeam, requireOpsTeamMember, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch statistics',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/coupons/promo/seed
+ * @desc    Upsert standard promo coupons (USG, CTSCAN, MRI, MED500, CORP6FREE)
+ * @access  Private/Team Ops
+ */
+router.post('/promo/seed', authTeam, requireOpsTeamMember, async (req, res) => {
+  try {
+    const execute = req.body?.execute === true;
+    const result = await seedPromoCoupons({
+      execute,
+      createdBy: req.teamUser?.id || null
+    });
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (error) {
+    console.error('Error seeding promo coupons:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to seed promo coupons',
       error: error.message
     });
   }
