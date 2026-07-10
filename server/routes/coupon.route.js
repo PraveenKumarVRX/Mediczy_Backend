@@ -26,7 +26,10 @@ const requireOpsTeamMember = (req, res, next) => {
   }
 
   const permissions = Array.isArray(teamUser.permissions) ? teamUser.permissions : [];
-  const hasCouponPermission = permissions.includes('coupons.manage');
+  const hasCouponPermission = permissions.some((permission) => {
+    const normalized = String(permission || '').trim().toLowerCase();
+    return normalized === 'coupons.manage' || normalized === 'coupon management';
+  });
 
   if (!hasCouponPermission) {
     return res.status(403).json({
