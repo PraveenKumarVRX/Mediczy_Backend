@@ -39,6 +39,89 @@ import api from '@/utils/api';
 import { Ticket, Plus, Trash2, Edit, Calendar, TrendingUp, Users, Coins } from 'lucide-react';
 import { format } from 'date-fns';
 
+const COUPON_CATEGORIES = {
+  FIXED_HC: {
+    label: 'Bonus HC',
+    type: 'FIXED_HC',
+    scopes: ['COINS_PURCHASE'],
+    valueHint: 'HC amount',
+    minPurchaseHint: 'Min HC for percentage coupons',
+    minPurchaseLabel: 'Min Purchase',
+  },
+  FREE_HC: {
+    label: 'Free HC',
+    type: 'FREE_HC',
+    scopes: ['COINS_PURCHASE'],
+    valueHint: 'HC amount',
+    minPurchaseHint: 'Min HC for percentage coupons',
+    minPurchaseLabel: 'Min Purchase',
+  },
+  PERCENTAGE_HC: {
+    label: 'Discount % (HC)',
+    type: 'PERCENTAGE',
+    scopes: ['COINS_PURCHASE'],
+    valueHint: 'Discount percentage',
+    minPurchaseHint: 'Min HC for percentage coupons',
+    minPurchaseLabel: 'Min Purchase',
+  },
+  MEMBERSHIP: {
+    label: 'Membership',
+    type: 'PERCENTAGE',
+    scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
+    valueHint: 'Discount percentage on plan price',
+    minPurchaseHint: 'Minimum membership order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+} as const;
+
+type CouponCategory = keyof typeof COUPON_CATEGORIES;
+
+const MEMBERSHIP_SCOPES = new Set(['GYM_MEMBERSHIP', 'MEMBERSHIP']);
+
+const categoryFromCoupon = (coupon: any): CouponCategory => {
+  const scopes = Array.isArray(coupon?.metadata?.scopes) ? coupon.metadata.scopes : [];
+  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => MEMBERSHIP_SCOPES.has(scope))) {
+    return 'MEMBERSHIP';
+  }
+  if (coupon?.type === 'PERCENTAGE') return 'PERCENTAGE_HC';
+  if (coupon?.type === 'FREE_HC') return 'FREE_HC';
+  return 'FIXED_HC';
+};
+
+const buildCouponPayload = (formData: {
+  code: string;
+  category: CouponCategory;
+  value: string;
+  minPurchase: string;
+  maxUsage: string;
+  maxUsagePerUser: string;
+  validUntil: string;
+  corporateName: string;
+  assignedUserIds: string;
+  description: string;
+  termsAndConditions: string;
+}) => {
+  const category = COUPON_CATEGORIES[formData.category];
+
+  return {
+    code: formData.code,
+    type: category.type,
+    scopes: category.scopes,
+    value: formData.value,
+    minPurchase: formData.minPurchase,
+    maxUsage: formData.maxUsage,
+    maxUsagePerUser: formData.maxUsagePerUser,
+    validUntil: formData.validUntil,
+    corporateName: formData.corporateName,
+    description: formData.description,
+    termsAndConditions: formData.termsAndConditions,
+    assignedUserIds: formData.assignedUserIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  };
+};
+
 export default function CouponManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -51,7 +134,7 @@ export default function CouponManagement() {
   // Form state
   const [formData, setFormData] = useState({
     code: '',
-    type: 'FIXED_HC',
+    category: 'FIXED_HC' as CouponCategory,
     value: '',
     minPurchase: '0',
     maxUsage: '1',
@@ -62,6 +145,10 @@ export default function CouponManagement() {
     description: '',
     termsAndConditions: ''
   });
+
+  const selectedCategory = COUPON_CATEGORIES[formData.category];
+  const isMembershipCoupon = formData.category === 'MEMBERSHIP';
+  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || isMembershipCoupon;
 
   // Fetch coupons
   const { data: couponsData, isLoading } = useQuery({
@@ -191,7 +278,7 @@ export default function CouponManagement() {
   const resetForm = () => {
     setFormData({
       code: '',
-      type: 'FIXED_HC',
+      category: 'FIXED_HC',
       value: '',
       minPurchase: '0',
       maxUsage: '1',
@@ -207,13 +294,7 @@ export default function CouponManagement() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const payload = {
-      ...formData,
-      assignedUserIds: formData.assignedUserIds
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    };
+    const payload = buildCouponPayload(formData);
     
     if (editingCoupon) {
       updateMutation.mutate({ id: editingCoupon.id, data: payload });
@@ -226,7 +307,7 @@ export default function CouponManagement() {
     setEditingCoupon(coupon);
     setFormData({
       code: coupon.code,
-      type: coupon.type,
+      category: categoryFromCoupon(coupon),
       value: coupon.value.toString(),
       minPurchase: coupon.minPurchase.toString(),
       maxUsage: coupon.maxUsage.toString(),
@@ -240,13 +321,23 @@ export default function CouponManagement() {
     setShowCreateDialog(true);
   };
 
-  const getCouponTypeDisplay = (type: string) => {
-    const types: Record<string, { label: string; color: string }> = {
-      PERCENTAGE: { label: 'Discount %', color: 'bg-blue-500' },
+  const getCouponTypeDisplay = (coupon: any) => {
+    const category = categoryFromCoupon(coupon);
+    const types: Record<CouponCategory, { label: string; color: string }> = {
+      PERCENTAGE_HC: { label: 'Discount % (HC)', color: 'bg-blue-500' },
       FIXED_HC: { label: 'Bonus HC', color: 'bg-green-500' },
-      FREE_HC: { label: 'Free HC', color: 'bg-purple-500' }
+      FREE_HC: { label: 'Free HC', color: 'bg-purple-500' },
+      MEMBERSHIP: { label: 'Membership', color: 'bg-amber-500' },
     };
-    return types[type] || types.FIXED_HC;
+    return types[category] || types.FIXED_HC;
+  };
+
+  const formatCouponValue = (coupon: any) => {
+    const category = categoryFromCoupon(coupon);
+    if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP') {
+      return `${coupon.value}%`;
+    }
+    return `${coupon.value} HC`;
   };
 
   const coupons = couponsData?.coupons || [];
@@ -276,7 +367,7 @@ export default function CouponManagement() {
             Coupon Management
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage corporate HC purchase coupons
+            Manage HC purchase and membership plan coupons
           </p>
         </div>
         <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
@@ -423,18 +514,22 @@ export default function CouponManagement() {
             </TableHeader>
             <TableBody>
               {coupons.map((coupon: any) => {
-                const typeDisplay = getCouponTypeDisplay(coupon.type);
+                const typeDisplay = getCouponTypeDisplay(coupon);
                 const isExpired = new Date(coupon.validUntil) < new Date();
                 const isActive = coupon.isActive && !isExpired;
+                const scopes = Array.isArray(coupon.metadata?.scopes) ? coupon.metadata.scopes.join(', ') : 'COINS_PURCHASE';
 
                 return (
                   <TableRow key={coupon.id}>
                     <TableCell className="font-mono font-bold">{coupon.code}</TableCell>
                     <TableCell>
-                      <Badge className={typeDisplay.color}>{typeDisplay.label}</Badge>
+                      <div className="space-y-1">
+                        <Badge className={typeDisplay.color}>{typeDisplay.label}</Badge>
+                        <p className="text-[10px] text-muted-foreground">{scopes}</p>
+                      </div>
                     </TableCell>
                     <TableCell>
-                      {coupon.type === 'PERCENTAGE' ? `${coupon.value}%` : `${coupon.value} HC`}
+                      {formatCouponValue(coupon)}
                     </TableCell>
                     <TableCell>{coupon.corporateName || '-'}</TableCell>
                     <TableCell>
@@ -500,7 +595,7 @@ export default function CouponManagement() {
           <DialogHeader>
             <DialogTitle>{editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}</DialogTitle>
             <DialogDescription>
-              {editingCoupon ? 'Update coupon details' : 'Create a new HC purchase coupon'}
+              {editingCoupon ? 'Update coupon details' : 'Create a new HC purchase or membership coupon'}
             </DialogDescription>
           </DialogHeader>
 
@@ -519,14 +614,18 @@ export default function CouponManagement() {
 
               <div>
                 <Label>Type *</Label>
-                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value: CouponCategory) => setFormData({ ...formData, category: value })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PERCENTAGE">Discount %</SelectItem>
                     <SelectItem value="FIXED_HC">Bonus HC</SelectItem>
                     <SelectItem value="FREE_HC">Free HC</SelectItem>
+                    <SelectItem value="PERCENTAGE_HC">Discount % (HC)</SelectItem>
+                    <SelectItem value="MEMBERSHIP">Membership</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -539,25 +638,34 @@ export default function CouponManagement() {
                   type="number"
                   value={formData.value}
                   onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                  placeholder={formData.type === 'PERCENTAGE' ? '10' : '100'}
+                  placeholder={isPercentageCoupon ? '10' : '100'}
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  {formData.type === 'PERCENTAGE' ? 'Discount percentage' : 'HC amount'}
+                  {selectedCategory.valueHint}
                 </p>
               </div>
 
               <div>
-                <Label>Min Purchase</Label>
+                <Label>{selectedCategory.minPurchaseLabel}</Label>
                 <Input
                   type="number"
                   value={formData.minPurchase}
                   onChange={(e) => setFormData({ ...formData, minPurchase: e.target.value })}
                   placeholder="0"
+                  disabled={!isPercentageCoupon}
                 />
-                <p className="text-xs text-muted-foreground mt-1">Min HC for percentage coupons</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {isPercentageCoupon ? selectedCategory.minPurchaseHint : 'Only used for percentage-based coupons'}
+                </p>
               </div>
             </div>
+
+            {isMembershipCoupon && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                Membership coupons apply a percentage discount when users purchase or upgrade a health membership plan.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

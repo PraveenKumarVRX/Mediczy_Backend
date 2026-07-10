@@ -60,8 +60,12 @@ const COUPON_SCOPES = {
   COINS_PURCHASE: 'COINS_PURCHASE',
   HEALTH_CHECKUP: 'HEALTH_CHECKUP',
   PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
-  CONSULTATION: 'CONSULTATION'
+  CONSULTATION: 'CONSULTATION',
+  GYM_MEMBERSHIP: 'GYM_MEMBERSHIP',
+  MEMBERSHIP: 'MEMBERSHIP'
 };
+
+const MEMBERSHIP_SCOPES = [COUPON_SCOPES.GYM_MEMBERSHIP, COUPON_SCOPES.MEMBERSHIP];
 
 const SAMPLE_COUPON_DEFINITIONS = [
   {
@@ -95,6 +99,14 @@ const SAMPLE_COUPON_DEFINITIONS = [
     minPurchase: 199,
     description: '25% off on doctor consultations',
     scopes: [COUPON_SCOPES.CONSULTATION]
+  },
+  {
+    code: 'MEMBER20',
+    type: 'PERCENTAGE',
+    value: 20,
+    minPurchase: 499,
+    description: '20% off on membership plan purchase',
+    scopes: MEMBERSHIP_SCOPES
   }
 ];
 
@@ -109,6 +121,18 @@ const normalizeScopes = (value) => {
 
   const normalized = list.filter((scope) => allowed.has(scope));
   return normalized.length ? normalized : [COUPON_SCOPES.COINS_PURCHASE];
+};
+
+const defaultScopesForType = (type, scopes) => {
+  if (scopes !== undefined && scopes !== null && scopes !== '') {
+    return normalizeScopes(scopes);
+  }
+
+  if (['FIXED_HC', 'FREE_HC'].includes(String(type).toUpperCase())) {
+    return [COUPON_SCOPES.COINS_PURCHASE];
+  }
+
+  return [COUPON_SCOPES.COINS_PURCHASE];
 };
 
 const assignSampleCouponsToUser = async (targetUserId, createdBy) => {
@@ -324,6 +348,7 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       description,
       termsAndConditions,
       assignedUserIds,
+      scopes,
       metadata
     } = req.body;
     
@@ -332,6 +357,23 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Code, type, value, and validUntil are required'
+      });
+    }
+
+    if (!['PERCENTAGE', 'FIXED_HC', 'FREE_HC'].includes(String(type).toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid coupon type'
+      });
+    }
+
+    const normalizedType = String(type).toUpperCase();
+    const normalizedScopes = defaultScopesForType(normalizedType, scopes ?? metadata?.scopes);
+
+    if (normalizedScopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && normalizedType !== 'PERCENTAGE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Membership coupons must use the Discount % type'
       });
     }
     
@@ -348,7 +390,7 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
 
     const coupon = await Coupon.create({
       code: code.toUpperCase(),
-      type,
+      type: normalizedType,
       value: parseFloat(value),
       minPurchase: minPurchase ? parseFloat(minPurchase) : 0,
       maxUsage: maxUsage || 1,
@@ -364,6 +406,7 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       usageCount: 0,
       metadata: {
         ...(metadata || {}),
+        scopes: normalizedScopes,
         ...(normalizedAssignedUserIds.length ? { assignedUserIds: normalizedAssignedUserIds } : {})
       }
     });
@@ -393,7 +436,9 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
     const { id } = req.params;
     const updates = { ...req.body };
     const normalizedAssignedUserIds = normalizeAssignedUserIds(updates.assignedUserIds);
+    const requestedScopes = updates.scopes ?? updates.metadata?.scopes;
     delete updates.assignedUserIds;
+    delete updates.scopes;
     
     const coupon = await Coupon.findByPk(id);
     if (!coupon) {
@@ -421,6 +466,18 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
         nextMetadata.assignedUserIds = normalizedAssignedUserIds;
       } else {
         delete nextMetadata.assignedUserIds;
+      }
+    }
+
+    if (requestedScopes !== undefined) {
+      const nextType = String(updates.type || coupon.type).toUpperCase();
+      nextMetadata.scopes = defaultScopesForType(nextType, requestedScopes);
+
+      if (nextMetadata.scopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && nextType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Membership coupons must use the Discount % type'
+        });
       }
     }
 
