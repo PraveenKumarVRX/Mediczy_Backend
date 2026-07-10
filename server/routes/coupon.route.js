@@ -60,8 +60,16 @@ const COUPON_SCOPES = {
   COINS_PURCHASE: 'COINS_PURCHASE',
   HEALTH_CHECKUP: 'HEALTH_CHECKUP',
   PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
-  CONSULTATION: 'CONSULTATION'
+  CONSULTATION: 'CONSULTATION',
+  GYM_MEMBERSHIP: 'GYM_MEMBERSHIP',
+  MEMBERSHIP: 'MEMBERSHIP',
+  USG_SCAN: 'USG_SCAN',
+  CT_SCAN: 'CT_SCAN',
+  MRI_SCAN: 'MRI_SCAN'
 };
+
+const MEMBERSHIP_SCOPES = [COUPON_SCOPES.GYM_MEMBERSHIP, COUPON_SCOPES.MEMBERSHIP];
+const DIAGNOSTIC_SCOPES = [COUPON_SCOPES.USG_SCAN, COUPON_SCOPES.CT_SCAN, COUPON_SCOPES.MRI_SCAN];
 
 const SAMPLE_COUPON_DEFINITIONS = [
   {
@@ -95,6 +103,50 @@ const SAMPLE_COUPON_DEFINITIONS = [
     minPurchase: 199,
     description: '25% off on doctor consultations',
     scopes: [COUPON_SCOPES.CONSULTATION]
+  },
+  {
+    code: 'MEMBER20',
+    type: 'PERCENTAGE',
+    value: 20,
+    minPurchase: 499,
+    description: '20% off on membership plan purchase',
+    scopes: MEMBERSHIP_SCOPES
+  },
+  {
+    code: 'MED500',
+    type: 'PERCENTAGE',
+    value: 500,
+    minPurchase: 500,
+    description: '₹500 off on online medicine orders',
+    scopes: [COUPON_SCOPES.PHARMACY_PURCHASE],
+    grantType: 'FIXED_INR'
+  },
+  {
+    code: 'USG',
+    type: 'PERCENTAGE',
+    value: 1000,
+    minPurchase: 0,
+    description: 'Book USG scan at ₹1000',
+    scopes: [COUPON_SCOPES.USG_SCAN],
+    grantType: 'FIXED_BOOKING_PRICE'
+  },
+  {
+    code: 'CTSCAN',
+    type: 'PERCENTAGE',
+    value: 2000,
+    minPurchase: 0,
+    description: 'Book CT scan at ₹2000',
+    scopes: [COUPON_SCOPES.CT_SCAN],
+    grantType: 'FIXED_BOOKING_PRICE'
+  },
+  {
+    code: 'MRI',
+    type: 'PERCENTAGE',
+    value: 3000,
+    minPurchase: 0,
+    description: 'Book MRI scan at ₹3000',
+    scopes: [COUPON_SCOPES.MRI_SCAN],
+    grantType: 'FIXED_BOOKING_PRICE'
   }
 ];
 
@@ -109,6 +161,18 @@ const normalizeScopes = (value) => {
 
   const normalized = list.filter((scope) => allowed.has(scope));
   return normalized.length ? normalized : [COUPON_SCOPES.COINS_PURCHASE];
+};
+
+const defaultScopesForType = (type, scopes) => {
+  if (scopes !== undefined && scopes !== null && scopes !== '') {
+    return normalizeScopes(scopes);
+  }
+
+  if (['FIXED_HC', 'FREE_HC'].includes(String(type).toUpperCase())) {
+    return [COUPON_SCOPES.COINS_PURCHASE];
+  }
+
+  return [COUPON_SCOPES.COINS_PURCHASE];
 };
 
 const assignSampleCouponsToUser = async (targetUserId, createdBy) => {
@@ -139,6 +203,9 @@ const assignSampleCouponsToUser = async (targetUserId, createdBy) => {
         createdBy,
         metadata: {
           scopes: definition.scopes,
+          ...(definition.grantType ? { grantType: definition.grantType } : {}),
+          ...(definition.grantType === 'FIXED_INR' ? { discountInr: definition.value } : {}),
+          ...(definition.grantType === 'FIXED_BOOKING_PRICE' ? { bookingPrice: definition.value } : {}),
           assignedUserIds: [uid],
           sample: true,
           sampleBaseCode: definition.code
@@ -324,6 +391,9 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       description,
       termsAndConditions,
       assignedUserIds,
+      scopes,
+      grantType,
+      planId,
       metadata
     } = req.body;
     
@@ -332,6 +402,91 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Code, type, value, and validUntil are required'
+      });
+    }
+
+    if (!['PERCENTAGE', 'FIXED_HC', 'FREE_HC'].includes(String(type).toUpperCase())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid coupon type'
+      });
+    }
+
+    const normalizedType = String(type).toUpperCase();
+    const normalizedGrantType = String(grantType || metadata?.grantType || '').toUpperCase();
+    const normalizedScopes = defaultScopesForType(normalizedType, scopes ?? metadata?.scopes);
+    const normalizedPlanId = planId ?? metadata?.planId;
+    const parsedPlanId = normalizedPlanId ? parseInt(normalizedPlanId, 10) : null;
+
+    if (normalizedGrantType === 'FREE_MEMBERSHIP') {
+      const freeMonths = parseInt(value, 10);
+      if (!Number.isInteger(freeMonths) || freeMonths < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Free membership coupons require a positive whole number of months in value'
+        });
+      }
+
+      if (normalizedType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Free membership coupons must use PERCENTAGE storage type'
+        });
+      }
+    }
+
+    if (normalizedGrantType === 'FIXED_INR') {
+      const discountInr = parseFloat(value);
+      if (!Number.isFinite(discountInr) || discountInr <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons require a positive discount amount in value'
+        });
+      }
+
+      if (normalizedType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons must use PERCENTAGE storage type'
+        });
+      }
+
+      if (!normalizedScopes.includes(COUPON_SCOPES.PHARMACY_PURCHASE)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons must include the PHARMACY_PURCHASE scope'
+        });
+      }
+    }
+
+    if (normalizedGrantType === 'FIXED_BOOKING_PRICE') {
+      const bookingPrice = parseFloat(value);
+      if (!Number.isFinite(bookingPrice) || bookingPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons require a positive INR amount in value'
+        });
+      }
+
+      if (normalizedType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons must use PERCENTAGE storage type'
+        });
+      }
+
+      if (!normalizedScopes.some((scope) => DIAGNOSTIC_SCOPES.includes(scope))) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons must include USG_SCAN, CT_SCAN, or MRI_SCAN scope'
+        });
+      }
+    }
+
+    if (normalizedScopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && normalizedType !== 'PERCENTAGE') {
+      return res.status(400).json({
+        success: false,
+        message: 'Membership coupons must use the Discount % type'
       });
     }
     
@@ -348,7 +503,7 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
 
     const coupon = await Coupon.create({
       code: code.toUpperCase(),
-      type,
+      type: normalizedType,
       value: parseFloat(value),
       minPurchase: minPurchase ? parseFloat(minPurchase) : 0,
       maxUsage: maxUsage || 1,
@@ -364,6 +519,12 @@ router.post('/', authTeam, requireOpsTeamMember, async (req, res) => {
       usageCount: 0,
       metadata: {
         ...(metadata || {}),
+        scopes: normalizedScopes,
+        ...(normalizedGrantType ? { grantType: normalizedGrantType } : {}),
+        ...(normalizedGrantType === 'FREE_MEMBERSHIP' ? { freeMonths: parseInt(value, 10) } : {}),
+        ...(normalizedGrantType === 'FIXED_INR' ? { discountInr: parseFloat(value) } : {}),
+        ...(normalizedGrantType === 'FIXED_BOOKING_PRICE' ? { bookingPrice: parseFloat(value) } : {}),
+        ...(parsedPlanId ? { planId: parsedPlanId } : {}),
         ...(normalizedAssignedUserIds.length ? { assignedUserIds: normalizedAssignedUserIds } : {})
       }
     });
@@ -393,7 +554,13 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
     const { id } = req.params;
     const updates = { ...req.body };
     const normalizedAssignedUserIds = normalizeAssignedUserIds(updates.assignedUserIds);
+    const requestedScopes = updates.scopes ?? updates.metadata?.scopes;
+    const requestedGrantType = updates.grantType ?? updates.metadata?.grantType;
+    const requestedPlanId = updates.planId ?? updates.metadata?.planId;
     delete updates.assignedUserIds;
+    delete updates.scopes;
+    delete updates.grantType;
+    delete updates.planId;
     
     const coupon = await Coupon.findByPk(id);
     if (!coupon) {
@@ -421,6 +588,70 @@ router.put('/:id', authTeam, requireOpsTeamMember, async (req, res) => {
         nextMetadata.assignedUserIds = normalizedAssignedUserIds;
       } else {
         delete nextMetadata.assignedUserIds;
+      }
+    }
+
+    if (requestedScopes !== undefined) {
+      const nextType = String(updates.type || coupon.type).toUpperCase();
+      nextMetadata.scopes = defaultScopesForType(nextType, requestedScopes);
+
+      if (nextMetadata.scopes.some((scope) => MEMBERSHIP_SCOPES.includes(scope)) && nextType !== 'PERCENTAGE') {
+        return res.status(400).json({
+          success: false,
+          message: 'Membership coupons must use the Discount % type'
+        });
+      }
+    }
+
+    if (requestedGrantType !== undefined) {
+      const grantType = String(requestedGrantType || '').toUpperCase();
+      if (grantType) {
+        nextMetadata.grantType = grantType;
+      } else {
+        delete nextMetadata.grantType;
+        delete nextMetadata.freeMonths;
+      }
+    }
+
+    if (nextMetadata.grantType === 'FREE_MEMBERSHIP') {
+      const freeMonths = parseInt(updates.value ?? coupon.value, 10);
+      if (!Number.isInteger(freeMonths) || freeMonths < 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'Free membership coupons require a positive whole number of months in value'
+        });
+      }
+      nextMetadata.freeMonths = freeMonths;
+    }
+
+    if (nextMetadata.grantType === 'FIXED_INR') {
+      const discountInr = parseFloat(updates.value ?? coupon.value);
+      if (!Number.isFinite(discountInr) || discountInr <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed INR coupons require a positive discount amount in value'
+        });
+      }
+      nextMetadata.discountInr = discountInr;
+    }
+
+    if (nextMetadata.grantType === 'FIXED_BOOKING_PRICE') {
+      const bookingPrice = parseFloat(updates.value ?? coupon.value);
+      if (!Number.isFinite(bookingPrice) || bookingPrice <= 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fixed booking price coupons require a positive INR amount in value'
+        });
+      }
+      nextMetadata.bookingPrice = bookingPrice;
+    }
+
+    if (requestedPlanId !== undefined) {
+      const parsedPlanId = requestedPlanId ? parseInt(requestedPlanId, 10) : null;
+      if (parsedPlanId) {
+        nextMetadata.planId = parsedPlanId;
+      } else {
+        delete nextMetadata.planId;
       }
     }
 

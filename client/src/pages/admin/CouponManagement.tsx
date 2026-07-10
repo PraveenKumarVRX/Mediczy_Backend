@@ -39,6 +39,172 @@ import api from '@/utils/api';
 import { Ticket, Plus, Trash2, Edit, Calendar, TrendingUp, Users, Coins } from 'lucide-react';
 import { format } from 'date-fns';
 
+const COUPON_CATEGORIES = {
+  FIXED_HC: {
+    label: 'Bonus HC',
+    type: 'FIXED_HC',
+    scopes: ['COINS_PURCHASE'],
+    valueHint: 'HC amount',
+    minPurchaseHint: 'Min HC for percentage coupons',
+    minPurchaseLabel: 'Min Purchase',
+  },
+  FREE_HC: {
+    label: 'Free HC',
+    type: 'FREE_HC',
+    scopes: ['COINS_PURCHASE'],
+    valueHint: 'HC amount',
+    minPurchaseHint: 'Min HC for percentage coupons',
+    minPurchaseLabel: 'Min Purchase',
+  },
+  PERCENTAGE_HC: {
+    label: 'Discount % (HC)',
+    type: 'PERCENTAGE',
+    scopes: ['COINS_PURCHASE'],
+    valueHint: 'Discount percentage',
+    minPurchaseHint: 'Min HC for percentage coupons',
+    minPurchaseLabel: 'Min Purchase',
+  },
+  MEMBERSHIP: {
+    label: 'Membership Discount %',
+    type: 'PERCENTAGE',
+    scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
+    valueHint: 'Discount percentage on plan price',
+    minPurchaseHint: 'Minimum membership order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  MEMBERSHIP_FREE: {
+    label: 'Membership Free',
+    type: 'PERCENTAGE',
+    scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
+    grantType: 'FREE_MEMBERSHIP',
+    valueHint: 'Number of free months (e.g. 6)',
+    minPurchaseHint: 'Not used for free membership coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  PHARMACY_FIXED: {
+    label: 'Pharmacy ₹ Discount',
+    type: 'PERCENTAGE',
+    scopes: ['PHARMACY_PURCHASE'],
+    grantType: 'FIXED_INR',
+    valueHint: 'Flat discount in INR (e.g. 500)',
+    minPurchaseHint: 'Minimum medicine order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  PHARMACY_PERCENT: {
+    label: 'Pharmacy Discount %',
+    type: 'PERCENTAGE',
+    scopes: ['PHARMACY_PURCHASE'],
+    valueHint: 'Discount percentage on medicine order',
+    minPurchaseHint: 'Minimum medicine order amount in INR',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  USG_SCAN: {
+    label: 'USG Scan Fixed Price',
+    type: 'PERCENTAGE',
+    scopes: ['USG_SCAN'],
+    grantType: 'FIXED_BOOKING_PRICE',
+    valueHint: 'Fixed booking price in INR (e.g. 1000)',
+    minPurchaseHint: 'Not used for fixed scan price coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  CT_SCAN: {
+    label: 'CT Scan Fixed Price',
+    type: 'PERCENTAGE',
+    scopes: ['CT_SCAN'],
+    grantType: 'FIXED_BOOKING_PRICE',
+    valueHint: 'Fixed booking price in INR (e.g. 2000)',
+    minPurchaseHint: 'Not used for fixed scan price coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+  MRI_SCAN: {
+    label: 'MRI Scan Fixed Price',
+    type: 'PERCENTAGE',
+    scopes: ['MRI_SCAN'],
+    grantType: 'FIXED_BOOKING_PRICE',
+    valueHint: 'Fixed booking price in INR (e.g. 3000)',
+    minPurchaseHint: 'Not used for fixed scan price coupons',
+    minPurchaseLabel: 'Min Order (INR)',
+  },
+} as const;
+
+type CouponCategory = keyof typeof COUPON_CATEGORIES;
+
+const MEMBERSHIP_SCOPES = new Set(['GYM_MEMBERSHIP', 'MEMBERSHIP']);
+const PHARMACY_SCOPES = new Set(['PHARMACY_PURCHASE']);
+const DIAGNOSTIC_SCOPES = new Set(['USG_SCAN', 'CT_SCAN', 'MRI_SCAN']);
+
+const categoryFromCoupon = (coupon: any): CouponCategory => {
+  if (coupon?.metadata?.grantType === 'FREE_MEMBERSHIP') {
+    return 'MEMBERSHIP_FREE';
+  }
+
+  if (coupon?.metadata?.grantType === 'FIXED_INR') {
+    return 'PHARMACY_FIXED';
+  }
+
+  const scopes = Array.isArray(coupon?.metadata?.scopes) ? coupon.metadata.scopes : [];
+
+  if (coupon?.metadata?.grantType === 'FIXED_BOOKING_PRICE') {
+    if (scopes.includes('USG_SCAN')) return 'USG_SCAN';
+    if (scopes.includes('CT_SCAN')) return 'CT_SCAN';
+    if (scopes.includes('MRI_SCAN')) return 'MRI_SCAN';
+  }
+
+  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => DIAGNOSTIC_SCOPES.has(scope))) {
+    if (scopes.includes('USG_SCAN')) return 'USG_SCAN';
+    if (scopes.includes('CT_SCAN')) return 'CT_SCAN';
+    return 'MRI_SCAN';
+  }
+
+  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => PHARMACY_SCOPES.has(scope))) {
+    return 'PHARMACY_PERCENT';
+  }
+  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => MEMBERSHIP_SCOPES.has(scope))) {
+    return 'MEMBERSHIP';
+  }
+  if (coupon?.type === 'PERCENTAGE') return 'PERCENTAGE_HC';
+  if (coupon?.type === 'FREE_HC') return 'FREE_HC';
+  return 'FIXED_HC';
+};
+
+const buildCouponPayload = (formData: {
+  code: string;
+  category: CouponCategory;
+  value: string;
+  minPurchase: string;
+  maxUsage: string;
+  maxUsagePerUser: string;
+  validUntil: string;
+  corporateName: string;
+  assignedUserIds: string;
+  planId: string;
+  description: string;
+  termsAndConditions: string;
+}) => {
+  const category = COUPON_CATEGORIES[formData.category];
+  const parsedPlanId = formData.planId.trim() ? parseInt(formData.planId.trim(), 10) : undefined;
+
+  return {
+    code: formData.code,
+    type: category.type,
+    scopes: category.scopes,
+    ...(category.grantType ? { grantType: category.grantType } : {}),
+    ...(parsedPlanId ? { planId: parsedPlanId } : {}),
+    value: formData.value,
+    minPurchase: ['MEMBERSHIP_FREE', 'USG_SCAN', 'CT_SCAN', 'MRI_SCAN'].includes(formData.category) ? '0' : formData.minPurchase,
+    maxUsage: formData.maxUsage,
+    maxUsagePerUser: formData.maxUsagePerUser,
+    validUntil: formData.validUntil,
+    corporateName: formData.corporateName,
+    description: formData.description,
+    termsAndConditions: formData.termsAndConditions,
+    assignedUserIds: formData.assignedUserIds
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean),
+  };
+};
+
 export default function CouponManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -51,7 +217,7 @@ export default function CouponManagement() {
   // Form state
   const [formData, setFormData] = useState({
     code: '',
-    type: 'FIXED_HC',
+    category: 'FIXED_HC' as CouponCategory,
     value: '',
     minPurchase: '0',
     maxUsage: '1',
@@ -59,9 +225,18 @@ export default function CouponManagement() {
     validUntil: '',
     corporateName: '',
     assignedUserIds: '',
+    planId: '',
     description: '',
     termsAndConditions: ''
   });
+
+  const selectedCategory = COUPON_CATEGORIES[formData.category];
+  const isMembershipCoupon = formData.category === 'MEMBERSHIP' || formData.category === 'MEMBERSHIP_FREE';
+  const isPharmacyCoupon = formData.category === 'PHARMACY_FIXED' || formData.category === 'PHARMACY_PERCENT';
+  const isDiagnosticCoupon = formData.category === 'USG_SCAN' || formData.category === 'CT_SCAN' || formData.category === 'MRI_SCAN';
+  const isFreeMembershipCoupon = formData.category === 'MEMBERSHIP_FREE';
+  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || formData.category === 'MEMBERSHIP' || formData.category === 'PHARMACY_PERCENT';
+  const usesInrMinPurchase = isPercentageCoupon || formData.category === 'PHARMACY_FIXED';
 
   // Fetch coupons
   const { data: couponsData, isLoading } = useQuery({
@@ -191,7 +366,7 @@ export default function CouponManagement() {
   const resetForm = () => {
     setFormData({
       code: '',
-      type: 'FIXED_HC',
+      category: 'FIXED_HC',
       value: '',
       minPurchase: '0',
       maxUsage: '1',
@@ -199,6 +374,7 @@ export default function CouponManagement() {
       validUntil: '',
       corporateName: '',
       assignedUserIds: '',
+      planId: '',
       description: '',
       termsAndConditions: ''
     });
@@ -207,13 +383,7 @@ export default function CouponManagement() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    const payload = {
-      ...formData,
-      assignedUserIds: formData.assignedUserIds
-        .split(',')
-        .map((id) => id.trim())
-        .filter(Boolean)
-    };
+    const payload = buildCouponPayload(formData);
     
     if (editingCoupon) {
       updateMutation.mutate({ id: editingCoupon.id, data: payload });
@@ -226,7 +396,7 @@ export default function CouponManagement() {
     setEditingCoupon(coupon);
     setFormData({
       code: coupon.code,
-      type: coupon.type,
+      category: categoryFromCoupon(coupon),
       value: coupon.value.toString(),
       minPurchase: coupon.minPurchase.toString(),
       maxUsage: coupon.maxUsage.toString(),
@@ -234,19 +404,46 @@ export default function CouponManagement() {
       validUntil: coupon.validUntil ? format(new Date(coupon.validUntil), 'yyyy-MM-dd') : '',
       corporateName: coupon.corporateName || '',
       assignedUserIds: Array.isArray(coupon.metadata?.assignedUserIds) ? coupon.metadata.assignedUserIds.join(', ') : '',
+      planId: coupon.metadata?.planId ? String(coupon.metadata.planId) : '',
       description: coupon.description || '',
       termsAndConditions: coupon.termsAndConditions || ''
     });
     setShowCreateDialog(true);
   };
 
-  const getCouponTypeDisplay = (type: string) => {
-    const types: Record<string, { label: string; color: string }> = {
-      PERCENTAGE: { label: 'Discount %', color: 'bg-blue-500' },
+  const getCouponTypeDisplay = (coupon: any) => {
+    const category = categoryFromCoupon(coupon);
+    const types: Record<CouponCategory, { label: string; color: string }> = {
+      PERCENTAGE_HC: { label: 'Discount % (HC)', color: 'bg-blue-500' },
       FIXED_HC: { label: 'Bonus HC', color: 'bg-green-500' },
-      FREE_HC: { label: 'Free HC', color: 'bg-purple-500' }
+      FREE_HC: { label: 'Free HC', color: 'bg-purple-500' },
+      MEMBERSHIP: { label: 'Membership Discount %', color: 'bg-amber-500' },
+      MEMBERSHIP_FREE: { label: 'Membership Free', color: 'bg-rose-500' },
+      PHARMACY_FIXED: { label: 'Pharmacy ₹ Discount', color: 'bg-cyan-500' },
+      PHARMACY_PERCENT: { label: 'Pharmacy Discount %', color: 'bg-sky-500' },
+      USG_SCAN: { label: 'USG Fixed Price', color: 'bg-teal-500' },
+      CT_SCAN: { label: 'CT Fixed Price', color: 'bg-indigo-500' },
+      MRI_SCAN: { label: 'MRI Fixed Price', color: 'bg-violet-500' },
     };
-    return types[type] || types.FIXED_HC;
+    return types[category] || types.FIXED_HC;
+  };
+
+  const formatCouponValue = (coupon: any) => {
+    const category = categoryFromCoupon(coupon);
+    if (category === 'MEMBERSHIP_FREE') {
+      const months = coupon.metadata?.freeMonths ?? coupon.value;
+      return `${months} month${Number(months) === 1 ? '' : 's'} free`;
+    }
+    if (category === 'PHARMACY_FIXED') {
+      return `₹${coupon.value} off`;
+    }
+    if (category === 'USG_SCAN' || category === 'CT_SCAN' || category === 'MRI_SCAN') {
+      return `₹${coupon.metadata?.bookingPrice ?? coupon.value} booking`;
+    }
+    if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP' || category === 'PHARMACY_PERCENT') {
+      return `${coupon.value}%`;
+    }
+    return `${coupon.value} HC`;
   };
 
   const coupons = couponsData?.coupons || [];
@@ -276,7 +473,7 @@ export default function CouponManagement() {
             Coupon Management
           </h1>
           <p className="text-muted-foreground mt-1">
-            Manage corporate HC purchase coupons
+            Manage HC purchase and membership plan coupons
           </p>
         </div>
         <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
@@ -423,18 +620,22 @@ export default function CouponManagement() {
             </TableHeader>
             <TableBody>
               {coupons.map((coupon: any) => {
-                const typeDisplay = getCouponTypeDisplay(coupon.type);
+                const typeDisplay = getCouponTypeDisplay(coupon);
                 const isExpired = new Date(coupon.validUntil) < new Date();
                 const isActive = coupon.isActive && !isExpired;
+                const scopes = Array.isArray(coupon.metadata?.scopes) ? coupon.metadata.scopes.join(', ') : 'COINS_PURCHASE';
 
                 return (
                   <TableRow key={coupon.id}>
                     <TableCell className="font-mono font-bold">{coupon.code}</TableCell>
                     <TableCell>
-                      <Badge className={typeDisplay.color}>{typeDisplay.label}</Badge>
+                      <div className="space-y-1">
+                        <Badge className={typeDisplay.color}>{typeDisplay.label}</Badge>
+                        <p className="text-[10px] text-muted-foreground">{scopes}</p>
+                      </div>
                     </TableCell>
                     <TableCell>
-                      {coupon.type === 'PERCENTAGE' ? `${coupon.value}%` : `${coupon.value} HC`}
+                      {formatCouponValue(coupon)}
                     </TableCell>
                     <TableCell>{coupon.corporateName || '-'}</TableCell>
                     <TableCell>
@@ -500,7 +701,7 @@ export default function CouponManagement() {
           <DialogHeader>
             <DialogTitle>{editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}</DialogTitle>
             <DialogDescription>
-              {editingCoupon ? 'Update coupon details' : 'Create a new HC purchase coupon'}
+              {editingCoupon ? 'Update coupon details' : 'Create a new HC purchase or membership coupon'}
             </DialogDescription>
           </DialogHeader>
 
@@ -519,14 +720,24 @@ export default function CouponManagement() {
 
               <div>
                 <Label>Type *</Label>
-                <Select value={formData.type} onValueChange={(value) => setFormData({ ...formData, type: value })}>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value: CouponCategory) => setFormData({ ...formData, category: value })}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="PERCENTAGE">Discount %</SelectItem>
                     <SelectItem value="FIXED_HC">Bonus HC</SelectItem>
                     <SelectItem value="FREE_HC">Free HC</SelectItem>
+                    <SelectItem value="PERCENTAGE_HC">Discount % (HC)</SelectItem>
+                    <SelectItem value="MEMBERSHIP">Membership Discount %</SelectItem>
+                    <SelectItem value="MEMBERSHIP_FREE">Membership Free</SelectItem>
+                    <SelectItem value="PHARMACY_FIXED">Pharmacy ₹ Discount</SelectItem>
+                    <SelectItem value="PHARMACY_PERCENT">Pharmacy Discount %</SelectItem>
+                    <SelectItem value="USG_SCAN">USG Scan Fixed Price</SelectItem>
+                    <SelectItem value="CT_SCAN">CT Scan Fixed Price</SelectItem>
+                    <SelectItem value="MRI_SCAN">MRI Scan Fixed Price</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -539,25 +750,77 @@ export default function CouponManagement() {
                   type="number"
                   value={formData.value}
                   onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                  placeholder={formData.type === 'PERCENTAGE' ? '10' : '100'}
+                  placeholder={
+                    isFreeMembershipCoupon ? '6'
+                    : formData.category === 'USG_SCAN' ? '1000'
+                    : formData.category === 'CT_SCAN' ? '2000'
+                    : formData.category === 'MRI_SCAN' ? '3000'
+                    : formData.category === 'PHARMACY_FIXED' ? '500'
+                    : isPercentageCoupon ? '10' : '100'
+                  }
                   required
                 />
                 <p className="text-xs text-muted-foreground mt-1">
-                  {formData.type === 'PERCENTAGE' ? 'Discount percentage' : 'HC amount'}
+                  {selectedCategory.valueHint}
                 </p>
               </div>
 
               <div>
-                <Label>Min Purchase</Label>
+                <Label>{selectedCategory.minPurchaseLabel}</Label>
                 <Input
                   type="number"
                   value={formData.minPurchase}
                   onChange={(e) => setFormData({ ...formData, minPurchase: e.target.value })}
                   placeholder="0"
+                  disabled={!usesInrMinPurchase && !isPharmacyCoupon}
                 />
-                <p className="text-xs text-muted-foreground mt-1">Min HC for percentage coupons</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {usesInrMinPurchase || isPharmacyCoupon ? selectedCategory.minPurchaseHint : 'Only used for percentage-based coupons'}
+                </p>
               </div>
             </div>
+
+            {isDiagnosticCoupon && (
+              <div className="rounded-lg border border-teal-500/30 bg-teal-500/5 p-3 text-sm text-muted-foreground">
+                Patient books the matching scan type at the fixed INR price in Value. Example: USG coupon code <strong>USG</strong> with Value <strong>1000</strong> books ultrasound at ₹1000.
+              </div>
+            )}
+
+            {isPharmacyCoupon && (
+              <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-sm text-muted-foreground">
+                {formData.category === 'PHARMACY_FIXED'
+                  ? 'Example: Value 500 + Min Order 500 gives ₹500 off online medicine orders of ₹500 or more (₹500 cart becomes free before delivery).'
+                  : 'Applies a percentage discount to the medicine subtotal on online pharmacy orders.'}
+              </div>
+            )}
+
+            {isFreeMembershipCoupon && (
+              <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-muted-foreground">
+                Grants the selected membership plan free for the number of months entered in Value (e.g. 6 = six months free, no payment).
+              </div>
+            )}
+
+            {isMembershipCoupon && (
+              <div>
+                <Label>Membership Plan ID</Label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={formData.planId}
+                  onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
+                  placeholder="Optional — lock coupon to one plan"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Leave empty to allow redemption on any active membership plan.
+                </p>
+              </div>
+            )}
+
+            {formData.category === 'MEMBERSHIP' && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
+                Membership coupons apply a percentage discount when users purchase or upgrade a health membership plan.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

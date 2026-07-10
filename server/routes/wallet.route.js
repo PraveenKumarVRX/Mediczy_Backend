@@ -15,73 +15,18 @@ import { ErrorCodes } from '../utils/error-codes.js';
 
 const router = express.Router();
 
-const COUPON_SCOPES = {
-  COINS_PURCHASE: 'COINS_PURCHASE',
-  HEALTH_CHECKUP: 'HEALTH_CHECKUP',
-  PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
-  CONSULTATION: 'CONSULTATION'
-};
+import {
+  COUPON_SCOPES,
+  normalizeRequestedScope,
+  parseCouponScopes,
+  parseAssignedUserIds,
+  isCouponEligibleForUser,
+  isCouponEligibleForScope,
+  calculateCouponPricing,
+  isFixedInrCoupon
+} from '../services/coupon-validation.service.js';
 
 const DEFAULT_COUPON_SCOPE = COUPON_SCOPES.COINS_PURCHASE;
-
-const parseAssignedUserIds = (coupon) => {
-  const metadata = coupon?.metadata || {};
-  const ids = metadata.assignedUserIds;
-
-  if (!ids) return [];
-
-  if (Array.isArray(ids)) {
-    return ids
-      .map((id) => parseInt(id, 10))
-      .filter((id) => Number.isInteger(id) && id > 0);
-  }
-
-  if (typeof ids === 'string') {
-    return ids
-      .split(',')
-      .map((id) => parseInt(id.trim(), 10))
-      .filter((id) => Number.isInteger(id) && id > 0);
-  }
-
-  return [];
-};
-
-const isCouponEligibleForUser = (coupon, userId) => {
-  const assignedUserIds = parseAssignedUserIds(coupon);
-  if (!assignedUserIds.length) return true;
-  return assignedUserIds.includes(parseInt(userId, 10));
-};
-
-const parseCouponScopes = (coupon) => {
-  const rawScopes = coupon?.metadata?.scopes;
-
-  if (!rawScopes) {
-    return [DEFAULT_COUPON_SCOPE];
-  }
-
-  const scopes = Array.isArray(rawScopes)
-    ? rawScopes
-    : String(rawScopes)
-        .split(',')
-        .map((item) => item.trim().toUpperCase())
-        .filter(Boolean);
-
-  const allowed = new Set(Object.values(COUPON_SCOPES));
-  const normalized = scopes.filter((scope) => allowed.has(scope));
-
-  return normalized.length ? normalized : [DEFAULT_COUPON_SCOPE];
-};
-
-const normalizeRequestedScope = (scope) => {
-  const value = String(scope || DEFAULT_COUPON_SCOPE).toUpperCase();
-  const allowed = new Set(Object.values(COUPON_SCOPES));
-  return allowed.has(value) ? value : null;
-};
-
-const isCouponEligibleForScope = (coupon, scope) => {
-  const scopes = parseCouponScopes(coupon);
-  return scopes.includes(scope);
-};
 
 /**
  * GET /api/wallet
@@ -455,37 +400,19 @@ router.post('/validate-coupon', authUser, async (req, res) => {
       return conflict(res, 'You have already used this coupon the maximum number of times', ErrorCodes.COUPON_ALREADY_USED);
     }
 
-    // Get package if specified
-    let pkg = null;
-    const normalizedOrderAmount = Number(orderAmount || 0);
-    if (packageId !== undefined) {
-      pkg = HEALTH_COINS_PRICING.packages[packageId];
-
-      // Check min purchase for PERCENTAGE type
-      if (coupon.type === 'PERCENTAGE' && pkg && pkg.coins < coupon.minPurchase) {
-        return clientError(res, `Minimum purchase of ${coupon.minPurchase} HC required for this coupon`, ErrorCodes.INVALID_COUPON);
-      }
-    }
-
-    if (coupon.type === 'PERCENTAGE' && !pkg && normalizedOrderAmount > 0 && normalizedOrderAmount < Number(coupon.minPurchase || 0)) {
-      return clientError(res, `Minimum order of ₹${coupon.minPurchase} required for this coupon`, ErrorCodes.INVALID_COUPON);
-    }
-
     // Calculate discount/bonus
-    const baseAmount = pkg ? pkg.price : (normalizedOrderAmount > 0 ? normalizedOrderAmount : 0);
-    let discount = 0;
-    let bonusHC = 0;
-    let finalPrice = baseAmount;
-
-    if (coupon.type === 'PERCENTAGE' && baseAmount > 0) {
-      discount = (baseAmount * coupon.value) / 100;
-      finalPrice = baseAmount - discount;
-    } else if (coupon.type === 'FIXED_HC') {
-      bonusHC = coupon.value;
-    } else if (coupon.type === 'FREE_HC') {
-      bonusHC = coupon.value;
-      finalPrice = 0; // Free HC
+    const normalizedOrderAmount = Number(orderAmount || 0);
+    const pkg = packageId !== undefined ? HEALTH_COINS_PRICING.packages[packageId] : null;
+    if (coupon.type === 'PERCENTAGE' && pkg && pkg.coins < coupon.minPurchase && !isFixedInrCoupon(coupon)) {
+      return clientError(res, `Minimum purchase of ${coupon.minPurchase} HC required for this coupon`, ErrorCodes.INVALID_COUPON);
     }
+
+    const pricing = calculateCouponPricing({
+      coupon,
+      scope,
+      orderAmount: normalizedOrderAmount,
+      packagePrice: pkg ? pkg.price : 0
+    });
 
     return ok(res, {
       message: 'Coupon is valid',
@@ -495,13 +422,17 @@ router.post('/validate-coupon', authUser, async (req, res) => {
         value: coupon.value,
         scope,
         scopes: parseCouponScopes(coupon),
+        grantType: coupon.metadata?.grantType || null,
         description: coupon.description,
-        discount,
-        bonusHC,
-        finalPrice: Math.max(0, finalPrice)
+        discount: pricing.discount,
+        bonusHC: pricing.bonusHC,
+        finalPrice: pricing.finalPrice
       }
     });
   } catch (error) {
+    if (error.message?.includes('coupon') || error.message?.includes('Coupon') || error.message?.includes('Minimum order')) {
+      return clientError(res, error.message, ErrorCodes.INVALID_COUPON);
+    }
     console.error('Validate coupon error:', error);
     return serverError(res, error, 'Failed to validate coupon');
   }

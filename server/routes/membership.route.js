@@ -14,7 +14,8 @@ const COUPON_SCOPES = {
   HEALTH_CHECKUP: 'HEALTH_CHECKUP',
   PHARMACY_PURCHASE: 'PHARMACY_PURCHASE',
   CONSULTATION: 'CONSULTATION',
-  GYM_MEMBERSHIP: 'GYM_MEMBERSHIP'
+  GYM_MEMBERSHIP: 'GYM_MEMBERSHIP',
+  MEMBERSHIP: 'MEMBERSHIP'
 };
 
 const parseAssignedUserIds = (coupon) => {
@@ -61,28 +62,16 @@ const parseCouponScopes = (coupon) => {
 
 const isCouponEligibleForScope = (coupon, scope) => parseCouponScopes(coupon).includes(scope);
 
-const validateCouponForOrder = async ({ code, userId, scope, amount }) => {
-  if (!code) return null;
+const isFreeMembershipCoupon = (coupon) => coupon?.metadata?.grantType === 'FREE_MEMBERSHIP';
 
-  const coupon = await Coupon.findOne({
-    where: {
-      code: String(code).trim().toUpperCase(),
-      isActive: true,
-      validFrom: { [Op.lte]: new Date() },
-      validUntil: { [Op.gte]: new Date() }
-    }
-  });
+const getFreeMembershipMonths = (coupon) => {
+  const months = Number(coupon?.metadata?.freeMonths ?? coupon?.value ?? 0);
+  return Number.isFinite(months) && months > 0 ? Math.floor(months) : 0;
+};
 
-  if (!coupon) {
-    throw new Error('Invalid or expired coupon code');
-  }
-
+const validateCouponEligibility = async ({ coupon, userId }) => {
   if (!isCouponEligibleForUser(coupon, userId)) {
     throw new Error('This coupon is not assigned to your account');
-  }
-
-  if (!isCouponEligibleForScope(coupon, scope)) {
-    throw new Error(`This coupon is not valid for ${scope}`);
   }
 
   if (coupon.usageCount >= coupon.maxUsage) {
@@ -96,6 +85,77 @@ const validateCouponForOrder = async ({ code, userId, scope, amount }) => {
   if (userUsage >= coupon.maxUsagePerUser) {
     throw new Error('You have already used this coupon the maximum number of times');
   }
+};
+
+const findActiveCoupon = async (code) => {
+  const coupon = await Coupon.findOne({
+    where: {
+      code: String(code).trim().toUpperCase(),
+      isActive: true,
+      validFrom: { [Op.lte]: new Date() },
+      validUntil: { [Op.gte]: new Date() }
+    }
+  });
+
+  if (!coupon) {
+    throw new Error('Invalid or expired coupon code');
+  }
+
+  return coupon;
+};
+
+const validateFreeMembershipCoupon = async ({ code, userId, planId, scope = COUPON_SCOPES.MEMBERSHIP }) => {
+  const coupon = await findActiveCoupon(code);
+  const selectedScope = String(scope || COUPON_SCOPES.MEMBERSHIP).toUpperCase();
+
+  if (!isFreeMembershipCoupon(coupon)) {
+    throw new Error('This coupon is not a free membership coupon');
+  }
+
+  if (!isCouponEligibleForScope(coupon, selectedScope)) {
+    throw new Error(`This coupon is not valid for ${selectedScope}`);
+  }
+
+  await validateCouponEligibility({ coupon, userId });
+
+  const freeMonths = getFreeMembershipMonths(coupon);
+  if (!freeMonths) {
+    throw new Error('Invalid free membership duration on coupon');
+  }
+
+  const boundPlanId = coupon.metadata?.planId ? parseInt(coupon.metadata.planId, 10) : null;
+  const requestedPlanId = planId ? parseInt(planId, 10) : null;
+
+  if (boundPlanId && requestedPlanId && boundPlanId !== requestedPlanId) {
+    throw new Error('This coupon is not valid for the selected plan');
+  }
+
+  return {
+    coupon,
+    freeMonths,
+    boundPlanId,
+    scope: selectedScope
+  };
+};
+
+const validateCouponForOrder = async ({ code, userId, scope, amount }) => {
+  if (!code) return null;
+
+  const coupon = await findActiveCoupon(code);
+
+  if (isFreeMembershipCoupon(coupon)) {
+    throw new Error('Use the free membership coupon redemption flow for this code');
+  }
+
+  if (!isCouponEligibleForUser(coupon, userId)) {
+    throw new Error('This coupon is not assigned to your account');
+  }
+
+  if (!isCouponEligibleForScope(coupon, scope)) {
+    throw new Error(`This coupon is not valid for ${scope}`);
+  }
+
+  await validateCouponEligibility({ coupon, userId });
 
   if (coupon.type !== 'PERCENTAGE') {
     throw new Error('This coupon type is not supported for membership payments');
@@ -349,6 +409,155 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
   }
 });
 
+// -------- FREE MEMBERSHIP COUPON --------
+router.post('/validate-free-coupon', authUser, async (req, res) => {
+  try {
+    const { couponCode, planId, scope = COUPON_SCOPES.MEMBERSHIP } = req.body;
+
+    if (!couponCode) {
+      return res.status(400).json({ message: 'Coupon code is required' });
+    }
+
+    const validation = await validateFreeMembershipCoupon({
+      code: couponCode,
+      userId: req.user.id,
+      planId,
+      scope
+    });
+
+    return res.json({
+      success: true,
+      message: 'Coupon is valid for free membership',
+      coupon: {
+        code: validation.coupon.code,
+        freeMonths: validation.freeMonths,
+        boundPlanId: validation.boundPlanId,
+        scope: validation.scope
+      }
+    });
+  } catch (error) {
+    return res.status(400).json({ message: error.message });
+  }
+});
+
+router.post('/redeem-free-coupon', authUser, async (req, res) => {
+  try {
+    const { couponCode, planId, scope = COUPON_SCOPES.MEMBERSHIP } = req.body;
+
+    if (!couponCode || !planId) {
+      return res.status(400).json({ message: 'Coupon code and plan ID are required' });
+    }
+
+    const validation = await validateFreeMembershipCoupon({
+      code: couponCode,
+      userId: req.user.id,
+      planId,
+      scope
+    });
+
+    const plan = await MembershipPlan.findByPk(planId);
+    if (!plan || !plan.isActive) {
+      return res.status(404).json({ message: 'Plan not available' });
+    }
+
+    if (validation.boundPlanId && validation.boundPlanId !== plan.id) {
+      return res.status(400).json({ message: 'This coupon is not valid for the selected plan' });
+    }
+
+    const planType = plan.planType || 'primary';
+    if (planType === 'primary') {
+      const alreadyActive = await UserPlan.findOne({
+        where: { userId: req.user.id, status: 'active' },
+        include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: true }]
+      });
+      if (alreadyActive) {
+        return res.status(400).json({ message: 'You already have an active primary plan. Use upgrade endpoint to switch plans.' });
+      }
+    } else {
+      const alreadyHasAddon = await UserPlan.findOne({
+        where: { userId: req.user.id, membershipPlanId: plan.id, status: 'active' }
+      });
+      if (alreadyHasAddon) {
+        return res.status(400).json({ message: 'You already have this addon plan active' });
+      }
+    }
+
+    const startDate = new Date();
+    const durationDays = validation.freeMonths * 30;
+    const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
+    const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
+
+    const userPlan = await UserPlan.create({
+      userId: req.user.id,
+      membershipPlanId: plan.id,
+      startDate: startDate.toISOString().slice(0, 10),
+      endDate: endDate.toISOString().slice(0, 10),
+      paidAmount: 0,
+      paymentId: `FREE_MEMBERSHIP_${Date.now()}`,
+      paymentMethod: 'free_membership_coupon',
+      metadata: {
+        planName: plan.name,
+        planType,
+        tier: plan.tier,
+        features: plan.features,
+        benefits: plan.benefits,
+        limitations: plan.limitations,
+        appliedLimits: buildAppliedLimits(plan),
+        couponCode: validation.coupon.code,
+        freeMonths: validation.freeMonths,
+        grantType: 'FREE_MEMBERSHIP',
+        originalPrice: planPrice,
+        usage: { benefitINR: { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 }, teleConsult: {} }
+      }
+    });
+
+    await CouponUsage.create({
+      couponId: validation.coupon.id,
+      couponCode: validation.coupon.code,
+      userId: req.user.id,
+      hcPurchased: 0,
+      hcBonus: 0,
+      discountAmount: planPrice,
+      amountPaid: 0,
+      paymentId: userPlan.paymentId
+    });
+
+    await validation.coupon.update({
+      usageCount: Number(validation.coupon.usageCount || 0) + 1
+    });
+
+    try {
+      const phone = req.user.phoneNumber || req.user.phone;
+      if (phone) {
+        let formattedPhone = String(phone).replace(/[^0-9+]/g, '');
+        if (!formattedPhone.startsWith('+')) formattedPhone = '+91' + formattedPhone;
+        whatsappProductionService.sendMembershipPlanActivated({
+          to: formattedPhone,
+          name: req.user.firstName || 'Member',
+          planName: plan.name,
+          startDate: userPlan.startDate,
+          endDate: userPlan.endDate
+        }).catch((e) => console.error('WA plan activation notification failed:', e.message));
+      }
+    } catch (waErr) {
+      console.error('WA plan activation notification error:', waErr.message);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `${validation.freeMonths}-month free membership activated`,
+      userPlan,
+      coupon: {
+        code: validation.coupon.code,
+        freeMonths: validation.freeMonths
+      }
+    });
+  } catch (error) {
+    console.error('Redeem free membership coupon error:', error);
+    return res.status(400).json({ message: error.message || 'Failed to redeem membership coupon' });
+  }
+});
+
 // -------- PLAN PAYMENT ORDER --------
 // Create a Razorpay order for a plan upgrade (called before the actual upgrade)
 router.post('/payment-order', authUser, [
@@ -363,12 +572,36 @@ router.post('/payment-order', authUser, [
 
     let couponValidation = null;
     if (couponCode) {
-      couponValidation = await validateCouponForOrder({
-        code: couponCode,
-        userId: req.user.id,
-        scope: selectedScope,
-        amount: numericAmount
-      });
+      try {
+        const freeValidation = await validateFreeMembershipCoupon({
+          code: couponCode,
+          userId: req.user.id,
+          planId,
+          scope: selectedScope
+        });
+
+        return res.json({
+          success: true,
+          order: null,
+          requiresRedeem: true,
+          redeemEndpoint: '/api/membership/redeem-free-coupon',
+          pricing: {
+            amount: numericAmount,
+            discount: numericAmount,
+            finalAmount: 0,
+            couponCode: freeValidation.coupon.code,
+            freeMonths: freeValidation.freeMonths,
+            scope: selectedScope
+          }
+        });
+      } catch (freeCouponError) {
+        couponValidation = await validateCouponForOrder({
+          code: couponCode,
+          userId: req.user.id,
+          scope: selectedScope,
+          amount: numericAmount
+        });
+      }
     }
 
     const discount = couponValidation ? Number(couponValidation.discount || 0) : 0;
