@@ -1,24 +1,16 @@
 /**
- * Coupon Management Page - Admin Dashboard
- * Manage corporate HC purchase coupons
+ * Promotions & Coupon Hub — team/admin coupon management
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 import {
   Select,
   SelectContent,
@@ -34,357 +26,201 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
-import { Ticket, Plus, Trash2, Edit, Calendar, TrendingUp, Users, Coins } from 'lucide-react';
 import { format } from 'date-fns';
-
-const COUPON_CATEGORIES = {
-  FIXED_HC: {
-    label: 'Bonus HC',
-    type: 'FIXED_HC',
-    scopes: ['COINS_PURCHASE'],
-    valueHint: 'HC amount',
-    minPurchaseHint: 'Min HC for percentage coupons',
-    minPurchaseLabel: 'Min Purchase',
-  },
-  FREE_HC: {
-    label: 'Free HC',
-    type: 'FREE_HC',
-    scopes: ['COINS_PURCHASE'],
-    valueHint: 'HC amount',
-    minPurchaseHint: 'Min HC for percentage coupons',
-    minPurchaseLabel: 'Min Purchase',
-  },
-  PERCENTAGE_HC: {
-    label: 'Discount % (HC)',
-    type: 'PERCENTAGE',
-    scopes: ['COINS_PURCHASE'],
-    valueHint: 'Discount percentage',
-    minPurchaseHint: 'Min HC for percentage coupons',
-    minPurchaseLabel: 'Min Purchase',
-  },
-  MEMBERSHIP: {
-    label: 'Membership Discount %',
-    type: 'PERCENTAGE',
-    scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
-    valueHint: 'Discount percentage on plan price',
-    minPurchaseHint: 'Minimum membership order amount in INR',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-  MEMBERSHIP_FREE: {
-    label: 'Membership Free',
-    type: 'PERCENTAGE',
-    scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
-    grantType: 'FREE_MEMBERSHIP',
-    valueHint: 'Number of free months (e.g. 6)',
-    minPurchaseHint: 'Not used for free membership coupons',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-  PHARMACY_FIXED: {
-    label: 'Pharmacy ₹ Discount',
-    type: 'PERCENTAGE',
-    scopes: ['PHARMACY_PURCHASE'],
-    grantType: 'FIXED_INR',
-    valueHint: 'Flat discount in INR (e.g. 500)',
-    minPurchaseHint: 'Minimum medicine order amount in INR',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-  PHARMACY_PERCENT: {
-    label: 'Pharmacy Discount %',
-    type: 'PERCENTAGE',
-    scopes: ['PHARMACY_PURCHASE'],
-    valueHint: 'Discount percentage on medicine order',
-    minPurchaseHint: 'Minimum medicine order amount in INR',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-  USG_SCAN: {
-    label: 'USG Scan Fixed Price',
-    type: 'PERCENTAGE',
-    scopes: ['USG_SCAN'],
-    grantType: 'FIXED_BOOKING_PRICE',
-    valueHint: 'Fixed booking price in INR (e.g. 1000)',
-    minPurchaseHint: 'Not used for fixed scan price coupons',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-  CT_SCAN: {
-    label: 'CT Scan Fixed Price',
-    type: 'PERCENTAGE',
-    scopes: ['CT_SCAN'],
-    grantType: 'FIXED_BOOKING_PRICE',
-    valueHint: 'Fixed booking price in INR (e.g. 2000)',
-    minPurchaseHint: 'Not used for fixed scan price coupons',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-  MRI_SCAN: {
-    label: 'MRI Scan Fixed Price',
-    type: 'PERCENTAGE',
-    scopes: ['MRI_SCAN'],
-    grantType: 'FIXED_BOOKING_PRICE',
-    valueHint: 'Fixed booking price in INR (e.g. 3000)',
-    minPurchaseHint: 'Not used for fixed scan price coupons',
-    minPurchaseLabel: 'Min Order (INR)',
-  },
-} as const;
-
-type CouponCategory = keyof typeof COUPON_CATEGORIES;
-
-const MEMBERSHIP_SCOPES = new Set(['GYM_MEMBERSHIP', 'MEMBERSHIP']);
-const PHARMACY_SCOPES = new Set(['PHARMACY_PURCHASE']);
-const DIAGNOSTIC_SCOPES = new Set(['USG_SCAN', 'CT_SCAN', 'MRI_SCAN']);
-
-const categoryFromCoupon = (coupon: any): CouponCategory => {
-  if (coupon?.metadata?.grantType === 'FREE_MEMBERSHIP') {
-    return 'MEMBERSHIP_FREE';
-  }
-
-  if (coupon?.metadata?.grantType === 'FIXED_INR') {
-    return 'PHARMACY_FIXED';
-  }
-
-  const scopes = Array.isArray(coupon?.metadata?.scopes) ? coupon.metadata.scopes : [];
-
-  if (coupon?.metadata?.grantType === 'FIXED_BOOKING_PRICE') {
-    if (scopes.includes('USG_SCAN')) return 'USG_SCAN';
-    if (scopes.includes('CT_SCAN')) return 'CT_SCAN';
-    if (scopes.includes('MRI_SCAN')) return 'MRI_SCAN';
-  }
-
-  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => DIAGNOSTIC_SCOPES.has(scope))) {
-    if (scopes.includes('USG_SCAN')) return 'USG_SCAN';
-    if (scopes.includes('CT_SCAN')) return 'CT_SCAN';
-    return 'MRI_SCAN';
-  }
-
-  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => PHARMACY_SCOPES.has(scope))) {
-    return 'PHARMACY_PERCENT';
-  }
-  if (coupon?.type === 'PERCENTAGE' && scopes.some((scope: string) => MEMBERSHIP_SCOPES.has(scope))) {
-    return 'MEMBERSHIP';
-  }
-  if (coupon?.type === 'PERCENTAGE') return 'PERCENTAGE_HC';
-  if (coupon?.type === 'FREE_HC') return 'FREE_HC';
-  return 'FIXED_HC';
-};
-
-const buildCouponPayload = (formData: {
-  code: string;
-  category: CouponCategory;
-  value: string;
-  minPurchase: string;
-  maxUsage: string;
-  maxUsagePerUser: string;
-  validUntil: string;
-  corporateName: string;
-  assignedUserIds: string;
-  planId: string;
-  description: string;
-  termsAndConditions: string;
-}) => {
-  const category = COUPON_CATEGORIES[formData.category];
-  const parsedPlanId = formData.planId.trim() ? parseInt(formData.planId.trim(), 10) : undefined;
-
-  return {
-    code: formData.code,
-    type: category.type,
-    scopes: category.scopes,
-    ...(category.grantType ? { grantType: category.grantType } : {}),
-    ...(parsedPlanId ? { planId: parsedPlanId } : {}),
-    value: formData.value,
-    minPurchase: ['MEMBERSHIP_FREE', 'USG_SCAN', 'CT_SCAN', 'MRI_SCAN'].includes(formData.category) ? '0' : formData.minPurchase,
-    maxUsage: formData.maxUsage,
-    maxUsagePerUser: formData.maxUsagePerUser,
-    validUntil: formData.validUntil,
-    corporateName: formData.corporateName,
-    description: formData.description,
-    termsAndConditions: formData.termsAndConditions,
-    assignedUserIds: formData.assignedUserIds
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean),
-  };
-};
+import {
+  Calendar,
+  Copy,
+  Loader2,
+  Package,
+  Plus,
+  Search,
+  Sparkles,
+  Ticket,
+  TrendingUp,
+  Users,
+  Zap,
+} from 'lucide-react';
+import {
+  buildCouponPayload,
+  COUPON_GROUPS,
+  formatCouponValue,
+  getCouponTypeDisplay,
+  PROMO_TEMPLATES,
+  type CouponFormState,
+  type CouponGroupId,
+} from './coupon-management/couponConfig';
+import {
+  CouponFormSheet,
+  createEmptyForm,
+  formFromCoupon,
+} from './coupon-management/CouponFormSheet';
 
 export default function CouponManagement() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
+
+  const [showForm, setShowForm] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [groupFilter, setGroupFilter] = useState<CouponGroupId | 'all'>('all');
   const [sampleAssignUserId, setSampleAssignUserId] = useState('');
+  const [seedPreviewOpen, setSeedPreviewOpen] = useState(false);
+  const [seedPreview, setSeedPreview] = useState<any>(null);
 
-  // Form state
-  const [formData, setFormData] = useState({
-    code: '',
-    category: 'FIXED_HC' as CouponCategory,
-    value: '',
-    minPurchase: '0',
-    maxUsage: '1',
-    maxUsagePerUser: '1',
-    validUntil: '',
-    corporateName: '',
-    assignedUserIds: '',
-    planId: '',
-    description: '',
-    termsAndConditions: ''
-  });
+  const [formData, setFormData] = useState<CouponFormState>(createEmptyForm);
 
-  const selectedCategory = COUPON_CATEGORIES[formData.category];
-  const isMembershipCoupon = formData.category === 'MEMBERSHIP' || formData.category === 'MEMBERSHIP_FREE';
-  const isPharmacyCoupon = formData.category === 'PHARMACY_FIXED' || formData.category === 'PHARMACY_PERCENT';
-  const isDiagnosticCoupon = formData.category === 'USG_SCAN' || formData.category === 'CT_SCAN' || formData.category === 'MRI_SCAN';
-  const isFreeMembershipCoupon = formData.category === 'MEMBERSHIP_FREE';
-  const isPercentageCoupon = formData.category === 'PERCENTAGE_HC' || formData.category === 'MEMBERSHIP' || formData.category === 'PHARMACY_PERCENT';
-  const usesInrMinPurchase = isPercentageCoupon || formData.category === 'PHARMACY_FIXED';
-
-  // Fetch coupons
   const { data: couponsData, isLoading } = useQuery({
     queryKey: ['admin-coupons', searchQuery, statusFilter],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
       if (statusFilter !== 'all') params.append('status', statusFilter);
-      
       const { data } = await api.get(`/coupons?${params.toString()}`);
       return data;
-    }
+    },
   });
 
-  // Fetch stats
   const { data: statsData } = useQuery({
     queryKey: ['coupon-stats'],
     queryFn: async () => {
       const { data } = await api.get('/coupons/stats');
       return data.stats;
-    }
+    },
   });
 
-  // Create coupon mutation
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['admin-coupons'] });
+    queryClient.invalidateQueries({ queryKey: ['coupon-stats'] });
+  };
+
   const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await api.post('/coupons', data);
-      return response.data;
-    },
+    mutationFn: async (data: any) => (await api.post('/coupons', data)).data,
     onSuccess: () => {
-      toast({
-        title: 'Success',
-        description: 'Coupon created successfully',
-      });
-      queryClient.invalidateQueries({ queryKey: ['admin-coupons'] });
-      queryClient.invalidateQueries({ queryKey: ['coupon-stats'] });
-      setShowCreateDialog(false);
-      resetForm();
+      toast({ title: 'Promotion published', description: 'Patients can redeem this code at checkout.' });
+      invalidate();
+      closeForm();
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
-        description: error.response?.data?.message || 'Failed to create coupon',
+        title: 'Could not create promotion',
+        description: error.response?.data?.message || 'Please check the form and try again.',
         variant: 'destructive',
       });
-    }
+    },
   });
 
-  // Update coupon mutation
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: any) => {
-      const response = await api.put(`/coupons/${id}`, data);
-      return response.data;
-    },
+    mutationFn: async ({ id, data }: any) => (await api.put(`/coupons/${id}`, data)).data,
     onSuccess: () => {
-      toast({
-        title: 'Success',
-        description: 'Coupon updated successfully',
-      });
-      queryClient.invalidateQueries({ queryKey: ['admin-coupons'] });
-      setEditingCoupon(null);
-      resetForm();
+      toast({ title: 'Promotion updated' });
+      invalidate();
+      closeForm();
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: 'Update failed',
         description: error.response?.data?.message || 'Failed to update coupon',
         variant: 'destructive',
       });
-    }
+    },
   });
 
-  // Delete coupon mutation
   const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const response = await api.delete(`/coupons/${id}`);
-      return response.data;
-    },
+    mutationFn: async (id: number) => (await api.delete(`/coupons/${id}`)).data,
     onSuccess: () => {
-      toast({
-        title: 'Success',
-        description: 'Coupon deleted successfully',
-      });
-      queryClient.invalidateQueries({ queryKey: ['admin-coupons'] });
-      queryClient.invalidateQueries({ queryKey: ['coupon-stats'] });
+      toast({ title: 'Promotion removed' });
+      invalidate();
     },
     onError: (error: any) => {
       toast({
-        title: 'Error',
+        title: 'Delete failed',
         description: error.response?.data?.message || 'Failed to delete coupon',
         variant: 'destructive',
       });
-    }
+    },
   });
 
-  // Assign sample coupons mutation (team-only)
   const assignSampleMutation = useMutation({
-    mutationFn: async (userId: number) => {
-      const response = await api.post('/coupons/sample/assign', { userId });
-      return response.data;
-    },
+    mutationFn: async (userId: number) => (await api.post('/coupons/sample/assign', { userId })).data,
     onSuccess: (data) => {
-      const assignedCodes = Array.isArray(data?.coupons)
-        ? data.coupons.map((coupon: any) => coupon.code).join(', ')
-        : '';
-
+      const codes = Array.isArray(data?.coupons) ? data.coupons.map((c: any) => c.code).join(', ') : '';
       toast({
-        title: 'Sample Coupons Assigned',
-        description: assignedCodes
-          ? `Assigned: ${assignedCodes}`
-          : 'Sample coupons were assigned successfully.',
+        title: 'Sample bundle assigned',
+        description: codes ? codes : 'Sample coupons assigned successfully.',
       });
-
-      queryClient.invalidateQueries({ queryKey: ['admin-coupons'] });
-      queryClient.invalidateQueries({ queryKey: ['coupon-stats'] });
+      invalidate();
       setSampleAssignUserId('');
     },
     onError: (error: any) => {
       toast({
-        title: 'Assignment Failed',
+        title: 'Assignment failed',
         description: error.response?.data?.message || 'Failed to assign sample coupons',
         variant: 'destructive',
       });
-    }
+    },
   });
 
-  const resetForm = () => {
-    setFormData({
-      code: '',
-      category: 'FIXED_HC',
-      value: '',
-      minPurchase: '0',
-      maxUsage: '1',
-      maxUsagePerUser: '1',
-      validUntil: '',
-      corporateName: '',
-      assignedUserIds: '',
-      planId: '',
-      description: '',
-      termsAndConditions: ''
-    });
+  const seedPreviewMutation = useMutation({
+    mutationFn: async () => (await api.post('/coupons/promo/seed', { execute: false })).data,
+    onSuccess: (data) => {
+      setSeedPreview(data);
+      setSeedPreviewOpen(true);
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Preview unavailable',
+        description: error.response?.data?.message || 'Promo seed API not reachable. Deploy latest server or run CLI seed.',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const seedExecuteMutation = useMutation({
+    mutationFn: async () => (await api.post('/coupons/promo/seed', { execute: true })).data,
+    onSuccess: (data) => {
+      toast({
+        title: 'Standard promos installed',
+        description: `${data?.coupons?.length || 5} codes are live.`,
+      });
+      invalidate();
+      setSeedPreviewOpen(false);
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Install failed',
+        description: error.response?.data?.message || 'Failed to seed promo coupons',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const closeForm = () => {
+    setShowForm(false);
+    setEditingCoupon(null);
+    setFormData(createEmptyForm());
+  };
+
+  const openCreate = (prefill?: Partial<CouponFormState>) => {
+    setEditingCoupon(null);
+    setFormData({ ...createEmptyForm(), ...prefill });
+    setShowForm(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     const payload = buildCouponPayload(formData);
-    
     if (editingCoupon) {
       updateMutation.mutate({ id: editingCoupon.id, data: payload });
     } else {
@@ -394,523 +230,340 @@ export default function CouponManagement() {
 
   const handleEdit = (coupon: any) => {
     setEditingCoupon(coupon);
-    setFormData({
-      code: coupon.code,
-      category: categoryFromCoupon(coupon),
-      value: coupon.value.toString(),
-      minPurchase: coupon.minPurchase.toString(),
-      maxUsage: coupon.maxUsage.toString(),
-      maxUsagePerUser: coupon.maxUsagePerUser.toString(),
-      validUntil: coupon.validUntil ? format(new Date(coupon.validUntil), 'yyyy-MM-dd') : '',
-      corporateName: coupon.corporateName || '',
-      assignedUserIds: Array.isArray(coupon.metadata?.assignedUserIds) ? coupon.metadata.assignedUserIds.join(', ') : '',
-      planId: coupon.metadata?.planId ? String(coupon.metadata.planId) : '',
-      description: coupon.description || '',
-      termsAndConditions: coupon.termsAndConditions || ''
-    });
-    setShowCreateDialog(true);
+    setFormData(formFromCoupon(coupon));
+    setShowForm(true);
   };
 
-  const getCouponTypeDisplay = (coupon: any) => {
-    const category = categoryFromCoupon(coupon);
-    const types: Record<CouponCategory, { label: string; color: string }> = {
-      PERCENTAGE_HC: { label: 'Discount % (HC)', color: 'bg-blue-500' },
-      FIXED_HC: { label: 'Bonus HC', color: 'bg-green-500' },
-      FREE_HC: { label: 'Free HC', color: 'bg-purple-500' },
-      MEMBERSHIP: { label: 'Membership Discount %', color: 'bg-amber-500' },
-      MEMBERSHIP_FREE: { label: 'Membership Free', color: 'bg-rose-500' },
-      PHARMACY_FIXED: { label: 'Pharmacy ₹ Discount', color: 'bg-cyan-500' },
-      PHARMACY_PERCENT: { label: 'Pharmacy Discount %', color: 'bg-sky-500' },
-      USG_SCAN: { label: 'USG Fixed Price', color: 'bg-teal-500' },
-      CT_SCAN: { label: 'CT Fixed Price', color: 'bg-indigo-500' },
-      MRI_SCAN: { label: 'MRI Fixed Price', color: 'bg-violet-500' },
-    };
-    return types[category] || types.FIXED_HC;
-  };
-
-  const formatCouponValue = (coupon: any) => {
-    const category = categoryFromCoupon(coupon);
-    if (category === 'MEMBERSHIP_FREE') {
-      const months = coupon.metadata?.freeMonths ?? coupon.value;
-      return `${months} month${Number(months) === 1 ? '' : 's'} free`;
+  const copyCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      toast({ title: 'Copied', description: `${code} copied to clipboard` });
+    } catch {
+      toast({ title: 'Copy failed', variant: 'destructive' });
     }
-    if (category === 'PHARMACY_FIXED') {
-      return `₹${coupon.value} off`;
-    }
-    if (category === 'USG_SCAN' || category === 'CT_SCAN' || category === 'MRI_SCAN') {
-      return `₹${coupon.metadata?.bookingPrice ?? coupon.value} booking`;
-    }
-    if (category === 'PERCENTAGE_HC' || category === 'MEMBERSHIP' || category === 'PHARMACY_PERCENT') {
-      return `${coupon.value}%`;
-    }
-    return `${coupon.value} HC`;
   };
 
   const coupons = couponsData?.coupons || [];
 
-  const handleAssignSampleCoupons = () => {
-    const userId = parseInt(sampleAssignUserId, 10);
-    if (!Number.isInteger(userId) || userId <= 0) {
-      toast({
-        title: 'Invalid User ID',
-        description: 'Enter a valid positive numeric user ID.',
-        variant: 'destructive',
-      });
-      return;
-    }
+  const filteredCoupons = useMemo(() => {
+    if (groupFilter === 'all') return coupons;
+    return coupons.filter((coupon: any) => getCouponTypeDisplay(coupon).group === groupFilter);
+  }, [coupons, groupFilter]);
 
-    assignSampleMutation.mutate(userId);
-  };
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
 
   return (
     <AdminLayout>
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-3">
-            <Ticket className="h-8 w-8 text-primary" />
-            Coupon Management
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Manage HC purchase and membership plan coupons
-          </p>
+      <div className="space-y-6">
+        {/* Hero */}
+        <div className="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/10 via-background to-amber-500/5 p-6 md:p-8">
+          <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-primary">
+                <Ticket className="h-6 w-6" />
+                <span className="text-sm font-semibold uppercase tracking-wider">Growth</span>
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight md:text-4xl">Promotions Hub</h1>
+              <p className="max-w-2xl text-muted-foreground">
+                Create and manage offers across Health Coins, membership, pharmacy, and imaging — with live patient previews before you publish.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => seedPreviewMutation.mutate()} disabled={seedPreviewMutation.isPending}>
+                {seedPreviewMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+                Install standard promos
+              </Button>
+              <Button onClick={() => openCreate()} className="gap-2">
+                <Plus className="h-4 w-4" />
+                New promotion
+              </Button>
+            </div>
+          </div>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Create Coupon
-        </Button>
-      </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {/* Stats */}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
+          {[
+            { label: 'Total codes', value: statsData?.total || 0, icon: Ticket, tone: 'text-primary' },
+            { label: 'Active now', value: statsData?.active || 0, icon: TrendingUp, tone: 'text-emerald-600' },
+            { label: 'Expired', value: statsData?.expired || 0, icon: Calendar, tone: 'text-orange-600' },
+            { label: 'Redemptions', value: statsData?.totalUsage || 0, icon: Users, tone: 'text-blue-600' },
+          ].map((stat) => (
+            <Card key={stat.label} className="border-muted/60 shadow-sm">
+              <CardContent className="flex items-center justify-between p-4 md:p-6">
+                <div>
+                  <p className="text-xs text-muted-foreground md:text-sm">{stat.label}</p>
+                  <p className="text-2xl font-bold">{stat.value}</p>
+                </div>
+                <stat.icon className={`h-7 w-7 ${stat.tone} opacity-80`} />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        {/* Quick templates */}
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Coupons</p>
-                <p className="text-2xl font-bold">{statsData?.total || 0}</p>
-              </div>
-              <Ticket className="h-8 w-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Active Coupons</p>
-                <p className="text-2xl font-bold text-green-600">{statsData?.active || 0}</p>
-              </div>
-              <TrendingUp className="h-8 w-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Expired</p>
-                <p className="text-2xl font-bold text-orange-600">{statsData?.expired || 0}</p>
-              </div>
-              <Calendar className="h-8 w-8 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Usage</p>
-                <p className="text-2xl font-bold text-blue-600">{statsData?.totalUsage || 0}</p>
-              </div>
-              <Users className="h-8 w-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Search</Label>
-              <Input
-                placeholder="Search by code, corporate name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Status Filter</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Coupons</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="expired">Expired</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Team Sample Coupon Assignment */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Coins className="h-5 w-5 text-emerald-600" />
-            Assign Sample Coupons
-          </CardTitle>
-          <CardDescription>
-            Team users can assign predefined sample coupon bundles to a specific user ID.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
-            <div className="w-full sm:max-w-xs">
-              <Label htmlFor="sample-assign-user-id">Target User ID</Label>
-              <Input
-                id="sample-assign-user-id"
-                type="number"
-                min="1"
-                placeholder="e.g. 123"
-                value={sampleAssignUserId}
-                onChange={(e) => setSampleAssignUserId(e.target.value)}
-              />
-            </div>
-            <Button
-              onClick={handleAssignSampleCoupons}
-              disabled={assignSampleMutation.isPending || !sampleAssignUserId.trim()}
-            >
-              {assignSampleMutation.isPending ? 'Assigning...' : 'Assign Sample Coupons'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Coupons Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Coupons</CardTitle>
-          <CardDescription>All coupon codes</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Value</TableHead>
-                <TableHead>Corporate</TableHead>
-                <TableHead>Audience</TableHead>
-                <TableHead>Usage</TableHead>
-                <TableHead>Valid Until</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {coupons.map((coupon: any) => {
-                const typeDisplay = getCouponTypeDisplay(coupon);
-                const isExpired = new Date(coupon.validUntil) < new Date();
-                const isActive = coupon.isActive && !isExpired;
-                const scopes = Array.isArray(coupon.metadata?.scopes) ? coupon.metadata.scopes.join(', ') : 'COINS_PURCHASE';
-
-                return (
-                  <TableRow key={coupon.id}>
-                    <TableCell className="font-mono font-bold">{coupon.code}</TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <Badge className={typeDisplay.color}>{typeDisplay.label}</Badge>
-                        <p className="text-[10px] text-muted-foreground">{scopes}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {formatCouponValue(coupon)}
-                    </TableCell>
-                    <TableCell>{coupon.corporateName || '-'}</TableCell>
-                    <TableCell>
-                      {Array.isArray(coupon.metadata?.assignedUserIds) && coupon.metadata.assignedUserIds.length > 0 ? (
-                        <Badge variant="outline">{coupon.metadata.assignedUserIds.length} user(s)</Badge>
-                      ) : (
-                        <Badge variant="secondary">All users</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {coupon.usageCount} / {coupon.maxUsage}
-                    </TableCell>
-                    <TableCell>{format(new Date(coupon.validUntil), 'PP')}</TableCell>
-                    <TableCell>
-                      {isActive ? (
-                        <Badge variant="default" className="bg-green-600">Active</Badge>
-                      ) : isExpired ? (
-                        <Badge variant="secondary">Expired</Badge>
-                      ) : (
-                        <Badge variant="outline">Inactive</Badge>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEdit(coupon)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          onClick={() => {
-                            if (confirm('Delete this coupon?')) {
-                              deleteMutation.mutate(coupon.id);
-                            }
-                          }}
-                          disabled={coupon.usageCount > 0}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {/* Create/Edit Dialog */}
-      <Dialog open={showCreateDialog} onOpenChange={(open) => {
-        setShowCreateDialog(open);
-        if (!open) {
-          setEditingCoupon(null);
-          resetForm();
-        }
-      }}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{editingCoupon ? 'Edit Coupon' : 'Create New Coupon'}</DialogTitle>
-            <DialogDescription>
-              {editingCoupon ? 'Update coupon details' : 'Create a new HC purchase or membership coupon'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Coupon Code *</Label>
-                <Input
-                  value={formData.code}
-                  onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
-                  placeholder="CORP100"
-                  required
-                  disabled={editingCoupon && editingCoupon.usageCount > 0}
-                />
-              </div>
-
-              <div>
-                <Label>Type *</Label>
-                <Select
-                  value={formData.category}
-                  onValueChange={(value: CouponCategory) => setFormData({ ...formData, category: value })}
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Sparkles className="h-5 w-5 text-primary" />
+              Popular templates
+            </CardTitle>
+            <CardDescription>Start from a proven offer — customize before publishing.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+              {PROMO_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => openCreate(template.patch)}
+                  className="group rounded-xl border p-3 text-left transition hover:border-primary/50 hover:bg-primary/5"
                 >
-                  <SelectTrigger>
+                  <p className="font-medium group-hover:text-primary">{template.name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{template.description}</p>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Filters + table */}
+        <Card>
+          <CardHeader className="space-y-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle>All promotions</CardTitle>
+                <CardDescription>{filteredCoupons.length} shown</CardDescription>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="relative sm:w-64">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Search code or campaign…"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="sm:w-36">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="FIXED_HC">Bonus HC</SelectItem>
-                    <SelectItem value="FREE_HC">Free HC</SelectItem>
-                    <SelectItem value="PERCENTAGE_HC">Discount % (HC)</SelectItem>
-                    <SelectItem value="MEMBERSHIP">Membership Discount %</SelectItem>
-                    <SelectItem value="MEMBERSHIP_FREE">Membership Free</SelectItem>
-                    <SelectItem value="PHARMACY_FIXED">Pharmacy ₹ Discount</SelectItem>
-                    <SelectItem value="PHARMACY_PERCENT">Pharmacy Discount %</SelectItem>
-                    <SelectItem value="USG_SCAN">USG Scan Fixed Price</SelectItem>
-                    <SelectItem value="CT_SCAN">CT Scan Fixed Price</SelectItem>
-                    <SelectItem value="MRI_SCAN">MRI Scan Fixed Price</SelectItem>
+                    <SelectItem value="all">All status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="expired">Expired</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Value *</Label>
-                <Input
-                  type="number"
-                  value={formData.value}
-                  onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                  placeholder={
-                    isFreeMembershipCoupon ? '6'
-                    : formData.category === 'USG_SCAN' ? '1000'
-                    : formData.category === 'CT_SCAN' ? '2000'
-                    : formData.category === 'MRI_SCAN' ? '3000'
-                    : formData.category === 'PHARMACY_FIXED' ? '500'
-                    : isPercentageCoupon ? '10' : '100'
-                  }
-                  required
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {selectedCategory.valueHint}
+            <Tabs value={groupFilter} onValueChange={(v) => setGroupFilter(v as CouponGroupId | 'all')}>
+              <TabsList className="h-auto flex-wrap justify-start">
+                <TabsTrigger value="all">All</TabsTrigger>
+                {COUPON_GROUPS.map((group) => (
+                  <TabsTrigger key={group.id} value={group.id}>
+                    {group.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          </CardHeader>
+
+          <CardContent>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-16 text-muted-foreground">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Loading promotions…
+              </div>
+            ) : filteredCoupons.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <Package className="h-10 w-10 text-muted-foreground/60" />
+                <p className="font-medium">No promotions yet</p>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  Create your first offer or install the standard USG, pharmacy, and membership promos in one click.
                 </p>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => seedPreviewMutation.mutate()}>
+                    Install standard promos
+                  </Button>
+                  <Button onClick={() => openCreate()}>Create promotion</Button>
+                </div>
               </div>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Code</TableHead>
+                      <TableHead>Offer</TableHead>
+                      <TableHead>Campaign</TableHead>
+                      <TableHead>Usage</TableHead>
+                      <TableHead>Expires</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredCoupons.map((coupon: any) => {
+                      const typeDisplay = getCouponTypeDisplay(coupon);
+                      const isExpired = new Date(coupon.validUntil) < new Date();
+                      const isActive = coupon.isActive && !isExpired;
+                      const usagePct = coupon.maxUsage
+                        ? Math.min(100, (coupon.usageCount / coupon.maxUsage) * 100)
+                        : 0;
 
-              <div>
-                <Label>{selectedCategory.minPurchaseLabel}</Label>
-                <Input
-                  type="number"
-                  value={formData.minPurchase}
-                  onChange={(e) => setFormData({ ...formData, minPurchase: e.target.value })}
-                  placeholder="0"
-                  disabled={!usesInrMinPurchase && !isPharmacyCoupon}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  {usesInrMinPurchase || isPharmacyCoupon ? selectedCategory.minPurchaseHint : 'Only used for percentage-based coupons'}
-                </p>
-              </div>
-            </div>
-
-            {isDiagnosticCoupon && (
-              <div className="rounded-lg border border-teal-500/30 bg-teal-500/5 p-3 text-sm text-muted-foreground">
-                Patient books the matching scan type at the fixed INR price in Value. Example: USG coupon code <strong>USG</strong> with Value <strong>1000</strong> books ultrasound at ₹1000.
+                      return (
+                        <TableRow key={coupon.id} className="group">
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono text-sm font-bold">{coupon.code}</span>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-7 w-7 opacity-0 group-hover:opacity-100"
+                                onClick={() => copyCode(coupon.code)}
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <p className="font-medium">{formatCouponValue(coupon)}</p>
+                              <Badge variant="outline" className={typeDisplay.color}>
+                                {typeDisplay.label}
+                              </Badge>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {coupon.corporateName || '—'}
+                          </TableCell>
+                          <TableCell className="min-w-[120px]">
+                            <div className="space-y-1">
+                              <p className="text-xs text-muted-foreground">
+                                {coupon.usageCount} / {coupon.maxUsage}
+                              </p>
+                              <Progress value={usagePct} className="h-1.5" />
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-sm">{format(new Date(coupon.validUntil), 'dd MMM yyyy')}</TableCell>
+                          <TableCell>
+                            {isActive ? (
+                              <Badge className="bg-emerald-600 hover:bg-emerald-600">Live</Badge>
+                            ) : isExpired ? (
+                              <Badge variant="secondary">Expired</Badge>
+                            ) : (
+                              <Badge variant="outline">Paused</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button size="sm" variant="outline" onClick={() => handleEdit(coupon)}>
+                                Edit
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                disabled={coupon.usageCount > 0}
+                                onClick={() => {
+                                  if (confirm(`Remove ${coupon.code}?`)) deleteMutation.mutate(coupon.id);
+                                }}
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             )}
+          </CardContent>
+        </Card>
 
-            {isPharmacyCoupon && (
-              <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3 text-sm text-muted-foreground">
-                {formData.category === 'PHARMACY_FIXED'
-                  ? 'Example: Value 500 + Min Order 500 gives ₹500 off online medicine orders of ₹500 or more (₹500 cart becomes free before delivery).'
-                  : 'Applies a percentage discount to the medicine subtotal on online pharmacy orders.'}
-              </div>
-            )}
-
-            {isFreeMembershipCoupon && (
-              <div className="rounded-lg border border-rose-500/30 bg-rose-500/5 p-3 text-sm text-muted-foreground">
-                Grants the selected membership plan free for the number of months entered in Value (e.g. 6 = six months free, no payment).
-              </div>
-            )}
-
-            {isMembershipCoupon && (
-              <div>
-                <Label>Membership Plan ID</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={formData.planId}
-                  onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
-                  placeholder="Optional — lock coupon to one plan"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Leave empty to allow redemption on any active membership plan.
-                </p>
-              </div>
-            )}
-
-            {formData.category === 'MEMBERSHIP' && (
-              <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-muted-foreground">
-                Membership coupons apply a percentage discount when users purchase or upgrade a health membership plan.
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Max Usage *</Label>
-                <Input
-                  type="number"
-                  value={formData.maxUsage}
-                  onChange={(e) => setFormData({ ...formData, maxUsage: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div>
-                <Label>Max Usage Per User *</Label>
-                <Input
-                  type="number"
-                  value={formData.maxUsagePerUser}
-                  onChange={(e) => setFormData({ ...formData, maxUsagePerUser: e.target.value })}
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <Label>Valid Until *</Label>
+        {/* Sample assign — collapsed utility */}
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle className="text-base">Assign demo bundle to a patient</CardTitle>
+            <CardDescription>
+              Creates per-user sample codes (COINBOOST20U123, etc.) for testing checkout flows.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="sm:w-56">
+              <Label htmlFor="sample-user">Patient user ID</Label>
               <Input
-                type="date"
-                value={formData.validUntil}
-                onChange={(e) => setFormData({ ...formData, validUntil: e.target.value })}
-                required
+                id="sample-user"
+                type="number"
+                min="1"
+                placeholder="123"
+                value={sampleAssignUserId}
+                onChange={(e) => setSampleAssignUserId(e.target.value)}
               />
             </div>
+            <Button
+              variant="secondary"
+              disabled={assignSampleMutation.isPending || !sampleAssignUserId.trim()}
+              onClick={() => {
+                const userId = parseInt(sampleAssignUserId, 10);
+                if (!Number.isInteger(userId) || userId <= 0) {
+                  toast({ title: 'Invalid user ID', variant: 'destructive' });
+                  return;
+                }
+                assignSampleMutation.mutate(userId);
+              }}
+            >
+              {assignSampleMutation.isPending ? 'Assigning…' : 'Assign bundle'}
+            </Button>
+          </CardContent>
+        </Card>
 
-            <div>
-              <Label>Corporate Name</Label>
-              <Input
-                value={formData.corporateName}
-                onChange={(e) => setFormData({ ...formData, corporateName: e.target.value })}
-                placeholder="Company Name"
-              />
+        <CouponFormSheet
+          open={showForm}
+          onOpenChange={setShowForm}
+          formData={formData}
+          setFormData={setFormData}
+          editingCoupon={editingCoupon}
+          onSubmit={handleSubmit}
+          isSubmitting={isSubmitting}
+          onReset={closeForm}
+        />
+
+        <Dialog open={seedPreviewOpen} onOpenChange={setSeedPreviewOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Install standard promotions</DialogTitle>
+              <DialogDescription>
+                Upserts USG, CTSCAN, MRI, MED500, and CORP6FREE. Existing codes are updated, not duplicated.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              {(seedPreview?.coupons || PROMO_TEMPLATES.map((t) => ({ code: t.patch.code, action: 'upsert' }))).map(
+                (row: any) => (
+                  <div key={row.code} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                    <span className="font-mono font-semibold">{row.code}</span>
+                    <Badge variant="outline">{row.action || 'ready'}</Badge>
+                  </div>
+                )
+              )}
             </div>
-
-            <div>
-              <Label>Assigned User IDs</Label>
-              <Input
-                value={formData.assignedUserIds}
-                onChange={(e) => setFormData({ ...formData, assignedUserIds: e.target.value })}
-                placeholder="101, 245, 902 (leave empty for all users)"
-              />
-              <p className="text-xs text-muted-foreground mt-1">Comma-separated internal user IDs for user-specific coupon codes.</p>
-            </div>
-
-            <div>
-              <Label>Description</Label>
-              <Textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Coupon description..."
-              />
-            </div>
-
-            <div>
-              <Label>Terms & Conditions</Label>
-              <Textarea
-                value={formData.termsAndConditions}
-                onChange={(e) => setFormData({ ...formData, termsAndConditions: e.target.value })}
-                placeholder="Terms and conditions..."
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <Button type="submit" className="flex-1" disabled={createMutation.isPending || updateMutation.isPending}>
-                {editingCoupon ? 'Update' : 'Create'} Coupon
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setShowCreateDialog(false);
-                  setEditingCoupon(null);
-                  resetForm();
-                }}
-              >
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSeedPreviewOpen(false)}>
                 Cancel
               </Button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
+              <Button onClick={() => seedExecuteMutation.mutate()} disabled={seedExecuteMutation.isPending}>
+                {seedExecuteMutation.isPending ? 'Installing…' : 'Install now'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
     </AdminLayout>
   );
 }
