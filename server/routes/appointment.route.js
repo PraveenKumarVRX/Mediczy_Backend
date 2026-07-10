@@ -34,6 +34,22 @@ import {
 import { toArray, normalizeAppointment } from '../utils/doctorNormalizer.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 
+// appointments (and prescriptions) enforce FORCE ROW LEVEL SECURITY — every
+// read/write must run inside a transaction with the session GUCs set, or
+// Sequelize silently sees zero rows (reads) / gets rejected (writes).
+async function withAppointmentsRls(req, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext?.(transaction);
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
+
 const router = express.Router();
 
 /**
@@ -131,7 +147,7 @@ router.get(
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
-      const appointments = await Appointment.findAll({
+      const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
         where: {
           doctorId,
           appointmentDate: {
@@ -150,8 +166,9 @@ router.get(
         order: [
           ['appointmentDate', 'ASC'],
           ['appointmentTime', 'ASC']
-        ]
-      });
+        ],
+        transaction,
+      }));
 
       const normalizedAppointments = (appointments || []).map((apt) => {
         const item = apt.toJSON ? apt.toJSON() : apt;
@@ -259,12 +276,15 @@ router.get(
           ? { doctorId: id } 
           : { patientId: id };
         
-        const [totalCount, completedCount, upcomingCount, cancelledCount] = await Promise.all([
-          Appointment.count({ where: whereClause }),
-          Appointment.count({ where: { ...whereClause, status: 'completed' } }),
-          Appointment.count({ where: { ...whereClause, status: { [Op.in]: ['scheduled', 'confirmed'] } } }),
-          Appointment.count({ where: { ...whereClause, status: 'cancelled' } })
-        ]);
+        // Sequential (not Promise.all): all four counts share one RLS
+        // transaction, and a single pg connection cannot run concurrent queries.
+        const [totalCount, completedCount, upcomingCount, cancelledCount] = await withAppointmentsRls(req, async (transaction) => {
+          const total = await Appointment.count({ where: whereClause, transaction });
+          const completed = await Appointment.count({ where: { ...whereClause, status: 'completed' }, transaction });
+          const upcoming = await Appointment.count({ where: { ...whereClause, status: { [Op.in]: ['scheduled', 'confirmed'] } }, transaction });
+          const cancelled = await Appointment.count({ where: { ...whereClause, status: 'cancelled' }, transaction });
+          return [total, completed, upcoming, cancelled];
+        });
         
         analytics = {
           total: totalCount,
@@ -397,7 +417,7 @@ router.patch(
       if (!isAdmin && !isDoctorOwner) {
         return res.status(403).json({ message: 'Unauthorized access' });
       }
-      
+
       const updates = {};
       if (status) updates.status = status;
       if (notes !== undefined) updates.notes = notes;
@@ -489,93 +509,103 @@ router.post(
       const doctorId = req.user.id;
       const { notes, duration } = req.body;
 
-      const appointment = await Appointment.findByPk(id);
+      const completeResult = await withAppointmentsRls(req, async (transaction) => {
+        const appointment = await Appointment.findByPk(id, { transaction });
+        if (!appointment) return { notFound: true };
+        if (appointment.doctorId !== doctorId) return { forbidden: true };
 
-      if (!appointment) {
+        // Check if prescription already exists
+        const { Prescription, Doctor, User } = await import('../models/index.js');
+
+        let prescription = await Prescription.findOne({
+          where: { appointmentId: parseInt(id) },
+          transaction,
+        });
+
+        // If no prescription exists, create draft
+        if (!prescription) {
+          const doctor = await Doctor.findByPk(doctorId);
+          const patient = await User.findByPk(appointment.userId);
+
+          if (doctor && patient) {
+            let patientAge = null;
+            if (patient.dateOfBirth) {
+              const dob = new Date(patient.dateOfBirth);
+              const today = new Date();
+              patientAge = today.getFullYear() - dob.getFullYear();
+            }
+
+            prescription = await Prescription.create({
+              appointmentId: appointment.id,
+              patientId: appointment.userId,
+              patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
+              patientAge,
+              patientGender: patient.gender || 'Not specified',
+              patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
+              doctorId: doctor.id,
+              doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+              doctorQualifications: Array.isArray(doctor.qualifications)
+                ? doctor.qualifications.join(', ')
+                : (doctor.qualifications || doctor.qualification || 'MBBS'),
+              doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+              specialty: doctor.specialization || 'General Medicine',
+              clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+              clinicAddress: ['video', 'audio', 'chat'].includes(appointment.consultationType)
+                ? 'Online Consultation / Telemedicine'
+                : (doctor.clinicAddress || 'Clinic'),
+              clinicPhone: doctor.phone || doctor.phoneNumber,
+              clinicEmail: doctor.email,
+              clinicDetails: {
+                name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                address: ['video', 'audio', 'chat'].includes(appointment.consultationType)
+                  ? 'Online Consultation / Telemedicine'
+                  : (doctor.clinicAddress || 'Clinic'),
+                phone: doctor.phone || doctor.phoneNumber,
+                email: doctor.email,
+                specialty: doctor.specialization,
+                consultationType: appointment.consultationType
+              },
+              diagnosis: 'To be filled by doctor',
+              chiefComplaints: toArray(appointment.symptoms).length > 0 ? toArray(appointment.symptoms) : ['As discussed during consultation'],
+              medications: [],
+              labTests: [],
+              instructions: [
+                'Complete the full course of medications',
+                'Take medicines as directed',
+                'Contact doctor if symptoms worsen'
+              ],
+              vitals: {},
+              validityDays: 30,
+              notes: duration
+                ? `${appointment.consultationType} consultation completed (${duration})`
+                : notes || `${appointment.consultationType} consultation completed`,
+              status: 'draft'
+            }, { transaction });
+          }
+        }
+
+        // Update appointment
+        await appointment.update({
+          status: 'completed',
+          notes: duration
+            ? `Consultation completed (${duration})`
+            : notes || 'Consultation completed',
+          prescription: prescription?.prescriptionId
+        }, { transaction });
+
+        return { appointment, prescription };
+      });
+
+      if (completeResult.notFound) {
         return res.status(404).json({ message: 'Appointment not found' });
       }
 
-      if (appointment.doctorId !== doctorId) {
+      if (completeResult.forbidden) {
         return res.status(403).json({ message: 'Unauthorized access' });
       }
 
-      // Check if prescription already exists
-      const { Prescription, Doctor, User } = await import('../models/index.js');
-      
-      let prescription = await Prescription.findOne({
-        where: { appointmentId: parseInt(id) }
-      });
-
-      // If no prescription exists, create draft
-      if (!prescription) {
-        const doctor = await Doctor.findByPk(doctorId);
-        const patient = await User.findByPk(appointment.userId);
-
-        if (doctor && patient) {
-          let patientAge = null;
-          if (patient.dateOfBirth) {
-            const dob = new Date(patient.dateOfBirth);
-            const today = new Date();
-            patientAge = today.getFullYear() - dob.getFullYear();
-          }
-
-          prescription = await Prescription.create({
-            appointmentId: appointment.id,
-            patientId: appointment.userId,
-            patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
-            patientAge,
-            patientGender: patient.gender || 'Not specified',
-            patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
-            doctorId: doctor.id,
-            doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-            doctorQualifications: Array.isArray(doctor.qualifications) 
-              ? doctor.qualifications.join(', ') 
-              : (doctor.qualifications || doctor.qualification || 'MBBS'),
-            doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
-            specialty: doctor.specialization || 'General Medicine',
-            clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-            clinicAddress: ['video', 'audio', 'chat'].includes(appointment.consultationType)
-              ? 'Online Consultation / Telemedicine'
-              : (doctor.clinicAddress || 'Clinic'),
-            clinicPhone: doctor.phone || doctor.phoneNumber,
-            clinicEmail: doctor.email,
-            clinicDetails: {
-              name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-              address: ['video', 'audio', 'chat'].includes(appointment.consultationType)
-                ? 'Online Consultation / Telemedicine'
-                : (doctor.clinicAddress || 'Clinic'),
-              phone: doctor.phone || doctor.phoneNumber,
-              email: doctor.email,
-              specialty: doctor.specialization,
-              consultationType: appointment.consultationType
-            },
-            diagnosis: 'To be filled by doctor',
-            chiefComplaints: toArray(appointment.symptoms).length > 0 ? toArray(appointment.symptoms) : ['As discussed during consultation'],
-            medications: [],
-            labTests: [],
-            instructions: [
-              'Complete the full course of medications',
-              'Take medicines as directed',
-              'Contact doctor if symptoms worsen'
-            ],
-            vitals: {},
-            validityDays: 30,
-            notes: duration 
-              ? `${appointment.consultationType} consultation completed (${duration})`
-              : notes || `${appointment.consultationType} consultation completed`,
-            status: 'draft'
-          });
-        }
-      }
-
-      // Update appointment
-      await appointment.update({
-        status: 'completed',
-        notes: duration
-          ? `Consultation completed (${duration})`
-          : notes || 'Consultation completed',
-        prescription: prescription?.prescriptionId
-      });
+      const appointment = completeResult.appointment;
+      const prescription = completeResult.prescription;
 
       // Auto-log consultation to patient's health diary (fire-and-forget)
       if (appointment.userId) {
@@ -657,17 +687,17 @@ router.post(
       const { id } = req.params;
       const { message } = req.body;
       
-      const appointment = await Appointment.findByPk(id);
+      const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(id, { transaction }));
       if (!appointment) {
         return res.status(404).json({ success: false, message: 'Appointment not found' });
       }
-      
+
       // Try to send notification
       try {
         const notificationService = (await import('../services/notification.service.js')).default;
-        
+
         const reminderMessage = message || `Reminder: You have an appointment scheduled for ${appointment.appointmentDate} at ${appointment.appointmentTime}`;
-        
+
         // Send notification to patient
         if (appointment.userId) {
           await notificationService.sendNotification({
@@ -683,12 +713,12 @@ router.post(
             }
           });
         }
-        
+
         // Update appointment to mark reminder sent
-        await appointment.update({ 
+        await withAppointmentsRls(req, (transaction) => appointment.update({
           reminderSent: true,
           lastReminderAt: new Date()
-        });
+        }, { transaction }));
         
         res.json({ 
           success: true, 
@@ -733,7 +763,7 @@ router.get(
       const userRole = req.user.role;
 
       // Fetch appointment
-      const appointment = await Appointment.findByPk(appointmentId);
+      const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
 
       if (!appointment) {
         return res.status(404).json({
