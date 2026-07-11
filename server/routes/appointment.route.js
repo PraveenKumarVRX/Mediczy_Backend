@@ -26,13 +26,10 @@ import intelligentDb from '../utils/intelligentDbClient.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
-import {
-  findDoctorAuthorizedAppointment,
-  isDoctorOwnerFromCandidates,
-  resolveDoctorIdCandidates,
-} from '../utils/doctor-appointment-access.js';
 import { toArray, normalizeAppointment } from '../utils/doctorNormalizer.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import * as appointmentRepository from '../repositories/appointment.repository.js';
+import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 // appointments (and prescriptions) enforce FORCE ROW LEVEL SECURITY — every
 // read/write must run inside a transaction with the session GUCs set, or
@@ -374,46 +371,26 @@ router.patch(
     if (!errors.isEmpty()) {
       return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
     }
-    let rlsTransaction = null;
     try {
       const { id } = req.params;
       const { status, notes } = req.body;
 
-      // appointments uses FORCE ROW LEVEL SECURITY; set session context
-      // so doctor/admin status updates can resolve the row reliably.
-      rlsTransaction = await postgresSequelize.transaction();
-      await req.setSequelizeRlsContext?.(rlsTransaction);
+      // Status updates are a doctor/admin action, never a patient one — even
+      // over their own appointment — so gate on actor type before ownership.
+      const actor = await resolveActor(req);
+      if (actor.type === 'patient') {
+        return res.status(403).json({ message: 'Unauthorized access' });
+      }
 
-      const doctorIdCandidates = await resolveDoctorIdCandidates({
-        actorId: req.user?.id,
-        actorDoctorId: req.user?.doctorId,
-        actorEmail: req.user?.email,
-        UserModel: User,
-      });
-
-      const appointment = await findDoctorAuthorizedAppointment({
-        AppointmentModel: Appointment,
-        Op,
-        appointmentId: id,
-        doctorIdCandidates,
-        include: undefined,
-        transaction: rlsTransaction,
-        allowMeetingFallback: false,
-      }) || await Appointment.findByPk(id, { transaction: rlsTransaction });
+      const appointment = actor.type === 'doctor'
+        ? await appointmentRepository.findByIdForDoctor(req, id, { allowMeetingFallback: false })
+        : await appointmentRepository.findById(req, id, { include: [] });
 
       if (!appointment) {
-        await rlsTransaction.rollback();
         return res.status(404).json({ message: 'Appointment not found' });
       }
 
-      const isAdmin =
-        Boolean(req.user?.isAdmin) ||
-        (typeof req.userRole === 'string' && req.userRole.includes('admin'));
-      const isDoctorOwner =
-        req.userRole === 'doctor' &&
-        isDoctorOwnerFromCandidates(appointment.doctorId, doctorIdCandidates);
-
-      if (!isAdmin && !isDoctorOwner) {
+      if (!isOwnedByActor(appointment, actor)) {
         return res.status(403).json({ message: 'Unauthorized access' });
       }
 
@@ -421,9 +398,8 @@ router.patch(
       if (status) updates.status = status;
       if (notes !== undefined) updates.notes = notes;
 
-      await appointment.update(updates, { transaction: rlsTransaction });
-      await rlsTransaction.commit();
-      
+      await appointmentRepository.updateStatus(req, appointment, updates);
+
       // Auto-increment patient's plan usage when marking as completed
       if (status === 'completed' && appointment.userId && appointment.specialization) {
         try {
@@ -464,9 +440,6 @@ router.patch(
       
       res.json({ appointment });
     } catch (error) {
-      if (rlsTransaction && !rlsTransaction.finished) {
-        await rlsTransaction.rollback().catch(() => {});
-      }
       console.error(error);
       res.status(500).json({ message: 'Failed to update appointment', error: error.message });
     }
