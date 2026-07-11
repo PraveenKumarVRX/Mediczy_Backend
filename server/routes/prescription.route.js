@@ -19,11 +19,48 @@ import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import * as appointmentRepository from '../repositories/appointment.repository.js';
+import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 const router = express.Router();
 // Ensure request bodies are parsed even if app-level parser order changes.
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
+
+// prescriptions enforces FORCE ROW LEVEL SECURITY — every read/write must run
+// inside a transaction with the session GUCs set, or Sequelize silently sees
+// zero rows (reads) / gets rejected with "new row violates row-level
+// security policy" (writes).
+async function withPrescriptionsRls(req, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext?.(transaction);
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
+
+// For the token-based public share endpoints below (no authUser/authDoctor
+// middleware — identity is decoded from a bearer/query/cookie token *after*
+// the row is fetched, via canAccessPrescriptionPdf). Real authorization
+// still happens in the handler; this only makes the row visible to fetch.
+async function withPrescriptionsRlsBypass(work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -247,10 +284,11 @@ router.get('/', authDoctor, async (req, res) => {
   const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
   if (!doctorId) return res.status(400).json({ success: false, message: 'Doctor ID not found' });
   try {
-    const prescriptions = await Prescription.findAll({
+    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
       where: { doctorId: parseInt(doctorId) },
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
     return res.json({ success: true, count: prescriptions.length, prescriptions: prescriptions.map(p => p.toJSON()) });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to fetch prescriptions', error: error.message });
@@ -286,15 +324,19 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
       notes
     } = req.body;
 
-    // Get appointment details
-    const appointment = await Appointment.findByPk(appointmentId);
+    // Get appointment details.
+    // appointments has FORCE ROW LEVEL SECURITY — a bare findByPk() with no
+    // RLS context always matched zero rows regardless of whether the
+    // appointment existed. findByIdForDoctor also scopes the lookup to this
+    // doctor via candidate resolution instead of a direct id comparison.
+    const actor = await resolveActor(req);
+    const appointment = await appointmentRepository.findByIdForDoctor(req, appointmentId);
     if (!appointment) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
 
     // Verify doctor access
-    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
-    if (appointment.doctorId !== doctorId) {
+    if (!isOwnedByActor(appointment, actor)) {
       return res.status(403).json({ success: false, message: 'You can only create prescriptions for your own appointments' });
     }
 
@@ -335,56 +377,64 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
       ? 'Online Consultation / Telemedicine'
       : (doctor.clinicAddress || doctor.address?.street || 'Clinic');
 
-    // Create prescription linked to appointment
-    const prescription = await Prescription.create({
-      appointmentId: appointment.id,
-      patientId: appointment.userId,
-      ...patientData,
-      doctorId: doctor.id,
-      doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-      doctorQualifications: Array.isArray(doctor.qualifications)
-        ? doctor.qualifications.join(', ')
-        : (doctor.qualifications || doctor.qualification || 'MBBS'),
-      doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
-      specialty: doctor.specialization || 'General Medicine',
-      clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-      clinicAddress,
-      clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
-      clinicEmail: doctor.email,
-      clinicDetails: {
-        name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-        address: clinicAddress,
-        phone: doctor.phone || doctor.phoneNumber,
-        email: doctor.email,
-        specialty: doctor.specialization,
-        consultationType
-      },
-      diagnosis,
-      chiefComplaints: typeof chiefComplaints === 'string'
-        ? [chiefComplaints]
-        : (Array.isArray(chiefComplaints) ? chiefComplaints : appointment.symptoms || []),
-      medications,
-      labTests: labTests || [],
-      instructions: instructions || [
-        'Complete the full course of medications',
-        'Take medicines as directed',
-        'Contact doctor if symptoms worsen'
-      ],
-      vitals: vitals || {},
-      followUpDate,
-      validityDays: validityDays || 30,
-      notes: notes || appointment.notes,
-      status: 'draft'
-    });
+    // Create prescription linked to appointment, then mark the appointment
+    // completed — both prescriptions and appointments have FORCE ROW LEVEL
+    // SECURITY, so both writes must share one RLS-scoped transaction or the
+    // INSERT/UPDATE are rejected outright ("new row violates row-level
+    // security policy").
+    const prescription = await appointmentRepository.withTransaction(req, async (transaction) => {
+      const created = await Prescription.create({
+        appointmentId: appointment.id,
+        patientId: appointment.userId,
+        ...patientData,
+        doctorId: doctor.id,
+        doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+        doctorQualifications: Array.isArray(doctor.qualifications)
+          ? doctor.qualifications.join(', ')
+          : (doctor.qualifications || doctor.qualification || 'MBBS'),
+        doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+        specialty: doctor.specialization || 'General Medicine',
+        clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+        clinicAddress,
+        clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
+        clinicEmail: doctor.email,
+        clinicDetails: {
+          name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+          address: clinicAddress,
+          phone: doctor.phone || doctor.phoneNumber,
+          email: doctor.email,
+          specialty: doctor.specialization,
+          consultationType
+        },
+        diagnosis,
+        chiefComplaints: typeof chiefComplaints === 'string'
+          ? [chiefComplaints]
+          : (Array.isArray(chiefComplaints) ? chiefComplaints : appointment.symptoms || []),
+        medications,
+        labTests: labTests || [],
+        instructions: instructions || [
+          'Complete the full course of medications',
+          'Take medicines as directed',
+          'Contact doctor if symptoms worsen'
+        ],
+        vitals: vitals || {},
+        followUpDate,
+        validityDays: validityDays || 30,
+        notes: notes || appointment.notes,
+        status: 'draft'
+      }, { transaction });
 
-    // Update appointment with prescription reference
-    await Appointment.update(
-      {
-        prescription: prescription.prescriptionId,
-        status: 'completed'
-      },
-      { where: { id: appointmentId } }
-    );
+      // Update appointment with prescription reference
+      await Appointment.update(
+        {
+          prescription: created.prescriptionId,
+          status: 'completed'
+        },
+        { where: { id: appointmentId }, transaction }
+      );
+
+      return created;
+    });
 
     // Notify patient (WhatsApp + email, fire-and-forget)
     let notifyPdfUrl = null;
@@ -655,10 +705,11 @@ router.get('/doctor', authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Doctor ID not found' });
     }
 
-    const prescriptions = await Prescription.findAll({
+    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
       where: { doctorId: parseInt(doctorId) },
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
 
     const normalizeInstructions = (prescription) => {
       if (Array.isArray(prescription.adviceList) && prescription.adviceList.length > 0) {
@@ -719,10 +770,11 @@ router.get('/patient', authUser, async (req, res) => {
     const patientId = req.user.id;
 
     // Only return prescriptions that are visible to the patient (not drafts)
-    const prescriptions = await Prescription.findAll({
+    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
       where: { patientId, status: ['issued', 'active', 'dispensed', 'expired'] },
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -747,10 +799,11 @@ router.get('/patient', authUser, async (req, res) => {
 router.get('/patient/adherence-summary', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
-    const prescriptions = await Prescription.findAll({
+    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
       where: { patientId, status: ['issued', 'active', 'dispensed'] },
       order: [['createdAt', 'DESC']],
-    });
+      transaction,
+    }));
 
     const summaries = prescriptions.map((rx) => {
       const tracking = rx.adherenceTracking || {};
@@ -807,9 +860,10 @@ router.post('/:id/adherence', authUser, [
     const { medicationId, taken = true } = req.body;
     const userId = req.user.id;
 
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
       where: isNaN(id) ? { prescriptionId: id } : { id: parseInt(id, 10) },
-    });
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -854,11 +908,12 @@ router.get('/:id', authUser, async (req, res) => {
     const { id } = req.params;
 
     // Find by ID or prescriptionId
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
       where: isNaN(id)
         ? { prescriptionId: id }
-        : { id: parseInt(id) }
-    });
+        : { id: parseInt(id) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -902,10 +957,11 @@ router.get('/patient/:patientId', authUser, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const prescriptions = await Prescription.findAll({
+    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
       where: { patientId: parseInt(patientId) },
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -940,10 +996,11 @@ router.get('/my/all', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
 
-    const prescriptions = await Prescription.findAll({
+    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
       where: { patientId, status: ['issued', 'active', 'dispensed', 'expired'] },
-      order: [['createdAt', 'DESC']]
-    });
+      order: [['createdAt', 'DESC']],
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -969,9 +1026,10 @@ router.get('/appointment/:appointmentId', authUser, async (req, res) => {
   try {
     const { appointmentId } = req.params;
 
-    const prescription = await Prescription.findOne({
-      where: { appointmentId: parseInt(appointmentId) }
-    });
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
+      where: { appointmentId: parseInt(appointmentId) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({
@@ -984,7 +1042,8 @@ router.get('/appointment/:appointmentId', authUser, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    if (userRole !== 'doctor' && prescription.userId !== userId) {
+    // Prescription's patient-identifying column is patientId, not userId.
+    if (userRole !== 'doctor' && prescription.patientId !== userId) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
@@ -1018,12 +1077,13 @@ router.get('/doctor/issued', authDoctor, async (req, res) => {
     const page  = Math.max(0, parseInt(req.query.page  || '0',  10));
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '20', 10)));
 
-    const { count: total, rows: prescriptions } = await Prescription.findAndCountAll({
+    const { count: total, rows: prescriptions } = await withPrescriptionsRls(req, (transaction) => Prescription.findAndCountAll({
       where: { doctorId },
       order: [['createdAt', 'DESC']],
       limit,
       offset: page * limit,
-    });
+      transaction,
+    }));
 
     res.json({
       success: true,
@@ -1058,21 +1118,31 @@ router.put('/:id', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await Prescription.findByPk(id);
-    if (!prescription) {
+    const fetchResult = await withPrescriptionsRls(req, async (transaction) => {
+      const found = await Prescription.findByPk(id, { transaction });
+      if (!found) return { notFound: true };
+
+      // Check if doctor owns this prescription
+      const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+      if (found.doctorId !== doctorId) return { forbidden: true };
+
+      // Cannot update issued/dispensed prescriptions
+      if (['issued', 'dispensed', 'cancelled'].includes(found.status)) return { badStatus: found.status };
+
+      return { prescription: found };
+    });
+
+    if (fetchResult.notFound) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-
-    // Check if doctor owns this prescription
-    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
-    if (prescription.doctorId !== doctorId) {
+    if (fetchResult.forbidden) {
       return res.status(403).json({ success: false, message: 'Not authorized to update this prescription' });
     }
-
-    // Cannot update issued/dispensed prescriptions
-    if (['issued', 'dispensed', 'cancelled'].includes(prescription.status)) {
-      return res.status(400).json({ success: false, message: `Cannot update ${prescription.status} prescription` });
+    if (fetchResult.badStatus) {
+      return res.status(400).json({ success: false, message: `Cannot update ${fetchResult.badStatus} prescription` });
     }
+
+    const prescription = fetchResult.prescription;
 
     const {
       diagnosis,
@@ -1131,7 +1201,7 @@ router.put('/:id', authDoctor, async (req, res) => {
       notes: prescription.notes
     };
 
-    await prescription.update({
+    await withPrescriptionsRls(req, (transaction) => prescription.update({
       diagnosis: diagnosis !== undefined ? diagnosis : prescription.diagnosis,
       chiefComplaints: chiefComplaints !== undefined ? chiefComplaints : prescription.chiefComplaints,
       medications: medications !== undefined ? medications : prescription.medications,
@@ -1140,7 +1210,7 @@ router.put('/:id', authDoctor, async (req, res) => {
       vitals: vitals !== undefined ? vitals : prescription.vitals,
       followUpDate: followUpDate !== undefined ? followUpDate : prescription.followUpDate,
       notes: notes !== undefined ? notes : prescription.notes
-    });
+    }, { transaction }));
 
     // Audit logging for prescription update (HIPAA compliance)
     try {
@@ -1207,7 +1277,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid status' });
     }
 
-    const prescription = await Prescription.findByPk(id);
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findByPk(id, { transaction }));
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
@@ -1219,10 +1289,10 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
     }
 
     const previousStatus = prescription.status;
-    await prescription.update({
+    await withPrescriptionsRls(req, (transaction) => prescription.update({
       status,
       issuedAt: status === 'issued' ? new Date() : prescription.issuedAt
-    });
+    }, { transaction }));
 
     // Audit logging for prescription status change (HIPAA compliance)
     try {
@@ -1329,7 +1399,7 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await Prescription.findByPk(id);
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findByPk(id, { transaction }));
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
@@ -1346,10 +1416,10 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
     }
 
     const previousStatus = prescription.status;
-    await prescription.update({
+    await withPrescriptionsRls(req, (transaction) => prescription.update({
       status: 'issued',
       issuedAt: new Date()
-    });
+    }, { transaction }));
 
     // When prescription is issued, create EHR record and health diary entries
     if (prescription.patientId) {
@@ -1427,11 +1497,12 @@ router.get('/:id/html', async (req, res) => {
     const { id } = req.params;
     const { token } = req.query;
 
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRlsBypass((transaction) => Prescription.findOne({
       where: isNaN(id)
         ? { prescriptionId: id }
-        : { id: parseInt(id) }
-    });
+        : { id: parseInt(id) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1522,11 +1593,12 @@ router.get('/:id/pdf', async (req, res) => {
     const { id } = req.params;
     const { token } = req.query;
 
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRlsBypass((transaction) => Prescription.findOne({
       where: isNaN(id)
         ? { prescriptionId: id }
-        : { id: parseInt(id) }
-    });
+        : { id: parseInt(id) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1630,11 +1702,12 @@ router.get('/:id/share/whatsapp', authUser, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
       where: isNaN(id)
         ? { prescriptionId: id }
-        : { id: parseInt(id) }
-    });
+        : { id: parseInt(id) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1701,11 +1774,12 @@ router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
   try {
     const { id, phone } = req.params;
 
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
       where: isNaN(id)
         ? { prescriptionId: id }
-        : { id: parseInt(id) }
-    });
+        : { id: parseInt(id) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1775,7 +1849,7 @@ router.delete('/:id', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await Prescription.findByPk(id);
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findByPk(id, { transaction }));
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
@@ -1788,7 +1862,7 @@ router.delete('/:id', authDoctor, async (req, res) => {
 
     // Cannot delete dispensed prescriptions, only cancel
     if (prescription.status === 'dispensed') {
-      await prescription.update({ status: 'cancelled' });
+      await withPrescriptionsRls(req, (transaction) => prescription.update({ status: 'cancelled' }, { transaction }));
       
       // Audit logging for prescription cancellation
       try {
@@ -1825,7 +1899,7 @@ router.delete('/:id', authDoctor, async (req, res) => {
     }
 
     // Soft delete by cancelling
-    await prescription.update({ status: 'cancelled' });
+    await withPrescriptionsRls(req, (transaction) => prescription.update({ status: 'cancelled' }, { transaction }));
 
     // Audit logging for prescription deletion
     try {
@@ -1890,11 +1964,12 @@ router.post('/:id/share', authDoctor, [
     const { entityId, entityType, method, contact } = req.body;
 
     // Find prescription
-    const prescription = await Prescription.findOne({
+    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
       where: isNaN(id)
         ? { prescriptionId: id }
-        : { id: parseInt(id) }
-    });
+        : { id: parseInt(id) },
+      transaction,
+    }));
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });

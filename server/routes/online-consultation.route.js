@@ -20,6 +20,8 @@ import { canonicalizeAppointmentTime, isSlotBooked } from '../utils/appointmentS
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import * as appointmentRepository from '../repositories/appointment.repository.js';
+import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 const router = express.Router();
 
@@ -1155,21 +1157,16 @@ router.post('/payment/manual/:appointmentId', authUser, [
   try {
     const { appointmentId } = req.params;
     const { paymentMethod, transactionRef } = req.body;
-    const userId =
-      req.user.id ||
-      req.user._id ||
-      req.user.dataValues?.id ||
-      req.user.dataValues?._id;
-    const userRole = req.user.role || req.userRole;
+
+    // isOwnedByActor covers both "is the assigned doctor" (via candidate
+    // resolution, not a direct doctorId === req.user.id comparison — those
+    // are independent id-spaces) and "is an admin" in one check.
+    const actor = await resolveActor(req);
 
     const manualResult = await withAppointmentsRls(req, async (transaction) => {
       const appointment = await Appointment.findByPk(appointmentId, { transaction });
       if (!appointment) return { notFound: true };
-
-      // Check if user is the doctor or admin
-      const isDoctor = appointment.doctorId === userId;
-      const isAdmin = userRole === 'admin' || userRole === 'super_admin';
-      if (!isDoctor && !isAdmin) return { forbidden: true };
+      if (!isOwnedByActor(appointment, actor)) return { forbidden: true };
 
       if (appointment.status !== 'accepted') return { badStatus: appointment.status };
 
@@ -1723,12 +1720,16 @@ router.post('/video/end/:appointmentId', authUser, [
   try {
     const { appointmentId } = req.params;
     const { notes, prescription } = req.body;
-    const doctorId = req.user.id || req.user.dataValues?.id;
+
+    const actor = await resolveActor(req);
+    if (actor.type === 'patient') {
+      return res.status(403).json({ success: false, message: 'Unauthorized access' });
+    }
 
     const videoEndResult = await withAppointmentsRls(req, async (transaction) => {
       const appointment = await Appointment.findByPk(appointmentId, { transaction });
       if (!appointment) return { notFound: true };
-      if (appointment.doctorId !== doctorId) return { forbidden: true };
+      if (!isOwnedByActor(appointment, actor)) return { forbidden: true };
 
       await appointment.update({
         status: 'completed',
@@ -2114,25 +2115,30 @@ router.get('/chat/conversations', authUser, async (req, res) => {
 router.get('/chat/:appointmentId/messages', authUser, async (req, res) => {
   try {
     const { appointmentId } = req.params;
-    const userId = req.user.id;
     const { limit = 50, before } = req.query;
-    
-    // Verify user has access to this appointment
-    const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
+    // Used only for the in-memory chat read-receipt system below, which
+    // stores receiverId as raw req.user.id/appointment.doctorId — a
+    // separate, pre-existing convention from appointment ownership.
+    const userId = req.user.id;
+
+    const actor = await resolveActor(req);
+    const appointment = actor.type === 'doctor'
+      ? await appointmentRepository.findByIdForDoctor(req, appointmentId)
+      : await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
     if (!appointment) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
-    
-    if (appointment.patientId !== userId && appointment.doctorId !== userId) {
+
+    if (!isOwnedByActor(appointment, actor)) {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
       });
     }
-    
+
     const chatKey = `chat_${appointmentId}`;
     let messages = consultationChats.get(chatKey) || [];
     
@@ -2219,26 +2225,27 @@ router.post('/chat/:appointmentId/messages', authUser, [
     const { appointmentId } = req.params;
     const { text, attachments } = req.body;
     const userId = req.user.id;
-    const userRole = req.user.role;
-    
+
     // Verify user has access
-    const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
+    const actor = await resolveActor(req);
+    const appointment = actor.type === 'doctor'
+      ? await appointmentRepository.findByIdForDoctor(req, appointmentId)
+      : await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
     if (!appointment) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
-    
-    const isPatient = appointment.patientId === userId;
-    const isDoctor = appointment.doctorId === userId;
-    
-    if (!isPatient && !isDoctor) {
+
+    if (!isOwnedByActor(appointment, actor)) {
       return res.status(403).json({
         success: false,
         message: 'Access denied'
       });
     }
+
+    const isDoctor = actor.type === 'doctor';
     
     const chatKey = `chat_${appointmentId}`;
     const messages = consultationChats.get(chatKey) || [];
@@ -2283,18 +2290,22 @@ router.post('/chat/:appointmentId/messages', authUser, [
 router.post('/chat/:appointmentId/read', authUser, async (req, res) => {
   try {
     const { appointmentId } = req.params;
+    // Used only for the in-memory chat read-receipt system below.
     const userId = req.user.id;
-    
+
     // Verify access
-    const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
+    const actor = await resolveActor(req);
+    const appointment = actor.type === 'doctor'
+      ? await appointmentRepository.findByIdForDoctor(req, appointmentId)
+      : await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
     if (!appointment) {
       return res.status(404).json({
         success: false,
         message: 'Appointment not found'
       });
     }
-    
-    if (appointment.patientId !== userId && appointment.doctorId !== userId) {
+
+    if (!isOwnedByActor(appointment, actor)) {
       return res.status(403).json({
         success: false,
         message: 'Access denied'

@@ -4,8 +4,24 @@ import medicalAIService from '../services/medicalAI.service.js';
 import medicalTerminologyService from '../services/medical-terminology.service.js';
 import cimsService from '../services/cims.service.js';
 import { Prescription, Appointment, User, Doctor } from '../models/index.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
+
+// prescriptions enforces FORCE ROW LEVEL SECURITY — writes without the
+// session GUCs set are rejected ("new row violates row-level security policy").
+async function withPrescriptionsRls(req, work) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext?.(transaction);
+    const result = await work(transaction);
+    await transaction.commit();
+    return result;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
 
 // ── Indic Language Translation Helper ────────────────────────────────────────
 // Delegates to the SIB FastAPI /translate endpoint which reuses indic_translation.py
@@ -379,7 +395,7 @@ Generate the prescription JSON:`;
         const prescriptionNumber = `RX${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
         // Create prescription in database
-        savedPrescription = await Prescription.create({
+        savedPrescription = await withPrescriptionsRls(req, (transaction) => Prescription.create({
           prescriptionId: prescriptionNumber,
           appointmentId: appointmentId || null,
           patientId: patientId || null,
@@ -416,7 +432,7 @@ Generate the prescription JSON:`;
             aiModel: 'Llama-3.1-8B-Instruct',
             source: 'ai-prescription-demo'
           }
-        });
+        }, { transaction }));
 
         console.log(`✅ Prescription saved to database: ${prescriptionNumber}`);
       } catch (dbError) {
