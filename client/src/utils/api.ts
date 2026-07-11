@@ -150,6 +150,19 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
 
+    // A 401 from a login/auth endpoint itself (wrong credentials, inactive
+    // account, etc.) must never trigger the session-management redirects
+    // below — those are for an EXPIRED session on an already-authenticated
+    // request. Before any real session exists, getUserType() is falsy, so
+    // without this guard every portal's login attempt that returns 401 would
+    // fall through to the generic patient-session handler and hard-navigate
+    // the user away to /login instead of letting the login page show its own
+    // "invalid credentials" error.
+    const requestUrl = String(originalRequest?.url || "");
+    if (error.response?.status === 401 && /\/(login|auth\/login|register)(\/|$|\?)/.test(requestUrl)) {
+      return Promise.reject(error);
+    }
+
     // Only auto-refresh for team users hitting 401, not an already-retried request
     if (
       error.response?.status === 401 &&

@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, LifeBuoy, ArrowLeft } from 'lucide-react';
-import axios from 'axios';
 import api from '@/utils/api';
 import { clearAuthTokens } from '@/hooks/auth';
 
@@ -67,27 +66,14 @@ const AdminLogin = () => {
       // Add timeout to prevent long waits
       timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      const resolveAdminLoginUrl = () => {
-        const envBase = import.meta.env.VITE_API_URL as string | undefined;
-        if (envBase && envBase.trim()) {
-          const trimmed = envBase.replace(/\/+$/, '');
-          if (trimmed.endsWith('/api')) {
-            return `${trimmed}/admin/login`;
-          }
-          return `${trimmed}/api/admin/login`;
-        }
-        if (typeof window !== 'undefined') {
-          return `${window.location.origin}/api/admin/login`;
-        }
-        return '/api/admin/login';
-      };
-
-      const loginUrl = resolveAdminLoginUrl();
-      const { data } = await axios.post(loginUrl, { email, password }, { 
+      // Use the shared api instance (same env/LAN-IP/proxy resolution every
+      // other portal login relies on) instead of hand-rolling the base URL.
+      const { data } = await api.post('/admin/login', { email, password }, {
         signal: controller.signal,
         withCredentials: true,
-        timeout: 30000
-      });
+        timeout: 30000,
+        skipAuth: true,
+      } as any);
       
       if (import.meta.env.DEV) {
         console.log('Login response:', data);

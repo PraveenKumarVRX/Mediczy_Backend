@@ -19,6 +19,17 @@ const ROLE_ROUTES: Record<string, string> = {
   chief_medical_officer: '/hospital/ms',
 };
 
+// Reverse lookup: which portal a bare /hospital/:role URL is for, so the
+// login page can identify itself instead of always showing generic
+// "Hospital Login" branding — e.g. visiting /hospital/ceo unauthenticated
+// redirects here with ?next=/hospital/ceo.
+const NEXT_PATH_TO_ROLE_LABEL: Record<string, string> = {
+  '/hospital/ceo': 'CEO Login',
+  '/hospital/coo': 'COO Login',
+  '/hospital/cfo': 'CFO Login',
+  '/hospital/ms': 'Medical Superintendent Login',
+};
+
 const HospitalLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,6 +39,7 @@ const HospitalLogin = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const portalLabel = NEXT_PATH_TO_ROLE_LABEL[searchParams.get('next') || ''] || 'Hospital Login';
 
   const resolvePostLoginPath = (role?: string) => {
     const next = getSafeRedirectPath(searchParams.get('next'));
@@ -170,10 +182,12 @@ const HospitalLogin = () => {
               </div>
             </div>
             <CardTitle className="text-3xl font-bold text-center bg-gradient-to-r from-teal-600 to-teal-500 bg-clip-text text-transparent">
-              Hospital Login
+              {portalLabel}
             </CardTitle>
             <CardDescription className="text-center text-base">
-              Access your hospital management portal
+              {portalLabel === 'Hospital Login'
+                ? 'Access your hospital management portal'
+                : `Sign in with your ${portalLabel.replace(' Login', '')} credentials`}
             </CardDescription>
           </CardHeader>
           <CardContent>
