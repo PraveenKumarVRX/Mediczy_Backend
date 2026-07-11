@@ -21,6 +21,8 @@ import {
   normalizeTimeHHMM,
 } from '../utils/appointmentSlotTime.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
+import * as appointmentRepository from '../repositories/appointment.repository.js';
+import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 const getAppointmentDateTime = (appointment) => {
   if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
@@ -934,32 +936,28 @@ export const getDoctorAppointments = async (req, res) => {
  * GET /api/appointments/:id
  */
 export const getAppointmentById = async (req, res) => {
-  let rlsTransaction = null;
   try {
     const { id } = req.params;
-    const userId = req.user.id;
 
-    // appointments has FORCE ROW LEVEL SECURITY — without RLS context this
-    // always matched zero rows regardless of whether the appointment existed.
-    rlsTransaction = await postgresSequelize.transaction();
-    await req.setSequelizeRlsContext?.(rlsTransaction);
-    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
-    await rlsTransaction.commit();
+    // appointment.doctorId lives in doctors.id's id-space, not users.id's —
+    // resolveActor + isOwnedByActor handle that instead of comparing
+    // appointment.doctorId to req.user.id directly (see
+    // services/appointment-identity.service.js for why that's unsafe).
+    const actor = await resolveActor(req);
+    const appointment = actor.type === 'doctor'
+      ? await appointmentRepository.findByIdForDoctor(req, id)
+      : await appointmentRepository.findById(req, id);
 
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    // Check authorization (user must be the patient or doctor)
-    if (String(appointment.userId) !== String(userId) && String(appointment.doctorId) !== String(userId)) {
+    if (!isOwnedByActor(appointment, actor)) {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
     return res.status(200).json({ appointment });
   } catch (error) {
-    if (rlsTransaction && !rlsTransaction.finished) {
-      await rlsTransaction.rollback().catch(() => {});
-    }
     console.error('Get appointment error:', error);
     return res.status(500).json({
       message: 'Failed to fetch appointment',
@@ -973,57 +971,42 @@ export const getAppointmentById = async (req, res) => {
  * DELETE /api/appointments/:id
  */
 export const cancelAppointment = async (req, res) => {
-  let rlsTransaction = null;
   try {
     const { id } = req.params;
-    const userId = req.user.id;
     const { reason, cancellationReason } = req.body;
-
-    // Use either reason or cancellationReason field
     const cancelReason = reason || cancellationReason;
 
-    // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix
-    // as getAppointmentById above.
-    rlsTransaction = await postgresSequelize.transaction();
-    await req.setSequelizeRlsContext?.(rlsTransaction);
-    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
+    const actor = await resolveActor(req);
+    const appointment = actor.type === 'doctor'
+      ? await appointmentRepository.findByIdForDoctor(req, id)
+      : await appointmentRepository.findById(req, id);
 
     if (!appointment) {
-      await rlsTransaction.rollback();
       return res.status(404).json({ message: 'Appointment not found' });
     }
 
-    // Check authorization
-    if (String(appointment.userId) !== String(userId) && String(appointment.doctorId) !== String(userId)) {
-      await rlsTransaction.rollback();
+    if (!isOwnedByActor(appointment, actor)) {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
     // Check if appointment can be cancelled
     if (!canCancelOrReschedule(appointment, 2)) {
-      await rlsTransaction.rollback();
       return res.status(400).json({
         message: 'Appointment cannot be cancelled. Must be cancelled at least 2 hours before the scheduled time.'
       });
     }
 
-    // Determine who is cancelling
-    const cancelledByRole = String(appointment.userId) === String(userId) ? 'patient' : 'doctor';
-    const cancelledById = cancelledByRole === 'patient'
-      ? appointment.userId
-      : appointment.doctorId;
-    const defaultReason = cancelledByRole === 'patient'
-      ? 'Cancelled by patient'
-      : 'Cancelled by doctor';
+    // actor.type is already known from resolveActor — no need to re-derive
+    // who's cancelling by comparing ids again.
+    const cancelledById = actor.type === 'patient' ? appointment.userId : appointment.doctorId;
+    const defaultReason = actor.type === 'patient' ? 'Cancelled by patient' : 'Cancelled by doctor';
 
-    // Update appointment
-    await appointment.update({
+    await appointmentRepository.update(req, appointment, {
       status: 'cancelled',
       cancelledBy: cancelledById,
       cancellationReason: cancelReason || defaultReason,
       cancelledAt: new Date()
-    }, { transaction: rlsTransaction });
-    await rlsTransaction.commit();
+    });
 
     // Publish Kafka event
     try {
@@ -1042,9 +1025,6 @@ export const cancelAppointment = async (req, res) => {
       appointment
     });
   } catch (error) {
-    if (rlsTransaction && !rlsTransaction.finished) {
-      await rlsTransaction.rollback().catch(() => {});
-    }
     console.error('Cancel appointment error:', error);
     return res.status(500).json({
       message: 'Failed to cancel appointment',

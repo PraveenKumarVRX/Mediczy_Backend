@@ -137,6 +137,8 @@ export async function create(req, data) {
   return withTransaction(req, (transaction) => Appointment.create(data, { transaction }));
 }
 
-export async function updateStatus(req, appointment, updates) {
+/** General-purpose update — updateStatus() is an alias kept for call-site clarity. */
+export async function update(req, appointment, updates) {
   return withTransaction(req, (transaction) => appointment.update(updates, { transaction }));
 }
+export const updateStatus = update;
