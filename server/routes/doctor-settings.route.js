@@ -61,6 +61,39 @@ const normalizeWeeklySchedule = (rawSchedule) => {
   return weeklySchedule;
 };
 
+const deriveWeeklyAvailabilityFromSchedule = (weeklySchedule = {}) => {
+  const normalizedSchedule = normalizeWeeklySchedule(weeklySchedule);
+  const derived = {};
+
+  Object.keys(DEFAULT_WEEKLY_SCHEDULE).forEach((day) => {
+    const dayConfig = normalizedSchedule[day] || DEFAULT_WEEKLY_SCHEDULE[day];
+    const slots = [];
+
+    if (dayConfig.online?.enabled && dayConfig.online.startTime && dayConfig.online.endTime) {
+      slots.push({
+        startTime: dayConfig.online.startTime,
+        endTime: dayConfig.online.endTime,
+        consultationType: 'online'
+      });
+    }
+
+    if (dayConfig.inPerson?.enabled && dayConfig.inPerson.startTime && dayConfig.inPerson.endTime) {
+      slots.push({
+        startTime: dayConfig.inPerson.startTime,
+        endTime: dayConfig.inPerson.endTime,
+        consultationType: 'walkIn'
+      });
+    }
+
+    derived[day] = {
+      isAvailable: dayConfig.isOff !== true && slots.length > 0,
+      slots
+    };
+  });
+
+  return derived;
+};
+
 const deriveOffDaysFromSchedule = (weeklySchedule = {}) => {
   return Object.keys(DEFAULT_WEEKLY_SCHEDULE).filter((day) => weeklySchedule[day]?.isOff === true);
 };
@@ -259,9 +292,11 @@ router.put('/appointment-config', authUser, [
     // Update fields
     if (slotDuration !== undefined) doctor.slotDuration = slotDuration;
     if (weeklySchedule !== undefined) {
-      doctor.weeklySchedule = weeklySchedule;
+      const normalizedWeeklySchedule = normalizeWeeklySchedule(weeklySchedule);
+      doctor.weeklySchedule = normalizedWeeklySchedule;
+      doctor.weeklyAvailability = deriveWeeklyAvailabilityFromSchedule(normalizedWeeklySchedule);
       if (offDays === undefined) {
-        doctor.offDays = deriveOffDaysFromSchedule(weeklySchedule);
+        doctor.offDays = deriveOffDaysFromSchedule(normalizedWeeklySchedule);
       }
     }
     if (offDays !== undefined) doctor.offDays = offDays;
@@ -382,7 +417,7 @@ router.put('/weekly-schedule/:day', authUser, async (req, res) => {
     }
 
     const { isOff, online, inPerson, blockedSlots } = req.body;
-    const weeklySchedule = doctor.weeklySchedule || {};
+    const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule || {});
     
     weeklySchedule[day.toLowerCase()] = {
       isOff: isOff ?? false,
@@ -392,6 +427,7 @@ router.put('/weekly-schedule/:day', authUser, async (req, res) => {
     };
 
     doctor.weeklySchedule = weeklySchedule;
+  doctor.weeklyAvailability = deriveWeeklyAvailabilityFromSchedule(weeklySchedule);
     await doctor.save();
 
     res.json({
@@ -456,7 +492,7 @@ router.put('/off-days', authUser, [
     doctor.offDays = offDays.map(d => d.toLowerCase());
     
     // Also update weekly schedule to mark these days as off
-    const weeklySchedule = doctor.weeklySchedule || {};
+    const weeklySchedule = normalizeWeeklySchedule(doctor.weeklySchedule || {});
     validDays.forEach(day => {
       if (!weeklySchedule[day]) {
         weeklySchedule[day] = {
@@ -468,6 +504,7 @@ router.put('/off-days', authUser, [
       weeklySchedule[day].isOff = offDays.map((d) => String(d).toLowerCase()).includes(day);
     });
     doctor.weeklySchedule = weeklySchedule;
+    doctor.weeklyAvailability = deriveWeeklyAvailabilityFromSchedule(weeklySchedule);
     
     await doctor.save();
 

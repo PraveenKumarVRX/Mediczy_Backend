@@ -347,6 +347,7 @@ router.post('/book', authUser, [
   body('reason').optional().isString(),
   body('paymentMethod').optional().isIn(['hc', 'wallet', 'razorpay', 'cash']).withMessage('Invalid payment method')
 ], async (req, res) => {
+  let rlsTransaction = null;
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -388,9 +389,19 @@ router.post('/book', authUser, [
 
     const canonicalTime = canonicalizeAppointmentTime(appointmentTime);
 
-    const doctorConflictResult = await checkDoctorConflict(doctorId, appointmentDate, canonicalTime);
+    // appointments has FORCE ROW LEVEL SECURITY in production. The booking flow
+    // must set transaction-scoped RLS context before checking conflicts or
+    // inserting, otherwise conflict checks can miss rows and the INSERT fails.
+    rlsTransaction = await postgresSequelize.transaction();
+    await req.setSequelizeRlsContext?.(rlsTransaction);
+
+    const doctorConflictResult = await checkDoctorConflict(doctorId, appointmentDate, canonicalTime, {
+      transaction: rlsTransaction,
+    });
 
     if (doctorConflictResult.conflict) {
+      await rlsTransaction.rollback();
+      rlsTransaction = null;
       return res.status(409).json({
         success: false,
         message: 'This doctor is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.',
@@ -398,11 +409,16 @@ router.post('/book', authUser, [
       });
     }
 
-    const patientConflictResult = await checkPatientConflict(patientId, appointmentDate, canonicalTime);
+    const patientConflictResult = await checkPatientConflict(patientId, appointmentDate, canonicalTime, {
+      transaction: rlsTransaction,
+    });
 
     if (patientConflictResult.conflict) {
       const conflictDoctorName = patientConflictResult.conflictDoctorName || 'another doctor';
       const patientConflict = patientConflictResult.existingAppointment;
+
+      await rlsTransaction.rollback();
+      rlsTransaction = null;
 
       return res.status(409).json({
         success: false,
@@ -470,6 +486,8 @@ router.post('/book', authUser, [
       paymentStatus: initialPaymentStatus,
       symptoms: symptomsArray,
       reason
+    }, {
+      transaction: rlsTransaction,
     });
 
     notifyCareTeamOfBooking({
@@ -511,6 +529,8 @@ router.post('/book', authUser, [
           meetingLink,
           meetingDetails,
           notes: `Paid with ${hcPaymentResult.hcPaid} Health Coins (₹${consultationFee} value). Video consultation enabled.`
+        }, {
+          transaction: rlsTransaction,
         });
 
         paymentDetails = {
@@ -524,6 +544,8 @@ router.post('/book', authUser, [
 
         console.log(`✅ HC payment successful during booking: User ${patientId} paid ${hcPaymentResult.hcPaid} HC for appointment ${appointment.id}`);
       } catch (hcError) {
+        await rlsTransaction.commit();
+        rlsTransaction = null;
         // If HC payment fails, keep appointment as pending
         console.error('HC payment failed during booking:', hcError);
         // Don't fail the whole booking, just return with pending payment
@@ -545,6 +567,9 @@ router.post('/book', authUser, [
         });
       }
     }
+
+    await rlsTransaction.commit();
+    rlsTransaction = null;
 
     // Send notification to doctor about new appointment request
     try {
@@ -588,6 +613,9 @@ router.post('/book', authUser, [
 
     res.status(201).json(responseData);
   } catch (error) {
+    if (rlsTransaction && !rlsTransaction.finished) {
+      await rlsTransaction.rollback().catch(() => {});
+    }
     console.error('Error booking appointment:', error);
     res.status(500).json({
       success: false,

@@ -2314,7 +2314,7 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
   }
 
   const doctor = doctorResult.rows[0];
-  let schedule = doctor.weeklyAvailability || doctor.weeklySchedule || null;
+  let schedule = doctor.weeklySchedule || doctor.weeklyAvailability || null;
   if (typeof schedule === 'string') {
     try {
       schedule = JSON.parse(schedule);
