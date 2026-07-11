@@ -1,4 +1,8 @@
 import express from 'express';
+import {
+  findDoctorAuthorizedAppointment,
+  resolveDoctorIdCandidates,
+} from '../../utils/doctor-appointment-access.js';
 
 export const createDoctorTriageRouter = ({
   authDoctor,
@@ -322,89 +326,39 @@ export const createDoctorTriageRouter = ({
   });
 
   router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req, res) => {
+    let rlsTransaction = null;
     try {
       const { appointmentId } = req.params;
-      const doctorId = req.doctor.id;
-      const normalizedDoctorId = String(doctorId || '').trim();
-      const doctorIdCandidates = new Set();
-
-      if (doctorId !== undefined && doctorId !== null) {
-        doctorIdCandidates.add(doctorId);
-        doctorIdCandidates.add(normalizedDoctorId);
-        if (/^\d+$/.test(normalizedDoctorId)) {
-          doctorIdCandidates.add(Number.parseInt(normalizedDoctorId, 10));
-        }
-      }
-
-      if (req.doctor?.email) {
-        try {
-          const linkedDoctorUser = await User.findOne({
-            where: { email: req.doctor.email, role: 'doctor' },
-            attributes: ['id'],
-          });
-
-          if (linkedDoctorUser?.id !== undefined && linkedDoctorUser?.id !== null) {
-            const linkedUserId = String(linkedDoctorUser.id).trim();
-            doctorIdCandidates.add(linkedDoctorUser.id);
-            doctorIdCandidates.add(linkedUserId);
-            if (/^\d+$/.test(linkedUserId)) {
-              doctorIdCandidates.add(Number.parseInt(linkedUserId, 10));
-            }
-          }
-        } catch (doctorLookupError) {
-          console.warn('Could not resolve linked doctor user ID for initiate-call:', doctorLookupError?.message || doctorLookupError);
-        }
-      }
-
-      const doctorWhere = { [Op.in]: Array.from(doctorIdCandidates) };
-      const normalizedAppointmentId = String(appointmentId || '').trim();
-      const isNumericAppointmentId = /^\d+$/.test(normalizedAppointmentId);
-      const numericAppointmentId = isNumericAppointmentId ? Number.parseInt(normalizedAppointmentId, 10) : NaN;
-      const isSafeIntId = Number.isSafeInteger(numericAppointmentId) && numericAppointmentId > 0 && numericAppointmentId <= 2147483647;
-      const isLongNumericId = isNumericAppointmentId && normalizedAppointmentId.length > 10;
+      const doctorIdCandidates = await resolveDoctorIdCandidates({
+        actorId: req.doctor?.id,
+        actorDoctorId: req.doctor?.doctorId,
+        actorEmail: req.doctor?.email,
+        UserModel: User,
+      });
 
       let appointment = null;
+
+      // appointments table has FORCE ROW LEVEL SECURITY in prod; set RLS
+      // context for this request so doctor-owned rows are visible here.
+      rlsTransaction = await Appointment.sequelize.transaction();
+      await req.setSequelizeRlsContext?.(rlsTransaction);
+
       const includeModels = [
         { model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] },
         { model: Doctor, as: 'doctor', attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization'] },
       ];
-
-      if (isLongNumericId) {
-        const candidateMeetingIds = [normalizedAppointmentId, `apt-${normalizedAppointmentId}`];
-        appointment = await Appointment.findOne({ where: { doctorId: doctorWhere, meetingId: candidateMeetingIds }, include: includeModels });
-        if (!appointment) {
-          const meetingIdToken = `room=${normalizedAppointmentId}`;
-          const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
-          appointment = await Appointment.findOne({
-            where: {
-              doctorId: doctorWhere,
-              meetingLink: { [Op.or]: [{ [Op.iLike]: `%${meetingIdToken}%` }, { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }] },
-            },
-            include: includeModels,
-          });
-        }
-      } else {
-        if (isSafeIntId) {
-          appointment = await Appointment.findOne({ where: { id: numericAppointmentId, doctorId: doctorWhere }, include: includeModels });
-        }
-        if (!appointment) {
-          const candidateMeetingIds = [normalizedAppointmentId, `apt-${normalizedAppointmentId}`];
-          appointment = await Appointment.findOne({ where: { doctorId: doctorWhere, meetingId: candidateMeetingIds }, include: includeModels });
-        }
-        if (!appointment) {
-          const meetingIdToken = `room=${normalizedAppointmentId}`;
-          const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
-          appointment = await Appointment.findOne({
-            where: {
-              doctorId: doctorWhere,
-              meetingLink: { [Op.or]: [{ [Op.iLike]: `%${meetingIdToken}%` }, { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }] },
-            },
-            include: includeModels,
-          });
-        }
-      }
+      appointment = await findDoctorAuthorizedAppointment({
+        AppointmentModel: Appointment,
+        Op,
+        appointmentId,
+        doctorIdCandidates,
+        include: includeModels,
+        transaction: rlsTransaction,
+        allowMeetingFallback: true,
+      });
 
       if (!appointment) {
+        await rlsTransaction.rollback();
         return res.status(404).json({ success: false, message: 'Appointment not found or you are not authorized' });
       }
 
@@ -503,7 +457,9 @@ export const createDoctorTriageRouter = ({
         meetingDetails,
         callInitiatedBy: 'doctor',
         callInitiatedAt: callStartedAt,
-      });
+      }, { transaction: rlsTransaction });
+
+      await rlsTransaction.commit();
 
       const doctorName = appointment.doctor
         ? `${appointment.doctor.prefix || 'Dr.'} ${appointment.doctor.firstName} ${appointment.doctor.lastName}`
@@ -678,6 +634,9 @@ export const createDoctorTriageRouter = ({
         },
       });
     } catch (error) {
+      if (rlsTransaction && !rlsTransaction.finished) {
+        await rlsTransaction.rollback().catch(() => {});
+      }
       console.error('Initiate call error:', {
         message: error?.message,
         name: error?.name,

@@ -26,7 +26,13 @@ import intelligentDb from '../utils/intelligentDbClient.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
+import {
+  findDoctorAuthorizedAppointment,
+  isDoctorOwnerFromCandidates,
+  resolveDoctorIdCandidates,
+} from '../utils/doctor-appointment-access.js';
 import { toArray, normalizeAppointment } from '../utils/doctorNormalizer.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
@@ -349,12 +355,35 @@ router.patch(
     if (!errors.isEmpty()) {
       return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
     }
+    let rlsTransaction = null;
     try {
       const { id } = req.params;
       const { status, notes } = req.body;
-      
-      const appointment = await Appointment.findByPk(id);
+
+      // appointments uses FORCE ROW LEVEL SECURITY; set session context
+      // so doctor/admin status updates can resolve the row reliably.
+      rlsTransaction = await postgresSequelize.transaction();
+      await req.setSequelizeRlsContext?.(rlsTransaction);
+
+      const doctorIdCandidates = await resolveDoctorIdCandidates({
+        actorId: req.user?.id,
+        actorDoctorId: req.user?.doctorId,
+        actorEmail: req.user?.email,
+        UserModel: User,
+      });
+
+      const appointment = await findDoctorAuthorizedAppointment({
+        AppointmentModel: Appointment,
+        Op,
+        appointmentId: id,
+        doctorIdCandidates,
+        include: undefined,
+        transaction: rlsTransaction,
+        allowMeetingFallback: false,
+      }) || await Appointment.findByPk(id, { transaction: rlsTransaction });
+
       if (!appointment) {
+        await rlsTransaction.rollback();
         return res.status(404).json({ message: 'Appointment not found' });
       }
 
@@ -363,7 +392,7 @@ router.patch(
         (typeof req.userRole === 'string' && req.userRole.includes('admin'));
       const isDoctorOwner =
         req.userRole === 'doctor' &&
-        Number(appointment.doctorId) === Number(req.user.id);
+        isDoctorOwnerFromCandidates(appointment.doctorId, doctorIdCandidates);
 
       if (!isAdmin && !isDoctorOwner) {
         return res.status(403).json({ message: 'Unauthorized access' });
@@ -372,8 +401,9 @@ router.patch(
       const updates = {};
       if (status) updates.status = status;
       if (notes !== undefined) updates.notes = notes;
-      
-      await appointment.update(updates);
+
+      await appointment.update(updates, { transaction: rlsTransaction });
+      await rlsTransaction.commit();
       
       // Auto-increment patient's plan usage when marking as completed
       if (status === 'completed' && appointment.userId && appointment.specialization) {
@@ -415,6 +445,9 @@ router.patch(
       
       res.json({ appointment });
     } catch (error) {
+      if (rlsTransaction && !rlsTransaction.finished) {
+        await rlsTransaction.rollback().catch(() => {});
+      }
       console.error(error);
       res.status(500).json({ message: 'Failed to update appointment', error: error.message });
     }
