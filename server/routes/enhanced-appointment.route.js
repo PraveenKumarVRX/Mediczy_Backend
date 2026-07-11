@@ -20,6 +20,7 @@ import {
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
 
@@ -799,16 +800,29 @@ router.get('/available-slots', [
       slot.consultationType === effectiveConsultationType || slot.consultationType === 'both'
     );
 
-    // Get booked appointments for this date (DB-backed)
-    const bookedAppointments = await Appointment.findAll({
-      where: {
-        doctorId,
-        appointmentDate: date,
-        status: {
-          [Op.notIn]: ['cancelled', 'no-show']
-        }
-      }
-    });
+    // Get booked appointments for this date (DB-backed).
+    // Public route (no authUser) — appointments has FORCE ROW LEVEL SECURITY,
+    // so a platform-admin bypass transaction is required for this narrow,
+    // existence-check-only, non-PII read (booked times only).
+    const slotsRlsTransaction = await postgresSequelize.transaction();
+    let bookedAppointments;
+    try {
+      await setRlsContext(slotsRlsTransaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+      bookedAppointments = await Appointment.findAll({
+        where: {
+          doctorId,
+          appointmentDate: date,
+          status: {
+            [Op.notIn]: ['cancelled', 'no-show']
+          }
+        },
+        transaction: slotsRlsTransaction,
+      });
+      await slotsRlsTransaction.commit();
+    } catch (err) {
+      await slotsRlsTransaction.rollback().catch(() => {});
+      throw err;
+    }
 
     // Filter available slots and add more details
     const availableSlots = doctorSlots.filter(slot => {

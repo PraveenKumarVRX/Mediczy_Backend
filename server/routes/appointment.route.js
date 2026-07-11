@@ -142,18 +142,17 @@ router.get(
           message: 'Doctor context missing in auth token'
         });
       }
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+      // appointmentDate is a DATEONLY column storing the IST calendar date the
+      // patient booked. Computing "today" from the server's local (typically
+      // UTC) clock misses appointments during the ~5.5h window where IST has
+      // already rolled to a new day but UTC hasn't — use IST explicitly.
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayIST = `${nowIST.getFullYear()}-${String(nowIST.getMonth() + 1).padStart(2, '0')}-${String(nowIST.getDate()).padStart(2, '0')}`;
 
       const appointments = await withAppointmentsRls(req, (transaction) => Appointment.findAll({
         where: {
           doctorId,
-          appointmentDate: {
-            [Op.gte]: today,
-            [Op.lt]: tomorrow
-          }
+          appointmentDate: todayIST
         },
         include: [
           {

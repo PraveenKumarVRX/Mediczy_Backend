@@ -42,7 +42,16 @@ router.post(
   '/room/token',
   authUser,
   [
-    body('roomId').notEmpty().withMessage('Room ID is required'),
+    body('roomId')
+      .optional()
+      .isString()
+      .withMessage('Room ID must be a string')
+      .custom((value, { req }) => {
+        if (!value && !req.body.appointmentId) {
+          throw new Error('roomId or appointmentId is required');
+        }
+        return true;
+      }),
     body('appointmentId').optional().isInt().withMessage('Valid appointment ID is required')
   ],
   VideoController.generateRoomToken

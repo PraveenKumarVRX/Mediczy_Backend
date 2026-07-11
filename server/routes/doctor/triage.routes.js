@@ -327,6 +327,7 @@ export const createDoctorTriageRouter = ({
 
   router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req, res) => {
     let rlsTransaction = null;
+    const doctorId = req.doctor.id;
     try {
       const { appointmentId } = req.params;
       const doctorIdCandidates = await resolveDoctorIdCandidates({

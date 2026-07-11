@@ -7,6 +7,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, resolveLiveKitApiUrl, resolveLiveKitWsUrl, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
 import { RoomServiceClient } from 'livekit-server-sdk';
 import { redisClient } from '../config/redis.js';
+import { isDoctorOwnerFromCandidates, resolveDoctorIdCandidates } from '../utils/doctor-appointment-access.js';
 
 const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
@@ -157,6 +158,8 @@ class VideoController {
 
   // Generate video room token
   static generateRoomToken = async (req, res) => {
+    let rlsTransaction = null;
+
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -165,26 +168,37 @@ class VideoController {
 
       const { roomId, appointmentId } = req.body;
       const userId = req.user.id;
-      const userRole = req.user.role || 'user';
+      const userRole = req.userRole || req.user.role || 'user';
       let resolvedRoomId = roomId;
 
       if (appointmentId) {
-        // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix
-        // as generateLiveKitTokenFromQuery/joinRoom above.
-        const rlsTransaction = await postgresSequelize.transaction();
+        rlsTransaction = await Appointment.sequelize.transaction();
         await req.setSequelizeRlsContext?.(rlsTransaction);
+
         const appointment = await Appointment.findByPk(appointmentId, { transaction: rlsTransaction });
-        await rlsTransaction.commit();
         if (!appointment) {
+          await rlsTransaction.rollback();
+          rlsTransaction = null;
           return res.status(404).json({
             success: false,
             message: 'Appointment not found'
           });
         }
 
+        const doctorIdCandidates = await resolveDoctorIdCandidates({
+          actorId: userId,
+          actorDoctorId: req.user?.doctorId,
+          actorEmail: req.user?.email,
+          UserModel: User,
+        });
         const isPatient = String(appointment.userId) === String(userId);
-        const isDoctor = String(appointment.doctorId) === String(userId);
+        const isDoctor =
+          String(userRole).toLowerCase() === 'doctor' &&
+          isDoctorOwnerFromCandidates(appointment.doctorId, doctorIdCandidates);
+
         if (!isPatient && !isDoctor) {
+          await rlsTransaction.rollback();
+          rlsTransaction = null;
           return res.status(403).json({
             success: false,
             message: 'Not authorized to generate token for this consultation'
@@ -200,12 +214,17 @@ class VideoController {
           resolvedRoomId !== expectedRoomId &&
           !verifyCanonicalMeetingId(appointment.id, resolvedRoomId)
         ) {
+          await rlsTransaction.rollback();
+          rlsTransaction = null;
           return res.status(403).json({
             success: false,
             message: 'Invalid room for appointment'
           });
         }
         resolvedRoomId = resolvedRoomId || expectedRoomId;
+
+        await rlsTransaction.commit();
+        rlsTransaction = null;
       }
 
       if (!resolvedRoomId) {
@@ -229,7 +248,7 @@ class VideoController {
       );
 
       // Generate room URL
-      const roomUrl = `${req.protocol}://${req.get('host')}/video-room/${resolvedRoomId}?token=${roomToken}`;
+      const roomUrl = req.protocol + '://' + req.get('host') + '/video-room/' + resolvedRoomId + '?token=' + roomToken;
 
       res.json(withOptionalIceServers({
         success: true,
@@ -240,6 +259,9 @@ class VideoController {
       }));
 
     } catch (error) {
+      if (rlsTransaction && !rlsTransaction.finished) {
+        await rlsTransaction.rollback().catch(() => {});
+      }
       console.error('Failed to generate room token:', error);
       res.status(500).json({
         success: false,

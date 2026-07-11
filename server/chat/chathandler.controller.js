@@ -3,7 +3,9 @@ import { createAdapter } from "@socket.io/redis-adapter";
 import Redis from "ioredis";
 import { Conversation, Message } from "../models/chat.model.intelligent.js";
 import { sendMessageNotification, sendVideoCallNotification } from "../utils/firebase-admin.js";
-import { FCMToken } from "../services/notification.service.js";
+import * as notificationServiceModule from "../services/notification.service.js";
+
+const { FCMToken } = notificationServiceModule;
 
 // Track online users and their FCM tokens
 const onlineUsers = new Map();

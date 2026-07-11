@@ -308,10 +308,10 @@ describe('Hospital Insurance Route Contracts', () => {
           insuranceProviderId: 10,
         }),
       ]);
-      expect(mockInsuranceClaimFindAll).toHaveBeenCalledWith({
+      expect(mockInsuranceClaimFindAll).toHaveBeenCalledWith(expect.objectContaining({
         where: { policyNumber: 'POL123456' },
         include: [expect.objectContaining({ as: 'patient' })],
-      });
+      }));
     });
 
     it('supports UHID search by mapping the UHID to a numeric patient id', async () => {

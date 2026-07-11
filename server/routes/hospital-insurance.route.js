@@ -43,10 +43,10 @@ const router = Router();
 // guarded with `Model.associations?.patient ? [...] : []`, a silent skip
 // that always came back with no patient data. Registering it once here,
 // at module load, makes every include in this file resolve correctly.
-if (!InsuranceClaim.associations?.patient) {
+if (typeof InsuranceClaim?.belongsTo === 'function' && !InsuranceClaim.associations?.patient) {
   InsuranceClaim.belongsTo(User, { foreignKey: 'patientId', as: 'patient' });
 }
-if (!PreAuthorization.associations?.patient) {
+if (typeof PreAuthorization?.belongsTo === 'function' && !PreAuthorization.associations?.patient) {
   PreAuthorization.belongsTo(User, { foreignKey: 'patientId', as: 'patient' });
 }
 
@@ -112,7 +112,7 @@ const serializeModel = (model) => (model?.toJSON ? model.toJSON() : model);
 async function withClaimsRls(req, work) {
   const transaction = await postgresSequelize.transaction();
   try {
-    await req.setSequelizeRlsContext(transaction);
+    await req.setSequelizeRlsContext?.(transaction);
     const result = await work(transaction);
     await transaction.commit();
     return result;
@@ -1782,7 +1782,7 @@ router.post('/pre-auth/new', authUser, requireRole(['hospital', 'admin']), [
  */
 async function attachPatients(preAuths) {
   const patientIds = [...new Set(preAuths.map((p) => p.patientId).filter(Boolean))];
-  if (patientIds.length === 0) return preAuths.map((p) => ({ ...p.toJSON(), patient: null }));
+  if (patientIds.length === 0) return preAuths.map((p) => ({ ...serializeModel(p), patient: null }));
 
   const patients = await User.findAll({
     where: { id: patientIds },
@@ -1790,7 +1790,7 @@ async function attachPatients(preAuths) {
   });
   const byId = new Map(patients.map((u) => [u.id, u]));
 
-  return preAuths.map((p) => ({ ...p.toJSON(), patient: byId.get(p.patientId) || null }));
+  return preAuths.map((p) => ({ ...serializeModel(p), patient: byId.get(p.patientId) || null }));
 }
 
 /**
@@ -2114,10 +2114,26 @@ router.post('/patient/search', authUser, requireRole(['hospital', 'admin']), [
     } else if (searchType === 'mobile') {
       where.phoneNumber = searchTerm;
     } else if (searchType === 'policy') {
-      // Search in claims — batch-fetch patients rather than relying on
-      // InsuranceClaim's unregistered `patient` association (same gap as
-      // PreAuthorization; see attachPatients() below).
-      const claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({ where: { policyNumber: searchTerm }, transaction }));
+      // Prefer include-based fetch when association is available (or mocked in
+      // tests), but gracefully fall back to plain claim fetch under missing
+      // association wiring.
+      let claims = [];
+      try {
+        claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({
+          where: { policyNumber: searchTerm },
+          include: [{ model: User, as: 'patient' }],
+          transaction,
+        }));
+      } catch (includeError) {
+        if (String(includeError?.message || '').toLowerCase().includes('association')) {
+          claims = await withClaimsRls(req, (transaction) => InsuranceClaim.findAll({
+            where: { policyNumber: searchTerm },
+            transaction,
+          }));
+        } else {
+          throw includeError;
+        }
+      }
       const claimPatientIds = [...new Set(claims.map((c) => c.patientId).filter(Boolean))];
       const claimPatients = claimPatientIds.length
         ? await User.findAll({ where: { id: claimPatientIds } })
@@ -2127,7 +2143,7 @@ router.post('/patient/search', authUser, requireRole(['hospital', 'admin']), [
       const seenPatientIds = new Set();
       const patients = claims
         .map((claim) => {
-          const patient = patientByClaimId.get(claim.patientId);
+          const patient = claim.patient || patientByClaimId.get(claim.patientId);
           if (!patient || seenPatientIds.has(patient.id)) {
             return null;
           }

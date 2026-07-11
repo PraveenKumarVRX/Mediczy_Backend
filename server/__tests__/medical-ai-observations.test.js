@@ -6,6 +6,9 @@
 import { describe, it, expect } from '@jest/globals';
 import crypto from 'crypto';
 import fs from 'fs';
+import path from 'path';
+
+const agentSourcePath = path.resolve(process.cwd(), 'isha-agent', 'agent.py');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HMAC Session ID
@@ -122,7 +125,7 @@ describe('/analyze-symptoms validation', () => {
 // Voice agent system prompt quality
 // ─────────────────────────────────────────────────────────────────────────────
 describe('Voice agent system prompt', () => {
-  const src = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+  const src = fs.readFileSync(agentSourcePath, 'utf8');
 
   it('120-word limit (increased from 60) for clinical adequacy', () => {
     expect(src).toContain('120 words');

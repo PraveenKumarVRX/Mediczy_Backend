@@ -3,6 +3,9 @@
  */
 import { describe, it, expect } from '@jest/globals';
 import fs from 'fs';
+import path from 'path';
+
+const agentSourcePath = path.resolve(process.cwd(), 'isha-agent', 'agent.py');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Environment guard — verify startup fails without required secrets
@@ -10,7 +13,7 @@ import fs from 'fs';
 describe('ISHA agent environment guard', () => {
   it('ISHA_AUTH_PASSWORD has no default value (env must be set explicitly)', () => {
     // Read the agent source and confirm no default string for ISHA_AUTH_PASSWORD
-    const source = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+    const source = fs.readFileSync(agentSourcePath, 'utf8');
 
     // Must NOT contain a non-empty default for ISHA_AUTH_PASSWORD
     expect(source).not.toMatch(/ISHA_AUTH_PASSWORD.*["']admin123["']/);
@@ -19,7 +22,7 @@ describe('ISHA agent environment guard', () => {
   });
 
   it('startup raises EnvironmentError if ISHA_AUTH_PASSWORD is missing', () => {
-    const source = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+    const source = fs.readFileSync(agentSourcePath, 'utf8');
     // Must have the EnvironmentError check
     expect(source).toContain('EnvironmentError');
     expect(source).toContain('ISHA_AUTH_PASSWORD');
@@ -27,20 +30,20 @@ describe('ISHA agent environment guard', () => {
   });
 
   it('VAD min_silence_duration is 1.2 (increased from 0.6 for clinical speech)', () => {
-    const source = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+    const source = fs.readFileSync(agentSourcePath, 'utf8');
     expect(source).toMatch(/min_silence_duration\s*=\s*1\.2/);
     expect(source).not.toMatch(/min_silence_duration\s*=\s*0\.6/);
   });
 
   it('audit log function exists and uses SHA256 hashing', () => {
-    const source = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+    const source = fs.readFileSync(agentSourcePath, 'utf8');
     expect(source).toContain('log_isha_exchange');
     expect(source).toContain('hashlib.sha256');
     expect(source).toContain('isha_audit_log');
   });
 
   it('patient context fetcher is non-blocking (never raises)', () => {
-    const source = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+    const source = fs.readFileSync(agentSourcePath, 'utf8');
     expect(source).toContain('fetch_patient_context');
     // Function must have try/except so failures don't crash the agent
     expect(source).toContain('except Exception as exc:');
@@ -48,7 +51,7 @@ describe('ISHA agent environment guard', () => {
   });
 
   it('room name parsing supports patient ID extraction', () => {
-    const source = fs.readFileSync('./server/isha-agent/agent.py', 'utf8');
+    const source = fs.readFileSync(agentSourcePath, 'utf8');
     expect(source).toContain('patient_id');
     // Room format: isha-assistant-<doctorId>-<patientId>
     // In Python the assignment is: doctor_id = parts[0] (variable before subscript)

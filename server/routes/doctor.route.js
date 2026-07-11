@@ -18,7 +18,7 @@ import { postgresSequelize } from "../db/postgres-sequelize.js";
 import { setRlsContext } from "../middleware/rls-context.middleware.js";
 import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
-import { Notification, FCMToken } from '../services/notification.service.js';
+import * as notificationServiceModule from '../services/notification.service.js';
 import { sendDoctorCallingNotification } from '../utils/firebase-admin.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -36,6 +36,7 @@ import { toArray, normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
 import { isSlotBooked, normalizeSlotKey } from '../utils/appointmentSlotTime.js';
 
 const router = express.Router();
+const { Notification, FCMToken } = notificationServiceModule;
 // Ensure request bodies are parsed even if app-level parser order changes.
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
@@ -381,9 +382,11 @@ router.get("/appointments", authDoctor, async (req, res) => {
 
     // Filter upcoming appointments
     if (upcoming === 'true') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      where.appointmentDate = { [Op.gte]: today };
+      // appointmentDate is a DATEONLY column storing the IST calendar date —
+      // compare against IST's current date, not the server's local clock.
+      const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+      const todayIST = `${nowIST.getFullYear()}-${String(nowIST.getMonth() + 1).padStart(2, '0')}-${String(nowIST.getDate()).padStart(2, '0')}`;
+      where.appointmentDate = { [Op.gte]: todayIST };
       where.status = { [Op.in]: ['pending', 'scheduled', 'confirmed', 'in-progress'] };
     }
 
