@@ -26,7 +26,9 @@ import fetch from 'node-fetch';
 // IndicTrans2 API endpoint (self-hosted or Hugging Face Inference API)
 const INDICTRANS_API_URL = process.env.INDICTRANS_API_URL || 'https://ai.isha.buzz/translate';
 const INDICTRANS_ENABLED = process.env.INDICTRANS_ENABLED !== 'false';
-const LABSE_ENABLED = process.env.LABSE_ENABLED !== 'false';
+const LABSE_ENABLED = process.env.LABSE_ENABLED
+  ? process.env.LABSE_ENABLED !== 'false'
+  : !(process.env.NODE_ENV === 'test' || process.env.JEST_WORKER_ID);
 
 // Language code mappings for IndicTrans2
 const INDIC_LANGUAGES = {

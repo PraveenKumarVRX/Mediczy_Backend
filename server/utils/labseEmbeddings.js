@@ -11,6 +11,8 @@ import { pipeline } from '@xenova/transformers';
 
 class LaBSEEmbeddings {
   constructor() {
+    const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.JEST_WORKER_ID);
+    const semanticFallbackEnv = process.env.LABSE_SEMANTIC_FALLBACK;
     this.model = null;
     this.modelLoaded = false;
     this.embeddingCache = new Map();
@@ -21,7 +23,10 @@ class LaBSEEmbeddings {
     
     // Performance configuration (from environment)
     this.eagerLoadEnabled = process.env.LABSE_EAGER_LOAD === 'true';
-    this.semanticFallbackEnabled = process.env.LABSE_SEMANTIC_FALLBACK !== 'false';
+    // In tests, default semantic fallback to disabled unless explicitly enabled.
+    this.semanticFallbackEnabled = semanticFallbackEnv
+      ? semanticFallbackEnv !== 'false'
+      : !isTestEnv;
     this.maxRssMb = parseInt(process.env.LABSE_MAX_RSS_MB || '0', 10);
     
     // Intent reference phrases for semantic matching
