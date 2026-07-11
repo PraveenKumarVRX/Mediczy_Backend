@@ -86,6 +86,37 @@ export async function findByIdForDoctor(req, id, { include, allowMeetingFallback
   );
 }
 
+/**
+ * Escape hatch for multi-step operations (fetch + conflict-check + update)
+ * that must share ONE already-open transaction — the named methods above
+ * each open and commit their own, so they can't be composed for atomicity.
+ * Use inside a withTransaction(req, ...) block. allowMeetingFallback
+ * defaults false here since actor-scoped in-transaction fetches are
+ * exclusively used by numeric-id write flows so far (reschedule etc).
+ */
+export async function findByIdForActorInTransaction(actor, id, transaction, { include, allowMeetingFallback = false } = {}) {
+  if (actor.type === 'doctor') {
+    return findDoctorAuthorizedAppointment({
+      AppointmentModel: Appointment,
+      Op,
+      appointmentId: id,
+      doctorIdCandidates: actor.candidateIds,
+      include,
+      transaction,
+      allowMeetingFallback,
+    });
+  }
+  return Appointment.findByPk(id, { include, transaction });
+}
+
+/** Other non-cancelled/no-show appointments for a doctor on a given date — for slot-conflict checks. */
+export async function findActiveAppointmentsForDoctorOnDate(doctorId, date, transaction, { excludeStatuses = ['cancelled', 'no-show'] } = {}) {
+  return Appointment.findAll({
+    where: { doctorId, appointmentDate: date, status: { [Op.notIn]: excludeStatuses } },
+    transaction,
+  });
+}
+
 export async function findByIdForPatient(req, id, { include = [DOCTOR_INCLUDE] } = {}) {
   const actor = await resolveActor(req);
   return withTransaction(req, (transaction) =>

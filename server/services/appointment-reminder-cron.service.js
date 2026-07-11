@@ -273,7 +273,11 @@ class AppointmentReminderService {
   async send15MinuteReminder(appointment) {
     console.log(`🚨 Sending 15min urgent reminder for appointment ${appointment.id}`);
 
-    const isVideoConsultation = ['video', 'audio', 'chat'].includes(appointment.consultationType);
+    // Bookings are stored with consultationType='online' regardless of the
+    // requested video/audio/chat mode (see mapConsultationTypeForDb in
+    // appointment.controller.js) — 'online' must be included or every
+    // online consultation gets the wrong reminder action URL.
+    const isVideoConsultation = ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType);
     const actionUrl = isVideoConsultation 
       ? `/video-consultation/${appointment.id}` 
       : '/my-bookings';

@@ -8,6 +8,8 @@ import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, re
 import { RoomServiceClient } from 'livekit-server-sdk';
 import { redisClient } from '../config/redis.js';
 import { isDoctorOwnerFromCandidates, resolveDoctorIdCandidates } from '../utils/doctor-appointment-access.js';
+import * as appointmentRepository from '../repositories/appointment.repository.js';
+import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
@@ -301,10 +303,14 @@ class VideoController {
         // appointments has FORCE ROW LEVEL SECURITY — a bare findByPk() with no
         // RLS context always matched zero rows, so every join attempt failed
         // with "Appointment not found" regardless of whether it existed.
-        const rlsTransaction = await postgresSequelize.transaction();
-        await req.setSequelizeRlsContext?.(rlsTransaction);
-        const appointment = await Appointment.findByPk(effectiveAppointmentId, { transaction: rlsTransaction });
-        await rlsTransaction.commit();
+        // Ownership must go through resolveActor/isOwnedByActor, not a direct
+        // appointment.doctorId === userId comparison — doctors.id and
+        // users.id are independent sequences that can coincidentally collide.
+        const actor = await resolveActor(req);
+        const appointment = actor.type === 'doctor'
+          ? await appointmentRepository.findByIdForDoctor(req, effectiveAppointmentId)
+          : await appointmentRepository.findById(req, effectiveAppointmentId, { include: [] });
+
         if (!appointment) {
           return res.status(404).json({
             success: false,
@@ -312,9 +318,7 @@ class VideoController {
           });
         }
 
-        const isPatient = String(appointment.userId) === String(userId);
-        const isDoctor = String(appointment.doctorId) === String(userId);
-        if (!isPatient && !isDoctor) {
+        if (!isOwnedByActor(appointment, actor)) {
           return res.status(403).json({
             success: false,
             message: 'Not authorized to join this consultation'
@@ -517,11 +521,13 @@ class VideoController {
         
         // Verify appointment exists and user is authorized.
         // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix
-        // as generateLiveKitTokenFromQuery above.
-        const rlsTransaction = await postgresSequelize.transaction();
-        await req.setSequelizeRlsContext?.(rlsTransaction);
-        const appointment = await Appointment.findByPk(appointmentId, { transaction: rlsTransaction });
-        await rlsTransaction.commit();
+        // as generateLiveKitTokenFromQuery above. Ownership resolved via
+        // resolveActor/isOwnedByActor, not a direct doctorId === userId
+        // comparison — doctors.id and users.id are independent sequences.
+        const actor = await resolveActor(req);
+        const appointment = actor.type === 'doctor'
+          ? await appointmentRepository.findByIdForDoctor(req, appointmentId)
+          : await appointmentRepository.findById(req, appointmentId, { include: [] });
         if (!appointment) {
           return res.status(404).json({
             success: false,
@@ -546,10 +552,7 @@ class VideoController {
         console.log(`🔐 Meeting ID verified: ${providedMeetingId} (canonical: ${canonicalMeetingId})`);
 
         // Verify user is doctor or patient for this appointment
-        const isDoctor = appointment.doctorId === userId;
-        const isPatient = appointment.userId === userId || appointment.patientId === userId;
-        
-        if (!isDoctor && !isPatient) {
+        if (!isOwnedByActor(appointment, actor)) {
           console.warn(`⚠️ Unauthorized join attempt: user ${userId} for appointment ${appointmentId}`);
           return res.status(403).json({
             success: false,
@@ -557,7 +560,7 @@ class VideoController {
           });
         }
 
-        console.log(`✅ Appointment verified: ${appointmentId} - ${displayName} is ${isDoctor ? 'doctor' : 'patient'}`);
+        console.log(`✅ Appointment verified: ${appointmentId} - ${displayName} is ${actor.type}`);
       }
 
       // PHASE 2: Lazy room creation - create room if it doesn't exist
@@ -678,20 +681,27 @@ class VideoController {
         // without RLS context this whole block silently found "no appointment"
         // every time, so completed video calls never got marked completed and
         // never got an auto-drafted prescription.
+        // Ownership resolved via resolveActor/isOwnedByActor, not a direct
+        // doctorId === userId comparison — doctors.id and users.id are
+        // independent sequences that can coincidentally collide.
+        const actor = await resolveActor(req);
         let rlsTransaction;
         try {
           rlsTransaction = await postgresSequelize.transaction();
           await req.setSequelizeRlsContext?.(rlsTransaction);
           const appointment = await Appointment.findByPk(appointmentId, { transaction: rlsTransaction });
 
-          if (appointment && appointment.doctorId === userId) {
+          if (appointment && isOwnedByActor(appointment, actor)) {
             // Check if consultation was online and no prescription exists yet
             const existingPrescription = await Prescription.findOne({
               where: { appointmentId: parseInt(appointmentId) },
               transaction: rlsTransaction,
             });
 
-            if (!existingPrescription && ['video', 'audio', 'chat'].includes(appointment.consultationType)) {
+            // Bookings are stored with consultationType='online' regardless
+            // of the requested video/audio/chat mode — 'online' must be
+            // included or this auto-prescription check never fires.
+            if (!existingPrescription && ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)) {
               // Get doctor details
               const doctor = await Doctor.findByPk(userId);
               

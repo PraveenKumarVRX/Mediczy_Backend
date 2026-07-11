@@ -1038,7 +1038,6 @@ export const cancelAppointment = async (req, res) => {
  * PATCH /api/appointments/:id/reschedule
  */
 export const rescheduleAppointment = async (req, res) => {
-  let rlsTransaction = null;
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -1046,69 +1045,47 @@ export const rescheduleAppointment = async (req, res) => {
     }
 
     const { id } = req.params;
-    const userId = req.user.id;
     const { appointmentDate, appointmentTime: rawAppointmentTime } = req.body;
     const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
+    const actor = await resolveActor(req);
 
-    // appointments has FORCE ROW LEVEL SECURITY — same missing-context fix as
-    // getAppointmentById/cancelAppointment above.
-    rlsTransaction = await postgresSequelize.transaction();
-    await req.setSequelizeRlsContext?.(rlsTransaction);
-    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
+    // Fetch, conflict-check, and update all need to share one transaction —
+    // the named repository methods each open/commit their own, so this uses
+    // the in-transaction primitives directly.
+    const result = await appointmentRepository.withTransaction(req, async (transaction) => {
+      const appointment = await appointmentRepository.findByIdForActorInTransaction(actor, id, transaction);
+      if (!appointment) return { notFound: true };
+      if (!isOwnedByActor(appointment, actor)) return { forbidden: true };
+      if (!canCancelOrReschedule(appointment, 2)) return { badWindow: true };
 
-    if (!appointment) {
-      await rlsTransaction.rollback();
+      const doctorAppointments = await appointmentRepository.findActiveAppointmentsForDoctorOnDate(
+        appointment.doctorId,
+        appointmentDate,
+        transaction
+      );
+      const conflict = findSlotConflict(doctorAppointments, appointmentTime, { excludeId: appointment.id });
+      if (conflict) return { conflict: true };
+
+      const oldDate = appointment.appointmentDate;
+      const oldTime = appointment.appointmentTime;
+      await appointment.update({ appointmentDate, appointmentTime, status: 'rescheduled' }, { transaction });
+      return { appointment, oldDate, oldTime };
+    });
+
+    if (result.notFound) {
       return res.status(404).json({ message: 'Appointment not found' });
     }
-
-    // Check authorization — allow patient OR the assigned doctor to reschedule
-    const isPatient = String(appointment.userId) === String(userId);
-    const isDoctor = String(appointment.doctorId) === String(userId);
-    if (!isPatient && !isDoctor) {
-      await rlsTransaction.rollback();
+    if (result.forbidden) {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
-
-    // Check if appointment can be rescheduled
-    if (!canCancelOrReschedule(appointment, 2)) {
-      await rlsTransaction.rollback();
-      return res.status(400).json({
-        message: 'Appointment cannot be rescheduled at this time.'
-      });
+    if (result.badWindow) {
+      return res.status(400).json({ message: 'Appointment cannot be rescheduled at this time.' });
+    }
+    if (result.conflict) {
+      return res.status(409).json({ message: 'This time slot is already booked. Please select another slot.' });
     }
 
-    const doctorAppointments = await Appointment.findAll({
-      where: {
-        doctorId: appointment.doctorId,
-        appointmentDate,
-        status: {
-          [Op.notIn]: ['cancelled', 'no-show']
-        }
-      },
-      transaction: rlsTransaction,
-    });
-    const existingAppointment = findSlotConflict(doctorAppointments, appointmentTime, {
-      excludeId: appointment.id,
-    });
-
-    if (existingAppointment) {
-      await rlsTransaction.rollback();
-      return res.status(409).json({
-        message: 'This time slot is already booked. Please select another slot.'
-      });
-    }
-
-    // Store old date and time for Kafka event
-    const oldDate = appointment.appointmentDate;
-    const oldTime = appointment.appointmentTime;
-
-    // Update appointment
-    await appointment.update({
-      appointmentDate,
-      appointmentTime,
-      status: 'rescheduled'
-    }, { transaction: rlsTransaction });
-    await rlsTransaction.commit();
+    const { appointment, oldDate, oldTime } = result;
 
     // Publish Kafka event
     try {
@@ -1127,9 +1104,6 @@ export const rescheduleAppointment = async (req, res) => {
       appointment
     });
   } catch (error) {
-    if (rlsTransaction && !rlsTransaction.finished) {
-      await rlsTransaction.rollback().catch(() => {});
-    }
     console.error('Reschedule appointment error:', error);
     return res.status(500).json({
       message: 'Failed to reschedule appointment',
@@ -1143,129 +1117,138 @@ export const rescheduleAppointment = async (req, res) => {
  * POST /api/appointments/:id/complete
  */
 export const completeAppointment = async (req, res) => {
-  let rlsTransaction = null;
   try {
     const { id } = req.params;
     const doctorId = req.user.id;
     const { notes, prescription, autoCreatePrescription } = req.body;
 
-    // appointments AND prescriptions both have FORCE ROW LEVEL SECURITY — same
-    // missing-context fix as cancelAppointment/rescheduleAppointment above.
-    rlsTransaction = await postgresSequelize.transaction();
-    await req.setSequelizeRlsContext?.(rlsTransaction);
-    const appointment = await Appointment.findByPk(id, { transaction: rlsTransaction });
-
-    if (!appointment) {
-      await rlsTransaction.rollback();
-      return res.status(404).json({ message: 'Appointment not found' });
-    }
-
-    // Check authorization
-    if (String(appointment.doctorId) !== String(doctorId)) {
-      await rlsTransaction.rollback();
+    const actor = await resolveActor(req);
+    if (actor.type !== 'doctor' && actor.type !== 'admin') {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
-    let prescriptionData = null;
+    // appointments AND prescriptions both have FORCE ROW LEVEL SECURITY —
+    // fetch, optional prescription draft, and the appointment update all
+    // need to share one transaction, hence the in-transaction primitives.
+    const result = await appointmentRepository.withTransaction(req, async (rlsTransaction) => {
+      const appointment = await appointmentRepository.findByIdForActorInTransaction(actor, id, rlsTransaction);
+      if (!appointment) return { notFound: true };
+      if (!isOwnedByActor(appointment, actor)) return { forbidden: true };
 
-    // Auto-create prescription draft for online consultations if requested
-    if (autoCreatePrescription !== false && ['video', 'audio', 'chat'].includes(appointment.consultationType)) {
-      try {
-        const { Prescription, Doctor, User } = await import('../models/index.js');
+      let prescriptionData = null;
 
-        // Check if prescription already exists
-        const existingPrescription = await Prescription.findOne({
-          where: { appointmentId: parseInt(id) },
-          transaction: rlsTransaction,
-        });
+      // Auto-create prescription draft for online consultations if requested.
+      // mapConsultationTypeForDb() above stores every video/audio/chat
+      // booking as consultationType='online' — 'online' must be included
+      // here or every online consultation silently skips auto-prescription.
+      if (autoCreatePrescription !== false && ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)) {
+        try {
+          const { Prescription, Doctor, User } = await import('../models/index.js');
 
-        if (!existingPrescription) {
-          const doctor = await Doctor.findByPk(doctorId);
-          const patient = await User.findByPk(appointment.userId);
+          // Check if prescription already exists
+          const existingPrescription = await Prescription.findOne({
+            where: { appointmentId: parseInt(id) },
+            transaction: rlsTransaction,
+          });
 
-          if (doctor && patient) {
-            let patientAge = null;
-            if (patient.dateOfBirth) {
-              const dob = new Date(patient.dateOfBirth);
-              const today = new Date();
-              patientAge = today.getFullYear() - dob.getFullYear();
-            }
+          if (!existingPrescription) {
+            const doctor = await Doctor.findByPk(doctorId);
+            const patient = await User.findByPk(appointment.userId);
 
-            const newPrescription = await Prescription.create({
-              appointmentId: appointment.id,
-              tenant_id: appointment.tenant_id || appointment.organization_id || null,
-              corporate_tenant_id: appointment.corporate_tenant_id || null,
-              organization_id: appointment.organization_id || null,
-              organization_type: appointment.organization_type || null,
-              patientId: appointment.userId,
-              patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
-              patientAge,
-              patientGender: patient.gender || 'Not specified',
-              patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
-              doctorId: doctor.id,
-              doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-              doctorQualifications: Array.isArray(doctor.qualifications)
-                ? doctor.qualifications.join(', ')
-                : (doctor.qualifications || doctor.qualification || 'MBBS'),
-              doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
-              specialty: doctor.specialization || 'General Medicine',
-              clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-              clinicAddress: appointment.consultationType === 'in-person'
-                ? (doctor.clinicAddress || 'Clinic')
-                : 'Online Consultation / Telemedicine',
-              clinicPhone: doctor.phone || doctor.phoneNumber,
-              clinicEmail: doctor.email,
-              clinicDetails: {
-                name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-                address: appointment.consultationType === 'in-person'
+            if (doctor && patient) {
+              let patientAge = null;
+              if (patient.dateOfBirth) {
+                const dob = new Date(patient.dateOfBirth);
+                const today = new Date();
+                patientAge = today.getFullYear() - dob.getFullYear();
+              }
+
+              const newPrescription = await Prescription.create({
+                appointmentId: appointment.id,
+                tenant_id: appointment.tenant_id || appointment.organization_id || null,
+                corporate_tenant_id: appointment.corporate_tenant_id || null,
+                organization_id: appointment.organization_id || null,
+                organization_type: appointment.organization_type || null,
+                patientId: appointment.userId,
+                patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
+                patientAge,
+                patientGender: patient.gender || 'Not specified',
+                patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
+                doctorId: doctor.id,
+                doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+                doctorQualifications: Array.isArray(doctor.qualifications)
+                  ? doctor.qualifications.join(', ')
+                  : (doctor.qualifications || doctor.qualification || 'MBBS'),
+                doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+                specialty: doctor.specialization || 'General Medicine',
+                clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                clinicAddress: appointment.consultationType === 'in-person'
                   ? (doctor.clinicAddress || 'Clinic')
                   : 'Online Consultation / Telemedicine',
-                phone: doctor.phone || doctor.phoneNumber,
-                email: doctor.email,
-                specialty: doctor.specialization,
-                consultationType: appointment.consultationType
-              },
-              diagnosis: 'To be filled by doctor',
-              chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
-              medications: [],
-              labTests: [],
-              instructions: [
-                'Complete the full course of medications',
-                'Take medicines as directed',
-                'Contact doctor if symptoms worsen'
-              ],
-              vitals: {},
-              validityDays: 30,
-              notes: notes || `${appointment.consultationType} consultation completed`,
-              status: 'draft'
-            }, { transaction: rlsTransaction });
+                clinicPhone: doctor.phone || doctor.phoneNumber,
+                clinicEmail: doctor.email,
+                clinicDetails: {
+                  name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                  address: appointment.consultationType === 'in-person'
+                    ? (doctor.clinicAddress || 'Clinic')
+                    : 'Online Consultation / Telemedicine',
+                  phone: doctor.phone || doctor.phoneNumber,
+                  email: doctor.email,
+                  specialty: doctor.specialization,
+                  consultationType: appointment.consultationType
+                },
+                diagnosis: 'To be filled by doctor',
+                chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
+                medications: [],
+                labTests: [],
+                instructions: [
+                  'Complete the full course of medications',
+                  'Take medicines as directed',
+                  'Contact doctor if symptoms worsen'
+                ],
+                vitals: {},
+                validityDays: 30,
+                notes: notes || `${appointment.consultationType} consultation completed`,
+                status: 'draft'
+              }, { transaction: rlsTransaction });
 
+              prescriptionData = {
+                prescriptionId: newPrescription.prescriptionId,
+                status: 'draft',
+                message: 'Prescription draft auto-created'
+              };
+            }
+          } else {
             prescriptionData = {
-              prescriptionId: newPrescription.prescriptionId,
-              status: 'draft',
-              message: 'Prescription draft auto-created'
+              prescriptionId: existingPrescription.prescriptionId,
+              status: existingPrescription.status,
+              message: 'Prescription already exists'
             };
           }
-        } else {
-          prescriptionData = {
-            prescriptionId: existingPrescription.prescriptionId,
-            status: existingPrescription.status,
-            message: 'Prescription already exists'
-          };
+        } catch (prescriptionError) {
+          console.error('Auto-prescription creation failed:', prescriptionError);
+          // Continue even if prescription creation fails
         }
-      } catch (prescriptionError) {
-        console.error('Auto-prescription creation failed:', prescriptionError);
-        // Continue even if prescription creation fails
       }
+
+      // Update appointment
+      await appointment.update({
+        status: 'completed',
+        notes: notes || appointment.notes,
+        prescription: prescription || prescriptionData?.prescriptionId || appointment.prescription
+      }, { transaction: rlsTransaction });
+
+      return { appointment, prescriptionData };
+    });
+
+    if (result.notFound) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+    if (result.forbidden) {
+      return res.status(403).json({ message: 'Unauthorized access' });
     }
 
-    // Update appointment
-    await appointment.update({
-      status: 'completed',
-      notes: notes || appointment.notes,
-      prescription: prescription || prescriptionData?.prescriptionId || appointment.prescription
-    }, { transaction: rlsTransaction });
-    await rlsTransaction.commit();
+    const { appointment, prescriptionData } = result;
 
     // Publish Kafka event
     try {
@@ -1285,9 +1268,6 @@ export const completeAppointment = async (req, res) => {
       prescription: prescriptionData
     });
   } catch (error) {
-    if (rlsTransaction && !rlsTransaction.finished) {
-      await rlsTransaction.rollback().catch(() => {});
-    }
     console.error('Complete appointment error:', error);
     return res.status(500).json({
       message: 'Failed to complete appointment',

@@ -481,10 +481,17 @@ router.post(
       const doctorId = req.user.id;
       const { notes, duration } = req.body;
 
+      // Completing a consultation is a doctor/admin action, never a patient
+      // one — even over their own appointment.
+      const actor = await resolveActor(req);
+      if (actor.type === 'patient') {
+        return res.status(403).json({ message: 'Unauthorized access' });
+      }
+
       const completeResult = await withAppointmentsRls(req, async (transaction) => {
         const appointment = await Appointment.findByPk(id, { transaction });
         if (!appointment) return { notFound: true };
-        if (appointment.doctorId !== doctorId) return { forbidden: true };
+        if (!isOwnedByActor(appointment, actor)) return { forbidden: true };
 
         // Check if prescription already exists
         const { Prescription, Doctor, User } = await import('../models/index.js');
@@ -522,14 +529,14 @@ router.post(
               doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
               specialty: doctor.specialization || 'General Medicine',
               clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-              clinicAddress: ['video', 'audio', 'chat'].includes(appointment.consultationType)
+              clinicAddress: ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)
                 ? 'Online Consultation / Telemedicine'
                 : (doctor.clinicAddress || 'Clinic'),
               clinicPhone: doctor.phone || doctor.phoneNumber,
               clinicEmail: doctor.email,
               clinicDetails: {
                 name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-                address: ['video', 'audio', 'chat'].includes(appointment.consultationType)
+                address: ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)
                   ? 'Online Consultation / Telemedicine'
                   : (doctor.clinicAddress || 'Clinic'),
                 phone: doctor.phone || doctor.phoneNumber,
@@ -731,11 +738,14 @@ router.get(
   async (req, res) => {
     try {
       const appointmentId = parseInt(req.params.id);
-      const userId = req.user.id;
-      const userRole = req.user.role;
+      const actor = await resolveActor(req);
 
-      // Fetch appointment
-      const appointment = await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
+      // Fetch appointment, scoped for doctor actors via candidate resolution
+      // — doctors.id and users.id are independent sequences, so a direct
+      // appointment.doctorId === req.user.id comparison can be wrong.
+      const appointment = actor.type === 'doctor'
+        ? await appointmentRepository.findByIdForDoctor(req, appointmentId)
+        : await withAppointmentsRls(req, (transaction) => Appointment.findByPk(appointmentId, { transaction }));
 
       if (!appointment) {
         return res.status(404).json({
@@ -745,10 +755,8 @@ router.get(
       }
 
       // Verify user has access to this appointment
-      const isDoctor = userRole === 'doctor' && appointment.doctorId === userId;
-      const isPatient = userRole !== 'doctor' && appointment.userId === userId;
-
-      if (!isDoctor && !isPatient) {
+      const isDoctor = actor.type === 'doctor';
+      if (!isOwnedByActor(appointment, actor)) {
         return res.status(403).json({
           success: false,
           message: 'Access denied'
