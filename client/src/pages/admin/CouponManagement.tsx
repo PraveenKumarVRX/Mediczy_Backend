@@ -540,7 +540,7 @@ export default function CouponManagement() {
             <DialogHeader>
               <DialogTitle>Install standard promotions</DialogTitle>
               <DialogDescription>
-                Upserts USG, CTSCAN, MRI, MED500, and CORP6FREE. Existing codes are updated, not duplicated.
+                Upserts USG, CTSCAN, MRI, MED500, and FREE6MO. Existing codes are updated, not duplicated.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">

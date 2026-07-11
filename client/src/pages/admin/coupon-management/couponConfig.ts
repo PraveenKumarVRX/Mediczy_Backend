@@ -101,7 +101,7 @@ export const COUPON_CATEGORIES = {
     minPurchaseLabel: 'Min order (₹)',
     minPurchaseHint: 'Not used for free membership',
     showMinPurchase: false,
-    example: 'CORP6FREE → 6 months membership free',
+    example: 'FREE6MO → 6 months membership free',
   },
   PHARMACY_FIXED: {
     group: 'pharmacy' as CouponGroupId,
@@ -255,12 +255,12 @@ export const PROMO_TEMPLATES: Array<{
     },
   },
   {
-    id: 'corp6free',
+    id: 'free6mo',
     name: '6 months free',
-    description: 'Corporate membership perk',
+    description: 'Free membership trial',
     group: 'membership',
     patch: {
-      code: 'CORP6FREE',
+      code: 'FREE6MO',
       category: 'MEMBERSHIP_FREE',
       value: '6',
       maxUsagePerUser: '1',

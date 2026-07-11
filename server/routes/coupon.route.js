@@ -337,7 +337,7 @@ router.get('/stats', authTeam, requireOpsTeamMember, async (req, res) => {
 
 /**
  * @route   POST /api/coupons/promo/seed
- * @desc    Upsert standard promo coupons (USG, CTSCAN, MRI, MED500, CORP6FREE)
+ * @desc    Upsert standard promo coupons (USG, CTSCAN, MRI, MED500, FREE6MO)
  * @access  Private/Team Ops
  */
 router.post('/promo/seed', authTeam, requireOpsTeamMember, async (req, res) => {

@@ -66,14 +66,14 @@ export const PROMO_COUPON_DEFINITIONS = [
     }
   },
   {
-    code: 'CORP6FREE',
+    code: 'FREE6MO',
     type: 'PERCENTAGE',
     value: 6,
     minPurchase: 0,
     maxUsage: 100000,
     maxUsagePerUser: 1,
     description: '6 months free membership',
-    corporateName: 'Mediqzy Corporate',
+    corporateName: 'Mediqzy Membership',
     metadata: {
       scopes: ['GYM_MEMBERSHIP', 'MEMBERSHIP'],
       grantType: 'FREE_MEMBERSHIP',
@@ -82,11 +82,56 @@ export const PROMO_COUPON_DEFINITIONS = [
   }
 ];
 
+/** @type {Record<string, string>} retired standard promo codes → replacement */
+const PROMO_CODE_RENAMES = {
+  CORP6FREE: 'FREE6MO',
+};
+
+async function migrateLegacyPromoCodes({ execute = false } = {}) {
+  const migrations = [];
+
+  for (const [oldCode, newCode] of Object.entries(PROMO_CODE_RENAMES)) {
+    const legacy = await Coupon.findOne({ where: { code: oldCode } });
+    if (!legacy) continue;
+
+    const replacement = await Coupon.findOne({ where: { code: newCode } });
+
+    if (replacement) {
+      migrations.push({ from: oldCode, to: newCode, action: 'deactivate-legacy' });
+      if (execute) {
+        if (Number(legacy.usageCount) === 0) {
+          await legacy.destroy();
+        } else {
+          await legacy.update({ isActive: false, description: `${legacy.description || oldCode} (retired — use ${newCode})` });
+        }
+      }
+      continue;
+    }
+
+    migrations.push({ from: oldCode, to: newCode, action: 'rename' });
+    if (execute) {
+      await legacy.update({
+        code: newCode,
+        corporateName: 'Mediqzy Membership',
+        description: legacy.description?.replace(/corporate/gi, '')?.trim() || '6 months free membership',
+      });
+    }
+  }
+
+  return migrations;
+}
+
 export async function seedPromoCoupons({ execute = false, createdBy = null } = {}) {
   const validUntil = new Date();
   validUntil.setFullYear(validUntil.getFullYear() + 1);
 
-  const results = [];
+  const migrations = await migrateLegacyPromoCodes({ execute });
+  const results = [...migrations.map((row) => ({
+    code: row.to,
+    action: row.action,
+    migratedFrom: row.from,
+    next: { value: null, metadata: {} },
+  }))];
 
   for (const definition of PROMO_COUPON_DEFINITIONS) {
     try {
@@ -156,9 +201,11 @@ export async function seedPromoCoupons({ execute = false, createdBy = null } = {
     coupons: results.map((row) => ({
       code: row.code,
       action: row.action,
-      value: row.next.value,
-      grantType: row.next.metadata?.grantType,
-      scopes: row.next.metadata?.scopes
-    }))
+      ...(row.migratedFrom ? { migratedFrom: row.migratedFrom } : {}),
+      value: row.next?.value,
+      grantType: row.next?.metadata?.grantType,
+      scopes: row.next?.metadata?.scopes
+    })),
+    ...(migrations.length ? { migrations } : {})
   };
 }
