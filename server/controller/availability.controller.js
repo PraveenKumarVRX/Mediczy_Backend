@@ -3,27 +3,30 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
+import { User } from '../models/index.js';
 import { Op } from 'sequelize';
+import { resolveDoctorIdCandidates, isDoctorOwnerFromCandidates } from '../utils/doctor-appointment-access.js';
 
-const resolveAuthenticatedDoctorId = (req) => {
-  const role = String(req.userRole || req.user?.role || '').toLowerCase();
-  if (role !== 'doctor') return null;
+const isDoctorRole = (req) => String(req.userRole || req.user?.role || '').toLowerCase() === 'doctor';
 
-  const candidateIds = [
-    req.user?.doctorId,
-    req.user?.id,
-    req.user?.dataValues?.doctorId,
-    req.user?.dataValues?.id,
-  ];
-
-  for (const value of candidateIds) {
-    const parsed = Number.parseInt(String(value ?? ''), 10);
-    if (Number.isInteger(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-
-  return null;
+/**
+ * Is the requesting actor authorized to act as `routeDoctorId`?
+ *
+ * The previous version picked the *first* of [req.user.doctorId, req.user.id,
+ * ...] and did a single strict comparison — doctors.id and users.id are
+ * independent sequences, so if the "first" candidate happened to be in the
+ * wrong id-space, a legitimate doctor would be wrongly denied access to
+ * their own availability. This checks the route's doctorId against every
+ * candidate id the actor could legitimately own instead.
+ */
+const isAuthorizedDoctorForRoute = async (req, routeDoctorId) => {
+  const candidateIds = await resolveDoctorIdCandidates({
+    actorId: req.user?.id ?? req.user?.dataValues?.id,
+    actorDoctorId: req.user?.doctorId ?? req.user?.dataValues?.doctorId,
+    actorEmail: req.user?.email ?? req.user?.dataValues?.email,
+    UserModel: User,
+  });
+  return isDoctorOwnerFromCandidates(routeDoctorId, candidateIds);
 };
 
 /**
@@ -146,16 +149,15 @@ export const setDoctorAvailability = async (req, res) => {
     }
 
     const { doctorId } = req.params;
-    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
 
-    if (!authenticatedDoctorId) {
+    if (!isDoctorRole(req)) {
       return res.status(403).json({ message: 'Only doctors can set availability' });
     }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedDoctorId) {
-      return res.status(403).json({ 
-        message: 'You can only set your own availability' 
+    if (!(await isAuthorizedDoctorForRoute(req, doctorId))) {
+      return res.status(403).json({
+        message: 'You can only set your own availability'
       });
     }
 
@@ -228,15 +230,14 @@ export const updateDoctorAvailability = async (req, res) => {
     }
 
     const { doctorId, scheduleId } = req.params;
-    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
 
-    if (!authenticatedDoctorId) {
+    if (!isDoctorRole(req)) {
       return res.status(403).json({ message: 'Only doctors can update availability' });
     }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedDoctorId) {
-      return res.status(403).json({ 
+    if (!(await isAuthorizedDoctorForRoute(req, doctorId))) {
+      return res.status(403).json({
         message: 'You can only update your own availability' 
       });
     }
@@ -275,16 +276,15 @@ export const updateDoctorAvailability = async (req, res) => {
 export const deleteDoctorAvailability = async (req, res) => {
   try {
     const { doctorId, scheduleId } = req.params;
-    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
 
-    if (!authenticatedDoctorId) {
+    if (!isDoctorRole(req)) {
       return res.status(403).json({ message: 'Only doctors can delete availability' });
     }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedDoctorId) {
-      return res.status(403).json({ 
-        message: 'You can only delete your own availability' 
+    if (!(await isAuthorizedDoctorForRoute(req, doctorId))) {
+      return res.status(403).json({
+        message: 'You can only delete your own availability'
       });
     }
 
@@ -320,17 +320,16 @@ export const deleteDoctorAvailability = async (req, res) => {
 export const bulkSetAvailability = async (req, res) => {
   try {
     const { doctorId } = req.params;
-    const authenticatedDoctorId = resolveAuthenticatedDoctorId(req);
     const { schedules } = req.body;
 
-    if (!authenticatedDoctorId) {
+    if (!isDoctorRole(req)) {
       return res.status(403).json({ message: 'Only doctors can set availability' });
     }
 
     // Check if authenticated user is the doctor
-    if (parseInt(doctorId) !== authenticatedDoctorId) {
-      return res.status(403).json({ 
-        message: 'You can only set your own availability' 
+    if (!(await isAuthorizedDoctorForRoute(req, doctorId))) {
+      return res.status(403).json({
+        message: 'You can only set your own availability'
       });
     }
 
