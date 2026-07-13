@@ -5,28 +5,12 @@
 
 import express from 'express';
 import { HealthDiary, EHRRecord } from '../models/postgres/ehr.model.postgres.js';
-import { Prescription } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { Op } from 'sequelize';
 import healthDiaryService from '../services/health-diary.service.js';
-import { postgresSequelize } from '../db/postgres-sequelize.js';
+import * as prescriptionRepository from '../repositories/prescription.repository.js';
 
 const router = express.Router();
-
-// prescriptions enforces FORCE ROW LEVEL SECURITY — a bare query with no
-// session GUCs set always sees zero rows.
-async function withPrescriptionsRls(req, work) {
-  const transaction = await postgresSequelize.transaction();
-  try {
-    await req.setSequelizeRlsContext?.(transaction);
-    const result = await work(transaction);
-    await transaction.commit();
-    return result;
-  } catch (error) {
-    await transaction.rollback().catch(() => {});
-    throw error;
-  }
-}
 
 /**
  * @route   GET /api/health-diary
@@ -86,11 +70,7 @@ router.get('/prescriptions', authUser, async (req, res) => {
     });
     
     // Get actual prescriptions
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId: parseInt(userId) },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForPatient(req, userId);
     
     res.json({
       success: true,
@@ -147,12 +127,7 @@ router.get('/summary', authUser, async (req, res) => {
     });
     
     // Get recent prescriptions
-    const recentPrescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId: parseInt(userId) },
-      order: [['createdAt', 'DESC']],
-      limit: 5,
-      transaction,
-    }));
+    const recentPrescriptions = await prescriptionRepository.findAllForPatient(req, userId, { limit: 5 });
     
     res.json({
       success: true,
@@ -574,12 +549,7 @@ router.post('/sync', authUser, async (req, res) => {
         })).map(r => String(r.linkedRecordId))
       );
 
-      const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-        where: { patientId: userId },
-        order: [['createdAt', 'DESC']],
-        limit: 50,
-        transaction,
-      }));
+      const prescriptions = await prescriptionRepository.findAllForPatient(req, userId, { limit: 50 });
 
       for (const rx of prescriptions) {
         if (alreadyLinked.has(String(rx.id))) continue;

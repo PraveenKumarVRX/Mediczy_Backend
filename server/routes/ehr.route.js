@@ -5,27 +5,12 @@
 
 import express from 'express';
 import { EHRRecord, HealthDiary } from '../models/postgres/ehr.model.postgres.js';
-import { Prescription, Report } from '../models/index.js';
+import { Report } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { Op } from 'sequelize';
-import { postgresSequelize } from '../db/postgres-sequelize.js';
+import * as prescriptionRepository from '../repositories/prescription.repository.js';
 
 const router = express.Router();
-
-// prescriptions enforces FORCE ROW LEVEL SECURITY — a bare query with no
-// session GUCs set always sees zero rows.
-async function withPrescriptionsRls(req, work) {
-  const transaction = await postgresSequelize.transaction();
-  try {
-    await req.setSequelizeRlsContext?.(transaction);
-    const result = await work(transaction);
-    await transaction.commit();
-    return result;
-  } catch (error) {
-    await transaction.rollback().catch(() => {});
-    throw error;
-  }
-}
 
 /**
  * @route   GET /api/ehr/patient/:patientId
@@ -199,11 +184,7 @@ router.get('/prescriptions/:patientId', authUser, async (req, res) => {
       order: [['recordDate', 'DESC']]
     });
     
-    const directPrescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId: parseInt(patientId) },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const directPrescriptions = await prescriptionRepository.findAllForPatient(req, patientId);
     
     res.json({
       success: true,

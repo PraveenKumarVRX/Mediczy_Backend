@@ -18,9 +18,8 @@ import { COOKIE_NAMES } from '../config/cookies.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
-import { postgresSequelize } from '../db/postgres-sequelize.js';
-import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
+import * as prescriptionRepository from '../repositories/prescription.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 const router = express.Router();
@@ -28,39 +27,6 @@ const router = express.Router();
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
 
-// prescriptions enforces FORCE ROW LEVEL SECURITY — every read/write must run
-// inside a transaction with the session GUCs set, or Sequelize silently sees
-// zero rows (reads) / gets rejected with "new row violates row-level
-// security policy" (writes).
-async function withPrescriptionsRls(req, work) {
-  const transaction = await postgresSequelize.transaction();
-  try {
-    await req.setSequelizeRlsContext?.(transaction);
-    const result = await work(transaction);
-    await transaction.commit();
-    return result;
-  } catch (error) {
-    await transaction.rollback().catch(() => {});
-    throw error;
-  }
-}
-
-// For the token-based public share endpoints below (no authUser/authDoctor
-// middleware — identity is decoded from a bearer/query/cookie token *after*
-// the row is fetched, via canAccessPrescriptionPdf). Real authorization
-// still happens in the handler; this only makes the row visible to fetch.
-async function withPrescriptionsRlsBypass(work) {
-  const transaction = await postgresSequelize.transaction();
-  try {
-    await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
-    const result = await work(transaction);
-    await transaction.commit();
-    return result;
-  } catch (error) {
-    await transaction.rollback().catch(() => {});
-    throw error;
-  }
-}
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -284,11 +250,7 @@ router.get('/', authDoctor, async (req, res) => {
   const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
   if (!doctorId) return res.status(400).json({ success: false, message: 'Doctor ID not found' });
   try {
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { doctorId: parseInt(doctorId) },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForDoctor(req, doctorId);
     return res.json({ success: true, count: prescriptions.length, prescriptions: prescriptions.map(p => p.toJSON()) });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to fetch prescriptions', error: error.message });
@@ -613,27 +575,19 @@ router.post('/', authDoctor, [
       status: 'draft'
     };
 
-    const transaction = await postgresSequelize.transaction();
-    let prescription;
-    try {
-      await req.setSequelizeRlsContext?.(transaction);
-      prescription = await Prescription.create(prescriptionPayload, { transaction });
+    const prescription = await prescriptionRepository.withTransaction(req, async (transaction) => {
+      const created = await Prescription.create(prescriptionPayload, { transaction });
 
       // Update appointment with prescription reference if provided
       if (appointmentId) {
         await Appointment.update(
-          { prescription: prescription.prescriptionId },
+          { prescription: created.prescriptionId },
           { where: { id: appointmentId }, transaction }
         );
       }
 
-      await transaction.commit();
-    } catch (txError) {
-      if (!transaction.finished) {
-        await transaction.rollback();
-      }
-      throw txError;
-    }
+      return created;
+    });
 
     // Audit logging for prescription creation (HIPAA compliance)
     try {
@@ -705,11 +659,7 @@ router.get('/doctor', authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Doctor ID not found' });
     }
 
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { doctorId: parseInt(doctorId) },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForDoctor(req, doctorId);
 
     const normalizeInstructions = (prescription) => {
       if (Array.isArray(prescription.adviceList) && prescription.adviceList.length > 0) {
@@ -770,11 +720,9 @@ router.get('/patient', authUser, async (req, res) => {
     const patientId = req.user.id;
 
     // Only return prescriptions that are visible to the patient (not drafts)
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId, status: ['issued', 'active', 'dispensed', 'expired'] },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForPatient(req, patientId, {
+      status: ['issued', 'active', 'dispensed', 'expired'],
+    });
 
     res.json({
       success: true,
@@ -799,11 +747,9 @@ router.get('/patient', authUser, async (req, res) => {
 router.get('/patient/adherence-summary', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId, status: ['issued', 'active', 'dispensed'] },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForPatient(req, patientId, {
+      status: ['issued', 'active', 'dispensed'],
+    });
 
     const summaries = prescriptions.map((rx) => {
       const tracking = rx.adherenceTracking || {};
@@ -860,10 +806,7 @@ router.post('/:id/adherence', authUser, [
     const { medicationId, taken = true } = req.body;
     const userId = req.user.id;
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
-      where: isNaN(id) ? { prescriptionId: id } : { id: parseInt(id, 10) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findById(req, id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -908,12 +851,7 @@ router.get('/:id', authUser, async (req, res) => {
     const { id } = req.params;
 
     // Find by ID or prescriptionId
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
-      where: isNaN(id)
-        ? { prescriptionId: id }
-        : { id: parseInt(id) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findById(req, id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -957,11 +895,7 @@ router.get('/patient/:patientId', authUser, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId: parseInt(patientId) },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForPatient(req, patientId);
 
     res.json({
       success: true,
@@ -996,11 +930,9 @@ router.get('/my/all', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
 
-    const prescriptions = await withPrescriptionsRls(req, (transaction) => Prescription.findAll({
-      where: { patientId, status: ['issued', 'active', 'dispensed', 'expired'] },
-      order: [['createdAt', 'DESC']],
-      transaction,
-    }));
+    const prescriptions = await prescriptionRepository.findAllForPatient(req, patientId, {
+      status: ['issued', 'active', 'dispensed', 'expired'],
+    });
 
     res.json({
       success: true,
@@ -1026,10 +958,7 @@ router.get('/appointment/:appointmentId', authUser, async (req, res) => {
   try {
     const { appointmentId } = req.params;
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
-      where: { appointmentId: parseInt(appointmentId) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findByAppointmentId(req, appointmentId);
 
     if (!prescription) {
       return res.status(404).json({
@@ -1077,13 +1006,10 @@ router.get('/doctor/issued', authDoctor, async (req, res) => {
     const page  = Math.max(0, parseInt(req.query.page  || '0',  10));
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit || '20', 10)));
 
-    const { count: total, rows: prescriptions } = await withPrescriptionsRls(req, (transaction) => Prescription.findAndCountAll({
-      where: { doctorId },
-      order: [['createdAt', 'DESC']],
+    const { count: total, rows: prescriptions } = await prescriptionRepository.findAndCountAllForDoctor(req, doctorId, {
       limit,
       offset: page * limit,
-      transaction,
-    }));
+    });
 
     res.json({
       success: true,
@@ -1118,8 +1044,8 @@ router.put('/:id', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const fetchResult = await withPrescriptionsRls(req, async (transaction) => {
-      const found = await Prescription.findByPk(id, { transaction });
+    const fetchResult = await prescriptionRepository.withTransaction(req, async (transaction) => {
+      const found = await prescriptionRepository.findByIdInTransaction(id, transaction);
       if (!found) return { notFound: true };
 
       // Check if doctor owns this prescription
@@ -1201,7 +1127,7 @@ router.put('/:id', authDoctor, async (req, res) => {
       notes: prescription.notes
     };
 
-    await withPrescriptionsRls(req, (transaction) => prescription.update({
+    await prescriptionRepository.update(req, prescription, {
       diagnosis: diagnosis !== undefined ? diagnosis : prescription.diagnosis,
       chiefComplaints: chiefComplaints !== undefined ? chiefComplaints : prescription.chiefComplaints,
       medications: medications !== undefined ? medications : prescription.medications,
@@ -1210,7 +1136,7 @@ router.put('/:id', authDoctor, async (req, res) => {
       vitals: vitals !== undefined ? vitals : prescription.vitals,
       followUpDate: followUpDate !== undefined ? followUpDate : prescription.followUpDate,
       notes: notes !== undefined ? notes : prescription.notes
-    }, { transaction }));
+    });
 
     // Audit logging for prescription update (HIPAA compliance)
     try {
@@ -1277,7 +1203,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid status' });
     }
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findByPk(id, { transaction }));
+    const prescription = await prescriptionRepository.findById(req, id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
@@ -1289,10 +1215,10 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
     }
 
     const previousStatus = prescription.status;
-    await withPrescriptionsRls(req, (transaction) => prescription.update({
+    await prescriptionRepository.update(req, prescription, {
       status,
       issuedAt: status === 'issued' ? new Date() : prescription.issuedAt
-    }, { transaction }));
+    });
 
     // Audit logging for prescription status change (HIPAA compliance)
     try {
@@ -1399,7 +1325,7 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findByPk(id, { transaction }));
+    const prescription = await prescriptionRepository.findById(req, id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
@@ -1416,10 +1342,10 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
     }
 
     const previousStatus = prescription.status;
-    await withPrescriptionsRls(req, (transaction) => prescription.update({
+    await prescriptionRepository.update(req, prescription, {
       status: 'issued',
       issuedAt: new Date()
-    }, { transaction }));
+    });
 
     // When prescription is issued, create EHR record and health diary entries
     if (prescription.patientId) {
@@ -1497,12 +1423,7 @@ router.get('/:id/html', async (req, res) => {
     const { id } = req.params;
     const { token } = req.query;
 
-    const prescription = await withPrescriptionsRlsBypass((transaction) => Prescription.findOne({
-      where: isNaN(id)
-        ? { prescriptionId: id }
-        : { id: parseInt(id) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findByIdBypass(id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1593,12 +1514,7 @@ router.get('/:id/pdf', async (req, res) => {
     const { id } = req.params;
     const { token } = req.query;
 
-    const prescription = await withPrescriptionsRlsBypass((transaction) => Prescription.findOne({
-      where: isNaN(id)
-        ? { prescriptionId: id }
-        : { id: parseInt(id) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findByIdBypass(id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1702,12 +1618,7 @@ router.get('/:id/share/whatsapp', authUser, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
-      where: isNaN(id)
-        ? { prescriptionId: id }
-        : { id: parseInt(id) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findById(req, id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1774,12 +1685,7 @@ router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
   try {
     const { id, phone } = req.params;
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
-      where: isNaN(id)
-        ? { prescriptionId: id }
-        : { id: parseInt(id) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findById(req, id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
@@ -1849,7 +1755,7 @@ router.delete('/:id', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findByPk(id, { transaction }));
+    const prescription = await prescriptionRepository.findById(req, id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
@@ -1862,7 +1768,7 @@ router.delete('/:id', authDoctor, async (req, res) => {
 
     // Cannot delete dispensed prescriptions, only cancel
     if (prescription.status === 'dispensed') {
-      await withPrescriptionsRls(req, (transaction) => prescription.update({ status: 'cancelled' }, { transaction }));
+      await prescriptionRepository.update(req, prescription, { status: 'cancelled' });
       
       // Audit logging for prescription cancellation
       try {
@@ -1899,7 +1805,7 @@ router.delete('/:id', authDoctor, async (req, res) => {
     }
 
     // Soft delete by cancelling
-    await withPrescriptionsRls(req, (transaction) => prescription.update({ status: 'cancelled' }, { transaction }));
+    await prescriptionRepository.update(req, prescription, { status: 'cancelled' });
 
     // Audit logging for prescription deletion
     try {
@@ -1964,12 +1870,7 @@ router.post('/:id/share', authDoctor, [
     const { entityId, entityType, method, contact } = req.body;
 
     // Find prescription
-    const prescription = await withPrescriptionsRls(req, (transaction) => Prescription.findOne({
-      where: isNaN(id)
-        ? { prescriptionId: id }
-        : { id: parseInt(id) },
-      transaction,
-    }));
+    const prescription = await prescriptionRepository.findById(req, id);
 
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
