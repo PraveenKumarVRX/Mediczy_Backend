@@ -132,6 +132,33 @@ module.exports = {
       exp_backoff_restart_delay: 1000  // Exponential backoff on crashes
     },
 
+    // ==================== AI Platform Gateway (optional, port 8000) ====================
+    // Aggregates health from sib-fastapi (8001), scribe-service (8005), offline-scribe (8006).
+    // Start manually when needed:  pm2 start ecosystem.config.js --only ai-platform-gateway
+    {
+      name: 'ai-platform-gateway',
+      script: 'gateway.py',
+      cwd: path.join(ROOT_DIR, 'ai-platform'),
+      instances: 1,
+      exec_mode: 'fork',
+      interpreter: path.join(AI_ENGINE_DIR, 'doctor_bot', 'venv', 'bin', 'python3'),
+      autorestart: false,  // opt-in only; don't run in prod by default
+      env: {
+        PYTHONUNBUFFERED: '1',
+        GATEWAY_PORT: 8000,
+        SIB_PORT: 8001,
+        SCRIBE_GPU_PORT: 8005,
+        SCRIBE_PORT: 8006,
+        LOG_LEVEL: 'INFO',
+      },
+      error_file: path.join(LOGS_DIR, 'ai-gateway-error.log'),
+      out_file: path.join(LOGS_DIR, 'ai-gateway-out.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '200M',
+      watch: false,
+    },
+
     // ==================== Background Worker ====================
     {
       name: 'mediczy-worker',

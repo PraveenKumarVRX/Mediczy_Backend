@@ -299,6 +299,18 @@ async def lifespan(app: FastAPI):
 
 # ==================== FastAPI App ====================
 
+# ── Shared platform health probe ──────────────────────────────────────────────
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
+    from ai_platform.health.probe import build_health_response as _build_health
+    _PLATFORM_HEALTH_AVAILABLE = True
+except ImportError:
+    _PLATFORM_HEALTH_AVAILABLE = False
+
+SIB_PORT = int(os.getenv("SIB_PORT", "8001"))
+
 app = FastAPI(
     title="Dr. iSHA - AI Medical Assistant",
     description="""
@@ -398,6 +410,17 @@ async def health():
         "request_count": app_state.request_count,
         "index_stats": stats
     }
+
+
+@app.get("/platform-health", tags=["platform"])
+async def platform_health_check():
+    """Standardised health endpoint consumed by ai-platform gateway and load balancer."""
+    status = "healthy" if app_state.initialized else "initializing"
+    if _PLATFORM_HEALTH_AVAILABLE:
+        return _build_health("sib-fastapi", "1.0.0", SIB_PORT,
+                             {"index": {"status": status},
+                              "requests": {"count": app_state.request_count, "status": "healthy"}})
+    return {"status": status, "service": "sib-fastapi"}
 
 
 @app.delete("/chat/{patient_id}")

@@ -1,0 +1,71 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Mediczy AI Platform — Merged Requirements
+#
+# Install in one shot:
+#   pip install -r ai-platform/requirements.txt
+#
+# Or per-service virtual envs reference this file with:
+#   pip install -r ../../ai-platform/requirements.txt
+#
+# Sections marked [heavy] require GPU/large-disk; skip on CI with:
+#   pip install -r ai-platform/requirements.txt --ignore-requires-python
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Core web framework (all services) ────────────────────────────────────────
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+python-multipart>=0.0.6
+aiofiles>=23.0.0
+httpx>=0.25.0
+requests>=2.31.0
+
+# ── Async utilities ───────────────────────────────────────────────────────────
+aiohttp>=3.9.0
+python-dotenv>=1.0.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+asyncpg>=0.29.0
+psycopg2-binary>=2.9.9
+pgvector>=0.4.2
+duckdb>=0.9.0
+
+# ── LLM / inference (CPU-only; [heavy] for GPU) ───────────────────────────────
+llama-cpp-python>=0.2.20          # CPU LLM (offline-scribe, scribe-service)
+groq>=0.4.0                        # Groq cloud API (sib-fastapi)
+google-generativeai>=0.3.0         # Gemini fallback (sib-fastapi)
+langchain>=1.3.0
+langchain-core>=1.4.0
+langgraph>=1.2.0
+
+# ── Embeddings / vector retrieval ─────────────────────────────────────────────
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4
+rank-bm25>=0.2.7
+
+# ── Speech-to-text ────────────────────────────────────────────────────────────
+faster-whisper>=0.9.0              # CPU STT (offline-scribe)
+pydub>=0.25.0
+
+# ── Medical NLP ───────────────────────────────────────────────────────────────
+spacy>=3.7.0
+medspacy>=1.0.0
+
+# ── Bayesian / reasoning ──────────────────────────────────────────────────────
+pgmpy>=0.1.23
+networkx>=3.0
+
+# ── Numerics ──────────────────────────────────────────────────────────────────
+numpy>=1.24.0
+pandas>=2.1.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# ── Task scheduling ───────────────────────────────────────────────────────────
+APScheduler>=3.10.0
+
+# ── [heavy] GPU — only needed for scribe-service local-GPU mode ───────────────
+# torch==2.1.0
+# torchvision==0.16.0
+# torchaudio==2.1.0
+# openai-whisper==20231117
