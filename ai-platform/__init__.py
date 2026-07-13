@@ -1,0 +1,1 @@
+"""Mediczy AI Platform package."""

@@ -111,6 +111,18 @@ print_config()
 _DEBUG = os.getenv("SCRIBE_DEBUG", "false").lower() == "true"
 _SCRIBE_TOKEN = os.getenv("SCRIBE_TOKEN", "")  # required in production
 
+# ── Shared platform health probe ──────────────────────────────────────────────
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+    from ai_platform.health.probe import build_health_response as _build_health
+    _PLATFORM_HEALTH_AVAILABLE = True
+except ImportError:
+    _PLATFORM_HEALTH_AVAILABLE = False
+
+OFFLINE_SCRIBE_PORT = int(os.getenv("SCRIBE_PORT", "8006"))
+
 app = FastAPI(
     title="Mediczy Offline AI Scribe",
     description="Hospital-grade, fully offline medical scribe for Indian hospitals",
@@ -518,6 +530,24 @@ async def health_check():
         },
         "disclaimer": COMPLIANCE_DISCLAIMER,
     }
+
+
+@app.get("/platform-health", tags=["platform"])
+async def platform_health_check():
+    """Standardised health endpoint consumed by ai-platform gateway and load balancer."""
+    try:
+        stt = get_stt_service()
+        llm = get_llm_engine()
+        stt_ok = stt.health_check().get("status") == "healthy"
+        llm_ok = llm.health_check().get("status") == "healthy"
+        status = "healthy" if (stt_ok and llm_ok) else "degraded"
+    except Exception:
+        status = "degraded"
+    if _PLATFORM_HEALTH_AVAILABLE:
+        return _build_health("offline-scribe", "1.0.0", OFFLINE_SCRIBE_PORT,
+                             {"stt": {"status": "healthy" if status == "healthy" else "degraded"},
+                              "llm": {"status": "healthy" if status == "healthy" else "degraded"}})
+    return {"status": status, "service": "offline-scribe"}
 
 
 @app.get("/api/scribe/languages")

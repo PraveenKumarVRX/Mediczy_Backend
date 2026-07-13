@@ -59,6 +59,18 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# ── Shared platform health probe ──────────────────────────────────────────────
+try:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parents[1]))
+    from ai_platform.health.probe import build_health_response as _build_health
+    _PLATFORM_HEALTH_AVAILABLE = True
+except ImportError:
+    _PLATFORM_HEALTH_AVAILABLE = False
+
+SCRIBE_SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8005"))
+
 # Enable CORS
 app.add_middleware(
     CORSMiddleware,
@@ -670,6 +682,20 @@ async def health_check():
                 "discharge-summary-generation"
             ]
         }
+
+@app.get("/platform-health", tags=["platform"])
+async def platform_health_check():
+    """Standardised health endpoint consumed by ai-platform gateway and load balancer."""
+    try:
+        legacy = await health_check()
+        status = legacy.get("status", "healthy")
+    except Exception:
+        status = "degraded"
+    if _PLATFORM_HEALTH_AVAILABLE:
+        return _build_health("scribe-service", "2.0.0", SCRIBE_SERVICE_PORT,
+                             {"upstream": {"status": status}})
+    return {"status": status, "service": "scribe-service"}
+
 
 @app.get("/api/scribe/gpu-stats")
 async def gpu_stats():

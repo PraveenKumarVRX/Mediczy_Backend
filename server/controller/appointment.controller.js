@@ -23,6 +23,7 @@ import {
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
+import { completeAppointment as completeAppointmentOrchestrated } from '../services/appointment-completion.service.js';
 
 const getAppointmentDateTime = (appointment) => {
   if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
@@ -1119,7 +1120,6 @@ export const rescheduleAppointment = async (req, res) => {
 export const completeAppointment = async (req, res) => {
   try {
     const { id } = req.params;
-    const doctorId = req.user.id;
     const { notes, prescription, autoCreatePrescription } = req.body;
 
     const actor = await resolveActor(req);
@@ -1127,119 +1127,7 @@ export const completeAppointment = async (req, res) => {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
-    // appointments AND prescriptions both have FORCE ROW LEVEL SECURITY —
-    // fetch, optional prescription draft, and the appointment update all
-    // need to share one transaction, hence the in-transaction primitives.
-    const result = await appointmentRepository.withTransaction(req, async (rlsTransaction) => {
-      const appointment = await appointmentRepository.findByIdForActorInTransaction(actor, id, rlsTransaction);
-      if (!appointment) return { notFound: true };
-      if (!isOwnedByActor(appointment, actor)) return { forbidden: true };
-
-      let prescriptionData = null;
-
-      // Auto-create prescription draft for online consultations if requested.
-      // mapConsultationTypeForDb() above stores every video/audio/chat
-      // booking as consultationType='online' — 'online' must be included
-      // here or every online consultation silently skips auto-prescription.
-      if (autoCreatePrescription !== false && ['online', 'video', 'audio', 'chat'].includes(appointment.consultationType)) {
-        try {
-          const { Prescription, Doctor, User } = await import('../models/index.js');
-
-          // Check if prescription already exists
-          const existingPrescription = await Prescription.findOne({
-            where: { appointmentId: parseInt(id) },
-            transaction: rlsTransaction,
-          });
-
-          if (!existingPrescription) {
-            const doctor = await Doctor.findByPk(doctorId);
-            const patient = await User.findByPk(appointment.userId);
-
-            if (doctor && patient) {
-              let patientAge = null;
-              if (patient.dateOfBirth) {
-                const dob = new Date(patient.dateOfBirth);
-                const today = new Date();
-                patientAge = today.getFullYear() - dob.getFullYear();
-              }
-
-              const newPrescription = await Prescription.create({
-                appointmentId: appointment.id,
-                tenant_id: appointment.tenant_id || appointment.organization_id || null,
-                corporate_tenant_id: appointment.corporate_tenant_id || null,
-                organization_id: appointment.organization_id || null,
-                organization_type: appointment.organization_type || null,
-                patientId: appointment.userId,
-                patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
-                patientAge,
-                patientGender: patient.gender || 'Not specified',
-                patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
-                doctorId: doctor.id,
-                doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-                doctorQualifications: Array.isArray(doctor.qualifications)
-                  ? doctor.qualifications.join(', ')
-                  : (doctor.qualifications || doctor.qualification || 'MBBS'),
-                doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
-                specialty: doctor.specialization || 'General Medicine',
-                clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-                clinicAddress: appointment.consultationType === 'in-person'
-                  ? (doctor.clinicAddress || 'Clinic')
-                  : 'Online Consultation / Telemedicine',
-                clinicPhone: doctor.phone || doctor.phoneNumber,
-                clinicEmail: doctor.email,
-                clinicDetails: {
-                  name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-                  address: appointment.consultationType === 'in-person'
-                    ? (doctor.clinicAddress || 'Clinic')
-                    : 'Online Consultation / Telemedicine',
-                  phone: doctor.phone || doctor.phoneNumber,
-                  email: doctor.email,
-                  specialty: doctor.specialization,
-                  consultationType: appointment.consultationType
-                },
-                diagnosis: 'To be filled by doctor',
-                chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
-                medications: [],
-                labTests: [],
-                instructions: [
-                  'Complete the full course of medications',
-                  'Take medicines as directed',
-                  'Contact doctor if symptoms worsen'
-                ],
-                vitals: {},
-                validityDays: 30,
-                notes: notes || `${appointment.consultationType} consultation completed`,
-                status: 'draft'
-              }, { transaction: rlsTransaction });
-
-              prescriptionData = {
-                prescriptionId: newPrescription.prescriptionId,
-                status: 'draft',
-                message: 'Prescription draft auto-created'
-              };
-            }
-          } else {
-            prescriptionData = {
-              prescriptionId: existingPrescription.prescriptionId,
-              status: existingPrescription.status,
-              message: 'Prescription already exists'
-            };
-          }
-        } catch (prescriptionError) {
-          console.error('Auto-prescription creation failed:', prescriptionError);
-          // Continue even if prescription creation fails
-        }
-      }
-
-      // Update appointment
-      await appointment.update({
-        status: 'completed',
-        notes: notes || appointment.notes,
-        prescription: prescription || prescriptionData?.prescriptionId || appointment.prescription
-      }, { transaction: rlsTransaction });
-
-      return { appointment, prescriptionData };
-    });
+    const result = await completeAppointmentOrchestrated(req, actor, id, { notes, prescription, autoCreatePrescription });
 
     if (result.notFound) {
       return res.status(404).json({ message: 'Appointment not found' });
