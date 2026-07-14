@@ -210,6 +210,20 @@ export default function VideoCallNotification() {
       }
     };
 
+    // Remove ALL previously-registered listeners for these events first — this
+    // function is re-invoked on every socket 'reconnect' (see below), and each
+    // call creates fresh handler closures, so off(event, handler) with the new
+    // closure can't remove a listener registered by an earlier call. Without
+    // this, handlers stack up across reconnects: each stacked handler fires
+    // independently on the same event and calls playRingingSound()/
+    // playCallingSound(), which start a *new* ring interval on top of any
+    // already running — so the ringtone never fully stops even after
+    // stopRinging() clears the (single) interval ref it knows about.
+    socket.off('appointment_notification');
+    socket.off('doctor-initiated-call');
+    socket.off('triage-call-request');
+    socket.off('triage-call-accepted');
+
     socket.on('appointment_notification', handleNotification);
     socket.on('doctor-initiated-call', handleDoctorInitiatedCall);
     socket.on('triage-call-request', handleTriageCallRequest);
@@ -303,6 +317,7 @@ export default function VideoCallNotification() {
   };
 
   const playRingingSound = () => {
+    if (ringingTimerRef.current) clearInterval(ringingTimerRef.current);
     playRingCycle();
     ringingTimerRef.current = setInterval(playRingCycle, 2000);
     setIsRinging(true);
@@ -320,6 +335,7 @@ export default function VideoCallNotification() {
         console.log('Web Audio calling failed:', e);
       }
     };
+    if (ringingTimerRef.current) clearInterval(ringingTimerRef.current);
     playPulse();
     ringingTimerRef.current = setInterval(playPulse, 1200);
     setIsRinging(true);

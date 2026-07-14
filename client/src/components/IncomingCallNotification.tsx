@@ -48,9 +48,27 @@ export function IncomingCallNotification({
 }: IncomingCallNotificationProps) {
   const [timeLeft, setTimeLeft] = useState(autoRejectTimeout);
   const [isRinging, setIsRinging] = useState(true);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const ringingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Keep the latest onReject without making the ring/timer effect below
+  // depend on it — onAccept/onReject are recreated on every render by all
+  // three callers (DoctorDashboard/DoctorTriage/DoctorMobileHome), which
+  // would otherwise tear down and restart the ring cycle on every parent
+  // re-render (e.g. background query polling) while the call is still ringing.
+  const onRejectRef = useRef(onReject);
+  onRejectRef.current = onReject;
+
+  const stopRinging = () => {
+    if (ringingTimerRef.current) {
+      clearInterval(ringingTimerRef.current);
+      ringingTimerRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch (_) { /* ignore */ }
+      audioCtxRef.current = null;
+    }
+  };
 
   useEffect(() => {
     // Play ringtone using Web Audio API (G5→B5→D6→G6 ascending arpeggio)
@@ -87,7 +105,7 @@ export function IncomingCallNotification({
       setTimeLeft((prev) => {
         if (prev <= 1) {
           // Auto-reject when time runs out
-          onReject(callData.appointmentId, 'No response - timeout');
+          onRejectRef.current(callData.appointmentId, 'No response - timeout');
           return 0;
         }
         return prev - 1;
@@ -103,25 +121,17 @@ export function IncomingCallNotification({
     return () => {
       clearInterval(timer);
       clearInterval(pulseInterval);
-      if (ringingTimerRef.current) clearInterval(ringingTimerRef.current);
-      if (audioCtxRef.current) {
-        try { audioCtxRef.current.close(); } catch (_) { /* ignore */ }
-        audioCtxRef.current = null;
-      }
+      stopRinging();
     };
-  }, [callData.appointmentId, onReject]);
+  }, [callData.appointmentId]);
 
   const handleAccept = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+    stopRinging();
     onAccept(callData.appointmentId);
   };
 
   const handleReject = () => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+    stopRinging();
     onReject(callData.appointmentId, 'Busy');
   };
 

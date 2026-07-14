@@ -227,18 +227,20 @@ const DoctorDashboard = () => {
 
   // Accept incoming emergency call
   const handleAcceptIncomingCall = async (appointmentId: number) => {
+    // Close the incoming call notification (and stop its ringtone) immediately,
+    // rather than after the accept-call request resolves — otherwise the ring
+    // keeps playing through the whole round trip, and stays stuck forever if
+    // the request fails since the catch block never reached setIncomingCall(null).
+    setIncomingCall(null);
     try {
       console.log('✅ Accepting emergency call:', appointmentId);
-      
+
       const response = await api.post('/doctors/triage/accept-call', { appointmentId });
-      
+
       toast({
         title: "✅ Call Accepted",
         description: "Joining video consultation...",
       });
-
-      // Close incoming call notification
-      setIncomingCall(null);
 
       // Navigate to video room with LiveKit token from accept response
       const roomId = response.data.appointment?.roomId || response.data.appointment?.meetingId;

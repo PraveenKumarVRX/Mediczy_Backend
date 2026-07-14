@@ -371,14 +371,33 @@ const doctorModel = {
 	        rawSlots = [];
 	        skipDefaultSlots = true;
 	      } else {
-	        // Prefer weeklySchedule time windows if present (this is what the doctor portal edits).
 	        const slotDuration = doctor.slotDuration || 30;
+	        const availabilityForDay = weeklyAvailability?.[dayName];
 	        const scheduleWindow = scheduleForDay
 	          ? (isInPerson ? scheduleForDay.inPerson : scheduleForDay.online)
 	          : null;
 
-	        if (scheduleForDay) {
-	          // If the doctor configured this day, don't invent defaults; respect toggles.
+	        if (Array.isArray(availabilityForDay?.slots) && availabilityForDay.slots.length > 0) {
+	          // weeklyAvailability is the source POST /doctors/availability/bulk-update
+	          // writes (mobile app). It must win over weeklySchedule (written by the
+	          // doctor web portal / settings endpoints) whenever the doctor has
+	          // explicitly set slots here — otherwise a leftover weeklySchedule entry
+	          // for the same day silently shadows every mobile-app update forever.
+	          // Each entry is a start/end window (optionally per-consultationType),
+	          // so expand it into concrete time increments rather than treating the
+	          // whole window as a single bookable instant.
+	          rawSlots = availabilityForDay.slots.flatMap((slot) => {
+	            if (!TIME_HHMM_REGEX.test(slot?.startTime || '') || !TIME_HHMM_REGEX.test(slot?.endTime || '')) {
+	              return [];
+	            }
+	            const duration = [15, 20, 30, 45, 60].includes(slot.slotDuration) ? slot.slotDuration : slotDuration;
+	            return generateSlotsFromWindow(slot.startTime, slot.endTime, duration).map((s) => ({
+	              ...s,
+	              consultationType: slot.consultationType
+	            }));
+	          });
+	        } else if (scheduleForDay) {
+	          // If the doctor configured this day via weeklySchedule, don't invent defaults; respect toggles.
 	          if (!scheduleWindow?.enabled) {
 	            rawSlots = [];
 	            skipDefaultSlots = true;
@@ -397,10 +416,7 @@ const doctorModel = {
 	          }
 	        } else {
 	          // Fall back to existing slot storage mechanisms for legacy records.
-	          rawSlots =
-	            weeklyAvailability?.[dayName]?.slots ||
-	            weeklySchedule?.[dayName]?.slots ||
-	            storedSlots;
+	          rawSlots = weeklySchedule?.[dayName]?.slots || storedSlots;
 	        }
 	      }
 	    }
