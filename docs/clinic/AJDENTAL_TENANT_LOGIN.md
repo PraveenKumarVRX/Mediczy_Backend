@@ -5,12 +5,13 @@
 Dedicated dental clinic portal:
 
 ```
-https://ajdental.mediqzy.com/clinic/login
+https://ajdental.mediqzy.com/login
 ```
 
 Aliases:
 
 ```
+https://ajdental.mediqzy.com/clinic/login  → redirects to /login on tenant host
 https://app.mediqzy.com/clinic/login
 https://app.mediqzy.com/clinic/ajdental/login
 ```
@@ -65,12 +66,13 @@ curl -X POST https://api.mediqzy.com/api/admin/clinics/ensure-login \
 
 | | |
 |---|---|
-| URL | https://ajdental.mediqzy.com/clinic/login |
+| URL | https://ajdental.mediqzy.com/login |
 | Email | `admin@ajdental.com` |
 | Password | `AjDental@123` |
 
 ## Notes
 
 - Change the password after first login.
+- On tenant hosts, `/login` is clinic login; `app.mediqzy.com/login` stays the platform login.
 - Frontend Host detection (after deploy) sends `clinic_slug=ajdental` from `ajdental.mediqzy.com`.
 - SPA API calls still use `VITE_API_URL=https://app.mediqzy.com/api`.

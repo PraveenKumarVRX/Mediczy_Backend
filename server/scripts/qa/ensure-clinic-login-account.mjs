@@ -172,6 +172,7 @@ export async function ensureClinicLoginAccount(input = {}) {
       email,
       password,
       urls: [
+        `https://${subdomain}.mediqzy.com/login`,
         `https://${subdomain}.mediqzy.com/clinic/login`,
         'https://app.mediqzy.com/clinic/login',
       ],

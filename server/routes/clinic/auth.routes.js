@@ -156,10 +156,11 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     // Optional subdomain / slug scoping (e.g. ajdental.mediqzy.com/clinic/login)
+    const meta = typeof clinic.metadata === 'string'
+      ? (() => { try { return JSON.parse(clinic.metadata); } catch { return {}; } })()
+      : (clinic.metadata || {});
+
     if (subdomainLabel) {
-      const meta = typeof clinic.metadata === 'string'
-        ? (() => { try { return JSON.parse(clinic.metadata); } catch { return {}; } })()
-        : (clinic.metadata || {});
       const allowed = [
         meta.tenant_subdomain,
         meta.tenant_slug,
@@ -206,7 +207,7 @@ router.post('/login', authLimiter, async (req, res) => {
         name: clinic.hospital_name,
         userType: 'clinic',
         role: 'clinic',
-        clinicSlug: subdomainLabel || clinic.metadata?.tenant_subdomain || null,
+        clinicSlug: subdomainLabel || meta.tenant_subdomain || null,
       },
       JWT_SECRET,
       { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
@@ -226,8 +227,8 @@ router.post('/login', authLimiter, async (req, res) => {
         email: clinic.email,
         phone: clinic.phone_number,
         registrationNumber: clinic.registration_number,
-        clinicType: clinic.metadata?.clinicType || 'General',
-        numberOfRooms: clinic.metadata?.numberOfRooms || 0,
+        clinicType: meta.clinicType || 'General',
+        numberOfRooms: meta.numberOfRooms || 0,
         city: clinic.city,
         state: clinic.state,
         totalBeds: clinic.total_beds,
@@ -235,8 +236,8 @@ router.post('/login', authLimiter, async (req, res) => {
         specializations: clinic.specializations || [],
         facilities: clinic.facilities || [],
         isVerified: clinic.is_verified,
-        slug: clinic.metadata?.tenant_slug || subdomainLabel || null,
-        subdomain: clinic.metadata?.tenant_subdomain || subdomainLabel || null,
+        slug: meta.tenant_slug || subdomainLabel || null,
+        subdomain: meta.tenant_subdomain || subdomainLabel || null,
       }
     });
   } catch (error) {
