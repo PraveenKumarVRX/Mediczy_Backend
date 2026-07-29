@@ -54,8 +54,9 @@ const Tenant = sequelize.define('Tenant', {
   type: {
     type: DataTypes.ENUM(
       'hospital',
-      'clinic', 
+      'clinic',
       'lab',
+      'diagnostic_centre',
       'pharmacy',
       'ambulance',
       'corporate',

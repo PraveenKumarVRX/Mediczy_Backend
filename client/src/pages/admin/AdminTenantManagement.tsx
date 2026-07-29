@@ -91,19 +91,39 @@ interface FormData {
   admin_last_name?: string;
 }
 
-const TENANT_TYPES = [
-  { value: 'hospital', label: 'Hospital', icon: '🏥', minPlan: 'professional' },
-  { value: 'clinic', label: 'Clinic', icon: '🏨', minPlan: 'free' },
-  { value: 'lab', label: 'Diagnostic Lab', icon: '🔬', minPlan: 'free' },
-  { value: 'pharmacy', label: 'Pharmacy', icon: '💊', minPlan: 'free' },
-  { value: 'ambulance', label: 'Ambulance Service', icon: '🚑', minPlan: 'professional' },
-  { value: 'corporate', label: 'Corporate/Enterprise', icon: '🏢', minPlan: 'professional' },
-  { value: 'tpa', label: 'TPA (Third Party Administrator)', icon: '📋', minPlan: 'enterprise' },
-  { value: 'psu', label: 'PSU (Public Sector)', icon: '🏛️', minPlan: 'enterprise' },
-  { value: 'insurer', label: 'Insurance Company', icon: '🛡️', minPlan: 'enterprise' },
-  { value: 'broker', label: 'Insurance Broker', icon: '🤝', minPlan: 'professional' },
-  { value: 'ngo', label: 'NGO / Non-Profit', icon: '❤️', minPlan: 'free' },
-  { value: 'homecare', label: 'Home Healthcare', icon: '🏠', minPlan: 'professional' },
+interface TenantModule {
+  key: string;
+  label: string;
+  path: string;
+  enabled?: boolean;
+}
+
+interface TenantTypeOption {
+  value: string;
+  label: string;
+  icon: string;
+  minPlan: 'free' | 'professional' | 'enterprise';
+  description?: string;
+  routePrefix?: string;
+  modules?: TenantModule[];
+  optionalModules?: TenantModule[];
+  isCore?: boolean;
+}
+
+const FALLBACK_TENANT_TYPES: TenantTypeOption[] = [
+  { value: 'hospital', label: 'Hospital', icon: '🏥', minPlan: 'professional', routePrefix: '/hospital' },
+  { value: 'clinic', label: 'Clinic', icon: '🏨', minPlan: 'free', routePrefix: '/clinic' },
+  { value: 'lab', label: 'Lab', icon: '🔬', minPlan: 'free', routePrefix: '/lab' },
+  { value: 'diagnostic_centre', label: 'Diagnostic Centre', icon: '🩻', minPlan: 'free', routePrefix: '/lab' },
+  { value: 'corporate', label: 'Corporate', icon: '🏢', minPlan: 'professional', routePrefix: '/corporate' },
+  { value: 'homecare', label: 'Homecare', icon: '🏠', minPlan: 'professional', routePrefix: '/homecare' },
+  { value: 'ambulance', label: 'Ambulance', icon: '🚑', minPlan: 'professional', routePrefix: '/ambulance' },
+  { value: 'pharmacy', label: 'Pharmacy', icon: '💊', minPlan: 'free', routePrefix: '/pharmacy' },
+  { value: 'tpa', label: 'TPA', icon: '📋', minPlan: 'enterprise', routePrefix: '/tpa' },
+  { value: 'psu', label: 'PSU', icon: '🏛️', minPlan: 'enterprise', routePrefix: '/psu' },
+  { value: 'insurer', label: 'Insurer', icon: '🛡️', minPlan: 'enterprise', routePrefix: '/insurer' },
+  { value: 'broker', label: 'Broker', icon: '🤝', minPlan: 'professional', routePrefix: '/intermediary' },
+  { value: 'ngo', label: 'NGO', icon: '❤️', minPlan: 'free', routePrefix: '/ngo' },
 ];
 
 const PLAN_TIERS: TierInfo[] = [
@@ -194,6 +214,7 @@ const AdminTenantManagement = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [tenantTypes, setTenantTypes] = useState<TenantTypeOption[]>(FALLBACK_TENANT_TYPES);
 
   const [formData, setFormData] = useState<FormData>({
     name: '',
@@ -205,6 +226,7 @@ const AdminTenantManagement = () => {
   });
 
   const token = localStorage.getItem('adminToken');
+  const selectedTypeInfo = tenantTypes.find((t) => t.value === formData.type);
 
   useEffect(() => {
     if (!token) {
@@ -213,7 +235,33 @@ const AdminTenantManagement = () => {
     }
     fetchTenants();
     fetchStats();
+    fetchEntityTypes();
   }, [token, navigate]);
+
+  const fetchEntityTypes = async () => {
+    try {
+      const response = await api.get('/superadmin/tenants/entity-types', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const rows = response.data?.entity_types || [];
+      if (!rows.length) return;
+      setTenantTypes(
+        rows.map((row: any) => ({
+          value: row.type,
+          label: row.name,
+          icon: row.icon || '🏥',
+          minPlan: (row.min_plan || 'free') as TenantTypeOption['minPlan'],
+          description: row.description,
+          routePrefix: row.route_prefix,
+          modules: row.modules || [],
+          optionalModules: row.optional_modules || [],
+          isCore: Boolean(row.is_core),
+        }))
+      );
+    } catch (err) {
+      console.log('Entity types API unavailable — using fallback module packs');
+    }
+  };
 
   const fetchTenants = async () => {
     setLoading(true);
@@ -257,7 +305,7 @@ const AdminTenantManagement = () => {
     setError(null);
 
     // Check minimum plan requirement for entity type
-    const entityType = TENANT_TYPES.find(t => t.value === formData.type);
+    const entityType = tenantTypes.find(t => t.value === formData.type);
     if (entityType) {
       const planRank = { free: 0, professional: 1, enterprise: 2 };
       if (planRank[formData.plan] < planRank[entityType.minPlan as keyof typeof planRank]) {
@@ -516,7 +564,7 @@ const AdminTenantManagement = () => {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {TENANT_TYPES.map((t) => (
+                      {tenantTypes.map((t) => (
                         <SelectItem key={t.value} value={t.value}>
                           <div className="flex items-center gap-2">
                             <span>{t.icon}</span>
@@ -529,8 +577,46 @@ const AdminTenantManagement = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                  {selectedTypeInfo?.description && (
+                    <p className="text-xs text-gray-500 mt-1">{selectedTypeInfo.description}</p>
+                  )}
                 </div>
               </div>
+
+              {selectedTypeInfo && (
+                <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">
+                      Modules for {selectedTypeInfo.label}
+                    </p>
+                    {selectedTypeInfo.routePrefix && (
+                      <Badge variant="outline" className="font-mono text-xs">
+                        prefix {selectedTypeInfo.routePrefix}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    Selecting this tenant type attaches the modules below (paths are prefixed for this organization).
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                    {(selectedTypeInfo.modules || []).map((m) => (
+                      <Badge key={m.key} variant="secondary" className="text-xs font-normal">
+                        {m.label}
+                      </Badge>
+                    ))}
+                    {!selectedTypeInfo.modules?.length && (
+                      <span className="text-xs text-gray-500">
+                        Pack will be attached from server registry on create.
+                      </span>
+                    )}
+                  </div>
+                  {!!selectedTypeInfo.optionalModules?.length && (
+                    <p className="text-xs text-gray-500">
+                      Optional: {selectedTypeInfo.optionalModules.map((m) => m.label).join(', ')}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
@@ -755,7 +841,7 @@ const AdminTenantManagement = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
-                {TENANT_TYPES.map((t) => (
+                {tenantTypes.map((t) => (
                   <SelectItem key={t.value} value={t.value}>
                     {t.icon} {t.label}
                   </SelectItem>
@@ -815,7 +901,7 @@ const AdminTenantManagement = () => {
               {filteredTenants.map((tenant) => {
                 const tenantPlan = tenant.plan || tenant.tier || '';
                 const tierInfo = PLAN_TIERS.find(t => t.id === tenantPlan);
-                const typeInfo = TENANT_TYPES.find(t => t.value === tenant.type);
+                const typeInfo = tenantTypes.find(t => t.value === tenant.type);
                 const createdDate = tenant.created_at || tenant.createdAt;
                 return (
                   <tr key={tenant.id} className="border-b hover:bg-gray-50">
@@ -985,7 +1071,7 @@ const AdminTenantManagement = () => {
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">Type</label>
-                  <p>{TENANT_TYPES.find(t => t.value === selectedTenant.type)?.label || selectedTenant.type}</p>
+                  <p>{tenantTypes.find(t => t.value === selectedTenant.type)?.label || selectedTenant.type}</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-500">Email</label>

@@ -33,6 +33,14 @@ import {
   listAllTenantServers
 } from '../services/database-provisioning.service.js';
 import { onboardTenant, upgradePlan, checkTenantLimit } from '../services/tenant.service.js';
+import {
+  ALL_TENANT_TYPES,
+  CORE_TENANT_TYPES,
+  listTenantModulePacks,
+  getTenantModulePack,
+  buildTenantModuleAttachment,
+  normalizeTenantType,
+} from '../config/tenant-module-packs.js';
 
 const router = express.Router();
 
@@ -129,128 +137,66 @@ router.get('/tiers', async (req, res) => {
 
 /**
  * GET /entity-types
- * Get all supported organization/entity types
+ * Get all supported organization/entity types with attached module packs
  */
 router.get('/entity-types', async (req, res) => {
   try {
-    const entityTypes = [
-      {
-        type: 'hospital',
-        name: 'Hospital',
-        description: 'Multi-specialty hospital with departments',
-        can_have_children: true,
-        possible_children: ['lab', 'pharmacy', 'ambulance', 'homecare'],
-        features: ['opd', 'ipd', 'emergency', 'lab', 'pharmacy', 'radiology', 'telemedicine'],
-        min_plan: 'professional'
-      },
-      {
-        type: 'clinic',
-        name: 'Clinic',
-        description: 'Single or multi-doctor clinic',
-        can_have_children: true,
-        possible_children: ['lab', 'pharmacy'],
-        features: ['opd', 'telemedicine', 'prescriptions'],
-        min_plan: 'free'
-      },
-      {
-        type: 'lab',
-        name: 'Diagnostic Lab',
-        description: 'Pathology and diagnostic laboratory',
-        can_have_children: false,
-        can_be_child_of: ['hospital', 'clinic', 'corporate', 'ngo'],
-        features: ['sample_collection', 'test_results', 'home_collection'],
-        min_plan: 'free'
-      },
-      {
-        type: 'pharmacy',
-        name: 'Pharmacy',
-        description: 'Retail or hospital pharmacy',
-        can_have_children: false,
-        can_be_child_of: ['hospital', 'clinic', 'corporate', 'ngo'],
-        features: ['inventory', 'prescriptions', 'delivery'],
-        min_plan: 'free'
-      },
-      {
-        type: 'ambulance',
-        name: 'Ambulance Service',
-        description: 'Emergency ambulance services',
-        can_have_children: false,
-        can_be_child_of: ['hospital', 'corporate', 'ngo'],
-        features: ['dispatch', 'tracking', 'emergency_response'],
-        min_plan: 'professional'
-      },
-      {
-        type: 'corporate',
-        name: 'Corporate/Enterprise',
-        description: 'Corporate health management',
-        can_have_children: true,
-        possible_children: ['lab', 'pharmacy', 'ambulance', 'homecare'],
-        features: ['employee_wellness', 'health_camps', 'insurance_mgmt', 'analytics'],
-        min_plan: 'professional'
-      },
-      {
-        type: 'tpa',
-        name: 'Third Party Administrator',
-        description: 'Insurance TPA services',
-        can_have_children: false,
-        can_be_child_of: ['insurer'],
-        features: ['claims_processing', 'pre_auth', 'network_providers', 'analytics'],
-        min_plan: 'enterprise'
-      },
-      {
-        type: 'psu',
-        name: 'Public Sector Undertaking',
-        description: 'Government healthcare entity',
-        can_have_children: true,
-        possible_children: ['hospital', 'clinic', 'lab', 'pharmacy', 'ambulance'],
-        features: ['employee_health', 'pensioner_health', 'wellness', 'analytics'],
-        min_plan: 'enterprise'
-      },
-      {
-        type: 'insurer',
-        name: 'Insurance Company',
-        description: 'Health insurance provider',
-        can_have_children: true,
-        possible_children: ['tpa'],
-        features: ['policy_mgmt', 'claims', 'network_hospitals', 'analytics'],
-        min_plan: 'enterprise'
-      },
-      {
-        type: 'broker',
-        name: 'Insurance Broker',
-        description: 'Insurance broker/agent',
-        can_have_children: false,
-        features: ['policy_sales', 'claims_assist', 'renewals', 'client_mgmt'],
-        min_plan: 'professional'
-      },
-      {
-        type: 'ngo',
-        name: 'NGO / Non-Profit',
-        description: 'Healthcare NGO or charitable organization',
-        can_have_children: true,
-        possible_children: ['clinic', 'lab', 'pharmacy', 'ambulance', 'homecare'],
-        features: ['camps', 'community_health', 'donations', 'volunteers'],
-        min_plan: 'free'
-      },
-      {
-        type: 'homecare',
-        name: 'Home Healthcare',
-        description: 'Home healthcare and nursing services',
-        can_have_children: false,
-        can_be_child_of: ['hospital', 'clinic', 'corporate', 'ngo'],
-        features: ['home_visits', 'nursing_care', 'physiotherapy', 'equipment'],
-        min_plan: 'professional'
-      }
-    ];
-    
+    const coreOnly = String(req.query.core_only || '') === 'true';
+    const packs = listTenantModulePacks({ coreOnly });
+    const entityTypes = packs.map((pack) => ({
+      type: pack.id,
+      name: pack.label,
+      description: pack.description,
+      icon: pack.icon,
+      min_plan: pack.minPlan,
+      route_prefix: pack.routePrefix,
+      api_prefix: pack.apiPrefix,
+      login_path: pack.loginPath,
+      access_path: pack.accessPath,
+      modules: pack.modules,
+      optional_modules: pack.optionalModules || [],
+      module_keys: pack.module_keys,
+      module_count: pack.module_count,
+      is_core: CORE_TENANT_TYPES.includes(pack.id),
+    }));
+
     res.json({
       success: true,
       entity_types: entityTypes,
-      total: entityTypes.length
+      core_types: CORE_TENANT_TYPES,
+      total: entityTypes.length,
     });
   } catch (error) {
     console.error('Failed to get entity types:', error);
     res.status(500).json({ error: 'Failed to retrieve entity types' });
+  }
+});
+
+/**
+ * GET /module-packs
+ * Module packs registry (pack-centric view of tenant-type modules)
+ */
+router.get('/module-packs', async (req, res) => {
+  try {
+    const coreOnly = String(req.query.core_only || '') === 'true';
+    const packs = listTenantModulePacks({ coreOnly });
+    res.json({ success: true, packs, core_types: CORE_TENANT_TYPES, total: packs.length });
+  } catch (error) {
+    console.error('Failed to get module packs:', error);
+    res.status(500).json({ error: 'Failed to retrieve module packs' });
+  }
+});
+
+/**
+ * GET /module-packs/:type
+ */
+router.get('/module-packs/:type', async (req, res) => {
+  try {
+    const pack = getTenantModulePack(req.params.type);
+    if (!pack) return res.status(404).json({ error: 'Unknown tenant type' });
+    res.json({ success: true, pack });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to retrieve module pack' });
   }
 });
 
@@ -392,6 +338,8 @@ router.get('/tenants/:id', [
       where: { parent_organization_id: tenant.id },
       attributes: ['id', 'name', 'type', 'status', 'subdomain']
     });
+
+    const modulePack = getTenantModulePack(tenant.type);
     
     res.json({
       success: true,
@@ -408,8 +356,18 @@ router.get('/tenants/:id', [
         database_stats: dbStats,
         admin_users: adminUsers,
         children: children,
+        module_pack: tenant.metadata?.module_pack || (modulePack ? {
+          id: modulePack.id,
+          route_prefix: modulePack.routePrefix,
+          api_prefix: modulePack.apiPrefix,
+          modules: modulePack.modules,
+          optional_modules: modulePack.optionalModules || [],
+        } : null),
         access_urls: {
           subdomain: tenant.subdomain ? `https://${tenant.subdomain}.mediqzy.com` : null,
+          login: modulePack && tenant.subdomain
+            ? `https://${tenant.subdomain}.mediqzy.com${modulePack.loginPath || ''}`
+            : null,
           custom_domain: tenant.custom_domain ? `https://${tenant.custom_domain}` : null
         }
       }
@@ -430,10 +388,8 @@ router.get('/tenants/:id', [
  */
 router.post('/tenants', [
   body('name').notEmpty().isString().trim(),
-  body('type').isIn([
-    'hospital', 'clinic', 'lab', 'pharmacy', 'ambulance',
-    'corporate', 'tpa', 'psu', 'insurer', 'broker', 'ngo', 'homecare'
-  ]),
+  body('type').customSanitizer((v) => normalizeTenantType(v)).isIn(ALL_TENANT_TYPES),
+  body('enabled_modules').optional().isArray(),
   body('plan').isIn(['free', 'professional', 'enterprise']),
   body('billing_cycle').optional().isIn(['monthly', 'quarterly', 'annual']),
   body('email').isEmail().normalizeEmail(),
@@ -455,7 +411,7 @@ router.post('/tenants', [
     
     const {
       name,
-      type,
+      type: rawType,
       plan,
       billing_cycle = 'monthly',
       email,
@@ -472,13 +428,20 @@ router.post('/tenants', [
       admin_last_name,
       parent_organization_id,
       branding,
-      settings
+      settings,
+      enabled_modules,
     } = req.body;
+
+    const type = normalizeTenantType(rawType);
+    const modulePack = getTenantModulePack(type);
+    if (!modulePack) {
+      return res.status(400).json({ error: `Unsupported tenant type: ${rawType}` });
+    }
     
     // Validate tier requirements
     const tierInfo = PLAN_TIERS[plan];
     
-    // Check if entity type requires minimum plan
+    // Check if entity type requires minimum plan (pack.minPlan + legacy overrides)
     const entityRequirements = {
       hospital: 'professional',
       ambulance: 'professional',
@@ -487,10 +450,14 @@ router.post('/tenants', [
       broker: 'professional',
       tpa: 'enterprise',
       psu: 'enterprise',
-      insurer: 'enterprise'
+      insurer: 'enterprise',
+      diagnostic_centre: modulePack.minPlan || 'free',
+      lab: modulePack.minPlan || 'free',
+      clinic: modulePack.minPlan || 'free',
+      pharmacy: modulePack.minPlan || 'free',
     };
     
-    const minPlan = entityRequirements[type];
+    const minPlan = entityRequirements[type] || modulePack.minPlan;
     if (minPlan) {
       const planRank = { free: 0, professional: 1, enterprise: 2 };
       if (planRank[plan] < planRank[minPlan]) {
@@ -551,6 +518,26 @@ router.post('/tenants', [
       }
     }
     
+    // Attach type-prefixed module pack for this tenant
+    const moduleAttachment = buildTenantModuleAttachment(type, tierInfo.features || {});
+    if (Array.isArray(enabled_modules) && enabled_modules.length) {
+      const allowed = new Set([
+        ...(modulePack.modules || []).map((m) => m.key),
+        ...(modulePack.optionalModules || []).map((m) => m.key),
+      ]);
+      const selected = enabled_modules.map(String).filter((k) => allowed.has(k));
+      if (selected.length) {
+        moduleAttachment.features.modules = selected;
+        for (const key of allowed) {
+          moduleAttachment.features[`module_${key}`] = selected.includes(key);
+        }
+        moduleAttachment.metadata.module_pack.modules = [
+          ...(modulePack.modules || []),
+          ...(modulePack.optionalModules || []),
+        ].filter((m) => selected.includes(m.key));
+      }
+    }
+
     // Create tenant
     const tenant = await Tenant.create({
       name,
@@ -569,9 +556,12 @@ router.post('/tenants', [
       plan_start_date,
       plan_end_date,
       limits: tierInfo.limits,
-      features: tierInfo.features,
+      features: moduleAttachment.features,
       branding: branding || {},
-      settings: settings || {},
+      settings: {
+        ...(settings || {}),
+        ...moduleAttachment.settings,
+      },
       status: 'pending',
       parent_organization_id,
       admin_email,
@@ -579,7 +569,8 @@ router.post('/tenants', [
       metadata: {
         created_by: req.user.email,
         created_at: new Date(),
-        creation_method: 'super_admin_dashboard'
+        creation_method: 'super_admin_dashboard',
+        ...moduleAttachment.metadata,
       }
     });
     
@@ -650,10 +641,24 @@ router.post('/tenants', [
         slug: tenant.slug,
         type: tenant.type,
         plan: tenant.plan,
-        status: tenant.status
+        status: tenant.status,
+        features: tenant.features,
+        settings: tenant.settings,
+      },
+      module_pack: {
+        id: modulePack.id,
+        label: modulePack.label,
+        route_prefix: modulePack.routePrefix,
+        api_prefix: modulePack.apiPrefix,
+        login_path: modulePack.loginPath,
+        access_path: modulePack.accessPath,
+        modules: moduleAttachment.features.modules,
+        module_defs: moduleAttachment.metadata.module_pack?.modules || modulePack.modules,
       },
       access: {
         subdomain_url: `https://${tenant.subdomain}.mediqzy.com`,
+        login_url: `https://${tenant.subdomain}.mediqzy.com${modulePack.loginPath || ''}`,
+        access_url: `https://${tenant.subdomain}.mediqzy.com${modulePack.accessPath || ''}`,
         custom_domain_url: tenant.custom_domain ? `https://${tenant.custom_domain}` : null,
         admin_login: admin_email || tenant.admin_email
       },
@@ -683,6 +688,88 @@ router.post('/tenants', [
 // ============================================================================
 // TENANT UPDATES
 // ============================================================================
+
+/**
+ * POST /tenants/:id/modules/attach
+ * (Re)attach the module pack for the tenant's current type (or a provided type).
+ */
+router.post('/tenants/:id/modules/attach', [
+  param('id').isInt().toInt(),
+  body('type').optional().isString(),
+  body('enabled_modules').optional().isArray(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const tenant = await Tenant.findByPk(req.params.id);
+    if (!tenant) {
+      return res.status(404).json({ error: 'Tenant not found' });
+    }
+
+    const type = normalizeTenantType(req.body.type || tenant.type);
+    const modulePack = getTenantModulePack(type);
+    if (!modulePack) {
+      return res.status(400).json({ error: `Unsupported tenant type: ${type}` });
+    }
+
+    const planFeatures = PLAN_TIERS[tenant.plan]?.features || tenant.features || {};
+    const moduleAttachment = buildTenantModuleAttachment(type, planFeatures);
+    const enabled_modules = req.body.enabled_modules;
+    if (Array.isArray(enabled_modules) && enabled_modules.length) {
+      const allowed = new Set([
+        ...(modulePack.modules || []).map((m) => m.key),
+        ...(modulePack.optionalModules || []).map((m) => m.key),
+      ]);
+      const selected = enabled_modules.map(String).filter((k) => allowed.has(k));
+      if (selected.length) {
+        moduleAttachment.features.modules = selected;
+        for (const key of allowed) {
+          moduleAttachment.features[`module_${key}`] = selected.includes(key);
+        }
+        moduleAttachment.metadata.module_pack.modules = [
+          ...(modulePack.modules || []),
+          ...(modulePack.optionalModules || []),
+        ].filter((m) => selected.includes(m.key));
+      }
+    }
+
+    await tenant.update({
+      type,
+      features: {
+        ...(tenant.features || {}),
+        ...moduleAttachment.features,
+      },
+      settings: {
+        ...(tenant.settings || {}),
+        ...moduleAttachment.settings,
+      },
+      metadata: {
+        ...(tenant.metadata || {}),
+        ...moduleAttachment.metadata,
+        modules_attached_by: req.user.email,
+        modules_attached_at: new Date().toISOString(),
+      },
+    });
+
+    res.json({
+      success: true,
+      message: `Module pack "${modulePack.id}" attached to tenant ${tenant.id}`,
+      tenant: {
+        id: tenant.id,
+        type: tenant.type,
+        features: tenant.features,
+        settings: tenant.settings,
+      },
+      module_pack: moduleAttachment.metadata.module_pack,
+    });
+  } catch (error) {
+    console.error('Failed to attach modules:', error);
+    res.status(500).json({ error: 'Failed to attach module pack', details: error.message });
+  }
+});
 
 /**
  * PUT /tenants/:id
