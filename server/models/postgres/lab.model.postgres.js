@@ -257,11 +257,17 @@ Lab.prototype.generateAuthToken = function() {
     process.env.TENANT_ID ||
     null;
 
+  // Align with pharmacy tokens + ringFencing tokenField:'labId'.
+  // Labs have no refresh-token flow, so default TTL must be usable (not 15m).
   const payload = {
     id: this.id,
+    labId: this.id,
     user_id: this.id,
     email: this.email,
     role: 'lab',
+    userType: 'lab',
+    type: 'lab',
+    name: this.name,
     labName: this.name,
     isVerified: this.isVerified,
     department: this.department || 'pathology',
@@ -270,7 +276,7 @@ Lab.prototype.generateAuthToken = function() {
   };
   
   return jwt.sign(payload, JWT_CONFIG.SECRET, {
-    expiresIn: process.env.JWT_ACCESS_TTL || '15m'
+    expiresIn: process.env.JWT_ACCESS_TTL || JWT_CONFIG.EXPIRY?.NORMAL || '24h'
   });
 };
 
@@ -286,8 +292,12 @@ Lab.prototype.toJSON = function() {
 
 // Static methods
 Lab.findByEmail = async function(email) {
+  const normalized = String(email || '').toLowerCase().trim();
   return await this.findOne({
-    where: { email: email.toLowerCase() }
+    where: postgresSequelize.where(
+      postgresSequelize.fn('LOWER', postgresSequelize.col('email')),
+      normalized,
+    ),
   });
 };
 

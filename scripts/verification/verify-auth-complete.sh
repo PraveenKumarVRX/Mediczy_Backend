@@ -58,7 +58,7 @@ test_auth "Assistant" "assistant@mediczy.com" "Assistant123" "/api/assistant/log
 test_auth "Corporate" "corporate@mediczy.com" "Corporate123" "/api/corporate/login" "/api/corporate/verify"
 test_auth "Hospital" "hospital@mediczy.com" "Hospital123" "/api/hospital/login" "/api/hospital/verify"
 test_auth "Clinic" "clinic@mediczy.com" "Clinic123" "/api/clinic/login" "/api/clinic/verify"
-test_auth "Laboratory" "lab@mediczy.com" "Lab123" "/api/lab/login" "/api/lab/verify"
+test_auth "Laboratory" "lab@mediczy.com" "Lab@123" "/api/lab/login" "/api/lab/verify"
 test_auth "Pharmacy" "pharmacy@mediczy.com" "Pharmacy123" "/api/pharmacy/login" "/api/pharmacy/verify"
 test_auth "Ambulance" "ambulance@mediczy.com" "Ambulance123" "/api/ambulance/login" "/api/ambulance/verify"
 test_auth "Homecare" "homecare@mediczy.com" "Homecare123" "/api/homecare/login" "/api/homecare/verify"

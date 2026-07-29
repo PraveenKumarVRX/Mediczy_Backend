@@ -193,7 +193,7 @@ Return user data
 #### 10. **Laboratory**
 - **Endpoint:** `/api/lab/login`, `/api/lab/verify`
 - **Route:** `server/routes/lab/auth.routes.js`
-- **Test Account:** lab@mediczy.com / Lab123
+- **Test Account:** lab@mediczy.com / Lab@123
 - **Mock Data:**
   ```javascript
   {
@@ -472,7 +472,7 @@ Response: {success: true, clinic: {...}}
 ```bash
 # Login
 POST http://localhost:8000/api/lab/login
-Body: {"email": "lab@mediczy.com", "password": "Lab123"}
+Body: {"email": "lab@mediczy.com", "password": "Lab@123"}
 Response: {success: true, token: "...", lab: {...}}
 
 # Verify

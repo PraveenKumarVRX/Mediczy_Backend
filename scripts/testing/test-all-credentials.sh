@@ -124,7 +124,7 @@ test_login "Hospital" "hospital@mediczy.com" "Hospital123" "/hospital/login"
 test_login "Clinic" "clinic@mediczy.com" "Clinic123" "/clinic/login"
 
 # Test 10: Laboratory
-test_login "Laboratory" "lab@mediczy.com" "Lab123" "/lab/login"
+test_login "Laboratory" "lab@mediczy.com" "Lab@123" "/lab/login"
 
 # Test 11: Pharmacy
 test_login "Pharmacy" "pharmacy@mediczy.com" "Pharmacy123" "/pharmacy/login"

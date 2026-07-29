@@ -47,7 +47,7 @@ async function main() {
     const loginRes = await fetch(`${base}/api/lab/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: 'lab@mediczy.com', password: 'Lab123' }),
+      body: JSON.stringify({ email: 'lab@mediczy.com', password: 'Lab@123' }),
     });
     const loginBody = await jsonOrText(loginRes);
     assert(loginRes.ok, `Login failed (${loginRes.status}): ${JSON.stringify(loginBody)}`);

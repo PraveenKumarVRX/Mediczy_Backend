@@ -78,7 +78,12 @@ const LabLogin = () => {
       const controller = new AbortController();
       timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const { data } = await api.post('/lab/login', { email, password }, { signal: controller.signal, skipAuth: true });
+      const { data } = await api.post('/lab/login', { email: email.trim(), password }, { signal: controller.signal, skipAuth: true });
+
+      if (!data?.success || !data?.token) {
+        setError(data?.message || 'Login failed. Please check your credentials.');
+        return;
+      }
 
       establishLabSession(data.token, data.lab);
       navigate('/lab/dashboard', { replace: true });
@@ -88,8 +93,9 @@ const LabLogin = () => {
       if (err?.response?.data?.pending) { setIsPending(true); return; }
       if (err?.response?.status === 429) {
         setError('Too many login attempts. Please wait 15 minutes and try again.');
-      } else
-      if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
+      } else if (err?.response?.status === 403) {
+        setError(err?.response?.data?.message || 'Account is inactive. Please contact support.');
+      } else if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
         setError(err?.response?.data?.message || err?.message || 'Login failed. Please check your credentials.');

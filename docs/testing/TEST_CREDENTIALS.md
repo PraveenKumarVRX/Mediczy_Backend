@@ -15,7 +15,8 @@ Use these accounts for deterministic portal login checks when manual QA reports 
 | Portal | Email | Password | API Login Endpoint |
 |---|---|---|---|
 | Doctor | doctor@mediczy.com | Doctor123 | /api/doctors/login |
-| Lab | qa.lab@mediczy.com | QaLab@123 | /api/lab/login |
+| Lab | lab@mediczy.com | Lab@123 | /api/lab/login |
+| Lab (QA) | qa.lab@mediczy.com | QaLab@123 | /api/lab/login |
 | Pharmacy | qa.pharmacy@mediczy.com | QaPharm@123 | /api/pharmacy/login |
 | Nurse | qa.nurse@mediczy.com | QaNurse@123 | /api/nurse/login |
 | Hospital | qa.hospital@mediczy.com | QaHosp@123 | /api/hospital/auth/login |
@@ -128,7 +129,7 @@ If consultationNotes is missing, API returns 400 with code NOTES_REQUIRED.
 ### 10. 🧪 Laboratory
 ```
 📧 Email: lab@mediczy.com
-🔑 Password: Lab123
+🔑 Password: Lab@123
 🌐 URL: /lab/login
 📱 Access: Lab tests, results, reports
 ```
@@ -198,7 +199,7 @@ If consultationNotes is missing, API returns 400 with code NOTES_REQUIRED.
 | 7 | Corporate | `corporate@mediczy.com` | `Corporate123` | `/corporate/login` |
 | 8 | Hospital | `hospital@mediczy.com` | `Hospital123` | `/hospital/login` |
 | 9 | Clinic | `clinic@mediczy.com` | `Clinic123` | `/clinic/login` |
-| 10 | Lab | `lab@mediczy.com` | `Lab123` | `/lab/login` |
+| 10 | Lab | `lab@mediczy.com` | `Lab@123` | `/lab/login` |
 | 11 | Pharmacy | `pharmacy@mediczy.com` | `Pharmacy123` | `/pharmacy/login` |
 | 12 | Ambulance | `ambulance@mediczy.com` | `Ambulance123` | `/ambulance/login` |
 | 13 | Homecare | `homecare@mediczy.com` | `Homecare123` | `/homecare/login` |

@@ -2,11 +2,11 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import Lab from '../../models/postgres/lab.model.postgres.js';
+import postgresSequelize from '../../db/postgres-sequelize.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
 import pool from '../../db/pgPool.js';
-import bcrypt from 'bcrypt';
 import {
   createUploadMiddleware, registerLimiter,
   uploadDocuments, uploadIdCard, sendAdminLeadEmail, addOtpRoutes,
@@ -49,8 +49,14 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
-    const normalizedEmail = String(email).toLowerCase();
-    const lab = await Lab.findOne({ where: { email: normalizedEmail } });
+    const normalizedEmail = String(email).toLowerCase().trim();
+    // Case-insensitive lookup — legacy rows may store mixed-case emails.
+    const lab = await Lab.findOne({
+      where: postgresSequelize.where(
+        postgresSequelize.fn('LOWER', postgresSequelize.col('email')),
+        normalizedEmail,
+      ),
+    });
 
     if (!lab) {
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Lab not found');
@@ -83,6 +89,15 @@ router.post('/login', authLimiter, async (req, res) => {
         success: false,
         message: 'Account is inactive. Please contact support.'
       });
+    }
+
+    // Normalize stored email if it drifted from lowercase.
+    if (lab.email !== normalizedEmail) {
+      try {
+        await lab.update({ email: normalizedEmail });
+      } catch (emailNormErr) {
+        console.warn('[lab/login] email normalize skipped:', emailNormErr.message);
+      }
     }
 
     const token = lab.generateAuthToken();
