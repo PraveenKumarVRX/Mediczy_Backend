@@ -1233,6 +1233,7 @@ const LabDashboard = () => {
       </Card>
     </div>
   );
+  };
 
   // Master Test Catalog Data
   const testCategories = [
@@ -1869,7 +1870,6 @@ const LabDashboard = () => {
       </Dialog>
     </div>
   );
-  };
 
   const renderOrdersContent = () => (
     <div className="space-y-6">
