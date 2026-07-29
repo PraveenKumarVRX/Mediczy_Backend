@@ -5,11 +5,11 @@ import Redis from 'ioredis';
 
 import { connectToPostgresDB } from '../../db/postgres-sequelize.js';
 import postgresSequelize from '../../db/postgres-sequelize.js';
-import Lab from '../../models/postgres/lab.model.postgres.js';
 import Pharmacy from '../../models/postgres/pharmacy.model.postgres.js';
 import Hospital from '../../models/hospital.model.intelligent.js';
 import nurseModel from '../../models/nurse.model.intelligent.js';
 import { resetDoctorQaAccount } from './reset-doctor-qa-account.mjs';
+import { resetLabQaAccount } from './reset-lab-qa-account.mjs';
 
 dotenv.config({ path: '/home/ubuntu/Mediczy/server/.env' });
 
@@ -20,6 +20,17 @@ const QA_ACCOUNTS = {
     note: 'Existing seeded doctor account expected in environment',
   },
   lab: {
+    email: 'lab@mediczy.com',
+    password: 'Lab@123',
+    values: {
+      name: 'Mediczy Diagnostics Lab',
+      phoneNumber: '+919999000003',
+      status: 'active',
+      isVerified: true,
+      department: 'pathology',
+    },
+  },
+  labQa: {
     email: 'qa.lab@mediczy.com',
     password: 'QaLab@123',
     values: {
@@ -72,15 +83,9 @@ const QA_ACCOUNTS = {
   },
 };
 
-async function upsertLab() {
-  const { email, password, values } = QA_ACCOUNTS.lab;
-  let row = await Lab.findOne({ where: { email } });
-  if (!row) {
-    row = await Lab.create({ email, password, ...values });
-    return { action: 'created', id: row.id };
-  }
-  await row.update({ ...values, password });
-  return { action: 'updated', id: row.id };
+async function upsertLab(account = QA_ACCOUNTS.lab) {
+  const { email, password, values } = account;
+  return resetLabQaAccount({ email, password, values });
 }
 
 async function upsertPharmacy() {
@@ -155,7 +160,8 @@ async function main() {
     email: QA_ACCOUNTS.doctor.email,
     password: QA_ACCOUNTS.doctor.password,
   });
-  results.lab = await upsertLab();
+  results.lab = await upsertLab(QA_ACCOUNTS.lab);
+  results.labQa = await upsertLab(QA_ACCOUNTS.labQa);
   results.pharmacy = await upsertPharmacy();
   results.nurse = await upsertNurse();
   results.hospital = await upsertHospital();
@@ -168,6 +174,7 @@ async function main() {
   console.log('\nQA credentials for manual testing:');
   console.log(`doctor   | ${QA_ACCOUNTS.doctor.email}   | ${QA_ACCOUNTS.doctor.password}`);
   console.log(`lab      | ${QA_ACCOUNTS.lab.email}      | ${QA_ACCOUNTS.lab.password}`);
+  console.log(`labQa    | ${QA_ACCOUNTS.labQa.email}    | ${QA_ACCOUNTS.labQa.password}`);
   console.log(`pharmacy | ${QA_ACCOUNTS.pharmacy.email} | ${QA_ACCOUNTS.pharmacy.password}`);
   console.log(`nurse    | ${QA_ACCOUNTS.nurse.email}    | ${QA_ACCOUNTS.nurse.password}`);
   console.log(`hospital | ${QA_ACCOUNTS.hospital.email} | ${QA_ACCOUNTS.hospital.password}`);

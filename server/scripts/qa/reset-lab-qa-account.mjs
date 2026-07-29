@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Reset QA lab account — mirrors reset-doctor-qa-account.mjs.
+ * Reset canonical + QA lab accounts — mirrors reset-doctor-qa-account.mjs.
  *
  * Usage (on EC2):
  *   cd /home/ubuntu/Mediczy/server
  *   node scripts/qa/reset-lab-qa-account.mjs
+ *   # or via SSM-loaded env:
+ *   npm run fix:lab-login:ssm
  *
  * Optional env:
  *   LAB_EMAIL=lab@mediczy.com
- *   LAB_PASSWORD=Lab12345
+ *   LAB_PASSWORD=Lab@123
  */
 import dotenv from 'dotenv';
 
@@ -17,11 +19,24 @@ import postgresSequelize from '../../db/postgres-sequelize.js';
 import { Lab } from '../../models/index.js';
 
 dotenv.config({ path: '/home/ubuntu/Mediczy/server/.env' });
+dotenv.config();
 
 const EMAIL = (process.env.LAB_EMAIL || 'lab@mediczy.com').toLowerCase().trim();
-const PASSWORD = process.env.LAB_PASSWORD || 'Lab12345';
+const PASSWORD = process.env.LAB_PASSWORD || 'Lab@123';
 
-export async function resetLabQaAccount({ email = EMAIL, password = PASSWORD } = {}) {
+const DEFAULT_VALUES = {
+  name: 'Mediczy Diagnostics Lab',
+  phoneNumber: '+919999000003',
+  status: 'active',
+  isVerified: true,
+  department: 'pathology',
+};
+
+export async function resetLabQaAccount({
+  email = EMAIL,
+  password = PASSWORD,
+  values = DEFAULT_VALUES,
+} = {}) {
   const normalizedEmail = email.toLowerCase().trim();
   let lab = await Lab.findOne({
     where: postgresSequelize.where(
@@ -31,6 +46,8 @@ export async function resetLabQaAccount({ email = EMAIL, password = PASSWORD } =
   });
 
   const patch = {
+    ...values,
+    email: normalizedEmail,
     password,
     isVerified: true,
     status: 'active',
@@ -38,10 +55,6 @@ export async function resetLabQaAccount({ email = EMAIL, password = PASSWORD } =
 
   if (!lab) {
     lab = await Lab.create({
-      email: normalizedEmail,
-      password,
-      name: 'QA Diagnostics Lab',
-      phoneNumber: '+919999000003',
       ...patch,
     });
     return { action: 'created', id: lab.id, email: normalizedEmail };
@@ -53,10 +66,24 @@ export async function resetLabQaAccount({ email = EMAIL, password = PASSWORD } =
 
 async function main() {
   await connectToPostgresDB();
-  const result = await resetLabQaAccount();
-  console.log('Lab QA account reset:');
-  console.log(JSON.stringify(result, null, 2));
+
+  const primary = await resetLabQaAccount();
+  const qa = await resetLabQaAccount({
+    email: 'qa.lab@mediczy.com',
+    password: 'QaLab@123',
+    values: {
+      name: 'QA Central Lab',
+      phoneNumber: '9999991001',
+      status: 'active',
+      isVerified: true,
+      department: 'pathology',
+    },
+  });
+
+  console.log('Lab accounts reset:');
+  console.log(JSON.stringify({ primary, qa }, null, 2));
   console.log(`\nLogin: ${EMAIL} / ${PASSWORD}`);
+  console.log('QA:    qa.lab@mediczy.com / QaLab@123');
   console.log('URL:   https://app.mediqzy.com/lab/login');
   await postgresSequelize.close();
 }
