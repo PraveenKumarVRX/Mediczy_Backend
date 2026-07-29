@@ -63,33 +63,44 @@ export const TENANT_MODULE_PACKS = {
   hospital: {
     id: 'hospital',
     label: 'Hospital',
-    description: 'Full HMIS / hospital OS on a personalised subdomain (e.g. hycare.mediqzy.com)',
+    description:
+      'Hospital on a personalised subdomain (e.g. hycare.mediqzy.com). Staff use role logins — not /hospital/login.',
     icon: '🏥',
     minPlan: 'professional',
     routePrefix: '/hospital',
     apiPrefix: '/api/hospital',
-    loginPath: '/hospital/login',
+    // No single staff login — each role has its own path on the tenant host
+    loginPath: null,
     accessPath: '/hospital/dashboard',
-    appLoginPath: '/hospital/login',
+    appLoginPath: null,
+    roleLogins: true,
     modules: [
-      mod('dashboard', 'Dashboard', '/hospital/dashboard'),
-      mod('opd', 'OPD', '/hospital/opd'),
-      mod('ipd', 'IPD', '/hospital/ipd'),
-      mod('ehr', 'EHR / EMR', '/hospital/ehr'),
-      mod('appointments', 'Appointments', '/hospital/appointments'),
-      mod('patients', 'Patients', '/hospital/patients'),
-      mod('billing', 'Billing', '/hospital/billing'),
-      mod('lab_orders', 'Lab Orders', '/hospital/lab'),
-      mod('pharmacy', 'Pharmacy', '/hospital/pharmacy'),
-      mod('staff', 'Staff', '/hospital/staff'),
-      mod('insurance', 'Insurance', '/hospital/insurance'),
-      mod('hr', 'HR Portal', '/hr/login'),
-      mod('os', 'Hospital OS', '/hospital/os'),
-      mod('settings', 'Settings', '/hospital/settings'),
+      // Role portals (primary access on {subdomain}.mediqzy.com)
+      mod('doctor', 'Doctor', '/doctor/login', { kind: 'role_login', dashboard: '/doctor/dashboard' }),
+      mod('nurse', 'Nurse', '/nurse/login', { kind: 'role_login', dashboard: '/nurse/dashboard' }),
+      mod('frontdesk', 'Front Desk', '/frontdesk/login', { kind: 'role_login', dashboard: '/assistant/dashboard', aliases: ['/assistant/login'] }),
+      mod('lab', 'Lab', '/lab/login', { kind: 'role_login', dashboard: '/lab/dashboard' }),
+      mod('pharmacy', 'Pharmacy', '/pharmacy/login', { kind: 'role_login', dashboard: '/pharmacy/dashboard' }),
+      mod('mrd', 'MRD', '/mrd/login', { kind: 'role_login', dashboard: '/mrd/dashboard' }),
+      mod('hr', 'HR', '/hr/login', { kind: 'role_login', dashboard: '/hr/dashboard' }),
+      mod('accounts', 'Accounts', '/accounts/login', { kind: 'role_login', dashboard: '/accounts/dashboard' }),
+      mod('insurance_desk', 'Insurance Desk', '/insurance-desk/login', { kind: 'role_login', dashboard: '/insurance-desk/dashboard' }),
+      mod('ot', 'OT', '/ot/login', { kind: 'role_login', dashboard: '/ot/dashboard' }),
+      mod('icu', 'ICU', '/icu/login', { kind: 'role_login', dashboard: '/icu/dashboard' }),
+      mod('security', 'Security', '/security/login', { kind: 'role_login', dashboard: '/security/dashboard' }),
+      mod('quality', 'Quality', '/quality/login', { kind: 'role_login', dashboard: '/quality/dashboard' }),
+      mod('it_edp', 'IT / EDP', '/it-edp/login', { kind: 'role_login', dashboard: '/it-edp/dashboard' }),
+      // Ops modules (post-login hospital OS surfaces)
+      mod('opd', 'OPD', '/hospital/opd', { kind: 'ops' }),
+      mod('ipd', 'IPD', '/hospital/ipd', { kind: 'ops' }),
+      mod('ehr', 'EHR / EMR', '/hospital/ehr', { kind: 'ops' }),
+      mod('billing', 'Billing', '/hospital/billing', { kind: 'ops' }),
+      mod('os', 'Hospital OS', '/hospital/os', { kind: 'ops' }),
+      mod('settings', 'Settings', '/hospital/settings', { kind: 'ops' }),
     ],
     optionalModules: [
-      mod('ambulance', 'Ambulance Desk', '/hospital/ambulance', { enabled: false }),
-      mod('homecare', 'Homecare Desk', '/hospital/homecare', { enabled: false }),
+      mod('ambulance', 'Ambulance Desk', '/ambulance/login', { enabled: false, kind: 'role_login' }),
+      mod('homecare', 'Homecare Desk', '/homecare/login', { enabled: false, kind: 'role_login' }),
     ],
   },
 
@@ -399,6 +410,8 @@ export function listTenantModulePacks({ coreOnly = false } = {}) {
 /**
  * Build personalised portal URLs for a tenant subdomain / custom domain.
  * Primary: https://{subdomain}.mediqzy.com/...
+ *
+ * Hospital tenants use role logins (doctor/nurse/lab/…) — not a single /hospital/login.
  */
 export function buildTenantPortalUrls({
   type,
@@ -418,20 +431,32 @@ export function buildTenantPortalUrls({
       ? `https://${label}.${baseDomain}`
       : null;
 
-  const loginPath = pack?.loginPath || '/login';
-  const accessPath = pack?.accessPath || '/';
-  const appLoginPath = pack?.appLoginPath || `${pack?.routePrefix || ''}/login`;
+  const roleMods = (pack?.modules || []).filter((m) => m.enabled !== false && m.kind === 'role_login');
+
+  const role_logins = roleMods.map((m) => ({
+    key: m.key,
+    label: m.label,
+    path: m.path,
+    dashboard: m.dashboard || null,
+    url: origin ? `${origin}${m.path}` : null,
+  }));
+
+  const accessPath = pack?.accessPath || role_logins[0]?.dashboard || '/';
 
   return {
     origin,
     host: origin ? origin.replace(/^https?:\/\//, '') : null,
     subdomain: label,
     custom_domain: domain || null,
-    login_path: loginPath,
+    // Single login only when the pack defines one (clinic / lab / …). Hospital → null.
+    login_path: pack?.loginPath || null,
     access_path: accessPath,
-    login_url: origin ? `${origin}${loginPath}` : null,
+    login_url: pack?.loginPath && origin ? `${origin}${pack.loginPath}` : null,
     access_url: origin ? `${origin}${accessPath}` : null,
-    app_login_url: `https://${appHost}${appLoginPath}`,
+    app_login_url: pack?.appLoginPath ? `https://${appHost}${pack.appLoginPath}` : null,
+    // Role portals on personalised domain (hospital staff)
+    role_logins,
+    example_login_url: role_logins[0]?.url || (pack?.loginPath && origin ? `${origin}${pack.loginPath}` : null),
     module_prefix: pack?.routePrefix || null,
   };
 }
@@ -456,12 +481,14 @@ export function buildTenantModuleAttachment(type, planFeatures = {}, portalOpts 
     subdomain: portalOpts.subdomain,
     custom_domain: portalOpts.custom_domain || portalOpts.customDomain,
   });
+  const roleLoginKeys = (portal.role_logins || []).map((r) => r.key);
 
   return {
     features: {
       ...planFeatures,
       pack_id: pack.id,
       modules: moduleKeys,
+      role_logins: roleLoginKeys,
       // boolean convenience flags used by requireFeature middleware
       ...Object.fromEntries(moduleKeys.map((key) => [`module_${key}`, true])),
     },
@@ -470,18 +497,20 @@ export function buildTenantModuleAttachment(type, planFeatures = {}, portalOpts 
       api_prefix: pack.apiPrefix,
       login_path: pack.loginPath,
       access_path: pack.accessPath,
-      app_login_path: pack.appLoginPath || `${pack.routePrefix}/login`,
+      app_login_path: pack.appLoginPath || null,
       module_pack_id: pack.id,
+      role_logins: true,
       // Personalised domain — primary access surface
       tenant_domain: portal.host,
       portal_origin: portal.origin,
       portal_login_url: portal.login_url,
       portal_access_url: portal.access_url,
+      portal_role_logins: portal.role_logins,
     },
     metadata: {
       module_pack: {
         id: pack.id,
-        version: 2,
+        version: 3,
         route_prefix: pack.routePrefix,
         api_prefix: pack.apiPrefix,
         login_path: pack.loginPath,
@@ -490,6 +519,7 @@ export function buildTenantModuleAttachment(type, planFeatures = {}, portalOpts 
         tenant_domain: portal.host,
         portal_origin: portal.origin,
         portal_login_url: portal.login_url,
+        role_logins: portal.role_logins,
         modules: enabledModules,
         optional_modules: pack.optionalModules || [],
         attached_at: new Date().toISOString(),

@@ -155,9 +155,20 @@ router.get('/entity-types', async (req, res) => {
       login_path: pack.loginPath,
       access_path: pack.accessPath,
       app_login_path: pack.appLoginPath,
+      role_logins: pack.roleLogins || false,
       // Personalised domain pattern — replace {subdomain}
-      portal_login_example: `https://{subdomain}.mediqzy.com${pack.loginPath}`,
+      portal_login_example: pack.loginPath
+        ? `https://{subdomain}.mediqzy.com${pack.loginPath}`
+        : null,
       portal_access_example: `https://{subdomain}.mediqzy.com${pack.accessPath}`,
+      portal_role_login_examples: (pack.modules || [])
+        .filter((m) => m.kind === 'role_login')
+        .map((m) => ({
+          key: m.key,
+          label: m.label,
+          path: m.path,
+          url: `https://{subdomain}.mediqzy.com${m.path}`,
+        })),
       modules: pack.modules,
       optional_modules: pack.optionalModules || [],
       module_keys: pack.module_keys,

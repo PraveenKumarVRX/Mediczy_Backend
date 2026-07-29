@@ -612,11 +612,35 @@ const AdminTenantManagement = () => {
                     )}
                   </div>
                   <div className="rounded border border-blue-100 bg-white px-3 py-2 space-y-1">
-                    <p className="text-xs font-medium text-slate-700">Personalised domain (primary login)</p>
-                    <p className="font-mono text-sm text-blue-700 break-all">{previewPortalLogin}</p>
-                    <p className="text-xs text-gray-500">
-                      Same pattern as hycare.mediqzy.com / ajdental.mediqzy.com — type modules are organised under this host.
-                    </p>
+                    <p className="text-xs font-medium text-slate-700">Personalised domain</p>
+                    {formData.type === 'hospital' ? (
+                      <>
+                        <p className="font-mono text-sm text-blue-700 break-all">
+                          {`https://${previewSubdomain}.mediqzy.com/{role}/login`}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Staff use role logins (no /hospital/login). Examples:
+                          /doctor/login, /nurse/login, /frontdesk/login, /lab/login, /pharmacy/login, /mrd/login, /hr/login
+                        </p>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {(selectedTypeInfo.modules || [])
+                            .filter((m: any) => m.kind === 'role_login' || String(m.path || '').endsWith('/login'))
+                            .slice(0, 8)
+                            .map((m) => (
+                              <Badge key={m.key} variant="outline" className="text-[10px] font-mono font-normal">
+                                {m.path}
+                              </Badge>
+                            ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="font-mono text-sm text-blue-700 break-all">{previewPortalLogin}</p>
+                        <p className="text-xs text-gray-500">
+                          Same pattern as hycare.mediqzy.com / ajdental.mediqzy.com — type modules are organised under this host.
+                        </p>
+                      </>
+                    )}
                   </div>
                   <p className="text-xs text-gray-600">
                     Choosing this type attaches the modules below for that organisation.
