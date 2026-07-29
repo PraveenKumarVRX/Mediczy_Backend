@@ -1527,6 +1527,7 @@ const AppRoutes = () => {
         {/* Legacy redirects — send back to login so the slug is re-established */}
         <Route path="/hospital-insurance/*"               element={<Navigate to="/hospital-insurance/login" replace />} />
         {/* Slug-scoped insurance portal: /hospital/:slug/insurance/* */}
+        <Route path="/hospital/:slug/hr/login"                  element={<HRLogin />} />
         <Route path="/hospital/:slug/insurance/dashboard"       element={<InsurancePortalDashboard />} />
         <Route path="/hospital/:slug/insurance/claims"          element={<InsuranceClaimsPage />} />
         <Route path="/hospital/:slug/insurance/pre-auth"        element={<InsurancePreAuthPage />} />
@@ -1713,8 +1714,6 @@ const AppRoutes = () => {
         {/* ── HR ──────────────────────────────────────────────────────── */}
         <Route path="/hr/login"        element={<HRLogin />} />
         <Route path="/hr/:slug/login"  element={<HRLogin />} />
-        {/* Convenience alias matching /hospital/:slug/insurance pattern */}
-        <Route path="/hospital/:slug/hr/login" element={<HRLogin />} />
         <Route path="/hr/dashboard"    element={<HRDashboard />} />
         <Route path="/hr/staff"        element={<HRStaffPage />} />
         <Route path="/hr/attendance"   element={<HRAttendancePage />} />
