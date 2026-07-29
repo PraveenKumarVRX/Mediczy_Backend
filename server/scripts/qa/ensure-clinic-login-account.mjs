@@ -8,7 +8,7 @@
  *   CLINIC_CODE=AJDENTAL \
  *   CLINIC_SUBDOMAIN=ajdental \
  *   CLINIC_EMAIL=admin@ajdental.com \
- *   CLINIC_PASSWORD='AjDental@123' \
+ *   CLINIC_PASSWORD='Mayden@321' \
  *   node scripts/qa/ensure-clinic-login-account.mjs
  *
  * Or via admin API after deploy:
@@ -28,7 +28,7 @@ const DEFAULTS = {
   code: (process.env.CLINIC_CODE || 'AJDENTAL').toUpperCase(),
   subdomain: (process.env.CLINIC_SUBDOMAIN || 'ajdental').toLowerCase().trim(),
   email: (process.env.CLINIC_EMAIL || 'admin@ajdental.com').toLowerCase().trim(),
-  password: process.env.CLINIC_PASSWORD || 'AjDental@123',
+  password: process.env.CLINIC_PASSWORD || 'Mayden@321',
   phone: process.env.CLINIC_PHONE || '+919999000111',
   city: process.env.CLINIC_CITY || 'India',
   specialty: process.env.CLINIC_SPECIALTY || 'dental',

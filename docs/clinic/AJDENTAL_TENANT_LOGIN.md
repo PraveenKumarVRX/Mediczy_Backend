@@ -41,7 +41,7 @@ CLINIC_NAME='AJ Dental Clinic' \
 CLINIC_CODE=AJDENTAL \
 CLINIC_SUBDOMAIN=ajdental \
 CLINIC_EMAIL=admin@ajdental.com \
-CLINIC_PASSWORD='AjDental@123' \
+CLINIC_PASSWORD='Mayden@321' \
 npm run fix:clinic-login
 # or: npm run fix:clinic-login:ssm
 ```
@@ -57,7 +57,7 @@ curl -X POST https://api.mediqzy.com/api/admin/clinics/ensure-login \
     "code": "AJDENTAL",
     "subdomain": "ajdental",
     "email": "admin@ajdental.com",
-    "password": "AjDental@123",
+    "password": "Mayden@321",
     "specialty": "dental"
   }'
 ```
@@ -68,7 +68,7 @@ curl -X POST https://api.mediqzy.com/api/admin/clinics/ensure-login \
 |---|---|
 | URL | https://ajdental.mediqzy.com/login |
 | Email | `admin@ajdental.com` |
-| Password | `AjDental@123` |
+| Password | `Mayden@321` |
 
 ## Notes
 

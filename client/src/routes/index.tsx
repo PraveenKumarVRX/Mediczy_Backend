@@ -22,7 +22,6 @@ import HmisLegacyRedirect from "@/routes/HmisLegacyRedirect";
 
 // ─── Critical-path — always in the initial bundle ───────────────────────────
 import Index            from "@/pages/Index";
-import Login            from "@/auth/Login";
 import TenantAwareLogin from "@/pages/TenantAwareLogin";
 import ChangePassword   from "@/auth/ChangePassword";
 import ForgotPassword   from "@/pages/ForgotPassword";
