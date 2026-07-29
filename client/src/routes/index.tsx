@@ -1147,6 +1147,7 @@ const AppRoutes = () => {
 
         {/* ── Clinic ──────────────────────────────────────────────────── */}
         <Route path="/clinic/login"         element={<ClinicLogin />} />
+        <Route path="/clinic/:slug/login"   element={<ClinicLogin />} />
         <Route path="/clinic/register"      element={<ClinicRegister />} />
         <Route path="/clinic/dashboard"     element={<ClinicDashboard />} />
         <Route path="/clinic/appointments"  element={<ClinicAppointmentsPage />} />

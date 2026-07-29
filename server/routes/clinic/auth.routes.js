@@ -96,9 +96,14 @@ const JWT_SECRET = JWT_CONFIG.SECRET;
 // Clinic Login - Now using database
 router.post('/login', authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, clinic_slug, clinic_domain } = req.body;
+    const platformDomain = (process.env.PLATFORM_DOMAIN || 'mediqzy.com').toLowerCase();
+    const rawIdentifier = String(clinic_slug || clinic_domain || '').trim().toLowerCase();
+    const subdomainLabel = rawIdentifier.endsWith(`.${platformDomain}`)
+      ? rawIdentifier.slice(0, -(platformDomain.length + 1)).split('.')[0]
+      : rawIdentifier;
 
-    console.log('🏥 Clinic login attempt:', { email });
+    console.log('🏥 Clinic login attempt:', { email, clinic_slug: subdomainLabel || null });
 
     if (!email || !password) {
       return res.status(400).json({
@@ -113,7 +118,7 @@ router.post('/login', authLimiter, async (req, res) => {
               registration_number, total_beds, available_beds, specializations,
               facilities, metadata, status, is_verified
        FROM hospitals 
-       WHERE email = :email 
+       WHERE LOWER(email) = LOWER(:email) 
        LIMIT 1`,
       {
         replacements: { email },
@@ -150,6 +155,30 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    // Optional subdomain / slug scoping (e.g. ajdental.mediqzy.com/clinic/login)
+    if (subdomainLabel) {
+      const meta = typeof clinic.metadata === 'string'
+        ? (() => { try { return JSON.parse(clinic.metadata); } catch { return {}; } })()
+        : (clinic.metadata || {});
+      const allowed = [
+        meta.tenant_subdomain,
+        meta.tenant_slug,
+        meta.clinic_code,
+      ]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase());
+      const codeMatch = allowed.includes(subdomainLabel)
+        || allowed.includes(subdomainLabel.replace(/-/g, ''))
+        || allowed.some((v) => v.replace(/-/g, '') === subdomainLabel.replace(/-/g, ''));
+      if (allowed.length && !codeMatch) {
+        await auditLoginAttempt(req, clinic.id, email, false, 'Clinic subdomain mismatch');
+        return res.status(403).json({
+          success: false,
+          message: 'This account does not belong to this clinic portal'
+        });
+      }
+    }
+
     // Check if clinic is pending approval
     if (clinic.status === 'pending') {
       await auditLoginAttempt(req, clinic.id, email, false, 'Clinic pending approval');
@@ -176,7 +205,8 @@ router.post('/login', authLimiter, async (req, res) => {
         type: 'clinic',
         name: clinic.hospital_name,
         userType: 'clinic',
-        role: 'clinic'
+        role: 'clinic',
+        clinicSlug: subdomainLabel || clinic.metadata?.tenant_subdomain || null,
       },
       JWT_SECRET,
       { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
@@ -204,7 +234,9 @@ router.post('/login', authLimiter, async (req, res) => {
         availableBeds: clinic.available_beds,
         specializations: clinic.specializations || [],
         facilities: clinic.facilities || [],
-        isVerified: clinic.is_verified
+        isVerified: clinic.is_verified,
+        slug: clinic.metadata?.tenant_slug || subdomainLabel || null,
+        subdomain: clinic.metadata?.tenant_subdomain || subdomainLabel || null,
       }
     });
   } catch (error) {

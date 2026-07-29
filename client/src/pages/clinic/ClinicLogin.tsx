@@ -1,11 +1,21 @@
-import { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect, useMemo } from 'react';
+import { useNavigate, Link, useParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Building2, Eye, EyeOff, Loader2, Lock, ArrowRight, Clock, ShieldCheck, Stethoscope, HeartPulse } from 'lucide-react';
 import api from '@/utils/api';
 import { clearAuthTokens, setAuthData } from '@/hooks/auth';
+import { getTenantSubdomain, slugToDisplayName } from '@/utils/tenantHost';
 
 const ClinicLogin = () => {
+  const { slug } = useParams<{ slug?: string }>();
+  const pathSlug = String(slug || '').trim().toLowerCase() || undefined;
+  const hostSlug = getTenantSubdomain() || undefined;
+  const clinicSlug = pathSlug || hostSlug;
+  const clinicLabel = useMemo(
+    () => (clinicSlug ? slugToDisplayName(clinicSlug) : undefined),
+    [clinicSlug],
+  );
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,12 +51,27 @@ const ClinicLogin = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const { data } = await api.post('/clinic/login', { email, password }, { signal: controller.signal, skipAuth: true });
+      const authBody = clinicSlug
+        ? {
+            email,
+            password,
+            clinic_slug: clinicSlug,
+            clinic_domain: `${clinicSlug}.mediqzy.com`,
+          }
+        : { email, password };
+
+      const { data } = await api.post('/clinic/login', authBody, { signal: controller.signal, skipAuth: true });
 
       clearTimeout(timeoutId);
 
       setAuthData(data.token, 'clinic', data.clinic?.id);
-      localStorage.setItem('clinicData', JSON.stringify(data.clinic));
+      localStorage.setItem('clinicData', JSON.stringify({
+        ...data.clinic,
+        clinicSlug: clinicSlug || data.clinic?.slug || null,
+      }));
+      if (clinicSlug) {
+        localStorage.setItem('clinicHospitalSlug', clinicSlug);
+      }
       
       navigate('/clinic/dashboard', { replace: true });
     } catch (err: any) {
@@ -111,8 +136,14 @@ const ClinicLogin = () => {
 
           {/* Heading */}
           <div className="text-center mb-7">
-            <h1 className="text-3xl font-extrabold text-white tracking-tight">Clinic Portal</h1>
-            <p className="text-slate-400 text-sm mt-1.5">Sign in to your clinic management dashboard</p>
+            <h1 className="text-3xl font-extrabold text-white tracking-tight">
+              {clinicLabel ? `${clinicLabel} Login` : 'Clinic Portal'}
+            </h1>
+            <p className="text-slate-400 text-sm mt-1.5">
+              {clinicSlug
+                ? 'Sign in to your dental clinic management dashboard'
+                : 'Sign in to your clinic management dashboard'}
+            </p>
           </div>
 
           {/* Glass card */}

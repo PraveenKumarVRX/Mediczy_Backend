@@ -277,7 +277,11 @@ export const AuthProvider = ({ children }) => {
     
     if (isClinicRoute) {
       const clinicToken = getValidPortalToken('clinicToken');
-      if (!clinicToken && location.pathname !== '/clinic/login' && location.pathname !== '/clinic/register') {
+      const isClinicLoginPath =
+        location.pathname === '/clinic/login'
+        || location.pathname === '/clinic/register'
+        || /^\/clinic\/[^/]+\/login$/.test(location.pathname);
+      if (!clinicToken && !isClinicLoginPath) {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/clinic/login", { replace: true });
         return;

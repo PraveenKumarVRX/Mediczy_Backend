@@ -103,8 +103,9 @@ export const createClinicWithAdmin = async (req, res) => {
       });
     }
 
-    // Generate clinic slug if not provided
+    // Generate clinic slug if not provided; subdomain mirrors DNS label (e.g. ajdental)
     const slug = clinic_slug || clinic_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const subdomain = String(req.body.clinic_subdomain || slug).toLowerCase().trim().slice(0, 63);
 
     // Create clinic tenant
     const clinic = await Tenant.create({
@@ -113,6 +114,7 @@ export const createClinicWithAdmin = async (req, res) => {
       phone: clinic_phone,
       type: clinic_type,
       slug: slug,
+      subdomain,
       admin_email: admin_email,
       admin_password: admin_password, // Will be hashed by model hook
       registration_number: registration_number || null,
