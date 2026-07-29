@@ -390,8 +390,14 @@ export const bulkUploadLabs = async (req, res) => {
 
         const rows = await sequelize.query(`
           INSERT INTO labs (name, email, password, "phoneNumber", address, status, "isVerified", unique_id, "createdAt", "updatedAt")
-          VALUES (:name, :email, :password, :phoneNumber, :address::jsonb, 'active', false, :uniqueId, NOW(), NOW())
-          ON CONFLICT (email) DO NOTHING
+          VALUES (:name, :email, :password, :phoneNumber, :address::jsonb, 'active', true, :uniqueId, NOW(), NOW())
+          ON CONFLICT (email) DO UPDATE SET
+            password = EXCLUDED.password,
+            "phoneNumber" = COALESCE(NULLIF(EXCLUDED."phoneNumber", ''), labs."phoneNumber"),
+            name = COALESCE(EXCLUDED.name, labs.name),
+            status = 'active',
+            "isVerified" = true,
+            "updatedAt" = NOW()
           RETURNING id, name, email
         `, {
           replacements: { name: lab.name, email, password: hashedPassword, phoneNumber, address, uniqueId },
@@ -400,10 +406,10 @@ export const bulkUploadLabs = async (req, res) => {
 
         if (rows && rows.length > 0) {
           inserted++;
-          created.push({ id: rows[0].id, name: rows[0].name });
+          created.push({ id: rows[0].id, name: rows[0].name, email: rows[0].email });
         } else {
           skipped++;
-          errors.push({ lab: lab.name, reason: 'Email already exists (skipped)' });
+          errors.push({ lab: lab.name, reason: 'No row returned' });
         }
       } catch (e) {
         skipped++;
