@@ -88,7 +88,9 @@ async function main() {
   await postgresSequelize.close();
 }
 
-const isMain = process.argv[1]?.includes('reset-lab-qa-account');
+const isMain =
+  process.argv[1]?.includes('reset-lab-qa-account') ||
+  process.argv[2]?.includes('reset-lab-qa-account');
 if (isMain) {
   main().catch(async (err) => {
     console.error('Failed to reset lab QA account:', err.message);

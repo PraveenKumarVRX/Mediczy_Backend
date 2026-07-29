@@ -24,6 +24,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST || '13.127.125.93' }}
           username: ${{ secrets.SERVER_USER || 'ubuntu' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 45m
           script: |
             set -e
             cd /home/ubuntu/Mediczy
@@ -31,6 +32,10 @@ jobs:
             git pull origin main
             bash scripts/deploy/deploy-full-prod-s3.sh
             echo "✓ Full prod + S3 deployment complete"
+            echo "→ Ensuring lab@mediczy.com login account..."
+            cd /home/ubuntu/Mediczy/server
+            npm run fix:lab-login:ssm
+            echo "✓ Lab login account reset complete"
 
       - name: Post-deployment health check
         run: |

@@ -382,6 +382,40 @@ router.post('/health-risk/inference', authUser, requireRole('admin'), runHealthR
 // This includes GET /doctors, /doctors/filters/*, POST /doctors/:id/create-login, PATCH /doctors/:id/status
 
 router.get('/labs', authUser, requireRole('admin'), listLabs);
+router.post('/labs/ensure-login', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { resetLabQaAccount } = await import('../scripts/qa/reset-lab-qa-account.mjs');
+    const email = String(req.body?.email || 'lab@mediczy.com').toLowerCase().trim();
+    const password = String(req.body?.password || 'Lab@123');
+    const name = String(req.body?.name || 'Mediczy Diagnostics Lab');
+    const phoneNumber = String(req.body?.phoneNumber || '+919999000003');
+
+    const result = await resetLabQaAccount({
+      email,
+      password,
+      values: {
+        name,
+        phoneNumber,
+        status: 'active',
+        isVerified: true,
+        department: req.body?.department || 'pathology',
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: `Lab login account ${result.action}`,
+      result: { ...result, passwordSet: true },
+      login: { email, password, url: '/lab/login' },
+    });
+  } catch (error) {
+    console.error('[admin/labs/ensure-login]', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to ensure lab login account',
+    });
+  }
+});
 router.get('/pharmacies', authUser, requireRole('admin'), listPharmacies);
 
 /**
