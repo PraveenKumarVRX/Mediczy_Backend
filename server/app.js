@@ -611,7 +611,13 @@ const envOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
   : [];
 
-const defaultProdOrigins = ['https://app.mediqzy.com', 'https://mediqzy.com', 'https://www.mediqzy.com', 'https://mediczy.in', 'https://www.mediczy.in'];
+const defaultProdOrigins = [
+  'https://app.mediqzy.com',
+  'https://mediqzy.com',
+  'https://www.mediqzy.com',
+  'https://mediczy.in',
+  'https://www.mediczy.in',
+];
 const defaultDevOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -624,6 +630,17 @@ const defaultDevOrigins = [
   'https://192.168.1.72',
   'http://192.168.1.72'
 ];
+
+/** Personalised tenant hosts: https://{subdomain}.mediqzy.com (and mediczy.in). */
+const TENANT_ORIGIN_RE = /^https:\/\/[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.(mediqzy\.com|mediczy\.in)$/i;
+
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.includes(origin)) return true;
+  // Tenant personalised domains (hycare / ajdental / …)
+  if (TENANT_ORIGIN_RE.test(origin)) return true;
+  return false;
+}
 
 const baseOrigins = envOrigins.length > 0
   ? envOrigins
@@ -641,13 +658,13 @@ console.log('🔒 CORS Configuration:');
 console.log('   NODE_ENV:', process.env.NODE_ENV);
 console.log('   CORS_ORIGIN env:', process.env.CORS_ORIGIN);
 console.log('   Allowed Origins:', allowedOrigins);
+console.log('   Tenant wildcard: https://*.mediqzy.com / https://*.mediczy.in');
 
 // Block disallowed origins early with 403 (both preflight and actual requests)
 app.use((req, res, next) => {
   const origin = req.get('Origin');
-  const referer = req.get('Referer');
 
-  if (origin && !allowedOrigins.includes(origin)) {
+  if (origin && !isAllowedCorsOrigin(origin)) {
     console.warn('[CORS] Blocked origin:', origin, req.url);
     if (req.method === 'OPTIONS') {
       return res.status(403).end();
@@ -661,8 +678,8 @@ app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.includes(origin)) {
+
+    if (isAllowedCorsOrigin(origin)) {
       return callback(null, true);
     }
 
@@ -679,7 +696,7 @@ app.use(cors({
 // Handle preflight requests explicitly BEFORE rate limiting
 app.options('*', (req, res) => {
   const origin = req.get('Origin');
-  if (origin && !allowedOrigins.includes(origin)) {
+  if (origin && !isAllowedCorsOrigin(origin)) {
     return res.status(403).end();
   }
   res.header('Access-Control-Allow-Origin', origin || '*');
