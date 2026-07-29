@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import api from "@/utils/api";
 import { getToken, getUserType, hasHospitalPortalSession } from "@/hooks/auth";
 import { profileProps, doctorProfileProps } from "@/lib/user.type";
+import { getTenantSubdomain } from "@/utils/tenantHost";
 import "@/App.css";
 
 /**
@@ -277,9 +278,15 @@ export const AuthProvider = ({ children }) => {
     
     if (isClinicRoute) {
       const clinicToken = getValidPortalToken('clinicToken');
-      if (!clinicToken && location.pathname !== '/clinic/login' && location.pathname !== '/clinic/register') {
+      const clinicLoginPath = getTenantSubdomain() ? '/login' : '/clinic/login';
+      const isClinicLoginPath =
+        location.pathname === '/clinic/login'
+        || location.pathname === '/clinic/register'
+        || (Boolean(getTenantSubdomain()) && location.pathname === '/login')
+        || /^\/clinic\/[^/]+\/login$/.test(location.pathname);
+      if (!clinicToken && !isClinicLoginPath) {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate("/clinic/login", { replace: true });
+        navigate(clinicLoginPath, { replace: true });
         return;
       }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));

@@ -22,7 +22,7 @@ import HmisLegacyRedirect from "@/routes/HmisLegacyRedirect";
 
 // ─── Critical-path — always in the initial bundle ───────────────────────────
 import Index            from "@/pages/Index";
-import Login            from "@/auth/Login";
+import TenantAwareLogin from "@/pages/TenantAwareLogin";
 import ChangePassword   from "@/auth/ChangePassword";
 import ForgotPassword   from "@/pages/ForgotPassword";
 import ResetPassword    from "@/pages/ResetPassword";
@@ -384,6 +384,7 @@ const HospitalSupportPage      = lazyNamed(_HospitalModulePages, "HospitalSuppor
 
 // ─── Clinic ──────────────────────────────────────────────────────────────────
 const ClinicLogin     = lazy(() => import("@/pages/clinic/ClinicLogin"));
+const ClinicLoginEntry = lazy(() => import("@/pages/clinic/ClinicLoginEntry"));
 const ClinicRegister  = lazy(() => import("@/pages/clinic/ClinicRegister"));
 const ClinicDashboard = lazy(() => import("@/pages/clinic/ClinicDashboard"));
 
@@ -1025,7 +1026,7 @@ const AppRoutes = () => {
       <Routes>
         {/* ── Home / auth ─────────────────────────────────────────────── */}
         <Route path="/"                element={<MainLayout><Index /></MainLayout>} />
-        <Route path="/login"           element={<Login />} />
+        <Route path="/login"           element={<TenantAwareLogin />} />
         <Route path="/claim-status/:token" element={<ClaimStatusPublicPage />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -1147,7 +1148,8 @@ const AppRoutes = () => {
         {portalClinicalRoutes("hospital", CLINICAL_PAGES)}
 
         {/* ── Clinic ──────────────────────────────────────────────────── */}
-        <Route path="/clinic/login"         element={<ClinicLogin />} />
+        <Route path="/clinic/login"         element={<ClinicLoginEntry />} />
+        <Route path="/clinic/:slug/login"   element={<ClinicLogin />} />
         <Route path="/clinic/register"      element={<ClinicRegister />} />
         <Route path="/clinic/dashboard"     element={<ClinicDashboard />} />
         <Route path="/clinic/appointments"  element={<ClinicAppointmentsPage />} />

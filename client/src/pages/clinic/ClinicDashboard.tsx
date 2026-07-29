@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import ClinicLayout from '@/components/clinic/ClinicLayout';
 import api from '@/utils/api';
+import { clearClinicSession, getClinicLoginPath } from '@/utils/clinicPortal';
 
 const ClinicDashboard = () => {
   const navigate = useNavigate();
@@ -419,7 +420,7 @@ const ClinicDashboard = () => {
     const userType = localStorage.getItem('userType');
     
     if (!token) {
-      navigate('/clinic/login');
+      navigate(getClinicLoginPath());
       return;
     }
     
@@ -437,9 +438,8 @@ const ClinicDashboard = () => {
   }, [navigate]);
 
   const handleLogout = () => {
-    localStorage.removeItem('clinicToken');
-    localStorage.removeItem('clinicData');
-    navigate('/clinic/login');
+    clearClinicSession();
+    navigate(getClinicLoginPath());
   };
 
   if (loading) {

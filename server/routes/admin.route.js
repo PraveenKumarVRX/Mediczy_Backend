@@ -416,6 +416,46 @@ router.post('/labs/ensure-login', authUser, requireRole('admin'), async (req, re
     });
   }
 });
+
+/**
+ * Ensure clinic tenant + hospitals login account (subdomain clinic portals).
+ * Example: AJDENTAL → https://ajdental.mediqzy.com/clinic/login
+ */
+router.post('/clinics/ensure-login', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { ensureClinicLoginAccount } = await import('../scripts/qa/ensure-clinic-login-account.mjs');
+    const result = await ensureClinicLoginAccount({
+      name: req.body?.name || req.body?.clinic_name,
+      code: req.body?.code || req.body?.clinic_code,
+      subdomain: req.body?.subdomain || req.body?.clinic_slug,
+      slug: req.body?.slug || req.body?.clinic_slug || req.body?.subdomain,
+      email: req.body?.email || req.body?.admin_email,
+      password: req.body?.password || req.body?.admin_password,
+      phone: req.body?.phone || req.body?.clinic_phone,
+      city: req.body?.city,
+      specialty: req.body?.specialty || 'dental',
+      plan: req.body?.plan,
+      tenantId: req.body?.tenant_id || req.body?.tenantId,
+      registrationNumber: req.body?.registration_number,
+      admin_first_name: req.body?.admin_first_name,
+      admin_last_name: req.body?.admin_last_name,
+    });
+
+    return res.json({
+      success: true,
+      message: `Clinic tenant ${result.tenantAction}; login ${result.hospitalAction}; admin ${result.adminAction}`,
+      result,
+      login: result.login,
+    });
+  } catch (error) {
+    console.error('[admin/clinics/ensure-login]', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to ensure clinic login account',
+    });
+  }
+});
+
 router.get('/pharmacies', authUser, requireRole('admin'), listPharmacies);
 
 /**

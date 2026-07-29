@@ -1,6 +1,6 @@
 /**
  * Tenant host helpers — resolve hospital/clinic slug from the browser Host.
- * Mirrors HospitalLogin subdomain detection for department portals.
+ * Mirrors HospitalLogin subdomain detection for department and clinic portals.
  */
 
 const PLATFORM_APEX = 'mediqzy.com';
@@ -26,6 +26,7 @@ const RESERVED_SUBDOMAINS = new Set([
  * for apex / reserved platform hosts (app, api, www, ...).
  *
  * Examples:
+ *   ajdental.mediqzy.com    → "ajdental"
  *   hycare.mediqzy.com      → "hycare"
  *   app.mediqzy.com         → null
  *   www.mediqzy.com         → null

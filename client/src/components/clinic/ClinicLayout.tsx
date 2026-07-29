@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
 import api from "@/utils/api";
+import { clearClinicSession, getClinicLoginPath } from "@/utils/clinicPortal";
 
 interface ClinicLayoutProps {
   children: ReactNode;
@@ -92,7 +93,7 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
     const userType = localStorage.getItem("userType");
     
     if (!token) {
-      navigate("/clinic/login");
+      navigate(getClinicLoginPath());
       return;
     }
     
@@ -142,7 +143,8 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
     localStorage.removeItem("clinicToken");
     localStorage.removeItem("clinicData");
     localStorage.removeItem("userType");
-    navigate("/clinic/login");
+    clearClinicSession();
+    navigate(getClinicLoginPath());
   };
 
   const { theme, setTheme } = useTheme();

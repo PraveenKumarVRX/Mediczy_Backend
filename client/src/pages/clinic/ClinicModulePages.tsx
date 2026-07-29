@@ -688,69 +688,88 @@ export const ClinicQueuePage = () =>
 
 export const ClinicDoctorsPage = () => {
   const { toast } = useToast();
-  const filterKeys = ["on-duty", "on-call", "telehealth", "leave"] as const;
-  const [activeFilter, setActiveFilter] = useState(0);
   const [stats, setStats] = useState<StatCardProps[]>([
-    { title: "On Duty", value: "32" },
-    { title: "On Call", value: "6" },
-    { title: "Telehealth", value: "8" },
-    { title: "Leave", value: "3" },
+    { title: "Doctors", value: "0" },
+    { title: "Nurses", value: "0" },
+    { title: "Assistants", value: "0" },
+    { title: "Active", value: "0" },
   ]);
-  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
-    "on-duty": [
-      { label: "Dr. Kapoor", meta: "OPD • 14 patients", status: "Active" },
-      { label: "Dr. Sen", meta: "Dermatology • 9 patients", status: "Active" },
-      { label: "Dr. Nair", meta: "Pediatrics • 6 patients", status: "Active" },
-    ],
-    "on-call": [
-      { label: "Dr. Mehta", meta: "Emergency • 2 pending", status: "Standby" },
-      { label: "Dr. Rao", meta: "Surgery • 1 standby", status: "Standby" },
-    ],
-    telehealth: [
-      { label: "Dr. Iyer", meta: "Video • 4 patients", status: "Online" },
-      { label: "Dr. Bose", meta: "Tele-consult • 3 patients", status: "Online" },
-    ],
-    leave: [
-      { label: "Dr. Thomas", meta: "Back on Apr 6", status: "Leave" },
-      { label: "Dr. Dutta", meta: "Back on Apr 8", status: "Leave" },
-    ],
-  });
+  const [items, setItems] = useState<{ label: string; meta?: string; status?: string }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const activeKey = filterKeys[activeFilter];
+  const refresh = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await api.get("/clinic/dashboard/staff");
+      const staff = response.data?.data || [];
+      const doctors = staff.filter((s: any) => s.role === "doctor");
+      const nurses = staff.filter((s: any) => s.role === "nurse");
+      const assistants = staff.filter((s: any) => s.role === "doctor_assistant");
+      const active = staff.filter((s: any) => s.status === "active");
+      setStats([
+        { title: "Doctors", value: String(doctors.length) },
+        { title: "Nurses", value: String(nurses.length) },
+        { title: "Assistants", value: String(assistants.length) },
+        { title: "Active", value: String(active.length) },
+      ]);
+      setItems(
+        doctors.map((d: any) => ({
+          label: d.name,
+          meta: buildMeta([d.specialization, d.email, d.phone]),
+          status: d.status || "active",
+        })),
+      );
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load doctors.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
   const action: ActionMode = {
     kind: "dialog",
-    actionLabel: "Invite doctor",
-    dialogTitle: "Invite Doctor",
-    dialogDescription: "Send an invite to a doctor.",
+    actionLabel: "Add doctor",
+    dialogTitle: "Add Doctor",
+    dialogDescription: "Create a doctor login for this clinic.",
     fields: [
-      { key: "name", label: "Doctor Name", type: "text" },
+      { key: "first_name", label: "First Name", type: "text" },
+      { key: "last_name", label: "Last Name", type: "text" },
       { key: "email", label: "Email", type: "text" },
-      { key: "specialty", label: "Specialty", type: "text" },
+      { key: "phone", label: "Phone", type: "text" },
+      { key: "specialization", label: "Specialty", type: "text" },
+      { key: "password", label: "Temp Password", type: "text" },
     ],
     onSubmit: async (values) => {
-      const nextItem = {
-        label: values.name?.trim() ? `Invited: ${values.name.trim()}` : "Doctor invited",
-        meta: values.specialty || values.email || undefined,
-        status: "Invited",
-      };
-      setItemsByFilter((prev) => ({
-        ...prev,
-        "on-duty": [nextItem, ...(prev["on-duty"] || [])],
-      }));
-      setStats((prev) => setStatValueAt(prev, 0, toNumber(prev[0]?.value) + 1));
-      toast({ title: "Saved", description: "Doctor invite queued." });
+      await api.post("/clinic/dashboard/staff", {
+        role: "doctor",
+        first_name: values.first_name,
+        last_name: values.last_name,
+        email: values.email,
+        phone: values.phone,
+        specialization: values.specialization,
+        password: values.password || undefined,
+      });
+      toast({ title: "Saved", description: "Doctor added." });
+      await refresh();
     },
   };
 
   return (
     <ActionPage
       title="Doctors"
-      subtitle="Daily rosters and availability"
+      subtitle="Clinic doctors and availability"
       stats={stats}
-      initialItems={itemsByFilter[activeKey] || []}
+      initialItems={items}
       action={action}
-      onStatClick={(_, index) => setActiveFilter(index)}
-      activeStatIndex={activeFilter}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage="No doctors yet. Add the first doctor for AJ Dental."
     />
   );
 };
@@ -1320,37 +1339,88 @@ export const ClinicReportsPage = () => {
   );
 };
 
-export const ClinicStaffPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Staff",
-      subtitle: "Doctors, nurses, ops, and support",
-      stats: [
-        { title: "Active", value: "118" },
-        { title: "On Duty", value: "62" },
-        { title: "Shifts Pending", value: "9" },
-        { title: "Training", value: "86%" },
-      ],
-      items: [
-        { label: "Front desk", meta: "Full strength", status: "Ready" },
-        { label: "Nursing", meta: "2 gaps weekend", status: "Plan" },
-        { label: "Diagnostics", meta: "Audit scheduled", status: "Review" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Add staff",
-        dialogTitle: "Add Staff",
-        dialogDescription: "Add a staff member.",
-        fields: [
-          { key: "name", label: "Name", type: "text" },
-          { key: "role", label: "Role", type: "text" },
-          { key: "email", label: "Email", type: "text" },
-        ],
-        onSubmit: () => {},
-      },
+export const ClinicStaffPage = () => {
+  const { toast } = useToast();
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Active", value: "0" },
+    { title: "Doctors", value: "0" },
+    { title: "Nurses", value: "0" },
+    { title: "Assistants", value: "0" },
+  ]);
+  const [items, setItems] = useState<{ label: string; meta?: string; status?: string }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await api.get("/clinic/dashboard/staff");
+      const staff = response.data?.data || [];
+      setStats([
+        { title: "Active", value: String(staff.filter((s: any) => s.status === "active").length) },
+        { title: "Doctors", value: String(staff.filter((s: any) => s.role === "doctor").length) },
+        { title: "Nurses", value: String(staff.filter((s: any) => s.role === "nurse").length) },
+        { title: "Assistants", value: String(staff.filter((s: any) => s.role === "doctor_assistant").length) },
+      ]);
+      setItems(
+        staff.map((s: any) => ({
+          label: s.name,
+          meta: buildMeta([s.role, s.email, s.specialization]),
+          status: s.status || "active",
+        })),
+      );
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load staff.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Add staff",
+    dialogTitle: "Add Staff",
+    dialogDescription: "Add a doctor, nurse, or assistant.",
+    fields: [
+      { key: "first_name", label: "First Name", type: "text" },
+      { key: "last_name", label: "Last Name", type: "text" },
+      { key: "email", label: "Email", type: "text" },
+      { key: "phone", label: "Phone", type: "text" },
+      { key: "role", label: "Role (doctor/nurse/doctor_assistant)", type: "text" },
+      { key: "password", label: "Temp Password", type: "text" },
+    ],
+    onSubmit: async (values) => {
+      await api.post("/clinic/dashboard/staff", {
+        first_name: values.first_name,
+        last_name: values.last_name,
+        email: values.email,
+        phone: values.phone,
+        role: values.role || "nurse",
+        password: values.password || undefined,
+      });
+      toast({ title: "Saved", description: "Staff member added." });
+      await refresh();
     },
-    (v) => ({ label: v.name?.trim() ? `Added: ${v.name.trim()}` : "Added staff", meta: v.role || v.email || undefined, status: "Active" })
+  };
+
+  return (
+    <ActionPage
+      title="Staff"
+      subtitle="Doctors, nurses, and assistants"
+      stats={stats}
+      initialItems={items}
+      action={action}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage="No staff yet. Add clinic team members to get started."
+    />
   );
+};
 
 export const ClinicNotificationsPage = () => {
   const filterKeys = ["unread", "high", "reminders", "escalated"] as const;
@@ -1492,37 +1562,78 @@ export const ClinicNotificationsPage = () => {
   );
 };
 
-export const ClinicSettingsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Settings",
-      subtitle: "Clinic preferences, workflows, and integrations",
-      stats: [
-        { title: "Automation", value: "9 flows" },
-        { title: "Integrations", value: "5" },
-        { title: "Templates", value: "24" },
-        { title: "Audit Logs", value: "Clean" },
-      ],
-      items: [
-        { label: "OPD timings", meta: "Synced", status: "Live" },
-        { label: "Billing defaults", meta: "GST@18%", status: "Active" },
-        { label: "Notifications", meta: "Quiet hours set", status: "Ready" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Edit",
-        dialogTitle: "Edit Settings",
-        dialogDescription: "Update clinic configuration.",
-        fields: [
-          { key: "clinicName", label: "Clinic Name", type: "text" },
-          { key: "opdTimings", label: "OPD Timings", type: "text" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
+export const ClinicSettingsPage = () => {
+  const { toast } = useToast();
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Clinic", value: "—" },
+    { title: "Subdomain", value: "—" },
+    { title: "Status", value: "—" },
+    { title: "Verified", value: "—" },
+  ]);
+  const [items, setItems] = useState<{ label: string; meta?: string; status?: string }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await api.get("/clinic/dashboard/profile");
+      const profile = response.data?.data || {};
+      setStats([
+        { title: "Clinic", value: profile.name || "—" },
+        { title: "Subdomain", value: profile.subdomain || "—" },
+        { title: "Status", value: "Active" },
+        { title: "Verified", value: profile.isVerified ? "Yes" : "No" },
+      ]);
+      setItems([
+        { label: "Email", meta: profile.email, status: "Live" },
+        { label: "Phone", meta: profile.phone, status: "Live" },
+        { label: "City", meta: profile.city || profile.address?.city, status: "Live" },
+        { label: "Portal URL", meta: profile.accessUrl, status: "Live" },
+      ]);
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load settings.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Edit",
+    dialogTitle: "Edit Clinic Profile",
+    dialogDescription: "Update clinic contact details.",
+    fields: [
+      { key: "name", label: "Clinic Name", type: "text" },
+      { key: "phone", label: "Phone", type: "text" },
+      { key: "city", label: "City", type: "text" },
+      { key: "address", label: "Address", type: "textarea" },
+    ],
+    onSubmit: async (values) => {
+      await api.put("/clinic/dashboard/profile", values);
+      toast({ title: "Saved", description: "Clinic profile updated." });
+      await refresh();
     },
-    (v) => ({ label: "Settings updated", meta: v.opdTimings || v.clinicName || undefined, status: "Saved" })
+  };
+
+  return (
+    <ActionPage
+      title="Settings"
+      subtitle="Clinic profile and portal configuration"
+      stats={stats}
+      initialItems={items}
+      action={action}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage="No clinic profile loaded."
+    />
   );
+};
 
 export const ClinicSupportPage = () => {
   const { toast } = useToast();

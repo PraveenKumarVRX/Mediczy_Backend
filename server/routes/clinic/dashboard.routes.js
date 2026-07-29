@@ -6,6 +6,19 @@ import { Notification, Report, Prescription } from '../../models/index.js';
 // import Clinic from '../../models/postgres/clinic.model.postgres.js'; // Lazy import
 // import { postgresSequelize } from '../../db/postgres-sequelize.js'; // Lazy import
 
+import {
+  resolveClinicPortalContext,
+  getClinicPortalStats,
+  listClinicPortalPatients,
+  createClinicPortalPatient,
+  listClinicPortalAppointments,
+  createClinicPortalAppointment,
+  listClinicPortalStaff,
+  createClinicPortalStaff,
+} from '../../services/clinic-portal.service.js';
+import User from '../../models/postgres/user.model.postgres.js';
+import Tenant from '../../models/postgres/tenant.model.postgres.js';
+
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -16,7 +29,7 @@ const getModels = async () => {
   return { Clinic, postgresSequelize };
 };
 
-// Middleware to verify clinic token
+// Middleware to verify clinic token and resolve tenant context
 const verifyClinicToken = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
@@ -37,12 +50,18 @@ const verifyClinicToken = async (req, res, next) => {
       });
     }
 
-    // For now, skip database lookup and just use decoded token
-    req.clinic = { id: decoded.id, name: decoded.name };
-    req.clinicId = decoded.id;
+    const ctx = await resolveClinicPortalContext(decoded);
+    req.clinic = {
+      id: ctx.hospitalId || decoded.id,
+      name: decoded.name,
+      tenantId: ctx.tenantId,
+      slug: ctx.slug,
+    };
+    req.clinicId = ctx.hospitalId || decoded.id;
+    req.tenantId = ctx.tenantId;
+    req.clinicPortal = ctx;
     next();
   } catch (error) {
-    // If token is invalid, return 401
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError') {
       return res.status(401).json({
         success: false,
@@ -50,7 +69,6 @@ const verifyClinicToken = async (req, res, next) => {
       });
     }
 
-    // For other errors, also return 401
     res.status(401).json({
       success: false,
       message: 'Authentication failed'
@@ -58,29 +76,23 @@ const verifyClinicToken = async (req, res, next) => {
   }
 };
 
+const requireTenant = (req, res) => {
+  if (!req.tenantId) {
+    res.status(403).json({
+      success: false,
+      message: 'Clinic tenant not linked. Ask admin to run ensure-login for this clinic.',
+    });
+    return false;
+  }
+  return true;
+};
+
 // Get Dashboard Stats (with authentication)
 router.get('/stats', verifyClinicToken, async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    // Simulated stats - replace with actual database queries
-    const stats = {
-      todayAppointments: 24,
-      patientsWaiting: 8,
-      totalPatients: 1847,
-      todayRevenue: 45890,
-      monthlyRevenue: 845600,
-      revenueGrowth: 12
-    };
-
-    res.json({
-      success: true,
-      data: stats
-    });
+    if (!requireTenant(req, res)) return;
+    const stats = await getClinicPortalStats(req.tenantId);
+    res.json({ success: true, data: stats });
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
     res.status(500).json({
@@ -417,49 +429,9 @@ router.get('/health', (req, res) => {
 // Get Appointments
 router.get('/appointments', verifyClinicToken, async (req, res) => {
   try {
-    const { date, status } = req.query;
-
-    // Simulated data - replace with actual appointment queries
-    const appointments = [
-      {
-        id: 1,
-        patient: 'Rajesh Kumar',
-        time: '10:30 AM',
-        type: 'Consultation',
-        status: 'Waiting',
-        phone: '+91-9876543210'
-      },
-      {
-        id: 2,
-        patient: 'Priya Sharma',
-        time: '11:00 AM',
-        type: 'Follow-up',
-        status: 'Scheduled',
-        phone: '+91-9876543211'
-      },
-      {
-        id: 3,
-        patient: 'Amit Patel',
-        time: '11:30 AM',
-        type: 'Check-up',
-        status: 'Scheduled',
-        phone: '+91-9876543212'
-      },
-      {
-        id: 4,
-        patient: 'Neha Singh',
-        time: '12:00 PM',
-        type: 'Consultation',
-        status: 'Scheduled',
-        phone: '+91-9876543213'
-      }
-    ];
-
-    res.json({
-      success: true,
-      data: appointments,
-      total: appointments.length
-    });
+    if (!requireTenant(req, res)) return;
+    const appointments = await listClinicPortalAppointments(req.tenantId, { limit: req.query.limit });
+    res.json({ success: true, data: appointments, total: appointments.length });
   } catch (error) {
     console.error('Error fetching appointments:', error);
     res.status(500).json({
@@ -473,28 +445,23 @@ router.get('/appointments', verifyClinicToken, async (req, res) => {
 // Create Appointment
 router.post('/appointments', verifyClinicToken, async (req, res) => {
   try {
-    const { patientName, date, time, type, phone } = req.body;
-
-    if (!patientName || !date || !time) {
+    if (!requireTenant(req, res)) return;
+    const { patientName, date, time, type, phone, patientPhone, patientEmail, doctorName } = req.body;
+    if (!patientName || !(date || time)) {
       return res.status(400).json({
         success: false,
-        message: 'Patient name, date, and time are required'
+        message: 'Patient name and date/time are required'
       });
     }
-
-    // Create appointment logic here
-    const appointment = {
-      id: Date.now(),
-      clinicId: req.clinicId,
-      patient: patientName,
-      date,
-      time,
-      type: type || 'Consultation',
-      status: 'Scheduled',
-      phone,
-      createdAt: new Date()
-    };
-
+    const appointment = await createClinicPortalAppointment(req.tenantId, {
+      patientName,
+      appointmentDate: date,
+      appointmentTime: time,
+      appointmentType: type,
+      patientPhone: phone || patientPhone,
+      patientEmail,
+      doctorName,
+    });
     res.json({
       success: true,
       message: 'Appointment created successfully',
@@ -513,47 +480,12 @@ router.post('/appointments', verifyClinicToken, async (req, res) => {
 // Get Patients
 router.get('/patients', verifyClinicToken, async (req, res) => {
   try {
-    const { search, limit = 50, offset = 0 } = req.query;
-
-    // Simulated data - replace with actual patient queries
-    const patients = [
-      {
-        id: 1,
-        name: 'Rahul Mehta',
-        lastVisit: '2024-12-03',
-        diagnosis: 'Diabetes Follow-up',
-        nextVisit: '2024-12-17',
-        phone: '+91-9876543220',
-        age: 45,
-        gender: 'Male'
-      },
-      {
-        id: 2,
-        name: 'Anita Desai',
-        lastVisit: '2024-12-03',
-        diagnosis: 'Hypertension',
-        nextVisit: '2024-12-10',
-        phone: '+91-9876543221',
-        age: 52,
-        gender: 'Female'
-      },
-      {
-        id: 3,
-        name: 'Vikram Joshi',
-        lastVisit: '2024-12-02',
-        diagnosis: 'Routine Check-up',
-        nextVisit: '2025-01-02',
-        phone: '+91-9876543222',
-        age: 38,
-        gender: 'Male'
-      }
-    ];
-
-    res.json({
-      success: true,
-      data: patients,
-      total: patients.length
+    if (!requireTenant(req, res)) return;
+    const patients = await listClinicPortalPatients(req.tenantId, {
+      search: req.query.search,
+      limit: req.query.limit,
     });
+    res.json({ success: true, data: patients, total: patients.length });
   } catch (error) {
     console.error('Error fetching patients:', error);
     res.status(500).json({
@@ -567,27 +499,24 @@ router.get('/patients', verifyClinicToken, async (req, res) => {
 // Add Patient
 router.post('/patients', verifyClinicToken, async (req, res) => {
   try {
-    const { name, phone, email, age, gender, address } = req.body;
-
+    if (!requireTenant(req, res)) return;
+    const { name, phone, email, diagnosis, nextVisit, password } = req.body;
     if (!name || !phone) {
       return res.status(400).json({
         success: false,
         message: 'Patient name and phone are required'
       });
     }
-
-    const patient = {
-      id: Date.now(),
-      clinicId: req.clinicId,
+    const derivedEmail = email
+      || `${String(name).toLowerCase().replace(/[^a-z0-9]+/g, '.')}@${req.clinicPortal?.slug || 'clinic'}.patient.local`;
+    const patient = await createClinicPortalPatient(req.tenantId, {
       name,
       phone,
-      email,
-      age,
-      gender,
-      address,
-      createdAt: new Date()
-    };
-
+      email: derivedEmail,
+      diagnosis,
+      nextVisit,
+      password,
+    });
     res.json({
       success: true,
       message: 'Patient added successfully',
@@ -595,11 +524,34 @@ router.post('/patients', verifyClinicToken, async (req, res) => {
     });
   } catch (error) {
     console.error('Error adding patient:', error);
-    res.status(500).json({
+    res.status(error.status || 500).json({
       success: false,
-      message: 'Failed to add patient',
+      message: error.message || 'Failed to add patient',
       error: error.message
     });
+  }
+});
+
+// Staff list / create (portal token)
+router.get('/staff', verifyClinicToken, async (req, res) => {
+  try {
+    if (!requireTenant(req, res)) return;
+    const staff = await listClinicPortalStaff(req.tenantId);
+    res.json({ success: true, data: staff, total: staff.length });
+  } catch (error) {
+    console.error('Error fetching staff:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to fetch staff' });
+  }
+});
+
+router.post('/staff', verifyClinicToken, async (req, res) => {
+  try {
+    if (!requireTenant(req, res)) return;
+    const staff = await createClinicPortalStaff(req.tenantId, req.body);
+    res.status(201).json({ success: true, message: 'Staff created', data: staff });
+  } catch (error) {
+    console.error('Error creating staff:', error);
+    res.status(error.status || 500).json({ success: false, message: error.message || 'Failed to create staff' });
   }
 });
 
@@ -924,31 +876,26 @@ router.put('/inventory/:id', verifyClinicToken, async (req, res) => {
 // Get Clinic Profile
 router.get('/profile', verifyClinicToken, async (req, res) => {
   try {
-    const { Clinic } = await getModels();
-    const clinic = await Clinic.findByPk(req.clinicId);
-
+    const hospital = req.clinicPortal?.hospital;
+    const tenant = req.clinicPortal?.tenant || (req.tenantId ? await Tenant.findByPk(req.tenantId) : null);
+    const meta = hospital?.metadata || {};
     res.json({
       success: true,
       data: {
-        id: clinic.id,
-        name: clinic.name,
-        email: clinic.email,
-        phone: clinic.phone,
-        alternatePhone: clinic.alternatePhone,
-        clinicType: clinic.clinicType,
-        address: clinic.address,
-        city: clinic.city,
-        state: clinic.state,
-        pincode: clinic.pincode,
-        specializations: clinic.specializations,
-        services: clinic.services,
-        operatingHours: clinic.operatingHours,
-        hasPharmacy: clinic.hasPharmacy,
-        hasLab: clinic.hasLab,
-        numberOfRooms: clinic.numberOfRooms,
-        rating: clinic.rating,
-        totalReviews: clinic.totalReviews,
-        isVerified: clinic.isVerified
+        id: hospital?.id || req.clinicId,
+        tenantId: req.tenantId,
+        name: hospital?.hospitalName || hospital?.hospital_name || tenant?.name,
+        email: hospital?.email || tenant?.admin_email || tenant?.email,
+        phone: hospital?.phoneNumber || hospital?.phone_number || tenant?.phone,
+        clinicType: meta.clinicType || 'Dental Clinic',
+        address: hospital?.address || tenant?.address,
+        city: hospital?.city,
+        state: hospital?.state,
+        specializations: hospital?.specializations || ['Dental'],
+        subdomain: tenant?.subdomain,
+        slug: tenant?.slug,
+        accessUrl: tenant?.subdomain ? `https://${tenant.subdomain}.mediqzy.com` : null,
+        isVerified: hospital?.isVerified ?? tenant?.is_verified,
       }
     });
   } catch (error) {
@@ -964,25 +911,37 @@ router.get('/profile', verifyClinicToken, async (req, res) => {
 // Update Clinic Profile
 router.put('/profile', verifyClinicToken, async (req, res) => {
   try {
-    const updates = req.body;
-
-    // Remove fields that shouldn't be updated directly
-    delete updates.id;
-    delete updates.email;
-    delete updates.registrationNumber;
-    delete updates.rating;
-    delete updates.totalReviews;
-
-    await Clinic.update(updates, {
-      where: { id: req.clinicId }
-    });
-
-    const updatedClinic = await Clinic.findByPk(req.clinicId);
-
+    const hospital = req.clinicPortal?.hospital;
+    if (!hospital) {
+      return res.status(404).json({ success: false, message: 'Clinic login account not found' });
+    }
+    const allowed = ['hospitalName', 'phoneNumber', 'address', 'city', 'state', 'pincode'];
+    const updates = {};
+    if (req.body.name) updates.hospitalName = req.body.name;
+    if (req.body.phone) updates.phoneNumber = req.body.phone;
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) updates[key] = req.body[key];
+    }
+    await hospital.update(updates);
+    if (req.tenantId && (req.body.name || req.body.phone)) {
+      await Tenant.update(
+        {
+          ...(req.body.name ? { name: req.body.name } : {}),
+          ...(req.body.phone ? { phone: req.body.phone } : {}),
+        },
+        { where: { id: req.tenantId } },
+      );
+    }
     res.json({
       success: true,
       message: 'Profile updated successfully',
-      data: updatedClinic
+      data: {
+        id: hospital.id,
+        name: hospital.hospitalName,
+        phone: hospital.phoneNumber,
+        city: hospital.city,
+        state: hospital.state,
+      }
     });
   } catch (error) {
     console.error('Error updating profile:', error);
