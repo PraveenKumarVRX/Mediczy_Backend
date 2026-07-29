@@ -26,6 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { clearClinicSession, getClinicLoginPath } from "@/utils/clinicPortal";
 
 interface SidebarItem {
   icon: React.ElementType;
@@ -71,7 +72,8 @@ const ClinicSidebar = () => {
     localStorage.removeItem("clinicToken");
     localStorage.removeItem("clinicData");
     localStorage.removeItem("userType");
-    navigate("/clinic/login");
+    clearClinicSession();
+    navigate(getClinicLoginPath());
   };
 
   const NavItem = ({ item }: { item: SidebarItem }) => {

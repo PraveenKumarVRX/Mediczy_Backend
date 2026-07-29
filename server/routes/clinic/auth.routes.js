@@ -198,19 +198,42 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    const { resolveClinicPortalContext } = await import('../../services/clinic-portal.service.js');
+    const ctx = await resolveClinicPortalContext({
+      id: clinic.id,
+      hospitalId: clinic.id,
+      tenantId: meta.tenant_id,
+      clinicSlug: subdomainLabel || meta.tenant_subdomain || meta.tenant_slug,
+      email: clinic.email,
+    });
+
+    let adminUserId = null;
+    if (ctx.tenantId) {
+      const adminRows = await sequelize.query(
+        `SELECT id FROM users
+         WHERE organization_id = :tenantId AND role = 'clinic_admin' AND status = 'active'
+         ORDER BY id ASC LIMIT 1`,
+        { replacements: { tenantId: ctx.tenantId }, type: QueryTypes.SELECT },
+      );
+      adminUserId = adminRows?.[0]?.id || null;
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       {
         id: clinic.id,
+        hospitalId: clinic.id,
+        tenantId: ctx.tenantId || null,
+        adminUserId,
         email: clinic.email,
         type: 'clinic',
         name: clinic.hospital_name,
         userType: 'clinic',
         role: 'clinic',
-        clinicSlug: subdomainLabel || meta.tenant_subdomain || null,
+        clinicSlug: ctx.slug || subdomainLabel || meta.tenant_subdomain || null,
       },
       JWT_SECRET,
-      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '24h' }
     );
 
     console.log('✅ Clinic login successful:', clinic.hospital_name);
@@ -223,6 +246,7 @@ router.post('/login', authLimiter, async (req, res) => {
       token,
       clinic: {
         id: clinic.id,
+        tenantId: ctx.tenantId || null,
         name: clinic.hospital_name,
         email: clinic.email,
         phone: clinic.phone_number,
@@ -236,8 +260,8 @@ router.post('/login', authLimiter, async (req, res) => {
         specializations: clinic.specializations || [],
         facilities: clinic.facilities || [],
         isVerified: clinic.is_verified,
-        slug: meta.tenant_slug || subdomainLabel || null,
-        subdomain: meta.tenant_subdomain || subdomainLabel || null,
+        slug: meta.tenant_slug || ctx.slug || subdomainLabel || null,
+        subdomain: meta.tenant_subdomain || ctx.slug || subdomainLabel || null,
       }
     });
   } catch (error) {

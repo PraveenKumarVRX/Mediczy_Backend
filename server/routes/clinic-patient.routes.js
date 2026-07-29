@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { body } from 'express-validator';
-import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authClinicPortal } from '../middleware/clinicPortalAuth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   patientSignup,
@@ -61,7 +61,7 @@ router.post(
  */
 router.post(
   '/:clinicId/patient/add',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   [
     body('email').isEmail().withMessage('Invalid email'),
@@ -100,7 +100,7 @@ router.post(
  */
 router.get(
   '/:clinicId/patients',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   listClinicPatients
 );
@@ -111,7 +111,7 @@ router.get(
  */
 router.get(
   '/:clinicId/patients/:patientId',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   getPatientDetails
 );
@@ -122,7 +122,7 @@ router.get(
  */
 router.patch(
   '/:clinicId/patients/:patientId',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   [
     body('phone').optional().trim(),
@@ -142,7 +142,7 @@ router.patch(
  */
 router.get(
   '/:clinicId/patient-stats',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   getPatientStats
 );

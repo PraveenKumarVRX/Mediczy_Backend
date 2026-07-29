@@ -1,52 +1,49 @@
-# AJ Dental Clinic tenant (AJDENTAL)
+# AJ Dental Clinic — complete portal flow
 
-## Goal
-
-Dedicated dental clinic portal:
+## Canonical URL
 
 ```
 https://ajdental.mediqzy.com/login
 ```
 
-Aliases:
+(` /clinic/login` on the tenant host redirects here.)
 
-```
-https://ajdental.mediqzy.com/clinic/login  → redirects to /login on tenant host
-https://app.mediqzy.com/clinic/login
-https://app.mediqzy.com/clinic/ajdental/login
-```
+## Credentials
 
-## What was provisioned
-
-| Field | Value |
+| | |
 |---|---|
-| Tenant id | `56` (prod) |
-| Name | AJ Dental Clinic |
-| Code | `AJDENTAL` |
-| Subdomain | `ajdental` |
-| Type | `clinic` |
-| Status | `active` |
-| Access URL | `https://ajdental.mediqzy.com` |
+| Email | `admin@ajdental.com` |
+| Password | `Mayden@321` |
 
-DNS for `ajdental.mediqzy.com` is covered by the Cloudflare `*.mediqzy.com` record (same origin as `app`).
+## What is wired
 
-## Finish login account (EC2 — required once)
+1. **Tenant** (`tenants`) — type `clinic`, subdomain `ajdental`
+2. **Hospital login row** (`hospitals`) — powers `POST /api/clinic/login`
+3. **Clinic admin user** (`users.role=clinic_admin`) — staff/patient management identity
+4. **Portal JWT** — includes `tenantId`, `hospitalId`, `clinicSlug`
+5. **Dashboard APIs** (real DB, tenant-scoped):
+   - `GET /api/clinic/dashboard/stats`
+   - `GET|POST /api/clinic/dashboard/patients`
+   - `GET|POST /api/clinic/dashboard/appointments`
+   - `GET|POST /api/clinic/dashboard/staff`
+   - `GET|PUT /api/clinic/dashboard/profile`
+6. **UI modules** — Dashboard, Patients, Appointments, Doctors, Staff, Settings
+7. **Admin create** — creating a clinic tenant also provisions hospital login + clinic_admin
 
-Clinic web login reads the `hospitals` table. Create/update that row + sync tenant slug:
+## One-time EC2 provision (if not already done)
 
 ```bash
 cd /home/ubuntu/Mediczy/server
-git pull
+git pull   # or checkout this branch
 CLINIC_NAME='AJ Dental Clinic' \
 CLINIC_CODE=AJDENTAL \
 CLINIC_SUBDOMAIN=ajdental \
 CLINIC_EMAIL=admin@ajdental.com \
 CLINIC_PASSWORD='Mayden@321' \
 npm run fix:clinic-login
-# or: npm run fix:clinic-login:ssm
 ```
 
-After deploy, admins can also call:
+Or after deploy:
 
 ```bash
 curl -X POST https://api.mediqzy.com/api/admin/clinics/ensure-login \
@@ -58,21 +55,26 @@ curl -X POST https://api.mediqzy.com/api/admin/clinics/ensure-login \
     "subdomain": "ajdental",
     "email": "admin@ajdental.com",
     "password": "Mayden@321",
-    "specialty": "dental"
+    "specialty": "dental",
+    "tenant_id": 56
   }'
 ```
 
-## Login credentials (after ensure script)
+## Flow
 
-| | |
-|---|---|
-| URL | https://ajdental.mediqzy.com/login |
-| Email | `admin@ajdental.com` |
-| Password | `Mayden@321` |
+```
+Admin creates clinic tenant (optional)
+        ↓
+ensure-login / auto-provision
+  → tenants + hospitals + clinic_admin
+        ↓
+https://ajdental.mediqzy.com/login
+        ↓
+clinicToken (tenant-linked)
+        ↓
+Dashboard → Patients / Appointments / Staff / Settings
+```
 
-## Notes
+## DNS
 
-- Change the password after first login.
-- On tenant hosts, `/login` is clinic login; `app.mediqzy.com/login` stays the platform login.
-- Frontend Host detection (after deploy) sends `clinic_slug=ajdental` from `ajdental.mediqzy.com`.
-- SPA API calls still use `VITE_API_URL=https://app.mediqzy.com/api`.
+Covered by Cloudflare `*.mediqzy.com` → same origin as `app`.

@@ -435,12 +435,15 @@ router.post('/clinics/ensure-login', authUser, requireRole('admin'), async (req,
       city: req.body?.city,
       specialty: req.body?.specialty || 'dental',
       plan: req.body?.plan,
+      tenantId: req.body?.tenant_id || req.body?.tenantId,
       registrationNumber: req.body?.registration_number,
+      admin_first_name: req.body?.admin_first_name,
+      admin_last_name: req.body?.admin_last_name,
     });
 
     return res.json({
       success: true,
-      message: `Clinic tenant ${result.tenantAction}; login account ${result.hospitalAction}`,
+      message: `Clinic tenant ${result.tenantAction}; login ${result.hospitalAction}; admin ${result.adminAction}`,
       result,
       login: result.login,
     });
