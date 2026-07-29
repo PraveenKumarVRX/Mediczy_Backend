@@ -327,6 +327,7 @@ const AssistantReports         = lazy(() => import("@/pages/assistant/AssistantR
 // ─── Hospital ────────────────────────────────────────────────────────────────
 const HospitalRegister                 = lazy(() => import("@/pages/hospital/HospitalRegister"));
 const HospitalLogin                    = lazy(() => import("@/pages/hospital/HospitalLogin"));
+const FrontDeskLogin                   = lazy(() => import("@/pages/hospital/FrontDeskLogin"));
 const HospitalDashboard                = lazy(() => import("@/pages/hospital/HospitalDashboard"));
 const CEODashboard                     = lazy(() => import("@/pages/hospital/CEODashboard"));
 const COODashboard                     = lazy(() => import("@/pages/hospital/COODashboard"));
@@ -1273,7 +1274,9 @@ const AppRoutes = () => {
         {portalClinicalRoutes("nurse", CLINICAL_PAGES)}
         <Route path="/nurse/mdt/:sessionId/room" element={<MDTRoom />} />
 
-        {/* ── Assistant ───────────────────────────────────────────────── */}
+        {/* ── Assistant / Front Desk ──────────────────────────────────── */}
+        <Route path="/frontdesk/login"             element={<FrontDeskLogin />} />
+        <Route path="/frontdesk/dashboard"         element={<Navigate to="/assistant/dashboard" replace />} />
         <Route path="/assistant/login"             element={<AssistantLogin />} />
         <Route path="/assistant/dashboard"         element={<MainLayout><AssistantDashboard /></MainLayout>} />
         <Route path="/assistant/register-patient"  element={<MainLayout><AssistantRegisterPatient /></MainLayout>} />
