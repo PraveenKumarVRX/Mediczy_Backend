@@ -1,0 +1,43 @@
+name: Fix Lab Login Account
+
+# Lightweight prod ops job: pull latest main and upsert lab@mediczy.com / Lab@123.
+# Triggered by [fix-lab-login] in the commit message, or manually.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  fix-lab-login:
+    name: Reset lab@mediczy.com on EC2
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[fix-lab-login]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reset lab account on production
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST || '13.127.125.93' }}
+          username: ${{ secrets.SERVER_USER || 'ubuntu' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 10m
+          script: |
+            set -e
+            cd /home/ubuntu/Mediczy
+            git fetch origin main
+            git pull origin main
+            cd server
+            npm run fix:lab-login:ssm
+            echo "✓ lab account reset done"
+
+      - name: Verify lab login
+        run: |
+          set -e
+          # Auth limiter is IP-scoped; give any prior probe window a moment.
+          sleep 5
+          HTTP=$(curl -sS -o /tmp/lab-login.json -w "%{http_code}" -X POST 'https://api.mediqzy.com/api/lab/login' \
+            -H 'Content-Type: application/json' \
+            -d '{"email":"lab@mediczy.com","password":"Lab@123"}')
+          echo "login_http=$HTTP"
+          cat /tmp/lab-login.json; echo
+          test "$HTTP" = "200"
+          echo "✓ lab@mediczy.com / Lab@123 works"
