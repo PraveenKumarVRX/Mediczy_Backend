@@ -105,6 +105,9 @@ interface TenantTypeOption {
   minPlan: 'free' | 'professional' | 'enterprise';
   description?: string;
   routePrefix?: string;
+  loginPath?: string;
+  accessPath?: string;
+  portalLoginExample?: string;
   modules?: TenantModule[];
   optionalModules?: TenantModule[];
   isCore?: boolean;
@@ -227,6 +230,16 @@ const AdminTenantManagement = () => {
 
   const token = localStorage.getItem('adminToken');
   const selectedTypeInfo = tenantTypes.find((t) => t.value === formData.type);
+  const previewSubdomain = (formData.custom_subdomain || formData.subdomain || formData.name || 'your-org')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .substring(0, 63) || 'your-org';
+  const previewLoginPath = selectedTypeInfo?.loginPath || '/login';
+  const previewPortalLogin = `https://${previewSubdomain}.mediqzy.com${previewLoginPath}`;
 
   useEffect(() => {
     if (!token) {
@@ -253,6 +266,9 @@ const AdminTenantManagement = () => {
           minPlan: (row.min_plan || 'free') as TenantTypeOption['minPlan'],
           description: row.description,
           routePrefix: row.route_prefix,
+          loginPath: row.login_path,
+          accessPath: row.access_path,
+          portalLoginExample: row.portal_login_example,
           modules: row.modules || [],
           optionalModules: row.optional_modules || [],
           isCore: Boolean(row.is_core),
@@ -585,18 +601,25 @@ const AdminTenantManagement = () => {
 
               {selectedTypeInfo && (
                 <div className="rounded-md border border-slate-200 bg-slate-50 p-3 space-y-2">
-                  <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <p className="text-sm font-medium">
                       Modules for {selectedTypeInfo.label}
                     </p>
                     {selectedTypeInfo.routePrefix && (
                       <Badge variant="outline" className="font-mono text-xs">
-                        prefix {selectedTypeInfo.routePrefix}
+                        modules {selectedTypeInfo.routePrefix}/*
                       </Badge>
                     )}
                   </div>
+                  <div className="rounded border border-blue-100 bg-white px-3 py-2 space-y-1">
+                    <p className="text-xs font-medium text-slate-700">Personalised domain (primary login)</p>
+                    <p className="font-mono text-sm text-blue-700 break-all">{previewPortalLogin}</p>
+                    <p className="text-xs text-gray-500">
+                      Same pattern as hycare.mediqzy.com / ajdental.mediqzy.com — type modules are organised under this host.
+                    </p>
+                  </div>
                   <p className="text-xs text-gray-600">
-                    Selecting this tenant type attaches the modules below (paths are prefixed for this organization).
+                    Choosing this type attaches the modules below for that organisation.
                   </p>
                   <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
                     {(selectedTypeInfo.modules || []).map((m) => (

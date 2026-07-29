@@ -39,6 +39,7 @@ import {
   listTenantModulePacks,
   getTenantModulePack,
   buildTenantModuleAttachment,
+  buildTenantPortalUrls,
   normalizeTenantType,
 } from '../config/tenant-module-packs.js';
 
@@ -153,6 +154,10 @@ router.get('/entity-types', async (req, res) => {
       api_prefix: pack.apiPrefix,
       login_path: pack.loginPath,
       access_path: pack.accessPath,
+      app_login_path: pack.appLoginPath,
+      // Personalised domain pattern — replace {subdomain}
+      portal_login_example: `https://{subdomain}.mediqzy.com${pack.loginPath}`,
+      portal_access_example: `https://{subdomain}.mediqzy.com${pack.accessPath}`,
       modules: pack.modules,
       optional_modules: pack.optionalModules || [],
       module_keys: pack.module_keys,
@@ -340,6 +345,11 @@ router.get('/tenants/:id', [
     });
 
     const modulePack = getTenantModulePack(tenant.type);
+    const portal = buildTenantPortalUrls({
+      type: tenant.type,
+      subdomain: tenant.subdomain,
+      custom_domain: tenant.custom_domain,
+    });
     
     res.json({
       success: true,
@@ -364,10 +374,10 @@ router.get('/tenants/:id', [
           optional_modules: modulePack.optionalModules || [],
         } : null),
         access_urls: {
-          subdomain: tenant.subdomain ? `https://${tenant.subdomain}.mediqzy.com` : null,
-          login: modulePack && tenant.subdomain
-            ? `https://${tenant.subdomain}.mediqzy.com${modulePack.loginPath || ''}`
-            : null,
+          subdomain: portal.origin,
+          login: portal.login_url,
+          access: portal.access_url,
+          app_login: portal.app_login_url,
           custom_domain: tenant.custom_domain ? `https://${tenant.custom_domain}` : null
         }
       }
@@ -518,8 +528,11 @@ router.post('/tenants', [
       }
     }
     
-    // Attach type-prefixed module pack for this tenant
-    const moduleAttachment = buildTenantModuleAttachment(type, tierInfo.features || {});
+    // Attach type-prefixed module pack for this tenant (personalised subdomain URLs)
+    const moduleAttachment = buildTenantModuleAttachment(type, tierInfo.features || {}, {
+      subdomain: finalSubdomain,
+      custom_domain: tierInfo.custom_domain ? custom_domain : null,
+    });
     if (Array.isArray(enabled_modules) && enabled_modules.length) {
       const allowed = new Set([
         ...(modulePack.modules || []).map((m) => m.key),
@@ -656,9 +669,12 @@ router.post('/tenants', [
         module_defs: moduleAttachment.metadata.module_pack?.modules || modulePack.modules,
       },
       access: {
+        ...(moduleAttachment.portal || buildTenantPortalUrls({
+          type,
+          subdomain: tenant.subdomain,
+          custom_domain: tenant.custom_domain,
+        })),
         subdomain_url: `https://${tenant.subdomain}.mediqzy.com`,
-        login_url: `https://${tenant.subdomain}.mediqzy.com${modulePack.loginPath || ''}`,
-        access_url: `https://${tenant.subdomain}.mediqzy.com${modulePack.accessPath || ''}`,
         custom_domain_url: tenant.custom_domain ? `https://${tenant.custom_domain}` : null,
         admin_login: admin_email || tenant.admin_email
       },
@@ -716,7 +732,10 @@ router.post('/tenants/:id/modules/attach', [
     }
 
     const planFeatures = PLAN_TIERS[tenant.plan]?.features || tenant.features || {};
-    const moduleAttachment = buildTenantModuleAttachment(type, planFeatures);
+    const moduleAttachment = buildTenantModuleAttachment(type, planFeatures, {
+      subdomain: tenant.subdomain,
+      custom_domain: tenant.custom_domain,
+    });
     const enabled_modules = req.body.enabled_modules;
     if (Array.isArray(enabled_modules) && enabled_modules.length) {
       const allowed = new Set([

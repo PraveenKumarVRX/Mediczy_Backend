@@ -1,19 +1,33 @@
 # Tenant Module Packs
 
-When creating an organization, choose a **tenant type**. The platform attaches a **module pack** with a route/API prefix so modules stay organized for that tenant.
+When creating an organization, choose a **tenant type**. The platform attaches a **module pack** and binds it to the tenant’s **personalised domain**.
+
+## Personalised domain first
+
+Primary access is always the tenant subdomain (Cloudflare `*.mediqzy.com`):
+
+| Example | Type | Login |
+|---|---|---|
+| `https://hycare.mediqzy.com/hospital/login` | hospital | hospital pack (+ `/hr/login`) |
+| `https://ajdental.mediqzy.com/login` | clinic | clinic pack |
+| `https://{lab}.mediqzy.com/lab/login` | lab / diagnostic_centre | lab pack |
+
+`app.mediqzy.com{appLoginPath}` remains a platform fallback (e.g. `/clinic/login`).
+
+Type prefixes (`/clinic`, `/hospital`, `/lab`, …) organise modules **under** that personalised host — they do not replace the subdomain.
 
 ## Core types
 
-| Type | Prefix | Login |
+| Type | Tenant host login | Module prefix |
 |---|---|---|
-| `hospital` | `/hospital` | `/hospital/login` |
-| `clinic` | `/clinic` | `/login` (tenant host) |
-| `lab` | `/lab` | `/lab/login` |
-| `diagnostic_centre` | `/lab` | `/lab/login` |
-| `corporate` | `/corporate` | `/corporate/login` |
-| `homecare` | `/homecare` | `/homecare/login` |
-| `ambulance` | `/ambulance` | `/ambulance/login` |
-| `pharmacy` | `/pharmacy` | `/pharmacy/login` |
+| `hospital` | `/hospital/login` | `/hospital` |
+| `clinic` | `/login` | `/clinic` |
+| `lab` | `/lab/login` | `/lab` |
+| `diagnostic_centre` | `/lab/login` | `/lab` |
+| `corporate` | `/corporate/login` | `/corporate` |
+| `homecare` | `/homecare/login` | `/homecare` |
+| `ambulance` | `/ambulance/login` | `/ambulance` |
+| `pharmacy` | `/pharmacy/login` | `/pharmacy` |
 
 Also supported: `tpa`, `insurer`, `broker`, `psu`, `ngo`.
 
@@ -22,8 +36,10 @@ Also supported: `tpa`, `insurer`, `broker`, `psu`, `ngo`.
 - Registry: `server/config/tenant-module-packs.js`
 - Attached on create into:
   - `features.modules` + `features.module_*` flags
-  - `settings.module_prefix` / `api_prefix` / `login_path` / `access_path`
-  - `metadata.module_pack` (full module defs)
+  - `settings.module_prefix` / `login_path` / `tenant_domain` / `portal_login_url`
+  - `metadata.module_pack` (full module defs + portal URLs)
+
+Helpers: `buildTenantPortalUrls()`, `buildTenantModuleAttachment(type, features, { subdomain })`.
 
 ## APIs
 
@@ -31,11 +47,13 @@ Also supported: `tpa`, `insurer`, `broker`, `psu`, `ngo`.
 GET  /api/superadmin/tenants/entity-types
 GET  /api/superadmin/tenants/module-packs
 GET  /api/superadmin/tenants/module-packs/:type
-POST /api/superadmin/tenants/tenants                    # attaches pack
+POST /api/superadmin/tenants/tenants                    # attaches pack + portal URLs
 POST /api/superadmin/tenants/tenants/:id/modules/attach # re-attach / migrate
 ```
 
 Optional body on create/attach: `{ "enabled_modules": ["dashboard", "patients", ...] }`.
+
+Create response `access.login_url` is the personalised domain, e.g. `https://ajdental.mediqzy.com/login`.
 
 ## Migration
 

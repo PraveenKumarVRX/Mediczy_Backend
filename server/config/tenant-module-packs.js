@@ -1,7 +1,15 @@
 /**
  * Tenant module packs — modules attached by tenant type on create.
- * Each pack defines the portal prefix and default modules for that organization type.
+ *
+ * Access model (personalised domain first):
+ *   https://{subdomain}.mediqzy.com{loginPath}   ← primary (ajdental, hycare, …)
+ *   https://app.mediqzy.com{appLoginPath}        ← platform fallback
+ *
+ * `routePrefix` organises SPA/API modules for that type under the tenant host.
  */
+
+export const PLATFORM_BASE_DOMAIN = process.env.PLATFORM_BASE_DOMAIN || 'mediqzy.com';
+export const PLATFORM_APP_HOST = process.env.PLATFORM_APP_HOST || `app.${PLATFORM_BASE_DOMAIN}`;
 
 export const TENANT_TYPE_ALIASES = {
   diagnostic_center: 'diagnostic_centre',
@@ -46,18 +54,23 @@ function mod(key, label, path, extra = {}) {
 
 /**
  * Module packs keyed by canonical tenant.type
+ *
+ * loginPath / accessPath = paths on the tenant personalised host
+ *   e.g. https://ajdental.mediqzy.com/login
+ * appLoginPath = path on app.mediqzy.com when not using a subdomain
  */
 export const TENANT_MODULE_PACKS = {
   hospital: {
     id: 'hospital',
     label: 'Hospital',
-    description: 'Full HMIS / hospital operating system',
+    description: 'Full HMIS / hospital OS on a personalised subdomain (e.g. hycare.mediqzy.com)',
     icon: '🏥',
     minPlan: 'professional',
     routePrefix: '/hospital',
     apiPrefix: '/api/hospital',
     loginPath: '/hospital/login',
     accessPath: '/hospital/dashboard',
+    appLoginPath: '/hospital/login',
     modules: [
       mod('dashboard', 'Dashboard', '/hospital/dashboard'),
       mod('opd', 'OPD', '/hospital/opd'),
@@ -70,6 +83,7 @@ export const TENANT_MODULE_PACKS = {
       mod('pharmacy', 'Pharmacy', '/hospital/pharmacy'),
       mod('staff', 'Staff', '/hospital/staff'),
       mod('insurance', 'Insurance', '/hospital/insurance'),
+      mod('hr', 'HR Portal', '/hr/login'),
       mod('os', 'Hospital OS', '/hospital/os'),
       mod('settings', 'Settings', '/hospital/settings'),
     ],
@@ -82,13 +96,14 @@ export const TENANT_MODULE_PACKS = {
   clinic: {
     id: 'clinic',
     label: 'Clinic',
-    description: 'Outpatient clinic / dental / specialty practice',
+    description: 'Clinic portal on personalised subdomain (e.g. ajdental.mediqzy.com/login)',
     icon: '🏨',
     minPlan: 'free',
     routePrefix: '/clinic',
     apiPrefix: '/api/clinic',
-    loginPath: '/login', // tenant host; app host uses /clinic/login
+    loginPath: '/login',
     accessPath: '/clinic/dashboard',
+    appLoginPath: '/clinic/login',
     modules: [
       mod('dashboard', 'Dashboard', '/clinic/dashboard'),
       mod('appointments', 'Appointments', '/clinic/appointments'),
@@ -111,13 +126,14 @@ export const TENANT_MODULE_PACKS = {
   lab: {
     id: 'lab',
     label: 'Lab',
-    description: 'Pathology / clinical laboratory',
+    description: 'Lab portal on personalised subdomain (e.g. acmelab.mediqzy.com/lab/login)',
     icon: '🔬',
     minPlan: 'free',
     routePrefix: '/lab',
     apiPrefix: '/api/lab',
     loginPath: '/lab/login',
     accessPath: '/lab/dashboard',
+    appLoginPath: '/lab/login',
     modules: [
       mod('dashboard', 'Dashboard', '/lab/dashboard'),
       mod('test_catalog', 'Test Catalog', '/lab/test-catalog'),
@@ -135,13 +151,14 @@ export const TENANT_MODULE_PACKS = {
   diagnostic_centre: {
     id: 'diagnostic_centre',
     label: 'Diagnostic Centre',
-    description: 'Imaging + diagnostics (RIS / radiology / multi-modal diagnostics)',
+    description: 'Imaging + diagnostics on personalised subdomain (shares lab portal paths)',
     icon: '🩻',
     minPlan: 'free',
     routePrefix: '/lab',
     apiPrefix: '/api/lab',
     loginPath: '/lab/login',
     accessPath: '/lab/dashboard',
+    appLoginPath: '/lab/login',
     modules: [
       mod('dashboard', 'Dashboard', '/lab/dashboard'),
       mod('test_catalog', 'Test Catalog', '/lab/test-catalog'),
@@ -162,13 +179,14 @@ export const TENANT_MODULE_PACKS = {
   corporate: {
     id: 'corporate',
     label: 'Corporate',
-    description: 'Employer / corporate wellness & benefits',
+    description: 'Employer wellness portal on personalised subdomain',
     icon: '🏢',
     minPlan: 'professional',
     routePrefix: '/corporate',
     apiPrefix: '/api/corporate',
     loginPath: '/corporate/login',
     accessPath: '/corporate/dashboard',
+    appLoginPath: '/corporate/login',
     modules: [
       mod('dashboard', 'Dashboard', '/corporate/dashboard'),
       mod('employees', 'Employees', '/corporate/employees'),
@@ -184,13 +202,14 @@ export const TENANT_MODULE_PACKS = {
   homecare: {
     id: 'homecare',
     label: 'Homecare',
-    description: 'Home healthcare services',
+    description: 'Homecare portal on personalised subdomain',
     icon: '🏠',
     minPlan: 'professional',
     routePrefix: '/homecare',
     apiPrefix: '/api/homecare',
     loginPath: '/homecare/login',
     accessPath: '/homecare/dashboard',
+    appLoginPath: '/homecare/login',
     modules: [
       mod('dashboard', 'Dashboard', '/homecare/dashboard'),
       mod('patients', 'Patients', '/homecare/patients'),
@@ -207,13 +226,14 @@ export const TENANT_MODULE_PACKS = {
   ambulance: {
     id: 'ambulance',
     label: 'Ambulance',
-    description: 'EMS dispatch and fleet',
+    description: 'EMS dispatch portal on personalised subdomain',
     icon: '🚑',
     minPlan: 'professional',
     routePrefix: '/ambulance',
     apiPrefix: '/api/ambulance',
     loginPath: '/ambulance/login',
     accessPath: '/ambulance/dashboard',
+    appLoginPath: '/ambulance/login',
     modules: [
       mod('dashboard', 'Dashboard', '/ambulance/dashboard'),
       mod('dispatch', 'Dispatch', '/ambulance/dispatch'),
@@ -230,13 +250,14 @@ export const TENANT_MODULE_PACKS = {
   pharmacy: {
     id: 'pharmacy',
     label: 'Pharmacy',
-    description: 'Retail / hospital pharmacy POS & inventory',
+    description: 'Pharmacy portal on personalised subdomain',
     icon: '💊',
     minPlan: 'free',
     routePrefix: '/pharmacy',
     apiPrefix: '/api/pharmacy',
     loginPath: '/pharmacy/login',
     accessPath: '/pharmacy/dashboard',
+    appLoginPath: '/pharmacy/login',
     modules: [
       mod('dashboard', 'Dashboard', '/pharmacy/dashboard'),
       mod('pos', 'POS', '/pharmacy/pos'),
@@ -253,13 +274,14 @@ export const TENANT_MODULE_PACKS = {
   tpa: {
     id: 'tpa',
     label: 'TPA',
-    description: 'Third Party Administrator',
+    description: 'TPA portal on personalised subdomain',
     icon: '📋',
     minPlan: 'enterprise',
     routePrefix: '/tpa',
     apiPrefix: '/api/tpa',
     loginPath: '/tpa/login',
     accessPath: '/tpa/dashboard',
+    appLoginPath: '/tpa/login',
     modules: [
       mod('dashboard', 'Dashboard', '/tpa/dashboard'),
       mod('claims', 'Claims', '/tpa/claims'),
@@ -273,13 +295,14 @@ export const TENANT_MODULE_PACKS = {
   insurer: {
     id: 'insurer',
     label: 'Insurer',
-    description: 'Insurance company portal',
+    description: 'Insurer portal on personalised subdomain',
     icon: '🛡️',
     minPlan: 'enterprise',
     routePrefix: '/insurer',
     apiPrefix: '/api/insurer',
     loginPath: '/insurer/login',
     accessPath: '/insurer/dashboard',
+    appLoginPath: '/insurer/login',
     modules: [
       mod('dashboard', 'Dashboard', '/insurer/dashboard'),
       mod('policies', 'Policies', '/insurer/policies'),
@@ -292,13 +315,14 @@ export const TENANT_MODULE_PACKS = {
   broker: {
     id: 'broker',
     label: 'Broker',
-    description: 'Insurance broker / aggregator',
+    description: 'Broker portal on personalised subdomain',
     icon: '🤝',
     minPlan: 'professional',
     routePrefix: '/intermediary',
     apiPrefix: '/api/broker',
     loginPath: '/intermediary/login',
     accessPath: '/intermediary/dashboard',
+    appLoginPath: '/intermediary/login',
     modules: [
       mod('dashboard', 'Dashboard', '/intermediary/dashboard'),
       mod('clients', 'Clients', '/intermediary/clients'),
@@ -311,13 +335,14 @@ export const TENANT_MODULE_PACKS = {
   psu: {
     id: 'psu',
     label: 'PSU',
-    description: 'Public Sector Undertaking',
+    description: 'PSU portal on personalised subdomain',
     icon: '🏛️',
     minPlan: 'enterprise',
     routePrefix: '/psu',
     apiPrefix: '/api/psu',
     loginPath: '/psu/login',
     accessPath: '/psu/dashboard',
+    appLoginPath: '/psu/login',
     modules: [
       mod('dashboard', 'Dashboard', '/psu/dashboard'),
       mod('employees', 'Employees', '/psu/employees'),
@@ -330,13 +355,14 @@ export const TENANT_MODULE_PACKS = {
   ngo: {
     id: 'ngo',
     label: 'NGO',
-    description: 'Non-profit / NGO healthcare programs',
+    description: 'NGO portal on personalised subdomain',
     icon: '❤️',
     minPlan: 'free',
     routePrefix: '/ngo',
     apiPrefix: '/api/ngo',
     loginPath: '/ngo/login',
     accessPath: '/ngo/dashboard',
+    appLoginPath: '/ngo/login',
     modules: [
       mod('dashboard', 'Dashboard', '/ngo/dashboard'),
       mod('programs', 'Programs', '/ngo/programs'),
@@ -371,9 +397,49 @@ export function listTenantModulePacks({ coreOnly = false } = {}) {
 }
 
 /**
+ * Build personalised portal URLs for a tenant subdomain / custom domain.
+ * Primary: https://{subdomain}.mediqzy.com/...
+ */
+export function buildTenantPortalUrls({
+  type,
+  subdomain,
+  custom_domain,
+  customDomain,
+  baseDomain = PLATFORM_BASE_DOMAIN,
+  appHost = PLATFORM_APP_HOST,
+} = {}) {
+  const pack = getTenantModulePack(type);
+  const domain = custom_domain || customDomain || null;
+  const label = subdomain ? String(subdomain).trim().toLowerCase() : null;
+
+  const origin = domain
+    ? `https://${String(domain).replace(/^https?:\/\//, '').replace(/\/$/, '')}`
+    : label
+      ? `https://${label}.${baseDomain}`
+      : null;
+
+  const loginPath = pack?.loginPath || '/login';
+  const accessPath = pack?.accessPath || '/';
+  const appLoginPath = pack?.appLoginPath || `${pack?.routePrefix || ''}/login`;
+
+  return {
+    origin,
+    host: origin ? origin.replace(/^https?:\/\//, '') : null,
+    subdomain: label,
+    custom_domain: domain || null,
+    login_path: loginPath,
+    access_path: accessPath,
+    login_url: origin ? `${origin}${loginPath}` : null,
+    access_url: origin ? `${origin}${accessPath}` : null,
+    app_login_url: `https://${appHost}${appLoginPath}`,
+    module_prefix: pack?.routePrefix || null,
+  };
+}
+
+/**
  * Build features/settings payloads to attach on tenant create.
  */
-export function buildTenantModuleAttachment(type, planFeatures = {}) {
+export function buildTenantModuleAttachment(type, planFeatures = {}, portalOpts = {}) {
   const pack = getTenantModulePack(type);
   if (!pack) {
     return {
@@ -385,6 +451,11 @@ export function buildTenantModuleAttachment(type, planFeatures = {}) {
 
   const enabledModules = pack.modules.filter((m) => m.enabled !== false);
   const moduleKeys = enabledModules.map((m) => m.key);
+  const portal = buildTenantPortalUrls({
+    type,
+    subdomain: portalOpts.subdomain,
+    custom_domain: portalOpts.custom_domain || portalOpts.customDomain,
+  });
 
   return {
     features: {
@@ -399,20 +470,33 @@ export function buildTenantModuleAttachment(type, planFeatures = {}) {
       api_prefix: pack.apiPrefix,
       login_path: pack.loginPath,
       access_path: pack.accessPath,
+      app_login_path: pack.appLoginPath || `${pack.routePrefix}/login`,
       module_pack_id: pack.id,
+      // Personalised domain — primary access surface
+      tenant_domain: portal.host,
+      portal_origin: portal.origin,
+      portal_login_url: portal.login_url,
+      portal_access_url: portal.access_url,
     },
     metadata: {
       module_pack: {
         id: pack.id,
-        version: 1,
+        version: 2,
         route_prefix: pack.routePrefix,
         api_prefix: pack.apiPrefix,
+        login_path: pack.loginPath,
+        access_path: pack.accessPath,
+        app_login_path: pack.appLoginPath,
+        tenant_domain: portal.host,
+        portal_origin: portal.origin,
+        portal_login_url: portal.login_url,
         modules: enabledModules,
         optional_modules: pack.optionalModules || [],
         attached_at: new Date().toISOString(),
       },
     },
     pack,
+    portal,
   };
 }
 
@@ -426,9 +510,11 @@ export default {
   TENANT_MODULE_PACKS,
   CORE_TENANT_TYPES,
   ALL_TENANT_TYPES,
+  PLATFORM_BASE_DOMAIN,
   normalizeTenantType,
   getTenantModulePack,
   listTenantModulePacks,
+  buildTenantPortalUrls,
   buildTenantModuleAttachment,
   tenantHasModule,
 };
