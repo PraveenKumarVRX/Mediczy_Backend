@@ -36,6 +36,8 @@
     "fix:qa-login-blockers:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/fix-portal-login-blockers.mjs",
     "fix:lab-login": "node scripts/qa/reset-lab-qa-account.mjs",
     "fix:lab-login:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/reset-lab-qa-account.mjs",
+    "fix:clinic-login": "node scripts/qa/ensure-clinic-login-account.mjs",
+    "fix:clinic-login:ssm": "node scripts/ssm-env-loader.mjs scripts/qa/ensure-clinic-login-account.mjs",
     "test:lab-login-unit": "node scripts/qa/lab-login-unit-smoke.mjs",
     "test:doctor-assistant-nav-regression": "node scripts/qa/doctor-assistant-navigation-regression.mjs",
     "test:voice-assistant-prod-smoke": "node scripts/qa/voice-assistant-prod-smoke.mjs",

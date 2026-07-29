@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { body } from 'express-validator';
-import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authClinicPortal } from '../middleware/clinicPortalAuth.middleware.js';
 import {
   createClinicStaff,
   listClinicStaff,
@@ -18,7 +18,7 @@ import {
 const router = express.Router();
 
 /**
- * Middleware to verify clinic admin
+ * Middleware to verify clinic admin (portal JWT or clinic_admin user JWT)
  */
 const requireClinicAdmin = (req, res, next) => {
   if (!req.user || req.user.role !== 'clinic_admin') {
@@ -36,7 +36,7 @@ const requireClinicAdmin = (req, res, next) => {
  */
 router.post(
   '/:clinicId/staff',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   [
     body('email').isEmail().withMessage('Invalid email'),
@@ -60,7 +60,7 @@ router.post(
  */
 router.get(
   '/:clinicId/staff',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   listClinicStaff
 );
@@ -71,7 +71,7 @@ router.get(
  */
 router.get(
   '/:clinicId/staff/:staffId',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   getClinicStaffDetails
 );
@@ -82,7 +82,7 @@ router.get(
  */
 router.patch(
   '/:clinicId/staff/:staffId',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   [
     body('phone').optional().trim(),
@@ -102,7 +102,7 @@ router.patch(
  */
 router.delete(
   '/:clinicId/staff/:staffId',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   deleteClinicStaff
 );
@@ -113,7 +113,7 @@ router.delete(
  */
 router.get(
   '/:clinicId/staff-stats',
-  authUser,
+  authClinicPortal,
   requireClinicAdmin,
   getClinicStaffStats
 );

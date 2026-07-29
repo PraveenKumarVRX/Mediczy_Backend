@@ -19,10 +19,13 @@ interface DeptLoginTemplateProps {
   description: string;
   Icon: React.ComponentType<{ className?: string }>;
   dashboardPath: string;
+  /** When set (e.g. from /hr/:slug/login), scopes auth to that hospital tenant. */
+  hospitalSlug?: string;
+  hospitalName?: string;
 }
 
 const DeptLoginTemplate = ({
-  deptKey, title, description, Icon, dashboardPath,
+  deptKey, title, description, Icon, dashboardPath, hospitalSlug, hospitalName,
 }: DeptLoginTemplateProps) => {
   const [email, setEmail]               = useState('');
   const [password, setPassword]         = useState('');
@@ -33,6 +36,7 @@ const DeptLoginTemplate = ({
   const navigate = useNavigate();
 
   const tokenKey = `${deptKey}Token`;
+  const normalizedSlug = String(hospitalSlug || '').trim().toLowerCase();
 
   useEffect(() => {
     const token = localStorage.getItem(tokenKey);
@@ -61,12 +65,20 @@ const DeptLoginTemplate = ({
       // advances past 404/405 — stops right there and never reaches the real
       // endpoint. Legacy hospital-auth fallbacks stay last for departments that
       // predate the unified staff router.
+      const authBody = normalizedSlug
+        ? {
+            email,
+            password,
+            hospital_slug: normalizedSlug,
+            hospital_domain: `${normalizedSlug}.mediqzy.com`,
+          }
+        : { email, password };
       const attempts = [
-        { endpoint: `/hospital/staff/${deptKey}/login`,  body: { email, password } },
-        { endpoint: `/${deptKey}/login`,                 body: { email, password } },
-        { endpoint: `/hospital/dept/${deptKey}/login`,   body: { email, password } },
-        { endpoint: '/hospital/auth/login',              body: { email, password } },
-        { endpoint: '/hospital/login',                   body: { email, password } },
+        { endpoint: `/hospital/staff/${deptKey}/login`,  body: authBody },
+        { endpoint: `/${deptKey}/login`,                 body: authBody },
+        { endpoint: `/hospital/dept/${deptKey}/login`,   body: authBody },
+        { endpoint: '/hospital/auth/login',              body: authBody },
+        { endpoint: '/hospital/login',                   body: authBody },
       ];
 
       let data: unknown = null;
@@ -95,10 +107,17 @@ const DeptLoginTemplate = ({
       // Store token under department-specific key
       const d = data as any;
       const token = d.token ?? d.data?.token;
+      const staffPayload = d.data?.staff ?? d.hospital ?? d.user ?? {};
       localStorage.setItem(tokenKey, token);
       if (d.refreshToken) localStorage.setItem(`${deptKey}RefreshToken`, d.refreshToken);
       localStorage.setItem('userType', deptKey);
-      localStorage.setItem(`${deptKey}Data`, JSON.stringify(d.data?.staff ?? d.hospital ?? d.user ?? {}));
+      localStorage.setItem(`${deptKey}Data`, JSON.stringify({
+        ...staffPayload,
+        hospitalSlug: normalizedSlug || staffPayload?.hospital?.slug || null,
+      }));
+      if (normalizedSlug) {
+        localStorage.setItem(`${deptKey}HospitalSlug`, normalizedSlug);
+      }
       navigate(dashboardPath);
     } catch (err: any) {
       clearDeptSession(deptKey);
@@ -147,6 +166,11 @@ const DeptLoginTemplate = ({
               {title}
             </CardTitle>
             <CardDescription className="text-center text-base">{description}</CardDescription>
+            {(hospitalName || normalizedSlug) && (
+              <p className="text-center text-sm font-medium text-teal-700">
+                {hospitalName || normalizedSlug.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <form onSubmit={onSubmit} className="space-y-6">

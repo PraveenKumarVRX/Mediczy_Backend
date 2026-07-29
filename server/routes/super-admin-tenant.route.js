@@ -654,6 +654,30 @@ router.post('/tenants', [
     
     // Activate tenant
     await tenant.update({ status: 'active' });
+
+    // For clinics: also provision hospitals login + clinic_admin so subdomain portal works
+    let clinicPortal = null;
+    if (type === 'clinic') {
+      try {
+        const { provisionClinicPortal } = await import('../services/clinic-portal.service.js');
+        clinicPortal = await provisionClinicPortal({
+          tenantId: tenant.id,
+          name: tenant.name,
+          subdomain: tenant.subdomain,
+          slug: tenant.slug,
+          email: admin_email || tenant.email,
+          password: admin_password || `Clinic@${tenant.subdomain || tenant.id}`,
+          phone: tenant.phone,
+          plan: tenant.plan,
+          specialty: settings?.specialty || branding?.specialty || 'general',
+          code: (tenant.subdomain || tenant.slug || 'CLINIC').toUpperCase(),
+          admin_first_name: admin_first_name || 'Clinic',
+          admin_last_name: admin_last_name || 'Admin',
+        });
+      } catch (portalErr) {
+        console.error('Clinic portal provisioning failed:', portalErr);
+      }
+    }
     
     res.status(201).json({
       success: true,
@@ -686,9 +710,11 @@ router.post('/tenants', [
           custom_domain: tenant.custom_domain,
         })),
         subdomain_url: `https://${tenant.subdomain}.mediqzy.com`,
+        login_url: type === 'clinic' ? `https://${tenant.subdomain}.mediqzy.com/login` : `https://${tenant.subdomain}.mediqzy.com`,
         custom_domain_url: tenant.custom_domain ? `https://${tenant.custom_domain}` : null,
-        admin_login: admin_email || tenant.admin_email
+        admin_login: admin_email || tenant.admin_email || clinicPortal?.login?.email
       },
+      clinic_portal: clinicPortal,
       infrastructure,
       tier_details: {
         name: tierInfo.name,

@@ -58,6 +58,12 @@ const findHospitalByIdentifier = async (identifier) => {
     return null;
   }
 
+  const raw = String(identifier).trim().toLowerCase();
+  const platformDomain = (process.env.PLATFORM_DOMAIN || 'mediqzy.com').toLowerCase();
+  const subdomainLabel = raw.endsWith(`.${platformDomain}`)
+    ? raw.slice(0, -(platformDomain.length + 1)).split('.')[0]
+    : raw;
+
   // Try to find by ID, slug, subdomain, or custom_domain
   // Filter by type = 'hospital' (Tenant model uses 'type' not 'organization_type')
   const hospital = await Tenant.findOne({
@@ -68,9 +74,12 @@ const findHospitalByIdentifier = async (identifier) => {
         {
           [Op.or]: [
             { id: isNaN(identifier) ? null : parseInt(identifier) },
-            { slug: identifier },
-            { subdomain: identifier },
-            { custom_domain: identifier }
+            { slug: raw },
+            { subdomain: raw },
+            { custom_domain: raw },
+            ...(subdomainLabel && subdomainLabel !== raw
+              ? [{ slug: subdomainLabel }, { subdomain: subdomainLabel }]
+              : []),
           ]
         }
       ]

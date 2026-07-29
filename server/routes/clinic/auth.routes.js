@@ -96,9 +96,14 @@ const JWT_SECRET = JWT_CONFIG.SECRET;
 // Clinic Login - Now using database
 router.post('/login', authLimiter, async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, clinic_slug, clinic_domain } = req.body;
+    const platformDomain = (process.env.PLATFORM_DOMAIN || 'mediqzy.com').toLowerCase();
+    const rawIdentifier = String(clinic_slug || clinic_domain || '').trim().toLowerCase();
+    const subdomainLabel = rawIdentifier.endsWith(`.${platformDomain}`)
+      ? rawIdentifier.slice(0, -(platformDomain.length + 1)).split('.')[0]
+      : rawIdentifier;
 
-    console.log('🏥 Clinic login attempt:', { email });
+    console.log('🏥 Clinic login attempt:', { email, clinic_slug: subdomainLabel || null });
 
     if (!email || !password) {
       return res.status(400).json({
@@ -113,7 +118,7 @@ router.post('/login', authLimiter, async (req, res) => {
               registration_number, total_beds, available_beds, specializations,
               facilities, metadata, status, is_verified
        FROM hospitals 
-       WHERE email = :email 
+       WHERE LOWER(email) = LOWER(:email) 
        LIMIT 1`,
       {
         replacements: { email },
@@ -150,6 +155,31 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    // Optional subdomain / slug scoping (e.g. ajdental.mediqzy.com/clinic/login)
+    const meta = typeof clinic.metadata === 'string'
+      ? (() => { try { return JSON.parse(clinic.metadata); } catch { return {}; } })()
+      : (clinic.metadata || {});
+
+    if (subdomainLabel) {
+      const allowed = [
+        meta.tenant_subdomain,
+        meta.tenant_slug,
+        meta.clinic_code,
+      ]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase());
+      const codeMatch = allowed.includes(subdomainLabel)
+        || allowed.includes(subdomainLabel.replace(/-/g, ''))
+        || allowed.some((v) => v.replace(/-/g, '') === subdomainLabel.replace(/-/g, ''));
+      if (allowed.length && !codeMatch) {
+        await auditLoginAttempt(req, clinic.id, email, false, 'Clinic subdomain mismatch');
+        return res.status(403).json({
+          success: false,
+          message: 'This account does not belong to this clinic portal'
+        });
+      }
+    }
+
     // Check if clinic is pending approval
     if (clinic.status === 'pending') {
       await auditLoginAttempt(req, clinic.id, email, false, 'Clinic pending approval');
@@ -168,18 +198,42 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    const { resolveClinicPortalContext } = await import('../../services/clinic-portal.service.js');
+    const ctx = await resolveClinicPortalContext({
+      id: clinic.id,
+      hospitalId: clinic.id,
+      tenantId: meta.tenant_id,
+      clinicSlug: subdomainLabel || meta.tenant_subdomain || meta.tenant_slug,
+      email: clinic.email,
+    });
+
+    let adminUserId = null;
+    if (ctx.tenantId) {
+      const adminRows = await sequelize.query(
+        `SELECT id FROM users
+         WHERE organization_id = :tenantId AND role = 'clinic_admin' AND status = 'active'
+         ORDER BY id ASC LIMIT 1`,
+        { replacements: { tenantId: ctx.tenantId }, type: QueryTypes.SELECT },
+      );
+      adminUserId = adminRows?.[0]?.id || null;
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       {
         id: clinic.id,
+        hospitalId: clinic.id,
+        tenantId: ctx.tenantId || null,
+        adminUserId,
         email: clinic.email,
         type: 'clinic',
         name: clinic.hospital_name,
         userType: 'clinic',
-        role: 'clinic'
+        role: 'clinic',
+        clinicSlug: ctx.slug || subdomainLabel || meta.tenant_subdomain || null,
       },
       JWT_SECRET,
-      { expiresIn: process.env.JWT_ACCESS_TTL || '15m' }
+      { expiresIn: process.env.JWT_ACCESS_TTL || '24h' }
     );
 
     console.log('✅ Clinic login successful:', clinic.hospital_name);
@@ -192,19 +246,22 @@ router.post('/login', authLimiter, async (req, res) => {
       token,
       clinic: {
         id: clinic.id,
+        tenantId: ctx.tenantId || null,
         name: clinic.hospital_name,
         email: clinic.email,
         phone: clinic.phone_number,
         registrationNumber: clinic.registration_number,
-        clinicType: clinic.metadata?.clinicType || 'General',
-        numberOfRooms: clinic.metadata?.numberOfRooms || 0,
+        clinicType: meta.clinicType || 'General',
+        numberOfRooms: meta.numberOfRooms || 0,
         city: clinic.city,
         state: clinic.state,
         totalBeds: clinic.total_beds,
         availableBeds: clinic.available_beds,
         specializations: clinic.specializations || [],
         facilities: clinic.facilities || [],
-        isVerified: clinic.is_verified
+        isVerified: clinic.is_verified,
+        slug: meta.tenant_slug || ctx.slug || subdomainLabel || null,
+        subdomain: meta.tenant_subdomain || ctx.slug || subdomainLabel || null,
       }
     });
   } catch (error) {

@@ -103,8 +103,9 @@ export const createClinicWithAdmin = async (req, res) => {
       });
     }
 
-    // Generate clinic slug if not provided
+    // Generate clinic slug if not provided; subdomain mirrors DNS label (e.g. ajdental)
     const slug = clinic_slug || clinic_name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const subdomain = String(req.body.clinic_subdomain || slug).toLowerCase().trim().slice(0, 63);
 
     // Create clinic tenant
     const clinic = await Tenant.create({
@@ -113,6 +114,7 @@ export const createClinicWithAdmin = async (req, res) => {
       phone: clinic_phone,
       type: clinic_type,
       slug: slug,
+      subdomain,
       admin_email: admin_email,
       admin_password: admin_password, // Will be hashed by model hook
       registration_number: registration_number || null,
@@ -205,6 +207,30 @@ export const createClinicWithAdmin = async (req, res) => {
     clinic.admin_users = [adminUser.id];
     await clinic.save();
 
+    // Provision hospitals login row so subdomain /login works
+    let clinicPortal = null;
+    try {
+      const { provisionClinicPortal } = await import('../services/clinic-portal.service.js');
+      clinicPortal = await provisionClinicPortal({
+        tenantId: clinic.id,
+        name: clinic.name,
+        subdomain: clinic.subdomain || subdomain,
+        slug: clinic.slug || slug,
+        email: admin_email,
+        password: admin_password,
+        phone: clinic_phone,
+        plan,
+        city: clinic_city,
+        specialty: 'dental',
+        code: String(clinic.subdomain || subdomain || 'CLINIC').toUpperCase(),
+        admin_first_name,
+        admin_last_name,
+        registrationNumber: registration_number,
+      });
+    } catch (portalErr) {
+      console.error('Clinic portal hospital provisioning failed:', portalErr);
+    }
+
     // Generate JWT token for clinic admin
     const token = jwt.sign(
       {
@@ -244,7 +270,9 @@ export const createClinicWithAdmin = async (req, res) => {
           last_name: adminUser.lastName,
           role: adminUser.role
         },
-        token: token
+        token: token,
+        portal: clinicPortal,
+        login_url: clinic.subdomain ? `https://${clinic.subdomain}.mediqzy.com/login` : null,
       }
     });
   } catch (error) {

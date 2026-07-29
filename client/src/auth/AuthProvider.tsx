@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import api from "@/utils/api";
 import { getToken, getUserType, hasHospitalPortalSession } from "@/hooks/auth";
 import { profileProps, doctorProfileProps } from "@/lib/user.type";
+import { getTenantSubdomain } from "@/utils/tenantHost";
 import "@/App.css";
 
 /**
@@ -277,9 +278,15 @@ export const AuthProvider = ({ children }) => {
     
     if (isClinicRoute) {
       const clinicToken = getValidPortalToken('clinicToken');
-      if (!clinicToken && location.pathname !== '/clinic/login' && location.pathname !== '/clinic/register') {
+      const clinicLoginPath = getTenantSubdomain() ? '/login' : '/clinic/login';
+      const isClinicLoginPath =
+        location.pathname === '/clinic/login'
+        || location.pathname === '/clinic/register'
+        || (Boolean(getTenantSubdomain()) && location.pathname === '/login')
+        || /^\/clinic\/[^/]+\/login$/.test(location.pathname);
+      if (!clinicToken && !isClinicLoginPath) {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
-        navigate("/clinic/login", { replace: true });
+        navigate(clinicLoginPath, { replace: true });
         return;
       }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
@@ -420,13 +427,22 @@ export const AuthProvider = ({ children }) => {
     ];
     const deptPublicPaths = ['/queue/kiosk'];
     const isDeptPortalRoute = deptPortalPrefixes.some(p => location.pathname.startsWith(p));
-    if (isDeptPortalRoute) {
+    // Dedicated hospital-scoped dept login URLs: /hr/:slug/login, /accounts/:slug/login, etc.
+    const isSlugScopedDeptLogin = /^\/(accounts|mrd|insurance-desk|hr|it-edp|ot|icu|quality|security)\/[^/]+\/login$/.test(location.pathname)
+      || /^\/hospital\/[^/]+\/hr\/login$/.test(location.pathname);
+    if (isDeptPortalRoute || isSlugScopedDeptLogin) {
       // Allow login pages through; for all other dept pages require deptKey token
-      const loginPath = deptPortalPrefixes
-        .filter(p => location.pathname.startsWith(p))
-        .map(p => `${p.slice(0, -1)}/login`)[0];
-      if (!deptLoginPaths.includes(location.pathname) && !deptPublicPaths.includes(location.pathname)) {
-        const deptKey = loginPath?.replace('/', '').replace('/login', '');
+      const loginPath = isSlugScopedDeptLogin
+        ? location.pathname
+        : deptPortalPrefixes
+            .filter(p => location.pathname.startsWith(p))
+            .map(p => `${p.slice(0, -1)}/login`)[0];
+      if (
+        !deptLoginPaths.includes(location.pathname)
+        && !deptPublicPaths.includes(location.pathname)
+        && !isSlugScopedDeptLogin
+      ) {
+        const deptKey = (loginPath || '').replace(/^\//, '').split('/')[0];
         const deptToken = deptKey ? localStorage.getItem(`${deptKey}Token`) : null;
         if (!deptToken) {
           setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
@@ -489,7 +505,9 @@ export const AuthProvider = ({ children }) => {
       "/icu/login",
       "/quality/login",
       "/security/login"
-    ].includes(location.pathname);
+    ].includes(location.pathname)
+      || /^\/hr\/[^/]+\/login$/.test(location.pathname)
+      || /^\/hospital\/[^/]+\/hr\/login$/.test(location.pathname);
     
     if (!authState.token && !isPublicRoute) {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
