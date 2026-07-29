@@ -268,9 +268,15 @@ const AdminTenantManagement = () => {
     }
 
     try {
+      const payload = {
+        ...formData,
+        subdomain: formData.custom_subdomain || formData.subdomain || undefined,
+      };
+      delete (payload as any).custom_subdomain;
+
       const response = await api.post(
         '/superadmin/tenants/tenants',
-        formData,
+        payload,
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
