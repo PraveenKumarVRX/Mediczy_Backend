@@ -66,7 +66,12 @@ const DeptLoginTemplate = ({
       // endpoint. Legacy hospital-auth fallbacks stay last for departments that
       // predate the unified staff router.
       const authBody = normalizedSlug
-        ? { email, password, hospital_slug: normalizedSlug }
+        ? {
+            email,
+            password,
+            hospital_slug: normalizedSlug,
+            hospital_domain: `${normalizedSlug}.mediqzy.com`,
+          }
         : { email, password };
       const attempts = [
         { endpoint: `/hospital/staff/${deptKey}/login`,  body: authBody },
