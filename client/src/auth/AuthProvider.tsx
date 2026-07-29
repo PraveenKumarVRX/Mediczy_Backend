@@ -420,13 +420,22 @@ export const AuthProvider = ({ children }) => {
     ];
     const deptPublicPaths = ['/queue/kiosk'];
     const isDeptPortalRoute = deptPortalPrefixes.some(p => location.pathname.startsWith(p));
-    if (isDeptPortalRoute) {
+    // Dedicated hospital-scoped dept login URLs: /hr/:slug/login, /accounts/:slug/login, etc.
+    const isSlugScopedDeptLogin = /^\/(accounts|mrd|insurance-desk|hr|it-edp|ot|icu|quality|security)\/[^/]+\/login$/.test(location.pathname)
+      || /^\/hospital\/[^/]+\/hr\/login$/.test(location.pathname);
+    if (isDeptPortalRoute || isSlugScopedDeptLogin) {
       // Allow login pages through; for all other dept pages require deptKey token
-      const loginPath = deptPortalPrefixes
-        .filter(p => location.pathname.startsWith(p))
-        .map(p => `${p.slice(0, -1)}/login`)[0];
-      if (!deptLoginPaths.includes(location.pathname) && !deptPublicPaths.includes(location.pathname)) {
-        const deptKey = loginPath?.replace('/', '').replace('/login', '');
+      const loginPath = isSlugScopedDeptLogin
+        ? location.pathname
+        : deptPortalPrefixes
+            .filter(p => location.pathname.startsWith(p))
+            .map(p => `${p.slice(0, -1)}/login`)[0];
+      if (
+        !deptLoginPaths.includes(location.pathname)
+        && !deptPublicPaths.includes(location.pathname)
+        && !isSlugScopedDeptLogin
+      ) {
+        const deptKey = (loginPath || '').replace(/^\//, '').split('/')[0];
         const deptToken = deptKey ? localStorage.getItem(`${deptKey}Token`) : null;
         if (!deptToken) {
           setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
@@ -489,7 +498,9 @@ export const AuthProvider = ({ children }) => {
       "/icu/login",
       "/quality/login",
       "/security/login"
-    ].includes(location.pathname);
+    ].includes(location.pathname)
+      || /^\/hr\/[^/]+\/login$/.test(location.pathname)
+      || /^\/hospital\/[^/]+\/hr\/login$/.test(location.pathname);
     
     if (!authState.token && !isPublicRoute) {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));

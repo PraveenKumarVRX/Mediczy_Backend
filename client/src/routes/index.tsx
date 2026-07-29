@@ -1712,6 +1712,9 @@ const AppRoutes = () => {
 
         {/* ── HR ──────────────────────────────────────────────────────── */}
         <Route path="/hr/login"        element={<HRLogin />} />
+        <Route path="/hr/:slug/login"  element={<HRLogin />} />
+        {/* Convenience alias matching /hospital/:slug/insurance pattern */}
+        <Route path="/hospital/:slug/hr/login" element={<HRLogin />} />
         <Route path="/hr/dashboard"    element={<HRDashboard />} />
         <Route path="/hr/staff"        element={<HRStaffPage />} />
         <Route path="/hr/attendance"   element={<HRAttendancePage />} />
