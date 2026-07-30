@@ -206,6 +206,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/careos',  // HealthOS alias
       '/api/v3/hospital-os',  // Hospital OS 2035 platform
       '/api/hypergrid',  // DICOMweb + HyperGrid interoperability
+      '/api/imaging',  // Imaging platform (workflow, storage, VNA, triage)
       '/api/ehr',  // Electronic Health Records - patient records access
       '/api/emr',  // EMR folder (own record)
       '/api/fhir',  // FHIR R4 interoperability endpoints
@@ -278,6 +279,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/ehr',  // Electronic Health Records
       '/api/fhir',  // FHIR R4 interoperability endpoints
       '/api/hypergrid',  // HyperGrid interoperability & IoT layer
+      '/api/imaging',  // Imaging platform (workflow, storage, VNA, triage)
       '/api/cdss',  // Clinical Decision Support System
       '/api/compliance',  // HIPAA/DPDP compliance dashboard
       '/api/samd-regulatory',  // SaMD regulatory compliance (CDSCO/MDR 2017)
@@ -416,6 +418,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/careos',
       '/api/v3/hospital-os',
       '/api/hypergrid',
+      '/api/imaging',  // Imaging platform (workflow, storage, VNA, triage)
     ],
     tokenField: 'hospitalId'
   },
@@ -437,7 +440,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/lab/tests',
       '/api/lab/results',
       '/api/lab/reports',
-      '/api/ai/vision'
+      '/api/ai/vision',
+      '/api/imaging',  // Imaging platform + storage/tenant-isolation for RIS/PACS labs
+      '/api/hypergrid',  // DICOMweb / HyperGrid for lab RIS
     ],
     tokenField: 'labId'
   },

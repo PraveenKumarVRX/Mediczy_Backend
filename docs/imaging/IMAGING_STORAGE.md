@@ -92,6 +92,17 @@ Create the Wasabi bucket in the Wasabi console (or allow the transfer job to cre
 
 ## APIs
 
+Requires a **lab / doctor / hospital / admin** JWT (ring-fenced). Lab example:
+
+```bash
+LAB_TOKEN=$(curl -s -X POST https://app.mediqzy.com/api/lab/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"lab@example.com","password":"..."}' | jq -r .token)
+
+curl -s https://app.mediqzy.com/api/imaging/platform/storage/tenant-isolation \
+  -H "Authorization: Bearer $LAB_TOKEN" | jq '.archive'
+```
+
 ```
 GET  /api/imaging/platform/storage/tenant-isolation   # includes archive backend status
 POST /api/imaging/platform/storage/tenant-isolation/ensure   { "tenantId": 56 }
