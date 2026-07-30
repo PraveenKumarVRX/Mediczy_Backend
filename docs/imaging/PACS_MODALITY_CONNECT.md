@@ -5,7 +5,8 @@ Mediczy uses **Orthanc** as the DICOM PACS. Scanners can either **push** images 
 ## Lab UI
 
 1. Sign in at `/lab/login` (or diagnostic centre tenant host).
-2. Open **PACS Devices** → `/lab/pacs-devices`.
+2. Open **PACS Settings** → `/lab/pacs-settings` (also `/lab/pacs-devices`).
+   From the RIS worklist, use the **PACS Settings** button in the header.
 3. Register each machine (CT / MR / US / DX …) with AE Title, IP, and DICOM port.
 4. **C-ECHO** to verify connectivity.
 5. **Query (C-FIND)** → select studies → **Pull** (C-MOVE) into Orthanc.

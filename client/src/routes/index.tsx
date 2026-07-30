@@ -1179,6 +1179,7 @@ const AppRoutes = () => {
         <Route path="/lab/imaging"         element={<LabRIS />} />
         <Route path="/lab/sonology"        element={<LabRIS />} />
         <Route path="/lab/pacs-devices"    element={<LabPacsDevices />} />
+        <Route path="/lab/pacs-settings"   element={<LabPacsDevices />} />
         <Route path="/lab/orders"          element={<LabOrdersPage />} />
         <Route path="/lab/orders/new"      element={<LabOrdersPage />} />
         <Route path="/lab/patients"        element={<LabPatientsPage />} />

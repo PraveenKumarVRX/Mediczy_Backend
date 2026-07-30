@@ -48,7 +48,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: CalendarCheck, label: "Appointments", href: "/lab/appointments" },
   { icon: Clock, label: "Sample Queue", href: "/lab/queue" },
   { icon: ScanLine, label: "RIS / PACS", href: "/lab/ris", highlight: true },
-  { icon: HardDrive, label: "PACS Devices", href: "/lab/pacs-devices", highlight: true },
+  { icon: HardDrive, label: "PACS Settings", href: "/lab/pacs-settings", highlight: true },
 ];
 
 const labWorkItems: SidebarItem[] = [

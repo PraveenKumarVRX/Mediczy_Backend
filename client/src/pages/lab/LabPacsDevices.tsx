@@ -254,10 +254,11 @@ export default function LabPacsDevices() {
           <div>
             <h1 className="text-2xl font-semibold text-slate-900 flex items-center gap-2">
               <HardDrive className="w-6 h-6 text-teal-600" />
-              PACS Devices
+              PACS Settings
             </h1>
             <p className="text-sm text-slate-600 mt-1">
-              Connect CT, MRI, Ultrasound (USG), and Digital X-ray machines. Pull DICOM studies into Mediczy PACS.
+              Orthanc status, local AE title, and modality devices (CT / MRI / USG / X-ray).
+              Register scanners here, then open the RIS worklist to view studies.
             </p>
           </div>
           <div className="flex gap-2">

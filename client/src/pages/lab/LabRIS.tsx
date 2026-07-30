@@ -13,7 +13,7 @@ import {
   FileText, FlaskConical, Calendar, User,
   AlertCircle, CheckCircle2, Clock, Activity, AlertTriangle,
   ChevronDown, X, ScanLine, Info, Edit3,
-  Download, Printer, Eye, Trash2,
+  Download, Printer, Eye, Trash2, HardDrive,
 } from 'lucide-react';
 import DicomViewer from '../../components/lab/DicomViewer';
 import { openOhifViewer, buildOhifViewerUrl, listenOhifMeasurements } from '@/utils/imagingViewer';
@@ -915,12 +915,23 @@ const LabRIS: React.FC = () => {
               </h1>
               <p className="text-xs text-gray-500">{displayLabName} · {total} studies</p>
             </div>
-            <button
-              onClick={() => setShowUpload(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-xs font-medium text-white transition-colors"
-            >
-              <Upload size={12} /> Upload
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate('/lab/pacs-settings')}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-xs font-medium text-slate-200 transition-colors"
+                title="Orthanc status, AE title, register CT/MRI/USG scanners"
+              >
+                <HardDrive size={12} className="text-teal-400" />
+                PACS Settings
+              </button>
+              <button
+                onClick={() => setShowUpload(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-xs font-medium text-white transition-colors"
+              >
+                <Upload size={12} /> Upload
+              </button>
+            </div>
           </div>
 
           {/* Search */}

@@ -28,7 +28,7 @@ import {
   Plus, Search, Filter, Calendar, Clock, Users, TestTube, Microscope,
   CheckCircle, FileText, Package, Receipt, CreditCard, TrendingUp,
   UserCog, Bell, Settings, HelpCircle, ArrowLeft, Edit, Trash2,
-  Eye, AlertCircle, Download, Upload, Activity, BarChart3
+  Eye, AlertCircle, Download, Upload, Activity, BarChart3, HardDrive, ScanLine
 } from "lucide-react";
 
 type Id = string;
@@ -4327,6 +4327,7 @@ export const LabNotificationsPage = () => {
 // Settings Page
 export const LabSettingsPage = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [settings, setSettings] = useLocalStorageState<LabSettings>("lab.settings", {
     labName: "Mediczy Diagnostic Lab",
     licenseNumber: "DL-2024-001",
@@ -4363,6 +4364,7 @@ export const LabSettingsPage = () => {
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="tests">Test Configuration</TabsTrigger>
             <TabsTrigger value="equipment">Equipment</TabsTrigger>
+            <TabsTrigger value="pacs">PACS</TabsTrigger>
             <TabsTrigger value="reports">Reports</TabsTrigger>
           </TabsList>
 
@@ -4418,6 +4420,33 @@ export const LabSettingsPage = () => {
                 <div className="space-y-2">
                   <Label>Equipment Notes</Label>
                   <Textarea value={settings.equipmentNotes} onChange={(e) => setSettings((p) => ({ ...p, equipmentNotes: e.target.value }))} />
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="pacs" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <HardDrive className="h-5 w-5 text-teal-600" />
+                  PACS / Orthanc
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Configure Orthanc status, local AE title, and register CT / MRI / USG / X-ray modalities.
+                  Study worklist and reporting stay in RIS / PACS.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button className="gap-2" onClick={() => navigate("/lab/pacs-settings")}>
+                    <HardDrive className="h-4 w-4" />
+                    Open PACS Settings
+                  </Button>
+                  <Button variant="outline" className="gap-2" onClick={() => navigate("/lab/ris")}>
+                    <ScanLine className="h-4 w-4" />
+                    Open RIS Worklist
+                  </Button>
                 </div>
               </CardContent>
             </Card>
