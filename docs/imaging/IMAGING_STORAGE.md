@@ -1,115 +1,91 @@
-# Imaging storage — where pixels live
+# Imaging storage — where pixels live + tenant segregation
 
-## Today (after this change)
-
-| Path | Hot (daily) | Archive | Viewer source |
-|---|---|---|---|
-| Lab RIS DICOM | **Orthanc** + **S3 daily** `ris/tenant-{labId}/…` | MinIO (nightly copy) | OHIF ← Orthanc |
-| HyperGrid STOW | **S3 daily** `dicom/tenant-{id}/…` | MinIO (nightly copy) | WADO ← S3 daily (fallback legacy uploads) |
-| Doctor imaging | **S3 daily** `imaging/tenant-{hospitalId}/…` | MinIO (nightly copy) | Presigned S3 |
-| Scanner C-STORE | **Orthanc** volume | Bridge → HyperGrid → S3 daily → MinIO | Orthanc / OHIF |
-
-## Tenant segregation (how images stay apart)
-
-Isolation is layered — you need all three for real multi-tenant safety:
-
-| Layer | What | Strength |
-|---|---|---|
-| **1. DB** | `tenant_id` / `lab_id` on `hg_dicom_*`, `ris_studies`, VNA rows | Query isolation (already enforced on API reads) |
-| **2. Object key prefix** | `{dicom\|imaging\|ris}/tenant-{id}/YYYY/MM/DD/…` | List/delete/transfer one hospital without touching others |
-| **3. Orthanc** | Shared PACS today | **Weak** — study UIDs are opaque but not tenant-scoped. For hard isolation deploy **one Orthanc per hospital** (see infra README) |
-
-### Recommended key layout (implemented)
-
-```
-s3://mediczy-imaging-daily/
-  dicom/tenant-12/2026/07/30/1785…-a1b2.dcm     ← hospital / lab 12
-  dicom/tenant-56/2026/07/30/1785…-c3d4.dcm     ← AJ Dental (example)
-  ris/tenant-56/2026/07/30/…
-  imaging/tenant-12/2026/07/30/…
-```
-
-Same keys are mirrored to MinIO under `mediczy-imaging-archive`.
-
-Transfer one tenant only:
-
-```bash
-# API
-POST /api/imaging/platform/storage/daily-transfer/run
-{ "tenantId": 56, "dryRun": true }
-
-# or env for the CLI/cron
-IMAGING_TRANSFER_TENANT_ID=56 ./scripts/imaging/sync-imaging-daily-to-minio.sh
-```
-
-### Stronger options (if you need them later)
-
-| Mode | When | How |
-|---|---|---|
-| **Prefix** (default, now) | Most hospitals on one platform | `tenant-{id}/` in key |
-| **Per-tenant MinIO bucket** | Customer-owned archive / BAA | `MINIO_IMAGING_BUCKET=mediczy-imaging-t{id}` + IAM |
-| **Per-tenant S3 bucket** | Strict data residency | `mediczy-imaging-daily-t{id}` + bucket policy |
-| **Per-tenant Orthanc** | Hard PACS isolation | One compose stack / VLAN per hospital |
+## Architecture
 
 ```
 Upload (RIS / HyperGrid / doctor)
         │
         ▼
- s3://S3_IMAGING_DAILY_BUCKET/{dicom|imaging|ris}/tenant-{id}/YYYY/MM/DD/…
+ S3 daily (hot)  ──tenant key──►  …/tenant-{id}/YYYY/MM/DD/file
         │
-        │  cron 02:30  (imaging_daily_minio_transfer)
+        │  cron 02:30
         ▼
- minio://MINIO_IMAGING_BUCKET/{same key}              ← durable archive
+ MinIO archive (warm/cold)
 ```
 
-Default bucket name: **`mediczy-imaging-daily`**  
-Default MinIO archive: **`mediczy-imaging-archive`**
+## Tenant isolation modes
 
-Until `S3_IMAGING_DAILY_BUCKET` is set, the app falls back to `S3_UPLOADS_BUCKET` (`mediczy-uploads`) so existing deploys keep working. Legacy flat keys (`dicom/ts-uid.dcm` without `tenant-`) still read via fallback.
+Set `IMAGING_TENANT_ISOLATION` in `server/.env`:
 
-## One-time setup (EC2)
+| Mode | S3 hot | MinIO archive | When to use |
+|---|---|---|---|
+| **`prefix`** (default) | Shared `mediczy-imaging-daily` | Shared `mediczy-imaging-archive` | Most installs — keys under `tenant-{id}/` |
+| **`minio-bucket`** | Shared daily | **`mediczy-imaging-t{id}`** per tenant | Customer-owned archive / easier purge |
+| **`s3-bucket`** | **`mediczy-imaging-daily-t{id}`** | **`mediczy-imaging-t{id}`** | Strict residency / separate IAM |
+
+Keys are **always** tenant-prefixed (all modes):
+
+```
+dicom/tenant-56/2026/07/30/1785…-a1b2.dcm
+ris/tenant-56/2026/07/30/…
+imaging/tenant-12/2026/07/30/…
+```
+
+DB queries remain scoped by `tenant_id` / `lab_id`. Orthanc is still shared unless you deploy one stack per hospital.
+
+## EC2 setup
 
 ```bash
-# 1) Create AWS S3 daily bucket (public access blocked, AES256)
+# 1) Shared daily bucket (always create this; used by prefix + minio-bucket modes)
 AWS_REGION=ap-south-1 ./scripts/imaging/create-imaging-daily-s3-bucket.sh
 
-# 2) Ensure MinIO is up
+# 2) MinIO alias + shared archive (prefix mode)
 mc alias set mediczy http://127.0.0.1:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
 ./scripts/imaging/ensure-minio-imaging-bucket.sh
 
 # 3) server/.env
 S3_IMAGING_DAILY_BUCKET=mediczy-imaging-daily
-AWS_REGION=ap-south-1
 MINIO_ENDPOINT=http://127.0.0.1:9000
 MINIO_ACCESS_KEY=...
 MINIO_SECRET_KEY=...
 MINIO_IMAGING_BUCKET=mediczy-imaging-archive
 
-# 4) Migration + restart
+# Choose isolation (default prefix):
+IMAGING_TENANT_ISOLATION=prefix
+# IMAGING_TENANT_ISOLATION=minio-bucket
+# IMAGING_TENANT_ISOLATION=s3-bucket
+# S3_IMAGING_DAILY_BUCKET_PREFIX=mediczy-imaging-daily
+# MINIO_IMAGING_BUCKET_PREFIX=mediczy-imaging
+
+# 4) Per-tenant buckets (minio-bucket / s3-bucket modes)
+IMAGING_TENANT_ISOLATION=minio-bucket TENANT_IDS=12,56 \
+  ./scripts/imaging/ensure-tenant-imaging-buckets.sh
+
+# 5) Migrate + restart
 node server/migrations/imaging-daily-transfer-log.migration.js
 pm2 restart mediczy-server --update-env
 ```
 
-## Manual / dry-run transfer
-
-```bash
-./scripts/imaging/sync-imaging-daily-to-minio.sh --dry-run
-./scripts/imaging/sync-imaging-daily-to-minio.sh
-IMAGING_TRANSFER_TENANT_ID=56 LOOKBACK_HOURS=72 ./scripts/imaging/sync-imaging-daily-to-minio.sh
-```
-
-API (auth required):
+## APIs
 
 ```
+GET  /api/imaging/platform/storage/tenant-isolation
+POST /api/imaging/platform/storage/tenant-isolation/ensure   { "tenantId": 56 }
 GET  /api/imaging/platform/storage/daily-transfer
 POST /api/imaging/platform/storage/daily-transfer/run
-     body: { "dryRun": false, "force": false, "lookbackHours": 36, "tenantId": 56 }
+     { "tenantId": 56, "dryRun": true, "force": false, "lookbackHours": 36 }
+```
+
+## Transfer one tenant
+
+```bash
+IMAGING_TRANSFER_TENANT_ID=56 ./scripts/imaging/sync-imaging-daily-to-minio.sh --dry-run
+./scripts/imaging/sync-imaging-daily-to-minio.sh
 ```
 
 ## Safety
 
-- S3 daily bucket: **Block Public Access** + default **SSE-AES256**
-- Transfer does **not** delete from S3 unless `IMAGING_DAILY_DELETE_AFTER_TRANSFER=true`
-- Reads try daily bucket first, then legacy `mediczy-uploads` for pre-cutover keys
-- PHI transfer log: `imaging_daily_transfer_log`
-- API reads remain filtered by `tenant_id` / `lab_id` even if someone guesses an S3 key
+- Public access blocked + AES256 on AWS daily buckets
+- No S3 delete after MinIO copy unless `IMAGING_DAILY_DELETE_AFTER_TRANSFER=true`
+- Reads fall back across tenant bucket / shared daily / legacy uploads
+- Transfer log: `imaging_daily_transfer_log` (includes `tenant_id`)

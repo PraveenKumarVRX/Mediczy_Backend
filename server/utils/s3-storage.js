@@ -1,11 +1,10 @@
 /**
  * Shared multer-s3 storage for uploads.
  *
- * Imaging / DICOM / RIS → S3_IMAGING_DAILY_BUCKET (hot daily store), else S3_UPLOADS_BUCKET.
- * Tenant segregation (default): key prefix
+ * Imaging keys (always tenant-scoped):
  *   {folder}/tenant-{id}/YYYY/MM/DD/{timestamp}-{uid}{ext}
  *
- * Nightly job copies those objects to MinIO (imaging-daily-minio-transfer.service.js).
+ * Bucket selection depends on IMAGING_TENANT_ISOLATION — see imaging-tenant-storage.service.js
  */
 
 import {
@@ -17,6 +16,14 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import multerS3 from 'multer-s3';
 import crypto from 'crypto';
 import path from 'path';
+import {
+  getImagingDailyBucketForTenant,
+  resolveImagingBucketFromKey,
+  sharedImagingDailyBucket,
+  tenantKeySegment as tenantSeg,
+  parseTenantIdFromKey,
+  ensureTenantImagingStorage,
+} from '../services/imaging/imaging-tenant-storage.service.js';
 
 const IMAGING_PREFIXES = new Set(['dicom', 'imaging', 'ris']);
 
@@ -28,40 +35,19 @@ export function getUploadsBucket() {
   return process.env.S3_UPLOADS_BUCKET || 'mediczy-uploads';
 }
 
-/** Dedicated hot bucket for clinical imaging. */
-export function getImagingDailyBucket() {
-  return (
-    process.env.S3_IMAGING_DAILY_BUCKET
-    || process.env.S3_UPLOADS_BUCKET
-    || 'mediczy-imaging-daily'
-  );
+export function getImagingDailyBucket(tenantId = null) {
+  if (tenantId != null) return getImagingDailyBucketForTenant(tenantId);
+  return sharedImagingDailyBucket();
 }
 
 export function getS3Region() {
   return process.env.AWS_REGION || 'ap-south-1';
 }
 
-/** Resolve which bucket holds a key based on its top-level prefix. */
-export function resolveBucketForKey(key) {
-  const prefix = String(key || '').split('/')[0];
-  if (IMAGING_PREFIXES.has(prefix)) return getImagingDailyBucket();
-  return getUploadsBucket();
-}
-
-/**
- * Normalize a tenant id for object-key segments.
- * @returns {string} e.g. "tenant-56" or "tenant-unknown"
- */
 export function tenantKeySegment(tenantId) {
-  if (tenantId == null || tenantId === '') return 'tenant-unknown';
-  const raw = String(tenantId).trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64);
-  if (!raw) return 'tenant-unknown';
-  return raw.startsWith('tenant-') ? raw : `tenant-${raw}`;
+  return tenantSeg(tenantId);
 }
 
-/**
- * Pull tenant/lab/hospital id from an authenticated request.
- */
 export function resolveTenantIdFromReq(req) {
   return (
     req?.tenantId
@@ -78,10 +64,6 @@ export function resolveTenantIdFromReq(req) {
   );
 }
 
-/**
- * Build a tenant-segregated imaging object key.
- * Example: dicom/tenant-56/2026/07/30/1785427019815-a1b2c3d4.dcm
- */
 export function buildImagingObjectKey({
   folder,
   tenantId,
@@ -98,30 +80,43 @@ export function buildImagingObjectKey({
   return `${safeFolder}/${tenant}/${yyyy}/${mm}/${dd}/${Date.now()}-${uid}${ext}`;
 }
 
-/** Prefix used to list one tenant’s objects under a folder. */
 export function imagingTenantPrefix(folder, tenantId) {
   return `${folder}/${tenantKeySegment(tenantId)}/`;
 }
 
+/** Resolve which bucket holds a key. */
+export function resolveBucketForKey(key) {
+  const prefix = String(key || '').split('/')[0];
+  if (IMAGING_PREFIXES.has(prefix)) return resolveImagingBucketFromKey(key);
+  return getUploadsBucket();
+}
+
 /**
- * Returns a multer-s3 storage engine scoped to a folder prefix.
- * Imaging folders embed tenant + UTC date in the key for segregation.
- *
- * @param {string} folder  e.g. 'chat' | 'imaging' | 'recording' | 'dicom' | 'ris'
+ * @param {string} folder
  * @param {{ resolveTenant?: (req) => any }} [opts]
  */
 export function s3Storage(folder, opts = {}) {
-  const bucket = IMAGING_PREFIXES.has(folder) ? getImagingDailyBucket() : getUploadsBucket();
   const resolveTenant = opts.resolveTenant || resolveTenantIdFromReq;
+  const isImaging = IMAGING_PREFIXES.has(folder);
 
   return multerS3({
     s3: s3Client,
-    bucket,
+    bucket(req, _file, cb) {
+      try {
+        if (!isImaging) return cb(null, getUploadsBucket());
+        const tid = resolveTenant(req);
+        // Fire-and-forget ensure (idempotent); don't block key generation on slow CreateBucket
+        ensureTenantImagingStorage(tid).catch(() => {});
+        cb(null, getImagingDailyBucketForTenant(tid));
+      } catch (err) {
+        cb(err);
+      }
+    },
     contentType: multerS3.AUTO_CONTENT_TYPE,
     serverSideEncryption: 'AES256',
     key(req, file, cb) {
       try {
-        if (IMAGING_PREFIXES.has(folder)) {
+        if (isImaging) {
           cb(null, buildImagingObjectKey({
             folder,
             tenantId: resolveTenant(req),
@@ -139,20 +134,22 @@ export function s3Storage(folder, opts = {}) {
   });
 }
 
-/**
- * Generate a presigned GET URL (default 1 hour).
- * Tries imaging-daily bucket first for imaging prefixes, then uploads (legacy).
- */
-export async function s3PresignedUrl(key, expiresIn = 3600) {
+async function tryBuckets(key, fn) {
   const primary = resolveBucketForKey(key);
   const uploads = getUploadsBucket();
-  const candidates = primary === uploads ? [primary] : [primary, uploads];
+  const shared = sharedImagingDailyBucket();
+  const tid = parseTenantIdFromKey(key);
+  const candidates = [...new Set([
+    primary,
+    shared,
+    uploads,
+    tid ? getImagingDailyBucketForTenant(tid) : null,
+  ].filter(Boolean))];
+
   let lastErr;
   for (const bucket of candidates) {
     try {
-      await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
-      const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-      return getSignedUrl(s3Client, cmd, { expiresIn });
+      return await fn(bucket);
     } catch (err) {
       lastErr = err;
     }
@@ -160,24 +157,22 @@ export async function s3PresignedUrl(key, expiresIn = 3600) {
   throw lastErr || new Error(`Object not found: ${key}`);
 }
 
-/** Stream DICOM/object bytes from S3 for WADO-RS (daily bucket, then legacy uploads). */
+export async function s3PresignedUrl(key, expiresIn = 3600) {
+  return tryBuckets(key, async (bucket) => {
+    await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+    return getSignedUrl(s3Client, cmd, { expiresIn });
+  });
+}
+
 export async function s3GetObjectBuffer(key) {
-  const primary = resolveBucketForKey(key);
-  const uploads = getUploadsBucket();
-  const candidates = primary === uploads ? [primary] : [primary, uploads];
-  let lastErr;
-  for (const bucket of candidates) {
-    try {
-      const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-      const res = await s3Client.send(cmd);
-      const chunks = [];
-      for await (const chunk of res.Body) chunks.push(chunk);
-      return Buffer.concat(chunks);
-    } catch (err) {
-      lastErr = err;
-    }
-  }
-  throw lastErr || new Error(`Object not found: ${key}`);
+  return tryBuckets(key, async (bucket) => {
+    const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
+    const res = await s3Client.send(cmd);
+    const chunks = [];
+    for await (const chunk of res.Body) chunks.push(chunk);
+    return Buffer.concat(chunks);
+  });
 }
 
 export function s3FileUrl(key) {
@@ -185,9 +180,5 @@ export function s3FileUrl(key) {
   return `https://${bucket}.s3.${getS3Region()}.amazonaws.com/${key}`;
 }
 
-/** @deprecated use getImagingDailyBucket() — kept for RIS imports */
-export const BUCKET = process.env.S3_IMAGING_DAILY_BUCKET
-  || process.env.S3_UPLOADS_BUCKET
-  || 'mediczy-imaging-daily';
-
-export { getS3Region as S3_REGION };
+export const BUCKET = sharedImagingDailyBucket();
+export { getS3Region as S3_REGION, parseTenantIdFromKey };

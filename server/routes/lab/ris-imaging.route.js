@@ -18,6 +18,7 @@ import os        from 'os';
 import pool      from '../../db/pgPool.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
 import { s3Client, BUCKET, getImagingDailyBucket, s3PresignedUrl, buildImagingObjectKey } from '../../utils/s3-storage.js';
+import { ensureTenantImagingStorage } from '../../services/imaging/imaging-tenant-storage.service.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import crypto    from 'crypto';
 import {
@@ -451,13 +452,14 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
     }
 
     // Archive to S3 (compliance backup; OHIF reads from Orthanc) — tenant-segregated key
+    await ensureTenantImagingStorage(req.lab.id).catch(() => {});
     const s3Key  = buildImagingObjectKey({
       folder: 'ris',
       tenantId: req.lab.id,
       originalName: req.file.originalname,
     });
     await s3Client.send(new PutObjectCommand({
-      Bucket:      getImagingDailyBucket(),
+      Bucket:      getImagingDailyBucket(req.lab.id),
       Key:         s3Key,
       Body:        fs.createReadStream(req.file.path),
       ContentType: req.file.mimetype || 'application/octet-stream',
@@ -653,6 +655,7 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
 
     const primaryMeta = dicomBuffers[0].meta;
     const s3Keys = [];
+    await ensureTenantImagingStorage(req.lab.id).catch(() => {});
     for (const f of files) {
       const s3Key = buildImagingObjectKey({
         folder: 'ris',
@@ -660,7 +663,7 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
         originalName: f.originalname,
       });
       await s3Client.send(new PutObjectCommand({
-        Bucket: getImagingDailyBucket(),
+        Bucket: getImagingDailyBucket(req.lab.id),
         Key: s3Key,
         Body: fs.createReadStream(f.path),
         ContentType: f.mimetype || 'application/dicom',
@@ -1836,13 +1839,16 @@ router.delete('/:id', authLab, async (req, res) => {
     });
 
     if (study.file_path) {
-      await s3Client.send(new DeleteObjectCommand({
-        Bucket: getImagingDailyBucket(),
-        Key: study.file_path,
-      })).catch(() => {});
-      // Also try legacy uploads bucket if key was stored there before daily bucket cutover
-      if (BUCKET !== getImagingDailyBucket()) {
-        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: study.file_path })).catch(() => {});
+      const buckets = [...new Set([
+        getImagingDailyBucket(req.lab.id),
+        getImagingDailyBucket(),
+        BUCKET,
+      ].filter(Boolean))];
+      for (const bucket of buckets) {
+        await s3Client.send(new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: study.file_path,
+        })).catch(() => {});
       }
     }
     await client.query('DELETE FROM ris_studies WHERE id = $1', [req.params.id]);

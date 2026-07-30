@@ -421,6 +421,35 @@ router.get('/storage/daily-transfer', authImaging, async (_req, res) => {
   }
 });
 
+router.get('/storage/tenant-isolation', authImaging, async (_req, res) => {
+  try {
+    const { describeTenantIsolation } = await import('../services/imaging/imaging-tenant-storage.service.js');
+    return res.json({ success: true, ...describeTenantIsolation() });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/storage/tenant-isolation/ensure', authImaging, async (req, res) => {
+  try {
+    const tenantId = req.body?.tenantId ?? getTenantId(req);
+    if (tenantId == null) {
+      return res.status(400).json({ success: false, message: 'tenantId required' });
+    }
+    const { ensureTenantImagingStorage, describeTenantIsolation } = await import(
+      '../services/imaging/imaging-tenant-storage.service.js'
+    );
+    const ensured = await ensureTenantImagingStorage(tenantId);
+    return res.json({
+      success: true,
+      isolation: describeTenantIsolation(),
+      ensured,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.post('/storage/daily-transfer/run', authImaging, async (req, res) => {
   try {
     const { transferImagingDailyToMinio } = await import('../services/imaging/imaging-daily-minio-transfer.service.js');

@@ -1,18 +1,10 @@
 /**
- * Copy imaging objects from the hot S3 daily bucket → MinIO archive.
+ * Copy imaging objects from hot S3 → MinIO archive (tenant-aware).
  *
- * Flow:
- *   Lab/Doctor/HyperGrid upload → s3://S3_IMAGING_DAILY_BUCKET/{dicom|imaging|ris}/…
- *   Nightly cron (02:30)        → minio://MINIO_IMAGING_BUCKET/…  (same keys)
- *
- * Env:
- *   S3_IMAGING_DAILY_BUCKET   — source (default mediczy-imaging-daily)
- *   MINIO_ENDPOINT            — e.g. http://127.0.0.1:9000
- *   MINIO_ACCESS_KEY / MINIO_SECRET_KEY
- *   MINIO_IMAGING_BUCKET      — destination (default mediczy-imaging-archive)
- *   IMAGING_TRANSFER_PREFIXES — comma list (default dicom,imaging,ris)
- *   IMAGING_TRANSFER_LOOKBACK_HOURS — only objects modified in window (default 36)
- *   IMAGING_DAILY_DELETE_AFTER_TRANSFER — if "true", delete from S3 after successful MinIO put
+ * IMAGING_TENANT_ISOLATION:
+ *   prefix       — shared S3 + shared MinIO; keys under tenant-{id}/
+ *   minio-bucket — shared S3; MinIO bucket per tenant
+ *   s3-bucket    — S3 bucket + MinIO bucket per tenant
  */
 import {
   S3Client,
@@ -23,7 +15,20 @@ import {
 } from '@aws-sdk/client-s3';
 import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
-import { getImagingDailyBucket, getS3Region } from '../../utils/s3-storage.js';
+import { getS3Region } from '../../utils/s3-storage.js';
+import {
+  getTenantIsolationMode,
+  getImagingDailyBucketForTenant,
+  getMinioImagingBucketForTenant,
+  sharedImagingDailyBucket,
+  sharedMinioImagingBucket,
+  parseTenantIdFromKey,
+  normalizeTenantId,
+  ensureTenantMinioImagingBucket,
+  ensureTenantImagingDailyBucket,
+  describeTenantIsolation,
+  ISOLATION_S3_BUCKET,
+} from './imaging-tenant-storage.service.js';
 
 const LOOKBACK_HOURS = Number(process.env.IMAGING_TRANSFER_LOOKBACK_HOURS || 36);
 const DELETE_AFTER = ['1', 'true', 'yes'].includes(
@@ -54,10 +59,6 @@ function minioS3() {
   });
 }
 
-function minioBucket() {
-  return process.env.MINIO_IMAGING_BUCKET || 'mediczy-imaging-archive';
-}
-
 async function ensureTransferTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS imaging_daily_transfer_log (
@@ -65,6 +66,7 @@ async function ensureTransferTable() {
       source_bucket TEXT NOT NULL,
       dest_bucket TEXT NOT NULL,
       object_key TEXT NOT NULL,
+      tenant_id TEXT,
       size_bytes BIGINT,
       etag TEXT,
       status TEXT NOT NULL DEFAULT 'copied',
@@ -73,6 +75,9 @@ async function ensureTransferTable() {
       transferred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (dest_bucket, object_key)
     )
+  `).catch(() => {});
+  await pool.query(`
+    ALTER TABLE imaging_daily_transfer_log ADD COLUMN IF NOT EXISTS tenant_id TEXT
   `).catch(() => {});
 }
 
@@ -88,11 +93,12 @@ async function alreadyTransferred(destBucket, key) {
 async function recordTransfer(row) {
   await pool.query(
     `INSERT INTO imaging_daily_transfer_log
-       (source_bucket, dest_bucket, object_key, size_bytes, etag, status, error_message, deleted_from_source)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       (source_bucket, dest_bucket, object_key, tenant_id, size_bytes, etag, status, error_message, deleted_from_source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (dest_bucket, object_key)
      DO UPDATE SET
        status = EXCLUDED.status,
+       tenant_id = COALESCE(EXCLUDED.tenant_id, imaging_daily_transfer_log.tenant_id),
        size_bytes = COALESCE(EXCLUDED.size_bytes, imaging_daily_transfer_log.size_bytes),
        etag = COALESCE(EXCLUDED.etag, imaging_daily_transfer_log.etag),
        error_message = EXCLUDED.error_message,
@@ -102,6 +108,7 @@ async function recordTransfer(row) {
       row.sourceBucket,
       row.destBucket,
       row.key,
+      row.tenantId ?? null,
       row.size ?? null,
       row.etag ?? null,
       row.status,
@@ -116,7 +123,7 @@ async function* listPrefix(client, bucket, prefix, modifiedSince) {
   do {
     const res = await client.send(new ListObjectsV2Command({
       Bucket: bucket,
-      Prefix: prefix.endsWith('/') ? prefix : `${prefix}/`,
+      Prefix: prefix ? (prefix.endsWith('/') ? prefix : `${prefix}/`) : undefined,
       ContinuationToken: token,
     }));
     for (const obj of res.Contents || []) {
@@ -128,11 +135,10 @@ async function* listPrefix(client, bucket, prefix, modifiedSince) {
   } while (token);
 }
 
-async function streamCopy({ aws, minio, sourceBucket, destBucket, key, size, etag }) {
+async function streamCopy({ aws, minio, sourceBucket, destBucket, key, size, etag, tenantId }) {
   const get = await aws.send(new GetObjectCommand({ Bucket: sourceBucket, Key: key }));
-  const body = get.Body;
   const chunks = [];
-  for await (const chunk of body) chunks.push(chunk);
+  for await (const chunk of get.Body) chunks.push(chunk);
   const buf = Buffer.concat(chunks);
 
   await minio.send(new PutObjectCommand({
@@ -143,10 +149,10 @@ async function streamCopy({ aws, minio, sourceBucket, destBucket, key, size, eta
     ContentLength: buf.length,
     Metadata: {
       source_bucket: sourceBucket,
+      tenant_id: tenantId ? String(tenantId) : '',
       transferred_at: new Date().toISOString(),
       ...(etag ? { source_etag: String(etag).replace(/"/g, '') } : {}),
     },
-    // MinIO accepts SSE header optionally; omit if not configured
   }));
 
   let deleted = false;
@@ -159,6 +165,7 @@ async function streamCopy({ aws, minio, sourceBucket, destBucket, key, size, eta
     sourceBucket,
     destBucket,
     key,
+    tenantId,
     size: size ?? buf.length,
     etag,
     status: 'copied',
@@ -168,89 +175,107 @@ async function streamCopy({ aws, minio, sourceBucket, destBucket, key, size, eta
   return { key, bytes: buf.length, deleted };
 }
 
-/**
- * Transfer recent imaging objects from S3 daily → MinIO.
- * @param {{ lookbackHours?: number, dryRun?: boolean, force?: boolean, tenantId?: string|number }} [opts]
- */
-export async function transferImagingDailyToMinio(opts = {}) {
-  const lookbackHours = opts.lookbackHours ?? LOOKBACK_HOURS;
-  const sourceBucket = getImagingDailyBucket();
-  const destBucket = minioBucket();
-  const aws = awsS3();
-  const minio = minioS3();
-  const since = new Date(Date.now() - lookbackHours * 3600 * 1000);
-  const tenantFilter = opts.tenantId != null
-    ? `tenant-${String(opts.tenantId).replace(/^tenant-/, '')}`
-    : (process.env.IMAGING_TRANSFER_TENANT_ID
-      ? `tenant-${String(process.env.IMAGING_TRANSFER_TENANT_ID).replace(/^tenant-/, '')}`
-      : null);
+/** Discover tenant ids that have imaging rows (for multi-bucket modes). */
+async function discoverTenantIds(explicitTenantId) {
+  if (explicitTenantId != null) {
+    const id = normalizeTenantId(explicitTenantId);
+    return id ? [id] : [];
+  }
+  if (process.env.IMAGING_TRANSFER_TENANT_ID) {
+    const id = normalizeTenantId(process.env.IMAGING_TRANSFER_TENANT_ID);
+    return id ? [id] : [];
+  }
 
-  await ensureTransferTable();
+  const mode = getTenantIsolationMode();
+  if (mode === 'prefix') return [null]; // null = scan shared bucket all tenants via key prefixes
 
-  // Probe source bucket (ListObjects empty prefix)
+  const r = await pool.query(`
+    SELECT DISTINCT tid FROM (
+      SELECT tenant_id::text AS tid FROM hg_dicom_instances WHERE tenant_id IS NOT NULL
+      UNION
+      SELECT tenant_id::text FROM hg_dicom_studies WHERE tenant_id IS NOT NULL
+      UNION
+      SELECT lab_id::text FROM ris_studies WHERE lab_id IS NOT NULL
+    ) t
+    WHERE tid IS NOT NULL AND tid <> ''
+    ORDER BY tid
+    LIMIT 500
+  `).catch(() => ({ rows: [] }));
+
+  return r.rows.map((row) => normalizeTenantId(row.tid)).filter(Boolean);
+}
+
+async function transferTenantBucket({
+  aws, minio, tenantId, since, dryRun, force, summary,
+}) {
+  const sourceBucket = getImagingDailyBucketForTenant(tenantId);
+  const destBucket = getMinioImagingBucketForTenant(tenantId);
+
+  if (!dryRun) {
+    if (getTenantIsolationMode() === ISOLATION_S3_BUCKET && tenantId) {
+      await ensureTenantImagingDailyBucket(tenantId).catch(() => {});
+    }
+    if (tenantId) {
+      await ensureTenantMinioImagingBucket(tenantId).catch((err) => {
+        throw new Error(`MinIO bucket ensure failed for tenant ${tenantId}: ${err.message}`);
+      });
+    }
+  }
+
+  // Probe source
   try {
-    await aws.send(new ListObjectsV2Command({
-      Bucket: sourceBucket,
-      MaxKeys: 1,
-    }));
+    await aws.send(new ListObjectsV2Command({ Bucket: sourceBucket, MaxKeys: 1 }));
   } catch (err) {
     if (err?.name === 'NoSuchBucket' || err?.$metadata?.httpStatusCode === 404) {
-      throw new Error(
-        `S3 daily bucket missing: ${sourceBucket}. Run scripts/imaging/create-imaging-daily-s3-bucket.sh`,
-      );
+      summary.errors.push({ tenantId, error: `source bucket missing: ${sourceBucket}` });
+      return;
     }
     throw err;
   }
 
-  const summary = {
-    sourceBucket,
-    destBucket,
-    lookbackHours,
-    prefixes: PREFIXES,
-    tenantFilter,
-    scanned: 0,
-    copied: 0,
-    skipped: 0,
-    failed: 0,
-    bytes: 0,
-    deletedFromSource: 0,
-    errors: [],
-    dryRun: Boolean(opts.dryRun),
-  };
+  const tenantSeg = tenantId ? `tenant-${tenantId}` : null;
 
   for (const folder of PREFIXES) {
-    const listPrefixPath = tenantFilter ? `${folder}/${tenantFilter}` : folder;
-    for await (const obj of listPrefix(aws, sourceBucket, listPrefixPath, since)) {
+    const listPath = tenantSeg ? `${folder}/${tenantSeg}` : folder;
+    for await (const obj of listPrefix(aws, sourceBucket, listPath, since)) {
+      const keyTenant = parseTenantIdFromKey(obj.Key) || tenantId;
+      const objectDest = getMinioImagingBucketForTenant(keyTenant);
       summary.scanned += 1;
-      if (!opts.force && await alreadyTransferred(destBucket, obj.Key)) {
+
+      if (!force && await alreadyTransferred(objectDest, obj.Key)) {
         summary.skipped += 1;
         continue;
       }
-      if (opts.dryRun) {
+      if (dryRun) {
         summary.copied += 1;
         summary.bytes += obj.Size || 0;
         continue;
       }
       try {
+        if (objectDest !== destBucket) {
+          await ensureTenantMinioImagingBucket(keyTenant).catch(() => {});
+        }
         const result = await streamCopy({
           aws,
           minio,
           sourceBucket,
-          destBucket,
+          destBucket: objectDest,
           key: obj.Key,
           size: obj.Size,
           etag: obj.ETag,
+          tenantId: keyTenant,
         });
         summary.copied += 1;
         summary.bytes += result.bytes;
         if (result.deleted) summary.deletedFromSource += 1;
       } catch (err) {
         summary.failed += 1;
-        summary.errors.push({ key: obj.Key, error: err.message });
+        summary.errors.push({ key: obj.Key, tenantId: keyTenant, error: err.message });
         await recordTransfer({
           sourceBucket,
-          destBucket,
+          destBucket: objectDest,
           key: obj.Key,
+          tenantId: keyTenant,
           size: obj.Size,
           etag: obj.ETag,
           status: 'failed',
@@ -261,8 +286,57 @@ export async function transferImagingDailyToMinio(opts = {}) {
       }
     }
   }
+}
 
-  logger.info('[ImagingDailyTransfer] complete', summary);
+/**
+ * @param {{ lookbackHours?: number, dryRun?: boolean, force?: boolean, tenantId?: string|number }} [opts]
+ */
+export async function transferImagingDailyToMinio(opts = {}) {
+  const lookbackHours = opts.lookbackHours ?? LOOKBACK_HOURS;
+  const aws = awsS3();
+  const minio = minioS3();
+  const since = new Date(Date.now() - lookbackHours * 3600 * 1000);
+  const mode = getTenantIsolationMode();
+
+  await ensureTransferTable();
+  const tenants = await discoverTenantIds(opts.tenantId);
+
+  const summary = {
+    mode,
+    isolation: describeTenantIsolation(),
+    lookbackHours,
+    prefixes: PREFIXES,
+    tenants: tenants.map((t) => t ?? '*'),
+    scanned: 0,
+    copied: 0,
+    skipped: 0,
+    failed: 0,
+    bytes: 0,
+    deletedFromSource: 0,
+    errors: [],
+    dryRun: Boolean(opts.dryRun),
+  };
+
+  for (const tenantId of tenants) {
+    await transferTenantBucket({
+      aws,
+      minio,
+      tenantId,
+      since,
+      dryRun: Boolean(opts.dryRun),
+      force: Boolean(opts.force),
+      summary,
+    });
+  }
+
+  logger.info('[ImagingDailyTransfer] complete', {
+    mode: summary.mode,
+    scanned: summary.scanned,
+    copied: summary.copied,
+    failed: summary.failed,
+    skipped: summary.skipped,
+    bytes: summary.bytes,
+  });
   return summary;
 }
 
@@ -276,8 +350,9 @@ export async function getTransferStatus(limit = 50) {
     `SELECT status, COUNT(*)::int AS n FROM imaging_daily_transfer_log GROUP BY status`,
   ).catch(() => ({ rows: [] }));
   return {
-    sourceBucket: getImagingDailyBucket(),
-    destBucket: minioBucket(),
+    isolation: describeTenantIsolation(),
+    sourceBucket: sharedImagingDailyBucket(),
+    destBucket: sharedMinioImagingBucket(),
     minioEndpoint: process.env.MINIO_ENDPOINT || null,
     counts: Object.fromEntries(counts.rows.map((r) => [r.status, r.n])),
     recent: recent.rows,
