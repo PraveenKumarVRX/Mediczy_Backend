@@ -170,7 +170,7 @@ async function streamCopy({ aws, minio, sourceBucket, destBucket, key, size, eta
 
 /**
  * Transfer recent imaging objects from S3 daily → MinIO.
- * @param {{ lookbackHours?: number, dryRun?: boolean, force?: boolean }} [opts]
+ * @param {{ lookbackHours?: number, dryRun?: boolean, force?: boolean, tenantId?: string|number }} [opts]
  */
 export async function transferImagingDailyToMinio(opts = {}) {
   const lookbackHours = opts.lookbackHours ?? LOOKBACK_HOURS;
@@ -179,6 +179,11 @@ export async function transferImagingDailyToMinio(opts = {}) {
   const aws = awsS3();
   const minio = minioS3();
   const since = new Date(Date.now() - lookbackHours * 3600 * 1000);
+  const tenantFilter = opts.tenantId != null
+    ? `tenant-${String(opts.tenantId).replace(/^tenant-/, '')}`
+    : (process.env.IMAGING_TRANSFER_TENANT_ID
+      ? `tenant-${String(process.env.IMAGING_TRANSFER_TENANT_ID).replace(/^tenant-/, '')}`
+      : null);
 
   await ensureTransferTable();
 
@@ -202,6 +207,7 @@ export async function transferImagingDailyToMinio(opts = {}) {
     destBucket,
     lookbackHours,
     prefixes: PREFIXES,
+    tenantFilter,
     scanned: 0,
     copied: 0,
     skipped: 0,
@@ -212,8 +218,9 @@ export async function transferImagingDailyToMinio(opts = {}) {
     dryRun: Boolean(opts.dryRun),
   };
 
-  for (const prefix of PREFIXES) {
-    for await (const obj of listPrefix(aws, sourceBucket, prefix, since)) {
+  for (const folder of PREFIXES) {
+    const listPrefixPath = tenantFilter ? `${folder}/${tenantFilter}` : folder;
+    for await (const obj of listPrefix(aws, sourceBucket, listPrefixPath, since)) {
       summary.scanned += 1;
       if (!opts.force && await alreadyTransferred(destBucket, obj.Key)) {
         summary.skipped += 1;

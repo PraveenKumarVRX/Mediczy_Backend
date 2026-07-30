@@ -28,7 +28,12 @@ import {
 } from '../services/dicomweb-ohif.service.js';
 
 const router = express.Router();
-const upload = multer({ storage: s3Storage('dicom'), limits: { fileSize: 512 * 1024 * 1024 } });
+const upload = multer({
+  storage: s3Storage('dicom', {
+    resolveTenant: (req) => req.user?.tenantId || req.user?.id || req.lab?.id,
+  }),
+  limits: { fileSize: 512 * 1024 * 1024 },
+});
 
 router.use((req, res, next) => {
   const origin = process.env.OHIF_CORS_ORIGIN || req.headers.origin || '*';

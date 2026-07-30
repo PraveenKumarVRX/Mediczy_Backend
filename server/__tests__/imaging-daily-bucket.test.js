@@ -25,4 +25,19 @@ describe('imaging daily bucket routing', () => {
     expect(resolveBucketForKey('ris/y.dcm')).toBe('mediczy-imaging-daily');
     expect(resolveBucketForKey('chat/z.png')).toBe('mediczy-uploads');
   });
+
+  it('builds tenant-segregated object keys', async () => {
+    const { buildImagingObjectKey, tenantKeySegment, imagingTenantPrefix } = await import('../utils/s3-storage.js');
+    expect(tenantKeySegment(56)).toBe('tenant-56');
+    expect(tenantKeySegment('tenant-56')).toBe('tenant-56');
+    expect(imagingTenantPrefix('dicom', 56)).toBe('dicom/tenant-56/');
+
+    const key = buildImagingObjectKey({
+      folder: 'dicom',
+      tenantId: 56,
+      originalName: 'study.dcm',
+      at: new Date(Date.UTC(2026, 6, 30)),
+    });
+    expect(key).toMatch(/^dicom\/tenant-56\/2026\/07\/30\/\d+-[a-f0-9]+\.dcm$/);
+  });
 });

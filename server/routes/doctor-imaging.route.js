@@ -26,7 +26,15 @@ const ALLOWED_EXT = ['.jpg','.jpeg','.png','.gif','.webp','.bmp','.tiff','.dcm',
                      '.mp4','.webm','.ogv','.mov','.avi','.pdf'];
 
 const upload = multer({
-  storage: s3Storage('imaging'),
+  storage: s3Storage('imaging', {
+    resolveTenant: (req) =>
+      req.user?.hospitalId
+      || req.user?.hospital_id
+      || req.user?.tenantId
+      || req.user?.tenant_id
+      || req.user?.doctorId
+      || req.user?.id,
+  }),
   limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB (DICOM / video)
   fileFilter: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();

@@ -427,6 +427,7 @@ router.post('/storage/daily-transfer/run', authImaging, async (req, res) => {
     const result = await transferImagingDailyToMinio({
       dryRun: Boolean(req.body?.dryRun),
       force: Boolean(req.body?.force),
+      tenantId: req.body?.tenantId ?? undefined,
       lookbackHours: req.body?.lookbackHours != null
         ? Number(req.body.lookbackHours)
         : undefined,

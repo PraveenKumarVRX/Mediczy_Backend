@@ -17,7 +17,7 @@ import fs        from 'fs';
 import os        from 'os';
 import pool      from '../../db/pgPool.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
-import { s3Client, BUCKET, getImagingDailyBucket, s3PresignedUrl } from '../../utils/s3-storage.js';
+import { s3Client, BUCKET, getImagingDailyBucket, s3PresignedUrl, buildImagingObjectKey } from '../../utils/s3-storage.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import crypto    from 'crypto';
 import {
@@ -450,9 +450,12 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       }
     }
 
-    // Archive to S3 (compliance backup; OHIF reads from Orthanc)
-    const ext    = path.extname(req.file.originalname) || '';
-    const s3Key  = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
+    // Archive to S3 (compliance backup; OHIF reads from Orthanc) — tenant-segregated key
+    const s3Key  = buildImagingObjectKey({
+      folder: 'ris',
+      tenantId: req.lab.id,
+      originalName: req.file.originalname,
+    });
     await s3Client.send(new PutObjectCommand({
       Bucket:      getImagingDailyBucket(),
       Key:         s3Key,
@@ -651,8 +654,11 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
     const primaryMeta = dicomBuffers[0].meta;
     const s3Keys = [];
     for (const f of files) {
-      const ext = path.extname(f.originalname) || '.dcm';
-      const s3Key = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
+      const s3Key = buildImagingObjectKey({
+        folder: 'ris',
+        tenantId: req.lab.id,
+        originalName: f.originalname,
+      });
       await s3Client.send(new PutObjectCommand({
         Bucket: getImagingDailyBucket(),
         Key: s3Key,
