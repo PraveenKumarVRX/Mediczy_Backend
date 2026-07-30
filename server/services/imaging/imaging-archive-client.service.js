@@ -35,6 +35,16 @@ import {
 export const ARCHIVE_MINIO = 'minio';
 export const ARCHIVE_WASABI = 'wasabi';
 
+/**
+ * AWS SDK JS >= 3.729 defaults to CRC32 checksums that Wasabi/MinIO often
+ * reject with opaque UnknownError. Only checksum when the API requires it.
+ * @see https://github.com/aws/aws-sdk-js-v3/issues/6810
+ */
+export const S3_COMPAT_CHECKSUM = {
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
+};
+
 export function isMinioConfigured() {
   return Boolean(process.env.MINIO_ENDPOINT && (process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER));
 }
@@ -75,6 +85,7 @@ export function createMinioClient() {
     region: process.env.MINIO_REGION || process.env.AWS_REGION || 'ap-south-1',
     endpoint: process.env.MINIO_ENDPOINT,
     forcePathStyle: true,
+    ...S3_COMPAT_CHECKSUM,
     credentials: {
       accessKeyId: process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || '',
       secretAccessKey: process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || '',
@@ -96,6 +107,7 @@ export function createWasabiClient() {
     region,
     endpoint,
     forcePathStyle: true,
+    ...S3_COMPAT_CHECKSUM,
     credentials: {
       accessKeyId: String(process.env.WASABI_ACCESS_KEY || '').trim(),
       secretAccessKey: String(process.env.WASABI_SECRET_KEY || '').trim(),
@@ -104,8 +116,8 @@ export function createWasabiClient() {
 }
 
 /**
- * Live HeadBucket + ListObjects against Wasabi (proves keys/region/endpoint work).
- * @returns {Promise<{ ok: boolean, region: string, endpoint: string, bucket: string, objectCount?: number, error?: string }>}
+ * Live ListObjects against Wasabi (proves keys/region/endpoint work).
+ * @returns {Promise<{ ok: boolean, region: string, endpoint: string, bucket: string, objectCount?: number, error?: string, detail?: object }>}
  */
 export async function probeWasabiConnectivity() {
   const region = (process.env.WASABI_REGION || 'us-east-1').trim();
@@ -116,7 +128,7 @@ export async function probeWasabiConnectivity() {
   }
   try {
     const client = createWasabiClient();
-    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    // ListObjectsV2 is enough; HeadBucket is flaky on some S3-compatible stores.
     const listed = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 5 }));
     return {
       ok: true,
@@ -128,12 +140,20 @@ export async function probeWasabiConnectivity() {
   } catch (err) {
     const code = err.Code || err.name || err.$metadata?.httpStatusCode || 'Error';
     const message = err.message || String(err);
+    const cause = err.cause ? (err.cause.message || String(err.cause)) : undefined;
     return {
       ok: false,
       region,
       endpoint,
       bucket,
-      error: `${code}: ${message}`,
+      error: `${code}: ${message}${cause ? ` | cause: ${cause}` : ''}`,
+      detail: {
+        httpStatusCode: err.$metadata?.httpStatusCode,
+        requestId: err.$metadata?.requestId,
+        extendedRequestId: err.$metadata?.extendedRequestId,
+        fault: err.$fault,
+        cause: cause || null,
+      },
     };
   }
 }

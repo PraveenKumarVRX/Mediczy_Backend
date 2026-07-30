@@ -118,6 +118,9 @@ function minioClient() {
     region: process.env.MINIO_REGION || process.env.AWS_REGION || 'ap-south-1',
     endpoint,
     forcePathStyle: true,
+    // AWS SDK >= 3.729 CRC32 defaults break MinIO — see imaging-archive-client.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
     credentials: {
       accessKeyId: process.env.MINIO_ACCESS_KEY || process.env.MINIO_ROOT_USER || '',
       secretAccessKey: process.env.MINIO_SECRET_KEY || process.env.MINIO_ROOT_PASSWORD || '',

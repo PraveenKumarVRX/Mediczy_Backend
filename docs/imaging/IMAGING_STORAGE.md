@@ -35,6 +35,10 @@ Wasabi endpoint examples:
 - `https://s3.ap-southeast-1.wasabisys.com`
 - `https://s3.eu-central-1.wasabisys.com`
 
+> **SDK note:** `@aws-sdk/client-s3` ≥ 3.729 enables CRC32 checksums by default.
+> Mediczy sets `requestChecksumCalculation` / `responseChecksumValidation` to
+> `WHEN_REQUIRED` for MinIO and Wasabi clients (otherwise you get opaque `UnknownError`).
+
 ## Tenant isolation modes
 
 Set `IMAGING_TENANT_ISOLATION` in `server/.env`:

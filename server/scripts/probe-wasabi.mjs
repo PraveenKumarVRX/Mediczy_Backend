@@ -37,6 +37,9 @@ delete process.env.AWS_ACCESS_KEY_ID;
 delete process.env.AWS_SECRET_ACCESS_KEY;
 delete process.env.AWS_SESSION_TOKEN;
 process.env.AWS_EC2_METADATA_DISABLED = 'true';
+// Belt-and-suspenders for AWS SDK >= 3.729 vs Wasabi/MinIO
+process.env.AWS_REQUEST_CHECKSUM_CALCULATION = 'WHEN_REQUIRED';
+process.env.AWS_RESPONSE_CHECKSUM_VALIDATION = 'WHEN_REQUIRED';
 
 if (!process.env.WASABI_ENDPOINT || !process.env.WASABI_ACCESS_KEY || !process.env.WASABI_SECRET_KEY) {
   loadWasabiEnvFromFile(path.join(serverRoot, '.env'));
@@ -61,11 +64,14 @@ console.log(
 
 const result = await probeWasabiConnectivity();
 if (result.ok) {
-  console.log(`[wasabi] OK — HeadBucket + ListObjects (objects≈${result.objectCount})`);
+  console.log(`[wasabi] OK — ListObjects (objects≈${result.objectCount})`);
   process.exit(0);
 }
 
 console.error('[wasabi] FAIL:', result.error);
+if (result.detail) {
+  console.error('[wasabi] detail:', JSON.stringify(result.detail));
+}
 console.error('[wasabi] hint: bucket region must match WASABI_REGION; endpoint e.g. https://s3.wasabisys.com for us-east-1');
-console.error('[wasabi] hint: do not set AWS_REGION for this probe — EC2 IMDS region breaks SigV4');
+console.error('[wasabi] hint: AWS SDK >= 3.729 CRC32 defaults break Wasabi — client uses WHEN_REQUIRED');
 process.exit(1);
