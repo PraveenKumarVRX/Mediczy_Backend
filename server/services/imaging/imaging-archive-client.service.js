@@ -5,8 +5,8 @@
  *   MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_IMAGING_BUCKET
  *
  * Env (Wasabi):
- *   WASABI_ENDPOINT          e.g. https://s3.ap-southeast-1.wasabisys.com
- *   WASABI_REGION            e.g. ap-southeast-1
+ *   WASABI_ENDPOINT          e.g. https://s3.wasabisys.com (us-east-1)
+ *   WASABI_REGION            e.g. us-east-1  (must match bucket region; never use AWS_REGION)
  *   WASABI_ACCESS_KEY / WASABI_SECRET_KEY
  *   WASABI_IMAGING_BUCKET    default mediczy-imaging-archive
  *   WASABI_IMAGING_BUCKET_PREFIX  for per-tenant: mediczy-imaging-t{id}
@@ -20,6 +20,7 @@ import {
   PutObjectCommand,
   HeadBucketCommand,
   CreateBucketCommand,
+  ListObjectsV2Command,
   BucketAlreadyOwnedByYou,
   BucketAlreadyExists,
 } from '@aws-sdk/client-s3';
@@ -85,18 +86,56 @@ export function createWasabiClient() {
   if (!isWasabiConfigured()) {
     throw new Error('Wasabi not configured (WASABI_ENDPOINT + WASABI_ACCESS_KEY + WASABI_SECRET_KEY)');
   }
-  // Wasabi is AWS-S3 compatible; virtual-hosted style (forcePathStyle: false).
-  // Always prefer WASABI_REGION — never fall through to AWS_REGION (often ap-south-1).
-  const region = process.env.WASABI_REGION || 'us-east-1';
+  // Wasabi is S3-compatible. Use path-style against the regional/global endpoint —
+  // virtual-hosted (bucket.s3.wasabisys.com) often yields opaque UnknownError on EC2.
+  // Always prefer WASABI_REGION — never fall through to AWS_REGION / EC2 IMDS region
+  // (hosts in ap-southeast-1 would otherwise sign the wrong region).
+  const region = (process.env.WASABI_REGION || 'us-east-1').trim();
+  const endpoint = process.env.WASABI_ENDPOINT.replace(/\/$/, '').trim();
   return new S3Client({
     region,
-    endpoint: process.env.WASABI_ENDPOINT.replace(/\/$/, ''),
-    forcePathStyle: false,
+    endpoint,
+    forcePathStyle: true,
     credentials: {
-      accessKeyId: process.env.WASABI_ACCESS_KEY,
-      secretAccessKey: process.env.WASABI_SECRET_KEY,
+      accessKeyId: String(process.env.WASABI_ACCESS_KEY || '').trim(),
+      secretAccessKey: String(process.env.WASABI_SECRET_KEY || '').trim(),
     },
   });
+}
+
+/**
+ * Live HeadBucket + ListObjects against Wasabi (proves keys/region/endpoint work).
+ * @returns {Promise<{ ok: boolean, region: string, endpoint: string, bucket: string, objectCount?: number, error?: string }>}
+ */
+export async function probeWasabiConnectivity() {
+  const region = (process.env.WASABI_REGION || 'us-east-1').trim();
+  const endpoint = (process.env.WASABI_ENDPOINT || '').replace(/\/$/, '').trim();
+  const bucket = sharedWasabiImagingBucket();
+  if (!isWasabiConfigured()) {
+    return { ok: false, region, endpoint, bucket, error: 'Wasabi env not configured' };
+  }
+  try {
+    const client = createWasabiClient();
+    await client.send(new HeadBucketCommand({ Bucket: bucket }));
+    const listed = await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 5 }));
+    return {
+      ok: true,
+      region,
+      endpoint,
+      bucket,
+      objectCount: listed.KeyCount ?? 0,
+    };
+  } catch (err) {
+    const code = err.Code || err.name || err.$metadata?.httpStatusCode || 'Error';
+    const message = err.message || String(err);
+    return {
+      ok: false,
+      region,
+      endpoint,
+      bucket,
+      error: `${code}: ${message}`,
+    };
+  }
 }
 
 /**

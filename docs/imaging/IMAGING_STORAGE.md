@@ -75,8 +75,9 @@ MINIO_ACCESS_KEY=...
 MINIO_SECRET_KEY=...
 MINIO_IMAGING_BUCKET=mediczy-imaging-archive
 
-WASABI_ENDPOINT=https://s3.ap-southeast-1.wasabisys.com
-WASABI_REGION=ap-southeast-1
+# Match the region where you created the bucket (console). us-east-1 → s3.wasabisys.com
+WASABI_ENDPOINT=https://s3.wasabisys.com
+WASABI_REGION=us-east-1
 WASABI_ACCESS_KEY=...
 WASABI_SECRET_KEY=...
 WASABI_IMAGING_BUCKET=mediczy-imaging-archive
@@ -99,12 +100,15 @@ LAB_TOKEN=$(curl -s -X POST https://app.mediqzy.com/api/lab/login \
   -H 'Content-Type: application/json' \
   -d '{"email":"lab@example.com","password":"..."}' | jq -r .token)
 
-curl -s https://app.mediqzy.com/api/imaging/platform/storage/tenant-isolation \
+curl -s 'https://app.mediqzy.com/api/imaging/platform/storage/tenant-isolation?live=1' \
   -H "Authorization: Bearer $LAB_TOKEN" | jq '.archive'
+# .archive.wasabi.configured = env present
+# .archive.wasabiLive.ok = true  → live HeadBucket/ListObjects succeeded
 ```
 
 ```
-GET  /api/imaging/platform/storage/tenant-isolation   # includes archive backend status
+GET  /api/imaging/platform/storage/tenant-isolation          # archive backend status
+GET  /api/imaging/platform/storage/tenant-isolation?live=1   # + wasabiLive reachability
 POST /api/imaging/platform/storage/tenant-isolation/ensure   { "tenantId": 56 }
 GET  /api/imaging/platform/storage/daily-transfer
 POST /api/imaging/platform/storage/daily-transfer/run

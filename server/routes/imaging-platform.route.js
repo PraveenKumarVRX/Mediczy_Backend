@@ -421,14 +421,19 @@ router.get('/storage/daily-transfer', authImaging, async (_req, res) => {
   }
 });
 
-router.get('/storage/tenant-isolation', authImaging, async (_req, res) => {
+router.get('/storage/tenant-isolation', authImaging, async (req, res) => {
   try {
     const { describeTenantIsolation } = await import('../services/imaging/imaging-tenant-storage.service.js');
-    const { describeArchiveBackends } = await import('../services/imaging/imaging-archive-client.service.js');
+    const { describeArchiveBackends, probeWasabiConnectivity } = await import('../services/imaging/imaging-archive-client.service.js');
+    const archive = describeArchiveBackends();
+    const live = ['1', 'true', 'yes'].includes(String(req.query.live || '').toLowerCase());
+    if (live && archive.wasabi?.configured) {
+      archive.wasabiLive = await probeWasabiConnectivity();
+    }
     return res.json({
       success: true,
       ...describeTenantIsolation(),
-      archive: describeArchiveBackends(),
+      archive,
     });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
