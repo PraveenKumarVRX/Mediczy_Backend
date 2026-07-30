@@ -1840,6 +1840,10 @@ drugPriceSyncService.start();
 import corporateEmployeeQcService from './services/corporate-employee-qc.service.js';
 corporateEmployeeQcService.start();
 
+// ============== Imaging daily S3 → MinIO transfer (02:30) ==============
+import { startImagingDailyMinioCron } from './services/imaging/imaging-daily-minio-cron.service.js';
+startImagingDailyMinioCron();
+
 // ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
 import governanceServiceForCron from './services/ai-model-governance.service.js';
 import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';

@@ -50,4 +50,10 @@ Then `pm2 restart mediczy-server`.
 
 OHIF uses relative `/api/hypergrid/dicom` roots (same-origin). Do not point at the marketing apex `https://mediqzy.com`.
 
+## Storage (S3 daily → MinIO)
+
+Clinical imaging object keys (`dicom/`, `imaging/`, `ris/`) write to **`S3_IMAGING_DAILY_BUCKET`** (default `mediczy-imaging-daily`). A nightly cron copies them to MinIO (`MINIO_IMAGING_BUCKET`).
+
+See: [IMAGING_STORAGE.md](./IMAGING_STORAGE.md)
+
 Production / nginx front-door stack: see `infra/imaging/` and `nginx/imaging-proxy.conf.example`.

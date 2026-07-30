@@ -84,7 +84,11 @@ Do not hardcode Orthanc passwords in compose or nginx. Host nginx: see `nginx/im
 Also run PHI audit migration:
 ```bash
 node server/migrations/imaging-phi-access-log.migration.js
+node server/migrations/imaging-daily-transfer-log.migration.js
 ```
+
+Imaging object store (daily S3 → MinIO): see `docs/imaging/IMAGING_STORAGE.md`.
+
 
 ### 4. Frontend
 

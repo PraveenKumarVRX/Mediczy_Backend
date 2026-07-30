@@ -410,6 +410,33 @@ router.post('/vna/lifecycle/run', authImaging, async (req, res) => {
   return res.json({ success: true, ...result });
 });
 
+// ─── Daily S3 → MinIO transfer ───────────────────────────────────────────────
+router.get('/storage/daily-transfer', authImaging, async (_req, res) => {
+  try {
+    const { getTransferStatus } = await import('../services/imaging/imaging-daily-minio-transfer.service.js');
+    const status = await getTransferStatus(100);
+    return res.json({ success: true, ...status });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/storage/daily-transfer/run', authImaging, async (req, res) => {
+  try {
+    const { transferImagingDailyToMinio } = await import('../services/imaging/imaging-daily-minio-transfer.service.js');
+    const result = await transferImagingDailyToMinio({
+      dryRun: Boolean(req.body?.dryRun),
+      force: Boolean(req.body?.force),
+      lookbackHours: req.body?.lookbackHours != null
+        ? Number(req.body.lookbackHours)
+        : undefined,
+    });
+    return res.json({ success: true, result });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.post('/measurements/from-viewer', authImaging, async (req, res) => {
   try {
     const { studyId, studyInstanceUID, lesionLabel, location, sizeMm, volumeMm3, patientName, data } = req.body || {};

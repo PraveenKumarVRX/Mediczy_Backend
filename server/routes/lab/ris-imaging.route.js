@@ -17,7 +17,7 @@ import fs        from 'fs';
 import os        from 'os';
 import pool      from '../../db/pgPool.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
-import { s3Client, BUCKET, s3PresignedUrl } from '../../utils/s3-storage.js';
+import { s3Client, BUCKET, getImagingDailyBucket, s3PresignedUrl } from '../../utils/s3-storage.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import crypto    from 'crypto';
 import {
@@ -454,7 +454,7 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
     const ext    = path.extname(req.file.originalname) || '';
     const s3Key  = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
     await s3Client.send(new PutObjectCommand({
-      Bucket:      BUCKET,
+      Bucket:      getImagingDailyBucket(),
       Key:         s3Key,
       Body:        fs.createReadStream(req.file.path),
       ContentType: req.file.mimetype || 'application/octet-stream',
@@ -654,7 +654,7 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
       const ext = path.extname(f.originalname) || '.dcm';
       const s3Key = `ris/${Date.now()}_${crypto.randomBytes(8).toString('hex')}${ext}`;
       await s3Client.send(new PutObjectCommand({
-        Bucket: BUCKET,
+        Bucket: getImagingDailyBucket(),
         Key: s3Key,
         Body: fs.createReadStream(f.path),
         ContentType: f.mimetype || 'application/dicom',
@@ -1830,7 +1830,14 @@ router.delete('/:id', authLab, async (req, res) => {
     });
 
     if (study.file_path) {
-      await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: study.file_path })).catch(() => {});
+      await s3Client.send(new DeleteObjectCommand({
+        Bucket: getImagingDailyBucket(),
+        Key: study.file_path,
+      })).catch(() => {});
+      // Also try legacy uploads bucket if key was stored there before daily bucket cutover
+      if (BUCKET !== getImagingDailyBucket()) {
+        await s3Client.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: study.file_path })).catch(() => {});
+      }
     }
     await client.query('DELETE FROM ris_studies WHERE id = $1', [req.params.id]);
     await client.query('COMMIT');

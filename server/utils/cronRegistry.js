@@ -81,6 +81,8 @@ export const TASK_DEFINITIONS = [
   { key: 'ai_his_score',          name: 'AI HIS Health Score Aggregation',       schedule: 'Every 6 hours',    category: 'ai',         scheduleDesc: '30 */6 * * *' },
   // Corporate QC
   { key: 'corp_employee_qc',      name: 'Corporate Employee QC Sweep',           schedule: 'Daily 3 AM IST',   category: 'corporate',  scheduleDesc: '0 3 * * *' },
+  // Imaging storage
+  { key: 'imaging_daily_minio_transfer', name: 'Imaging Daily S3 → MinIO Transfer', schedule: 'Daily 2:30 AM', category: 'imaging', scheduleDesc: '30 2 * * *' },
 ];
 
 // Key lookup map
