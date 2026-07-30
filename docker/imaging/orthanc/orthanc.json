@@ -5,7 +5,7 @@
   "RemoteAccessAllowed": true,
   "AuthenticationEnabled": true,
   "RegisteredUsers": {
-    "orthanc": "orthanc"
+    "pacs": "change-this-password"
   },
   "DicomAet": "MEDICZY",
   "DicomPort": 4242,
@@ -17,8 +17,5 @@
     "EnableWado": true,
     "WadoRoot": "/wado",
     "Ssl": false
-  },
-  "HttpHeaders": {
-    "Access-Control-Allow-Origin": "*"
   }
 }

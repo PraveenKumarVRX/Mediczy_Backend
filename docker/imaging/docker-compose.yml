@@ -2,13 +2,20 @@
 #
 # Usage:
 #   cd docker/imaging
-#   export MEDICZY_API_URL=https://mediqzy.com
+#   export MEDICZY_API_URL=https://app.mediqzy.com
 #   export ORTHANC_WEBHOOK_SECRET=your-secret
+#   docker compose down
 #   docker compose up -d
 #
-# Orthanc UI:  http://localhost:8042  (orthanc / orthanc)
+# Orthanc UI:  http://localhost:8042  (pacs / change-this-password)
 # OHIF Viewer: http://localhost:3001
 # DICOM C-STORE port: 4242 (AE Title: MEDICZY)
+#
+# Node API (.env) should match:
+#   ORTHANC_URL=http://127.0.0.1:8042
+#   ORTHANC_USER=pacs
+#   ORTHANC_PASSWORD=change-this-password
+#   ORTHANC_AET=MEDICZY
 
 services:
   orthanc:
@@ -20,14 +27,29 @@ services:
       - "8042:8042"
     volumes:
       - orthanc-data:/var/lib/orthanc/db
-      - ./orthanc/orthanc.json:/etc/orthanc/orthanc.json:ro
     environment:
-      ORTHANC_NAME: MediczyPACS
+      VERBOSE_STARTUP: "true"
+      # Prefer env config (orthancteam image) over a raw mounted JSON
+      ORTHANC__NAME: "MediczyPACS"
+      ORTHANC__DICOM_AET: "MEDICZY"
+      ORTHANC__DICOM_PORT: "4242"
+      ORTHANC__HTTP_PORT: "8042"
+      ORTHANC__REMOTE_ACCESS_ALLOWED: "true"
+      ORTHANC__AUTHENTICATION_ENABLED: "true"
+      ORTHANC__REGISTERED_USERS: '{"pacs":"change-this-password"}'
+      ORTHANC__STABLE_AGE: "10"
+      DICOM_WEB_PLUGIN_ENABLED: "true"
+      ORTHANC__DICOM_WEB__ENABLE: "true"
+      ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
+      ORTHANC__DICOM_WEB__ENABLE_WADO: "true"
+      ORTHANC__DICOM_WEB__WADO_ROOT: "/wado"
+    # Official probe handles Basic Auth; plain curl -f /system returns 401 → unhealthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8042/system"]
-      interval: 30s
+      test: ["CMD", "python3", "/probes/test-aliveness.py", "--user=pacs", "--pwd=change-this-password"]
+      interval: 15s
       timeout: 10s
-      retries: 3
+      retries: 8
+      start_period: 45s
 
   orthanc-bridge:
     image: curlimages/curl:8.11.1
@@ -38,11 +60,13 @@ services:
         condition: service_healthy
     environment:
       ORTHANC_URL: http://orthanc:8042
-      ORTHANC_USER: orthanc
-      ORTHANC_PASSWORD: orthanc
+      ORTHANC_USER: pacs
+      ORTHANC_PASSWORD: change-this-password
       MEDICZY_API_URL: ${MEDICZY_API_URL:-http://host.docker.internal:8888}
       ORTHANC_WEBHOOK_SECRET: ${ORTHANC_WEBHOOK_SECRET:-}
       POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-30}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./orthanc-bridge/poll-sync.sh:/poll-sync.sh:ro
     entrypoint: ["/bin/sh", "/poll-sync.sh"]
@@ -56,7 +80,8 @@ services:
     volumes:
       - ./ohif/app-config.js:/usr/share/nginx/html/app-config.js:ro
     depends_on:
-      - orthanc
+      orthanc:
+        condition: service_started
 
 volumes:
   orthanc-data:
