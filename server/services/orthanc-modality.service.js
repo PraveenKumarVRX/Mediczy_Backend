@@ -250,7 +250,7 @@ export const MODALITY_PRESETS = [
   { type: 'IO', label: 'Intra-oral X-ray', defaultPort: 104, manufacturer: 'Generic' },
   // Fluoro / interventional
   { type: 'RF', label: 'C-arm (Fluoroscopy)', defaultPort: 104, manufacturer: 'Generic' },
-  { type: 'XA', label: 'Angiogram / C-arm XA', defaultPort: 104, manufacturer: 'Generic' },
+  { type: 'XA', label: 'Cath lab / Angiogram (XA)', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'MG', label: 'Mammography', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'PT', label: 'PET', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'NM', label: 'Nuclear Medicine', defaultPort: 104, manufacturer: 'Generic' },

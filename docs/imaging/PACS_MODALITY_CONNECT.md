@@ -10,7 +10,8 @@ Mediczy uses **Orthanc** as the DICOM PACS. Scanners can either **push** images 
 | **PX** | **OPG (Panoramic)** | Dental clinics |
 | **IO** | **Intra-oral X-ray** | Dental clinics |
 | **RF** | **C-arm (Fluoroscopy)** | OT / ortho / pain |
-| **XA** | **Angiogram / C-arm XA** | Cath lab / vascular |
+| **XA** | **Cath lab / Angiogram (XA)** | Cardiac cath lab / vascular |
+| **MG** | Mammography | Breast imaging |
 
 ## Lab UI
 

@@ -293,7 +293,7 @@ export default function LabPacsDevices() {
       ] as Preset[])).slice(0, 12);
 
   return (
-    <PortalLayout title="PACS Settings" subtitle={IS_CLINIC ? 'OPG · C-arm · angiogram · Orthanc' : 'Orthanc · modalities · study pull'}>
+    <PortalLayout title="PACS Settings" subtitle={IS_CLINIC ? 'OPG · C-arm · cath lab · Orthanc' : 'Orthanc · modalities · study pull'}>
       <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
         {/* Atmosphere — brand cyan/emerald wash, not flat grey */}
         <div
@@ -326,8 +326,8 @@ export default function LabPacsDevices() {
               </h1>
               <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400 sm:text-base">
                 {IS_CLINIC
-                  ? 'Connect dental OPG, intra-oral, C-arm, and angiogram units to Orthanc, then open the clinic imaging worklist.'
-                  : 'Connect scanners to Orthanc, verify DICOM peers, and pull studies into the RIS worklist.'}
+                  ? 'Connect dental OPG, intra-oral, C-arm, and cath-lab angiogram units to Orthanc, then open the clinic imaging worklist.'
+                  : 'Connect scanners (including cath lab XA) to Orthanc, verify DICOM peers, and pull studies into the RIS worklist.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

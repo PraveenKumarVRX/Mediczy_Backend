@@ -19,6 +19,6 @@ describe('MODALITY_PRESETS dental + interventional', () => {
     expect(types).toEqual(expect.arrayContaining(['PX', 'IO', 'RF', 'XA']));
     expect(MODALITY_PRESETS.find((p) => p.type === 'PX')?.label).toMatch(/OPG/i);
     expect(MODALITY_PRESETS.find((p) => p.type === 'RF')?.label).toMatch(/C-arm/i);
-    expect(MODALITY_PRESETS.find((p) => p.type === 'XA')?.label).toMatch(/Angio/i);
+    expect(MODALITY_PRESETS.find((p) => p.type === 'XA')?.label).toMatch(/Cath lab|Angio/i);
   });
 });

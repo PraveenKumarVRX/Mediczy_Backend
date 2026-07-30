@@ -124,7 +124,7 @@ const IS_CLINIC_PORTAL = typeof window !== 'undefined' && window.location.pathna
 const MODALITIES = [
   'CT', 'MR', 'MRI', 'DX', 'X-Ray', 'US', 'USG', 'Echo',
   'PX', 'OPG', 'IO', 'Intra-oral',
-  'RF', 'C-Arm', 'XA', 'Angiogram',
+  'RF', 'C-Arm', 'XA', 'Angiogram', 'Cathlab',
   'MG', 'Mammography', 'Fluoroscopy', 'NM', 'PET', 'Other',
 ];
 const STATUSES   = ['Ordered','Scheduled','InProgress','Completed','Reported','Cancelled'];
@@ -147,6 +147,7 @@ const modalityColor: Record<string,string> = {
   'C-Arm': 'bg-orange-900 text-orange-300',
   XA: 'bg-rose-900 text-rose-300',
   Angiogram: 'bg-rose-900 text-rose-300',
+  Cathlab: 'bg-rose-900 text-rose-300',
 };
 const getModalityColor = (m: string) =>
   modalityColor[m] || 'bg-gray-800 text-gray-300';
