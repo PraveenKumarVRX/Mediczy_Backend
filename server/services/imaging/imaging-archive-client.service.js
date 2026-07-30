@@ -145,14 +145,14 @@ export async function probeWasabiConnectivity() {
     const bucketRegion = err.BucketRegion || err.Region || null;
     let hint = null;
     if (code === 'PermanentRedirect' || err.$metadata?.httpStatusCode === 301) {
-      // Bucket lives in another Wasabi region — e.g. Singapore = ap-southeast-1
+      // Bucket lives in another Wasabi region — e.g. Singapore = ap-southeast-1.
+      // Redirect host is often virtual-hosted (bucket.s3.REGION.wasabisys.com); we use
+      // path-style so suggest the service endpoint https://s3.REGION.wasabisys.com.
       const suggestedRegion = bucketRegion
         || (String(redirectEndpoint || '').match(/s3\.([a-z0-9-]+)\.wasabisys\.com/i) || [])[1]
         || 'ap-southeast-1';
-      const suggestedEndpoint = redirectEndpoint
-        ? (String(redirectEndpoint).startsWith('http') ? redirectEndpoint : `https://${redirectEndpoint}`)
-        : `https://s3.${suggestedRegion}.wasabisys.com`;
-      hint = `Bucket is not in ${region}. Set WASABI_REGION=${suggestedRegion} and WASABI_ENDPOINT=${suggestedEndpoint} (Wasabi Singapore = ap-southeast-1)`;
+      const suggestedEndpoint = `https://s3.${suggestedRegion}.wasabisys.com`;
+      hint = `Update server/.env then pm2 restart: WASABI_REGION=${suggestedRegion} WASABI_ENDPOINT=${suggestedEndpoint}`;
     }
     return {
       ok: false,

@@ -21,6 +21,13 @@ if [[ ! -d "$ROOT/server/node_modules/@aws-sdk/client-s3" ]]; then
   exit 1
 fi
 
+# Prefer already-exported vars; otherwise load from server/.env
+# NOTE: bare `WASABI_REGION=…` in the shell does NOT export — edit server/.env
+# or use: export WASABI_ENDPOINT=… WASABI_REGION=…
+if [[ -z "${WASABI_ENDPOINT:-}" || -z "${WASABI_ACCESS_KEY:-}" || -z "${WASABI_SECRET_KEY:-}" ]]; then
+  : # probe-wasabi.mjs loads server/.env
+fi
+
 cd "$ROOT/server"
 # Clear ambient AWS region/creds in this shell before spawning Node
 unset AWS_REGION AWS_DEFAULT_REGION AWS_PROFILE \
