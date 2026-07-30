@@ -12,8 +12,10 @@ load_env_file() {
   local f="$1"
   [[ -f "$f" ]] || return 0
   set -a
+  # Only Wasabi keys — do NOT import AWS_REGION (often ap-south-1 / ap-southeast-1),
+  # which breaks Wasabi SigV4 signing when the bucket is in us-east-1.
   # shellcheck disable=SC1090
-  source <(grep -E '^(WASABI_|AWS_|MINIO_)[A-Z0-9_]*=' "$f" | sed 's/\r$//')
+  source <(grep -E '^WASABI_[A-Z0-9_]*=' "$f" | sed 's/\r$//')
   set +a
 }
 
@@ -34,19 +36,13 @@ echo "[wasabi] region=${REGION}"
 echo "[wasabi] bucket=${BUCKET}"
 echo "[wasabi] access_key=${WASABI_ACCESS_KEY:0:4}…${WASABI_ACCESS_KEY: -4}"
 
-if command -v aws >/dev/null 2>&1; then
-  if AWS_ACCESS_KEY_ID="$WASABI_ACCESS_KEY" \
-     AWS_SECRET_ACCESS_KEY="$WASABI_SECRET_KEY" \
-     aws s3 ls "s3://${BUCKET}" \
-       --endpoint-url "$WASABI_ENDPOINT" \
-       --region "$REGION"; then
-    echo "[wasabi] OK — bucket reachable"
-  else
-    echo "[wasabi] bucket list failed — check region/endpoint match the bucket, or create it in Wasabi console" >&2
-    exit 1
-  fi
-else
-  # Fallback: Node SDK probe (same client as the app)
+probe_with_node() {
+  # Same client path as the app — ignores ambient AWS_REGION / ~/.aws/config
+  WASABI_ENDPOINT="$WASABI_ENDPOINT" \
+  WASABI_REGION="$REGION" \
+  WASABI_IMAGING_BUCKET="$BUCKET" \
+  WASABI_ACCESS_KEY="$WASABI_ACCESS_KEY" \
+  WASABI_SECRET_KEY="$WASABI_SECRET_KEY" \
   node --input-type=module <<'EOF'
 import { S3Client, HeadBucketCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 
@@ -72,6 +68,34 @@ try {
   process.exit(1);
 }
 EOF
+}
+
+if command -v aws >/dev/null 2>&1; then
+  # Isolate from shell AWS_REGION, profiles, and ~/.aws/config (often ap-south-1 /
+  # ap-southeast-1 on this host). Custom endpoints sometimes ignore --region and
+  # still sign with ambient AWS_REGION — so wipe those vars and config files.
+  if env -u AWS_REGION -u AWS_DEFAULT_REGION -u AWS_PROFILE \
+     -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
+     AWS_ACCESS_KEY_ID="$WASABI_ACCESS_KEY" \
+     AWS_SECRET_ACCESS_KEY="$WASABI_SECRET_KEY" \
+     AWS_REGION="$REGION" \
+     AWS_DEFAULT_REGION="$REGION" \
+     AWS_CONFIG_FILE=/dev/null \
+     AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+     AWS_EC2_METADATA_DISABLED=true \
+     aws s3 ls "s3://${BUCKET}" \
+       --endpoint-url "$WASABI_ENDPOINT" \
+       --region "$REGION"; then
+    echo "[wasabi] OK — bucket reachable (aws cli)"
+  else
+    echo "[wasabi] aws cli list failed — retrying with Node SDK (app path)…" >&2
+    if ! probe_with_node; then
+      echo "[wasabi] bucket list failed — check region/endpoint match the bucket, or create it in Wasabi console" >&2
+      exit 1
+    fi
+  fi
+else
+  probe_with_node
 fi
 
 echo

@@ -85,9 +85,11 @@ export function createWasabiClient() {
   if (!isWasabiConfigured()) {
     throw new Error('Wasabi not configured (WASABI_ENDPOINT + WASABI_ACCESS_KEY + WASABI_SECRET_KEY)');
   }
-  // Wasabi is AWS-S3 compatible; virtual-hosted style (forcePathStyle: false)
+  // Wasabi is AWS-S3 compatible; virtual-hosted style (forcePathStyle: false).
+  // Always prefer WASABI_REGION — never fall through to AWS_REGION (often ap-south-1).
+  const region = process.env.WASABI_REGION || 'us-east-1';
   return new S3Client({
-    region: process.env.WASABI_REGION || 'us-east-1',
+    region,
     endpoint: process.env.WASABI_ENDPOINT.replace(/\/$/, ''),
     forcePathStyle: false,
     credentials: {
