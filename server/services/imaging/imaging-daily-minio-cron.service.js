@@ -1,12 +1,11 @@
 /**
- * Nightly cron: S3 imaging-daily → MinIO archive.
- * Schedule: 02:30 server local time (after DB backup window).
+ * Nightly cron: S3 imaging-daily → MinIO (primary) / Wasabi (fallback).
+ * Schedule: 02:30 server local time.
  */
 import cron from 'node-cron';
 import { tick, tickStart, tickError } from '../../utils/cronRegistry.js';
-import {
-  transferImagingDailyToMinio,
-} from './imaging-daily-minio-transfer.service.js';
+import { transferImagingDailyToMinio } from './imaging-daily-minio-transfer.service.js';
+import { isMinioConfigured, isWasabiConfigured } from './imaging-archive-client.service.js';
 import logger from '../../config/logger.js';
 
 const ENABLED = !['0', 'false', 'no'].includes(
@@ -19,8 +18,8 @@ export function startImagingDailyMinioCron() {
     logger.info('[ImagingDailyTransfer] cron disabled (IMAGING_DAILY_TRANSFER_ENABLED=false)');
     return;
   }
-  if (!process.env.MINIO_ENDPOINT) {
-    logger.warn('[ImagingDailyTransfer] cron not started — MINIO_ENDPOINT unset');
+  if (!isMinioConfigured() && !isWasabiConfigured()) {
+    logger.warn('[ImagingDailyTransfer] cron not started — configure MinIO and/or Wasabi');
     return;
   }
 
@@ -33,6 +32,7 @@ export function startImagingDailyMinioCron() {
         failed: result.failed,
         skipped: result.skipped,
         bytes: result.bytes,
+        providers: result.providers,
       });
     } catch (err) {
       tickError('imaging_daily_minio_transfer', err);
@@ -40,7 +40,9 @@ export function startImagingDailyMinioCron() {
     }
   });
 
-  logger.info(`[ImagingDailyTransfer] cron scheduled: ${SCHEDULE}`);
+  logger.info(
+    `[ImagingDailyTransfer] cron scheduled: ${SCHEDULE} (minio=${isMinioConfigured()} wasabi=${isWasabiConfigured()})`,
+  );
 }
 
 export default { startImagingDailyMinioCron };

@@ -10,14 +10,36 @@ Upload (RIS / HyperGrid / doctor)
         │
         │  cron 02:30
         ▼
- MinIO archive (warm/cold)
+ MinIO archive (primary)
+        │  on failure / if MinIO down
+        ▼
+ Wasabi (S3-compatible fallback)
 ```
+
+Optional: `IMAGING_WASABI_MIRROR=true` writes to **both** MinIO and Wasabi.
+
+## Archive backends
+
+| Backend | Role | Env |
+|---|---|---|
+| **MinIO** | Primary on-prem / VPC archive | `MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, `MINIO_IMAGING_BUCKET` |
+| **Wasabi** | Cloud fallback (or sole archive) | `WASABI_ENDPOINT`, `WASABI_REGION`, `WASABI_ACCESS_KEY`, `WASABI_SECRET_KEY`, `WASABI_IMAGING_BUCKET` |
+
+Strategy (auto):
+- Both set → **minio-then-wasabi-fallback** (or **mirror-both** if `IMAGING_WASABI_MIRROR=true`)
+- Only Wasabi → **wasabi-only**
+- Only MinIO → **minio-only**
+
+Wasabi endpoint examples:
+- `https://s3.wasabisys.com` (us-east-1)
+- `https://s3.ap-southeast-1.wasabisys.com`
+- `https://s3.eu-central-1.wasabisys.com`
 
 ## Tenant isolation modes
 
 Set `IMAGING_TENANT_ISOLATION` in `server/.env`:
 
-| Mode | S3 hot | MinIO archive | When to use |
+| Mode | S3 hot | Archive (MinIO / Wasabi) | When to use |
 |---|---|---|---|
 | **`prefix`** (default) | Shared `mediczy-imaging-daily` | Shared `mediczy-imaging-archive` | Most installs — keys under `tenant-{id}/` |
 | **`minio-bucket`** | Shared daily | **`mediczy-imaging-t{id}`** per tenant | Customer-owned archive / easier purge |
@@ -31,61 +53,56 @@ ris/tenant-56/2026/07/30/…
 imaging/tenant-12/2026/07/30/…
 ```
 
-DB queries remain scoped by `tenant_id` / `lab_id`. Orthanc is still shared unless you deploy one stack per hospital.
-
 ## EC2 setup
 
 ```bash
-# 1) Shared daily bucket (always create this; used by prefix + minio-bucket modes)
+# 1) Shared daily bucket
 AWS_REGION=ap-south-1 ./scripts/imaging/create-imaging-daily-s3-bucket.sh
 
-# 2) MinIO alias + shared archive (prefix mode)
+# 2a) MinIO (optional if Wasabi-only)
 mc alias set mediczy http://127.0.0.1:9000 "$MINIO_ACCESS_KEY" "$MINIO_SECRET_KEY"
 ./scripts/imaging/ensure-minio-imaging-bucket.sh
 
+# 2b) Wasabi fallback
+./scripts/imaging/check-wasabi.sh
+
 # 3) server/.env
 S3_IMAGING_DAILY_BUCKET=mediczy-imaging-daily
+IMAGING_TENANT_ISOLATION=prefix
+
 MINIO_ENDPOINT=http://127.0.0.1:9000
 MINIO_ACCESS_KEY=...
 MINIO_SECRET_KEY=...
 MINIO_IMAGING_BUCKET=mediczy-imaging-archive
 
-# Choose isolation (default prefix):
-IMAGING_TENANT_ISOLATION=prefix
-# IMAGING_TENANT_ISOLATION=minio-bucket
-# IMAGING_TENANT_ISOLATION=s3-bucket
-# S3_IMAGING_DAILY_BUCKET_PREFIX=mediczy-imaging-daily
-# MINIO_IMAGING_BUCKET_PREFIX=mediczy-imaging
+WASABI_ENDPOINT=https://s3.ap-southeast-1.wasabisys.com
+WASABI_REGION=ap-southeast-1
+WASABI_ACCESS_KEY=...
+WASABI_SECRET_KEY=...
+WASABI_IMAGING_BUCKET=mediczy-imaging-archive
+# WASABI_IMAGING_BUCKET_PREFIX=mediczy-imaging   # for minio-bucket / s3-bucket modes
+# IMAGING_WASABI_MIRROR=true                     # dual-write both archives
 
-# 4) Per-tenant buckets (minio-bucket / s3-bucket modes)
-IMAGING_TENANT_ISOLATION=minio-bucket TENANT_IDS=12,56 \
-  ./scripts/imaging/ensure-tenant-imaging-buckets.sh
-
-# 5) Migrate + restart
+# 4) Migrate + restart
 node server/migrations/imaging-daily-transfer-log.migration.js
 pm2 restart mediczy-server --update-env
 ```
 
+Create the Wasabi bucket in the Wasabi console (or allow the transfer job to create it on first put).
+
 ## APIs
 
 ```
-GET  /api/imaging/platform/storage/tenant-isolation
+GET  /api/imaging/platform/storage/tenant-isolation   # includes archive backend status
 POST /api/imaging/platform/storage/tenant-isolation/ensure   { "tenantId": 56 }
 GET  /api/imaging/platform/storage/daily-transfer
 POST /api/imaging/platform/storage/daily-transfer/run
-     { "tenantId": 56, "dryRun": true, "force": false, "lookbackHours": 36 }
-```
-
-## Transfer one tenant
-
-```bash
-IMAGING_TRANSFER_TENANT_ID=56 ./scripts/imaging/sync-imaging-daily-to-minio.sh --dry-run
-./scripts/imaging/sync-imaging-daily-to-minio.sh
+     { "tenantId": 56, "dryRun": true }
 ```
 
 ## Safety
 
 - Public access blocked + AES256 on AWS daily buckets
-- No S3 delete after MinIO copy unless `IMAGING_DAILY_DELETE_AFTER_TRANSFER=true`
-- Reads fall back across tenant bucket / shared daily / legacy uploads
-- Transfer log: `imaging_daily_transfer_log` (includes `tenant_id`)
+- No S3 delete after archive copy unless `IMAGING_DAILY_DELETE_AFTER_TRANSFER=true`
+- Transfer log tracks `archive_provider` (`minio` | `wasabi`)
+- Reads fall back across tenant / shared / legacy upload buckets

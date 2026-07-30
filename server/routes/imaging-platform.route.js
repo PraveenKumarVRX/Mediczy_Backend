@@ -424,7 +424,12 @@ router.get('/storage/daily-transfer', authImaging, async (_req, res) => {
 router.get('/storage/tenant-isolation', authImaging, async (_req, res) => {
   try {
     const { describeTenantIsolation } = await import('../services/imaging/imaging-tenant-storage.service.js');
-    return res.json({ success: true, ...describeTenantIsolation() });
+    const { describeArchiveBackends } = await import('../services/imaging/imaging-archive-client.service.js');
+    return res.json({
+      success: true,
+      ...describeTenantIsolation(),
+      archive: describeArchiveBackends(),
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
