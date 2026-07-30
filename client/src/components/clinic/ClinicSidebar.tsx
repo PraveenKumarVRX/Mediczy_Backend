@@ -22,6 +22,8 @@ import {
   Clock,
   CreditCard,
   TrendingUp,
+  ScanLine,
+  HardDrive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -48,6 +50,8 @@ const clinicalItems: SidebarItem[] = [
   { icon: FileText, label: "Prescriptions", href: "/clinic/prescriptions" },
   { icon: Pill, label: "Pharmacy", href: "/clinic/pharmacy" },
   { icon: Activity, label: "Lab Tests", href: "/clinic/lab-tests" },
+  { icon: ScanLine, label: "Imaging / OPG", href: "/clinic/ris" },
+  { icon: HardDrive, label: "PACS Settings", href: "/clinic/pacs-settings" },
 ];
 
 const billingItems: SidebarItem[] = [

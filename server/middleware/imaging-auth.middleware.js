@@ -5,7 +5,7 @@ import { authUser } from './auth.middleware.js';
 import { authLab } from './authLab.middleware.js';
 import { optionalKeycloakAuth } from './imaging-keycloak.middleware.js';
 
-const PACS_ROLES = new Set(['doctor', 'admin', 'hospital', 'lab', 'super-admin', 'medical_director']);
+const PACS_ROLES = new Set(['doctor', 'admin', 'hospital', 'lab', 'clinic', 'clinic_admin', 'super-admin', 'medical_director']);
 
 export function authImaging(req, res, next) {
   return optionalKeycloakAuth(req, res, () => {

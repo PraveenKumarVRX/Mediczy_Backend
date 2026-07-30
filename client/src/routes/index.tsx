@@ -1161,6 +1161,9 @@ const AppRoutes = () => {
         <Route path="/clinic/prescriptions" element={<ClinicPrescriptionsPage />} />
         <Route path="/clinic/pharmacy"      element={<ClinicPharmacyPage />} />
         <Route path="/clinic/lab-tests"     element={<ClinicLabTestsPage />} />
+        <Route path="/clinic/ris"           element={<LabRIS />} />
+        <Route path="/clinic/pacs-settings" element={<LabPacsDevices />} />
+        <Route path="/clinic/pacs-devices"  element={<LabPacsDevices />} />
         <Route path="/clinic/billing"       element={<ClinicBillingPage />} />
         <Route path="/clinic/payments"      element={<ClinicPaymentsPage />} />
         <Route path="/clinic/reports"       element={<ClinicReportsPage />} />

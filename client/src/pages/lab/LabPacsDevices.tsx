@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LabLayout from '@/components/lab/LabLayout';
+import ClinicLayout from '@/components/clinic/ClinicLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +30,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import api from '@/utils/api';
+
+const IS_CLINIC = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/');
+const TOKEN_KEY = IS_CLINIC ? 'clinicToken' : 'labToken';
+const LOGIN_PATH = IS_CLINIC ? '/clinic/login' : '/lab/login';
+const RIS_PATH = IS_CLINIC ? '/clinic/ris' : '/lab/ris';
+const PortalLayout = IS_CLINIC ? ClinicLayout : LabLayout;
 
 type Modality = {
   id: number;
@@ -73,6 +80,9 @@ const MODALITY_TONE: Record<string, string> = {
   US: 'from-teal-500/20 to-emerald-500/5 text-teal-700 dark:text-teal-300 border-teal-500/30',
   DX: 'from-amber-500/15 to-orange-500/5 text-amber-800 dark:text-amber-300 border-amber-500/30',
   CR: 'from-amber-500/15 to-orange-500/5 text-amber-800 dark:text-amber-300 border-amber-500/30',
+  PX: 'from-cyan-500/20 to-sky-500/5 text-cyan-800 dark:text-cyan-300 border-cyan-500/30',
+  IO: 'from-sky-500/15 to-blue-500/5 text-sky-800 dark:text-sky-300 border-sky-500/30',
+  RF: 'from-orange-500/20 to-amber-500/5 text-orange-800 dark:text-orange-300 border-orange-500/30',
   XA: 'from-rose-500/15 to-pink-500/5 text-rose-700 dark:text-rose-300 border-rose-500/30',
 };
 
@@ -82,7 +92,7 @@ function modalityTone(type: string) {
 
 export default function LabPacsDevices() {
   const navigate = useNavigate();
-  const token = localStorage.getItem('labToken');
+  const token = localStorage.getItem(TOKEN_KEY);
 
   const [pacs, setPacs] = useState<{ online?: boolean; aet?: string; dicomPort?: number; url?: string; message?: string } | null>(null);
   const [presets, setPresets] = useState<Preset[]>([]);
@@ -110,7 +120,7 @@ export default function LabPacsDevices() {
   const [echoing, setEchoing] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) navigate('/lab/login');
+    if (!token) navigate(LOGIN_PATH);
   }, [token, navigate]);
 
   const authHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
@@ -280,10 +290,10 @@ export default function LabPacsDevices() {
         { type: 'MR', label: 'MRI', defaultPort: 104, manufacturer: '' },
         { type: 'US', label: 'USG', defaultPort: 104, manufacturer: '' },
         { type: 'DX', label: 'Digital X-ray', defaultPort: 104, manufacturer: '' },
-      ] as Preset[])).slice(0, 8);
+      ] as Preset[])).slice(0, 12);
 
   return (
-    <LabLayout title="PACS Settings" subtitle="Orthanc · modalities · study pull">
+    <PortalLayout title="PACS Settings" subtitle={IS_CLINIC ? 'OPG · C-arm · angiogram · Orthanc' : 'Orthanc · modalities · study pull'}>
       <div className="relative min-h-[calc(100vh-4rem)] overflow-hidden">
         {/* Atmosphere — brand cyan/emerald wash, not flat grey */}
         <div
@@ -315,7 +325,9 @@ export default function LabPacsDevices() {
                 PACS Settings
               </h1>
               <p className="text-sm leading-relaxed text-slate-600 dark:text-slate-400 sm:text-base">
-                Connect scanners to Orthanc, verify DICOM peers, and pull studies into the RIS worklist.
+                {IS_CLINIC
+                  ? 'Connect dental OPG, intra-oral, C-arm, and angiogram units to Orthanc, then open the clinic imaging worklist.'
+                  : 'Connect scanners to Orthanc, verify DICOM peers, and pull studies into the RIS worklist.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -340,11 +352,11 @@ export default function LabPacsDevices() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => navigate('/lab/ris')}
+                onClick={() => navigate(RIS_PATH)}
                 className="border-primary/30 bg-primary/5 text-primary hover:bg-primary/10 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300"
               >
                 <ScanLine className="mr-2 h-3.5 w-3.5" />
-                Open RIS
+                {IS_CLINIC ? 'Open imaging' : 'Open RIS'}
                 <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
               </Button>
             </div>
@@ -802,6 +814,6 @@ export default function LabPacsDevices() {
           </section>
         </div>
       </div>
-    </LabLayout>
+    </PortalLayout>
   );
 }

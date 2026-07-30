@@ -16,7 +16,7 @@ import path      from 'path';
 import fs        from 'fs';
 import os        from 'os';
 import pool      from '../../db/pgPool.js';
-import { authLab } from '../../middleware/authLab.middleware.js';
+import { authLabOrClinicImaging as authLab } from '../../middleware/authLabOrClinicImaging.middleware.js';
 import { s3Client, BUCKET, getImagingDailyBucket, s3PresignedUrl, buildImagingObjectKey } from '../../utils/s3-storage.js';
 import { ensureTenantImagingStorage } from '../../services/imaging/imaging-tenant-storage.service.js';
 import { PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';

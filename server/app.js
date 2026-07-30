@@ -1684,6 +1684,7 @@ import dicomModalityRouter from './routes/dicom-modality.route.js';
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
 app.use('/api/lab/orders', labOrdersRouter); // Lab incoming EMR orders
 app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
+app.use('/api/clinic/ris', labRisImagingRouter); // Clinic RIS — dental OPG / C-arm / angio (same router)
 app.use('/api/dicom', dicomModalityRouter); // DICOM modality peer registry (Orthanc sync)
 
 // Pharmacy Service Routes

@@ -245,8 +245,13 @@ export const MODALITY_PRESETS = [
   { type: 'US', label: 'Ultrasound (USG)', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'DX', label: 'Digital X-ray', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'CR', label: 'Computed Radiography', defaultPort: 104, manufacturer: 'Generic' },
+  // Dental
+  { type: 'PX', label: 'OPG (Panoramic)', defaultPort: 104, manufacturer: 'Generic' },
+  { type: 'IO', label: 'Intra-oral X-ray', defaultPort: 104, manufacturer: 'Generic' },
+  // Fluoro / interventional
+  { type: 'RF', label: 'C-arm (Fluoroscopy)', defaultPort: 104, manufacturer: 'Generic' },
+  { type: 'XA', label: 'Angiogram / C-arm XA', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'MG', label: 'Mammography', defaultPort: 104, manufacturer: 'Generic' },
-  { type: 'XA', label: 'X-ray Angiography', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'PT', label: 'PET', defaultPort: 104, manufacturer: 'Generic' },
   { type: 'NM', label: 'Nuclear Medicine', defaultPort: 104, manufacturer: 'Generic' },
 ];

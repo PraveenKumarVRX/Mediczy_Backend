@@ -429,7 +429,10 @@ const USER_TYPE_PERMISSIONS = {
       '/api/clinic/appointments',
       '/api/clinic/patients',
       '/api/clinic/inventory',
-      '/api/clinic/invoices'
+      '/api/clinic/invoices',
+      '/api/dicom',  // PACS Settings — OPG / C-arm / angiogram modalities
+      '/api/imaging',  // Imaging platform
+      '/api/hypergrid',  // DICOMweb
     ],
     tokenField: 'clinicId'
   },

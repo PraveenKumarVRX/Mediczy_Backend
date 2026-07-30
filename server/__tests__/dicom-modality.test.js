@@ -11,3 +11,14 @@ describe('dicom-modality route helpers', () => {
     expect(columns.filter((c) => c === 'host')).toHaveLength(1);
   });
 });
+
+describe('MODALITY_PRESETS dental + interventional', () => {
+  it('includes OPG, intra-oral, C-arm, and angiogram codes', async () => {
+    const { MODALITY_PRESETS } = await import('../services/orthanc-modality.service.js');
+    const types = MODALITY_PRESETS.map((p) => p.type);
+    expect(types).toEqual(expect.arrayContaining(['PX', 'IO', 'RF', 'XA']));
+    expect(MODALITY_PRESETS.find((p) => p.type === 'PX')?.label).toMatch(/OPG/i);
+    expect(MODALITY_PRESETS.find((p) => p.type === 'RF')?.label).toMatch(/C-arm/i);
+    expect(MODALITY_PRESETS.find((p) => p.type === 'XA')?.label).toMatch(/Angio/i);
+  });
+});

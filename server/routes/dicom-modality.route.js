@@ -1,5 +1,5 @@
 /**
- * DICOM modality device registry — lab-managed scanner peers synced to Orthanc.
+ * DICOM modality device registry — lab/clinic-managed scanner peers synced to Orthanc.
  *
  * GET    /api/dicom/health
  * GET    /api/dicom/presets
@@ -14,7 +14,7 @@
  */
 import express from 'express';
 import pool from '../db/pgPool.js';
-import { authLab } from '../middleware/authLab.middleware.js';
+import { authLabOrClinicImaging as authLab } from '../middleware/authLabOrClinicImaging.middleware.js';
 import {
   upsertOrthancModality,
   deleteOrthancModality,
@@ -66,7 +66,7 @@ async function assertOwnedModality(tid, name) {
   return r.rows[0] || null;
 }
 
-/** Public-ish health for lab UI (still requires lab auth). */
+/** Public-ish health for lab UI (requires lab or clinic auth). */
 router.get('/health', authLab, async (_req, res) => {
   try {
     const system = await getOrthancSystem();

@@ -1,16 +1,33 @@
-# Connect CT / MRI / USG / Digital X-ray to Mediczy PACS
+# Connect modalities to Mediczy PACS (Orthanc)
 
-Mediczy uses **Orthanc** as the DICOM PACS. Scanners can either **push** images (C-STORE) or you can **pull** them (C-FIND + C-MOVE) from the lab UI.
+Mediczy uses **Orthanc** as the DICOM PACS. Scanners can either **push** images (C-STORE) or you can **pull** them (C-FIND + C-MOVE) from the lab or clinic UI.
+
+## Supported modality presets
+
+| DICOM type | Label | Typical use |
+|---|---|---|
+| CT / MR / US / DX / CR | CT, MRI, USG, X-ray | Diagnostic centre / lab |
+| **PX** | **OPG (Panoramic)** | Dental clinics |
+| **IO** | **Intra-oral X-ray** | Dental clinics |
+| **RF** | **C-arm (Fluoroscopy)** | OT / ortho / pain |
+| **XA** | **Angiogram / C-arm XA** | Cath lab / vascular |
 
 ## Lab UI
 
 1. Sign in at `/lab/login` (or diagnostic centre tenant host).
 2. Open **PACS Settings** → `/lab/pacs-settings` (also `/lab/pacs-devices`).
    From the RIS worklist, use the **PACS Settings** button in the header.
-3. Register each machine (CT / MR / US / DX …) with AE Title, IP, and DICOM port.
+3. Register each machine (including OPG / C-arm / angiogram) with AE Title, IP, and DICOM port.
 4. **C-ECHO** to verify connectivity.
 5. **Query (C-FIND)** → select studies → **Pull** (C-MOVE) into Orthanc.
 6. Review in **RIS / PACS** → `/lab/ris`.
+
+## Clinic UI (dental / procedure rooms)
+
+1. Sign in at `/clinic/login`.
+2. Sidebar → **PACS Settings** (`/clinic/pacs-settings`) — register OPG, intra-oral, C-arm, angiogram.
+3. Sidebar → **Imaging / OPG** (`/clinic/ris`) — worklist, upload, viewer, reports.
+4. Same Orthanc AE: `MEDICZY` port `4242` for C-STORE push from the machine.
 
 ## Network setup (machines → Mediczy)
 

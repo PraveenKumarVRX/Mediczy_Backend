@@ -107,17 +107,46 @@ interface DicomwebVerification {
   checkedAt: string;
 }
 
-const API_BASE = '/api/lab/ris';
-const MODALITIES = ['CT','MRI','X-Ray','USG','Echo','Mammography','Fluoroscopy','NM','PET','Other'];
+const API_BASE = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/')
+  ? '/api/clinic/ris'
+  : '/api/lab/ris';
+const TOKEN_KEY = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/')
+  ? 'clinicToken'
+  : 'labToken';
+const LOGIN_PATH = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/')
+  ? '/clinic/login'
+  : '/lab/login';
+const PACS_SETTINGS_PATH = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/')
+  ? '/clinic/pacs-settings'
+  : '/lab/pacs-settings';
+const IS_CLINIC_PORTAL = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/');
+
+const MODALITIES = [
+  'CT', 'MR', 'MRI', 'DX', 'X-Ray', 'US', 'USG', 'Echo',
+  'PX', 'OPG', 'IO', 'Intra-oral',
+  'RF', 'C-Arm', 'XA', 'Angiogram',
+  'MG', 'Mammography', 'Fluoroscopy', 'NM', 'PET', 'Other',
+];
 const STATUSES   = ['Ordered','Scheduled','InProgress','Completed','Reported','Cancelled'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const modalityColor: Record<string,string> = {
   CT:   'bg-blue-900 text-blue-300',
+  MR:   'bg-purple-900 text-purple-300',
   MRI:  'bg-purple-900 text-purple-300',
+  DX:   'bg-yellow-900 text-yellow-300',
   'X-Ray':'bg-yellow-900 text-yellow-300',
+  US:   'bg-teal-900 text-teal-300',
   USG:  'bg-teal-900 text-teal-300',
   Echo: 'bg-pink-900 text-pink-300',
+  PX: 'bg-cyan-900 text-cyan-300',
+  OPG: 'bg-cyan-900 text-cyan-300',
+  IO: 'bg-sky-900 text-sky-300',
+  'Intra-oral': 'bg-sky-900 text-sky-300',
+  RF: 'bg-orange-900 text-orange-300',
+  'C-Arm': 'bg-orange-900 text-orange-300',
+  XA: 'bg-rose-900 text-rose-300',
+  Angiogram: 'bg-rose-900 text-rose-300',
 };
 const getModalityColor = (m: string) =>
   modalityColor[m] || 'bg-gray-800 text-gray-300';
@@ -182,7 +211,7 @@ const UploadModal: React.FC<{
   const [uploading, setUploading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const fileRef               = useRef<HTMLInputElement>(null);
-  const token                 = localStorage.getItem('labToken') || '';
+  const token                 = localStorage.getItem(TOKEN_KEY) || '';
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -401,9 +430,9 @@ const ReportPanel: React.FC<{
   const [criticalEnabled, setCriticalEnabled] = useState(false);
   const [criticalReason, setCriticalReason] = useState('');
   const [criticalDueMinutes, setCriticalDueMinutes] = useState('30');
-  const token                   = localStorage.getItem('labToken') || '';
-  const labData                 = JSON.parse(localStorage.getItem('labData') || '{}');
-  const displayLabName          = labData.labName || labData.name || 'Radiologist';
+  const token                   = localStorage.getItem(TOKEN_KEY) || '';
+  const labData                 = JSON.parse(localStorage.getItem(IS_CLINIC_PORTAL ? 'clinicData' : 'labData') || '{}');
+  const displayLabName          = labData.labName || labData.name || labData.clinicName || (IS_CLINIC_PORTAL ? 'Clinician' : 'Radiologist');
 
   const save = async () => {
     setSaving(true);
@@ -616,13 +645,13 @@ const ReportPanel: React.FC<{
 // ─── Main LabRIS Page ─────────────────────────────────────────────────────────
 const LabRIS: React.FC = () => {
   const navigate   = useNavigate();
-  const token      = localStorage.getItem('labToken');
-  const labData    = JSON.parse(localStorage.getItem('labData') || '{}');
-  const displayLabName = labData.labName || labData.name || 'Radiology';
+  const token      = localStorage.getItem(TOKEN_KEY);
+  const labData    = JSON.parse(localStorage.getItem(IS_CLINIC_PORTAL ? 'clinicData' : 'labData') || '{}');
+  const displayLabName = labData.labName || labData.name || labData.clinicName || (IS_CLINIC_PORTAL ? 'Clinic' : 'Radiology');
 
   // Auth guard
   useEffect(() => {
-    if (!token) navigate('/lab/login');
+    if (!token) navigate(LOGIN_PATH);
   }, [token, navigate]);
 
   const [studies, setStudies]         = useState<Study[]>([]);
@@ -911,16 +940,16 @@ const LabRIS: React.FC = () => {
             <div>
               <h1 className="text-base font-bold text-white flex items-center gap-2">
                 <ScanLine className="text-indigo-400" size={18} />
-                RIS Worklist
+                {IS_CLINIC_PORTAL ? 'Clinic Imaging' : 'RIS Worklist'}
               </h1>
               <p className="text-xs text-gray-500">{displayLabName} · {total} studies</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => navigate('/lab/pacs-settings')}
+                onClick={() => navigate(PACS_SETTINGS_PATH)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-xs font-medium text-slate-200 transition-colors"
-                title="Orthanc status, AE title, register CT/MRI/USG scanners"
+                title="Orthanc status, AE title, register OPG / C-arm / angiogram / CT…"
               >
                 <HardDrive size={12} className="text-teal-400" />
                 PACS Settings
@@ -1469,7 +1498,7 @@ const LabRIS: React.FC = () => {
         <UploadModal
           onClose={() => setShowUpload(false)}
           onUploaded={s => { setStudies(prev => [s, ...prev]); setTotal(t => t + 1); }}
-          labName={labData.labName || 'Lab'}
+          labName={labData.labName || labData.name || labData.clinicName || (IS_CLINIC_PORTAL ? 'Clinic' : 'Lab')}
         />
       )}
     </div>

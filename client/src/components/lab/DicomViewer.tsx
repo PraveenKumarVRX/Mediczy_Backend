@@ -40,7 +40,9 @@ interface CornerstoneLib {
   dicomParser: unknown;
 }
 
-const API_BASE = '/api/lab/ris';
+const API_BASE = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/')
+  ? '/api/clinic/ris'
+  : '/api/lab/ris';
 
 /* ────── Tool button helper ────────────────────────────────────────────────── */
 const ToolBtn: React.FC<{
@@ -90,7 +92,10 @@ const DicomViewer: React.FC<DicomViewerProps> = ({
   const [loaded, setLoaded]           = useState(false);
 
   const fileUrl = fileUrlOverride || `${resolvedApiBase}/file/${studyId}`;
-  const token   = tokenOverride || localStorage.getItem('labToken') || '';
+  const defaultTokenKey = typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic/')
+    ? 'clinicToken'
+    : 'labToken';
+  const token   = tokenOverride || localStorage.getItem(defaultTokenKey) || '';
 
   /* ── Load cornerstone libs lazily ─────────────────────────────────────── */
   useEffect(() => {
