@@ -1,11 +1,16 @@
 /**
  * DICOM modality device registry — lab-managed scanner peers synced to Orthanc.
  *
+ * GET    /api/dicom/health
+ * GET    /api/dicom/presets
  * GET    /api/dicom/modalities
  * POST   /api/dicom/modalities
  * GET    /api/dicom/modalities/:name
  * PUT    /api/dicom/modalities/:name
  * DELETE /api/dicom/modalities/:name
+ * POST   /api/dicom/modalities/:name/echo      — C-ECHO
+ * POST   /api/dicom/modalities/:name/query     — C-FIND
+ * POST   /api/dicom/modalities/:name/retrieve  — C-MOVE pull into Orthanc
  */
 import express from 'express';
 import pool from '../db/pgPool.js';
@@ -14,11 +19,14 @@ import {
   upsertOrthancModality,
   deleteOrthancModality,
   listOrthancModalities,
+  getOrthancSystem,
+  echoOrthancModality,
+  queryOrthancModality,
+  retrieveOrthancModality,
+  MODALITY_PRESETS,
 } from '../services/orthanc-modality.service.js';
 
 const router = express.Router();
-
-router.use(authLab);
 
 function tenantId(req) {
   return req.lab?.id;
@@ -50,6 +58,41 @@ function rowToModality(row) {
   };
 }
 
+async function assertOwnedModality(tid, name) {
+  const r = await pool.query(
+    `SELECT * FROM dicom_modalities WHERE tenant_id = $1 AND name = $2 LIMIT 1`,
+    [tid, name],
+  );
+  return r.rows[0] || null;
+}
+
+/** Public-ish health for lab UI (still requires lab auth). */
+router.get('/health', authLab, async (_req, res) => {
+  try {
+    const system = await getOrthancSystem();
+    res.json({ success: true, pacs: system });
+  } catch (err) {
+    res.status(503).json({
+      success: false,
+      message: 'PACS (Orthanc) is not reachable. Start docker/imaging Orthanc or set ORTHANC_URL.',
+      error: err.message,
+      pacs: { online: false, url: process.env.ORTHANC_URL || 'http://127.0.0.1:8042' },
+    });
+  }
+});
+
+router.get('/presets', authLab, (_req, res) => {
+  res.json({
+    success: true,
+    presets: MODALITY_PRESETS,
+    local_aet: process.env.ORTHANC_AET || 'MEDICZY',
+    local_port: Number(process.env.ORTHANC_DICOM_PORT || 4242),
+    note: 'Configure each CT/MRI/USG/DX machine to C-STORE to this AE, or register the machine here and pull via C-MOVE.',
+  });
+});
+
+router.use(authLab);
+
 router.get('/modalities', async (req, res) => {
   try {
     const tid = tenantId(req);
@@ -74,14 +117,11 @@ router.get('/modalities', async (req, res) => {
 router.get('/modalities/:name', async (req, res) => {
   try {
     const tid = tenantId(req);
-    const r = await pool.query(
-      `SELECT * FROM dicom_modalities WHERE tenant_id = $1 AND name = $2 LIMIT 1`,
-      [tid, req.params.name],
-    );
-    if (!r.rows[0]) {
+    const row = await assertOwnedModality(tid, req.params.name);
+    if (!row) {
       return res.status(404).json({ success: false, message: 'Modality not found' });
     }
-    return res.json({ success: true, modality: rowToModality(r.rows[0]) });
+    return res.json({ success: true, modality: rowToModality(row) });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to fetch modality' });
   }
@@ -150,15 +190,12 @@ router.post('/modalities', async (req, res) => {
 router.put('/modalities/:name', async (req, res) => {
   try {
     const tid = tenantId(req);
-    const existing = await pool.query(
-      `SELECT * FROM dicom_modalities WHERE tenant_id = $1 AND name = $2 LIMIT 1`,
-      [tid, req.params.name],
-    );
-    if (!existing.rows[0]) {
+    const existing = await assertOwnedModality(tid, req.params.name);
+    if (!existing) {
       return res.status(404).json({ success: false, message: 'Modality not found' });
     }
 
-    const row = existing.rows[0];
+    const row = existing;
     const aeTitle = req.body.ae_title ?? row.ae_title;
     const host = req.body.host ?? row.host;
     const portNum = req.body.port != null ? normalizePort(req.body.port) : Number(row.port);
@@ -217,6 +254,109 @@ router.delete('/modalities/:name', async (req, res) => {
     return res.json({ success: true, deleted: req.params.name });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to delete modality' });
+  }
+});
+
+/** C-ECHO connectivity test */
+router.post('/modalities/:name/echo', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const row = await assertOwnedModality(tid, req.params.name);
+    if (!row) return res.status(404).json({ success: false, message: 'Modality not found' });
+
+    // Ensure Orthanc peer is synced before echo
+    if (!row.orthanc_synced) {
+      await upsertOrthancModality({
+        name: row.name,
+        aeTitle: row.ae_title,
+        host: row.host,
+        port: row.port,
+        manufacturer: row.manufacturer,
+      });
+      await pool.query(
+        `UPDATE dicom_modalities SET orthanc_synced = true, updated_at = NOW() WHERE id = $1`,
+        [row.id],
+      );
+    }
+
+    const result = await echoOrthancModality(req.params.name);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(502).json({ success: false, message: err.message || 'C-ECHO failed' });
+  }
+});
+
+/** C-FIND — query remote modality for studies (CT/MR/US/DX …) */
+router.post('/modalities/:name/query', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const row = await assertOwnedModality(tid, req.params.name);
+    if (!row) return res.status(404).json({ success: false, message: 'Modality not found' });
+
+    const {
+      patient_name: patientName,
+      patient_id: patientId,
+      study_date: studyDate,
+      accession_number: accessionNumber,
+      modalities_in_study: modalitiesInStudy,
+      study_description: studyDescription,
+      study_instance_uid: studyInstanceUID,
+      level,
+    } = req.body || {};
+
+    // Default to this device's modality type when not specified
+    const mods = modalitiesInStudy
+      || (row.modality_type ? String(row.modality_type).toUpperCase() : '');
+
+    const result = await queryOrthancModality(req.params.name, {
+      level: level || 'Study',
+      query: {
+        ...(patientName != null ? { PatientName: patientName } : {}),
+        ...(patientId != null ? { PatientID: patientId } : {}),
+        ...(studyDate != null ? { StudyDate: studyDate } : {}),
+        ...(accessionNumber != null ? { AccessionNumber: accessionNumber } : {}),
+        ...(mods ? { ModalitiesInStudy: mods } : {}),
+        ...(studyDescription != null ? { StudyDescription: studyDescription } : {}),
+        ...(studyInstanceUID != null ? { StudyInstanceUID: studyInstanceUID } : {}),
+      },
+    });
+
+    res.json({ success: true, modality: req.params.name, ...result });
+  } catch (err) {
+    res.status(502).json({ success: false, message: err.message || 'C-FIND failed' });
+  }
+});
+
+/** C-MOVE — pull selected studies into local Orthanc PACS */
+router.post('/modalities/:name/retrieve', async (req, res) => {
+  try {
+    const tid = tenantId(req);
+    const row = await assertOwnedModality(tid, req.params.name);
+    if (!row) return res.status(404).json({ success: false, message: 'Modality not found' });
+
+    const uids = req.body?.study_instance_uids
+      || req.body?.studyInstanceUIDs
+      || (req.body?.study_instance_uid ? [req.body.study_instance_uid] : []);
+
+    if (!Array.isArray(uids) || !uids.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'study_instance_uids array is required',
+      });
+    }
+
+    const result = await retrieveOrthancModality(req.params.name, {
+      studyInstanceUIDs: uids.map(String),
+      targetAet: req.body?.target_aet || null,
+    });
+
+    res.json({
+      success: true,
+      message: `Retrieve started for ${uids.length} study(ies). Images will appear in RIS/PACS after Orthanc → HyperGrid bridge sync.`,
+      ...result,
+    });
+  } catch (err) {
+    res.status(502).json({ success: false, message: err.message || 'C-MOVE retrieve failed' });
   }
 });
 
