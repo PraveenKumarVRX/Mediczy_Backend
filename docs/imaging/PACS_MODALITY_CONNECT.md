@@ -38,12 +38,26 @@ ORTHANC_WEBHOOK_SECRET=...
 cd docker/imaging
 export MEDICZY_API_URL=https://app.mediqzy.com
 export ORTHANC_WEBHOOK_SECRET=your-secret
+docker compose down
 docker compose up -d
+# wait until healthy (~45s)
+docker compose ps
+curl -u pacs:change-this-password http://127.0.0.1:8042/system
 ```
 
-- Orthanc UI: `:8042`
+- Orthanc UI: `:8042` — user `pacs` / `change-this-password`
 - DICOM C-STORE: `:4242` AE `MEDICZY`
 - OHIF: `:3001`
+
+If Orthanc shows **unhealthy**, pull latest compose (auth-aware healthcheck) and recreate:
+
+```bash
+git pull origin main
+cd docker/imaging
+docker compose down
+docker compose up -d
+docker logs mediczy-orthanc --tail 80
+```
 
 ## APIs
 
