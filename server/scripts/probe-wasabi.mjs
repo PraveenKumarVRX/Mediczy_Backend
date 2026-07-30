@@ -69,9 +69,11 @@ if (result.ok) {
 }
 
 console.error('[wasabi] FAIL:', result.error);
+if (result.hint) {
+  console.error('[wasabi] FIX:', result.hint);
+}
 if (result.detail) {
   console.error('[wasabi] detail:', JSON.stringify(result.detail));
 }
-console.error('[wasabi] hint: bucket region must match WASABI_REGION; endpoint e.g. https://s3.wasabisys.com for us-east-1');
-console.error('[wasabi] hint: AWS SDK >= 3.729 CRC32 defaults break Wasabi — client uses WHEN_REQUIRED');
+console.error('[wasabi] Wasabi Singapore → WASABI_REGION=ap-southeast-1 WASABI_ENDPOINT=https://s3.ap-southeast-1.wasabisys.com');
 process.exit(1);

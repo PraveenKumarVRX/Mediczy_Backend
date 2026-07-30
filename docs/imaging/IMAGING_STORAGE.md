@@ -79,9 +79,11 @@ MINIO_ACCESS_KEY=...
 MINIO_SECRET_KEY=...
 MINIO_IMAGING_BUCKET=mediczy-imaging-archive
 
-# Match the region where you created the bucket (console). us-east-1 → s3.wasabisys.com
-WASABI_ENDPOINT=https://s3.wasabisys.com
-WASABI_REGION=us-east-1
+# Match the region where you created the bucket (Wasabi console).
+# Singapore (AP Southeast 1) — common for mediqzy EC2 in Singapore:
+WASABI_ENDPOINT=https://s3.ap-southeast-1.wasabisys.com
+WASABI_REGION=ap-southeast-1
+# us-east-1 would instead be: https://s3.wasabisys.com + us-east-1
 WASABI_ACCESS_KEY=...
 WASABI_SECRET_KEY=...
 WASABI_IMAGING_BUCKET=mediczy-imaging-archive
