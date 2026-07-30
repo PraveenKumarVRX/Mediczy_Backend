@@ -443,6 +443,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/ai/vision',
       '/api/imaging',  // Imaging platform + storage/tenant-isolation for RIS/PACS labs
       '/api/hypergrid',  // DICOMweb / HyperGrid for lab RIS
+      '/api/dicom',  // PACS Settings — Orthanc health, modality registry, C-ECHO/FIND/MOVE
     ],
     tokenField: 'labId'
   },
