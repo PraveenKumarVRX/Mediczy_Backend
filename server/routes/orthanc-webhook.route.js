@@ -10,7 +10,14 @@ const router = express.Router();
 const WEBHOOK_SECRET = process.env.ORTHANC_WEBHOOK_SECRET || process.env.MEDICZY_INTERNAL_TOKEN || '';
 
 function verifyWebhook(req, res, next) {
-  if (!WEBHOOK_SECRET) return next();
+  // Fail closed: never accept Orthanc webhooks when no shared secret is configured.
+  if (!WEBHOOK_SECRET) {
+    logger.error('[OrthancWebhook] ORTHANC_WEBHOOK_SECRET unset — rejecting request');
+    return res.status(503).json({
+      success: false,
+      message: 'Webhook authentication not configured (ORTHANC_WEBHOOK_SECRET required)',
+    });
+  }
   const token = req.headers['x-orthanc-secret'] || req.query.secret;
   if (token !== WEBHOOK_SECRET) {
     return res.status(401).json({ success: false, message: 'Invalid webhook secret' });

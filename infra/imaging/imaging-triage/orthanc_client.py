@@ -10,7 +10,11 @@ from typing import Any
 
 ORTHANC_URL = os.getenv("ORTHANC_URL", "http://127.0.0.1:8042").rstrip("/")
 ORTHANC_USER = os.getenv("ORTHANC_USER", "pacs")
-ORTHANC_PASSWORD = os.getenv("ORTHANC_PASSWORD", "change-this-password")
+ORTHANC_PASSWORD = os.getenv("ORTHANC_PASSWORD")
+if not ORTHANC_PASSWORD:
+    raise RuntimeError(
+        "ORTHANC_PASSWORD is required. Refusing to authenticate to Orthanc with an insecure default."
+    )
 
 
 def auth_header() -> str:

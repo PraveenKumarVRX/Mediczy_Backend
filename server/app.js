@@ -953,6 +953,7 @@ app.use((req, res, next) => {
     '/api/doctor/chat/upload',
     '/api/doctors/imaging/upload',
     '/api/lab/ris/upload',
+    '/api/hypergrid/dicom/studies', // STOW-RS multer — express-fileupload must not drain body first
     '/api/voice-assistant/stt',   // multer memoryStorage — must not be pre-consumed by express-fileupload
   ];
   if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {

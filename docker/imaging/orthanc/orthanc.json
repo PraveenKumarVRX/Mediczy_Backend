@@ -5,7 +5,7 @@
   "RemoteAccessAllowed": true,
   "AuthenticationEnabled": true,
   "RegisteredUsers": {
-    "pacs": "change-this-password"
+    "pacs": "REPLACE_VIA_ENV_ORTHANC__REGISTERED_USERS"
   },
   "DicomAet": "MEDICZY",
   "DicomPort": 4242,

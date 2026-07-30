@@ -21,6 +21,7 @@ MediQzy Node API:
 
 ```bash
 cd infra/imaging
+cp .env.example .env   # set ORTHANC_PASSWORD, ORTHANC_REGISTERED_USERS, ORTHANC_BASIC_AUTH
 docker compose -f compose.yml up -d
 
 # OHIF:  http://localhost:8088/ohif/
@@ -28,14 +29,19 @@ docker compose -f compose.yml up -d
 # DICOM: localhost:4242  AE Title MEDIQZY
 ```
 
-## Production nginx (on mediqzy.com)
+`ORTHANC_BASIC_AUTH` is base64 of `user:password` (no `Basic ` prefix). The nginx
+template fails closed if it is unset — never commit a real Orthanc password.
 
-Add to your main nginx / ALB:
+## Production nginx (on app host)
+
+Prefer real Orthanc/OHIF ports — **not** a phantom `:8088` unless this compose stack is running:
 
 | Path | Target | Auth |
 |------|--------|------|
-| `/ohif/*` | OHIF container | Public (study UIDs opaque) |
-| `/pacs/*` | Orthanc :8042 | `auth_request` → `/api/imaging/session/validate` |
+| `/ohif/*` | OHIF `:3001` (or compose nginx) | Public (study UIDs opaque) |
+| `/pacs/*` | Orthanc `:8042` | `auth_request` → `/api/imaging/session/validate` |
+
+See `nginx/imaging-proxy.conf.example` for host nginx snippets.
 
 Port **4242** only on the hospital modality VLAN.
 
@@ -50,8 +56,12 @@ Port **4242** only on the hospital modality VLAN.
 ```env
 ORTHANC_URL=http://orthanc:8042
 ORTHANC_USER=pacs
-ORTHANC_PASSWORD=change-this-password
+ORTHANC_PASSWORD=<strong secret — required, no default>
+ORTHANC_REGISTERED_USERS={"pacs":"<same password>"}
+ORTHANC_BASIC_AUTH=<base64 of user:password>
 ```
+
+Passwords containing `$` must use `$$` in Compose `.env` files (Compose interpolation).
 
 ## Multi-tenant
 

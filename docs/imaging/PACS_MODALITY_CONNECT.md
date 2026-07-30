@@ -36,18 +36,20 @@ ORTHANC_WEBHOOK_SECRET=...
 
 ```bash
 cd docker/imaging
+cp .env.example .env   # set ORTHANC_PASSWORD + ORTHANC_REGISTERED_USERS
 export MEDICZY_API_URL=https://app.mediqzy.com
 export ORTHANC_WEBHOOK_SECRET=your-secret
 docker compose down
 docker compose up -d
 # wait until healthy (~45s)
 docker compose ps
-curl -u pacs:change-this-password http://127.0.0.1:8042/system
+# use the password from .env (escape $ as $$ only inside Compose .env)
+curl -u "pacs:$ORTHANC_PASSWORD" http://127.0.0.1:8042/system
 ```
 
-- Orthanc UI: `:8042` — user `pacs` / `change-this-password`
+- Orthanc UI: `:8042` — `ORTHANC_USER` / `ORTHANC_PASSWORD` from `.env` (no weak defaults in git)
 - DICOM C-STORE: `:4242` AE `MEDICZY`
-- OHIF: `:3001`
+- OHIF: `:3001` (relative `/api/hypergrid/dicom` datasource)
 
 If Orthanc shows **unhealthy**, pull latest compose (auth-aware healthcheck) and recreate:
 

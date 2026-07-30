@@ -10,6 +10,19 @@ import { recordMetric } from './imaging-observability.service.js';
 
 const TRIAGE_URL = process.env.IMAGING_TRIAGE_URL || 'http://127.0.0.1:8010';
 
+/** Text-only LLM path never saw pixels — must not look like a real CV read. */
+const LLM_FALLBACK_MAX_CONFIDENCE = 0.2;
+const LLM_FALLBACK_DISCLAIMER = {
+  label: 'No image analysis performed',
+  severity: 'info',
+  note: 'Text-only LLM fallback — pixel data was not analyzed. Physician review required before any clinical action.',
+};
+
+function withLlmFallbackDisclaimer(findings) {
+  const list = Array.isArray(findings) ? findings.filter(Boolean) : [];
+  return [LLM_FALLBACK_DISCLAIMER, ...list];
+}
+
 export async function requestTriage({ studyId, studyInstanceUID, tenantId, modality, orthancStudyId }) {
   await pool.query(
     `INSERT INTO imaging_ai_triage (study_id, study_instance_uid, tenant_id, modality, status)
@@ -44,14 +57,14 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
       inferenceBackend = body.inference_backend || inferenceBackend;
       featureAttributions = body.feature_attributions || [];
     } else {
-      findings = await llmTriageFallback(modality, studyInstanceUID);
-      confidence = 0.5;
+      findings = withLlmFallbackDisclaimer(await llmTriageFallback(modality, studyInstanceUID));
+      confidence = LLM_FALLBACK_MAX_CONFIDENCE;
       modelVersion = 'llm-fallback-v1';
       inferenceBackend = 'llm-fallback';
     }
   } catch {
-    findings = await llmTriageFallback(modality, studyInstanceUID);
-    confidence = 0.4;
+    findings = withLlmFallbackDisclaimer(await llmTriageFallback(modality, studyInstanceUID));
+    confidence = LLM_FALLBACK_MAX_CONFIDENCE;
     modelVersion = 'llm-fallback-v1';
     inferenceBackend = 'llm-fallback';
   }

@@ -1,6 +1,9 @@
 # MediQzy imaging reverse proxy
-# /ohif/* → OHIF Viewer (public read via same-origin)
+# /ohif/* → OHIF Viewer
 # /pacs/* → Orthanc HTTP API + DICOMweb (auth_request validates pacs_session cookie)
+#
+# ORTHANC_BASIC_AUTH must be the base64 of "user:password" (no "Basic " prefix).
+# Official nginx image envsubst fills this from /etc/nginx/templates/.
 
 upstream ohif_upstream {
   server ohif:80;
@@ -16,7 +19,6 @@ server {
 
   client_max_body_size 512m;
 
-  # OHIF viewer — no auth (study UIDs are opaque; PACS proxy still protected)
   location /ohif/ {
     proxy_pass http://ohif_upstream/;
     proxy_http_version 1.1;
@@ -26,7 +28,6 @@ server {
     proxy_set_header X-Forwarded-Proto $scheme;
   }
 
-  # Orthanc admin + DICOMweb — requires MediQzy PACS session cookie
   location /pacs/ {
     auth_request /_pacs_auth;
     auth_request_set $auth_status $upstream_status;
@@ -38,12 +39,11 @@ server {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     # Inject Orthanc credentials server-side (never exposed to browser)
-    proxy_set_header Authorization "Basic cGFjczpjaGFuZ2UtdGhpcy1wYXNzd29yZA==";
+    proxy_set_header Authorization "Basic ${ORTHANC_BASIC_AUTH}";
     proxy_read_timeout 300s;
     proxy_send_timeout 300s;
   }
 
-  # Internal auth subrequest — validates HttpOnly pacs_session cookie
   location = /_pacs_auth {
     internal;
     proxy_pass http://host.docker.internal:8888/api/imaging/session/validate;

@@ -12,10 +12,11 @@ window.config = {
       configuration: {
         friendlyName: 'Mediczy HyperGrid DICOMweb',
         name: 'mediczy',
-        // Override at deploy time via envsubst or edit for your host:
-        wadoUriRoot: 'https://mediqzy.com/api/hypergrid/dicom',
-        qidoRoot: 'https://mediqzy.com/api/hypergrid/dicom',
-        wadoRoot: 'https://mediqzy.com/api/hypergrid/dicom',
+        // Relative paths — same-origin via app nginx / API host.
+        // Do NOT hardcode https://mediqzy.com (marketing site has no /api proxy).
+        wadoUriRoot: '/api/hypergrid/dicom',
+        qidoRoot: '/api/hypergrid/dicom',
+        wadoRoot: '/api/hypergrid/dicom',
         qidoSupportsIncludeField: true,
         supportsReject: false,
         imageRendering: 'wadors',

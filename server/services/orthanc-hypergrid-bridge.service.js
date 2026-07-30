@@ -5,17 +5,14 @@
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import logger from '../config/logger.js';
+import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';
 
-const ORTHANC_URL = process.env.ORTHANC_URL || 'http://127.0.0.1:8042';
-const ORTHANC_USER = process.env.ORTHANC_USER || 'orthanc';
-const ORTHANC_PASSWORD = process.env.ORTHANC_PASSWORD || 'orthanc';
+const ORTHANC_URL = (process.env.ORTHANC_URL || 'http://127.0.0.1:8042').replace(/\/$/, '');
 const MEDICZY_API_URL = process.env.MEDICZY_API_URL || process.env.API_BASE_URL || 'http://127.0.0.1:8888';
 const BRIDGE_TOKEN = process.env.ORTHANC_BRIDGE_TOKEN || process.env.MEDICZY_INTERNAL_TOKEN || '';
 
 function orthancAuthHeader() {
-  if (!ORTHANC_USER) return {};
-  const token = Buffer.from(`${ORTHANC_USER}:${ORTHANC_PASSWORD}`).toString('base64');
-  return { Authorization: `Basic ${token}` };
+  return orthancBasicAuthHeader({ defaultUser: 'pacs' });
 }
 
 export async function fetchOrthancInstance(instanceId) {

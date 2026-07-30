@@ -115,8 +115,8 @@ services:
     restart: unless-stopped
     environment:
       ORTHANC_URL: http://orthanc:8042
-      ORTHANC_USER: pacs
-      ORTHANC_PASSWORD: change-this-password
+      ORTHANC_USER: ${ORTHANC_USER:-pacs}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
       MODEL_WEIGHTS_DIR: /app/models
       NNUNET_MODEL_FOLDER: ${NNUNET_MODEL_FOLDER:-}
       NNUNET_DATASET_NAME: ${NNUNET_DATASET_NAME:-Dataset001_Lung}

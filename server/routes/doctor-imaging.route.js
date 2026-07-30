@@ -151,7 +151,19 @@ router.get('/file/:id', authDoctor, async (req, res) => {
       [req.params.id, doctorId]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Not found' });
-    const url = await s3PresignedUrl(rows[0].file_path, 3600);
+    const study = rows[0];
+    const { logImagingPhiAccess } = await import('../services/imaging/imaging-phi-access-log.service.js');
+    await logImagingPhiAccess({
+      actorId: doctorId,
+      actorRole: req.user?.role || 'doctor',
+      actorEmail: req.user?.email || null,
+      resourceType: 'doctor_imaging_file',
+      resourceId: String(study.id),
+      path: req.path,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    }).catch(() => {});
+    const url = await s3PresignedUrl(study.file_path, 3600);
     res.redirect(302, url);
   } catch (err) {
     console.error('imaging serve error:', err);

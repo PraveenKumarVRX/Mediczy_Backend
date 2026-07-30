@@ -333,6 +333,20 @@ async function streamInstance(req, res) {
   );
   if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Instance not found' });
   const inst = r.rows[0];
+  const { logImagingPhiAccess } = await import('../services/imaging/imaging-phi-access-log.service.js');
+  await logImagingPhiAccess({
+    actorId: req.user?.id || req.lab?.id,
+    actorRole: req.userRole || req.user?.role || 'unknown',
+    actorEmail: req.user?.email || req.lab?.email || null,
+    resourceType: 'dicom_instance',
+    resourceId: String(inst.id || sopUID),
+    studyInstanceUid: studyUID,
+    seriesInstanceUid: seriesUID || inst.series_instance_uid,
+    sopInstanceUid: sopUID,
+    path: req.path,
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+  }).catch(() => {});
   const accept = String(req.headers.accept || '').toLowerCase();
   if (accept.includes('application/dicom') || req.path.includes('/frames/')) {
     const buf = await s3GetObjectBuffer(inst.file_path);

@@ -32,6 +32,8 @@ export function s3Storage(folder) {
     s3: s3Client,
     bucket: BUCKET,
     contentType: multerS3.AUTO_CONTENT_TYPE,
+    // PHI imaging/DICOM objects must be encrypted at rest
+    serverSideEncryption: 'AES256',
     key(_req, file, cb) {
       const uid  = crypto.randomBytes(8).toString('hex');
       const ext  = path.extname(file.originalname) || '';

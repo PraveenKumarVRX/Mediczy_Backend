@@ -69,16 +69,22 @@ Redeploy Node server after merge.
 
 ```bash
 cd docker/imaging
-export MEDICZY_API_URL=https://mediqzy.com
+cp .env.example .env   # required: ORTHANC_PASSWORD, ORTHANC_REGISTERED_USERS
+export MEDICZY_API_URL=https://app.mediqzy.com
 export ORTHANC_WEBHOOK_SECRET=your-secret
 docker compose up -d
 ```
 
-- Orthanc UI: http://localhost:8042 (orthanc / orthanc)
-- OHIF: http://localhost:3001
+- Orthanc UI: http://localhost:8042 (`ORTHANC_USER` / `ORTHANC_PASSWORD` from `.env`)
+- OHIF: http://localhost:3001 — config uses relative `/api/hypergrid/dicom` (not marketing apex)
 - DICOM C-STORE: port **4242**, AE Title **MEDICZY**
 
-Edit `docker/imaging/ohif/app-config.js` — set `qidoRoot` / `wadoRoot` to your production API URL.
+Do not hardcode Orthanc passwords in compose or nginx. Host nginx: see `nginx/imaging-proxy.conf.example` (ports **3001** / **8042**, not phantom **8088**).
+
+Also run PHI audit migration:
+```bash
+node server/migrations/imaging-phi-access-log.migration.js
+```
 
 ### 4. Frontend
 

@@ -5,11 +5,18 @@
 ORTHANC_URL="${ORTHANC_URL:-http://orthanc:8042}"
 MEDICZY_API_URL="${MEDICZY_API_URL:-http://host.docker.internal:8888}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-30}"
-AUTH="-u orthanc:orthanc"
+ORTHANC_USER="${ORTHANC_USER:-pacs}"
+
+if [ -z "${ORTHANC_PASSWORD:-}" ]; then
+  echo "[orthanc-bridge] FATAL: ORTHANC_PASSWORD is required (no default credentials)" >&2
+  exit 1
+fi
+
+AUTH="-u ${ORTHANC_USER}:${ORTHANC_PASSWORD}"
 SECRET_HDR=""
 [ -n "$ORTHANC_WEBHOOK_SECRET" ] && SECRET_HDR="-H x-orthanc-secret: $ORTHANC_WEBHOOK_SECRET"
 
-echo "[orthanc-bridge] polling $ORTHANC_URL → $MEDICZY_API_URL every ${POLL_INTERVAL_SEC}s"
+echo "[orthanc-bridge] polling $ORTHANC_URL → $MEDICZY_API_URL every ${POLL_INTERVAL_SEC}s (user=$ORTHANC_USER)"
 
 LAST_CHANGE=0
 

@@ -2,20 +2,20 @@
 #
 # Usage:
 #   cd docker/imaging
+#   cp .env.example .env   # set ORTHANC_PASSWORD (+ escape $ as $$)
 #   export MEDICZY_API_URL=https://app.mediqzy.com
 #   export ORTHANC_WEBHOOK_SECRET=your-secret
 #   docker compose down
 #   docker compose up -d
 #
-# Orthanc UI:  http://localhost:8042  (pacs / change-this-password)
+# Orthanc UI:  http://localhost:8042  (user from ORTHANC_USER, password from .env)
 # OHIF Viewer: http://localhost:3001
 # DICOM C-STORE port: 4242 (AE Title: MEDICZY)
 #
-# Node API (.env) should match:
-#   ORTHANC_URL=http://127.0.0.1:8042
-#   ORTHANC_USER=pacs
-#   ORTHANC_PASSWORD=change-this-password
-#   ORTHANC_AET=MEDICZY
+# IMPORTANT — passwords containing `$` must use `$$` in docker/imaging/.env
+# so Compose does not treat `$foo` as variable interpolation (truncation bug).
+#
+# Node API (server/.env) must use the SAME Orthanc password (unescaped there).
 
 services:
   orthanc:
@@ -29,23 +29,24 @@ services:
       - orthanc-data:/var/lib/orthanc/db
     environment:
       VERBOSE_STARTUP: "true"
-      # Prefer env config (orthancteam image) over a raw mounted JSON
       ORTHANC__NAME: "MediczyPACS"
       ORTHANC__DICOM_AET: "MEDICZY"
       ORTHANC__DICOM_PORT: "4242"
       ORTHANC__HTTP_PORT: "8042"
       ORTHANC__REMOTE_ACCESS_ALLOWED: "true"
       ORTHANC__AUTHENTICATION_ENABLED: "true"
-      ORTHANC__REGISTERED_USERS: '{"pacs":"change-this-password"}'
+      # Full JSON string — set in .env; do not bake passwords into git
+      ORTHANC__REGISTERED_USERS: ${ORTHANC_REGISTERED_USERS:?Set ORTHANC_REGISTERED_USERS in docker/imaging/.env}
+      ORTHANC_USER: ${ORTHANC_USER:-pacs}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in docker/imaging/.env}
       ORTHANC__STABLE_AGE: "10"
       DICOM_WEB_PLUGIN_ENABLED: "true"
       ORTHANC__DICOM_WEB__ENABLE: "true"
       ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
       ORTHANC__DICOM_WEB__ENABLE_WADO: "true"
       ORTHANC__DICOM_WEB__WADO_ROOT: "/wado"
-    # Official probe handles Basic Auth; plain curl -f /system returns 401 → unhealthy
     healthcheck:
-      test: ["CMD", "python3", "/probes/test-aliveness.py", "--user=pacs", "--pwd=change-this-password"]
+      test: ["CMD-SHELL", "python3 /probes/test-aliveness.py --user=$${ORTHANC_USER:-pacs} --pwd=$${ORTHANC_PASSWORD}"]
       interval: 15s
       timeout: 10s
       retries: 8
@@ -60,8 +61,8 @@ services:
         condition: service_healthy
     environment:
       ORTHANC_URL: http://orthanc:8042
-      ORTHANC_USER: pacs
-      ORTHANC_PASSWORD: change-this-password
+      ORTHANC_USER: ${ORTHANC_USER:-pacs}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in docker/imaging/.env}
       MEDICZY_API_URL: ${MEDICZY_API_URL:-http://host.docker.internal:8888}
       ORTHANC_WEBHOOK_SECRET: ${ORTHANC_WEBHOOK_SECRET:-}
       POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-30}

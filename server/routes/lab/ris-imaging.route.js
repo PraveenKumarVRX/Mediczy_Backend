@@ -458,6 +458,7 @@ router.post('/upload', authLab, upload.single('file'), async (req, res) => {
       Key:         s3Key,
       Body:        fs.createReadStream(req.file.path),
       ContentType: req.file.mimetype || 'application/octet-stream',
+      ServerSideEncryption: 'AES256',
     }));
     fs.unlink(req.file.path, () => {});
 
@@ -657,6 +658,7 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
         Key: s3Key,
         Body: fs.createReadStream(f.path),
         ContentType: f.mimetype || 'application/dicom',
+        ServerSideEncryption: 'AES256',
       }));
       s3Keys.push(s3Key);
       fs.unlink(f.path, () => {});
@@ -806,6 +808,32 @@ router.get('/file/:id', authLab, async (req, res) => {
     if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
 
     const study = row.rows[0];
+    const { actorId, actorName } = getActor(req);
+    await writeAuditEvent(pool, {
+      studyId: study.id,
+      labId: req.lab.id,
+      eventType: 'phi_file_access',
+      actorId,
+      actorName,
+      details: {
+        resource: 'ris_file',
+        study_instance_uid: study.study_instance_uid,
+        file_path: study.file_path,
+      },
+    }).catch((e) => console.error('[RIS] PHI audit failed:', e.message));
+    const { logImagingPhiAccess } = await import('../../services/imaging/imaging-phi-access-log.service.js');
+    await logImagingPhiAccess({
+      actorId,
+      actorRole: 'lab',
+      actorEmail: req.lab?.email || null,
+      resourceType: 'ris_file',
+      resourceId: String(study.id),
+      studyInstanceUid: study.study_instance_uid,
+      path: req.path,
+      ipAddress: req.ip,
+      userAgent: req.get('user-agent'),
+    }).catch(() => {});
+
     const url   = await s3PresignedUrl(study.file_path, 3600);
     return res.redirect(302, url);
   } catch (err) {

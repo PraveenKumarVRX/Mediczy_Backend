@@ -4,14 +4,12 @@
  */
 import fetch from 'node-fetch';
 import logger from '../config/logger.js';
+import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';
 
 const ORTHANC_URL = (process.env.ORTHANC_URL || 'http://127.0.0.1:8042').replace(/\/$/, '');
-const ORTHANC_USER = process.env.ORTHANC_USER || 'pacs';
-const ORTHANC_PASSWORD = process.env.ORTHANC_PASSWORD || 'change-this-password';
 
 function basicAuthHeader() {
-  const token = Buffer.from(`${ORTHANC_USER}:${ORTHANC_PASSWORD}`).toString('base64');
-  return { Authorization: `Basic ${token}` };
+  return orthancBasicAuthHeader();
 }
 
 async function orthancFetch(path, { method = 'GET', body, timeout = 60000 } = {}) {

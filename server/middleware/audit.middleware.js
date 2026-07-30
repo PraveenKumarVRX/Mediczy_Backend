@@ -24,7 +24,9 @@ const isPHIEndpoint = (path) => {
     /\/appointment/i,
     /\/consultation/i,
     /\/doctor/i,
-    /\/insurance/i
+    /\/insurance/i,
+    /\/hypergrid\/dicom/i,
+    /\/imaging/i,
   ];
   
   return phiPatterns.some(pattern => pattern.test(path));

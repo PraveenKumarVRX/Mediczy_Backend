@@ -1,0 +1,43 @@
+# Host nginx imaging proxy — OHIF + Orthanc on the real docker/imaging ports.
+# Include from the main server block AFTER /api/ so API routes win.
+#
+# Do NOT proxy to :8088 unless infra/imaging compose nginx is actually running.
+# That phantom upstream caused /ohif/ and /pacs/ to fall through / fail open.
+#
+# Create /etc/nginx/mediczy-orthanc-auth.inc from the example below (not in git):
+#   proxy_set_header Authorization "Basic <base64 of user:password>";
+
+# OHIF viewer (docker/imaging → host :3001)
+location /ohif/ {
+    proxy_pass http://127.0.0.1:3001/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Orthanc HTTP + DICOMweb (docker/imaging → host :8042)
+location /pacs/ {
+    auth_request /_pacs_auth;
+    auth_request_set $auth_status $upstream_status;
+
+    proxy_pass http://127.0.0.1:8042/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    include /etc/nginx/mediczy-orthanc-auth.inc;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
+
+location = /_pacs_auth {
+    internal;
+    proxy_pass http://127.0.0.1:8888/api/imaging/session/validate;
+    proxy_pass_request_body off;
+    proxy_set_header Content-Length "";
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header X-Original-URI $request_uri;
+}

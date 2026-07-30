@@ -6,6 +6,10 @@ node_modules/
 .env.local
 .env.production
 .env.development
+docker/imaging/.env
+infra/imaging/.env
+**/mediczy-orthanc-auth.inc
+
 
 # Credential files (never commit)
 TEST_CREDENTIALS.md
