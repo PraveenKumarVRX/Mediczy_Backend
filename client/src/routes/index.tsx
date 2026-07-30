@@ -410,6 +410,7 @@ const LabLogin     = lazy(() => import("@/pages/lab/LabLogin"));
 const LabRegister  = lazy(() => import("@/pages/lab/LabRegister"));
 const LabDashboard = lazy(() => import("@/pages/lab/LabDashboard"));
 const LabRIS       = lazy(() => import("@/pages/lab/LabRIS"));
+const LabPacsDevices = lazy(() => import("@/pages/lab/LabPacsDevices"));
 
 const _LabModulePages = () => import("@/pages/lab/LabModulePages");
 const LabOrdersPage        = lazyNamed(_LabModulePages, "LabOrdersPage");
@@ -1177,6 +1178,7 @@ const AppRoutes = () => {
         <Route path="/lab/ris"             element={<LabRIS />} />
         <Route path="/lab/imaging"         element={<LabRIS />} />
         <Route path="/lab/sonology"        element={<LabRIS />} />
+        <Route path="/lab/pacs-devices"    element={<LabPacsDevices />} />
         <Route path="/lab/orders"          element={<LabOrdersPage />} />
         <Route path="/lab/orders/new"      element={<LabOrdersPage />} />
         <Route path="/lab/patients"        element={<LabPatientsPage />} />

@@ -156,6 +156,7 @@ export const TENANT_MODULE_PACKS = {
     ],
     optionalModules: [
       mod('home_collection', 'Home Collection', '/lab/home-collection', { enabled: false }),
+      mod('pacs_devices', 'PACS Devices', '/lab/pacs-devices', { enabled: false }),
     ],
   },
 
@@ -177,6 +178,7 @@ export const TENANT_MODULE_PACKS = {
       mod('ris', 'RIS / Imaging', '/lab/ris'),
       mod('imaging', 'Imaging', '/lab/imaging'),
       mod('sonology', 'Sonology', '/lab/sonology'),
+      mod('pacs_devices', 'PACS Devices', '/lab/pacs-devices'),
       mod('sample_collection', 'Sample Collection', '/lab/sample-collection'),
       mod('results', 'Results', '/lab/results'),
       mod('billing', 'Billing', '/lab/billing'),
