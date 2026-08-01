@@ -3,6 +3,9 @@
  *
  * POST /api/abdm/abha/register/init       Initiate ABHA registration (send OTP)
  * POST /api/abdm/abha/register/verify     Verify OTP and complete ABHA linking
+ * GET  /api/abdm/abha/aadhaar-enrol/status Aadhaar→ABHA create availability
+ * POST /api/abdm/abha/aadhaar-enrol/init  Send Aadhaar OTP to create ABHA
+ * POST /api/abdm/abha/aadhaar-enrol/verify Verify OTP and create ABHA
  * GET  /api/abdm/abha/:abhaNumber/profile ABHA health profile
  * GET  /api/abdm/abha/registrations       List ABHA registrations for tenant
  *
@@ -41,6 +44,11 @@ import {
   listPhiRequests,
   linkCareContext,
 } from '../services/abdm-client.service.js';
+import {
+  initiateAadhaarAbhaEnrol,
+  verifyAadhaarAbhaEnrol,
+  isAadhaarAbhaEnrolMockMode,
+} from '../services/abdm-aadhaar-enrol.service.js';
 
 const router = Router();
 
@@ -90,7 +98,7 @@ router.get('/status', async (req, res) => {
   }
 });
 
-// ── ABHA Registration ─────────────────────────────────────────────────────────
+// ── ABHA Registration (mobile OTP login/link — legacy path) ───────────────────
 router.post('/abha/register/init', async (req, res) => {
   try {
     const { mobile, name, gender, dateOfBirth, patientId } = req.body;
@@ -131,6 +139,61 @@ router.post('/abha/register/verify', abhaOtpRateLimit, async (req, res) => {
     res.json({ success: true, ...result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── Aadhaar OTP → create new ABHA (ABDM enrollment) ───────────────────────────
+router.get('/abha/aadhaar-enrol/status', async (_req, res) => {
+  try {
+    res.json({
+      success: true,
+      available: true,
+      mock: isAadhaarAbhaEnrolMockMode(),
+      message: isAadhaarAbhaEnrolMockMode()
+        ? 'Sandbox ABHA enrol (OTP 123456) — configure ABDM_CLIENT_ID for live NHA'
+        : 'Aadhaar OTP ABHA creation via ABDM',
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/abha/aadhaar-enrol/init', async (req, res) => {
+  try {
+    if (!req.body?.consentAccepted) {
+      return res.status(400).json({
+        success: false,
+        message: 'Consent is required to create ABHA using Aadhaar OTP',
+      });
+    }
+    const result = await initiateAadhaarAbhaEnrol({
+      aadhaarNumber: req.body?.aadhaarNumber,
+      mobile: req.body?.mobile,
+      tenantId: tenantId(req),
+      name: req.body?.name || null,
+    });
+    res.status(202).json({ success: true, ...result });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/abha/aadhaar-enrol/verify', abhaOtpRateLimit, async (req, res) => {
+  try {
+    const result = await verifyAadhaarAbhaEnrol({
+      txnId: req.body?.txnId,
+      otp: req.body?.otp,
+      mobile: req.body?.mobile,
+      firstName: req.body?.firstName,
+      lastName: req.body?.lastName,
+      gender: req.body?.gender,
+      dateOfBirth: req.body?.dateOfBirth,
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const status = err.status || 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 

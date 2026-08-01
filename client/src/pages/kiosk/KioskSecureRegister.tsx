@@ -86,6 +86,16 @@ export default function KioskSecureRegister() {
   const [done, setDone] = useState<{ tokenNumber?: string; phone?: string } | null>(null);
   const [aadhaarHint, setAadhaarHint] = useState<string | null>(null);
 
+  /** Optional Aadhaar → ABHA self-enrol */
+  const [abhaPanelOpen, setAbhaPanelOpen] = useState(false);
+  const [abhaMock, setAbhaMock] = useState(false);
+  const [abhaConsent, setAbhaConsent] = useState(false);
+  const [abhaTxnId, setAbhaTxnId] = useState<string | null>(null);
+  const [abhaOtp, setAbhaOtp] = useState("");
+  const [abhaBusy, setAbhaBusy] = useState(false);
+  const [abhaMsg, setAbhaMsg] = useState<string | null>(null);
+  const [abhaCreated, setAbhaCreated] = useState(false);
+
   const age = useMemo(() => ageFromDob(form.dateOfBirth), [form.dateOfBirth]);
 
   const load = useCallback(async () => {
@@ -108,6 +118,14 @@ export default function KioskSecureRegister() {
       });
       if (json.status === "completed") {
         setDone({ tokenNumber: json.tokenNumber, phone: json.phone });
+      } else {
+        try {
+          const st = await fetch(`/api/public/kiosk-register/${token}/abha/status`);
+          const sj = await st.json();
+          if (sj.success) setAbhaMock(Boolean(sj.mock));
+        } catch {
+          /* optional */
+        }
       }
     } catch {
       setError("Could not open this registration link. Check your connection.");
@@ -175,6 +193,89 @@ export default function KioskSecureRegister() {
     } catch (e: unknown) {
       setAadhaarHint(null);
       setError(e instanceof Error ? e.message : "Could not read Aadhaar photo");
+    }
+  };
+
+  const sendAbhaOtp = async () => {
+    if (!token) return;
+    const aadhaarDigits = digitsOnly(form.aadhaarNumber);
+    if (aadhaarDigits.length !== 12) {
+      setAbhaMsg("Enter your full 12-digit Aadhaar to create ABHA.");
+      return;
+    }
+    if (!abhaConsent) {
+      setAbhaMsg("Accept ABHA consent to continue.");
+      return;
+    }
+    setAbhaBusy(true);
+    setAbhaMsg(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/public/kiosk-register/${token}/abha/aadhaar/init`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          aadhaarNumber: aadhaarDigits,
+          consentAccepted: true,
+          name: `${form.firstName} ${form.lastName}`.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || "Could not send OTP");
+      setAbhaTxnId(json.txnId);
+      setAbhaMock(Boolean(json.mock));
+      setAbhaMsg(json.message || "OTP sent to Aadhaar-linked mobile");
+    } catch (e: unknown) {
+      setAbhaMsg(e instanceof Error ? e.message : "Could not send Aadhaar OTP");
+    } finally {
+      setAbhaBusy(false);
+    }
+  };
+
+  const verifyAbhaOtp = async () => {
+    if (!token || !abhaTxnId) return;
+    if (!/^\d{6}$/.test(abhaOtp.trim())) {
+      setAbhaMsg("Enter the 6-digit OTP.");
+      return;
+    }
+    setAbhaBusy(true);
+    setAbhaMsg(null);
+    try {
+      const res = await fetch(`/api/public/kiosk-register/${token}/abha/aadhaar/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          txnId: abhaTxnId,
+          otp: abhaOtp.trim(),
+          firstName: form.firstName || undefined,
+          lastName: form.lastName || undefined,
+          gender: form.gender || undefined,
+          dateOfBirth: form.dateOfBirth || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.message || "OTP verification failed");
+      const abha = json.abhaAddress || json.abhaNumber || "";
+      setForm((p) => ({
+        ...p,
+        abhaId: abha,
+        aadhaarLast4: json.aadhaarLast4 || p.aadhaarLast4,
+        firstName: json.profile?.firstName || p.firstName,
+        lastName: json.profile?.lastName || p.lastName,
+        gender: genderLabel(json.profile?.gender || p.gender),
+        dateOfBirth: json.profile?.dateOfBirth || p.dateOfBirth,
+        address: json.profile?.address || p.address,
+      }));
+      setAbhaCreated(true);
+      setAbhaMsg(
+        json.mock
+          ? `Sandbox ABHA ready: ${abha}`
+          : `ABHA created: ${abha}`
+      );
+    } catch (e: unknown) {
+      setAbhaMsg(e instanceof Error ? e.message : "Could not create ABHA");
+    } finally {
+      setAbhaBusy(false);
     }
   };
 
@@ -448,6 +549,99 @@ export default function KioskSecureRegister() {
                     />
                   </label>
                 </div>
+
+                {!abhaCreated && (
+                  <div className="mt-4 rounded-2xl border border-teal-100 bg-teal-50/60 p-4">
+                    <button
+                      type="button"
+                      onClick={() => setAbhaPanelOpen((v) => !v)}
+                      className="flex w-full items-center justify-between text-left"
+                    >
+                      <div>
+                        <p className="text-sm font-bold text-teal-950">
+                          Optional · Create ABHA with Aadhaar OTP
+                        </p>
+                        <p className="mt-0.5 text-xs text-teal-900/70">
+                          New to ABHA? We’ll send an OTP to your Aadhaar-linked mobile
+                        </p>
+                      </div>
+                      <span className="text-teal-700">{abhaPanelOpen ? "−" : "+"}</span>
+                    </button>
+
+                    {abhaPanelOpen && (
+                      <div className="mt-4 space-y-3">
+                        <label className="flex items-start gap-2 text-xs text-teal-950/80">
+                          <input
+                            type="checkbox"
+                            className="mt-0.5 h-4 w-4 rounded border-teal-300"
+                            checked={abhaConsent}
+                            onChange={(e) => setAbhaConsent(e.target.checked)}
+                          />
+                          <span>
+                            I consent to share my Aadhaar with NHA/ABDM solely to create my ABHA
+                            (Ayushman Bharat Health Account).
+                          </span>
+                        </label>
+
+                        {!abhaTxnId ? (
+                          <button
+                            type="button"
+                            disabled={abhaBusy}
+                            onClick={() => void sendAbhaOtp()}
+                            className="w-full rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-60"
+                          >
+                            {abhaBusy ? "Sending OTP…" : "Send Aadhaar OTP"}
+                          </button>
+                        ) : (
+                          <div className="space-y-2">
+                            <label className="block">
+                              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-teal-900/70">
+                                Enter OTP
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={6}
+                                placeholder={abhaMock ? "Sandbox: 123456" : "6-digit OTP"}
+                                className="w-full rounded-xl border border-teal-200 bg-white px-3 py-3 text-sm tracking-widest outline-none focus:border-teal-400"
+                                value={abhaOtp}
+                                onChange={(e) => setAbhaOtp(digitsOnly(e.target.value).slice(0, 6))}
+                              />
+                            </label>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                disabled={abhaBusy}
+                                onClick={() => void verifyAbhaOtp()}
+                                className="flex-1 rounded-xl bg-teal-700 px-4 py-3 text-sm font-semibold text-white hover:bg-teal-600 disabled:opacity-60"
+                              >
+                                {abhaBusy ? "Verifying…" : "Verify & create ABHA"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={abhaBusy}
+                                onClick={() => void sendAbhaOtp()}
+                                className="rounded-xl px-3 py-3 text-xs font-semibold text-teal-700 hover:bg-teal-100"
+                              >
+                                Resend
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {abhaMsg && (
+                          <p className="text-xs leading-relaxed text-teal-900/90">{abhaMsg}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {abhaCreated && form.abhaId && (
+                  <p className="mt-3 rounded-xl bg-teal-50 px-3 py-2 text-xs font-medium text-teal-800">
+                    ABHA linked: {form.abhaId}
+                  </p>
+                )}
               </div>
 
               <label className="flex items-start gap-3 pt-1 text-sm text-slate-600">
