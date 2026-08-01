@@ -1,5 +1,47 @@
 /** Camera hardware helpers for dense Aadhaar Secure QR capture. */
 
+export type VideoRoi = { sx: number; sy: number; sw: number; sh: number };
+
+/**
+ * Map object-fit:cover preview → source rectangle in video pixel space.
+ * Without this, center-ROI decode looks at the wrong area on Android/desktop
+ * (landscape sensor + portrait UI), while iOS often “luckily” aligns.
+ */
+export function objectCoverSourceRect(video: HTMLVideoElement): VideoRoi {
+  const vw = video.videoWidth || 0;
+  const vh = video.videoHeight || 0;
+  const ew = video.clientWidth || video.offsetWidth || vw;
+  const eh = video.clientHeight || video.offsetHeight || vh;
+  if (vw < 2 || vh < 2 || ew < 2 || eh < 2) {
+    return { sx: 0, sy: 0, sw: Math.max(0, vw), sh: Math.max(0, vh) };
+  }
+  const videoAspect = vw / vh;
+  const elemAspect = ew / eh;
+  if (videoAspect > elemAspect) {
+    // Wider than box — crop left/right
+    const visibleW = vh * elemAspect;
+    return { sx: (vw - visibleW) / 2, sy: 0, sw: visibleW, sh: vh };
+  }
+  // Taller than box — crop top/bottom
+  const visibleH = vw / elemAspect;
+  return { sx: 0, sy: (vh - visibleH) / 2, sw: vw, sh: visibleH };
+}
+
+/** Viewfinder square (CSS ratio of the visible cover area) → video pixels. */
+export function viewfinderRoiInVideo(
+  video: HTMLVideoElement,
+  viewfinderRatio = 0.58
+): VideoRoi {
+  const cover = objectCoverSourceRect(video);
+  const side = Math.max(64, Math.min(cover.sw, cover.sh) * viewfinderRatio);
+  return {
+    sx: Math.max(0, Math.floor(cover.sx + (cover.sw - side) / 2)),
+    sy: Math.max(0, Math.floor(cover.sy + (cover.sh - side) / 2)),
+    sw: Math.floor(side),
+    sh: Math.floor(side),
+  };
+}
+
 export type CameraOpenResult = {
   stream: MediaStream;
   track: MediaStreamTrack;

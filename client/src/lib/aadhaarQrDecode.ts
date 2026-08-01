@@ -18,6 +18,7 @@ import {
   decodeImageDataInWorker,
   warmAadhaarWorker,
 } from "@/lib/aadhaarQrWorkerBridge";
+import { viewfinderRoiInVideo, type VideoRoi } from "@/lib/aadhaarCamera";
 
 export type AadhaarScanPayload = {
   qrBytesBase64?: string;
@@ -574,11 +575,42 @@ export async function decodeAadhaarFromImageData(
   return null;
 }
 
+async function decodeVideoRoi(
+  video: HTMLVideoElement,
+  roi: VideoRoi,
+  canvas?: HTMLCanvasElement | null
+): Promise<AadhaarScanPayload | null> {
+  const { sx, sy, sw, sh } = roi;
+  if (sw < 32 || sh < 32) return null;
+
+  try {
+    if (typeof createImageBitmap === "function") {
+      const bitmap = await createImageBitmap(video, sx, sy, sw, sh);
+      const fromWorker = await decodeBitmapInWorker(bitmap, "quick");
+      if (fromWorker) return fromWorker;
+    }
+  } catch {
+    /* fall through */
+  }
+
+  const target = canvas || document.createElement("canvas");
+  if (target.width !== sw || target.height !== sh) {
+    target.width = sw;
+    target.height = sh;
+  }
+  const ctx = target.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+  const imageData = ctx.getImageData(0, 0, sw, sh);
+  return decodeAadhaarFromImageData(imageData, { alsoDetectFrom: video, mode: "quick" });
+}
+
 /**
- * High-performance live frame decode:
- * 1) Native BarcodeDetector (GPU path on Chromium) — digit Secure QR
- * 2) Center ROI ImageBitmap → Web Worker zxing-wasm (binary Secure QR)
- * 3) Main-thread quick fallback
+ * High-performance live frame decode.
+ *
+ * Critical: ROI must match object-fit:cover viewfinder (not raw video center).
+ * Android/desktop landscape→portrait mismatch made naive center crops miss the QR
+ * while iOS often aligned by chance — so live worked on iPhone only.
  */
 export async function decodeAadhaarFromVideo(
   video: HTMLVideoElement,
@@ -593,35 +625,27 @@ export async function decodeAadhaarFromVideo(
   const native = await tryNativeBarcodeDetectorStrict(video, "native-barcode-detector:video");
   if (native) return native;
 
+  const guideRatio = opts?.roiRatio ?? 0.58;
+  const rois: VideoRoi[] = [
+    viewfinderRoiInVideo(video, guideRatio),
+    viewfinderRoiInVideo(video, Math.min(0.82, guideRatio + 0.2)),
+  ];
+  // Also try full-frame center (legacy) — helps when guide CSS changes
   const w = video.videoWidth;
   const h = video.videoHeight;
-  const roiRatio = opts?.roiRatio ?? 0.62;
-  const side = Math.max(64, Math.floor(Math.min(w, h) * roiRatio));
-  const sx = Math.floor((w - side) / 2);
-  const sy = Math.floor((h - side) / 2);
+  const side = Math.max(64, Math.floor(Math.min(w, h) * 0.7));
+  rois.push({
+    sx: Math.floor((w - side) / 2),
+    sy: Math.floor((h - side) / 2),
+    sw: side,
+    sh: side,
+  });
 
-  // Worker path via ImageBitmap ROI — no main-thread getImageData cost
-  try {
-    if (typeof createImageBitmap === "function") {
-      const bitmap = await createImageBitmap(video, sx, sy, side, side);
-      const fromWorker = await decodeBitmapInWorker(bitmap, "quick");
-      if (fromWorker) return fromWorker;
-    }
-  } catch {
-    /* fall through */
+  for (const roi of rois) {
+    const hit = await decodeVideoRoi(video, roi, canvas);
+    if (hit) return hit;
   }
-
-  const target = canvas || document.createElement("canvas");
-  // Decode ROI only — ~3× fewer pixels than full frame
-  if (target.width !== side || target.height !== side) {
-    target.width = side;
-    target.height = side;
-  }
-  const ctx = target.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return null;
-  ctx.drawImage(video, sx, sy, side, side, 0, 0, side, side);
-  const imageData = ctx.getImageData(0, 0, side, side);
-  return decodeAadhaarFromImageData(imageData, { alsoDetectFrom: video, mode: "quick" });
+  return null;
 }
 
 export async function decodeAadhaarFromFile(file: File | Blob): Promise<AadhaarScanPayload | null> {

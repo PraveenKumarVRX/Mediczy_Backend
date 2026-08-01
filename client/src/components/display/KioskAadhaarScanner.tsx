@@ -26,12 +26,11 @@ interface Props {
 
 type Phase = "starting" | "scanning" | "capturing" | "reading" | "permission" | "snap";
 
-/** Native BarcodeDetector cadence (Chromium GPU path) */
 const LIVE_NATIVE_MS = 90;
-/** Worker WASM ROI cadence */
-const LIVE_WASM_MS = 220;
-/** Full-res ImageCapture still cadence */
-const AUTO_STILL_MS = 850;
+const LIVE_WASM_MS = 200;
+/** Android ImageCapture stills are the sharp path (iOS has no ImageCapture — video frames work there) */
+const AUTO_STILL_MS_ANDROID = 650;
+const AUTO_STILL_MS_DEFAULT = 900;
 
 function vibrate(ms = 35) {
   try {
@@ -64,24 +63,21 @@ function waitForVideoEl(
 }
 
 /**
- * Aadhaar Secure QR is extremely dense (binary + photo payload).
+ * Live Aadhaar Secure QR scanner.
  *
- * Why iOS worked but Android/laptop failed:
- *  - iOS users hit OS camera stills (sharp, focused JPEG/HEIC→JPEG)
- *  - Android/laptop stayed on live getUserMedia frames — soft video cannot
- *    resolve Secure QR modules (laptop webcams are usually worse: ~720p, no macro)
- *
- * Strategy now:
- *  - ALL devices: photo/upload first (sharp still)
- *  - Live scan is optional secondary
- *  - Phones: capture=environment (rear OS camera)
- *  - Laptop: file picker / upload a phone photo of the back QR
+ * Reality check from prod:
+ *  - iOS live camera DID lock (video frames + wasm) — do not force photo-only
+ *  - Android/laptop failed largely because ROI used raw video-center while the
+ *    preview uses object-fit:cover (wrong crop on landscape→portrait)
+ *  - Android also has ImageCapture — use frequent max-res stills
+ *  - Laptop webcams are often too soft; photo upload stays prominent there
  */
 export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const mobile = isMobilePhone();
   const ios = isIOS();
+  const android = mobile && !ios;
   const hasImageCapture = supportsImageCapture();
-  const photoFirst = true; // dense Secure QR — stills beat live on every device class
+  const desktop = !mobile && !ios;
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -100,11 +96,12 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const startCameraRef = useRef<() => Promise<void>>(async () => undefined);
   const photoRef = useRef<HTMLInputElement | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("snap");
+  // Live-first on phones (iOS proved live works). Desktop starts on upload.
+  const [phase, setPhase] = useState<Phase>(desktop ? "snap" : "starting");
   const [coach, setCoach] = useState(
-    mobile || ios
-      ? "Photograph the large QR on the back of the Aadhaar card"
-      : "Upload a sharp photo of the large QR on the back (laptop cams usually can’t resolve it)"
+    desktop
+      ? "Upload a sharp phone photo of the back QR — laptop cams often can’t resolve it"
+      : "Hold the large QR on the back in the frame"
   );
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
@@ -161,11 +158,16 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       } catch (err: unknown) {
         handledRef.current = false;
         setError(err instanceof Error ? err.message : "Couldn’t read that QR.");
-        setCoach("Take another sharp photo of the QR on the back");
-        setPhase("snap");
+        setCoach("Hold steady in the frame, or use Sharp photo");
+        if (desktop) {
+          setPhase("snap");
+        } else {
+          setPhase("starting");
+          void startCameraRef.current();
+        }
       }
     },
-    [clearTimers, stopCamera]
+    [clearTimers, desktop, stopCamera]
   );
 
   const onUpload = async (file: File) => {
@@ -183,11 +185,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
         setError(
           "No Aadhaar QR found. Use the large QR on the BACK, fill the frame, avoid glare."
         );
-        setCoach(
-          mobile || ios
-            ? "Take another photo — move closer until the QR fills the frame"
-            : "Upload a phone photo taken up close — laptop webcams rarely resolve Secure QR"
-        );
+        setCoach("Take another clear photo — move closer to the QR");
         setPhase("snap");
         return;
       }
@@ -214,21 +212,21 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       stopCamera();
       if (msg) setError(msg);
       setCoach(
-        mobile || ios
-          ? "Photograph the large QR on the back — fill the frame"
-          : "Upload a sharp phone photo of the back QR"
+        desktop
+          ? "Upload a sharp phone photo of the back QR"
+          : "Photograph the large QR on the back — fill the frame"
       );
       setPhase("snap");
     },
-    [ios, mobile, stopCamera]
+    [desktop, stopCamera]
   );
 
   const runStillDecode = useCallback(
     async (manual: boolean) => {
       if (handledRef.current || stillBusyRef.current) return;
 
-      // Dense Secure QR: prefer OS/file still over soft live frames on phones
-      if (manual && (mobile || ios || !hasImageCapture)) {
+      // iOS has no ImageCapture — shutter opens OS camera for a real still
+      if (manual && (ios || !hasImageCapture)) {
         openOsCamera();
         return;
       }
@@ -259,15 +257,15 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
         }
         failStillsRef.current += 1;
         if (manual && !handledRef.current) {
-          setError("Live camera couldn’t resolve this QR");
-          openOsCamera();
-        } else if (!manual && failStillsRef.current >= 3) {
-          // Auto-bail to photo — dense QR rarely locks on live video/webcam
-          goSnap(
-            mobile || ios
-              ? "Live preview too soft — use a sharp photo instead"
-              : "Laptop camera can’t resolve dense Aadhaar QR — upload a phone photo"
-          );
+          if (failStillsRef.current >= 2) {
+            setError("Opening sharp photo capture");
+            openOsCamera();
+          } else {
+            setError("Not locked yet — move closer, fill the frame");
+            setPhase("scanning");
+          }
+        } else if (!manual && failStillsRef.current >= (android ? 4 : 6)) {
+          setCoach("Tap Sharp photo if live doesn’t lock");
         }
       } finally {
         stillBusyRef.current = false;
@@ -276,7 +274,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
         }
       }
     },
-    [emitPayload, goSnap, hasImageCapture, ios, mobile]
+    [android, emitPayload, hasImageCapture, ios]
   );
 
   const scanLiveFrame = useCallback(() => {
@@ -300,7 +298,8 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       if (dueWasm) lastWasmAtRef.current = now;
       liveBusyRef.current = true;
       setScanPulse((n) => (n + 1) % 1000);
-      void decodeAadhaarFromVideo(video, canvasRef.current, { roiRatio: 0.62 })
+      // 0.58 matches the on-screen guide; decode maps via object-fit:cover
+      void decodeAadhaarFromVideo(video, canvasRef.current, { roiRatio: 0.58 })
         .then((payload) => {
           if (payload && !handledRef.current) return emitPayload(payload);
         })
@@ -350,24 +349,27 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
 
       setPhase("scanning");
       setCoach(
-        mobile || ios
-          ? "Scanning… if it doesn’t lock, tap Sharp photo"
-          : "Laptop cams often fail on Secure QR — Sharp photo / upload works best"
+        android
+          ? "Scanning… hold steady — Android also snaps sharp stills automatically"
+          : ios
+            ? "Scanning… hold the back QR in the frame"
+            : "Scanning… or use Sharp photo / upload"
       );
 
       lastNativeAtRef.current = 0;
       lastWasmAtRef.current = 0;
       rafRef.current = requestAnimationFrame(scanLiveFrame);
+      const stillMs = android && hasImageCapture ? AUTO_STILL_MS_ANDROID : AUTO_STILL_MS_DEFAULT;
       stillTimerRef.current = window.setInterval(() => {
         if (!handledRef.current && !stillBusyRef.current && !document.hidden) {
           void runStillDecode(false);
         }
-      }, AUTO_STILL_MS);
+      }, stillMs);
     } catch (e: unknown) {
       stopCamera();
       const msg =
         e instanceof Error && /Permission|NotAllowed|denied/i.test(e.message)
-          ? "Camera permission blocked. Use photo capture below."
+          ? "Camera permission blocked. Allow camera, or use photo capture below."
           : e instanceof Error
             ? e.message
             : "Could not open live camera";
@@ -376,27 +378,31 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     } finally {
       startingRef.current = false;
     }
-  }, [goSnap, ios, mobile, runStillDecode, scanLiveFrame, stopCamera]);
+  }, [
+    android,
+    goSnap,
+    hasImageCapture,
+    ios,
+    runStillDecode,
+    scanLiveFrame,
+    stopCamera,
+  ]);
 
   startCameraRef.current = startCamera;
 
-  // Photo-first: do not auto-start soft live camera
   useEffect(() => {
-    if (!photoFirst) {
+    if (!desktop) {
       void startCameraRef.current();
     }
     return () => {
       startingRef.current = false;
       stopCamera();
     };
-  }, [photoFirst, stopCamera]);
+  }, [desktop, stopCamera]);
 
   const busy = phase === "capturing" || phase === "reading";
   const showPreview =
     phase === "starting" || phase === "scanning" || phase === "capturing" || phase === "reading";
-
-  const primaryCaptureLabel =
-    mobile || ios ? "Open camera & photograph QR" : "Upload sharp photo of Aadhaar QR";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-neutral-950 text-white">
@@ -431,12 +437,12 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
               busy ? "pointer-events-none opacity-50" : ""
             }`}
           >
-            {primaryCaptureLabel}
+            {desktop ? "Upload sharp photo of Aadhaar QR" : "Open camera & photograph QR"}
             <input
               ref={photoRef}
               type="file"
               accept="image/jpeg,image/png,image/*"
-              {...(mobile || ios ? { capture: "environment" as const } : {})}
+              {...(!desktop ? { capture: "environment" as const } : {})}
               className="sr-only"
               disabled={busy}
               onChange={(e) => {
@@ -447,33 +453,17 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
             />
           </label>
           <p className="text-center text-sm text-white/50">
-            {mobile || ios
-              ? "Sharp still required for dense Secure QR — same path that works on iPhone"
-              : "Use a phone photo of the back QR. Built-in laptop cameras are usually too soft."}
+            {desktop
+              ? "Laptop webcams are often too soft for dense Secure QR — use a phone photo"
+              : "Sharp still backup if live scan doesn’t lock"}
           </p>
-          {(mobile || ios) && (
-            <label className="cursor-pointer text-sm text-white/45 underline-offset-4 hover:text-white/70 hover:underline">
-              Or choose an existing photo
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/*"
-                className="sr-only"
-                disabled={busy}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void onUpload(f);
-                }}
-              />
-            </label>
-          )}
           <button
             type="button"
             disabled={busy}
             onClick={() => void startCamera()}
             className="text-sm text-white/45 underline-offset-4 hover:text-white/70 hover:underline"
           >
-            {mobile || ios ? "Try live scan instead" : "Try laptop camera (often fails)"}
+            {desktop ? "Try laptop camera anyway" : "Retry live camera"}
           </button>
         </div>
       )}
@@ -521,7 +511,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
                   ref={photoRef}
                   type="file"
                   accept="image/jpeg,image/png,image/*"
-                  {...(mobile || ios ? { capture: "environment" as const } : {})}
+                  {...(!desktop ? { capture: "environment" as const } : {})}
                   className="sr-only"
                   disabled={busy}
                   onChange={(e) => {
@@ -554,47 +544,14 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
                   {torchOn ? "Light on" : "Light"}
                 </button>
               ) : (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => goSnap()}
-                  className="w-24 text-center text-xs text-white/70"
-                >
-                  Photo
-                </button>
+                <span className="w-24" />
               )}
             </div>
             <p className="text-xs text-white/40">
-              Dense Secure QR — sharp photo is the reliable path
+              Live scan · cover-correct ROI · {android ? "Android still burst" : "sharp photo backup"}
             </p>
           </div>
         </>
-      )}
-
-      {phase === "permission" && (
-        <div className="mx-auto mt-10 flex w-full max-w-md flex-1 flex-col items-center gap-5 px-6 pb-8">
-          <label className="flex w-full cursor-pointer items-center justify-center rounded-2xl bg-teal-500 px-6 py-5 text-lg font-bold text-white hover:bg-teal-400">
-            {primaryCaptureLabel}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/*"
-              {...(mobile || ios ? { capture: "environment" as const } : {})}
-              className="sr-only"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void onUpload(f);
-              }}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => void startCamera()}
-            className="text-sm text-white/45 underline-offset-4 hover:underline"
-          >
-            Retry live camera
-          </button>
-        </div>
       )}
 
       <style>{`
