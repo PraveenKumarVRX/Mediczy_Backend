@@ -5,8 +5,9 @@
  *
  * POST   /aadhaar/parse     — extract demographics from Aadhaar Secure QR (raw bytes)
  * GET    /context           — portal defaults (zone, department, label)
+ * GET    /walk-in-kiosk     — launch URL for unified walk-in kiosk (phone + Aadhaar)
  * GET    /console           — today's active board for this tenant
- * POST   /check-in          — issue token (walk-in / Aadhaar-assisted)
+ * POST   /check-in          — issue token (walk-in / Aadhaar-assisted) [legacy desk]
  * PATCH  /:id/call          — reception call
  * PATCH  /:id/start         — mark serving
  * PATCH  /:id/complete      — complete
@@ -66,8 +67,80 @@ router.get('/context', (req, res) => {
         ],
         note: 'Only last 4 digits of Aadhaar are returned. Full UID is never stored.',
       },
+      walkInKioskPath: '/kiosk/checkin',
+      queueConsolePath: '/hospital/queue-console',
     },
   });
+});
+
+/**
+ * GET /api/qms/walk-in-kiosk
+ * One registration surface: ensure a display device token for this tenant
+ * and return the walk-in kiosk URL (phone WhatsApp invite + Aadhaar).
+ */
+router.get('/walk-in-kiosk', async (req, res) => {
+  try {
+    const orgId = req.qms.organizationId;
+    const portal = req.qms.portal;
+    const deviceName = `${portal}-walk-in-kiosk-org-${orgId}`;
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS display_devices (
+        id SERIAL PRIMARY KEY,
+        device_token VARCHAR(128) UNIQUE NOT NULL,
+        name VARCHAR(255),
+        zone_id VARCHAR(64),
+        display_type VARCHAR(64),
+        url_path VARCHAR(255),
+        ip_address VARCHAR(64),
+        organization_id INTEGER,
+        config JSONB DEFAULT '{}'::jsonb,
+        active BOOLEAN DEFAULT true,
+        registered_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
+    await pool.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT true`);
+
+    let row = await pool.query(
+      `SELECT device_token FROM display_devices
+       WHERE organization_id = $1
+         AND display_type = 'self-checkin'
+         AND COALESCE(active, true) = true
+       ORDER BY id ASC LIMIT 1`,
+      [orgId]
+    );
+
+    if (!row.rows[0]) {
+      const crypto = await import('crypto');
+      const deviceToken = crypto.randomBytes(24).toString('hex');
+      row = await pool.query(
+        `INSERT INTO display_devices
+           (device_token, name, zone_id, display_type, url_path, organization_id, config, active)
+         VALUES ($1,$2,'opd-counter','self-checkin','/kiosk/checkin',$3,$4::jsonb,true)
+         RETURNING device_token`,
+        [
+          deviceToken,
+          deviceName,
+          orgId,
+          JSON.stringify({ organization_id: orgId, portal, source: 'qms-walk-in-kiosk' }),
+        ]
+      );
+    }
+
+    const deviceToken = row.rows[0].device_token;
+    const kioskPath = `/kiosk/checkin?deviceToken=${encodeURIComponent(deviceToken)}`;
+    res.json({
+      success: true,
+      deviceToken,
+      kioskPath,
+      queueConsolePath: '/hospital/queue-console',
+      message: 'Walk-in registration is on the kiosk (phone + Aadhaar). Use Queue Console for call next.',
+    });
+  } catch (e) {
+    console.error('[qms] walk-in-kiosk:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 /**

@@ -72,7 +72,7 @@ export default function QueueConsole() {
             href="/hospital/qms"
             className="px-3 py-2 rounded-lg bg-teal-800/80 hover:bg-teal-700 text-sm text-teal-50"
           >
-            Open QMS + Aadhaar QR check-in
+            Open Walk-in Kiosk
           </a>
         </div>
         {analytics && (
