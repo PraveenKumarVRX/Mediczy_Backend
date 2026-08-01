@@ -108,7 +108,8 @@ async function setupProduction() {
       healthReport: '',
       prescription: '',
       otp: '',
-      checkupReminder: ''
+      checkupReminder: '',
+      kioskRegister: ''
     };
     
     const templateDescriptions = {
@@ -117,7 +118,8 @@ async function setupProduction() {
       healthReport: 'Health Report Ready (notifies report availability)',
       prescription: 'Prescription Notification (notifies prescription ready)',
       otp: 'OTP Verification (sends verification code)',
-      checkupReminder: 'Health Checkup Reminder (reminds about annual checkup)'
+      checkupReminder: 'Health Checkup Reminder (reminds about annual checkup)',
+      kioskRegister: 'Kiosk registration invite (hospital name + expiry + secure link URL)'
     };
     
     for (const [key, desc] of Object.entries(templateDescriptions)) {
@@ -140,6 +142,8 @@ async function setupProduction() {
     console.log(`WHATSAPP_TEMPLATE_PRESCRIPTION=${templateMappings.prescription}`);
     console.log(`WHATSAPP_TEMPLATE_OTP=${templateMappings.otp}`);
     console.log(`WHATSAPP_TEMPLATE_CHECKUP_REMINDER=${templateMappings.checkupReminder}`);
+    console.log(`WHATSAPP_TEMPLATE_KIOSK_REGISTER=${templateMappings.kioskRegister}`);
+    console.log('WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE=text');
     console.log('');
     console.log('='.repeat(70));
     

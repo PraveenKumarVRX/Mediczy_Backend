@@ -5,7 +5,7 @@ process.env.KIOSK_REG_INVITE_TTL_MIN = '30';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
 const poolQuery = jest.fn();
-const sendToPhone = jest.fn();
+const sendKioskRegistrationNotify = jest.fn();
 const checkIn = jest.fn();
 const allocateUhid = jest.fn();
 
@@ -14,7 +14,7 @@ jest.unstable_mockModule('../db/pgPool.js', () => ({
 }));
 
 jest.unstable_mockModule('../services/queue-notify.service.js', () => ({
-  sendToPhone: (...args) => sendToPhone(...args),
+  sendKioskRegistrationNotify: (...args) => sendKioskRegistrationNotify(...args),
 }));
 
 jest.unstable_mockModule('../services/hospital-queue.service.js', () => ({
@@ -32,10 +32,15 @@ const {
 describe('kiosk registration invites', () => {
   beforeEach(() => {
     poolQuery.mockReset();
-    sendToPhone.mockReset();
+    sendKioskRegistrationNotify.mockReset();
     checkIn.mockReset();
     allocateUhid.mockReset();
-    sendToPhone.mockResolvedValue({ ok: true, channels: ['whatsapp', 'sms'] });
+    sendKioskRegistrationNotify.mockResolvedValue({
+      ok: true,
+      channels: ['whatsapp', 'sms'],
+      usedTemplate: true,
+      errors: [],
+    });
     allocateUhid.mockResolvedValue('UHID-TEST-1');
     checkIn.mockResolvedValue({
       id: 55,
@@ -75,12 +80,13 @@ describe('kiosk registration invites', () => {
     expect(result.registerUrlHint).toContain('…');
     expect(result._rawTokenForTests).toMatch(/^[a-f0-9]{48}$/);
 
-    expect(sendToPhone).toHaveBeenCalledTimes(1);
-    const [phoneArg, message] = sendToPhone.mock.calls[0];
+    expect(sendKioskRegistrationNotify).toHaveBeenCalledTimes(1);
+    const [phoneArg, payload] = sendKioskRegistrationNotify.mock.calls[0];
     expect(phoneArg).toBe('9876543210');
-    expect(message).toContain('https://app.mediqzy.com/kiosk/register/');
-    expect(message).toContain(result._rawTokenForTests);
-    expect(message).toContain('City Care');
+    expect(payload.registerUrl).toContain('https://app.mediqzy.com/kiosk/register/');
+    expect(payload.registerUrl).toContain(result._rawTokenForTests);
+    expect(payload.hospitalName).toBe('City Care');
+    expect(payload.token).toBe(result._rawTokenForTests);
 
     // INSERT used token_hash (sha256 hex), not raw token
     const insertCall = poolQuery.mock.calls.find((c) => String(c[0]).includes('INSERT INTO kiosk_registration_invites'));

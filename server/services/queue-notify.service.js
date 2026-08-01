@@ -110,6 +110,87 @@ export async function sendToPhone(phone, message) {
   return result;
 }
 
+/**
+ * Kiosk registration invite — WhatsApp via approved Content template + SMS plain text.
+ * Do NOT use free-form session WhatsApp for cold outbound (Twilio 24h window).
+ */
+export async function sendKioskRegistrationNotify(
+  phone,
+  { hospitalName, expiresMin, registerUrl, token } = {}
+) {
+  const to = normalizePhone(phone);
+  const result = {
+    ok: false,
+    whatsapp: false,
+    sms: false,
+    channels: [],
+    errors: [],
+    whatsappSid: undefined,
+    usedTemplate: false,
+  };
+  if (!to || !registerUrl) {
+    result.errors.push('Missing phone or registerUrl');
+    return result;
+  }
+
+  const smsMessage =
+    `Mediqzy · Complete your registration for ${hospitalName || 'the hospital'}\n\n` +
+    `Tap this secure link (expires in ${expiresMin || 30} min):\n${registerUrl}\n\n` +
+    `Do not share this link. Reply STOP to opt out.`;
+
+  const tasks = [];
+
+  if (ENABLE_WHATSAPP && whatsappProductionService?.sendKioskRegistrationInvite) {
+    tasks.push(
+      whatsappProductionService
+        .sendKioskRegistrationInvite({
+          to,
+          hospitalName,
+          expiresMin,
+          registerUrl,
+          token,
+        })
+        .then((msg) => {
+          result.whatsapp = true;
+          result.usedTemplate = true;
+          result.channels.push('whatsapp');
+          result.whatsappSid = msg?.sid;
+        })
+        .catch((e) => {
+          const detail = `${e.message || 'WhatsApp template send failed'}${e?.code ? ` code=${e.code}` : ''}`;
+          console.warn('[queue-notify] kiosk WhatsApp template failed:', detail);
+          result.errors.push(`WhatsApp: ${detail}`);
+        }),
+    );
+  } else if (ENABLE_WHATSAPP) {
+    result.errors.push('WhatsApp kiosk template sender unavailable');
+  }
+
+  if (ENABLE_SMS && smsService) {
+    tasks.push(
+      smsService
+        .sendSMS({ to, message: toSmsPlainText(smsMessage) })
+        .then((res) => {
+          if (res?.success === false) {
+            throw new Error(res.error || 'SMS provider returned failure');
+          }
+          result.sms = true;
+          result.channels.push('sms');
+        })
+        .catch((e) => {
+          console.warn('[queue-notify] kiosk SMS failed:', e.message);
+          result.errors.push(`SMS: ${e.message}`);
+        }),
+    );
+  } else if (ENABLE_SMS && !smsService) {
+    result.errors.push('SMS not configured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PHONE_NUMBER)');
+  }
+
+  if (tasks.length) await Promise.allSettled(tasks);
+  result.ok = result.whatsapp || result.sms;
+  return result;
+}
+
 async function logNotification(entryId, type, channels, ok) {
   try {
     await pool.query(
@@ -214,5 +295,6 @@ export default {
   notifyAlmostReady,
   refreshPositionNotifications,
   sendToPhone,
+  sendKioskRegistrationNotify,
   toSmsPlainText,
 };

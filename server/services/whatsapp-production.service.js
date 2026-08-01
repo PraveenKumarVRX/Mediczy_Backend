@@ -40,8 +40,21 @@ class WhatsAppProductionService {
       checkupReminder: process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER,
       membershipRenewalReminder: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER,
       membershipRenewalPayment: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT,
-      membershipPlanActivated: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED
+      membershipPlanActivated: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED,
+      /** UTILITY template for kiosk WhatsApp registration invites (business-initiated) */
+      kioskRegister: process.env.WHATSAPP_TEMPLATE_KIOSK_REGISTER,
     };
+    /**
+     * text = body vars {{1}} hospital, {{2}} minutes, {{3}} full URL
+     * cta  = body vars {{1}} hospital, {{2}} minutes + URL button path {{3}} = token only
+     */
+    this.kioskRegisterStyle = String(process.env.WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE || 'text').toLowerCase();
+  }
+
+  whatsappFrom() {
+    const raw = String(this.fromNumber || '').trim();
+    if (!raw) throw new Error('TWILIO_WHATSAPP_NUMBER is not set');
+    return raw.startsWith('whatsapp:') ? raw : `whatsapp:${raw}`;
   }
 
   /**
@@ -265,6 +278,44 @@ class WhatsAppProductionService {
   }
 
   /**
+   * Business-initiated kiosk registration invite (requires approved Content template).
+   * Env: WHATSAPP_TEMPLATE_KIOSK_REGISTER=HXxxxx
+   * Style text (default): {{1}} hospital, {{2}} minutes, {{3}} full register URL
+   * Style cta: {{1}} hospital, {{2}} minutes, {{3}} token (URL button suffix)
+   */
+  async sendKioskRegistrationInvite({ to, hospitalName, expiresMin, registerUrl, token }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    const contentSid = this.templates.kioskRegister;
+    if (!contentSid) {
+      throw new Error(
+        'WHATSAPP_TEMPLATE_KIOSK_REGISTER is not set — create/approve the MediQzy kiosk registration template in Twilio'
+      );
+    }
+
+    const phoneNumber = String(to || '').trim();
+    const hospital = String(hospitalName || 'the hospital').slice(0, 60);
+    const minutes = String(expiresMin || 30);
+    const url = String(registerUrl || '').trim();
+    const pathToken =
+      String(token || '').trim() ||
+      (url.includes('/kiosk/register/') ? url.split('/kiosk/register/').pop() : '');
+
+    const contentVariables =
+      this.kioskRegisterStyle === 'cta'
+        ? { '1': hospital, '2': minutes, '3': pathToken }
+        : { '1': hospital, '2': minutes, '3': url };
+
+    return await this.client.messages.create({
+      from: this.whatsappFrom(),
+      to: `whatsapp:${phoneNumber}`,
+      contentSid,
+      contentVariables: JSON.stringify(contentVariables),
+    });
+  }
+
+  /**
    * Send session message (within 24hr window of user message)
    * Use this for replies to user-initiated conversations
    */
@@ -294,19 +345,11 @@ class WhatsAppProductionService {
       throw new Error('Twilio WhatsApp is not configured');
     }
 
-    // Twilio WhatsApp requires whatsapp: prefix on both ends
-    const from = String(this.fromNumber || '').startsWith('whatsapp:')
-      ? String(this.fromNumber)
-      : `whatsapp:${String(this.fromNumber || '').replace(/^whatsapp:/, '')}`;
-    if (!this.fromNumber) {
-      throw new Error('TWILIO_WHATSAPP_NUMBER is not set');
-    }
-
     // Add timeout to prevent hanging
     // NOTE: free-form body only delivers inside a 24h customer-care session.
     // Business-initiated invites need an approved Content template (contentSid).
     const sendPromise = this.client.messages.create({
-      from,
+      from: this.whatsappFrom(),
       to: `whatsapp:${phoneNumber}`,
       body: safeBody
     });
@@ -365,7 +408,10 @@ class WhatsAppProductionService {
       checkupReminder: !!this.templates.checkupReminder,
       membershipRenewalReminder: !!this.templates.membershipRenewalReminder,
       membershipRenewalPayment: !!this.templates.membershipRenewalPayment,
-      membershipPlanActivated: !!this.templates.membershipPlanActivated
+      membershipPlanActivated: !!this.templates.membershipPlanActivated,
+      kioskRegister: !!this.templates.kioskRegister,
+      kioskRegisterStyle: this.kioskRegisterStyle,
+      kioskRegisterSid: this.templates.kioskRegister || null,
     };
   }
 }
