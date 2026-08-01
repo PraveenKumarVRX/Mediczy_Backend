@@ -1,27 +1,23 @@
 /**
- * Aadhaar QR decoder — kiosk self-registration demographic prefill.
+ * Aadhaar QR decoder — kiosk / portal demographic prefill.
  *
- * Aadhaar cards printed since ~2018 carry a "Secure QR Code": the QR's raw
- * byte payload (NOT text — must come from the scanner's raw-bytes API, not
- * a UTF-8-decoded string, or multi-byte fields corrupt) is zlib-deflated;
- * once inflated, fields are separated by byte 0xFF in a fixed order. Cards
- * printed before that carry the older format: a UTF-8 XML document,
- * gzip-compressed, in a single self-closing <PrintLetterBarcodeData/> tag.
+ * Modern Secure QR pipeline (UIDAI):
+ *   QR image → decimal digit string → BigInt → bytes → zlib inflate → 0xFF fields
  *
- * UIDAI's Secure QR Code never encodes the full Aadhaar number — only the
- * cardholder's demographics plus (in some versions) the last 4 digits. The
- * older XML format DOES carry the full 12-digit "uid" attribute, which is
- * truncated to the last 4 digits immediately below and never returned.
+ * Also supports:
+ *   - raw binary QR bytes (byte mode) that inflate directly
+ *   - legacy gzip XML <PrintLetterBarcodeData/>
+ *
+ * Never returns the full Aadhaar number — last 4 digits only.
  */
 import zlib from 'zlib';
 import { validateAadhaar } from '../utils/validators.js';
 
 const SECURE_QR_DELIMITER = 0xff;
 
-// Field order per UIDAI Secure QR Code spec (versions 1-4 share this prefix;
-// later versions append extra fields after email/mobile bits, which we ignore).
-const SECURE_QR_FIELDS = [
-  'referenceId',   // email/mobile presence bits + last 4 digits of Aadhaar, packed
+/** Demographics field order after optional version / email-mobile indicator. */
+const SECURE_QR_DEMO_FIELDS = [
+  'referenceId',
   'name',
   'dob',
   'gender',
@@ -35,7 +31,7 @@ const SECURE_QR_FIELDS = [
   'state',
   'street',
   'subDistrict',
-  'vtc', // village/town/city
+  'vtc',
 ];
 
 function genderCodeToLabel(code) {
@@ -46,7 +42,6 @@ function genderCodeToLabel(code) {
   return null;
 }
 
-/** Split a Buffer on single-byte delimiter without touching UTF-8 boundaries mid-field. */
 function splitBuffer(buf, delimiter) {
   const parts = [];
   let start = 0;
@@ -61,27 +56,39 @@ function splitBuffer(buf, delimiter) {
 }
 
 function inflateAny(buffer) {
-  // UIDAI's reference implementation uses java.util.zip.Inflater with no
-  // header (raw deflate); some third-party generators wrap it as zlib.
   try {
     return zlib.inflateRawSync(buffer);
   } catch {
-    return zlib.inflateSync(buffer);
+    try {
+      return zlib.inflateSync(buffer);
+    } catch {
+      return zlib.gunzipSync(buffer);
+    }
   }
 }
 
-/** Try the current (2018+) Secure QR Code binary format. */
-function tryParseSecureQr(rawBytes) {
-  const inflated = inflateAny(rawBytes);
-  const parts = splitBuffer(inflated, SECURE_QR_DELIMITER);
-  if (parts.length < SECURE_QR_FIELDS.length) return null;
+/** Convert Secure QR decimal digit string → compressed bytes. */
+export function decimalStringToBuffer(decimalString) {
+  const s = String(decimalString || '').trim();
+  if (!/^\d+$/.test(s)) {
+    throw new Error('Expected decimal digit string');
+  }
+  if (s.length > 20000) {
+    throw new Error('QR decimal string too long');
+  }
+  let hex = BigInt(s).toString(16);
+  if (hex.length % 2 !== 0) hex = `0${hex}`;
+  return Buffer.from(hex, 'hex');
+}
 
+function mapDemoFields(parts, offset) {
+  if (parts.length < offset + SECURE_QR_DEMO_FIELDS.length) return null;
   const fields = {};
-  SECURE_QR_FIELDS.forEach((key, i) => {
-    fields[key] = parts[i].toString('utf8').trim();
+  SECURE_QR_DEMO_FIELDS.forEach((key, i) => {
+    fields[key] = parts[offset + i].toString('utf8').trim();
   });
+  if (!fields.name || fields.name.length < 2) return null;
 
-  // referenceId's last 4 chars are the last 4 Aadhaar digits by spec.
   const last4Match = fields.referenceId?.match(/(\d{4})\D*$/);
   const aadhaarLast4 = last4Match ? last4Match[1] : null;
 
@@ -104,9 +111,28 @@ function tryParseSecureQr(rawBytes) {
   };
 }
 
-/** Fallback: pre-2018 XML format — gzip-compressed <PrintLetterBarcodeData/>. */
+function tryParseSecureQr(rawBytes) {
+  const inflated = inflateAny(rawBytes);
+  const parts = splitBuffer(inflated, SECURE_QR_DELIMITER);
+
+  // Layout A: demographics start at index 0 (referenceId…)
+  // Layout B: version + emailMobileIndicator prefix, demographics at index 2
+  const candidates = [
+    mapDemoFields(parts, 0),
+    mapDemoFields(parts, 2),
+    mapDemoFields(parts, 1),
+  ].filter(Boolean);
+
+  return candidates[0] || null;
+}
+
 function tryParseLegacyXml(rawBytes) {
-  const xml = zlib.gunzipSync(rawBytes).toString('utf8');
+  let xml;
+  try {
+    xml = zlib.gunzipSync(rawBytes).toString('utf8');
+  } catch {
+    xml = rawBytes.toString('utf8');
+  }
   const tagMatch = xml.match(/<PrintLetterBarcodeData\b([^>]*)\/?>/i);
   if (!tagMatch) return null;
 
@@ -138,7 +164,6 @@ function tryParseLegacyXml(rawBytes) {
   };
 }
 
-/** "DD-MM-YYYY" / "DD/MM/YYYY" -> "YYYY-MM-DD"; passes through if already ISO. */
 function normalizeDob(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
@@ -151,34 +176,13 @@ function normalizeDob(raw) {
   return null;
 }
 
-/**
- * @param {Buffer} rawBytes - raw QR payload bytes (NOT a decoded/UTF-8 string —
- *   the caller must use the scanner's raw-bytes API, e.g. zxing's getRawBytes()).
- * @returns {{ success: true, fields: object } | { success: false, message: string }}
- */
-export function parseAadhaarQr(rawBytes) {
-  if (!Buffer.isBuffer(rawBytes) || rawBytes.length === 0) {
-    return { success: false, message: 'No QR data received' };
-  }
-
-  let result = null;
-  try {
-    result = tryParseSecureQr(rawBytes);
-  } catch { /* not a Secure QR — fall through */ }
-
-  if (!result) {
-    try {
-      result = tryParseLegacyXml(rawBytes);
-    } catch { /* not the legacy format either */ }
-  }
-
+function toResult(result) {
   if (!result || !result.name) {
     return {
       success: false,
       message: 'This does not look like an Aadhaar QR code. Please scan the QR on the back of the Aadhaar card, or enter details manually.',
     };
   }
-
   const [firstName, ...rest] = (result.name || '').trim().split(/\s+/);
   return {
     success: true,
@@ -198,4 +202,71 @@ export function parseAadhaarQr(rawBytes) {
   };
 }
 
-export default { parseAadhaarQr };
+/**
+ * @param {Buffer} rawBytes
+ */
+export function parseAadhaarQr(rawBytes) {
+  if (!Buffer.isBuffer(rawBytes) || rawBytes.length === 0) {
+    return { success: false, message: 'No QR data received' };
+  }
+
+  // Raw bytes that are actually ASCII digits of the Secure QR decimal string
+  const asLatin1 = rawBytes.toString('latin1').trim();
+  // Secure QR decimal strings are typically 1k–10k digits (photo included);
+  // short demographic-only test payloads can be ~80+ digits.
+  if (/^\d{80,}$/.test(asLatin1)) {
+    try {
+      return parseAadhaarQr(decimalStringToBuffer(asLatin1));
+    } catch { /* fall through */ }
+  }
+
+  let result = null;
+  try {
+    result = tryParseSecureQr(rawBytes);
+  } catch { /* fall through */ }
+
+  if (!result) {
+    try {
+      result = tryParseLegacyXml(rawBytes);
+    } catch { /* fall through */ }
+  }
+
+  return toResult(result);
+}
+
+/**
+ * Prefer qrText (decimal Secure QR) when present; else qrBytesBase64.
+ * @param {{ qrBytesBase64?: string, qrText?: string }} input
+ */
+export function parseAadhaarQrInput(input = {}) {
+  const qrText = typeof input.qrText === 'string' ? input.qrText.trim() : '';
+  if (qrText) {
+    if (/^\d{80,}$/.test(qrText)) {
+      try {
+        return parseAadhaarQr(decimalStringToBuffer(qrText));
+      } catch (e) {
+        return { success: false, message: e.message || 'Invalid Secure QR decimal payload' };
+      }
+    }
+    if (qrText.includes('PrintLetterBarcodeData') || qrText.startsWith('<')) {
+      return parseAadhaarQr(Buffer.from(qrText, 'utf8'));
+    }
+  }
+
+  const b64 = typeof input.qrBytesBase64 === 'string' ? input.qrBytesBase64 : '';
+  if (!b64) {
+    return {
+      success: false,
+      message: 'qrText (Secure QR digits) or qrBytesBase64 is required',
+    };
+  }
+  let rawBytes;
+  try {
+    rawBytes = Buffer.from(b64, 'base64');
+  } catch {
+    return { success: false, message: 'Invalid base64 payload' };
+  }
+  return parseAadhaarQr(rawBytes);
+}
+
+export default { parseAadhaarQr, parseAadhaarQrInput, decimalStringToBuffer };

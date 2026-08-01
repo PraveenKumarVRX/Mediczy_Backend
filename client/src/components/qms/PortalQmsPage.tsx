@@ -222,10 +222,13 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
     setDialogOpen(true);
   };
 
-  const handleAadhaarScan = async (qrBytesBase64: string) => {
+  const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
     setScanOpen(false);
     try {
-      const { data } = await api.post('/qms/aadhaar/parse', { qrBytesBase64 });
+      const { data } = await api.post('/qms/aadhaar/parse', {
+        qrText: payload?.qrText,
+        qrBytesBase64: payload?.qrBytesBase64,
+      });
       if (!data?.success || !data.fields) {
         throw new Error(data?.message || 'Parse failed');
       }

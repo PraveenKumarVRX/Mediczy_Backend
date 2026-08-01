@@ -69,7 +69,7 @@ export default function SelfCheckinKiosk() {
   const resetToIdle = useCallback(() => {
     setStep('idle');
     setPhone('');
-    setReg({ firstName: '', lastName: '', gender: 'other', dateOfBirth: '', chiefComplaint: '' });
+    setReg({ firstName: '', lastName: '', gender: 'Male', dateOfBirth: '', chiefComplaint: '' });
     setAadhaarLast4(null);
     setAppointments([]);
     setSelected(null);
@@ -147,7 +147,7 @@ export default function SelfCheckinKiosk() {
     }
   };
 
-  const handleAadhaarScan = async (qrBytesBase64: string) => {
+  const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
     setStep('walk-in');
     setLoading(true);
     setError(null);
@@ -155,7 +155,10 @@ export default function SelfCheckinKiosk() {
       const res = await fetch('/api/display/kiosk/parse-aadhaar-qr', {
         method: 'POST',
         headers: displayDeviceHeaders(),
-        body: JSON.stringify({ qrBytesBase64 }),
+        body: JSON.stringify({
+          qrText: payload?.qrText,
+          qrBytesBase64: payload?.qrBytesBase64,
+        }),
       });
       const json = await res.json();
       if (!json.success) {
@@ -163,11 +166,13 @@ export default function SelfCheckinKiosk() {
         return;
       }
       const f = json.fields || {};
+      const genderMap: Record<string, string> = { male: 'Male', female: 'Female', m: 'Male', f: 'Female' };
+      const g = String(f.gender || '').toLowerCase();
       setReg(r => ({
         ...r,
         firstName: f.firstName || r.firstName,
         lastName: f.lastName || r.lastName,
-        gender: f.gender || r.gender,
+        gender: genderMap[g] || (f.gender === 'Male' || f.gender === 'Female' ? f.gender : r.gender),
         dateOfBirth: f.dateOfBirth || r.dateOfBirth,
       }));
       if (f.aadhaarLast4) setAadhaarLast4(f.aadhaarLast4);
@@ -439,9 +444,8 @@ export default function SelfCheckinKiosk() {
                 onChange={e => setReg(r => ({ ...r, dateOfBirth: e.target.value }))} />
               <select className="flex-1 p-4 rounded-xl bg-gray-800 border border-gray-700" value={reg.gender}
                 onChange={e => setReg(r => ({ ...r, gender: e.target.value }))}>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
               </select>
             </div>
             <input className="w-full p-4 rounded-xl bg-gray-800 border border-gray-700" placeholder="Chief complaint" value={reg.chiefComplaint}

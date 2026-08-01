@@ -16,7 +16,7 @@
 import express from 'express';
 import pool from '../db/pgPool.js';
 import { authPortalQms } from '../middleware/authPortalQms.middleware.js';
-import { parseAadhaarQr } from '../services/aadhaar-qr.service.js';
+import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
 import * as queue from '../services/hospital-queue.service.js';
 import { pushQueueEvent } from '../services/display-sse-broker.service.js';
 import { listOpdQueues, queueZoneForDoctor } from '../services/qms-opd.service.js';
@@ -76,29 +76,20 @@ router.get('/context', (req, res) => {
  */
 router.post('/aadhaar/parse', async (req, res) => {
   try {
-    const { qrBytesBase64 } = req.body || {};
-    if (!qrBytesBase64 || typeof qrBytesBase64 !== 'string') {
+    const { qrBytesBase64, qrText } = req.body || {};
+    if (!qrBytesBase64 && !qrText) {
       return res.status(400).json({
         success: false,
-        message: 'qrBytesBase64 is required (raw QR bytes from camera, base64-encoded)',
+        message: 'qrText (Secure QR digits) or qrBytesBase64 is required',
       });
     }
-    let rawBytes;
-    try {
-      rawBytes = Buffer.from(qrBytesBase64, 'base64');
-    } catch {
-      return res.status(400).json({ success: false, message: 'Invalid base64 payload' });
-    }
-    if (!rawBytes.length) {
-      return res.status(400).json({ success: false, message: 'Empty QR payload' });
-    }
 
-    const parsed = parseAadhaarQr(rawBytes);
+    const parsed = parseAadhaarQrInput({ qrBytesBase64, qrText });
     if (!parsed?.success || !parsed.fields) {
       return res.status(422).json({
         success: false,
         message: parsed?.message
-          || 'Could not parse Aadhaar QR. Ensure you scanned the QR on the back of the card (raw bytes, not text).',
+          || 'Could not parse Aadhaar QR. Scan the QR on the back of the card (good light, fill the frame).',
       });
     }
 

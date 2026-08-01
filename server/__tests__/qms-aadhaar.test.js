@@ -74,4 +74,60 @@ describe('Aadhaar Secure QR parse (QMS)', () => {
     expect(parseAadhaarQr(Buffer.alloc(0)).success).toBe(false);
     expect(parseAadhaarQr(Buffer.from('hello')).success).toBe(false);
   });
+
+  it('parses Secure QR from decimal digit string (modern Aadhaar encoding)', async () => {
+    const { parseAadhaarQrInput, decimalStringToBuffer } = await import('../services/aadhaar-qr.service.js');
+    const raw = buildSecureQrBytes([
+      'xxxx9876',
+      'Ravi Kumar',
+      '01/01/1985',
+      'M',
+      '',
+      'Delhi',
+      '',
+      '1',
+      '',
+      '110001',
+      'Delhi',
+      'Delhi',
+      'CP',
+      '',
+      'Delhi',
+    ]);
+    // Round-trip: bytes → BigInt decimal string → parse
+    const decimal = BigInt(`0x${raw.toString('hex')}`).toString(10);
+    expect(decimalStringToBuffer(decimal).equals(raw)).toBe(true);
+    const parsed = parseAadhaarQrInput({ qrText: decimal });
+    expect(parsed.success).toBe(true);
+    expect(parsed.fields.fullName).toBe('Ravi Kumar');
+    expect(parsed.fields.aadhaarLast4).toBe('9876');
+    expect(parsed.fields.gender).toBe('male');
+  });
+
+  it('accepts 17-field layout with version prefix', async () => {
+    const { parseAadhaarQr } = await import('../services/aadhaar-qr.service.js');
+    const raw = buildSecureQrBytes([
+      '2', // version
+      '0', // email/mobile indicator
+      'ref4321',
+      'Sita Devi',
+      '20/03/1978',
+      'F',
+      '',
+      'Jaipur',
+      '',
+      '',
+      '',
+      '302001',
+      '',
+      'Rajasthan',
+      '',
+      '',
+      'Jaipur',
+    ]);
+    const parsed = parseAadhaarQr(raw);
+    expect(parsed.success).toBe(true);
+    expect(parsed.fields.fullName).toBe('Sita Devi');
+    expect(parsed.fields.aadhaarLast4).toBe('4321');
+  });
 });
