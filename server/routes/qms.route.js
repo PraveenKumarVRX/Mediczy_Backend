@@ -224,10 +224,11 @@ router.post('/check-in', async (req, res) => {
     };
 
     const doctorId = body.doctorId ? parseInt(body.doctorId, 10) : undefined;
+    // Fall back to portal default zone (lab-waiting / clinic-waiting) — not opd-waiting
     const zone = queueZoneForDoctor({
       doctorId,
       specialization: body.specialization,
-      queueZone: body.queueZone || body.zone,
+      queueZone: body.queueZone || body.zone || req.qms.queueZone,
     });
 
     const entry = await queue.checkIn({

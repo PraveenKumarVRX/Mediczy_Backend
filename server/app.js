@@ -845,6 +845,12 @@ app.use(compression({
     if (req.headers['x-no-compression']) {
       return false;
     }
+    // SSE must not be gzip-buffered (Cloudflare/proxy hangs waiting for end-of-stream)
+    const accept = String(req.headers.accept || '');
+    const path = String(req.path || req.url || '');
+    if (accept.includes('text/event-stream') || path.includes('/events')) {
+      return false;
+    }
     return compression.filter(req, res);
   },
   level: 6 // Balance between speed and compression ratio

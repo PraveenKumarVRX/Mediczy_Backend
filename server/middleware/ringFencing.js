@@ -782,6 +782,9 @@ const PUBLIC_ENDPOINTS = [
   '/api/email/track/',       // Email open/click tracking pixels (hit by email clients, no auth)
   '/api/display',            // Hospital kiosk & waiting-room displays (LAN/public)
   '/api/abdm/kiosk',         // ABHA kiosk registration flow
+  // Device-token gated (authDisplayDevice) — must bypass JWT ring-fence
+  '/api/v1/queue/board',
+  '/api/v1/queue/check-in',
   '/health', // Public health check
 ];
 

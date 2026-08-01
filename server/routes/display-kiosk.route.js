@@ -105,7 +105,7 @@ router.post('/parse-aadhaar-qr', async (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const {
-      phone, firstName, lastName, dateOfBirth, gender,
+      phone, firstName, lastName, dateOfBirth, gender: genderRaw,
       department, queueZone, doctorId, doctorName, chiefComplaint, consentVersion,
       photoKey, abhaId, notifyOptIn, notifyPhone,
     } = req.body;
@@ -113,6 +113,16 @@ router.post('/register', async (req, res) => {
     if (!phone || !firstName) {
       return res.status(400).json({ success: false, message: 'phone and firstName required' });
     }
+
+    // Prod enum_users_gender rejects "other" — try common values then male/female
+    const genderNorm = String(genderRaw || '').toLowerCase().trim();
+    const genderCandidates = [...new Set([
+      genderNorm,
+      genderNorm === 'm' ? 'male' : null,
+      genderNorm === 'f' ? 'female' : null,
+      'male',
+      'female',
+    ].filter(Boolean))];
 
     const orgId = req.organizationId;
     const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
@@ -128,16 +138,27 @@ router.post('/register', async (req, res) => {
     } else {
       const email = `kiosk+${normalizedPhone}@patient.mediqzy.local`;
       const hash = await bcrypt.hash(`kiosk-${normalizedPhone}-${Date.now()}`, 10);
-      const ins = await pool.query(
-        `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", "dateOfBirth", gender, status, "emailVerified", role, metadata)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'active',true,'user',$8)
-         RETURNING id`,
-        [
-          firstName, lastName || '', email, hash, normalizedPhone,
-          dateOfBirth || '1990-01-01', gender || 'other',
-          JSON.stringify({ uhidPending: true, abhaId: abhaId || null, photoKey: photoKey || null, source: 'kiosk' }),
-        ]
-      );
+      let ins = null;
+      let lastErr = null;
+      for (const g of genderCandidates) {
+        try {
+          ins = await pool.query(
+            `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", "dateOfBirth", gender, status, "emailVerified", role, metadata)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,'active',true,'user',$8)
+             RETURNING id`,
+            [
+              firstName, lastName || '', email, hash, normalizedPhone,
+              dateOfBirth || '1990-01-01', g,
+              JSON.stringify({ uhidPending: true, abhaId: abhaId || null, photoKey: photoKey || null, source: 'kiosk', genderRequested: genderRaw || null }),
+            ]
+          );
+          break;
+        } catch (e) {
+          lastErr = e;
+          if (!/enum_users_gender|invalid input value for enum/i.test(e.message)) throw e;
+        }
+      }
+      if (!ins?.rows?.[0]) throw lastErr || new Error('Failed to create kiosk patient');
       patientId = ins.rows[0].id;
     }
 
