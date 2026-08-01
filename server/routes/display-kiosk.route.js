@@ -52,6 +52,24 @@ router.get('/notify-health', async (req, res) => {
   try {
     const wa = (await import('../services/whatsapp-production.service.js')).default;
     const status = wa?.getTemplateStatus?.() || {};
+    const { SMSService } = await import('../services/sms.service.js');
+    const smsEnabled = String(process.env.QUEUE_NOTIFY_SMS ?? 'true').toLowerCase() !== 'false';
+    let sms = { configured: false, message: 'SMS disabled' };
+    if (smsEnabled) {
+      const probe = new SMSService({
+        provider: process.env.SMS_PROVIDER || 'twilio',
+        apiKey: process.env.SMS_API_KEY || process.env.TWILIO_ACCOUNT_SID,
+        apiSecret: process.env.SMS_API_SECRET || process.env.TWILIO_AUTH_TOKEN,
+        smsFrom: process.env.TWILIO_SMS_NUMBER || null,
+        messagingServiceSid:
+          process.env.TWILIO_MESSAGING_SERVICE_SID ||
+          process.env.TWILIO_SMS_MESSAGING_SERVICE_SID ||
+          null,
+        senderId: process.env.SMS_SENDER_ID || process.env.TWILIO_SMS_NUMBER || null,
+        allowDiscover: String(process.env.TWILIO_SMS_AUTO_DISCOVER ?? 'true').toLowerCase() !== 'false',
+      });
+      sms = await probe.getTwilioSmsSenderStatus();
+    }
     res.json({
       success: true,
       whatsappConfigured: !!wa?.twilioConfigured,
@@ -60,7 +78,12 @@ router.get('/notify-health', async (req, res) => {
       kioskRegisterSid: status.kioskRegisterSid
         ? `${String(status.kioskRegisterSid).slice(0, 6)}…`
         : null,
-      smsEnabled: String(process.env.QUEUE_NOTIFY_SMS ?? 'true').toLowerCase() !== 'false',
+      smsEnabled,
+      smsConfigured: !!sms.configured,
+      smsFromSource: sms.source || null,
+      smsFromHint: sms.fromHint || null,
+      smsMessagingService: !!sms.messagingService,
+      smsMessage: sms.message || null,
       publicAppUrl: (
         process.env.PUBLIC_APP_URL ||
         process.env.FRONTEND_URL ||

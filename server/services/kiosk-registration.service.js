@@ -97,7 +97,8 @@ function publicBaseUrl() {
 function looksLikeDeviceLabel(name) {
   const s = String(name || '').trim();
   if (!s) return true;
-  return /walk-in-kiosk|self-checkin|device/i.test(s);
+  // Device registry names like "Hospital OPD Kiosk" must not fill WhatsApp {{1}}
+  return /walk-in-kiosk|self-checkin|device|\bkiosk\b|\bboard\b/i.test(s);
 }
 
 /**

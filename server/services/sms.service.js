@@ -1,9 +1,118 @@
 // SMS Service - Multiple Gateway Support
 import axios from 'axios';
 
+/** Normalize Twilio phone / whatsapp: sender to bare E.164 digits with +. */
+export function normalizeE164(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  if (s.toLowerCase().startsWith('whatsapp:')) s = s.slice('whatsapp:'.length).trim();
+  s = s.replace(/[^\d+]/g, '');
+  if (!s) return '';
+  if (!s.startsWith('+')) s = `+${s}`;
+  return s;
+}
+
+/** WhatsApp-channel senders cannot be used as SMS From (Twilio 21659). */
+export function whatsappSenderE164() {
+  return normalizeE164(
+    process.env.TWILIO_WHATSAPP_NUMBER || process.env.TWILIO_PHONE_NUMBER || ''
+  );
+}
+
+/**
+ * Resolve Twilio SMS sender.
+ * Prefer dedicated SMS number / Messaging Service — never the WhatsApp sender.
+ * @returns {Promise<{ from?: string, messagingServiceSid?: string, source: string }>}
+ */
+export async function resolveTwilioSmsSender({
+  accountSid,
+  authToken,
+  smsFrom,
+  senderId,
+  messagingServiceSid,
+  fetch = globalThis.fetch,
+  allowDiscover = true,
+} = {}) {
+  const wa = whatsappSenderE164();
+  const mg =
+    String(
+      messagingServiceSid ||
+        process.env.TWILIO_MESSAGING_SERVICE_SID ||
+        process.env.TWILIO_SMS_MESSAGING_SERVICE_SID ||
+        ''
+    ).trim();
+
+  if (mg && /^MG[a-zA-Z0-9]+$/.test(mg)) {
+    return { messagingServiceSid: mg, source: 'messaging_service' };
+  }
+
+  const candidates = [
+    smsFrom,
+    process.env.TWILIO_SMS_NUMBER,
+    senderId,
+    // TWILIO_PHONE_NUMBER is often the WhatsApp sender — only use if different
+    process.env.TWILIO_PHONE_NUMBER,
+  ];
+
+  for (const c of candidates) {
+    const from = normalizeE164(c);
+    if (!from || /^mediczy$/i.test(String(c || '').trim())) continue;
+    if (wa && from === wa) continue; // WhatsApp-only sender → Twilio 21659
+    return { from, source: 'env' };
+  }
+
+  if (allowDiscover && accountSid && authToken) {
+    try {
+      const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/IncomingPhoneNumbers.json?PageSize=50`;
+      const res = await fetch(url, {
+        headers: {
+          Authorization:
+            'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const nums = Array.isArray(data.incoming_phone_numbers)
+          ? data.incoming_phone_numbers
+          : [];
+        const smsCapable = nums.filter((n) => {
+          const phone = normalizeE164(n.phone_number);
+          if (!phone || (wa && phone === wa)) return false;
+          const caps = n.capabilities || {};
+          // Twilio may return sms: true or SMS: true
+          return caps.sms === true || caps.SMS === true || n.sms_url != null;
+        });
+        // Prefer Indian (+91) numbers when present (kiosk users are IN)
+        smsCapable.sort((a, b) => {
+          const ap = normalizeE164(a.phone_number);
+          const bp = normalizeE164(b.phone_number);
+          const aIn = ap.startsWith('+91') ? 0 : 1;
+          const bIn = bp.startsWith('+91') ? 0 : 1;
+          return aIn - bIn;
+        });
+        if (smsCapable[0]) {
+          return {
+            from: normalizeE164(smsCapable[0].phone_number),
+            source: 'twilio_discover',
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[sms] Twilio number discovery failed:', e.message);
+    }
+  }
+
+  throw new Error(
+    'Twilio SMS From not configured — set TWILIO_SMS_NUMBER to an SMS-capable E.164 number ' +
+      '(not TWILIO_WHATSAPP_NUMBER). WhatsApp senders cannot send SMS (Twilio 21659).'
+  );
+}
+
 class SMSService {
   constructor(config) {
     this.config = config;
+    /** @type {{ from?: string, messagingServiceSid?: string, source: string } | null} */
+    this._twilioSenderCache = null;
   }
 
   async sendSMS(message) {
@@ -33,37 +142,53 @@ class SMSService {
     }
   }
 
+  async getTwilioSmsSenderStatus() {
+    try {
+      const sender = await this.resolveSender();
+      return {
+        configured: true,
+        source: sender.source,
+        fromHint: sender.from
+          ? `***${sender.from.slice(-4)}`
+          : null,
+        messagingService: !!sender.messagingServiceSid,
+      };
+    } catch (e) {
+      return { configured: false, message: e.message };
+    }
+  }
+
+  async resolveSender() {
+    if (this._twilioSenderCache) return this._twilioSenderCache;
+    const sender = await resolveTwilioSmsSender({
+      accountSid: this.config.apiKey,
+      authToken: this.config.apiSecret,
+      smsFrom: this.config.smsFrom,
+      senderId: this.config.senderId,
+      messagingServiceSid: this.config.messagingServiceSid,
+      allowDiscover: this.config.allowDiscover !== false,
+    });
+    this._twilioSenderCache = sender;
+    return sender;
+  }
+
   async sendViaTwilio(message) {
     const accountSid = this.config.apiKey;
     const authToken = this.config.apiSecret;
-
-    // Never send SMS with a whatsapp: sender or placeholder alpha ID — Twilio returns 400
-    let from = String(
-      this.config.smsFrom ||
-        process.env.TWILIO_SMS_NUMBER ||
-        this.config.senderId ||
-        process.env.TWILIO_PHONE_NUMBER ||
-        ''
-    ).trim();
-    if (from.toLowerCase().startsWith('whatsapp:')) {
-      from = from.slice('whatsapp:'.length).trim();
-    }
-    if (!from || /^mediczy$/i.test(from)) {
-      throw new Error(
-        'Twilio SMS From not configured — set TWILIO_SMS_NUMBER (E.164 SMS-capable number)'
-      );
-    }
-
+    const sender = await this.resolveSender();
     const to = Array.isArray(message.to) ? message.to[0] : message.to;
+
+    const params = { To: to, Body: message.message };
+    if (sender.messagingServiceSid) {
+      params.MessagingServiceSid = sender.messagingServiceSid;
+    } else {
+      params.From = sender.from;
+    }
 
     try {
       const response = await axios.post(
         `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-        new URLSearchParams({
-          From: from,
-          To: to,
-          Body: message.message,
-        }),
+        new URLSearchParams(params),
         {
           auth: {
             username: accountSid,
@@ -80,8 +205,11 @@ class SMSService {
         messageId: response.data.sid,
         provider: 'twilio',
         deliveryStatus: 'sent',
+        fromSource: sender.source,
       };
     } catch (error) {
+      // Cached sender may be invalid — allow one rediscovery
+      this._twilioSenderCache = null;
       const twilioMsg =
         error?.response?.data?.message ||
         error?.response?.data?.error_message ||

@@ -113,5 +113,27 @@ pm2 restart mediczy-server --update-env
 |---|---|---|
 | `notifyErrors` includes template / 630xx | Content template not **Approved** or vars mismatch | Approve in Twilio; match `STYLE=text` vs `cta` |
 | `linkSent: true` but phone empty (old builds) | API treated `messages.create()` as success | Deploy delivery-poll fix |
-| SMS `status code 400` | SMS From is WhatsApp number / alpha `MEDICZY` | Set `TWILIO_SMS_NUMBER` to SMS-capable E.164 |
+| SMS Twilio **21659** | SMS From is the WhatsApp sender (`TWILIO_WHATSAPP_NUMBER`) | Set `TWILIO_SMS_NUMBER` to a real SMS-capable E.164 (or `TWILIO_MESSAGING_SERVICE_SID`). Never reuse the WhatsApp number. |
+| SMS `status code 400` | Alpha `MEDICZY` / missing From | Set `TWILIO_SMS_NUMBER` |
 | Template missing on process | Env set but PM2 not restarted | `pm2 restart … --update-env` |
+
+### SMS backup (when WhatsApp undelivers)
+
+```bash
+# On EC2 — list SMS-capable numbers on the Twilio account
+cd /home/ubuntu/Mediczy/server
+node scripts/twilio-list-sms-numbers.mjs
+
+# Pick an SMS-capable number that is NOT the WhatsApp sender, then:
+# in .env / PM2 ecosystem:
+TWILIO_SMS_NUMBER=+91XXXXXXXXXX
+# optional:
+# TWILIO_MESSAGING_SERVICE_SID=MGxxxxxxxx
+# TWILIO_SMS_AUTO_DISCOVER=true   # default; auto-picks SMS number if env unset
+
+pm2 restart mediczy-server --update-env
+
+# Health should show smsConfigured: true
+curl -s https://app.mediqzy.com/api/display/kiosk/notify-health \
+  -H "x-device-token: $DEVICE_TOKEN" | jq '{smsConfigured,smsFromSource,smsFromHint}'
+```

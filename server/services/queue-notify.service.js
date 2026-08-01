@@ -18,7 +18,15 @@ const smsConfig = {
   provider: process.env.SMS_PROVIDER || 'twilio',
   apiKey: process.env.SMS_API_KEY || process.env.TWILIO_ACCOUNT_SID,
   apiSecret: process.env.SMS_API_SECRET || process.env.TWILIO_AUTH_TOKEN,
-  senderId: process.env.SMS_SENDER_ID || process.env.TWILIO_PHONE_NUMBER || 'MEDICZY',
+  // Prefer dedicated SMS From — never fall back to WhatsApp sender (Twilio 21659)
+  smsFrom: process.env.TWILIO_SMS_NUMBER || null,
+  messagingServiceSid:
+    process.env.TWILIO_MESSAGING_SERVICE_SID ||
+    process.env.TWILIO_SMS_MESSAGING_SERVICE_SID ||
+    null,
+  // Alpha IDs like MEDICZY are invalid for Twilio SMS From
+  senderId: process.env.SMS_SENDER_ID || process.env.TWILIO_SMS_NUMBER || null,
+  allowDiscover: String(process.env.TWILIO_SMS_AUTO_DISCOVER ?? 'true').toLowerCase() !== 'false',
 };
 
 let smsService = null;
