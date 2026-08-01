@@ -104,6 +104,35 @@ describe('Aadhaar Secure QR parse (QMS)', () => {
     expect(parsed.fields.gender).toBe('male');
   });
 
+  it('parses Secure QR from base64 bytes and latin1 qrText fallback', async () => {
+    const { parseAadhaarQrInput } = await import('../services/aadhaar-qr.service.js');
+    const raw = buildSecureQrBytes([
+      'xxxx5555',
+      'Meera Shah',
+      '12/12/1992',
+      'F',
+      '',
+      'Surat',
+      '',
+      '9',
+      '',
+      '395001',
+      'Surat',
+      'Gujarat',
+      'Ring Rd',
+      '',
+      'Surat',
+    ]);
+    const fromB64 = parseAadhaarQrInput({ qrBytesBase64: raw.toString('base64') });
+    expect(fromB64.success).toBe(true);
+    expect(fromB64.fields.fullName).toBe('Meera Shah');
+
+    const latin1 = raw.toString('latin1');
+    const fromLatin1 = parseAadhaarQrInput({ qrText: latin1 });
+    expect(fromLatin1.success).toBe(true);
+    expect(fromLatin1.fields.aadhaarLast4).toBe('5555');
+  });
+
   it('accepts 17-field layout with version prefix', async () => {
     const { parseAadhaarQr } = await import('../services/aadhaar-qr.service.js');
     const raw = buildSecureQrBytes([

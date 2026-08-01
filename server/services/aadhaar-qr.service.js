@@ -254,19 +254,34 @@ export function parseAadhaarQrInput(input = {}) {
   }
 
   const b64 = typeof input.qrBytesBase64 === 'string' ? input.qrBytesBase64 : '';
-  if (!b64) {
+  if (b64) {
+    let rawBytes;
+    try {
+      rawBytes = Buffer.from(b64, 'base64');
+    } catch {
+      return { success: false, message: 'Invalid base64 payload' };
+    }
+    const fromBytes = parseAadhaarQr(rawBytes);
+    if (fromBytes.success) return fromBytes;
+  }
+
+  // jsQR / some browsers return byte-mode Secure QR as a latin1 string in `data`
+  if (qrText && qrText.length > 40) {
+    const fromLatin1 = parseAadhaarQr(Buffer.from(qrText, 'latin1'));
+    if (fromLatin1.success) return fromLatin1;
+  }
+
+  if (!b64 && !qrText) {
     return {
       success: false,
       message: 'qrText (Secure QR digits) or qrBytesBase64 is required',
     };
   }
-  let rawBytes;
-  try {
-    rawBytes = Buffer.from(b64, 'base64');
-  } catch {
-    return { success: false, message: 'Invalid base64 payload' };
-  }
-  return parseAadhaarQr(rawBytes);
+
+  return {
+    success: false,
+    message: 'This does not look like an Aadhaar QR code. Please scan the QR on the back of the Aadhaar card, or enter details manually.',
+  };
 }
 
 export default { parseAadhaarQr, parseAadhaarQrInput, decimalStringToBuffer };

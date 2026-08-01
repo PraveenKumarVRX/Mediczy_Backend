@@ -1,73 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BrowserMultiFormatReader, BarcodeFormat, DecodeHintType, NotFoundException } from "@zxing/library";
-import jsQR from "jsqr";
+import {
+  decodeAadhaarFromFile,
+  decodeAadhaarFromImageData,
+  decodeAadhaarFromVideo,
+  grabHighResFrame,
+  type AadhaarScanPayload,
+} from "@/lib/aadhaarQrDecode";
 
-export type AadhaarScanPayload = {
-  /** base64 of raw QR bytes (byte-mode / legacy) */
-  qrBytesBase64?: string;
-  /** Secure QR decimal digit string — preferred for modern Aadhaar */
-  qrText?: string;
-};
+export type { AadhaarScanPayload };
 
 interface Props {
   onScan: (payload: AadhaarScanPayload) => void;
   onClose: () => void;
 }
 
-const SCAN_INTERVAL_MS = 160;
-
-function bytesToBase64(raw: Uint8Array | number[]): string {
-  let binary = "";
-  for (let i = 0; i < raw.length; i++) binary += String.fromCharCode(raw[i]);
-  return btoa(binary);
-}
-
-function payloadFromText(text: string): AadhaarScanPayload | null {
-  const t = String(text || "").trim();
-  if (!t) return null;
-  // Modern Secure QR: decimal digit string (often 1k+ digits)
-  if (/^\d{80,}$/.test(t)) return { qrText: t };
-  if (t.includes("PrintLetterBarcodeData") || t.startsWith("<")) {
-    return { qrText: t, qrBytesBase64: btoa(unescape(encodeURIComponent(t))) };
-  }
-  if (t.length > 50) return { qrText: t };
-  // Short binary-looking payload → send as bytes + text
-  if (t.length > 20) {
-    const bytes = new Uint8Array(t.length);
-    for (let i = 0; i < t.length; i++) bytes[i] = t.charCodeAt(i) & 0xff;
-    return { qrText: t, qrBytesBase64: bytesToBase64(bytes) };
-  }
-  return null;
-}
-
-function payloadFromZxing(result: { getText: () => string; getRawBytes: () => Uint8Array }): AadhaarScanPayload | null {
-  const text = (result.getText?.() || "").trim();
-  if (/^\d{80,}$/.test(text)) return { qrText: text };
-  const raw = result.getRawBytes?.();
-  if (raw && raw.length > 0) {
-    try {
-      const asText = new TextDecoder("latin1").decode(raw).trim();
-      if (/^\d{80,}$/.test(asText)) return { qrText: asText };
-    } catch {
-      /* ignore */
-    }
-    return { qrBytesBase64: bytesToBase64(raw) };
-  }
-  return payloadFromText(text);
-}
-
-function buildZxingReader() {
-  const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  hints.set(DecodeHintType.CHARACTER_SET, "ISO-8859-1");
-  return new BrowserMultiFormatReader(hints);
-}
+const LIVE_INTERVAL_MS = 220;
 
 /**
- * Aadhaar Secure QR is dense; zxing live decode often never fires.
- * Primary: getUserMedia → canvas → jsQR (proven for UIDAI QRs).
- * Upload fallback: jsQR then zxing (for raw byte-mode cards).
+ * Multi-engine Aadhaar Secure QR scanner.
+ * Live loop + Snap still (ImageCapture) + Upload — BarcodeDetector / jsQR / ZXing TRY_HARDER.
  */
 export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -76,11 +27,15 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const rafRef = useRef<number | null>(null);
   const lastScanAtRef = useRef(0);
   const handledRef = useRef(false);
+  const decodingRef = useRef(false);
   const onScanRef = useRef(onScan);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("Starting camera…");
+  const [busy, setBusy] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
 
   useEffect(() => {
     onScanRef.current = onScan;
@@ -98,13 +53,16 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     }
     const video = videoRef.current;
     if (video) video.srcObject = null;
+    setTorchOn(false);
+    setTorchSupported(false);
   }, []);
 
   const emitPayload = useCallback(
     (payload: AadhaarScanPayload) => {
       if (handledRef.current) return;
       handledRef.current = true;
-      setStatus("QR detected — parsing…");
+      setStatus("QR captured — parsing…");
+      setBusy(true);
       stopCamera();
       onScanRef.current(payload);
     },
@@ -112,211 +70,261 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   );
 
   const scanFrame = useCallback(() => {
+    if (handledRef.current) return;
     const video = videoRef.current;
-    const canvas = canvasRef.current;
-    if (!video || !canvas || handledRef.current) {
+    if (!video) {
       rafRef.current = requestAnimationFrame(scanFrame);
       return;
     }
 
-    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-      const now = Date.now();
-      if (now - lastScanAtRef.current >= SCAN_INTERVAL_MS) {
-        lastScanAtRef.current = now;
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w;
-          canvas.height = h;
-        }
-        const ctx = canvas.getContext("2d", { willReadFrequently: true });
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, w, h);
-          const imageData = ctx.getImageData(0, 0, w, h);
-          const code = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: "attemptBoth",
-          });
-          if (code?.data) {
-            const payload = payloadFromText(code.data);
-            if (payload) {
-              emitPayload(payload);
-              return;
-            }
-          }
-        }
-      }
+    const now = Date.now();
+    if (
+      !decodingRef.current &&
+      now - lastScanAtRef.current >= LIVE_INTERVAL_MS &&
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      lastScanAtRef.current = now;
+      decodingRef.current = true;
+      void decodeAadhaarFromVideo(video, canvasRef.current)
+        .then((payload) => {
+          if (payload && !handledRef.current) emitPayload(payload);
+        })
+        .finally(() => {
+          decodingRef.current = false;
+        });
     }
     rafRef.current = requestAnimationFrame(scanFrame);
   }, [emitPayload]);
 
-  useEffect(() => {
+  const startCamera = useCallback(async () => {
+    stopCamera();
     handledRef.current = false;
+    decodingRef.current = false;
     setError(null);
+    setBusy(false);
     setStatus("Starting camera…");
 
-    let cancelled = false;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Camera not supported. Use Upload QR image or Snap after granting camera.");
+      setStatus("Camera unavailable");
+      return;
+    }
 
-    const start = async () => {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Camera not supported. Use Upload QR image.");
-        setStatus("Camera unavailable");
-        return;
-      }
-
-      const constraintTries: MediaStreamConstraints[] = [
-        {
-          audio: false,
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
+    const tries: MediaStreamConstraints[] = [
+      {
+        audio: false,
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
         },
-        {
-          audio: false,
-          video: { facingMode: "environment" },
-        },
-        { audio: false, video: true },
-      ];
+      },
+      { audio: false, video: { facingMode: "environment" } },
+      { audio: false, video: true },
+    ];
 
-      let lastErr: unknown = null;
-      for (const constraints of constraintTries) {
-        if (cancelled) return;
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia(constraints);
-          if (cancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          streamRef.current = stream;
-          const video = videoRef.current;
-          if (!video) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          video.srcObject = stream;
-          await video.play();
-          setStatus("Point camera at Aadhaar QR…");
-          lastScanAtRef.current = 0;
-          rafRef.current = requestAnimationFrame(scanFrame);
-          lastErr = null;
+    let lastErr: unknown = null;
+    for (const constraints of tries) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
           return;
-        } catch (e) {
-          lastErr = e;
         }
-      }
+        video.srcObject = stream;
+        await video.play();
 
-      if (!cancelled && lastErr) {
-        const name =
-          lastErr && typeof lastErr === "object" && "name" in lastErr
-            ? String((lastErr as { name: string }).name)
-            : "";
-        if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-          setError("Camera permission denied. Allow camera, or use Upload QR image.");
-        } else if (name === "NotFoundError") {
-          setError("No camera found. Use Upload QR image instead.");
-        } else {
-          setError(lastErr instanceof Error ? lastErr.message : "Camera unavailable — try Upload QR image");
+        const track = stream.getVideoTracks()[0];
+        const caps = track?.getCapabilities?.() as { torch?: boolean } | undefined;
+        setTorchSupported(Boolean(caps?.torch));
+
+        try {
+          await track?.applyConstraints({
+            advanced: [{ focusMode: "continuous" } as MediaTrackConstraintSet],
+          } as MediaTrackConstraints);
+        } catch {
+          /* ignore */
         }
-        setStatus("Camera failed");
-      }
-    };
 
-    void start();
-    return () => {
-      cancelled = true;
-      stopCamera();
-    };
+        setStatus("Fill the square with the QR on the BACK of Aadhaar. Hold steady.");
+        lastScanAtRef.current = 0;
+        rafRef.current = requestAnimationFrame(scanFrame);
+        return;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+
+    const name =
+      lastErr && typeof lastErr === "object" && "name" in lastErr
+        ? String((lastErr as { name: string }).name)
+        : "";
+    if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+      setError("Camera permission denied. Allow camera, or use Upload QR image.");
+    } else if (name === "NotFoundError") {
+      setError("No camera found. Use Upload QR image instead.");
+    } else {
+      setError(lastErr instanceof Error ? lastErr.message : "Camera unavailable — try Upload QR image");
+    }
+    setStatus("Camera failed");
   }, [scanFrame, stopCamera]);
 
-  const decodeImageFile = async (file: File) => {
+  useEffect(() => {
+    void startCamera();
+    return () => stopCamera();
+  }, [startCamera, stopCamera]);
+
+  const toggleTorch = async () => {
+    const track = streamRef.current?.getVideoTracks()?.[0];
+    if (!track) return;
+    try {
+      await track.applyConstraints({
+        advanced: [{ torch: !torchOn } as MediaTrackConstraintSet],
+      } as MediaTrackConstraints);
+      setTorchOn((v) => !v);
+    } catch {
+      setError("Torch not available on this device");
+    }
+  };
+
+  const snapAndDecode = async () => {
+    if (handledRef.current || busy) return;
+    setBusy(true);
+    setError(null);
+    setStatus("Capturing high-res still…");
+    try {
+      const track = streamRef.current?.getVideoTracks()?.[0] || null;
+      let imageData = await grabHighResFrame(track);
+      if (!imageData && videoRef.current) {
+        const video = videoRef.current;
+        const canvas = canvasRef.current || document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (ctx && video.videoWidth > 0) {
+          ctx.drawImage(video, 0, 0);
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        }
+      }
+      if (!imageData) throw new Error("Could not capture frame");
+      setStatus("Decoding QR (this can take a few seconds)…");
+      const payload = await decodeAadhaarFromImageData(imageData, {
+        alsoDetectFrom: videoRef.current,
+        mode: "thorough",
+      });
+      if (!payload) {
+        setError(
+          "Could not read Aadhaar QR from that frame. Move closer so the QR fills the square, improve lighting, then Snap again — or Upload a clear photo of the QR only."
+        );
+        setStatus("Fill the square with the QR. Try Snap again.");
+        setBusy(false);
+        return;
+      }
+      emitPayload(payload);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Snap failed");
+      setBusy(false);
+      setStatus("Try Snap again or Upload QR image");
+    }
+  };
+
+  const onUpload = async (file: File) => {
+    if (handledRef.current) return;
+    setBusy(true);
     setError(null);
     setStatus("Reading image…");
     try {
-      const url = URL.createObjectURL(file);
-      try {
-        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-          const el = new Image();
-          el.onload = () => resolve(el);
-          el.onerror = () => reject(new Error("Could not load image"));
-          el.src = url;
-        });
-
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth || img.width;
-        canvas.height = img.naturalHeight || img.height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("Canvas unavailable");
-        ctx.drawImage(img, 0, 0);
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "attemptBoth",
-        });
-        if (code?.data) {
-          const payload = payloadFromText(code.data);
-          if (payload) {
-            emitPayload(payload);
-            return;
-          }
-        }
-
-        // zxing fallback (raw bytes for legacy byte-mode cards)
-        const reader = buildZxingReader();
-        try {
-          const result = await reader.decodeFromImageUrl(url);
-          const payload = payloadFromZxing(result);
-          if (payload) {
-            emitPayload(payload);
-            return;
-          }
-        } catch (zerr: unknown) {
-          if (!(zerr instanceof NotFoundException)) {
-            // ignore
-          }
-        }
-
-        setError("No Aadhaar QR found in that image. Use a clear photo of the QR on the back.");
+      const payload = await decodeAadhaarFromFile(file);
+      if (!payload) {
+        setError(
+          "No Aadhaar QR found. Crop tightly around the QR on the back of the card and upload again."
+        );
         setStatus("Try again");
-      } finally {
-        URL.revokeObjectURL(url);
+        setBusy(false);
+        return;
       }
+      emitPayload(payload);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Could not decode QR from image");
+      setBusy(false);
       setStatus("Try again");
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-6">
-      <h3 className="text-xl font-bold text-white mb-2">Scan Aadhaar QR Code</h3>
-      <p className="text-gray-400 text-sm mb-2 text-center max-w-sm">
-        Hold the <strong className="text-gray-200">back</strong> of the Aadhaar card to the camera.
-        Fill the frame with the QR; keep steady in good light.
+    <div className="fixed inset-0 z-50 bg-black/95 flex flex-col items-center justify-center p-4 sm:p-6">
+      <h3 className="text-xl font-bold text-white mb-1">Scan Aadhaar QR Code</h3>
+      <p className="text-gray-300 text-sm mb-1 text-center max-w-md">
+        Use the <strong className="text-white">large QR on the back</strong> of the Aadhaar card.
+        Fill the square, hold steady, then tap <strong className="text-white">Snap &amp; decode</strong> if live scan is slow.
       </p>
-      <p className="text-teal-400 text-xs mb-3">{status}</p>
+      <p className="text-teal-400 text-xs mb-3 text-center">{status}</p>
+
       <div className="relative w-full max-w-md">
         <video
           ref={videoRef}
-          className="w-full aspect-square object-cover rounded-xl border-2 border-teal-600 bg-black"
+          className="w-full aspect-square object-cover rounded-xl border-2 border-teal-500 bg-black"
           muted
           playsInline
           autoPlay
         />
         <canvas ref={canvasRef} className="hidden" aria-hidden />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div className="h-[62%] w-[62%] rounded-xl border-2 border-teal-300/90" />
+        </div>
+        {busy && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/55 text-white text-sm">
+            Working…
+          </div>
+        )}
       </div>
-      {error && <p className="text-red-400 mt-4 text-sm text-center max-w-md">{error}</p>}
-      <div className="mt-6 flex flex-wrap gap-3 justify-center">
+
+      {error && (
+        <p className="text-red-400 mt-3 text-sm text-center max-w-md whitespace-pre-wrap">{error}</p>
+      )}
+
+      <div className="mt-5 flex flex-wrap gap-2 justify-center max-w-lg">
         <button
           type="button"
+          disabled={busy}
+          onClick={() => void snapAndDecode()}
+          className="px-5 py-3 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 rounded-xl text-white font-semibold"
+        >
+          Snap &amp; decode
+        </button>
+        <button
+          type="button"
+          disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="px-6 py-3 bg-teal-800 hover:bg-teal-700 rounded-xl text-white"
+          className="px-5 py-3 bg-teal-900 hover:bg-teal-800 disabled:opacity-50 rounded-xl text-white"
         >
           Upload QR image
         </button>
-        <button type="button" onClick={onClose} className="px-6 py-3 bg-gray-700 rounded-xl text-white">
+        {torchSupported && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void toggleTorch()}
+            className="px-5 py-3 bg-amber-800 hover:bg-amber-700 disabled:opacity-50 rounded-xl text-white"
+          >
+            {torchOn ? "Torch off" : "Torch on"}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void startCamera()}
+          className="px-5 py-3 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-xl text-white"
+        >
+          Retry camera
+        </button>
+        <button type="button" onClick={onClose} className="px-5 py-3 bg-gray-700 rounded-xl text-white">
           Cancel
         </button>
       </div>
+
       <input
         ref={fileRef}
         type="file"
@@ -326,7 +334,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
         onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
-          if (f) void decodeImageFile(f);
+          if (f) void onUpload(f);
         }}
       />
     </div>
