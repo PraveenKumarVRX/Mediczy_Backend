@@ -480,7 +480,7 @@ export default function SelfCheckinKiosk() {
             >
               <p className="text-2xl font-bold text-white">Aadhaar QR</p>
               <p className="mt-2 text-base text-sky-100/70">
-                Photograph your Aadhaar QR — name, gender, age & address fill in
+                Scan the QR on the back — name, gender, age & address fill in
               </p>
             </button>
 
