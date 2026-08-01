@@ -23,14 +23,14 @@ import {
   viewfinderRoiInVideo,
   type VideoRoi,
 } from "@/lib/aadhaarCamera";
+import { tryZbarImageData, warmAadhaarZbar } from "@/lib/aadhaarZbar";
+import {
+  payloadFromDecoded,
+  type AadhaarScanPayload,
+} from "@/lib/aadhaarQrPayload";
 
-export type AadhaarScanPayload = {
-  qrBytesBase64?: string;
-  qrText?: string;
-  engine?: string;
-  /** Present when server already parsed demographics */
-  fields?: Record<string, unknown>;
-};
+export type { AadhaarScanPayload };
+export { payloadFromDecoded };
 
 const ZXING_WASM_PUBLIC_URL = `${import.meta.env.BASE_URL || "/"}zxing_reader.wasm`;
 
@@ -67,70 +67,8 @@ function ensureZxingWasm(): Promise<boolean> {
   return zxingReady;
 }
 
-function bytesToBase64(raw: Uint8Array | number[]): string {
-  let binary = "";
-  for (let i = 0; i < raw.length; i++) binary += String.fromCharCode(raw[i] & 0xff);
-  return btoa(binary);
-}
-
 function isDigitString(s: string, min = 80): boolean {
   return /^\d+$/.test(s) && s.length >= min;
-}
-
-function bytesAreAsciiDigits(bytes: Uint8Array, min = 80): boolean {
-  if (bytes.length < min) return false;
-  for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] < 48 || bytes[i] > 57) return false;
-  }
-  return true;
-}
-
-/**
- * Only accept payloads that look like real Aadhaar Secure/legacy QR.
- * Never treat arbitrary binary mojibake as success (causes false capture loops).
- */
-export function payloadFromDecoded(
-  text: string | null | undefined,
-  rawBytes?: Uint8Array | number[] | null,
-  engine?: string
-): AadhaarScanPayload | null {
-  const t = String(text || "").trim();
-  const bytes =
-    rawBytes && rawBytes.length > 0
-      ? rawBytes instanceof Uint8Array
-        ? rawBytes
-        : new Uint8Array(rawBytes)
-      : null;
-
-  // Prefer raw bytes — Secure QR is often byte-mode (compressed) or ASCII digits
-  if (bytes && bytes.length >= 50) {
-    if (bytesAreAsciiDigits(bytes, 80)) {
-      return {
-        qrText: new TextDecoder("ascii").decode(bytes),
-        qrBytesBase64: bytesToBase64(bytes),
-        engine,
-      };
-    }
-    if (isDigitString(t)) {
-      return { qrText: t, qrBytesBase64: bytesToBase64(bytes), engine };
-    }
-    // Compressed Secure QR binary — server inflates
-    return { qrBytesBase64: bytesToBase64(bytes), engine };
-  }
-
-  if (isDigitString(t)) {
-    return { qrText: t, engine };
-  }
-
-  if (t.includes("PrintLetterBarcodeData") || t.startsWith("<")) {
-    return {
-      qrText: t,
-      qrBytesBase64: btoa(unescape(encodeURIComponent(t))),
-      engine,
-    };
-  }
-
-  return null;
 }
 
 function payloadFromJsQR(code: QRCode, engine: string): AadhaarScanPayload | null {
@@ -472,13 +410,23 @@ type DecodeOpts = {
 
 /**
  * Dense UIDAI Secure QR decoder.
- * Order: worker WASM → main WASM → jsQR → ZXing-JS → strict native detector.
+ * Order: ZBar (binary) → jsQR → worker/main zxing-wasm → ZXing-JS → native.
  */
 export async function decodeAadhaarFromImageData(
   imageData: ImageData,
   opts?: DecodeOpts & { blob?: Blob | null }
 ): Promise<AadhaarScanPayload | null> {
   const mode = opts?.mode || "thorough";
+
+  // ZBar first — binary-safe C WASM; best engine for dense Secure QR on soft frames
+  {
+    const zbar = await tryZbarImageData(imageData, "zbar");
+    if (zbar) return zbar;
+  }
+  {
+    const jsqr = tryJsQR(imageData, "jsqr");
+    if (jsqr) return jsqr;
+  }
 
   // Prefer original JPEG/PNG bytes when present (better than re-encoded ImageData)
   if (opts?.blob) {
@@ -488,7 +436,7 @@ export async function decodeAadhaarFromImageData(
     if (fromBlob) return fromBlob;
   }
 
-  // Off-main-thread first (keeps camera UI smooth)
+  // Off-main-thread WASM (keeps camera UI smooth when ZBar/jsQR miss)
   {
     const fromWorker = await decodeImageDataInWorker(imageData, mode === "quick" ? "quick" : "thorough");
     if (fromWorker) return fromWorker;
@@ -501,6 +449,10 @@ export async function decodeAadhaarFromImageData(
 
   if (mode === "thorough") {
     const enhanced = enhanceContrast(imageData);
+    const zbarE = await tryZbarImageData(enhanced, "zbar:contrast");
+    if (zbarE) return zbarE;
+    const jsqrE = tryJsQR(enhanced, "jsqr:contrast");
+    if (jsqrE) return jsqrE;
     const wasmE = await tryZxingWasmImageData(enhanced, "zxing-wasm:contrast");
     if (wasmE) return wasmE;
     const jpeg = await imageDataToJpegBlob(enhanced);
@@ -610,11 +562,12 @@ async function decodeVideoRoi(
 }
 
 /**
- * High-performance live frame decode.
+ * Live frame decode — proven path used by working Aadhaar web scanners:
+ * 1) Full visible cover area → ZBar (binary) + jsQR (sync, dense-QR friendly)
+ * 2) Cover-correct ROIs → same engines (+ zxing fallback)
+ * 3) Native BarcodeDetector only for digit/XML Secure QR
  *
- * Critical: ROI must match object-fit:cover viewfinder (not raw video center).
- * Android/desktop landscape→portrait mismatch made naive center crops miss the QR
- * while iOS often aligned by chance — so live worked on iPhone only.
+ * Critical: ROI must match object-fit:cover (not raw video center).
  */
 export async function decodeAadhaarFromVideo(
   video: HTMLVideoElement,
@@ -625,22 +578,39 @@ export async function decodeAadhaarFromVideo(
     return null;
   }
 
-  // Strict native first on live video (fast path for digit Secure QR only)
+  const cover = objectCoverSourceRect(video);
+  const target = canvas || document.createElement("canvas");
+  const sw = Math.floor(cover.sw);
+  const sh = Math.floor(cover.sh);
+  if (sw < 32 || sh < 32) return null;
+
+  if (target.width !== sw || target.height !== sh) {
+    target.width = sw;
+    target.height = sh;
+  }
+  const ctx = target.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.drawImage(video, cover.sx, cover.sy, cover.sw, cover.sh, 0, 0, sw, sh);
+  const fullCover = ctx.getImageData(0, 0, sw, sh);
+
+  // Primary engines — same approach as KioskQrScanner / offline Aadhaar readers
+  {
+    const zbar = await tryZbarImageData(fullCover, "zbar:live");
+    if (zbar) return zbar;
+  }
+  {
+    const jsqr = tryJsQR(fullCover, "jsqr:live");
+    if (jsqr) return jsqr;
+  }
+
+  // Strict native (digit Secure QR / legacy XML only — never binary mojibake)
   const native = await tryNativeBarcodeDetectorStrict(video, "native-barcode-detector:video");
   if (native) return native;
 
   const guideRatio = opts?.roiRatio ?? 0.58;
-  const cover = objectCoverSourceRect(video);
   const rois: VideoRoi[] = [
     viewfinderRoiInVideo(video, guideRatio),
     viewfinderRoiInVideo(video, Math.min(0.85, guideRatio + 0.22)),
-    // Entire visible cover area — critical on laptop / mismatched aspect
-    {
-      sx: Math.floor(cover.sx),
-      sy: Math.floor(cover.sy),
-      sw: Math.floor(cover.sw),
-      sh: Math.floor(cover.sh),
-    },
   ];
   const w = video.videoWidth;
   const h = video.videoHeight;
@@ -668,12 +638,6 @@ export async function decodeAadhaarFromFile(file: File | Blob): Promise<AadhaarS
     jpeg = file;
   }
 
-  // Best path: worker then main-thread WASM on JPEG bytes
-  const fromWorker = await decodeBytesInWorker(jpeg, "thorough");
-  if (fromWorker) return fromWorker;
-  const fromBlob = await tryZxingWasmBlob(jpeg, "zxing-wasm:blob");
-  if (fromBlob) return fromBlob;
-
   const url = URL.createObjectURL(jpeg);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -693,11 +657,17 @@ export async function decodeAadhaarFromFile(file: File | Blob): Promise<AadhaarS
     }
     const imageData = getImageData(img, w, h);
     if (!imageData) return null;
-    // JPEG blob already tried via worker + main WASM above
-    return decodeAadhaarFromImageData(imageData, {
+    // ZBar/jsQR first via decodeAadhaarFromImageData; then zxing blob/worker
+    const fromPixels = await decodeAadhaarFromImageData(imageData, {
       alsoDetectFrom: img,
       mode: "thorough",
+      blob: jpeg,
     });
+    if (fromPixels) return fromPixels;
+
+    const fromWorker = await decodeBytesInWorker(jpeg, "thorough");
+    if (fromWorker) return fromWorker;
+    return tryZxingWasmBlob(jpeg, "zxing-wasm:blob");
   } finally {
     URL.revokeObjectURL(url);
   }
@@ -864,6 +834,7 @@ export async function decodeAadhaarFromVideoFrameWithServerFallback(
 }
 
 export function warmAadhaarDecoder(): void {
+  warmAadhaarZbar();
   warmAadhaarWorker();
   void ensureZxingWasm();
 }

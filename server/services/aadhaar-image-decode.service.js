@@ -1,14 +1,15 @@
 /**
  * Server-side Aadhaar QR decode from a photo (fallback when browser live-scan fails).
- * Uses zxing-wasm (same engine as the client) on the uploaded image bytes.
+ * Engines: ZBar (binary-safe, dense QR) → zxing-wasm.
  *
- * Critical: Secure QR is often byte-mode — always prefer ReadResult.bytes over text.
+ * Critical: Secure QR is often byte-mode — always prefer raw bytes over text.
  */
 import fs from 'fs';
 import { prepareZXingModule, readBarcodes } from 'zxing-wasm/reader';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import { parseAadhaarQrInput } from './aadhaar-qr.service.js';
+import { zbarDecodeJpegBytes } from './aadhaar-zbar-decode.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WASM_PATH = path.resolve(
@@ -108,13 +109,41 @@ export async function decodeAadhaarFromImageBytes(imageBytes) {
   if (!imageBytes?.length) {
     return { success: false, message: 'Empty image' };
   }
+
+  const bytesIn =
+    imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes);
+
+  // ZBar first — better on dense Secure QR / soft laptop frames
+  try {
+    const zbarHit = await zbarDecodeJpegBytes(bytesIn);
+    if (zbarHit) {
+      const qrText = /^\d+$/.test(String(zbarHit.text || '').trim())
+        ? String(zbarHit.text).trim()
+        : undefined;
+      const qrBytesBase64 = zbarHit.bytes?.length
+        ? Buffer.from(zbarHit.bytes).toString('base64')
+        : undefined;
+      const parsed = parseAadhaarQrInput({
+        qrText: qrText || (String(zbarHit.text || '').includes('<') ? zbarHit.text : undefined),
+        qrBytesBase64,
+      });
+      if (parsed.success) {
+        return {
+          ...parsed,
+          qrText: qrText || parsed.qrText,
+          qrBytesBase64: qrBytesBase64 || parsed.qrBytesBase64,
+          engine: 'server-zbar',
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('[aadhaar-image] zbar failed:', e.message);
+  }
+
   const ok = await ensureWasm();
   if (!ok) {
     return { success: false, message: 'QR decoder unavailable on server' };
   }
-
-  const bytesIn =
-    imageBytes instanceof Uint8Array ? imageBytes : new Uint8Array(imageBytes);
 
   for (const opts of OPTION_SETS) {
     try {

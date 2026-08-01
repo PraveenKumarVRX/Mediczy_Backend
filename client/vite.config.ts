@@ -88,7 +88,7 @@ export default defineConfig(({ mode }) => ({
       'lucide-react',
       '@tanstack/react-query'
     ],
-    exclude: ['zxing-wasm'],
+    exclude: ['zxing-wasm', '@undecaf/zbar-wasm'],
   },
   build: {
     // Production build optimization with memory constraints
