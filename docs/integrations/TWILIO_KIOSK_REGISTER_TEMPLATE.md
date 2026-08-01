@@ -45,6 +45,8 @@ node scripts/create-kiosk-register-whatsapp-template.js
 node scripts/create-kiosk-register-whatsapp-template.js --style=cta
 # list existing:
 node scripts/create-kiosk-register-whatsapp-template.js --list
+# submit approval for an existing SID:
+node scripts/create-kiosk-register-whatsapp-template.js --submit-only HXd6c41df868bbf2bfa128a777b69ad3b8
 ```
 
 The script prints:
@@ -54,10 +56,24 @@ WHATSAPP_TEMPLATE_KIOSK_REGISTER=HXxxxxxxxx
 WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE=text
 ```
 
+### Production SID (created 2026-08-01)
+
+```
+WHATSAPP_TEMPLATE_KIOSK_REGISTER=HXd6c41df868bbf2bfa128a777b69ad3b8
+WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE=text
+```
+
 Add those to the API host env (PM2 ecosystem / `.env`) and restart:
 
 ```bash
-pm2 restart mediczy-server
+# example if using server/.env
+grep -q WHATSAPP_TEMPLATE_KIOSK_REGISTER .env \
+  && sed -i 's|^WHATSAPP_TEMPLATE_KIOSK_REGISTER=.*|WHATSAPP_TEMPLATE_KIOSK_REGISTER=HXd6c41df868bbf2bfa128a777b69ad3b8|' .env \
+  || echo 'WHATSAPP_TEMPLATE_KIOSK_REGISTER=HXd6c41df868bbf2bfa128a777b69ad3b8' >> .env
+grep -q WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE .env \
+  && sed -i 's|^WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE=.*|WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE=text|' .env \
+  || echo 'WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE=text' >> .env
+pm2 restart mediczy-server --update-env
 ```
 
 ## Create manually in Twilio Console

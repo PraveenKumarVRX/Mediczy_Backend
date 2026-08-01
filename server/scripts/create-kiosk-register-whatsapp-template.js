@@ -98,27 +98,28 @@ function buildPayload(style) {
 }
 
 async function submitForWhatsAppApproval(client, contentSid, name) {
+  // Twilio Node SDK: contents(sid).approvalCreate.create({ name, category })
   try {
-    const approval = await client.content.v1.contents(contentSid).approvalRequests.create({
-      name,
+    const ctx = client.content.v1.contents(contentSid);
+    const approvalCreate = ctx.approvalCreate?.create
+      ? ctx.approvalCreate
+      : typeof ctx.approvalCreate === 'function'
+        ? ctx.approvalCreate()
+        : null;
+    if (!approvalCreate?.create) {
+      throw new Error('approvalCreate API missing in this Twilio SDK version');
+    }
+    const approval = await approvalCreate.create({
+      name: name || FRIENDLY,
       category: 'UTILITY',
     });
-    console.log('✅ Submitted for WhatsApp approval:', approval?.status || approval);
+    console.log('✅ Submitted for WhatsApp approval:', approval?.status || JSON.stringify(approval?.toJSON?.() || approval));
     return approval;
   } catch (e) {
-    // Older SDK shape
-    try {
-      const approval = await client.content.v1.contents(contentSid).approvals.create({
-        name,
-        category: 'UTILITY',
-      });
-      console.log('✅ Submitted for WhatsApp approval:', approval?.status || approval);
-      return approval;
-    } catch (e2) {
-      console.warn('⚠️  Could not auto-submit approval:', e2.message || e.message);
-      console.warn('   Submit manually in Content Template Builder → WhatsApp approval (UTILITY).');
-      return null;
-    }
+    console.warn('⚠️  Could not auto-submit approval:', e.message);
+    console.warn('   Submit manually: Content Template Builder → select template → Submit for WhatsApp (UTILITY).');
+    console.warn(`   SID: ${contentSid}`);
+    return null;
   }
 }
 
@@ -162,10 +163,14 @@ async function main() {
   console.log(`Creating Content template (${args.style})…`);
   const created = await client.content.v1.contents.create(payload);
   console.log('✅ Created');
-  console.log(`   friendlyName: ${created.friendlyName}`);
+  console.log(`   friendlyName: ${created.friendlyName || payload.friendlyName}`);
   console.log(`   SID: ${created.sid}`);
 
-  await submitForWhatsAppApproval(client, created.sid, created.friendlyName);
+  await submitForWhatsAppApproval(
+    client,
+    created.sid,
+    created.friendlyName || payload.friendlyName
+  );
 
   console.log('\n══════════════════════════════════════════════════════');
   console.log('ADD TO PRODUCTION ENV (then pm2 restart):');
