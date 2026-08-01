@@ -184,6 +184,7 @@ import providerNetworkBotRouter from './routes/provider-network-bot.route.js';
 import { ringFencingMiddleware } from './middleware/ringFencing.js';
 import publicReportRouter from './routes/public-report.route.js';
 import publicClaimStatusRouter from './routes/public-claim-status.route.js';
+import publicKioskRegisterRouter from './routes/public-kiosk-register.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import myupcharRouter from './routes/myupchar.route.js';
 import notificationRouter from './routes/notification.route.js';
@@ -1059,6 +1060,7 @@ app.use(responseShapeLinter);
 app.use('/api/public', publicReportRouter);
 // Public signed-token insurance claim status lookup (QR-code target, no auth required)
 app.use('/api/public/claim-status', publicClaimStatusRouter);
+app.use('/api/public/kiosk-register', publicKioskRegisterRouter);
 // Department login modules must stay before ring-fencing because login is public.
 app.use('/api/asset', assetRouter);
 app.use('/api/biomedical', biomedicalRouter);

@@ -1,5 +1,4 @@
 import express from 'express';
-import bcrypt from 'bcrypt';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,6 +12,12 @@ import { pushToZone } from '../services/display-sse-broker.service.js';
 import { assessKioskLiveness } from '../services/kiosk-liveness.service.js';
 import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
 import { requireDisplayDevice } from '../middleware/authDisplayDevice.middleware.js';
+import {
+  createRegistrationInvite,
+  getInviteStatusForKiosk,
+  registerWalkInPatient,
+  ensureKioskRegistrationTables,
+} from '../services/kiosk-registration.service.js';
 import { Op } from 'sequelize';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +38,62 @@ async function safeQueryOne(sql, params = []) {
 
 // P0: all kiosk mutations require x-device-token; org bound from device registry
 router.use(requireDisplayDevice);
+
+ensureKioskRegistrationTables().catch((e) =>
+  console.warn('[kiosk] invite tables:', e.message)
+);
+
+/**
+ * POST /api/display/kiosk/registration-invite
+ * Body: { phone, hospitalName? } — sends WhatsApp/SMS secure registration link
+ */
+router.post('/registration-invite', async (req, res) => {
+  try {
+    const { phone, hospitalName } = req.body || {};
+    const result = await createRegistrationInvite({
+      organizationId: req.organizationId,
+      deviceId: req.displayDevice?.id || null,
+      phone,
+      hospitalName: hospitalName || req.displayDevice?.name || 'the hospital',
+    });
+    res.status(201).json({
+      success: true,
+      inviteId: result.inviteId,
+      expiresAt: result.expiresAt,
+      phone: result.phone,
+      linkSent: result.linkSent,
+      channels: result.channels,
+      message: result.linkSent
+        ? 'Registration link sent on WhatsApp/SMS'
+        : 'Invite created — WhatsApp/SMS delivery may be unavailable; ask patient to retry',
+    });
+  } catch (e) {
+    const status = e.status || 500;
+    console.error('[kiosk] registration-invite:', e.message);
+    res.status(status).json({ success: false, message: e.message });
+  }
+});
+
+/** GET /api/display/kiosk/registration-invite/status?phone= */
+router.get('/registration-invite/status', async (req, res) => {
+  try {
+    const phone = req.query.phone || req.body?.phone;
+    const row = await getInviteStatusForKiosk({
+      organizationId: req.organizationId,
+      phone,
+    });
+    if (!row) return res.json({ success: true, status: 'none' });
+    res.json({
+      success: true,
+      status: row.status,
+      tokenNumber: row.token_number,
+      expiresAt: row.expires_at,
+      consumedAt: row.consumed_at,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
 
 // POST /api/display/kiosk/parse-qr
 router.post('/parse-qr', async (req, res) => {
@@ -98,102 +159,47 @@ router.post('/register', async (req, res) => {
     const {
       phone, firstName, lastName, dateOfBirth, gender: genderRaw,
       department, queueZone, doctorId, doctorName, chiefComplaint, consentVersion,
-      photoKey, abhaId, notifyOptIn, notifyPhone,
+      photoKey, abhaId, notifyOptIn, notifyPhone, address, aadhaarLast4,
     } = req.body;
 
-    if (!phone || !firstName) {
-      return res.status(400).json({ success: false, message: 'phone and firstName required' });
-    }
-
-    // Prod PG enum_users_gender values are capitalized: Male | Female
-    const genderNorm = String(genderRaw || '').trim();
-    const genderLower = genderNorm.toLowerCase();
-    const mapped =
-      genderLower === 'male' || genderLower === 'm' ? 'Male'
-        : genderLower === 'female' || genderLower === 'f' ? 'Female'
-          : null;
-    const genderCandidates = [...new Set([
-      mapped,
-      genderNorm, // already-correct "Male"/"Female"
-      'Male',
-      'Female',
-    ].filter(Boolean))];
-
-    const orgId = req.organizationId;
-    const normalizedPhone = String(phone).replace(/\D/g, '').slice(-10);
-
-    let patientId;
-    const existing = await pool.query(
-      `SELECT id, "firstName", "lastName" FROM users WHERE "phoneNumber" LIKE $1 LIMIT 1`,
-      [`%${normalizedPhone}`]
-    );
-
-    if (existing.rows[0]) {
-      patientId = existing.rows[0].id;
-    } else {
-      const email = `kiosk+${normalizedPhone}@patient.mediqzy.local`;
-      const hash = await bcrypt.hash(`kiosk-${normalizedPhone}-${Date.now()}`, 10);
-      let ins = null;
-      let lastErr = null;
-      for (const g of genderCandidates) {
-        try {
-          ins = await pool.query(
-            `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", "dateOfBirth", gender, status, "emailVerified", role, metadata)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,'active',true,'user',$8)
-             RETURNING id`,
-            [
-              firstName, lastName || '', email, hash, normalizedPhone,
-              dateOfBirth || '1990-01-01', g,
-              JSON.stringify({ uhidPending: true, abhaId: abhaId || null, photoKey: photoKey || null, source: 'kiosk', genderRequested: genderRaw || null }),
-            ]
-          );
-          break;
-        } catch (e) {
-          lastErr = e;
-          if (!/enum_users_gender|invalid input value for enum/i.test(e.message)) throw e;
-        }
-      }
-      if (!ins?.rows?.[0]) throw lastErr || new Error('Failed to create kiosk patient');
-      patientId = ins.rows[0].id;
-    }
-
-    const uhid = await queue.allocateUhid(orgId);
-    await pool.query(
-      `UPDATE users SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
-      [patientId, JSON.stringify({ uhid, registeredVia: 'kiosk', consentVersion })]
-    );
-
-    const entry = await queue.checkIn({
-      organizationId: orgId,
-      department: department || 'opd',
-      queueZone: queueZone || 'opd-waiting',
-      patientId,
-      patientName: `${firstName} ${lastName || ''}`.trim(),
-      doctorId: doctorId || null,
-      doctorName: doctorName || null,
-      queueType: 'walk_in',
+    const result = await registerWalkInPatient({
+      organizationId: req.organizationId,
+      phone,
+      firstName,
+      lastName,
+      dateOfBirth,
+      gender: genderRaw,
+      department,
+      queueZone,
+      doctorId,
+      doctorName,
       chiefComplaint,
       consentVersion,
-      metadata: {
-        uhid,
-        photoKey,
-        abhaId,
-        notifyOptIn: notifyOptIn === true || notifyOptIn === 'true',
-        notifyPhone: notifyPhone || normalizedPhone,
-      },
+      photoKey,
+      abhaId,
+      notifyOptIn,
+      notifyPhone,
+      address,
+      aadhaarLast4,
+      source: 'kiosk',
     });
 
     res.status(201).json({
       success: true,
-      patientId,
-      uhid,
-      entry,
-      token: entry,
-      eReceiptQr: JSON.stringify({ uhid, token: entry.tokenNumber, date: new Date().toISOString().slice(0, 10) }),
+      patientId: result.patientId,
+      uhid: result.uhid,
+      entry: result.entry,
+      token: result.entry,
+      eReceiptQr: JSON.stringify({
+        uhid: result.uhid,
+        token: result.entry?.tokenNumber,
+        date: new Date().toISOString().slice(0, 10),
+      }),
     });
   } catch (e) {
+    const status = e.status || 500;
     console.error('[kiosk] register error:', e.message);
-    res.status(500).json({ success: false, message: e.message });
+    res.status(status).json({ success: false, message: e.message });
   }
 });
 
