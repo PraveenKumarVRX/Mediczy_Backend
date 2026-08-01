@@ -18,7 +18,11 @@ import {
   decodeImageDataInWorker,
   warmAadhaarWorker,
 } from "@/lib/aadhaarQrWorkerBridge";
-import { viewfinderRoiInVideo, type VideoRoi } from "@/lib/aadhaarCamera";
+import {
+  objectCoverSourceRect,
+  viewfinderRoiInVideo,
+  type VideoRoi,
+} from "@/lib/aadhaarCamera";
 
 export type AadhaarScanPayload = {
   qrBytesBase64?: string;
