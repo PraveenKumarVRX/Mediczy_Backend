@@ -223,29 +223,28 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
   };
 
   const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
-    setScanOpen(false);
+    // Keep scanner mounted until parse succeeds — seamless “Reading details…” state
     try {
       const { data } = await api.post('/qms/aadhaar/parse', {
         qrText: payload?.qrText,
         qrBytesBase64: payload?.qrBytesBase64,
       });
       if (!data?.success || !data.fields) {
-        throw new Error(data?.message || 'Parse failed');
+        throw new Error(data?.message || 'Could not read Aadhaar details from that QR');
       }
+      setScanOpen(false);
       applyAadhaar(data.fields, data.source);
       toast({
-        title: 'Aadhaar details extracted',
+        title: 'Details ready',
         description: data.fields.fullName
           ? `${data.fields.fullName}${data.fields.aadhaarLast4 ? ` · ****${data.fields.aadhaarLast4}` : ''}`
-          : 'Form prefilled from QR',
+          : 'Form prefilled from Aadhaar',
       });
     } catch (e: any) {
-      toast({
-        title: 'Aadhaar scan failed',
-        description: e?.response?.data?.message || e?.message || 'Scan the QR on the back of the card',
-        variant: 'destructive',
-      });
-      openManual();
+      const message =
+        e?.response?.data?.message || e?.message || 'Hold the QR on the back of the card in the frame';
+      // Re-throw so the scanner can resume auto-capture without dumping the user to manual
+      throw new Error(message);
     }
   };
 

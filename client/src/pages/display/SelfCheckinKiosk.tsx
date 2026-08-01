@@ -148,39 +148,32 @@ export default function SelfCheckinKiosk() {
   };
 
   const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
-    setStep('walk-in');
-    setLoading(true);
+    // Stay on scanner until parse succeeds (seamless reading state)
     setError(null);
-    try {
-      const res = await fetch('/api/display/kiosk/parse-aadhaar-qr', {
-        method: 'POST',
-        headers: displayDeviceHeaders(),
-        body: JSON.stringify({
-          qrText: payload?.qrText,
-          qrBytesBase64: payload?.qrBytesBase64,
-        }),
-      });
-      const json = await res.json();
-      if (!json.success) {
-        setError(json.message || 'Could not read the Aadhaar QR code. Please enter details manually.');
-        return;
-      }
-      const f = json.fields || {};
-      const genderMap: Record<string, string> = { male: 'Male', female: 'Female', m: 'Male', f: 'Female' };
-      const g = String(f.gender || '').toLowerCase();
-      setReg(r => ({
-        ...r,
-        firstName: f.firstName || r.firstName,
-        lastName: f.lastName || r.lastName,
-        gender: genderMap[g] || (f.gender === 'Male' || f.gender === 'Female' ? f.gender : r.gender),
-        dateOfBirth: f.dateOfBirth || r.dateOfBirth,
-      }));
-      if (f.aadhaarLast4) setAadhaarLast4(f.aadhaarLast4);
-    } catch (_) {
-      setError('Connection error while reading Aadhaar QR.');
-    } finally {
-      setLoading(false);
+    const res = await fetch('/api/display/kiosk/parse-aadhaar-qr', {
+      method: 'POST',
+      headers: displayDeviceHeaders(),
+      body: JSON.stringify({
+        qrText: payload?.qrText,
+        qrBytesBase64: payload?.qrBytesBase64,
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!json.success) {
+      throw new Error(json.message || 'Could not read the Aadhaar QR. Hold the card steady and try again.');
     }
+    const f = json.fields || {};
+    const genderMap: Record<string, string> = { male: 'Male', female: 'Female', m: 'Male', f: 'Female' };
+    const g = String(f.gender || '').toLowerCase();
+    setReg((r) => ({
+      ...r,
+      firstName: f.firstName || r.firstName,
+      lastName: f.lastName || r.lastName,
+      gender: genderMap[g] || (f.gender === 'Male' || f.gender === 'Female' ? f.gender : r.gender),
+      dateOfBirth: f.dateOfBirth || r.dateOfBirth,
+    }));
+    if (f.aadhaarLast4) setAadhaarLast4(f.aadhaarLast4);
+    setStep('walk-in');
   };
 
   const uploadPhoto = async (blob: Blob) => {
