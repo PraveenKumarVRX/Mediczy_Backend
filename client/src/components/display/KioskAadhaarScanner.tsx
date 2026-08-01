@@ -17,9 +17,11 @@ export type { AadhaarScanPayload };
 interface Props {
   onScan: (payload: AadhaarScanPayload) => void | Promise<void>;
   onClose: () => void;
+  /** Default: photo — OS camera (most reliable). live = getUserMedia preview. */
+  initialMode?: "photo" | "live";
 }
 
-type Phase = "starting" | "scanning" | "capturing" | "reading" | "failed";
+type Phase = "photo" | "starting" | "scanning" | "capturing" | "reading" | "failed";
 
 const LIVE_INTERVAL_MS = 320;
 const AUTO_STILL_MS = 1800;
@@ -33,12 +35,15 @@ function vibrate(ms = 35) {
 }
 
 /**
- * Reliable Aadhaar capture UX:
- * - Live auto-scan (best effort)
- * - One familiar shutter tap (hi-res still, timeout-safe)
- * - Native OS camera always one tap away (most reliable on phones)
+ * Photo-first Aadhaar capture.
+ * Default path uses the phone’s native camera app (sharp focused stills).
+ * Live camera is optional for dedicated kiosk hardware.
  */
-export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
+export default function KioskAadhaarScanner({
+  onScan,
+  onClose,
+  initialMode = "photo",
+}: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -51,11 +56,14 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const stillBusyRef = useRef(false);
   const onScanRef = useRef(onScan);
   const startCameraRef = useRef<(() => Promise<void>) | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const osCamRef = useRef<HTMLInputElement | null>(null);
+  const photoRef = useRef<HTMLInputElement | null>(null);
 
-  const [phase, setPhase] = useState<Phase>("starting");
-  const [coach, setCoach] = useState("Hold the QR on the back of the Aadhaar card in the frame");
+  const [phase, setPhase] = useState<Phase>(initialMode === "live" ? "starting" : "photo");
+  const [coach, setCoach] = useState(
+    initialMode === "live"
+      ? "Hold the QR on the back of the Aadhaar card in the frame"
+      : "Photograph the large QR on the back of the Aadhaar card"
+  );
   const [torchOn, setTorchOn] = useState(false);
   const [torchSupported, setTorchSupported] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +71,11 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   useEffect(() => {
     onScanRef.current = onScan;
   }, [onScan]);
+
+  // Warm decoder as soon as the sheet opens
+  useEffect(() => {
+    warmAadhaarDecoder();
+  }, []);
 
   const clearTimers = useCallback(() => {
     if (rafRef.current != null) {
@@ -104,17 +117,37 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       } catch (err: unknown) {
         handledRef.current = false;
         setPhase("failed");
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Couldn’t read that QR. Try the shutter or phone camera."
-        );
-        setCoach("Hold the QR in the frame, then tap the shutter");
-        void startCameraRef.current?.();
+        setError(err instanceof Error ? err.message : "Couldn’t read that QR.");
+        setCoach("Try another clear photo of the QR on the back");
+        setPhase("photo");
       }
     },
     [clearTimers, stopCamera]
   );
+
+  const onUpload = async (file: File) => {
+    if (handledRef.current) return;
+    setPhase("reading");
+    setCoach("Reading your photo…");
+    setError(null);
+    try {
+      const payload = await decodeAadhaarFromFile(file);
+      if (!payload) {
+        setPhase("failed");
+        setError(
+          "No Aadhaar QR found in that photo. Use the large QR on the BACK, fill the frame, avoid glare."
+        );
+        setCoach("Take another photo — closer to the QR");
+        setPhase("photo");
+        return;
+      }
+      await emitPayload(payload);
+    } catch (e: unknown) {
+      setPhase("failed");
+      setError(e instanceof Error ? e.message : "Couldn’t read that photo");
+      setPhase("photo");
+    }
+  };
 
   const runStillDecode = useCallback(
     async (manual: boolean) => {
@@ -130,9 +163,8 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
         });
         if (!still || handledRef.current) {
           if (manual && !handledRef.current) {
-            setError("Couldn’t capture a clear frame. Try Phone camera instead.");
+            setError("Couldn’t capture. Switch to Photograph QR instead.");
             setPhase("scanning");
-            setCoach("Tap Phone camera for a sharp photo of the QR");
           }
           return;
         }
@@ -146,9 +178,8 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
           return;
         }
         if (manual && !handledRef.current) {
-          setError("QR not found yet. Move closer so the QR fills the frame, or use Phone camera.");
+          setError("QR not found. Move closer, or use Photograph QR.");
           setPhase("scanning");
-          setCoach("Fill the frame with the QR, then tap the shutter again");
         }
       } finally {
         stillBusyRef.current = false;
@@ -215,53 +246,26 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
 
       lastLiveAtRef.current = 0;
       rafRef.current = requestAnimationFrame(scanLiveFrame);
-
       stillTimerRef.current = window.setInterval(() => {
         if (!handledRef.current && !stillBusyRef.current && !document.hidden) {
           void runStillDecode(false);
         }
       }, AUTO_STILL_MS);
-    } catch (err: unknown) {
-      const name =
-        err && typeof err === "object" && "name" in err ? String((err as { name: string }).name) : "";
-      setPhase("failed");
-      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-        setError("Camera blocked. Use Phone camera instead — it opens your normal camera app.");
-      } else {
-        setError("Camera unavailable. Use Phone camera to photograph the QR.");
-      }
-      setCoach("Photograph the QR on the back of the Aadhaar card");
+    } catch {
+      setPhase("photo");
+      setError("Live camera unavailable. Photograph the QR instead — that usually works better.");
+      setCoach("Photograph the large QR on the back of the Aadhaar card");
     }
   }, [runStillDecode, scanLiveFrame, stopCamera]);
 
   startCameraRef.current = startCamera;
 
   useEffect(() => {
-    void startCamera();
-    return () => stopCamera();
-  }, [startCamera, stopCamera]);
-
-  const onUpload = async (file: File) => {
-    if (handledRef.current) return;
-    setPhase("reading");
-    setCoach("Reading your details…");
-    setError(null);
-    try {
-      const payload = await decodeAadhaarFromFile(file);
-      if (!payload) {
-        setPhase("failed");
-        setError("No Aadhaar QR found. Photograph the large QR on the back, close-up.");
-        setCoach("Try again with a closer photo");
-        if (!streamRef.current) void startCamera();
-        else setPhase("scanning");
-        return;
-      }
-      await emitPayload(payload);
-    } catch (e: unknown) {
-      setPhase("failed");
-      setError(e instanceof Error ? e.message : "Couldn’t read that photo");
+    if (initialMode === "live") {
+      void startCamera();
     }
-  };
+    return () => stopCamera();
+  }, [initialMode, startCamera, stopCamera]);
 
   const busy = phase === "capturing" || phase === "reading";
 
@@ -276,121 +280,132 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
           Close
         </button>
         <p className="text-sm font-medium text-white/90">Scan Aadhaar</p>
-        <div className="w-[4.5rem] flex justify-end">
-          {torchSupported && (phase === "scanning" || phase === "capturing") && (
-            <button
-              type="button"
-              onClick={() => {
-                void setTorch(trackRef.current, !torchOn).then((ok) => {
-                  if (ok) setTorchOn((v) => !v);
-                });
-              }}
-              className={`rounded-lg px-3 py-2 text-sm ${
-                torchOn ? "bg-amber-500/30 text-amber-100" : "text-white/80 hover:bg-white/10"
-              }`}
-            >
-              {torchOn ? "Light on" : "Light"}
-            </button>
-          )}
-        </div>
+        <div className="w-[4.5rem]" />
       </div>
 
-      <p className="px-6 text-center text-lg font-semibold tracking-tight sm:text-xl">{coach}</p>
-      <p className="mt-1 px-6 text-center text-sm text-white/50">
-        Back of the card · large QR · fill the frame
+      <p className="px-6 text-center text-xl font-semibold tracking-tight sm:text-2xl">{coach}</p>
+      <p className="mt-2 px-6 text-center text-sm text-white/55">
+        Flip the card · use the large QR on the back · fill the frame · avoid glare
       </p>
 
-      <div className="relative mx-auto mt-3 w-full max-w-lg flex-1 px-4">
-        <div className="relative mx-auto aspect-[3/4] max-h-[min(56vh,520px)] w-full overflow-hidden rounded-3xl bg-black shadow-[0_0_0_1px_rgba(255,255,255,0.08)]">
-          <video
-            ref={videoRef}
-            className="h-full w-full object-cover"
-            muted
-            playsInline
-            autoPlay
-          />
-          <canvas ref={canvasRef} className="hidden" aria-hidden />
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_42%,rgba(0,0,0,0.55)_100%)]" />
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div
-              className={`h-[58%] w-[58%] max-w-[280px] rounded-2xl border-2 ${
-                phase === "reading" ? "border-emerald-400" : "border-white/90"
-              }`}
-            />
-          </div>
-
-          {phase === "starting" && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-sm">
-              Starting camera…
-            </div>
-          )}
-          {phase === "reading" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-emerald-950/70">
-              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-xl">
-                ✓
-              </div>
-              <p className="font-medium">Reading details…</p>
-            </div>
-          )}
-        </div>
-      </div>
-
       {error && (
-        <p className="mx-auto max-w-md px-6 pb-2 text-center text-sm text-rose-300">{error}</p>
+        <p className="mx-auto mt-3 max-w-md px-6 text-center text-sm text-rose-300">{error}</p>
       )}
 
-      {/* Familiar camera controls — one shutter, one phone-camera escape hatch */}
-      <div className="mt-auto flex flex-col items-center gap-4 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
-        <div className="flex w-full max-w-md items-center justify-between gap-4 px-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => fileRef.current?.click()}
-            className="w-20 text-center text-xs font-medium text-white/70 disabled:opacity-40"
-          >
-            Gallery
-          </button>
+      {/* PHOTO-FIRST — native camera app */}
+      {(phase === "photo" || phase === "failed" || phase === "reading") && (
+        <div className="mx-auto mt-8 flex w-full max-w-md flex-1 flex-col items-center justify-center gap-6 px-6 pb-8">
+          <div className="flex h-40 w-40 items-center justify-center rounded-[2rem] border border-white/15 bg-white/5 text-6xl">
+            {phase === "reading" ? "…" : "🪪"}
+          </div>
 
-          <button
-            type="button"
-            disabled={busy || phase === "starting"}
-            aria-label="Capture"
-            onClick={() => void runStillDecode(true)}
-            className="relative flex h-[72px] w-[72px] items-center justify-center rounded-full bg-white shadow-lg disabled:opacity-50"
-          >
-            <span className="h-[60px] w-[60px] rounded-full border-[3px] border-neutral-900 bg-white" />
-          </button>
-
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => osCamRef.current?.click()}
-            className="w-20 text-center text-xs font-semibold text-teal-300 disabled:opacity-40"
-          >
-            Phone camera
-          </button>
+          {phase === "reading" ? (
+            <p className="text-base text-white/80">Reading details…</p>
+          ) : (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => photoRef.current?.click()}
+                className="w-full rounded-2xl bg-teal-500 px-6 py-5 text-lg font-bold text-white shadow-lg hover:bg-teal-400 disabled:opacity-50"
+              >
+                Photograph QR
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => photoRef.current?.click()}
+                className="w-full rounded-2xl bg-white/10 px-6 py-4 text-sm font-medium text-white hover:bg-white/15"
+              >
+                Choose from gallery
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void startCamera()}
+                className="text-sm text-white/45 underline-offset-4 hover:text-white/70 hover:underline"
+              >
+                Use live camera instead
+              </button>
+            </>
+          )}
         </div>
-        <p className="text-center text-[11px] text-white/35">
-          Tap the shutter if it doesn’t capture on its own · only last 4 Aadhaar digits are kept
-        </p>
-      </div>
+      )}
 
+      {/* LIVE mode */}
+      {(phase === "starting" || phase === "scanning" || phase === "capturing") && (
+        <>
+          <div className="relative mx-auto mt-3 w-full max-w-lg flex-1 px-4">
+            <div className="relative mx-auto aspect-[3/4] max-h-[min(52vh,480px)] w-full overflow-hidden rounded-3xl bg-black">
+              <video
+                ref={videoRef}
+                className="h-full w-full object-cover"
+                muted
+                playsInline
+                autoPlay
+              />
+              <canvas ref={canvasRef} className="hidden" aria-hidden />
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="h-[58%] w-[58%] rounded-2xl border-2 border-white/90" />
+              </div>
+              {phase === "starting" && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-sm">
+                  Starting camera…
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-auto flex flex-col items-center gap-3 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
+            <div className="flex w-full max-w-md items-center justify-between gap-4 px-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  stopCamera();
+                  setPhase("photo");
+                  setCoach("Photograph the large QR on the back of the Aadhaar card");
+                }}
+                className="w-24 text-center text-xs font-semibold text-teal-300"
+              >
+                Photograph QR
+              </button>
+              <button
+                type="button"
+                disabled={busy || phase === "starting"}
+                aria-label="Capture"
+                onClick={() => void runStillDecode(true)}
+                className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-white disabled:opacity-50"
+              >
+                <span className="h-[60px] w-[60px] rounded-full border-[3px] border-neutral-900" />
+              </button>
+              {torchSupported ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    void setTorch(trackRef.current, !torchOn).then((ok) => {
+                      if (ok) setTorchOn((v) => !v);
+                    });
+                  }}
+                  className="w-24 text-center text-xs text-white/70"
+                >
+                  {torchOn ? "Light on" : "Light"}
+                </button>
+              ) : (
+                <span className="w-24" />
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Always available for photo path — capture opens OS camera on phones */}
       <input
-        ref={osCamRef}
+        ref={photoRef}
         type="file"
         accept="image/*"
         capture="environment"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          e.target.value = "";
-          if (f) void onUpload(f);
-        }}
-      />
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];

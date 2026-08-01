@@ -148,8 +148,29 @@ export default function SelfCheckinKiosk() {
   };
 
   const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
-    // Stay on scanner until parse succeeds (seamless reading state)
     setError(null);
+    const { parseAadhaarPayloadClient } = await import('@/lib/aadhaarQrParse');
+    const applyFields = (f: Record<string, any>) => {
+      const genderMap: Record<string, string> = { male: 'Male', female: 'Female', m: 'Male', f: 'Female' };
+      const g = String(f.gender || '').toLowerCase();
+      setReg((r) => ({
+        ...r,
+        firstName: f.firstName || r.firstName,
+        lastName: f.lastName || r.lastName,
+        gender: genderMap[g] || (f.gender === 'Male' || f.gender === 'Female' ? f.gender : r.gender),
+        dateOfBirth: f.dateOfBirth || r.dateOfBirth,
+      }));
+      if (f.aadhaarLast4) setAadhaarLast4(f.aadhaarLast4);
+      setStep('walk-in');
+    };
+
+    // Client-first parse (no network required after QR decode)
+    const local = parseAadhaarPayloadClient(payload || {});
+    if (local.success) {
+      applyFields(local.fields);
+      return;
+    }
+
     const res = await fetch('/api/display/kiosk/parse-aadhaar-qr', {
       method: 'POST',
       headers: displayDeviceHeaders(),
@@ -160,20 +181,9 @@ export default function SelfCheckinKiosk() {
     });
     const json = await res.json().catch(() => ({}));
     if (!json.success) {
-      throw new Error(json.message || 'Could not read the Aadhaar QR. Hold the card steady and try again.');
+      throw new Error(json.message || local.message || 'Could not read the Aadhaar QR. Photograph the QR on the back.');
     }
-    const f = json.fields || {};
-    const genderMap: Record<string, string> = { male: 'Male', female: 'Female', m: 'Male', f: 'Female' };
-    const g = String(f.gender || '').toLowerCase();
-    setReg((r) => ({
-      ...r,
-      firstName: f.firstName || r.firstName,
-      lastName: f.lastName || r.lastName,
-      gender: genderMap[g] || (f.gender === 'Male' || f.gender === 'Female' ? f.gender : r.gender),
-      dateOfBirth: f.dateOfBirth || r.dateOfBirth,
-    }));
-    if (f.aadhaarLast4) setAadhaarLast4(f.aadhaarLast4);
-    setStep('walk-in');
+    applyFields(json.fields || {});
   };
 
   const uploadPhoto = async (blob: Blob) => {

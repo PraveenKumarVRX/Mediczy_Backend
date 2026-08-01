@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 import KioskAadhaarScanner from '@/components/display/KioskAadhaarScanner';
+import { parseAadhaarPayloadClient } from '@/lib/aadhaarQrParse';
 import { printQmsTokenSlip } from '@/utils/qmsPrintSlip';
 import { IdCard, Phone, Plus, Printer, RefreshCw, ScanLine, UserRound } from 'lucide-react';
 
@@ -223,14 +224,28 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
   };
 
   const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
-    // Keep scanner mounted until parse succeeds — seamless “Reading details…” state
+    // 1) Parse in-browser first (works even if API auth/network flakes)
+    const local = parseAadhaarPayloadClient(payload || {});
+    if (local.success) {
+      setScanOpen(false);
+      applyAadhaar(local.fields, local.source);
+      toast({
+        title: 'Details ready',
+        description: local.fields.fullName
+          ? `${local.fields.fullName}${local.fields.aadhaarLast4 ? ` · ****${local.fields.aadhaarLast4}` : ''}`
+          : 'Form prefilled from Aadhaar',
+      });
+      return;
+    }
+
+    // 2) Server fallback
     try {
       const { data } = await api.post('/qms/aadhaar/parse', {
         qrText: payload?.qrText,
         qrBytesBase64: payload?.qrBytesBase64,
       });
       if (!data?.success || !data.fields) {
-        throw new Error(data?.message || 'Could not read Aadhaar details from that QR');
+        throw new Error(data?.message || local.message || 'Could not read Aadhaar details from that QR');
       }
       setScanOpen(false);
       applyAadhaar(data.fields, data.source);
@@ -241,10 +256,9 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
           : 'Form prefilled from Aadhaar',
       });
     } catch (e: any) {
-      const message =
-        e?.response?.data?.message || e?.message || 'Hold the QR on the back of the card in the frame';
-      // Re-throw so the scanner can resume auto-capture without dumping the user to manual
-      throw new Error(message);
+      throw new Error(
+        e?.response?.data?.message || e?.message || local.message || 'Photograph the QR on the back of the card'
+      );
     }
   };
 
