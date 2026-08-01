@@ -1,114 +1,204 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { BrowserMultiFormatReader, DecodeHintType, NotFoundException } from "@zxing/library";
+import jsQR from "jsqr";
 
 interface Props {
   onScan: (text: string) => void;
   onClose: () => void;
 }
 
-function buildReader() {
-  const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  return new BrowserMultiFormatReader(hints, {
-    delayBetweenScanAttempts: 200,
-    delayBetweenScanSuccess: 800,
-  });
-}
+const SCAN_INTERVAL_MS = 180;
 
+/**
+ * Canvas + jsQR live scan (more reliable than zxing for dense QRs).
+ * Upload path tries jsQR first, then zxing.
+ */
 export default function KioskQrScanner({ onScan, onClose }: Props) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const onScanRef = useRef(onScan);
-  const controlsRef = useRef<IScannerControls | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const lastScanAtRef = useRef(0);
   const handledRef = useRef(false);
-  const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState('Starting camera…');
-  const fileRef = useRef<HTMLInputElement>(null);
+  const onScanRef = useRef(onScan);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("Starting camera…");
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
+
+  const stopCamera = useCallback(() => {
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    const stream = streamRef.current;
+    streamRef.current = null;
+    if (stream) {
+      for (const track of stream.getTracks()) track.stop();
+    }
+    const video = videoRef.current;
+    if (video) video.srcObject = null;
+  }, []);
+
+  const emitScan = useCallback(
+    (text: string) => {
+      const payload = String(text || "").trim();
+      if (!payload || handledRef.current) return;
+      handledRef.current = true;
+      setStatus("QR detected…");
+      stopCamera();
+      onScanRef.current(payload);
+    },
+    [stopCamera]
+  );
+
+  const scanFrame = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || handledRef.current) {
+      rafRef.current = requestAnimationFrame(scanFrame);
+      return;
+    }
+
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+      const now = Date.now();
+      if (now - lastScanAtRef.current >= SCAN_INTERVAL_MS) {
+        lastScanAtRef.current = now;
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (canvas.width !== w || canvas.height !== h) {
+          canvas.width = w;
+          canvas.height = h;
+        }
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, w, h);
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: "attemptBoth",
+          });
+          if (code?.data) {
+            emitScan(code.data);
+            return;
+          }
+        }
+      }
+    }
+    rafRef.current = requestAnimationFrame(scanFrame);
+  }, [emitScan]);
 
   useEffect(() => {
     handledRef.current = false;
+    setError(null);
+    setStatus("Starting camera…");
+
     let cancelled = false;
-    const reader = buildReader();
 
     const start = async () => {
-      const video = videoRef.current;
-      if (!video) return;
-
-      const constraintsList: MediaTrackConstraints[] = [
-        { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-        { facingMode: 'environment' },
-        true as unknown as MediaTrackConstraints,
-      ];
-
-      let lastErr: unknown = null;
-      for (const videoConstraints of constraintsList) {
-        if (cancelled) return;
-        try {
-          setStatus('Align QR code in the frame…');
-          const controls = await reader.decodeFromConstraints(
-            { video: videoConstraints === true ? true : videoConstraints },
-            video,
-            (result) => {
-              if (cancelled || handledRef.current || !result) return;
-              const text = result.getText()?.trim();
-              if (!text) return;
-              handledRef.current = true;
-              setStatus('QR detected…');
-              try { controlsRef.current?.stop(); } catch { /* noop */ }
-              try { reader.reset(); } catch { /* noop */ }
-              onScanRef.current(text);
-            },
-          );
-          controlsRef.current = controls;
-          lastErr = null;
-          break;
-        } catch (e) {
-          lastErr = e;
-        }
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setError("Camera not supported. Use Upload QR image.");
+        setStatus("Camera unavailable");
+        return;
       }
-      if (lastErr && !cancelled && !controlsRef.current) {
-        setError(lastErr instanceof Error ? lastErr.message : 'Camera unavailable — try Upload QR image');
-        setStatus('Camera failed');
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        video.srcObject = stream;
+        await video.play();
+        setStatus("Align QR code in the frame…");
+        lastScanAtRef.current = 0;
+        rafRef.current = requestAnimationFrame(scanFrame);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        const name = err && typeof err === "object" && "name" in err ? String((err as { name: string }).name) : "";
+        if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+          setError("Camera permission denied. Allow camera, or use Upload QR image.");
+        } else if (name === "NotFoundError") {
+          setError("No camera found. Use Upload QR image instead.");
+        } else {
+          setError(err instanceof Error ? err.message : "Camera unavailable — try Upload QR image");
+        }
+        setStatus("Camera failed");
       }
     };
 
-    const t = requestAnimationFrame(() => { start(); });
+    void start();
     return () => {
       cancelled = true;
-      cancelAnimationFrame(t);
-      try { controlsRef.current?.stop(); } catch { /* noop */ }
-      controlsRef.current = null;
-      try { reader.reset(); } catch { /* noop */ }
+      stopCamera();
     };
-  }, []);
+  }, [scanFrame, stopCamera]);
 
   const decodeImageFile = async (file: File) => {
     setError(null);
-    setStatus('Reading image…');
+    setStatus("Reading image…");
     try {
       const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.src = url;
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error('Could not load image'));
-      });
-      const reader = buildReader();
-      const result = await reader.decodeFromImageElement(img);
-      URL.revokeObjectURL(url);
-      const text = result.getText()?.trim();
-      if (!text) {
-        setError('No QR code found in that image.');
-        return;
+      try {
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+          const el = new Image();
+          el.onload = () => resolve(el);
+          el.onerror = () => reject(new Error("Could not load image"));
+          el.src = url;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas unavailable");
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "attemptBoth",
+        });
+        if (code?.data) {
+          emitScan(code.data);
+          return;
+        }
+
+        const hints = new Map();
+        hints.set(DecodeHintType.TRY_HARDER, true);
+        const reader = new BrowserMultiFormatReader(hints);
+        try {
+          const result = await reader.decodeFromImageUrl(url);
+          const text = result?.getText?.()?.trim();
+          if (text) {
+            emitScan(text);
+            return;
+          }
+        } catch (zerr: unknown) {
+          if (!(zerr instanceof NotFoundException)) {
+            // fall through
+          }
+        }
+        setError("No QR code found in that image.");
+        setStatus("Align QR code in the frame…");
+      } finally {
+        URL.revokeObjectURL(url);
       }
-      handledRef.current = true;
-      try { controlsRef.current?.stop(); } catch { /* noop */ }
-      onScanRef.current(text);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Could not decode QR from image');
+      setError(e instanceof Error ? e.message : "Could not decode QR from image");
+      setStatus("Align QR code in the frame…");
     }
   };
 
@@ -116,13 +206,16 @@ export default function KioskQrScanner({ onScan, onClose }: Props) {
     <div className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-6">
       <h3 className="text-xl font-bold text-white mb-2">Scan QR Code</h3>
       <p className="text-teal-400 text-xs mb-3">{status}</p>
-      <video
-        ref={videoRef}
-        className="w-full max-w-md aspect-square object-cover rounded-xl border-2 border-teal-600 bg-black"
-        muted
-        playsInline
-        autoPlay
-      />
+      <div className="relative w-full max-w-md">
+        <video
+          ref={videoRef}
+          className="w-full aspect-square object-cover rounded-xl border-2 border-teal-600 bg-black"
+          muted
+          playsInline
+          autoPlay
+        />
+        <canvas ref={canvasRef} className="hidden" aria-hidden />
+      </div>
       {error && <p className="text-red-400 mt-4 text-sm text-center max-w-md">{error}</p>}
       <div className="mt-6 flex flex-wrap gap-3 justify-center">
         <button
@@ -144,6 +237,7 @@ export default function KioskQrScanner({ onScan, onClose }: Props) {
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
+          e.target.value = "";
           if (f) void decodeImageFile(f);
         }}
       />
