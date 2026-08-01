@@ -10,6 +10,8 @@ interface PortalConfig {
 
 const CORE_PUBLIC_PATHS = ['/login', '/register'];
 const LEGACY_PUBLIC_PATHS = ['/doctor-login', '/doc-register'];
+/** Prefix-matched public surfaces (token links, kiosks) — no login required */
+const PUBLIC_PATH_PREFIXES = ['/kiosk/', '/display/'];
 
 const USER_TYPES: Record<string, PortalConfig> = {
   user: {
@@ -311,6 +313,7 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/hospital/queue-console',
       '/hospital/os',
       '/kiosk/checkin',
+      '/kiosk/register/:token',
       '/display/queue',
     ],
     tokenKey: 'hospitalToken',
@@ -512,7 +515,10 @@ export const useRingFencing = () => {
       const currentPath = location.pathname;
       
       // Public paths that don't require authentication
-      if (PUBLIC_PATHS.includes(currentPath)) {
+      if (
+        PUBLIC_PATHS.includes(currentPath) ||
+        PUBLIC_PATH_PREFIXES.some((p) => currentPath === p.slice(0, -1) || currentPath.startsWith(p))
+      ) {
         setIsChecking(false);
         return;
       }
