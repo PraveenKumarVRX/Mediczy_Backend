@@ -78,6 +78,7 @@ export default defineConfig(({ mode }) => ({
     global: 'globalThis',
     __SW_CACHE_VERSION__: JSON.stringify(buildHash),
   },
+  assetsInclude: ['**/*.wasm'],
   optimizeDeps: {
     // Pre-bundle dependencies to reduce initial load
     include: [
@@ -87,6 +88,7 @@ export default defineConfig(({ mode }) => ({
       'lucide-react',
       '@tanstack/react-query'
     ],
+    exclude: ['zxing-wasm'],
   },
   build: {
     // Production build optimization with memory constraints
