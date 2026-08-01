@@ -33,21 +33,13 @@ function ImageCaptureCtor():
   return (window as unknown as { ImageCapture?: new (t: MediaStreamTrack) => any }).ImageCapture || null;
 }
 
-async function unlockDeviceLabels(): Promise<void> {
-  try {
-    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    tmp.getTracks().forEach((t) => t.stop());
-  } catch {
-    /* permission denied later */
-  }
-}
-
 async function preferRearDeviceId(): Promise<string | undefined> {
   try {
-    await unlockDeviceLabels();
+    // Prefer facingMode first; only enumerate when labels are already available
+    // (avoid open-then-stop permission flicker that breaks some kiosk browsers)
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cams = devices.filter((d) => d.kind === "videoinput");
-    if (!cams.length) return undefined;
+    if (!cams.length || cams.every((d) => !d.label)) return undefined;
     const scored = cams
       .map((d) => {
         const label = (d.label || "").toLowerCase();
@@ -58,7 +50,7 @@ async function preferRearDeviceId(): Promise<string | undefined> {
         return { id: d.deviceId, score, label: d.label };
       })
       .sort((a, b) => b.score - a.score);
-    return scored[0]?.id;
+    return scored[0]?.score > 0 ? scored[0].id : undefined;
   } catch {
     return undefined;
   }
@@ -115,15 +107,8 @@ export async function openAadhaarCamera(): Promise<CameraOpenResult> {
   }
 
   const deviceId = await preferRearDeviceId();
+  // Prefer facingMode over exact deviceId — exact often fails on kiosk Chrome after reload
   const tries: MediaStreamConstraints[] = [
-    {
-      audio: false,
-      video: {
-        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: "environment" } }),
-        width: { ideal: 3840 },
-        height: { ideal: 2160 },
-      },
-    },
     {
       audio: false,
       video: {
@@ -132,6 +117,26 @@ export async function openAadhaarCamera(): Promise<CameraOpenResult> {
         height: { ideal: 1080 },
       },
     },
+    {
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 3840 },
+        height: { ideal: 2160 },
+      },
+    },
+    ...(deviceId
+      ? [
+          {
+            audio: false,
+            video: {
+              deviceId: { ideal: deviceId },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+          } as MediaStreamConstraints,
+        ]
+      : []),
     { audio: false, video: { facingMode: "environment" } },
     { audio: false, video: true },
   ];
