@@ -49,8 +49,8 @@ const SECTIONS: Section[] = [
   {
     label: 'Patient Journey',
     modules: [
-      { title: 'Walk-in Kiosk', description: 'Self check-in & token', path: '/kiosk/checkin', icon: UserPlus, gradient: 'from-teal-500 to-cyan-600', external: true },
-      { title: 'Hospital QMS', description: 'Tokens · Aadhaar QR · call next', path: '/hospital/qms', icon: ClipboardList, gradient: 'from-cyan-500 to-teal-600' },
+      { title: 'Walk-in Kiosk', description: 'Phone WhatsApp link · Aadhaar QR · token', path: '/hospital/qms', icon: UserPlus, gradient: 'from-teal-500 to-cyan-600' },
+      { title: 'Queue Console', description: 'Call next · start · complete', path: '/hospital/queue-console', icon: ClipboardList, gradient: 'from-cyan-500 to-teal-600' },
       { title: 'OPD Queue Board', description: 'Live waiting room', path: '/display/queue?zone=opd-waiting', icon: Monitor, gradient: 'from-sky-500 to-blue-600', external: true },
       { title: 'Practice Management', description: 'OPD roster & convert to IPD', path: '/hospital/practice-management', icon: ClipboardList, gradient: 'from-indigo-500 to-violet-600' },
       { title: 'Admit Patient', description: 'ADT with bed reservation', path: '/hospital/adt/admit', icon: Bed, gradient: 'from-blue-500 to-indigo-600' },

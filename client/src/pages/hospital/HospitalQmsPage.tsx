@@ -1,27 +1,62 @@
-import { ReactNode } from 'react';
-import PortalQmsPage from '@/components/qms/PortalQmsPage';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import api from '@/utils/api';
 
-/** Minimal shell so hospital QMS reuses the shared portal page. */
-function HospitalQmsLayout({ children }: { children: ReactNode; title?: string; subtitle?: string }) {
-  return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        <p className="text-teal-400/80 text-xs uppercase tracking-[0.2em] mb-4">Hospital OS · QMS</p>
-        <div className="rounded-2xl border border-white/10 bg-white text-slate-900 shadow-xl p-4 md:p-6">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
-}
-
+/**
+ * Hospital QMS is unified into the Walk-in Kiosk.
+ * This route exists for bookmarks / hub links — it provisions a device token
+ * for the hospital org and opens /kiosk/checkin (phone + Aadhaar registration).
+ * Staff call-next lives at /hospital/queue-console.
+ */
 export default function HospitalQmsPage() {
+  const navigate = useNavigate();
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get('/qms/walk-in-kiosk');
+        if (cancelled) return;
+        if (!data?.success || !data?.deviceToken) {
+          setError(data?.message || 'Could not open walk-in kiosk');
+          return;
+        }
+        try {
+          localStorage.setItem('displayDeviceToken', data.deviceToken);
+        } catch {
+          /* ignore */
+        }
+        const path = data.kioskPath || `/kiosk/checkin?deviceToken=${encodeURIComponent(data.deviceToken)}`;
+        window.location.replace(path);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        // Fallback: open kiosk anyway (may already have a device token in localStorage)
+        const existing = localStorage.getItem('displayDeviceToken');
+        if (existing) {
+          window.location.replace(`/kiosk/checkin?deviceToken=${encodeURIComponent(existing)}`);
+          return;
+        }
+        setError(e instanceof Error ? e.message : 'Could not open walk-in kiosk');
+        navigate('/kiosk/checkin', { replace: true });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
+
   return (
-    <PortalQmsPage
-      portal="hospital"
-      title="Hospital QMS"
-      subtitle="OPD tokens · Aadhaar QR check-in · call next"
-      Layout={HospitalQmsLayout}
-    />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-100 px-6">
+      <p className="text-2xl font-semibold text-teal-300" style={{ fontFamily: 'Georgia, serif' }}>
+        Mediqzy
+      </p>
+      <p className="mt-3 text-sm text-slate-400">
+        {error ? error : 'Opening walk-in kiosk…'}
+      </p>
+      <p className="mt-6 text-xs text-slate-600">
+        Phone + Aadhaar registration · Call next is on Queue Console
+      </p>
+    </div>
   );
 }
