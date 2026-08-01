@@ -630,14 +630,21 @@ export async function decodeAadhaarFromVideo(
   if (native) return native;
 
   const guideRatio = opts?.roiRatio ?? 0.58;
+  const cover = objectCoverSourceRect(video);
   const rois: VideoRoi[] = [
     viewfinderRoiInVideo(video, guideRatio),
-    viewfinderRoiInVideo(video, Math.min(0.82, guideRatio + 0.2)),
+    viewfinderRoiInVideo(video, Math.min(0.85, guideRatio + 0.22)),
+    // Entire visible cover area — critical on laptop / mismatched aspect
+    {
+      sx: Math.floor(cover.sx),
+      sy: Math.floor(cover.sy),
+      sw: Math.floor(cover.sw),
+      sh: Math.floor(cover.sh),
+    },
   ];
-  // Also try full-frame center (legacy) — helps when guide CSS changes
   const w = video.videoWidth;
   const h = video.videoHeight;
-  const side = Math.max(64, Math.floor(Math.min(w, h) * 0.7));
+  const side = Math.max(64, Math.floor(Math.min(w, h) * 0.75));
   rois.push({
     sx: Math.floor((w - side) / 2),
     sy: Math.floor((h - side) / 2),
