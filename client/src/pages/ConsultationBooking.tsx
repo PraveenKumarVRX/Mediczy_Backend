@@ -152,6 +152,7 @@ const ConsultationBooking = () => {
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [consultationType, setConsultationType] = useState("online");
+  const [notifyOptIn, setNotifyOptIn] = useState(false);
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
   const [symptoms, setSymptoms] = useState("");
   const [reason, setReason] = useState("");
@@ -318,13 +319,20 @@ const ConsultationBooking = () => {
         symptoms: symptoms.trim(),
         reason: reason.trim(),
         consultationFee: fee,
+        notifyOptIn: consultationType === 'walkin' ? notifyOptIn : false,
       };
 
       const { data } = await api.post("/appointments", bookingData);
+      const qms = data?.qmsToken || data?.data?.qmsToken;
+      const qmsMsg = qms?.deferred
+        ? ` Booked. OPD token activates on ${qms.activateOn} at kiosk/reception.`
+        : qms?.tokenNumber
+          ? ` OPD token ${qms.tokenNumber}${notifyOptIn ? ' sent via WhatsApp/SMS' : ''}.`
+          : '';
 
       toast({
         title: "Success",
-        description: "Consultation booked successfully!",
+        description: `Consultation booked successfully!${qmsMsg}`,
       });
 
       setShowConfirmDialog(false);
@@ -601,6 +609,20 @@ const ConsultationBooking = () => {
                     <strong>Fee:</strong> ₹
                     {doctor?.consultationFee ?? doctor?.serviceTiers?.[0]?.price ?? "-"}
                   </p>
+                  {consultationType === 'walkin' && (
+                    <label className="flex items-start gap-2 text-sm pt-2">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={notifyOptIn}
+                        onChange={(e) => setNotifyOptIn(e.target.checked)}
+                      />
+                      <span>
+                        Send my OPD token slip on <strong>WhatsApp and SMS</strong> (optional).
+                        Token activates on the appointment day at kiosk/reception if booked for a future date.
+                      </span>
+                    </label>
+                  )}
                 </div>
               </div>
               <DialogFooter>

@@ -42,17 +42,56 @@ export function computePriorityScore({ triageLevel, queueType, priority }) {
   return 50;
 }
 
-export async function nextTokenNumber(organizationId, department = 'opd') {
+/**
+ * Token sequences are scoped per org + department + doctor (or queue zone).
+ * Uses hospital_queue_token_sequences with row lock (no COUNT race).
+ * Examples: A12-001 (doctor 12 OPD), A-001 (general OPD), L-003 (lab).
+ */
+export async function nextTokenNumber(organizationId, department = 'opd', { doctorId, queueZone } = {}) {
   await ensureQueueTables();
+  try {
+    const { up: harden } = await import('../migrations/20260801-qms-hardening.migration.js');
+    await harden(pool);
+  } catch (_) { /* already applied / best-effort */ }
+
   const org = defaultOrgId(organizationId);
   const prefix = DEPT_PREFIX[department] || 'Q';
-  const { rows } = await pool.query(
-    `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
-     WHERE organization_id = $1 AND department = $2 AND check_in_at::date = CURRENT_DATE`,
-    [org, department]
-  );
-  const seq = (rows[0]?.c || 0) + 1;
-  return `${prefix}-${String(seq).padStart(3, '0')}`;
+  const docId = doctorId ? parseInt(doctorId, 10) : 0;
+  const zoneKey = doctorId ? '' : String(queueZone || '');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const upsert = await client.query(
+      `INSERT INTO hospital_queue_token_sequences
+         (organization_id, department, doctor_id, queue_zone, seq_date, last_seq)
+       VALUES ($1, $2, $3, $4, CURRENT_DATE, 1)
+       ON CONFLICT (organization_id, department, doctor_id, queue_zone, seq_date)
+       DO UPDATE SET last_seq = hospital_queue_token_sequences.last_seq + 1
+       RETURNING last_seq`,
+      [org, department, docId || 0, zoneKey],
+    );
+    await client.query('COMMIT');
+    const seq = upsert.rows[0]?.last_seq || 1;
+    const padded = String(seq).padStart(3, '0');
+    if (docId) return `${prefix}${docId}-${padded}`;
+    return `${prefix}-${padded}`;
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    // Fallback COUNT if sequence table missing
+    const { rows } = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND department = $2
+         AND ($3::int = 0 OR doctor_id = $3)
+         AND check_in_at::date = CURRENT_DATE`,
+      [org, department, docId || 0],
+    );
+    const seq = (rows[0]?.c || 0) + 1;
+    const padded = String(seq).padStart(3, '0');
+    if (docId) return `${prefix}${docId}-${padded}`;
+    return `${prefix}-${padded}`;
+  } finally {
+    client.release();
+  }
 }
 
 export async function estimateWaitMinutes({ organizationId, doctorId, department = 'opd', entryId }) {
@@ -163,7 +202,7 @@ export async function assignCounter(organizationId, queueZone) {
 export async function checkIn({
   organizationId,
   department = 'opd',
-  queueZone = 'OPD-MAIN',
+  queueZone = 'opd-waiting',
   patientId,
   patientName,
   appointmentId,
@@ -179,9 +218,16 @@ export async function checkIn({
 }) {
   await ensureQueueTables();
   const org = defaultOrgId(organizationId);
-  const tokenNumber = await nextTokenNumber(org, department);
+  // Prefer per-doctor OPD zone when doctor is known (multi-OPD hospitals)
+  let zone = queueZone || 'opd-waiting';
+  if (department === 'opd' && doctorId && (!queueZone || queueZone === 'OPD-MAIN' || queueZone === 'opd-waiting')) {
+    zone = `opd-doc-${parseInt(doctorId, 10)}`;
+  }
+  if (zone === 'OPD-MAIN') zone = 'opd-waiting';
+
+  const tokenNumber = await nextTokenNumber(org, department, { doctorId, queueZone: zone });
   const resolvedPriority = priorityScore ?? computePriorityScore({ triageLevel, queueType });
-  const resolvedCounter = counterId || await assignCounter(org, queueZone);
+  const resolvedCounter = counterId || doctorName || await assignCounter(org, zone);
   const estimatedWaitMinutes = await estimateWaitMinutes({ organizationId: org, doctorId, department });
 
   const { rows } = await pool.query(
@@ -192,21 +238,21 @@ export async function checkIn({
     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17)
     RETURNING *`,
     [
-      org, department, tokenNumber, queueZone, patientId || null, patientName || null,
+      org, department, tokenNumber, zone, patientId || null, patientName || null,
       appointmentId || null, doctorId || null, doctorName || null, resolvedCounter,
       queueType, triageLevel || null, resolvedPriority, chiefComplaint || null,
       estimatedWaitMinutes, consentVersion || null, JSON.stringify(metadata),
     ]
   );
   const entry = mapRow(rows[0]);
-  const board = await getBoardSnapshot({ organizationId: org, queueZone });
-  pushQueueEvent(queueZone, 'queue_token_issued', { entry, board });
+  const board = await getBoardSnapshot({ organizationId: org, queueZone: zone, doctorId });
+  pushQueueEvent(zone, 'queue_token_issued', { entry, board });
 
   const meta = typeof entry.metadata === 'object' ? entry.metadata : {};
   if (meta.notifyOptIn && meta.notifyPhone) {
     queueNotify.notifyQueueCheckIn({ ...entry, notifyOptIn: true }, meta.notifyPhone).catch(() => {});
   }
-  queueNotify.refreshPositionNotifications(org, queueZone).catch(() => {});
+  queueNotify.refreshPositionNotifications(org, zone).catch(() => {});
 
   return entry;
 }

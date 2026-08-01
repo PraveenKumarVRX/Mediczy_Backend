@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import DisplayShell from './DisplayShell';
+import { printQmsTokenSlip } from '@/utils/qmsPrintSlip';
 
 interface QueueEntry {
   id: number;
@@ -51,8 +52,11 @@ export default function QueueConsole() {
   }, [zone, fetchConsole]);
 
   const callEntry = async (id: number) => {
-    const token = localStorage.getItem('token') || localStorage.getItem('doctorToken');
-      await fetch(`/api/v1/queue/${id}/call-staff`, {
+    const token =
+      localStorage.getItem('hospitalToken') ||
+      localStorage.getItem('token') ||
+      localStorage.getItem('doctorToken');
+    await fetch(`/api/v1/queue/${id}/call-staff`, {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     });
@@ -62,7 +66,15 @@ export default function QueueConsole() {
   return (
     <DisplayShell zone={zone} zoneName="Queue Console" fullscreen={false}>
       <div className="p-6 max-w-6xl mx-auto">
-        <h1 className="text-2xl font-bold text-teal-300 mb-4">Smart Queue Console — {zone}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h1 className="text-2xl font-bold text-teal-300">Smart Queue Console — {zone}</h1>
+          <a
+            href="/hospital/qms"
+            className="px-3 py-2 rounded-lg bg-teal-800/80 hover:bg-teal-700 text-sm text-teal-50"
+          >
+            Open QMS + Aadhaar QR check-in
+          </a>
+        </div>
         {analytics && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
             <div className="bg-gray-800 rounded-xl p-3"><p className="text-xs text-gray-500">Today total</p><p className="text-2xl font-bold">{analytics.totals?.total_today ?? 0}</p></div>
@@ -100,9 +112,23 @@ export default function QueueConsole() {
                     <td><span className="px-2 py-1 rounded bg-gray-800">{e.status}</span></td>
                     <td>{e.priorityScore}</td>
                     <td>{e.estimatedWaitMinutes}m</td>
-                    <td>
+                    <td className="space-x-2 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => printQmsTokenSlip({
+                          tokenNumber: e.tokenNumber,
+                          patientName: e.patientName,
+                          doctorName: e.doctorName,
+                          counterId: e.counterId,
+                          estimatedWaitMinutes: e.estimatedWaitMinutes,
+                          queueZone: zone,
+                        })}
+                        className="px-3 py-1 bg-slate-700 rounded-lg text-xs"
+                      >
+                        Print
+                      </button>
                       {e.status === 'waiting' && (
-                        <button onClick={() => callEntry(e.id)} className="px-3 py-1 bg-teal-700 rounded-lg text-xs">Call</button>
+                        <button type="button" onClick={() => callEntry(e.id)} className="px-3 py-1 bg-teal-700 rounded-lg text-xs">Call</button>
                       )}
                     </td>
                   </tr>

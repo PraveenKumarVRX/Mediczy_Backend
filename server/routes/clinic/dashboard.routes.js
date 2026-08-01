@@ -453,6 +453,7 @@ router.post('/appointments', verifyClinicToken, async (req, res) => {
         message: 'Patient name and date/time are required'
       });
     }
+    const notifyOptIn = req.body?.notifyOptIn === true || req.body?.notifyOptIn === 'true';
     const appointment = await createClinicPortalAppointment(req.tenantId, {
       patientName,
       appointmentDate: date,
@@ -461,11 +462,45 @@ router.post('/appointments', verifyClinicToken, async (req, res) => {
       patientPhone: phone || patientPhone,
       patientEmail,
       doctorName,
+      doctorId: req.body?.doctorId,
     });
+
+    let qmsToken = null;
+    try {
+      const { issueTokenForAppointment, isInPersonConsultation } = await import('../../services/qms-opd.service.js');
+      const ctype = type || 'in-person';
+      if (isInPersonConsultation(ctype) || !['video', 'audio', 'chat', 'telemedicine'].includes(String(ctype).toLowerCase())) {
+        qmsToken = await issueTokenForAppointment({
+          id: appointment.id,
+          patientName,
+          patientPhone: phone || patientPhone,
+          doctorName: doctorName || appointment.doctor,
+          doctorId: req.body?.doctorId,
+          appointmentDate: date,
+          appointmentTime: time,
+          organization_id: req.tenantId,
+          specialization: req.body?.specialization,
+        }, {
+          notifyOptIn,
+          notifyPhone: phone || patientPhone,
+          organizationId: req.tenantId,
+          source: 'clinic-portal-booking',
+          mode: 'auto',
+        });
+      }
+    } catch (qmsErr) {
+      console.error('[clinic/appointments] QMS token failed:', qmsErr.message);
+    }
+
     res.json({
       success: true,
-      message: 'Appointment created successfully',
-      data: appointment
+      message: qmsToken?.deferred
+        ? `Appointment created. Token activates on ${qmsToken.activateOn}.`
+        : qmsToken?.tokenNumber
+          ? `Appointment created. Token ${qmsToken.tokenNumber} issued.`
+          : 'Appointment created successfully',
+      data: { ...appointment, qmsToken },
+      qmsToken,
     });
   } catch (error) {
     console.error('Error creating appointment:', error);

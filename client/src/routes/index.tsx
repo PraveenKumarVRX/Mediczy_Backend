@@ -61,6 +61,7 @@ const Consultation          = lazy(() => import("@/pages/Consultation"));
 const Ayushman              = lazy(() => import("@/pages/Ayushman"));
 const Emergency             = lazy(() => import("@/pages/Emergency"));
 const ConsultationBooking   = lazy(() => import("@/pages/ConsultationBooking"));
+const MyQueueToken          = lazy(() => import("@/pages/MyQueueToken"));
 const NurseBooking          = lazy(() => import("@/pages/NurseBooking"));
 const LabBooking            = lazy(() => import("@/pages/LabBooking"));
 const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
@@ -417,7 +418,9 @@ const LabOrdersPage        = lazyNamed(_LabModulePages, "LabOrdersPage");
 const LabPatientsPage      = lazyNamed(_LabModulePages, "LabPatientsPage");
 const LabAppointmentsPage  = lazyNamed(_LabModulePages, "LabAppointmentsPage");
 const LabQueuePage         = lazyNamed(_LabModulePages, "LabQueuePage");
+const LabQmsPage           = lazyNamed(_LabModulePages, "LabQmsPage");
 const LabHomeCollectionOpsPage = lazyNamed(_LabModulePages, "LabHomeCollectionOpsPage");
+const HospitalQmsPage = lazy(() => import("@/pages/hospital/HospitalQmsPage"));
 const LabSamplesPage       = lazyNamed(_LabModulePages, "LabSamplesPage");
 const LabProcessingPage    = lazyNamed(_LabModulePages, "LabProcessingPage");
 const LabResultsPage       = lazyNamed(_LabModulePages, "LabResultsPage");
@@ -1191,6 +1194,7 @@ const AppRoutes = () => {
         <Route path="/lab/appointments/new" element={<LabAppointmentsPage />} />
         <Route path="/lab/queue"           element={<LabQueuePage />} />
         <Route path="/lab/queue/new"       element={<LabQueuePage />} />
+        <Route path="/lab/qms"             element={<LabQmsPage />} />
         <Route path="/lab/home-collection" element={<LabHomeCollectionOpsPage />} />
         <Route path="/lab/samples"         element={<LabSamplesPage />} />
         <Route path="/lab/samples/new"     element={<LabSamplesPage />} />
@@ -1908,6 +1912,7 @@ const AppRoutes = () => {
         <Route path="/homecare-booking/:homecareId" element={<HomecareBooking />} />
         <Route path="/my-bookings"           element={<Navigate to="/appointments" replace />} />
         <Route path="/appointments"          element={<Appointments />} />
+        <Route path="/my-queue-token"        element={<MyQueueToken />} />
         <Route path="/my-appointments"       element={<Navigate to="/appointments" replace />} />
         <Route path="/my-prescriptions"      element={<MyPrescriptions />} />
         <Route path="/my-plans"              element={<MainLayout><MyPlans /></MainLayout>} />
@@ -1975,6 +1980,7 @@ const AppRoutes = () => {
         <Route path="/display/discharge-status" element={<DischargeStatusDisplay />} />
         <Route path="/kiosk/checkin"            element={<SelfCheckinKiosk />} />
         <Route path="/hospital/queue-console"   element={<QueueConsole />} />
+        <Route path="/hospital/qms"             element={<HospitalQmsPage />} />
         <Route path="/display/signage"           element={<LobbySignageDisplay />} />
         <Route path="/display/command"          element={<CommandCentreDisplay />} />
         <Route path="/display/floor-map"        element={<HospitalFloorMapDisplay />} />

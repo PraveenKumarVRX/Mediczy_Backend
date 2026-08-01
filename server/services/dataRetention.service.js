@@ -245,7 +245,15 @@ export function initializeDataRetentionScheduler() {
       await expireOldConsents();
       await cleanupSessionLogs();
       await checkInactiveUsers();
-      tick('data_retention_daily');
+      let qmsPhi = { purged: 0 };
+      try {
+        const { purgeQueueMetadataPhi } = await import('./qms-opd.service.js');
+        qmsPhi = await purgeQueueMetadataPhi({ olderThanDays: 30, limit: 1000 });
+        tick('qms_phi_purge', qmsPhi);
+      } catch (e) {
+        tickError('qms_phi_purge', e.message);
+      }
+      tick('data_retention_daily', { qmsPhiPurged: qmsPhi.purged || 0 });
     } catch (err) {
       tickError('data_retention_daily', err.message);
     }

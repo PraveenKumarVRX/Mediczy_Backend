@@ -3,6 +3,8 @@ import DisplayShell from './DisplayShell';
 import KioskQrScanner from '@/components/display/KioskQrScanner';
 import KioskPhotoCapture from '@/components/display/KioskPhotoCapture';
 import KioskAadhaarScanner from '@/components/display/KioskAadhaarScanner';
+import { printQmsTokenSlip } from '@/utils/qmsPrintSlip';
+import { displayDeviceHeaders, getDisplayDeviceToken } from '@/utils/displayDeviceAuth';
 
 type Step =
   | 'idle'
@@ -34,24 +36,16 @@ interface IssuedToken {
   issued_at: string;
   estimated_wait_minutes?: number;
   uhid?: string;
+  counter_id?: string;
+  queue_zone?: string;
+  specialization?: string | null;
+  whatsapp?: boolean;
 }
 
 const IDLE_TIMEOUT_MS = 45000;
 
 function printToken(token: IssuedToken) {
-  const w = window.open('', '_blank', 'width=400,height=300');
-  if (!w) return;
-  w.document.write(`
-    <html><body style="font-family:sans-serif;text-align:center;padding:20px;">
-      <h2>MediQzy Hospital</h2>
-      <p>Token: <strong style="font-size:48px;color:#0d9488">${token.token_number}</strong></p>
-      <p>${token.patient_name}</p>
-      <p>Est. wait: ${token.estimated_wait_minutes ?? '—'} min</p>
-    </body></html>
-  `);
-  w.document.close();
-  w.print();
-  w.close();
+  printQmsTokenSlip(token);
 }
 
 export default function SelfCheckinKiosk() {
@@ -65,7 +59,7 @@ export default function SelfCheckinKiosk() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
-  const [notifyOptIn, setNotifyOptIn] = useState(true);
+  const [notifyOptIn, setNotifyOptIn] = useState(false);
   const [photoKey, setPhotoKey] = useState<string | null>(null);
   const [abhaId, setAbhaId] = useState<string | null>(null);
   const [abhaOtp, setAbhaOtp] = useState('');
@@ -82,7 +76,7 @@ export default function SelfCheckinKiosk() {
     setToken(null);
     setError(null);
     setConsent(false);
-    setNotifyOptIn(true);
+    setNotifyOptIn(false);
     setPhotoKey(null);
     setAbhaId(null);
     setAbhaOtp('');
@@ -99,6 +93,11 @@ export default function SelfCheckinKiosk() {
     return () => { if (idleTimer.current) clearTimeout(idleTimer.current); };
   }, [step, resetIdleTimer]);
 
+  useEffect(() => {
+    // Persist ?deviceToken= for subsequent kiosk API calls (required in prod)
+    getDisplayDeviceToken();
+  }, []);
+
   const handlePhoneDigit = (d: string) => {
     resetIdleTimer();
     if (d === 'DEL') { setPhone(p => p.slice(0, -1)); return; }
@@ -113,7 +112,7 @@ export default function SelfCheckinKiosk() {
     try {
       const res = await fetch('/api/display/kiosk/parse-qr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: displayDeviceHeaders(),
         body: JSON.stringify({ payload }),
       });
       const json = await res.json();
@@ -155,7 +154,7 @@ export default function SelfCheckinKiosk() {
     try {
       const res = await fetch('/api/display/kiosk/parse-aadhaar-qr', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: displayDeviceHeaders(),
         body: JSON.stringify({ qrBytesBase64 }),
       });
       const json = await res.json();
@@ -182,7 +181,12 @@ export default function SelfCheckinKiosk() {
   const uploadPhoto = async (blob: Blob) => {
     const form = new FormData();
     form.append('photo', blob, 'kiosk-photo.jpg');
-    const res = await fetch('/api/display/kiosk/photo', { method: 'POST', body: form });
+    const token = getDisplayDeviceToken();
+    const res = await fetch('/api/display/kiosk/photo', {
+      method: 'POST',
+      body: form,
+      headers: token ? { 'x-device-token': token } : {},
+    });
     const json = await res.json();
     if (json.success) setPhotoKey(json.photoKey);
     setStep('walk-in');
@@ -244,7 +248,7 @@ export default function SelfCheckinKiosk() {
     try {
       const res = await fetch('/api/display/checkin/appointments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: displayDeviceHeaders(),
         body: JSON.stringify({ phone }),
       });
       const json = await res.json();
@@ -268,24 +272,35 @@ export default function SelfCheckinKiosk() {
     try {
       const res = await fetch('/api/display/checkin/issue-token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: displayDeviceHeaders(),
         body: JSON.stringify({
           appointment_id: selected.id,
           patient_name: selected.patient_name,
           doctor_name: selected.doctor_name,
+          patient_phone: phone || undefined,
+          notify_phone: phone || undefined,
+          notify_opt_in: notifyOptIn,
+          specialization: selected.specialty,
         }),
       });
       const json = await res.json();
       if (json.success && json.token) {
-        setToken({
+        const issued = {
           token_number: json.token.token_number,
           patient_name: json.token.patient_name,
           doctor_name: json.token.doctor_name,
           issued_at: json.token.issued_at || new Date().toISOString(),
           estimated_wait_minutes: json.token.estimated_wait_minutes,
-        });
+          counter_id: json.token.counter_id,
+          queue_zone: json.token.queue_zone,
+          specialization: json.token.specialization || selected.specialty,
+          whatsapp: Boolean(json.whatsapp),
+        };
+        setToken(issued);
         setStep('token-issued');
-        setTimeout(resetToIdle, 30000);
+        // Auto-print slip for kiosk
+        setTimeout(() => printToken(issued), 400);
+        setTimeout(resetToIdle, 45000);
       } else {
         setError('Could not issue token.');
       }
@@ -310,7 +325,7 @@ export default function SelfCheckinKiosk() {
     try {
       const res = await fetch('/api/display/kiosk/register', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: displayDeviceHeaders(),
         body: JSON.stringify({
           phone,
           firstName: reg.firstName,
@@ -327,15 +342,20 @@ export default function SelfCheckinKiosk() {
       });
       const json = await res.json();
       if (json.success && json.token) {
-        setToken({
+        const issued = {
           token_number: json.token.tokenNumber || json.entry?.tokenNumber,
           patient_name: `${reg.firstName} ${reg.lastName}`.trim(),
-          doctor_name: 'General OPD',
+          doctor_name: json.entry?.doctorName || 'General OPD',
           issued_at: new Date().toISOString(),
           estimated_wait_minutes: json.entry?.estimatedWaitMinutes,
           uhid: json.uhid,
-        });
+          counter_id: json.entry?.counterId,
+          queue_zone: json.entry?.queueZone,
+          whatsapp: notifyOptIn,
+        };
+        setToken(issued);
         setStep('token-issued');
+        setTimeout(() => printToken(issued), 400);
         setTimeout(resetToIdle, 45000);
       } else {
         setError(json.message || 'Registration failed.');
@@ -435,7 +455,7 @@ export default function SelfCheckinKiosk() {
             </label>
             <label className="flex items-start gap-3 text-sm text-gray-300">
               <input type="checkbox" checked={notifyOptIn} onChange={e => setNotifyOptIn(e.target.checked)} className="mt-1" />
-              Send WhatsApp/SMS queue updates to my mobile.
+              Send WhatsApp and SMS queue updates to my mobile.
             </label>
             {error && <p className="text-red-400 text-sm">{error}</p>}
             <button type="button" onClick={() => setStep('walk-in-photo')} className="w-full py-3 bg-gray-700 rounded-xl text-sm">📷 Add photo (optional)</button>
@@ -503,12 +523,18 @@ export default function SelfCheckinKiosk() {
         {step === 'token-issued' && token && (
           <div className="text-center">
             <h2 className="text-3xl font-bold mb-2">You're checked in!</h2>
-            <div className="text-9xl font-black text-teal-300 my-4">{token.token_number}</div>
+            <div className="text-8xl md:text-9xl font-black text-teal-300 my-4">{token.token_number}</div>
+            {token.doctor_name && <p className="text-xl text-teal-100 mb-1">{token.doctor_name}</p>}
+            {token.specialization && <p className="text-gray-400 mb-2">OPD · {token.specialization}</p>}
+            {token.counter_id && <p className="text-gray-300 mb-2">Counter / Room: {token.counter_id}</p>}
             {token.uhid && <p className="text-gray-400 mb-2">UHID: {token.uhid}</p>}
-            {token.estimated_wait_minutes != null && <p className="text-teal-200 mb-4">Estimated wait: ~{token.estimated_wait_minutes} min</p>}
+            {token.estimated_wait_minutes != null && <p className="text-teal-200 mb-2">Estimated wait: ~{token.estimated_wait_minutes} min</p>}
+            {phone && (
+              <p className="text-sm text-emerald-300 mb-2">WhatsApp + SMS token slip sent when notify is enabled</p>
+            )}
             <p className="text-gray-400 mb-6">Please wait in the OPD lounge. Your token will be announced.</p>
             <div className="flex gap-4 justify-center">
-              <button onClick={() => printToken(token)} className="px-6 py-3 bg-blue-700 rounded-xl">Print</button>
+              <button onClick={() => printToken(token)} className="px-6 py-3 bg-blue-700 rounded-xl">Print slip</button>
               <button onClick={resetToIdle} className="px-6 py-3 bg-gray-700 rounded-xl">Done</button>
             </div>
           </div>

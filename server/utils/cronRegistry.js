@@ -67,6 +67,7 @@ export const TASK_DEFINITIONS = [
   { key: 'lab_critical_escalation', name: 'Lab Critical Alert Escalation',       schedule: 'Every 15 min',     category: 'clinical',   scheduleDesc: '*/15 * * * *' },
   // Compliance
   { key: 'data_retention_daily',  name: 'Data Retention — Daily',                schedule: 'Daily 2 AM',       category: 'compliance', scheduleDesc: '0 2 * * *' },
+  { key: 'qms_phi_purge',         name: 'QMS Metadata PHI Purge (Aadhaar/address)', schedule: 'Daily 2 AM',    category: 'compliance', scheduleDesc: '0 2 * * *' },
   { key: 'data_retention_weekly', name: 'Data Retention — Weekly',               schedule: 'Weekly Sun 3 AM',  category: 'compliance', scheduleDesc: '0 3 * * 0' },
   { key: 'data_retention_monthly',name: 'Data Retention — Monthly',              schedule: '1st of month 4 AM',category: 'compliance', scheduleDesc: '0 4 1 * *' },
   // Pharmacy

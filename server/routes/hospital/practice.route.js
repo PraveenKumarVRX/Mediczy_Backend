@@ -662,17 +662,52 @@ router.post('/appointments', verifyHospitalToken, async (req, res) => {
 
     console.log('✅ Hospital created appointment:', appointment.id);
 
+    // Hospital OPD bookings → token today or deferred to appointment date
+    let qmsToken = null;
+    try {
+      const { issueTokenForAppointment } = await import('../../services/qms-opd.service.js');
+      const ctype = String(consultationType || 'in-person').toLowerCase();
+      const tele = ['video', 'audio', 'chat', 'telemedicine'].includes(ctype);
+      if (!tele) {
+        const notifyOptIn = req.body?.notifyOptIn === true || req.body?.notifyOptIn === 'true';
+        qmsToken = await issueTokenForAppointment(appointment, {
+          notifyOptIn,
+          notifyPhone: patientPhone,
+          organizationId,
+          source: 'hospital-practice-booking',
+          mode: 'auto',
+        });
+      }
+    } catch (qmsErr) {
+      console.error('[hospital/practice] QMS token issue failed:', qmsErr.message);
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Appointment created successfully',
+      message: qmsToken?.deferred
+        ? `Appointment created. Token activates on ${qmsToken.activateOn}.`
+        : qmsToken?.tokenNumber
+          ? `Appointment created. Token ${qmsToken.tokenNumber} sent on WhatsApp/SMS if opted in.`
+          : 'Appointment created successfully',
       data: {
         id: appointment.id.toString(),
         patientName: appointment.patientName,
         doctorName: appointment.doctorName,
         appointmentDate: appointment.appointmentDate,
         appointmentTime: appointment.appointmentTime,
-        status: appointment.status
-      }
+        status: appointment.status,
+        qmsToken: qmsToken
+          ? {
+              tokenNumber: qmsToken.tokenNumber || null,
+              deferred: Boolean(qmsToken.deferred),
+              activateOn: qmsToken.activateOn || null,
+              queueZone: qmsToken.queueZone,
+              estimatedWaitMinutes: qmsToken.estimatedWaitMinutes,
+              doctorName: qmsToken.doctorName,
+            }
+          : null,
+      },
+      qmsToken,
     });
   } catch (error) {
     console.error('Create hospital appointment error:', error);

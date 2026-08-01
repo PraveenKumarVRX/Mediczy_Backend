@@ -27,6 +27,7 @@ import {
   Beaker,
   ScanLine,
   HardDrive,
+  Ticket,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -47,6 +48,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: Users, label: "Patients", href: "/lab/patients" },
   { icon: CalendarCheck, label: "Appointments", href: "/lab/appointments" },
   { icon: Clock, label: "Sample Queue", href: "/lab/queue" },
+  { icon: Ticket, label: "Patient Queue (QMS)", href: "/lab/qms", highlight: true },
   { icon: ScanLine, label: "RIS / PACS", href: "/lab/ris", highlight: true },
   { icon: HardDrive, label: "PACS Settings", href: "/lab/pacs-settings", highlight: true },
 ];

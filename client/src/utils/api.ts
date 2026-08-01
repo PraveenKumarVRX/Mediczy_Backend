@@ -92,6 +92,8 @@ api.interceptors.request.use(
     const prefersHospitalToken =
       /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-|charge-master|billing))/i.test(requestPath) ||
       requestPath.startsWith('/hospital/') ||
+      // Hospital QMS page uses /api/qms — prefer hospitalToken when present on that portal
+      (requestPath.startsWith('/qms') && typeof window !== 'undefined' && !!localStorage.getItem('hospitalToken') && !localStorage.getItem('clinicToken') && !localStorage.getItem('labToken')) ||
       requestPath.startsWith('/v3/module-copilot/') ||
       requestPath.startsWith('/v3/healthos/') ||
       requestPath.startsWith('/v3/careos/') ||

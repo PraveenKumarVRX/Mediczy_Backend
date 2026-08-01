@@ -653,38 +653,8 @@ export const ClinicPatientsPage = () => {
   );
 };
 
-export const ClinicQueuePage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Queue Management",
-      subtitle: "Token and triage flow",
-      stats: [
-        { title: "Tokens Issued", value: "210" },
-        { title: "Avg. Wait", value: "11 min" },
-        { title: "In Consultation", value: "18" },
-        { title: "Missed", value: "5" },
-      ],
-      items: [
-        { label: "General OPD", meta: "36 waiting", status: "Busy" },
-        { label: "Diagnostics", meta: "12 waiting", status: "Steady" },
-        { label: "Dental", meta: "5 waiting", status: "Smooth" },
-      ],
-      countStatIndex: 0,
-      action: {
-        kind: "dialog",
-        actionLabel: "Manage tokens",
-        dialogTitle: "Manage Tokens",
-        dialogDescription: "Issue or update queue tokens.",
-        fields: [
-          { key: "queue", label: "Queue/Department", type: "text" },
-          { key: "token", label: "Token Number", type: "text" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
-    },
-    (v) => ({ label: v.token?.trim() ? `Token updated: ${v.token.trim()}` : "Token updated", meta: v.queue || undefined, status: "Updated" })
-  );
+/** Real QMS — tokens + Aadhaar QR via shared /api/qms engine. */
+export { default as ClinicQueuePage } from "@/pages/clinic/ClinicQmsPage";
 
 export const ClinicDoctorsPage = () => {
   const { toast } = useToast();

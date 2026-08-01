@@ -411,6 +411,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v1/recovery',
       '/api/v1/reports',
       '/api/v1/queue',
+      '/api/qms',  // Unified QMS + Aadhaar QR (shared with clinic/lab)
       '/api/v1/lab-rules',
       '/api/v1/hl7',
       '/api/fhir',
@@ -430,6 +431,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/clinic/patients',
       '/api/clinic/inventory',
       '/api/clinic/invoices',
+      '/api/qms',  // Unified QMS + Aadhaar QR check-in
+      '/api/display',  // Waiting-room SSE / boards for clinic QMS
       '/api/dicom',  // PACS Settings — OPG / C-arm / angiogram modalities
       '/api/imaging',  // Imaging platform
       '/api/hypergrid',  // DICOMweb
@@ -444,6 +447,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/lab/results',
       '/api/lab/reports',
       '/api/ai/vision',
+      '/api/qms',  // Unified QMS + Aadhaar QR check-in (lab collection tokens)
+      '/api/display',  // Waiting-room SSE / boards for lab QMS
       '/api/imaging',  // Imaging platform + storage/tenant-isolation for RIS/PACS labs
       '/api/hypergrid',  // DICOMweb / HyperGrid for lab RIS
       '/api/dicom',  // PACS Settings — Orthanc health, modality registry, C-ECHO/FIND/MOVE

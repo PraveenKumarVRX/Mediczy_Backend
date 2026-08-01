@@ -691,9 +691,31 @@ router.post('/book', authUser, [
       console.warn('Usage metering error (non-blocking):', meteringError.message);
     }
 
+    // In-person → QMS token (today) or deferred activate-on-arrival
+    let qmsToken = null;
+    try {
+      const { isInPersonConsultation, issueTokenForAppointment } = await import('../services/qms-opd.service.js');
+      if (isInPersonConsultation(dbConsultationType || appointment.consultationType)) {
+        const notifyOptIn = req.body?.notifyOptIn === true || req.body?.notifyOptIn === 'true';
+        qmsToken = await issueTokenForAppointment(dbAppointment, {
+          notifyOptIn,
+          notifyPhone: dbAppointment.patientPhone || req.user?.phoneNumber || req.user?.phone,
+          organizationId: dbAppointment.organization_id || doctor.organization_id,
+          source: 'enhanced-appointment-booking',
+          mode: 'auto',
+        });
+      }
+    } catch (qmsErr) {
+      console.error('[enhanced-appointments] QMS token failed:', qmsErr.message);
+    }
+
     res.status(201).json({
       success: true,
-      message: 'Appointment booked successfully',
+      message: qmsToken?.deferred
+        ? `Appointment booked. OPD token activates on ${qmsToken.activateOn}.`
+        : qmsToken?.tokenNumber
+          ? `Appointment booked. OPD token ${qmsToken.tokenNumber} issued.`
+          : 'Appointment booked successfully',
       appointment: {
         ...appointment,
         // Don't send sensitive doctor info to patient
@@ -703,8 +725,17 @@ router.post('/book', authUser, [
           clinicName: appointment.doctor.clinicName,
           experience: appointment.doctor.experience,
           profilePicture: appointment.doctor.profilePicture
-        }
-      }
+        },
+        qmsToken: qmsToken
+          ? {
+              tokenNumber: qmsToken.tokenNumber || null,
+              deferred: Boolean(qmsToken.deferred),
+              activateOn: qmsToken.activateOn || null,
+              queueZone: qmsToken.queueZone,
+            }
+          : null,
+      },
+      qmsToken,
     });
   } catch (error) {
     if (transaction && !transaction.finished) {

@@ -5,10 +5,16 @@ import Appointment from '../models/postgres/appointment.model.postgres.js';
 import { registerDisplaySSE, pushToZone, pushToAll, getSSEStats } from '../services/display-sse-broker.service.js';
 import * as queueService from '../services/hospital-queue.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
+import {
+  requireDisplayDevice,
+  optionalDisplayDeviceOrDefaultOrg,
+  ensureDisplayDeviceSchema,
+} from '../middleware/authDisplayDevice.middleware.js';
 
 const router = express.Router();
 
 registerDisplaySSE(router);
+ensureDisplayDeviceSchema().catch(() => {});
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
 async function safeQuery(sql, params = []) {
@@ -47,12 +53,14 @@ async function ensureTables() {
         display_type VARCHAR(40),
         url_path VARCHAR(200),
         ip_address VARCHAR(60),
+        organization_id INTEGER,
         last_seen TIMESTAMPTZ,
         active BOOLEAN DEFAULT TRUE,
         config JSONB DEFAULT '{}',
         registered_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    await db.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
     await db.query(`
       CREATE TABLE IF NOT EXISTS emergency_broadcasts (
         id SERIAL PRIMARY KEY,
@@ -165,17 +173,24 @@ router.get('/devices', async (_req, res) => {
 // POST /api/display/devices — register or update a device
 router.post('/devices', async (req, res) => {
   try {
-    const { name, zone_id, display_type, url_path, ip_address, config } = req.body;
+    const { name, zone_id, display_type, url_path, ip_address, config, organization_id, organizationId } = req.body;
     const crypto = await import('crypto');
     const device_token = crypto.randomBytes(24).toString('hex');
+    const orgId = parseInt(organization_id || organizationId || config?.organization_id || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const cfg = { ...(config && typeof config === 'object' ? config : {}), organization_id: orgId };
 
     const db = await connectPostgres();
+    await db.query(`ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
     const result = await db.query(
-      `INSERT INTO display_devices (device_token, name, zone_id, display_type, url_path, ip_address, config)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [device_token, name, zone_id, display_type, url_path, ip_address, JSON.stringify(config || {})]
+      `INSERT INTO display_devices (device_token, name, zone_id, display_type, url_path, ip_address, organization_id, config)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [device_token, name, zone_id, display_type, url_path, ip_address, orgId, JSON.stringify(cfg)]
     );
-    res.json({ success: true, device: result.rows[0] });
+    res.json({
+      success: true,
+      device: result.rows[0],
+      kioskUrlHint: `${url_path || '/kiosk/checkin'}?deviceToken=${device_token}`,
+    });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }
@@ -225,14 +240,15 @@ const ZONE_CATALOG = [
 ];
 
 // ─── Display data endpoints ───────────────────────────────────────────────────
-// All are public (no auth) — meant for browser kiosk displays on internal LAN
+// Board reads: optional device token; organizationId query requires device token (P0).
+// Mutations (check-in / issue-token): require x-device-token (P0).
 
 // OPD Queue board — unified smart queue
-router.get('/queue', async (req, res) => {
+router.get('/queue', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const isProd = process.env.NODE_ENV === 'production';
     const board = await queueService.getBoardSnapshot({
-      organizationId: req.query.organizationId,
+      organizationId: req.organizationId,
       queueZone: req.query.zone || 'opd-waiting',
       department: req.query.department || 'opd',
       doctorId: req.query.doctorId ? parseInt(req.query.doctorId, 10) : undefined,
@@ -515,7 +531,7 @@ router.get('/cssd', async (_req, res) => {
 // ─── Kiosk check-in endpoints ─────────────────────────────────────────────────
 
 // POST /api/display/checkin/appointments — Sequelize appointment lookup (no demo in prod)
-router.post('/checkin/appointments', async (req, res) => {
+router.post('/checkin/appointments', requireDisplayDevice, async (req, res) => {
   const { phone } = req.body;
   if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
   const normalized = String(phone).replace(/\D/g, '').slice(-10);
@@ -569,34 +585,61 @@ router.post('/checkin/appointments', async (req, res) => {
   }
 });
 
-// POST /api/display/checkin/issue-token — unified queue check-in
-router.post('/checkin/issue-token', async (req, res) => {
+// POST /api/display/checkin/issue-token — unified queue check-in (per-doctor OPD + WhatsApp/SMS)
+router.post('/checkin/issue-token', requireDisplayDevice, async (req, res) => {
   try {
-    const { appointment_id, patient_name, doctor_name, doctor_id, organization_id } = req.body;
+    const {
+      appointment_id, patient_name, doctor_name, doctor_id,
+      patient_phone, notify_opt_in, notify_phone, specialization,
+    } = req.body;
     if (!appointment_id) return res.status(400).json({ success: false, message: 'appointment_id required' });
 
-    const entry = await queueService.checkIn({
-      organizationId: organization_id,
-      department: 'opd',
-      queueZone: 'opd-waiting',
-      patientName: patient_name,
-      appointmentId: parseInt(appointment_id, 10) || appointment_id,
-      doctorName: doctor_name,
-      doctorId: doctor_id ? parseInt(doctor_id, 10) : undefined,
-      queueType: 'scheduled',
-      priorityScore: 60,
-    });
+    let appt = null;
+    try {
+      appt = await Appointment.findByPk(appointment_id);
+    } catch (_) { /* optional enrichment */ }
+
+    const { issueTokenForAppointment } = await import('../services/qms-opd.service.js');
+    const entry = await issueTokenForAppointment(
+      appt || {
+        id: parseInt(appointment_id, 10) || appointment_id,
+        patientName: patient_name,
+        doctorName: doctor_name,
+        doctorId: doctor_id,
+        organization_id: req.organizationId,
+        specialization,
+        patientPhone: patient_phone || notify_phone,
+      },
+      {
+        notifyOptIn: notify_opt_in === true || notify_opt_in === 'true',
+        notifyPhone: notify_phone || patient_phone || appt?.patientPhone,
+        organizationId: req.organizationId,
+        source: 'kiosk-issue-token',
+        mode: 'force',
+      },
+    );
+    if (entry?.deferred) {
+      return res.status(409).json({ success: false, message: entry.message, deferred: entry });
+    }
+
+    if (appt) {
+      try { await appt.update({ status: 'confirmed' }); } catch (_) { /* non-fatal */ }
+    }
 
     res.json({
       success: true,
       live: true,
+      whatsapp: Boolean(entry?.metadata?.notifyPhone || notify_phone || patient_phone),
       token: {
         token_number: entry.tokenNumber,
         patient_name: entry.patientName,
         doctor_name: entry.doctorName,
+        counter_id: entry.counterId,
+        queue_zone: entry.queueZone,
         status: entry.status,
         issued_at: entry.checkInAt,
         estimated_wait_minutes: entry.estimatedWaitMinutes,
+        specialization: entry.metadata?.specialization || specialization || null,
       },
     });
   } catch (e) {
@@ -636,10 +679,10 @@ router.post('/bedside/nurse-call', async (req, res) => {
 });
 
 // GET /api/display/signage?zone=lobby
-router.get('/signage', async (req, res) => {
+router.get('/signage', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const zone = req.query.zone || 'lobby';
-    const slides = await queueService.listCmsSlides(req.query.organizationId, zone);
+    const slides = await queueService.listCmsSlides(req.organizationId, zone);
     res.json({ success: true, zone, slides, live: slides.length > 0 });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -647,9 +690,9 @@ router.get('/signage', async (req, res) => {
 });
 
 // GET /api/display/er-triage — ER queue board for triage staff display (GAP-DISPLAY-003)
-router.get('/er-triage', async (req, res) => {
+router.get('/er-triage', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
-    const orgId = parseInt(req.query.organizationId || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const orgId = req.organizationId;
     const board = await queueService.getBoardSnapshot({
       organizationId: orgId,
       queueZone: 'er-triage',
@@ -662,9 +705,9 @@ router.get('/er-triage', async (req, res) => {
 });
 
 // GET /api/display/command — executive command centre KPIs (GAP-DISPLAY-005)
-router.get('/command', async (req, res) => {
+router.get('/command', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
-    const orgId = parseInt(req.query.organizationId || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const orgId = req.organizationId;
     const queueAnalytics = await queueService.getHospitalQueueAnalytics(orgId);
 
     const icuBeds = await safeQuery(
@@ -727,9 +770,9 @@ router.get('/command', async (req, res) => {
 });
 
 // GET /api/display/floor-map — digital twin occupancy overlay (GAP-HOS-002)
-router.get('/floor-map', async (req, res) => {
+router.get('/floor-map', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
-    const orgId = parseInt(req.query.organizationId || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const orgId = req.organizationId;
     const floor = req.query.floor || 'all';
 
     let twins = [];

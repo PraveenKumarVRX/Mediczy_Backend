@@ -170,6 +170,7 @@ import payrollRouter from './routes/payroll.route.js';
 import roadmapIntelligenceRouter from './routes/roadmap-intelligence.route.js';
 import hospitalDisplayRouter from './routes/hospital-display.route.js';
 import hospitalQueueRouter from './routes/hospital-queue.route.js';
+import qmsRouter from './routes/qms.route.js';
 import displayKioskRouter from './routes/display-kiosk.route.js';
 import abdmKioskRouter from './routes/abdm-kiosk.route.js';
 import hospitalDownloadsRouter from './routes/hospital-downloads.route.js';
@@ -1395,6 +1396,7 @@ app.use('/api/display', hospitalDisplayRouter);
 app.use('/api/display/kiosk', displayKioskRouter);
 app.use('/api/abdm/kiosk', abdmKioskRouter);
 app.use('/api/v1/queue', hospitalQueueRouter);
+app.use('/api/qms', qmsRouter); // Unified QMS — hospital / clinic / lab + Aadhaar QR
 app.use("/api/emr", emrRouter); // EMR folder per user — accessible by team members
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard

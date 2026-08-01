@@ -1057,6 +1057,9 @@ export const LabAppointmentsPage = () => {
   );
 };
 
+/** Patient QMS (collection desk tokens + Aadhaar). Sample workflow stays on LabQueuePage. */
+export { default as LabQmsPage } from "@/pages/lab/LabQmsPage";
+
 // Sample Queue Page
 export const LabQueuePage = () => {
   const { toast } = useToast();

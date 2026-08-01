@@ -12,6 +12,7 @@ import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import { pushToZone } from '../services/display-sse-broker.service.js';
 import { assessKioskLiveness } from '../services/kiosk-liveness.service.js';
 import { parseAadhaarQr } from '../services/aadhaar-qr.service.js';
+import { requireDisplayDevice } from '../middleware/authDisplayDevice.middleware.js';
 import { Op } from 'sequelize';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,24 +31,8 @@ async function safeQueryOne(sql, params = []) {
   }
 }
 
-async function deviceAuth(req, res, next) {
-  const token = req.headers['x-device-token'] || req.query.deviceToken;
-  if (!token) {
-    req.displayDevice = { organization_id: parseInt(process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10) };
-    return next();
-  }
-  const device = await safeQueryOne(
-    'SELECT * FROM display_devices WHERE device_token=$1 AND active=true',
-    [token]
-  );
-  if (!device) return res.status(401).json({ success: false, message: 'Unknown device token' });
-  req.displayDevice = device;
-  const config = typeof device.config === 'object' ? device.config : {};
-  req.organizationId = config.organization_id || parseInt(process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
-  next();
-}
-
-router.use(deviceAuth);
+// P0: all kiosk mutations require x-device-token; org bound from device registry
+router.use(requireDisplayDevice);
 
 // POST /api/display/kiosk/parse-qr
 router.post('/parse-qr', async (req, res) => {
@@ -341,28 +326,41 @@ router.post('/photo', async (req, res) => {
 // POST /api/display/kiosk/check-in-from-appointment
 router.post('/check-in-from-appointment', async (req, res) => {
   try {
-    const { appointmentId, phone } = req.body;
+    const { appointmentId, phone, notifyOptIn } = req.body;
     if (!appointmentId) return res.status(400).json({ success: false, message: 'appointmentId required' });
 
     const appt = await Appointment.findByPk(appointmentId);
     if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
 
-    const entry = await queue.checkIn({
-      organizationId: appt.organization_id || req.organizationId,
-      department: 'opd',
-      queueZone: 'OPD-MAIN',
-      patientId: appt.userId,
-      patientName: appt.patientName,
-      appointmentId: appt.id,
-      doctorId: appt.doctorId,
-      doctorName: appt.doctorName,
-      queueType: 'scheduled',
-      priorityScore: 60,
+    const { issueTokenForAppointment } = await import('../services/qms-opd.service.js');
+    const entry = await issueTokenForAppointment(appt, {
+      notifyOptIn: notifyOptIn === true || notifyOptIn === 'true',
+      notifyPhone: phone || appt.patientPhone,
+      organizationId: req.organizationId || appt.organization_id,
+      source: 'kiosk-appointment-checkin',
+      mode: 'force', // day-of arrival — always activate
     });
+    if (entry?.deferred) {
+      return res.status(409).json({ success: false, message: entry.message, deferred: entry });
+    }
 
     await appt.update({ status: 'confirmed' });
 
-    res.json({ success: true, entry, token: entry });
+    res.json({
+      success: true,
+      entry,
+      token: {
+        ...entry,
+        token_number: entry.tokenNumber,
+        patient_name: entry.patientName,
+        doctor_name: entry.doctorName,
+        counter_id: entry.counterId,
+        queue_zone: entry.queueZone,
+        estimated_wait_minutes: entry.estimatedWaitMinutes,
+        specialization: entry.metadata?.specialization || appt.specialization || null,
+      },
+      whatsapp: Boolean(phone || appt.patientPhone),
+    });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }

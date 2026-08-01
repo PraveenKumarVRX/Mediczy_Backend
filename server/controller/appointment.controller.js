@@ -749,9 +749,52 @@ export const createAppointment = async (req, res) => {
       }
     })();
 
+    // In-person OPD: issue token only if appointment is today; else defer to arrival (P1)
+    let qmsToken = null;
+    try {
+      const { isInPersonConsultation, issueTokenForAppointment } = await import('../services/qms-opd.service.js');
+      const bookedType = requestedConsultationType || appointment.consultationType;
+      if (isInPersonConsultation(bookedType)) {
+        const notifyOptIn = req.body?.notifyOptIn === true || req.body?.notifyOptIn === 'true';
+        qmsToken = await issueTokenForAppointment(appointment, {
+          notifyOptIn,
+          notifyPhone: appointment.patientPhone || user.phoneNumber || user.phone,
+          organizationId: appointment.organization_id || appointment.tenant_id || doctor.organization_id || doctor.hospitalId,
+          source: 'online-in-person-booking',
+          mode: 'auto',
+        });
+        try {
+          const meta = typeof appointment.metadata === 'object' && appointment.metadata
+            ? appointment.metadata
+            : {};
+          await appointment.update({
+            metadata: {
+              ...meta,
+              notifyOptIn,
+              qmsDeferred: Boolean(qmsToken?.deferred),
+              qmsActivateOn: qmsToken?.activateOn || null,
+              qmsTokenNumber: qmsToken?.tokenNumber || null,
+              qmsEntryId: qmsToken?.id || null,
+              qmsZone: qmsToken?.queueZone || null,
+            },
+          });
+        } catch (_) { /* non-fatal */ }
+      }
+    } catch (qmsErr) {
+      console.error('[appointment] QMS token issue failed:', qmsErr.message);
+    }
+
+    const qmsMessage = !qmsToken
+      ? 'Appointment booked successfully'
+      : qmsToken.deferred
+        ? `Appointment booked. Your OPD token will activate on ${qmsToken.activateOn} at the kiosk/reception.`
+        : qmsToken.tokenNumber
+          ? `Appointment booked. OPD token ${qmsToken.tokenNumber} issued — check WhatsApp and SMS if you opted in.`
+          : 'Appointment booked successfully';
+
     return res.status(201).json({
       success: true,
-      message: 'Appointment booked successfully',
+      message: qmsMessage,
       data: {
         id: appointment.id,
         doctorName: appointment.doctorName,
@@ -762,7 +805,19 @@ export const createAppointment = async (req, res) => {
         consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
         status: appointment.status,
         paymentStatus: appointment.paymentStatus,
-        freeReviewApplied
+        freeReviewApplied,
+        qmsToken: qmsToken
+          ? {
+              tokenNumber: qmsToken.tokenNumber || null,
+              deferred: Boolean(qmsToken.deferred),
+              activateOn: qmsToken.activateOn || null,
+              queueZone: qmsToken.queueZone,
+              doctorName: qmsToken.doctorName,
+              estimatedWaitMinutes: qmsToken.estimatedWaitMinutes,
+              counterId: qmsToken.counterId,
+              status: qmsToken.status,
+            }
+          : null,
       },
       appointment: {
         id: appointment.id,
@@ -774,8 +829,18 @@ export const createAppointment = async (req, res) => {
         consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
         status: appointment.status,
         paymentStatus: appointment.paymentStatus,
-        freeReviewApplied
-      }
+        freeReviewApplied,
+        qmsToken: qmsToken
+          ? {
+              tokenNumber: qmsToken.tokenNumber || null,
+              deferred: Boolean(qmsToken.deferred),
+              activateOn: qmsToken.activateOn || null,
+              queueZone: qmsToken.queueZone,
+              estimatedWaitMinutes: qmsToken.estimatedWaitMinutes,
+            }
+          : null,
+      },
+      qmsToken,
     });
   } catch (error) {
     if (error?.statusCode && error?.payload) {
