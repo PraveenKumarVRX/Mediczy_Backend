@@ -3,11 +3,13 @@
  * Mount: /api/public/kiosk-register
  */
 import express from 'express';
+import fs from 'fs';
 import {
   getInviteByRawToken,
   completeInviteRegistration,
 } from '../services/kiosk-registration.service.js';
 import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
+import { decodeAadhaarFromImageBytes } from '../services/aadhaar-image-decode.service.js';
 
 const router = express.Router();
 
@@ -47,6 +49,33 @@ router.post('/:token/parse-aadhaar', async (req, res) => {
     res.json(parsed);
   } catch (e) {
     res.status(500).json({ success: false, message: 'Could not read Aadhaar QR' });
+  }
+});
+
+/**
+ * POST /api/public/kiosk-register/:token/decode-aadhaar-image
+ * Multipart `photo` — server zxing-wasm for phones that cannot decode Secure QR locally.
+ */
+router.post('/:token/decode-aadhaar-image', async (req, res) => {
+  try {
+    const invite = await getInviteByRawToken(req.params.token);
+    if (!invite.success || invite.status !== 'pending') {
+      return res.status(410).json({ success: false, message: invite.message || 'Link expired' });
+    }
+    const file = req.files?.photo || req.files?.image || req.files?.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: 'photo file required' });
+    }
+    const buf = file.data || (file.tempFilePath ? fs.readFileSync(file.tempFilePath) : null);
+    if (!buf?.length) {
+      return res.status(400).json({ success: false, message: 'empty photo' });
+    }
+    const result = await decodeAadhaarFromImageBytes(buf);
+    if (!result.success) return res.status(422).json(result);
+    res.json(result);
+  } catch (e) {
+    console.error('[public-kiosk-reg] decode-aadhaar-image:', e.message);
+    res.status(500).json({ success: false, message: 'Could not read Aadhaar QR from photo' });
   }
 });
 

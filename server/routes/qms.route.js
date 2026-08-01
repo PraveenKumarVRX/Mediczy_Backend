@@ -18,6 +18,8 @@ import express from 'express';
 import pool from '../db/pgPool.js';
 import { authPortalQms } from '../middleware/authPortalQms.middleware.js';
 import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
+import { decodeAadhaarFromImageBytes } from '../services/aadhaar-image-decode.service.js';
+import fs from 'fs';
 import * as queue from '../services/hospital-queue.service.js';
 import { pushQueueEvent } from '../services/display-sse-broker.service.js';
 import { listOpdQueues, queueZoneForDoctor } from '../services/qms-opd.service.js';
@@ -175,6 +177,22 @@ router.post('/aadhaar/parse', async (req, res) => {
   } catch (e) {
     console.error('[qms] aadhaar parse error:', e.message);
     res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/** POST /api/qms/aadhaar/decode-image — multipart photo (staff JWT) */
+router.post('/aadhaar/decode-image', async (req, res) => {
+  try {
+    const file = req.files?.photo || req.files?.image || req.files?.file;
+    if (!file) return res.status(400).json({ success: false, message: 'photo file required' });
+    const buf = file.data || (file.tempFilePath ? fs.readFileSync(file.tempFilePath) : null);
+    if (!buf?.length) return res.status(400).json({ success: false, message: 'empty photo' });
+    const result = await decodeAadhaarFromImageBytes(buf);
+    if (!result.success) return res.status(422).json(result);
+    res.json({ ...result, portal: req.qms.portal });
+  } catch (e) {
+    console.error('[qms] aadhaar decode-image:', e.message);
+    res.status(500).json({ success: false, message: 'Could not read Aadhaar QR from photo' });
   }
 });
 

@@ -214,7 +214,24 @@ export type StillCapture = {
   height: number;
   source: "takePhoto" | "grabFrame" | "video";
   bitmap?: ImageBitmap;
+  /** JPEG/PNG blob when available — preferred input for zxing-wasm */
+  blob?: Blob;
 };
+
+export function supportsImageCapture(): boolean {
+  return Boolean(ImageCaptureCtor());
+}
+
+export function isMobilePhone(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || "");
+}
+
+export function isIOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+    (navigator.platform === "MacIntel" && (navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints! > 1);
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -265,6 +282,7 @@ export async function captureMaxResStill(
           height: bitmap.height,
           source: "takePhoto",
           bitmap,
+          blob,
         };
       }
       bitmap.close?.();

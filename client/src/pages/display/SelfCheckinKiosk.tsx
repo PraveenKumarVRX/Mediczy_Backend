@@ -250,7 +250,11 @@ export default function SelfCheckinKiosk() {
     return clearPoll;
   }, [step, phone, clearPoll, resetToIdle]);
 
-  const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
+  const handleAadhaarScan = async (payload: {
+    qrBytesBase64?: string;
+    qrText?: string;
+    fields?: Record<string, unknown>;
+  }) => {
     setError(null);
     const { parseAadhaarPayloadClient } = await import('@/lib/aadhaarQrParse');
     const apply = (f: Record<string, unknown>) => {
@@ -264,6 +268,12 @@ export default function SelfCheckinKiosk() {
       });
       setStep('aadhaar-confirm');
     };
+
+    // Server image-decode may already include demographics
+    if (payload?.fields && (payload.fields.firstName || payload.fields.aadhaarLast4)) {
+      apply(payload.fields);
+      return;
+    }
 
     const local = parseAadhaarPayloadClient(payload || {});
     if (local.success) {

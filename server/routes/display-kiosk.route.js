@@ -11,6 +11,7 @@ import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import { pushToZone } from '../services/display-sse-broker.service.js';
 import { assessKioskLiveness } from '../services/kiosk-liveness.service.js';
 import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
+import { decodeAadhaarFromImageBytes } from '../services/aadhaar-image-decode.service.js';
 import { requireDisplayDevice } from '../middleware/authDisplayDevice.middleware.js';
 import {
   createRegistrationInvite,
@@ -155,6 +156,29 @@ router.post('/parse-aadhaar-qr', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, message: 'Could not process this QR code' });
+  }
+});
+
+/**
+ * POST /api/display/kiosk/decode-aadhaar-image
+ * Multipart field `photo` — server-side zxing-wasm decode (mobile fallback when live scan fails).
+ */
+router.post('/decode-aadhaar-image', async (req, res) => {
+  try {
+    const file = req.files?.photo || req.files?.image || req.files?.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: 'photo file required' });
+    }
+    const buf = file.data || (file.tempFilePath ? fs.readFileSync(file.tempFilePath) : null);
+    if (!buf?.length) {
+      return res.status(400).json({ success: false, message: 'empty photo' });
+    }
+    const result = await decodeAadhaarFromImageBytes(buf);
+    if (!result.success) return res.status(422).json(result);
+    res.json(result);
+  } catch (err) {
+    console.error('[kiosk] decode-aadhaar-image:', err.message);
+    res.status(500).json({ success: false, message: 'Could not read Aadhaar QR from photo' });
   }
 });
 

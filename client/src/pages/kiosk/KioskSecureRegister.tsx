@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { parseAadhaarPayloadClient } from "@/lib/aadhaarQrParse";
-import { decodeAadhaarFromFile } from "@/lib/aadhaarQrDecode";
+import { decodeAadhaarFromFileWithServerFallback } from "@/lib/aadhaarQrDecode";
 
 type InviteState = {
   status: string;
@@ -106,10 +106,29 @@ export default function KioskSecureRegister() {
     setError(null);
     setAadhaarHint("Reading Aadhaar…");
     try {
-      const payload = await decodeAadhaarFromFile(file);
+      const endpoint = token
+        ? `/api/public/kiosk-register/${encodeURIComponent(token)}/decode-aadhaar-image`
+        : "/api/display/kiosk/decode-aadhaar-image";
+      const payload = await decodeAadhaarFromFileWithServerFallback(file, {}, endpoint);
       if (!payload) {
         setAadhaarHint(null);
-        setError("No Aadhaar QR found. Photograph the large QR on the back of the card.");
+        setError("No Aadhaar QR found. Photograph the large QR on the back of the card — fill the frame, avoid glare.");
+        return;
+      }
+      if (payload.fields && (payload.fields.firstName || payload.fields.aadhaarLast4)) {
+        const f = payload.fields as Record<string, string | null | undefined>;
+        setForm((prev) => ({
+          ...prev,
+          firstName: String(f.firstName || prev.firstName),
+          lastName: String(f.lastName || prev.lastName),
+          dateOfBirth: String(f.dateOfBirth || prev.dateOfBirth),
+          gender: genderLabel(String(f.gender || prev.gender)),
+          address: String(f.address || prev.address),
+          aadhaarLast4: String(f.aadhaarLast4 || prev.aadhaarLast4 || ""),
+        }));
+        setAadhaarHint(
+          `Aadhaar details added${f.aadhaarLast4 ? ` · ****${f.aadhaarLast4}` : ""}`
+        );
         return;
       }
       const parsed = parseAadhaarPayloadClient(payload);
@@ -254,31 +273,27 @@ export default function KioskSecureRegister() {
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="w-full rounded-3xl border border-teal-200/80 bg-gradient-to-br from-teal-50 to-white px-5 py-5 text-left shadow-sm"
-            >
-              <p className="text-base font-bold text-teal-900">Optional · Add Aadhaar QR photo</p>
+            <label className="block w-full cursor-pointer rounded-3xl border border-teal-200/80 bg-gradient-to-br from-teal-50 to-white px-5 py-5 text-left shadow-sm">
+              <p className="text-base font-bold text-teal-900">Optional · Photograph Aadhaar QR</p>
               <p className="mt-1 text-sm text-teal-800/70">
-                We’ll fill name, gender, age and address automatically
+                Large QR on the back — we’ll fill name, gender, age and address
               </p>
               {aadhaarHint && (
                 <p className="mt-2 text-sm font-medium text-teal-700">{aadhaarHint}</p>
               )}
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void onAadhaarPhoto(f);
-              }}
-            />
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/jpeg,image/png,image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) void onAadhaarPhoto(f);
+                }}
+              />
+            </label>
 
             <div className="space-y-3 rounded-3xl bg-white p-5 shadow-[0_20px_50px_-35px_rgba(15,23,42,0.35)]">
               <Field

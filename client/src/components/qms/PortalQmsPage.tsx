@@ -223,7 +223,25 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
     setDialogOpen(true);
   };
 
-  const handleAadhaarScan = async (payload: { qrBytesBase64?: string; qrText?: string }) => {
+  const handleAadhaarScan = async (payload: {
+    qrBytesBase64?: string;
+    qrText?: string;
+    fields?: Record<string, any>;
+    engine?: string;
+  }) => {
+    // 0) Server image-decode may already include demographics
+    if (payload?.fields && (payload.fields.firstName || payload.fields.aadhaarLast4)) {
+      setScanOpen(false);
+      applyAadhaar(payload.fields as any, payload.engine || 'server-zxing-wasm');
+      toast({
+        title: 'Details ready',
+        description: payload.fields.fullName
+          ? `${payload.fields.fullName}${payload.fields.aadhaarLast4 ? ` · ****${payload.fields.aadhaarLast4}` : ''}`
+          : 'Form prefilled from Aadhaar',
+      });
+      return;
+    }
+
     // 1) Parse in-browser first (works even if API auth/network flakes)
     const local = parseAadhaarPayloadClient(payload || {});
     if (local.success) {
