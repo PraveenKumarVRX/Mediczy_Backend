@@ -55,7 +55,8 @@ describe('kiosk registration invites', () => {
       .mockResolvedValueOnce({ rows: [] }) // revoke prior
       .mockResolvedValueOnce({
         rows: [{ id: 9, expires_at: new Date(Date.now() + 30 * 60 * 1000), status: 'pending' }],
-      });
+      })
+      .mockResolvedValueOnce({ rows: [] }); // notify diagnostics update
 
     const result = await createRegistrationInvite({
       organizationId: 7,
@@ -68,6 +69,8 @@ describe('kiosk registration invites', () => {
     expect(result.phone).toBe('9876543210');
     expect(result.linkSent).toBe(true);
     expect(result.channels).toEqual(['whatsapp', 'sms']);
+    expect(result.registerUrl).toContain('/kiosk/register/');
+    expect(result.registerUrl).toContain(result._rawTokenForTests);
     expect(result.registerUrlHint).toContain('/kiosk/register/');
     expect(result.registerUrlHint).toContain('…');
     expect(result._rawTokenForTests).toMatch(/^[a-f0-9]{48}$/);

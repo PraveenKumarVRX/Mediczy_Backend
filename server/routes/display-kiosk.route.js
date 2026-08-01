@@ -56,16 +56,21 @@ router.post('/registration-invite', async (req, res) => {
       phone,
       hospitalName: hospitalName || req.displayDevice?.name || 'the hospital',
     });
+    const channels = result.channels || [];
+    const via = channels.length ? channels.join(' + ') : 'none';
     res.status(201).json({
       success: true,
       inviteId: result.inviteId,
       expiresAt: result.expiresAt,
       phone: result.phone,
       linkSent: result.linkSent,
-      channels: result.channels,
+      channels,
+      notifyErrors: result.notifyErrors || [],
+      // Shown as on-screen QR when WhatsApp free-form delivery fails (24h session rules)
+      registerUrl: result.registerUrl,
       message: result.linkSent
-        ? 'Registration link sent on WhatsApp/SMS'
-        : 'Invite created — WhatsApp/SMS delivery may be unavailable; ask patient to retry',
+        ? `Registration link sent via ${via}`
+        : 'Invite created — WhatsApp/SMS may not have delivered. Scan the QR on this screen.',
     });
   } catch (e) {
     const status = e.status || 500;

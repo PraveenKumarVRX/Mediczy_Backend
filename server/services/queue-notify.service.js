@@ -38,12 +38,22 @@ function normalizePhone(phone) {
 
 /**
  * Send on WhatsApp and SMS in parallel (not fallback-only).
- * @returns {{ ok: boolean, whatsapp: boolean, sms: boolean, channels: string[] }}
+ * @returns {{ ok: boolean, whatsapp: boolean, sms: boolean, channels: string[], errors: string[], whatsappSid?: string }}
  */
 export async function sendToPhone(phone, message) {
   const to = normalizePhone(phone);
-  const result = { ok: false, whatsapp: false, sms: false, channels: [] };
-  if (!to || !message) return result;
+  const result = {
+    ok: false,
+    whatsapp: false,
+    sms: false,
+    channels: [],
+    errors: [],
+    whatsappSid: undefined,
+  };
+  if (!to || !message) {
+    result.errors.push('Missing phone or message');
+    return result;
+  }
 
   const tasks = [];
 
@@ -51,14 +61,26 @@ export async function sendToPhone(phone, message) {
     tasks.push(
       whatsappProductionService
         .sendSessionMessage({ to, body: message })
-        .then(() => {
+        .then((msg) => {
           result.whatsapp = true;
           result.channels.push('whatsapp');
+          result.whatsappSid = msg?.sid;
+          // Twilio may accept create() then undeliver outside the 24h session window
+          if (msg?.status && /undelivered|failed/i.test(String(msg.status))) {
+            result.whatsapp = false;
+            result.channels = result.channels.filter((c) => c !== 'whatsapp');
+            result.errors.push(`WhatsApp status ${msg.status}`);
+          }
         })
         .catch((e) => {
-          console.warn('[queue-notify] WhatsApp failed:', e.message);
+          const code = e?.code ? ` code=${e.code}` : '';
+          const detail = `${e.message || 'WhatsApp send failed'}${code}`;
+          console.warn('[queue-notify] WhatsApp failed:', detail);
+          result.errors.push(`WhatsApp: ${detail}`);
         }),
     );
+  } else if (ENABLE_WHATSAPP) {
+    result.errors.push('WhatsApp service unavailable');
   }
 
   if (ENABLE_SMS && smsService) {
@@ -75,10 +97,12 @@ export async function sendToPhone(phone, message) {
         })
         .catch((e) => {
           console.warn('[queue-notify] SMS failed:', e.message);
+          result.errors.push(`SMS: ${e.message}`);
         }),
     );
   } else if (ENABLE_SMS && !smsService) {
     console.warn('[queue-notify] SMS enabled but service not configured');
+    result.errors.push('SMS not configured (TWILIO_ACCOUNT_SID/AUTH_TOKEN/PHONE_NUMBER)');
   }
 
   if (tasks.length) await Promise.allSettled(tasks);

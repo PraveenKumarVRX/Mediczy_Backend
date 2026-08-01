@@ -93,6 +93,9 @@ export default function SelfCheckinKiosk() {
   const [consent, setConsent] = useState(false);
   const [notifyOptIn, setNotifyOptIn] = useState(true);
   const [inviteChannels, setInviteChannels] = useState<string[]>([]);
+  const [registerUrl, setRegisterUrl] = useState<string | null>(null);
+  const [registerQr, setRegisterQr] = useState<string | null>(null);
+  const [linkSent, setLinkSent] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -122,6 +125,9 @@ export default function SelfCheckinKiosk() {
     setConsent(false);
     setNotifyOptIn(true);
     setInviteChannels([]);
+    setRegisterUrl(null);
+    setRegisterQr(null);
+    setLinkSent(false);
     setLoading(false);
   }, [clearPoll]);
 
@@ -174,6 +180,27 @@ export default function SelfCheckinKiosk() {
         return;
       }
       setInviteChannels(Array.isArray(json.channels) ? json.channels : []);
+      setLinkSent(Boolean(json.linkSent));
+      const url = typeof json.registerUrl === 'string' ? json.registerUrl : null;
+      setRegisterUrl(url);
+      if (url) {
+        try {
+          const QRCode = (await import('qrcode')).default;
+          const dataUrl = await QRCode.toDataURL(url, {
+            width: 280,
+            margin: 2,
+            errorCorrectionLevel: 'M',
+          });
+          setRegisterQr(dataUrl);
+        } catch {
+          setRegisterQr(null);
+        }
+      } else {
+        setRegisterQr(null);
+      }
+      if (Array.isArray(json.notifyErrors) && json.notifyErrors.length && !json.linkSent) {
+        setError('WhatsApp/SMS may not have delivered — scan the QR with your phone camera.');
+      }
       setStep('phone-sent');
     } catch {
       setError('Connection error. Please try again.');
@@ -518,31 +545,43 @@ export default function SelfCheckinKiosk() {
         )}
 
         {step === 'phone-sent' && (
-          <div className="w-full max-w-md text-center px-2">
-            <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-teal-500/20 ring-1 ring-teal-400/40">
-              <span className="text-3xl text-teal-300" aria-hidden>
-                ✉
-              </span>
-            </div>
+          <div className="w-full max-w-lg text-center px-2">
             <h2
               className="text-3xl font-semibold text-white"
               style={{ fontFamily: 'Fraunces, Georgia, serif' }}
             >
-              Check your phone
+              Finish on your phone
             </h2>
             <p className="mt-3 text-lg text-slate-300">
-              Secure link sent to{' '}
+              For{' '}
               <span className="font-mono font-semibold text-teal-300">******{phone.slice(-4)}</span>
             </p>
-            <p className="mt-2 text-sm text-slate-500">via {channelHint}</p>
-            <div className="mt-8 rounded-3xl border border-slate-700/80 bg-slate-900/60 px-5 py-6">
+            <p className="mt-2 text-sm text-slate-500">
+              {linkSent
+                ? `Link attempted via ${channelHint}`
+                : 'WhatsApp/SMS may be blocked — use the QR below'}
+            </p>
+
+            {registerQr && (
+              <div className="mx-auto mt-6 inline-block rounded-3xl bg-white p-4 shadow-xl">
+                <img src={registerQr} alt="Scan to open registration" className="h-56 w-56" />
+              </div>
+            )}
+            <p className="mt-3 text-sm text-teal-200/90">
+              Scan this QR with your phone camera → open registration
+            </p>
+
+            <div className="mt-6 rounded-3xl border border-slate-700/80 bg-slate-900/60 px-5 py-5">
               <div className="mx-auto mb-3 h-2 w-2 animate-pulse rounded-full bg-teal-400" />
-              <p className="text-base text-slate-300">Waiting for you to finish on your phone…</p>
+              <p className="text-base text-slate-300">Waiting for you to submit…</p>
               <p className="mt-2 text-sm text-slate-500">
-                Open WhatsApp, tap the link, submit details. Your token appears here.
+                Your token will appear here when registration is complete.
               </p>
             </div>
             {error && <p className="mt-4 text-sm text-rose-400">{error}</p>}
+            {registerUrl && (
+              <p className="mt-3 break-all px-2 text-[11px] text-slate-600">{registerUrl}</p>
+            )}
             <div className="mt-6 flex flex-col gap-2">
               <button
                 type="button"
@@ -550,7 +589,7 @@ export default function SelfCheckinKiosk() {
                 onClick={() => void sendRegistrationInvite()}
                 className="w-full py-3 text-sm text-teal-400/90 hover:text-teal-300"
               >
-                Resend link
+                Resend / refresh QR
               </button>
               <button type="button" onClick={() => setStep('phone')} className="w-full py-2 text-sm text-slate-500">
                 ← Change number
