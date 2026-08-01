@@ -16,12 +16,12 @@ export type AadhaarScanPayload = {
   engine?: string;
 };
 
-/** Served from client/public — full still decode needs local WASM (no CDN dependency). */
 const ZXING_WASM_PUBLIC_URL = `${import.meta.env.BASE_URL || "/"}zxing_reader.wasm`;
 
-let zxingReady: Promise<void> | null = null;
+let zxingReady: Promise<boolean> | null = null;
+let zxingOk = false;
 
-function ensureZxingWasm(): Promise<void> {
+function ensureZxingWasm(): Promise<boolean> {
   if (!zxingReady) {
     zxingReady = Promise.resolve(
       prepareZXingModule({
@@ -34,8 +34,14 @@ function ensureZxingWasm(): Promise<void> {
         fireImmediately: true,
       }) as Promise<unknown>
     ).then(
-      () => undefined,
-      () => undefined
+      () => {
+        zxingOk = true;
+        return true;
+      },
+      () => {
+        zxingOk = false;
+        return false;
+      }
     );
   }
   return zxingReady;
@@ -51,37 +57,49 @@ function isDigitString(s: string, min = 80): boolean {
   return /^\d+$/.test(s) && s.length >= min;
 }
 
-/** Build API payload from decoded text and/or raw bytes. */
+function bytesAreAsciiDigits(bytes: Uint8Array, min = 80): boolean {
+  if (bytes.length < min) return false;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] < 48 || bytes[i] > 57) return false;
+  }
+  return true;
+}
+
+/**
+ * Only accept payloads that look like real Aadhaar Secure/legacy QR.
+ * Never treat arbitrary binary mojibake as success (causes false capture loops).
+ */
 export function payloadFromDecoded(
   text: string | null | undefined,
   rawBytes?: Uint8Array | number[] | null,
   engine?: string
 ): AadhaarScanPayload | null {
   const t = String(text || "").trim();
+  const bytes =
+    rawBytes && rawBytes.length > 0
+      ? rawBytes instanceof Uint8Array
+        ? rawBytes
+        : new Uint8Array(rawBytes)
+      : null;
+
+  // Prefer raw bytes — Secure QR is often byte-mode (compressed) or ASCII digits
+  if (bytes && bytes.length >= 50) {
+    if (bytesAreAsciiDigits(bytes, 80)) {
+      return {
+        qrText: new TextDecoder("ascii").decode(bytes),
+        qrBytesBase64: bytesToBase64(bytes),
+        engine,
+      };
+    }
+    if (isDigitString(t)) {
+      return { qrText: t, qrBytesBase64: bytesToBase64(bytes), engine };
+    }
+    // Compressed Secure QR binary — server inflates
+    return { qrBytesBase64: bytesToBase64(bytes), engine };
+  }
 
   if (isDigitString(t)) {
     return { qrText: t, engine };
-  }
-
-  if (rawBytes && rawBytes.length > 0) {
-    const bytes = rawBytes instanceof Uint8Array ? rawBytes : new Uint8Array(rawBytes);
-    let allDigits = bytes.length >= 80;
-    if (allDigits) {
-      for (let i = 0; i < bytes.length; i++) {
-        if (bytes[i] < 48 || bytes[i] > 57) {
-          allDigits = false;
-          break;
-        }
-      }
-    }
-    if (allDigits) {
-      return { qrText: new TextDecoder("ascii").decode(bytes), engine };
-    }
-    return {
-      qrBytesBase64: bytesToBase64(bytes),
-      qrText: t || undefined,
-      engine,
-    };
   }
 
   if (t.includes("PrintLetterBarcodeData") || t.startsWith("<")) {
@@ -90,12 +108,6 @@ export function payloadFromDecoded(
       qrBytesBase64: btoa(unescape(encodeURIComponent(t))),
       engine,
     };
-  }
-
-  if (t.length > 40) {
-    const bytes = new Uint8Array(t.length);
-    for (let i = 0; i < t.length; i++) bytes[i] = t.charCodeAt(i) & 0xff;
-    return { qrText: t, qrBytesBase64: bytesToBase64(bytes), engine };
   }
 
   return null;
@@ -157,6 +169,53 @@ function scaleImageData(imageData: ImageData, scale: number): ImageData {
   return dctx.getImageData(0, 0, w, h);
 }
 
+const WASM_READER_OPTS = {
+  formats: ["QRCode"] as const,
+  tryHarder: true,
+  tryInvert: true,
+  tryRotate: true,
+  tryDownscale: true,
+  maxNumberOfSymbols: 1,
+  textMode: "Plain" as const,
+  // Binary preserves Secure QR byte payloads; digit strings still decode as ASCII bytes
+  characterSet: "Binary" as const,
+};
+
+async function tryZxingWasmImageData(
+  imageData: ImageData,
+  engine: string
+): Promise<AadhaarScanPayload | null> {
+  try {
+    const ok = await ensureZxingWasm();
+    if (!ok) return null;
+    const results = await readBarcodes(imageData, { ...WASM_READER_OPTS });
+    for (const r of results || []) {
+      if (!r?.isValid) continue;
+      const payload = payloadFromDecoded(r.text, r.bytes?.length ? r.bytes : r.bytesECI, engine);
+      if (payload) return payload;
+    }
+  } catch {
+    /* decode fail */
+  }
+  return null;
+}
+
+async function tryZxingWasmBlob(blob: Blob, engine: string): Promise<AadhaarScanPayload | null> {
+  try {
+    const ok = await ensureZxingWasm();
+    if (!ok) return null;
+    const results = await readBarcodes(blob, { ...WASM_READER_OPTS });
+    for (const r of results || []) {
+      if (!r?.isValid) continue;
+      const payload = payloadFromDecoded(r.text, r.bytes?.length ? r.bytes : r.bytesECI, engine);
+      if (payload) return payload;
+    }
+  } catch {
+    /* decode fail */
+  }
+  return null;
+}
+
 function tryJsQR(imageData: ImageData, engine: string): AadhaarScanPayload | null {
   try {
     const code = jsQR(imageData.data, imageData.width, imageData.height, {
@@ -193,30 +252,8 @@ function tryZxingJs(imageData: ImageData, engine: string): AadhaarScanPayload | 
   }
 }
 
-async function tryZxingWasm(imageData: ImageData, engine: string): Promise<AadhaarScanPayload | null> {
-  try {
-    await ensureZxingWasm();
-    const results = await readBarcodes(imageData, {
-      formats: ["QRCode"],
-      tryHarder: true,
-      tryInvert: true,
-      tryRotate: true,
-      maxNumberOfSymbols: 1,
-      textMode: "Plain",
-      characterSet: "ISO8859_1",
-    });
-    for (const r of results || []) {
-      if (!r?.isValid) continue;
-      const payload = payloadFromDecoded(r.text, r.bytes, engine);
-      if (payload) return payload;
-    }
-  } catch {
-    /* wasm missing / decode fail */
-  }
-  return null;
-}
-
-async function tryNativeBarcodeDetector(
+/** Native detector: only accept digit Secure QR / legacy XML — never binary mojibake. */
+async function tryNativeBarcodeDetectorStrict(
   source: CanvasImageSource | ImageBitmap | HTMLVideoElement,
   engine: string
 ): Promise<AadhaarScanPayload | null> {
@@ -228,8 +265,11 @@ async function tryNativeBarcodeDetector(
     const detector = new BD({ formats: ["qr_code"] });
     const codes = await detector.detect(source as ImageBitmapSource);
     for (const code of codes || []) {
-      const payload = payloadFromDecoded(code.rawValue, null, engine);
-      if (payload) return payload;
+      const t = String(code.rawValue || "").trim();
+      if (isDigitString(t) || t.includes("PrintLetterBarcodeData") || t.startsWith("<")) {
+        const payload = payloadFromDecoded(t, null, engine);
+        if (payload) return payload;
+      }
     }
   } catch {
     /* unsupported */
@@ -244,7 +284,7 @@ type DecodeOpts = {
 
 /**
  * Dense UIDAI Secure QR decoder.
- * Order: native BarcodeDetector → ZXing-C++ WASM (tryHarder) → jsQR → ZXing-JS.
+ * Order: ZXing-C++ WASM (bytes) → jsQR → ZXing-JS → strict native detector.
  */
 export async function decodeAadhaarFromImageData(
   imageData: ImageData,
@@ -252,14 +292,8 @@ export async function decodeAadhaarFromImageData(
 ): Promise<AadhaarScanPayload | null> {
   const mode = opts?.mode || "thorough";
 
-  if (opts?.alsoDetectFrom) {
-    const native = await tryNativeBarcodeDetector(opts.alsoDetectFrom, "native-barcode-detector");
-    if (native) return native;
-  }
-
-  // Primary software path — ZXing C++ WASM with tryHarder (best for high-version QR)
   {
-    const wasm = await tryZxingWasm(imageData, "zxing-wasm");
+    const wasm = await tryZxingWasmImageData(imageData, "zxing-wasm");
     if (wasm) return wasm;
   }
 
@@ -297,7 +331,7 @@ export async function decodeAadhaarFromImageData(
 
   if (mode === "thorough") {
     for (const v of scaled.slice(1, 5)) {
-      const wasm = await tryZxingWasm(v.data, `zxing-wasm:${v.label}`);
+      const wasm = await tryZxingWasmImageData(v.data, `zxing-wasm:${v.label}`);
       if (wasm) return wasm;
     }
   }
@@ -312,6 +346,15 @@ export async function decodeAadhaarFromImageData(
       if (z) return z;
     }
   }
+
+  if (opts?.alsoDetectFrom) {
+    const native = await tryNativeBarcodeDetectorStrict(
+      opts.alsoDetectFrom,
+      "native-barcode-detector"
+    );
+    if (native) return native;
+  }
+
   return null;
 }
 
@@ -323,7 +366,8 @@ export async function decodeAadhaarFromVideo(
     return null;
   }
 
-  const native = await tryNativeBarcodeDetector(video, "native-barcode-detector:video");
+  // Strict native first on live video (fast path for digit Secure QR only)
+  const native = await tryNativeBarcodeDetectorStrict(video, "native-barcode-detector:video");
   if (native) return native;
 
   const w = video.videoWidth;
@@ -341,6 +385,10 @@ export async function decodeAadhaarFromVideo(
 }
 
 export async function decodeAadhaarFromFile(file: File): Promise<AadhaarScanPayload | null> {
+  // Best path: feed the photo blob straight into ZXing-WASM
+  const fromBlob = await tryZxingWasmBlob(file, "zxing-wasm:blob");
+  if (fromBlob) return fromBlob;
+
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -359,7 +407,10 @@ export async function decodeAadhaarFromFile(file: File): Promise<AadhaarScanPayl
   }
 }
 
-/** Prefetch WASM so the first Snap is faster. */
 export function warmAadhaarDecoder(): void {
   void ensureZxingWasm();
+}
+
+export function isAadhaarDecoderReady(): boolean {
+  return zxingOk;
 }

@@ -211,27 +211,46 @@ export type StillCapture = {
   bitmap?: ImageBitmap;
 };
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = window.setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+    promise.then(
+      (v) => {
+        window.clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        window.clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
 /**
  * Capture at full still-camera resolution via ImageCapture.takePhoto().
+ * takePhoto is hard-timeout'd — hangs must never block the scanner loop.
  * Falls back to grabFrame / video frame if unavailable.
  */
 export async function captureMaxResStill(
   track: MediaStreamTrack | null,
-  video?: HTMLVideoElement | null
+  video?: HTMLVideoElement | null,
+  opts?: { takePhotoTimeoutMs?: number }
 ): Promise<StillCapture | null> {
+  const takePhotoTimeoutMs = opts?.takePhotoTimeoutMs ?? 2500;
   const IC = ImageCaptureCtor();
   if (track && IC) {
     try {
       const capture = new IC(track);
       let settings: Record<string, unknown> = { fillLightMode: "auto" };
       try {
-        const caps = await capture.getPhotoCapabilities();
+        const caps = await withTimeout(capture.getPhotoCapabilities(), 1200, "getPhotoCapabilities");
         if (caps.imageWidth?.max) settings.imageWidth = caps.imageWidth.max;
         if (caps.imageHeight?.max) settings.imageHeight = caps.imageHeight.max;
       } catch {
         settings = {};
       }
-      const blob = await capture.takePhoto(settings);
+      const blob = await withTimeout(capture.takePhoto(settings), takePhotoTimeoutMs, "takePhoto");
       const bitmap = await createImageBitmap(blob);
       const imageData = bitmapToImageData(bitmap);
       if (imageData) {
@@ -245,12 +264,12 @@ export async function captureMaxResStill(
       }
       bitmap.close?.();
     } catch {
-      /* fall through */
+      /* fall through — never hang the scanner */
     }
 
     try {
       const capture = new IC(track);
-      const bitmap = await capture.grabFrame();
+      const bitmap = await withTimeout(capture.grabFrame(), 1500, "grabFrame");
       const imageData = bitmapToImageData(bitmap);
       if (imageData) {
         return {

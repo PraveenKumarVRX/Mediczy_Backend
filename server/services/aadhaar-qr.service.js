@@ -240,20 +240,26 @@ export function parseAadhaarQr(rawBytes) {
  */
 export function parseAadhaarQrInput(input = {}) {
   const qrText = typeof input.qrText === 'string' ? input.qrText.trim() : '';
-  if (qrText) {
-    if (/^\d{80,}$/.test(qrText)) {
-      try {
-        return parseAadhaarQr(decimalStringToBuffer(qrText));
-      } catch (e) {
-        return { success: false, message: e.message || 'Invalid Secure QR decimal payload' };
-      }
-    }
-    if (qrText.includes('PrintLetterBarcodeData') || qrText.startsWith('<')) {
-      return parseAadhaarQr(Buffer.from(qrText, 'utf8'));
+  const b64 = typeof input.qrBytesBase64 === 'string' ? input.qrBytesBase64 : '';
+
+  // 1) Decimal Secure QR digit string
+  if (qrText && /^\d{80,}$/.test(qrText)) {
+    try {
+      const fromDigits = parseAadhaarQr(decimalStringToBuffer(qrText));
+      if (fromDigits.success) return fromDigits;
+      // Fall through — bytes may still be valid
+    } catch {
+      /* fall through to bytes */
     }
   }
 
-  const b64 = typeof input.qrBytesBase64 === 'string' ? input.qrBytesBase64 : '';
+  // 2) Legacy XML
+  if (qrText && (qrText.includes('PrintLetterBarcodeData') || qrText.startsWith('<'))) {
+    const fromXml = parseAadhaarQr(Buffer.from(qrText, 'utf8'));
+    if (fromXml.success) return fromXml;
+  }
+
+  // 3) Raw QR bytes (byte-mode Secure QR)
   if (b64) {
     let rawBytes;
     try {
@@ -265,7 +271,7 @@ export function parseAadhaarQrInput(input = {}) {
     if (fromBytes.success) return fromBytes;
   }
 
-  // jsQR / some browsers return byte-mode Secure QR as a latin1 string in `data`
+  // 4) latin1 string of byte-mode payload
   if (qrText && qrText.length > 40) {
     const fromLatin1 = parseAadhaarQr(Buffer.from(qrText, 'latin1'));
     if (fromLatin1.success) return fromLatin1;

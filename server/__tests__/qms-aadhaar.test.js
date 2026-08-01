@@ -104,6 +104,33 @@ describe('Aadhaar Secure QR parse (QMS)', () => {
     expect(parsed.fields.gender).toBe('male');
   });
 
+  it('falls through from bad digit string to valid qrBytesBase64', async () => {
+    const { parseAadhaarQrInput } = await import('../services/aadhaar-qr.service.js');
+    const raw = buildSecureQrBytes([
+      'xxxx1111',
+      'Fall Through',
+      '01/01/1991',
+      'M',
+      '',
+      'Pune',
+      '',
+      '1',
+      '',
+      '411001',
+      'Pune',
+      'Maharashtra',
+      'MG',
+      '',
+      'Pune',
+    ]);
+    const parsed = parseAadhaarQrInput({
+      qrText: '1'.repeat(120),
+      qrBytesBase64: raw.toString('base64'),
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.fields.fullName).toBe('Fall Through');
+  });
+
   it('parses Secure QR from base64 bytes and latin1 qrText fallback', async () => {
     const { parseAadhaarQrInput } = await import('../services/aadhaar-qr.service.js');
     const raw = buildSecureQrBytes([
