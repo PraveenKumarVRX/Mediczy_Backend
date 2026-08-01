@@ -132,6 +132,8 @@ export async function createRegistrationInvite({
           channels: notify.channels,
           errors: notify.errors || [],
           whatsappSid: notify.whatsappSid || null,
+          whatsappStatus: notify.whatsappStatus || null,
+          whatsappErrorCode: notify.whatsappErrorCode || null,
           usedTemplate: notify.usedTemplate === true,
           at: new Date().toISOString(),
         },
@@ -147,6 +149,8 @@ export async function createRegistrationInvite({
     channels: notify.channels,
     notifyErrors: notify.errors || [],
     whatsappSid: notify.whatsappSid || null,
+    whatsappStatus: notify.whatsappStatus || null,
+    whatsappErrorCode: notify.whatsappErrorCode || null,
     // Device-auth kiosk may show this as QR fallback when WhatsApp/SMS doesn't arrive.
     // Raw token is never logged; only returned to the calling kiosk once.
     registerUrl: link,

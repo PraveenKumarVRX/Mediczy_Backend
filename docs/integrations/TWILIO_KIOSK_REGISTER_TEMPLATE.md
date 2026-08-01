@@ -95,7 +95,23 @@ pm2 restart mediczy-server --update-env
 
 ## Verify
 
-1. Template status in Twilio = **Approved**
-2. Env set + API restarted
-3. Kiosk → Mobile number → `9884089921` (or test handset)
-4. WhatsApp arrives with tappable link; kiosk still shows QR as backup
+1. Template status in Twilio = **Approved** (Pending = message accepted then undelivered)
+2. Env set + API restarted (`pm2 restart mediczy-server --update-env`)
+3. Device-auth health:
+   ```bash
+   curl -s https://app.mediqzy.com/api/display/kiosk/notify-health \
+     -H "x-device-token: $DEVICE_TOKEN" | jq
+   # expect kioskRegisterTemplate: true
+   ```
+4. Kiosk → Mobile number → test handset
+5. Invite API now returns `whatsappSid` + `whatsappStatus` + `notifyErrors` after delivery poll
+6. Kiosk always shows QR backup if WhatsApp fails
+
+## Common “not received” causes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `notifyErrors` includes template / 630xx | Content template not **Approved** or vars mismatch | Approve in Twilio; match `STYLE=text` vs `cta` |
+| `linkSent: true` but phone empty (old builds) | API treated `messages.create()` as success | Deploy delivery-poll fix |
+| SMS `status code 400` | SMS From is WhatsApp number / alpha `MEDICZY` | Set `TWILIO_SMS_NUMBER` to SMS-capable E.164 |
+| Template missing on process | Env set but PM2 not restarted | `pm2 restart … --update-env` |

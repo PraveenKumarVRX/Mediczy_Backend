@@ -396,6 +396,51 @@ class WhatsAppProductionService {
   }
 
   /**
+   * Poll Twilio until WhatsApp reaches a terminal or acceptably-sent state.
+   * messages.create() resolving is NOT delivery — undelivered/failed often arrive 1–5s later
+   * (unapproved template, bad vars, number not on WhatsApp, etc.).
+   */
+  async waitForOutboundStatus(messageSid, { timeoutMs = 9000, intervalMs = 900 } = {}) {
+    if (!messageSid) return { ok: false, status: 'missing_sid', errorCode: null, errorMessage: 'No message SID' };
+    const started = Date.now();
+    let last = null;
+    while (Date.now() - started < timeoutMs) {
+      last = await this.getMessageStatus(messageSid);
+      const status = String(last?.status || '').toLowerCase();
+      if (status === 'delivered' || status === 'read') {
+        return {
+          ok: true,
+          status,
+          errorCode: last.errorCode || null,
+          errorMessage: last.errorMessage || null,
+          message: last,
+        };
+      }
+      if (status === 'undelivered' || status === 'failed' || status === 'canceled') {
+        return {
+          ok: false,
+          status,
+          errorCode: last.errorCode || null,
+          errorMessage: last.errorMessage || null,
+          message: last,
+        };
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+    const status = String(last?.status || 'unknown').toLowerCase();
+    // Still in flight (queued/sent/accepted) — Twilio accepted it; treat as soft-success
+    const inflight = ['queued', 'accepted', 'scheduled', 'sending', 'sent'].includes(status);
+    return {
+      ok: inflight,
+      status,
+      pending: inflight,
+      errorCode: last?.errorCode || null,
+      errorMessage: last?.errorMessage || null,
+      message: last,
+    };
+  }
+
+  /**
    * Check if templates are configured
    */
   getTemplateStatus() {

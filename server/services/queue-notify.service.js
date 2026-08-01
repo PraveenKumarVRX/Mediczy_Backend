@@ -126,6 +126,8 @@ export async function sendKioskRegistrationNotify(
     channels: [],
     errors: [],
     whatsappSid: undefined,
+    whatsappStatus: undefined,
+    whatsappErrorCode: undefined,
     usedTemplate: false,
   };
   if (!to || !registerUrl) {
@@ -150,11 +152,31 @@ export async function sendKioskRegistrationNotify(
           registerUrl,
           token,
         })
-        .then((msg) => {
-          result.whatsapp = true;
+        .then(async (msg) => {
           result.usedTemplate = true;
-          result.channels.push('whatsapp');
           result.whatsappSid = msg?.sid;
+          result.whatsappStatus = msg?.status || null;
+
+          // Verify delivery — create() alone was reporting success while phones got nothing
+          if (msg?.sid && whatsappProductionService.waitForOutboundStatus) {
+            const delivery = await whatsappProductionService.waitForOutboundStatus(msg.sid);
+            result.whatsappStatus = delivery.status;
+            result.whatsappErrorCode = delivery.errorCode || null;
+            if (!delivery.ok) {
+              const code = delivery.errorCode ? ` code=${delivery.errorCode}` : '';
+              const errMsg = delivery.errorMessage || delivery.status || 'undelivered';
+              const detail = `${errMsg}${code}`;
+              console.warn('[queue-notify] kiosk WhatsApp undelivered:', detail, 'sid=', msg.sid);
+              result.errors.push(`WhatsApp: ${detail}`);
+              return;
+            }
+          } else if (msg?.status && /undelivered|failed/i.test(String(msg.status))) {
+            result.errors.push(`WhatsApp status ${msg.status}`);
+            return;
+          }
+
+          result.whatsapp = true;
+          result.channels.push('whatsapp');
         })
         .catch((e) => {
           const detail = `${e.message || 'WhatsApp template send failed'}${e?.code ? ` code=${e.code}` : ''}`;
@@ -163,7 +185,12 @@ export async function sendKioskRegistrationNotify(
         }),
     );
   } else if (ENABLE_WHATSAPP) {
-    result.errors.push('WhatsApp kiosk template sender unavailable');
+    const sidConfigured = !!whatsappProductionService?.getTemplateStatus?.()?.kioskRegister;
+    result.errors.push(
+      sidConfigured
+        ? 'WhatsApp kiosk template sender unavailable'
+        : 'WhatsApp: WHATSAPP_TEMPLATE_KIOSK_REGISTER is not set on API host'
+    );
   }
 
   if (ENABLE_SMS && smsService) {

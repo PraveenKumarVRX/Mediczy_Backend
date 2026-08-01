@@ -198,8 +198,15 @@ export default function SelfCheckinKiosk() {
       } else {
         setRegisterQr(null);
       }
-      if (Array.isArray(json.notifyErrors) && json.notifyErrors.length && !json.linkSent) {
-        setError('WhatsApp/SMS may not have delivered — scan the QR with your phone camera.');
+      const notifyErrors = Array.isArray(json.notifyErrors) ? json.notifyErrors : [];
+      const waFailed =
+        notifyErrors.some((e: string) => /whatsapp/i.test(String(e))) ||
+        (!json.linkSent && notifyErrors.length > 0);
+      if (waFailed || (!json.linkSent && url)) {
+        const tip = notifyErrors[0]
+          ? String(notifyErrors[0]).replace(/^WhatsApp:\s*/i, '')
+          : 'not delivered';
+        setError(`WhatsApp ${tip} — scan the QR with your phone camera.`);
       }
       setStep('phone-sent');
     } catch {
@@ -568,8 +575,8 @@ export default function SelfCheckinKiosk() {
             </p>
             <p className="mt-2 text-sm text-slate-500">
               {linkSent
-                ? `Link attempted via ${channelHint}`
-                : 'WhatsApp/SMS may be blocked — use the QR below'}
+                ? `Sent via ${channelHint}. If it doesn’t arrive in ~30s, scan the QR.`
+                : 'WhatsApp/SMS didn’t deliver — scan the QR below on your phone'}
             </p>
 
             {registerQr && (
@@ -577,8 +584,8 @@ export default function SelfCheckinKiosk() {
                 <img src={registerQr} alt="Scan to open registration" className="h-56 w-56" />
               </div>
             )}
-            <p className="mt-3 text-sm text-teal-200/90">
-              Scan this QR with your phone camera → open registration
+            <p className="mt-3 text-sm font-medium text-teal-200">
+              Scan this QR with your phone camera to open the registration link
             </p>
 
             <div className="mt-6 rounded-3xl border border-slate-700/80 bg-slate-900/60 px-5 py-5">

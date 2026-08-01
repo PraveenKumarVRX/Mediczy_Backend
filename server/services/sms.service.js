@@ -36,31 +36,59 @@ class SMSService {
   async sendViaTwilio(message) {
     const accountSid = this.config.apiKey;
     const authToken = this.config.apiSecret;
-    
-    const response = await axios.post(
-      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-      new URLSearchParams({
-        From: this.config.senderId,
-        To: Array.isArray(message.to) ? message.to[0] : message.to,
-        Body: message.message
-      }),
-      {
-        auth: {
-          username: accountSid,
-          password: authToken
-        },
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
 
-    return {
-      success: true,
-      messageId: response.data.sid,
-      provider: 'twilio',
-      deliveryStatus: 'sent'
-    };
+    // Never send SMS with a whatsapp: sender or placeholder alpha ID — Twilio returns 400
+    let from = String(
+      this.config.smsFrom ||
+        process.env.TWILIO_SMS_NUMBER ||
+        this.config.senderId ||
+        process.env.TWILIO_PHONE_NUMBER ||
+        ''
+    ).trim();
+    if (from.toLowerCase().startsWith('whatsapp:')) {
+      from = from.slice('whatsapp:'.length).trim();
+    }
+    if (!from || /^mediczy$/i.test(from)) {
+      throw new Error(
+        'Twilio SMS From not configured — set TWILIO_SMS_NUMBER (E.164 SMS-capable number)'
+      );
+    }
+
+    const to = Array.isArray(message.to) ? message.to[0] : message.to;
+
+    try {
+      const response = await axios.post(
+        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
+        new URLSearchParams({
+          From: from,
+          To: to,
+          Body: message.message,
+        }),
+        {
+          auth: {
+            username: accountSid,
+            password: authToken,
+          },
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
+
+      return {
+        success: true,
+        messageId: response.data.sid,
+        provider: 'twilio',
+        deliveryStatus: 'sent',
+      };
+    } catch (error) {
+      const twilioMsg =
+        error?.response?.data?.message ||
+        error?.response?.data?.error_message ||
+        error.message;
+      const code = error?.response?.data?.code;
+      throw new Error(code ? `${twilioMsg} (Twilio ${code})` : twilioMsg);
+    }
   }
 
   async sendViaAWS(message) {

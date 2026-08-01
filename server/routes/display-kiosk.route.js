@@ -45,6 +45,35 @@ ensureKioskRegistrationTables().catch((e) =>
 );
 
 /**
+ * GET /api/display/kiosk/notify-health
+ * Device-auth: is the kiosk WhatsApp template wired on this API process?
+ */
+router.get('/notify-health', async (req, res) => {
+  try {
+    const wa = (await import('../services/whatsapp-production.service.js')).default;
+    const status = wa?.getTemplateStatus?.() || {};
+    res.json({
+      success: true,
+      whatsappConfigured: !!wa?.twilioConfigured,
+      kioskRegisterTemplate: !!status.kioskRegister,
+      kioskRegisterStyle: status.kioskRegisterStyle || null,
+      kioskRegisterSid: status.kioskRegisterSid
+        ? `${String(status.kioskRegisterSid).slice(0, 6)}…`
+        : null,
+      smsEnabled: String(process.env.QUEUE_NOTIFY_SMS ?? 'true').toLowerCase() !== 'false',
+      publicAppUrl: (
+        process.env.PUBLIC_APP_URL ||
+        process.env.FRONTEND_URL ||
+        process.env.CLIENT_URL ||
+        ''
+      ).replace(/\/$/, '') || null,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
  * POST /api/display/kiosk/registration-invite
  * Body: { phone, hospitalName? } — sends WhatsApp/SMS secure registration link
  */
@@ -67,7 +96,10 @@ router.post('/registration-invite', async (req, res) => {
       linkSent: result.linkSent,
       channels,
       notifyErrors: result.notifyErrors || [],
-      // Shown as on-screen QR when WhatsApp free-form delivery fails (24h session rules)
+      whatsappSid: result.whatsappSid || null,
+      whatsappStatus: result.whatsappStatus || null,
+      whatsappErrorCode: result.whatsappErrorCode || null,
+      // Shown as on-screen QR when WhatsApp/SMS delivery fails
       registerUrl: result.registerUrl,
       message: result.linkSent
         ? `Registration link sent via ${via}`
