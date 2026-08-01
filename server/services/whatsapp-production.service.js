@@ -294,9 +294,19 @@ class WhatsAppProductionService {
       throw new Error('Twilio WhatsApp is not configured');
     }
 
+    // Twilio WhatsApp requires whatsapp: prefix on both ends
+    const from = String(this.fromNumber || '').startsWith('whatsapp:')
+      ? String(this.fromNumber)
+      : `whatsapp:${String(this.fromNumber || '').replace(/^whatsapp:/, '')}`;
+    if (!this.fromNumber) {
+      throw new Error('TWILIO_WHATSAPP_NUMBER is not set');
+    }
+
     // Add timeout to prevent hanging
+    // NOTE: free-form body only delivers inside a 24h customer-care session.
+    // Business-initiated invites need an approved Content template (contentSid).
     const sendPromise = this.client.messages.create({
-      from: this.fromNumber,
+      from,
       to: `whatsapp:${phoneNumber}`,
       body: safeBody
     });

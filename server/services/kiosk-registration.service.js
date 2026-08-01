@@ -117,12 +117,36 @@ export async function createRegistrationInvite({
 
   const notify = await sendToPhone(normalizedPhone, message);
 
+  // Persist delivery diagnostics (never store raw token)
+  await pool.query(
+    `UPDATE kiosk_registration_invites
+     SET prefill = COALESCE(prefill, '{}'::jsonb) || $2::jsonb
+     WHERE id = $1`,
+    [
+      ins.rows[0].id,
+      JSON.stringify({
+        notify: {
+          ok: notify.ok,
+          channels: notify.channels,
+          errors: notify.errors || [],
+          whatsappSid: notify.whatsappSid || null,
+          at: new Date().toISOString(),
+        },
+      }),
+    ]
+  );
+
   return {
     inviteId: ins.rows[0].id,
     expiresAt: ins.rows[0].expires_at,
     phone: normalizedPhone,
     linkSent: notify.ok,
     channels: notify.channels,
+    notifyErrors: notify.errors || [],
+    whatsappSid: notify.whatsappSid || null,
+    // Device-auth kiosk may show this as QR fallback when WhatsApp/SMS doesn't arrive.
+    // Raw token is never logged; only returned to the calling kiosk once.
+    registerUrl: link,
     // Never return raw token to kiosk response in logs-friendly shape — only for tests
     _rawTokenForTests: process.env.NODE_ENV === 'test' ? rawToken : undefined,
     registerUrlHint: link.replace(rawToken, '…'),
