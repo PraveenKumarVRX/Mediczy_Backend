@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import pool from '../db/pgPool.js';
 import * as queue from './hospital-queue.service.js';
-import { sendToPhone } from './queue-notify.service.js';
+import { sendKioskRegistrationNotify } from './queue-notify.service.js';
 import { parseAadhaarQrInput } from './aadhaar-qr.service.js';
 
 const INVITE_TTL_MIN = parseInt(process.env.KIOSK_REG_INVITE_TTL_MIN || '30', 10);
@@ -110,12 +110,14 @@ export async function createRegistrationInvite({
   );
 
   const link = `${publicBaseUrl()}/kiosk/register/${rawToken}`;
-  const message =
-    `Mediqzy · Complete your registration for ${hospitalName}\n\n` +
-    `Tap this secure link (expires in ${INVITE_TTL_MIN} min):\n${link}\n\n` +
-    `Do not share this link. Reply STOP to opt out.`;
 
-  const notify = await sendToPhone(normalizedPhone, message);
+  // Business-initiated WhatsApp must use an approved Content template (not free-form session).
+  const notify = await sendKioskRegistrationNotify(normalizedPhone, {
+    hospitalName,
+    expiresMin: INVITE_TTL_MIN,
+    registerUrl: link,
+    token: rawToken,
+  });
 
   // Persist delivery diagnostics (never store raw token)
   await pool.query(
@@ -130,6 +132,7 @@ export async function createRegistrationInvite({
           channels: notify.channels,
           errors: notify.errors || [],
           whatsappSid: notify.whatsappSid || null,
+          usedTemplate: notify.usedTemplate === true,
           at: new Date().toISOString(),
         },
       }),
