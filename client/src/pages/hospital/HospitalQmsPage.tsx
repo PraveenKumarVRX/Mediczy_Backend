@@ -37,8 +37,8 @@ export default function HospitalQmsPage() {
           window.location.replace(`/kiosk/checkin?deviceToken=${encodeURIComponent(existing)}`);
           return;
         }
+        // Never open bare /kiosk/checkin — Aadhaar server decode needs device token
         setError(e instanceof Error ? e.message : 'Could not open walk-in kiosk');
-        navigate('/kiosk/checkin', { replace: true });
       }
     })();
     return () => {

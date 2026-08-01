@@ -729,11 +729,70 @@ function authHeadersForDecode(extra: Record<string, string> = {}): Record<string
   return hdrs;
 }
 
+function resolveDecodeEndpoints(preferred?: string): string[] {
+  const hasDevice =
+    typeof localStorage !== "undefined" &&
+    !!(
+      localStorage.getItem("displayDeviceToken") ||
+      (typeof window !== "undefined" &&
+        new URLSearchParams(window.location.search).get("deviceToken"))
+    );
+  const hasStaff =
+    typeof localStorage !== "undefined" &&
+    !!(
+      localStorage.getItem("hospitalToken") ||
+      localStorage.getItem("clinicToken") ||
+      localStorage.getItem("labToken")
+    );
+
+  const kiosk = "/api/display/kiosk/decode-aadhaar-image";
+  const qms = "/api/qms/aadhaar/decode-image";
+  const out: string[] = [];
+  if (preferred) out.push(preferred);
+  // Prefer the endpoint we can actually auth
+  if (hasStaff) out.push(qms);
+  if (hasDevice) out.push(kiosk);
+  if (!hasStaff && !hasDevice) {
+    out.push(kiosk, qms);
+  }
+  return [...new Set(out)];
+}
+
+/** Snapshot <video> → JPEG for server/local decode (works without ImageCapture). */
+export async function videoFrameToJpegBlob(
+  video: HTMLVideoElement,
+  quality = 0.92
+): Promise<Blob | null> {
+  if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || video.videoWidth < 20) {
+    return null;
+  }
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.drawImage(video, 0, 0);
+    return await new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/jpeg", quality)
+    );
+  } catch {
+    return null;
+  }
+}
+
+export type ServerDecodeFailure = {
+  authMissing?: boolean;
+  lastStatus?: number;
+  lastMessage?: string;
+};
+
 /** Client decode first, then server zxing-wasm fallback. */
 export async function decodeAadhaarFromFileWithServerFallback(
   file: File | Blob,
   headers: Record<string, string> = {},
-  endpoint = "/api/display/kiosk/decode-aadhaar-image"
+  endpoint?: string,
+  failure?: ServerDecodeFailure
 ): Promise<AadhaarScanPayload | null> {
   let jpeg: Blob;
   try {
@@ -745,20 +804,31 @@ export async function decodeAadhaarFromFileWithServerFallback(
   const local = await decodeAadhaarFromFile(jpeg);
   if (local) return local;
 
-  const endpoints = [endpoint];
-  // Staff JWT portals (clinic/lab QMS) use /api/qms; kiosk uses device token
-  if (endpoint.includes("/display/kiosk/")) {
-    endpoints.push("/api/qms/aadhaar/decode-image");
-  }
-
+  const endpoints = resolveDecodeEndpoints(endpoint);
   const hdrs = authHeadersForDecode(headers);
+  let saw401 = false;
   for (const url of endpoints) {
     try {
       const form = new FormData();
       form.append("photo", jpeg, "aadhaar.jpg");
       const res = await fetch(url, { method: "POST", headers: hdrs, body: form });
       const json = await res.json().catch(() => ({}));
-      if (!json?.success) continue;
+      if (res.status === 401) {
+        saw401 = true;
+        if (failure) {
+          failure.authMissing = true;
+          failure.lastStatus = 401;
+          failure.lastMessage = json?.message || "Auth required for server decode";
+        }
+        continue;
+      }
+      if (!json?.success) {
+        if (failure) {
+          failure.lastStatus = res.status;
+          failure.lastMessage = json?.message || `HTTP ${res.status}`;
+        }
+        continue;
+      }
       if (json.qrText || json.qrBytesBase64 || json.fields) {
         return {
           qrText: json.qrText,
@@ -771,7 +841,26 @@ export async function decodeAadhaarFromFileWithServerFallback(
       /* try next */
     }
   }
+  if (failure && saw401) failure.authMissing = true;
   return null;
+}
+
+/**
+ * Live assist: encode current video frame → local + server decode.
+ * This is the path that works when soft webcam frames fail in-browser WASM.
+ */
+export async function decodeAadhaarFromVideoFrameWithServerFallback(
+  video: HTMLVideoElement,
+  headers: Record<string, string> = {},
+  failure?: ServerDecodeFailure
+): Promise<AadhaarScanPayload | null> {
+  // Fast in-browser live attempt first
+  const live = await decodeAadhaarFromVideo(video, null, { roiRatio: 0.58 });
+  if (live) return live;
+
+  const jpeg = await videoFrameToJpegBlob(video);
+  if (!jpeg) return null;
+  return decodeAadhaarFromFileWithServerFallback(jpeg, headers, undefined, failure);
 }
 
 export function warmAadhaarDecoder(): void {

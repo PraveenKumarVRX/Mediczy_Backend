@@ -11,8 +11,11 @@ import {
   decodeAadhaarFromFileWithServerFallback,
   decodeAadhaarFromImageData,
   decodeAadhaarFromVideo,
+  decodeAadhaarFromVideoFrameWithServerFallback,
+  videoFrameToJpegBlob,
   warmAadhaarDecoder,
   type AadhaarScanPayload,
+  type ServerDecodeFailure,
 } from "@/lib/aadhaarQrDecode";
 import { warmAadhaarWorker } from "@/lib/aadhaarQrWorkerBridge";
 import { getDisplayDeviceToken } from "@/utils/displayDeviceAuth";
@@ -26,8 +29,10 @@ interface Props {
 
 type Phase = "starting" | "scanning" | "capturing" | "reading" | "blocked";
 
-const LIVE_MS = 160;
-const STILL_MS = 700;
+/** Fast live attempt only — do NOT call ImageCapture in a tight loop (breaks Android). */
+const LIVE_MS = 180;
+/** Soft-frame rescue: JPEG snapshot → local + server (the path that actually works). */
+const ASSIST_MS = 2200;
 
 function vibrate(ms = 35) {
   try {
@@ -65,8 +70,11 @@ function authHeaders(): Record<string, string> {
 }
 
 /**
- * Simple Aadhaar QR scanner — live camera first, always.
- * Photo is a small secondary action, never the main screen.
+ * Working Aadhaar scanner (learned the hard way):
+ * - Show live camera (good UX)
+ * - Do NOT auto-fire ImageCapture.takePhoto (starves Android)
+ * - Periodically snapshot video→JPEG and run local + server decode
+ * - Manual shutter / Photo as backup
  */
 export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const ios = isIOS();
@@ -78,13 +86,12 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
   const streamRef = useRef<MediaStream | null>(null);
   const trackRef = useRef<MediaStreamTrack | null>(null);
   const rafRef = useRef<number | null>(null);
-  const stillTimerRef = useRef<number | null>(null);
+  const assistTimerRef = useRef<number | null>(null);
   const lastLiveAtRef = useRef(0);
   const handledRef = useRef(false);
   const liveBusyRef = useRef(false);
-  const stillBusyRef = useRef(false);
+  const assistBusyRef = useRef(false);
   const startingRef = useRef(false);
-  const failStillsRef = useRef(0);
   const onScanRef = useRef(onScan);
   const startCameraRef = useRef<() => Promise<void>>(async () => undefined);
   const photoRef = useRef<HTMLInputElement | null>(null);
@@ -110,9 +117,9 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
     }
-    if (stillTimerRef.current != null) {
-      window.clearInterval(stillTimerRef.current);
-      stillTimerRef.current = null;
+    if (assistTimerRef.current != null) {
+      window.clearInterval(assistTimerRef.current);
+      assistTimerRef.current = null;
     }
   }, []);
 
@@ -144,7 +151,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       } catch (err: unknown) {
         handledRef.current = false;
         setError(err instanceof Error ? err.message : "Couldn’t read that QR");
-        setStatus("Point at the large QR on the back");
+        setStatus("Hold the large QR on the back in the frame");
         setPhase("starting");
         void startCameraRef.current();
       }
@@ -159,9 +166,19 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     setError(null);
     stopCamera();
     try {
-      const payload = await decodeAadhaarFromFileWithServerFallback(file, authHeaders());
+      const failure: ServerDecodeFailure = {};
+      const payload = await decodeAadhaarFromFileWithServerFallback(
+        file,
+        authHeaders(),
+        undefined,
+        failure
+      );
       if (!payload) {
-        setError("QR not found — fill the frame with the large QR on the back, avoid glare");
+        setError(
+          failure.authMissing
+            ? "QR not found locally, and server backup needs login/device token"
+            : "QR not found — fill the frame with the large QR on the back"
+        );
         setStatus("Try again");
         setPhase("starting");
         void startCameraRef.current();
@@ -186,63 +203,99 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     el.click();
   };
 
-  const runStillDecode = useCallback(
-    async (manual: boolean) => {
-      if (handledRef.current || stillBusyRef.current) return;
+  /** Soft-frame rescue — JPEG from video + server. No ImageCapture. */
+  const runAssistDecode = useCallback(async () => {
+    if (handledRef.current || assistBusyRef.current || liveBusyRef.current) return;
+    const video = videoRef.current;
+    if (!video || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
-      // iOS: no ImageCapture — manual shutter opens OS camera still
-      if (manual && (ios || !hasImageCapture)) {
-        pickPhoto();
+    assistBusyRef.current = true;
+    try {
+      const failure: ServerDecodeFailure = {};
+      const payload = await decodeAadhaarFromVideoFrameWithServerFallback(
+        video,
+        authHeaders(),
+        failure
+      );
+      if (payload && !handledRef.current) {
+        await emitPayload(payload);
         return;
       }
-
-      stillBusyRef.current = true;
-      if (manual) {
-        setPhase("capturing");
-        setStatus("Capturing…");
+      if (failure.authMissing) {
+        setError((prev) => prev || "Tip: open kiosk with device token for better scan backup");
       }
-      try {
-        const still = await captureMaxResStill(trackRef.current, videoRef.current, {
-          takePhotoTimeoutMs: manual ? 4000 : 2000,
-        });
-        if (!still || handledRef.current) {
-          if (manual) pickPhoto();
-          return;
-        }
+    } finally {
+      assistBusyRef.current = false;
+    }
+  }, [emitPayload]);
 
-        let payload = await decodeAadhaarFromImageData(still.imageData, {
+  const runManualCapture = useCallback(async () => {
+    if (handledRef.current || assistBusyRef.current) return;
+
+    // iOS: OS camera still is sharpest
+    if (ios || !hasImageCapture) {
+      pickPhoto();
+      return;
+    }
+
+    assistBusyRef.current = true;
+    setPhase("capturing");
+    setStatus("Capturing…");
+    try {
+      const still = await captureMaxResStill(trackRef.current, videoRef.current, {
+        takePhotoTimeoutMs: 3500,
+      });
+      let payload: AadhaarScanPayload | null = null;
+      const failure: ServerDecodeFailure = {};
+
+      if (still) {
+        payload = await decodeAadhaarFromImageData(still.imageData, {
           alsoDetectFrom: still.bitmap || videoRef.current,
           mode: "thorough",
           blob: still.blob,
         });
-
-        // Server fallback for still JPEG (laptop / soft Android frames)
-        if (!payload && still.blob) {
-          payload = await decodeAadhaarFromFileWithServerFallback(still.blob, authHeaders());
+        if (!payload) {
+          const blob = still.blob || (await videoFrameToJpegBlob(videoRef.current!));
+          if (blob) {
+            payload = await decodeAadhaarFromFileWithServerFallback(
+              blob,
+              authHeaders(),
+              undefined,
+              failure
+            );
+          }
         }
-
         still.bitmap?.close?.();
-        if (payload && !handledRef.current) {
-          failStillsRef.current = 0;
-          await emitPayload(payload);
-          return;
-        }
-
-        failStillsRef.current += 1;
-        if (manual) {
-          setError("Not found — move closer and hold steady, or use Photo");
-          setPhase("scanning");
-          setStatus("Point at the large QR on the back");
-        }
-      } finally {
-        stillBusyRef.current = false;
-        if (!handledRef.current) {
-          setPhase((p) => (p === "capturing" ? "scanning" : p));
+      } else {
+        const blob = await videoFrameToJpegBlob(videoRef.current!);
+        if (blob) {
+          payload = await decodeAadhaarFromFileWithServerFallback(
+            blob,
+            authHeaders(),
+            undefined,
+            failure
+          );
         }
       }
-    },
-    [emitPayload, hasImageCapture, ios]
-  );
+
+      if (payload && !handledRef.current) {
+        await emitPayload(payload);
+        return;
+      }
+      setError(
+        failure.authMissing
+          ? "Not found — server backup needs device/login token. Try Photo."
+          : "Not found — move closer, fill the frame, or use Photo"
+      );
+      setPhase("scanning");
+      setStatus("Hold the large QR on the back in the frame");
+    } finally {
+      assistBusyRef.current = false;
+      if (!handledRef.current) {
+        setPhase((p) => (p === "capturing" ? "scanning" : p));
+      }
+    }
+  }, [emitPayload, hasImageCapture, ios]);
 
   const scanLiveFrame = useCallback(() => {
     if (handledRef.current) return;
@@ -254,7 +307,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     const now = Date.now();
     if (
       !liveBusyRef.current &&
-      !stillBusyRef.current &&
+      !assistBusyRef.current &&
       now - lastLiveAtRef.current >= LIVE_MS &&
       video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
     ) {
@@ -277,8 +330,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     stopCamera();
     handledRef.current = false;
     liveBusyRef.current = false;
-    stillBusyRef.current = false;
-    failStillsRef.current = 0;
+    assistBusyRef.current = false;
     setPhase("starting");
     setStatus("Starting camera…");
     setError(null);
@@ -309,15 +361,16 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
       }
 
       setPhase("scanning");
-      setStatus("Point at the large QR on the back");
+      setStatus("Hold the large QR on the back in the frame");
 
       lastLiveAtRef.current = 0;
       rafRef.current = requestAnimationFrame(scanLiveFrame);
-      stillTimerRef.current = window.setInterval(() => {
-        if (!handledRef.current && !stillBusyRef.current && !document.hidden) {
-          void runStillDecode(false);
+      // Soft-frame rescue — NOT ImageCapture.auto (that broke Android)
+      assistTimerRef.current = window.setInterval(() => {
+        if (!handledRef.current && !document.hidden) {
+          void runAssistDecode();
         }
-      }, STILL_MS);
+      }, ASSIST_MS);
     } catch (e: unknown) {
       stopCamera();
       const denied =
@@ -334,7 +387,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
     } finally {
       startingRef.current = false;
     }
-  }, [runStillDecode, scanLiveFrame, stopCamera]);
+  }, [runAssistDecode, scanLiveFrame, stopCamera]);
 
   startCameraRef.current = startCamera;
 
@@ -425,7 +478,7 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
             type="button"
             disabled={busy || phase === "starting" || phase === "blocked"}
             aria-label="Capture"
-            onClick={() => void runStillDecode(true)}
+            onClick={() => void runManualCapture()}
             className="flex h-[72px] w-[72px] items-center justify-center rounded-full bg-white disabled:opacity-40"
           >
             <span className="h-[60px] w-[60px] rounded-full border-[3px] border-neutral-900" />
@@ -455,11 +508,12 @@ export default function KioskAadhaarScanner({ onScan, onClose }: Props) {
           )}
         </div>
         <p className="text-xs text-white/35">
-          {mobile || ios ? "Hold steady — scans automatically" : "Hold the card close to the camera"}
+          {mobile || ios
+            ? "Hold steady — scanning automatically"
+            : "Hold the card close and steady"}
         </p>
       </div>
 
-      {/* Truly hidden — never show native "No file chosen" */}
       <input
         ref={photoRef}
         type="file"

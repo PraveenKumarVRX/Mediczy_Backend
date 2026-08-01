@@ -65,9 +65,17 @@ function ensureWorker(): Promise<boolean> {
       const timer = window.setTimeout(() => {
         clearPending(id);
         workerOk = false;
-        workerFailed = true;
+        // Do NOT permanently blacklist — allow retry next warm/start
+        workerFailed = false;
+        try {
+          w.terminate();
+        } catch {
+          /* ignore */
+        }
+        worker = null;
+        initPromise = null;
         resolve(false);
-      }, 8000);
+      }, 12000);
       pending.set(id, {
         resolve: () => {
           workerOk = true;
@@ -76,7 +84,8 @@ function ensureWorker(): Promise<boolean> {
         },
         reject: () => {
           workerOk = false;
-          workerFailed = true;
+          workerFailed = false;
+          initPromise = null;
           resolve(false);
         },
         timer,
