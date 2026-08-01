@@ -55,6 +55,29 @@ function normalizePhone10(phone) {
   return String(phone || '').replace(/\D/g, '').slice(-10);
 }
 
+/** Optional Aadhaar — accept 12-digit or last-4; return last 4 only (never store full UID). */
+function normalizeAadhaarLast4(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 4) return digits;
+  if (digits.length === 12) return digits.slice(-4);
+  return null;
+}
+
+/**
+ * Optional ABHA — 14-digit (xx-xxxx-xxxx-xxxx) or ABHA address (name@abdm).
+ */
+function normalizeAbhaId(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (/^[a-zA-Z0-9._-]{3,}@abdm$/i.test(raw)) return raw.toLowerCase();
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}-${digits.slice(10, 14)}`;
+  }
+  return null;
+}
+
 function mapGender(genderRaw) {
   const genderNorm = String(genderRaw || '').trim();
   const genderLower = genderNorm.toLowerCase();
@@ -343,6 +366,7 @@ export async function registerWalkInPatient({
         JSON.stringify({
           address: address || undefined,
           aadhaarLast4: aadhaarLast4 || undefined,
+          abhaId: abhaId || undefined,
           photoKey: photoKey || undefined,
           source,
         }),
@@ -443,6 +467,8 @@ export async function completeInviteRegistration(rawToken, body = {}) {
     chiefComplaint,
     address,
     aadhaarLast4,
+    aadhaarNumber,
+    abhaId,
     consentAccepted,
     notifyOptIn = true,
     aadhaarQrText,
@@ -456,6 +482,22 @@ export async function completeInviteRegistration(rawToken, body = {}) {
     throw Object.assign(new Error('First name is required'), { status: 400 });
   }
 
+  // Optional IDs — never store full Aadhaar; keep last 4 only
+  let normalizedLast4 = normalizeAadhaarLast4(aadhaarLast4 || aadhaarNumber);
+  if ((aadhaarLast4 || aadhaarNumber) && !normalizedLast4) {
+    throw Object.assign(
+      new Error('Aadhaar should be 12 digits (or last 4). Leave blank to skip.'),
+      { status: 400 }
+    );
+  }
+  const normalizedAbha = normalizeAbhaId(abhaId);
+  if (abhaId && String(abhaId).trim() && !normalizedAbha) {
+    throw Object.assign(
+      new Error('Enter a valid ABHA ID (14 digits or name@abdm). Leave blank to skip.'),
+      { status: 400 }
+    );
+  }
+
   let aadhaarFields = null;
   if (aadhaarQrText || aadhaarQrBytesBase64) {
     const parsed = parseAadhaarQrInput({
@@ -463,6 +505,9 @@ export async function completeInviteRegistration(rawToken, body = {}) {
       qrBytesBase64: aadhaarQrBytesBase64,
     });
     if (parsed.success) aadhaarFields = parsed.fields;
+  }
+  if (!normalizedLast4 && aadhaarFields?.aadhaarLast4) {
+    normalizedLast4 = String(aadhaarFields.aadhaarLast4).slice(-4);
   }
 
   const result = await registerWalkInPatient({
@@ -474,7 +519,8 @@ export async function completeInviteRegistration(rawToken, body = {}) {
     gender: gender || aadhaarFields?.gender,
     chiefComplaint,
     address: address || aadhaarFields?.address,
-    aadhaarLast4: aadhaarLast4 || aadhaarFields?.aadhaarLast4,
+    aadhaarLast4: normalizedLast4,
+    abhaId: normalizedAbha,
     notifyOptIn,
     notifyPhone: phone,
     source: 'kiosk-whatsapp',
@@ -497,7 +543,8 @@ export async function completeInviteRegistration(rawToken, body = {}) {
       result.entry?.tokenNumber || null,
       JSON.stringify({
         fullName: `${firstName} ${lastName || ''}`.trim(),
-        aadhaarLast4: aadhaarLast4 || aadhaarFields?.aadhaarLast4 || null,
+        aadhaarLast4: normalizedLast4 || null,
+        abhaId: normalizedAbha || null,
       }),
     ]
   );

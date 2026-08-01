@@ -17,6 +17,8 @@ type FormState = {
   gender: string;
   address: string;
   chiefComplaint: string;
+  aadhaarNumber: string;
+  abhaId: string;
   aadhaarLast4: string;
   consentAccepted: boolean;
   notifyOptIn: boolean;
@@ -29,10 +31,26 @@ const emptyForm = (): FormState => ({
   gender: "",
   address: "",
   chiefComplaint: "",
+  aadhaarNumber: "",
+  abhaId: "",
   aadhaarLast4: "",
   consentAccepted: false,
   notifyOptIn: true,
 });
+
+function digitsOnly(v: string) {
+  return String(v || "").replace(/\D/g, "");
+}
+
+/** Format ABHA as XX-XXXX-XXXX-XXXX while typing digits. */
+function formatAbhaInput(v: string) {
+  const d = digitsOnly(v).slice(0, 14);
+  if (v.includes("@")) return v.trim();
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return `${d.slice(0, 2)}-${d.slice(2)}`;
+  if (d.length <= 10) return `${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6)}`;
+  return `${d.slice(0, 2)}-${d.slice(2, 6)}-${d.slice(6, 10)}-${d.slice(10)}`;
+}
 
 function ageFromDob(dob: string): string | null {
   if (!dob) return null;
@@ -117,6 +135,7 @@ export default function KioskSecureRegister() {
       }
       if (payload.fields && (payload.fields.firstName || payload.fields.aadhaarLast4)) {
         const f = payload.fields as Record<string, string | null | undefined>;
+        const last4 = String(f.aadhaarLast4 || "").replace(/\D/g, "").slice(-4);
         setForm((prev) => ({
           ...prev,
           firstName: String(f.firstName || prev.firstName),
@@ -124,10 +143,11 @@ export default function KioskSecureRegister() {
           dateOfBirth: String(f.dateOfBirth || prev.dateOfBirth),
           gender: genderLabel(String(f.gender || prev.gender)),
           address: String(f.address || prev.address),
-          aadhaarLast4: String(f.aadhaarLast4 || prev.aadhaarLast4 || ""),
+          aadhaarLast4: last4 || prev.aadhaarLast4,
+          aadhaarNumber: last4 ? `********${last4}` : prev.aadhaarNumber,
         }));
         setAadhaarHint(
-          `Aadhaar details added${f.aadhaarLast4 ? ` · ****${f.aadhaarLast4}` : ""}`
+          `Aadhaar details added${last4 ? ` · ****${last4}` : ""}`
         );
         return;
       }
@@ -138,6 +158,7 @@ export default function KioskSecureRegister() {
         return;
       }
       const f = parsed.fields;
+      const last4 = String(f.aadhaarLast4 || "").replace(/\D/g, "").slice(-4);
       setForm((prev) => ({
         ...prev,
         firstName: f.firstName || prev.firstName,
@@ -145,10 +166,11 @@ export default function KioskSecureRegister() {
         dateOfBirth: f.dateOfBirth || prev.dateOfBirth,
         gender: genderLabel(f.gender || prev.gender),
         address: f.address || prev.address,
-        aadhaarLast4: f.aadhaarLast4 || prev.aadhaarLast4,
+        aadhaarLast4: last4 || prev.aadhaarLast4,
+        aadhaarNumber: last4 ? `********${last4}` : prev.aadhaarNumber,
       }));
       setAadhaarHint(
-        `Aadhaar details added${f.aadhaarLast4 ? ` · ****${f.aadhaarLast4}` : ""}`
+        `Aadhaar details added${last4 ? ` · ****${last4}` : ""}`
       );
     } catch (e: unknown) {
       setAadhaarHint(null);
@@ -166,6 +188,20 @@ export default function KioskSecureRegister() {
       setError("Please accept consent to continue.");
       return;
     }
+    const aadhaarDigits = digitsOnly(form.aadhaarNumber);
+    if (aadhaarDigits && aadhaarDigits.length !== 4 && aadhaarDigits.length !== 12) {
+      setError("Aadhaar should be 12 digits (or last 4). Leave blank to skip.");
+      return;
+    }
+    const abhaRaw = form.abhaId.trim();
+    if (abhaRaw) {
+      const abhaDigits = digitsOnly(abhaRaw);
+      const abhaAddr = /^[a-zA-Z0-9._-]{3,}@abdm$/i.test(abhaRaw);
+      if (!abhaAddr && abhaDigits.length !== 14) {
+        setError("ABHA should be 14 digits (XX-XXXX-XXXX-XXXX) or name@abdm. Leave blank to skip.");
+        return;
+      }
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -179,7 +215,9 @@ export default function KioskSecureRegister() {
           gender: form.gender || undefined,
           address: form.address || undefined,
           chiefComplaint: form.chiefComplaint || undefined,
-          aadhaarLast4: form.aadhaarLast4 || undefined,
+          aadhaarNumber: aadhaarDigits || undefined,
+          aadhaarLast4: form.aadhaarLast4 || (aadhaarDigits ? aadhaarDigits.slice(-4) : undefined),
+          abhaId: abhaRaw || undefined,
           consentAccepted: true,
           notifyOptIn: form.notifyOptIn,
         }),
@@ -352,6 +390,65 @@ export default function KioskSecureRegister() {
                 value={form.chiefComplaint}
                 onChange={(v) => setForm((p) => ({ ...p, chiefComplaint: v }))}
               />
+
+              <div className="border-t border-slate-100 pt-3">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Optional IDs
+                </p>
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Aadhaar number
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="12 digits · optional"
+                      maxLength={14}
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-teal-400 focus:bg-white"
+                      value={form.aadhaarNumber}
+                      onChange={(e) => {
+                        const d = digitsOnly(e.target.value).slice(0, 12);
+                        const pretty =
+                          d.length > 8
+                            ? `${d.slice(0, 4)} ${d.slice(4, 8)} ${d.slice(8)}`
+                            : d.length > 4
+                              ? `${d.slice(0, 4)} ${d.slice(4)}`
+                              : d;
+                        setForm((p) => ({
+                          ...p,
+                          aadhaarNumber: pretty,
+                          aadhaarLast4: d.length >= 4 ? d.slice(-4) : "",
+                        }));
+                      }}
+                    />
+                    <span className="mt-1 block text-[11px] text-slate-400">
+                      Only last 4 digits are stored
+                    </span>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      ABHA ID
+                    </span>
+                    <input
+                      type="text"
+                      inputMode="text"
+                      autoComplete="off"
+                      placeholder="XX-XXXX-XXXX-XXXX or name@abdm"
+                      className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-teal-400 focus:bg-white"
+                      value={form.abhaId}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setForm((p) => ({
+                          ...p,
+                          abhaId: v.includes("@") ? v.trim() : formatAbhaInput(v),
+                        }));
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
 
               <label className="flex items-start gap-3 pt-1 text-sm text-slate-600">
                 <input
