@@ -3,7 +3,8 @@
  * Keeps the camera UI at high FPS while dense QR decode runs in parallel.
  */
 import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
-import zxingWasmUrl from "zxing-wasm/dist/reader/zxing_reader.wasm?url";
+// Must use package export path (not /dist/...) — Vite resolves via package.json "exports"
+import zxingWasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 
 export type WorkerDecodeRequest =
   | { id: number; type: "init" }

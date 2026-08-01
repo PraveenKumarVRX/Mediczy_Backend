@@ -10,7 +10,8 @@ import {
 } from "@zxing/library";
 import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 // Bundled URL — survives deploy / CDN path issues better than only /public copy
-import zxingWasmAssetUrl from "zxing-wasm/dist/reader/zxing_reader.wasm?url";
+// Must use package export path (not /dist/...) — Vite resolves via package.json "exports"
+import zxingWasmAssetUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
 import {
   decodeBitmapInWorker,
   decodeBytesInWorker,
