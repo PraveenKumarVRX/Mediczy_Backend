@@ -51,7 +51,7 @@ function printToken(token: IssuedToken) {
 export default function SelfCheckinKiosk() {
   const [step, setStep] = useState<Step>('idle');
   const [phone, setPhone] = useState('');
-  const [reg, setReg] = useState({ firstName: '', lastName: '', gender: 'other', dateOfBirth: '', chiefComplaint: '' });
+  const [reg, setReg] = useState({ firstName: '', lastName: '', gender: 'Male', dateOfBirth: '', chiefComplaint: '' });
   const [aadhaarLast4, setAadhaarLast4] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selected, setSelected] = useState<Appointment | null>(null);

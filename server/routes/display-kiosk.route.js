@@ -114,14 +114,18 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ success: false, message: 'phone and firstName required' });
     }
 
-    // Prod enum_users_gender rejects "other" — try common values then male/female
-    const genderNorm = String(genderRaw || '').toLowerCase().trim();
+    // Prod PG enum_users_gender values are capitalized: Male | Female
+    const genderNorm = String(genderRaw || '').trim();
+    const genderLower = genderNorm.toLowerCase();
+    const mapped =
+      genderLower === 'male' || genderLower === 'm' ? 'Male'
+        : genderLower === 'female' || genderLower === 'f' ? 'Female'
+          : null;
     const genderCandidates = [...new Set([
-      genderNorm,
-      genderNorm === 'm' ? 'male' : null,
-      genderNorm === 'f' ? 'female' : null,
-      'male',
-      'female',
+      mapped,
+      genderNorm, // already-correct "Male"/"Female"
+      'Male',
+      'Female',
     ].filter(Boolean))];
 
     const orgId = req.organizationId;
