@@ -71,6 +71,39 @@ function publicBaseUrl() {
   return String(APP_BASE).replace(/\/$/, '');
 }
 
+function looksLikeDeviceLabel(name) {
+  const s = String(name || '').trim();
+  if (!s) return true;
+  return /walk-in-kiosk|self-checkin|device/i.test(s);
+}
+
+/**
+ * Resolve a human hospital/clinic/lab name for WhatsApp {{1}}.
+ * Kiosk UI often omits hospitalName and falls back to device label — that used to
+ * work for Twilio accept, but Meta can quality-score / drop odd template vars.
+ */
+export async function resolveOrgDisplayName(organizationId, fallback = 'the hospital') {
+  const org = parseInt(organizationId, 10);
+  if (!org) return fallback;
+  const queries = [
+    `SELECT "hospitalName" AS n FROM hospitals WHERE id = $1 LIMIT 1`,
+    `SELECT hospital_name AS n FROM hospitals WHERE id = $1 LIMIT 1`,
+    `SELECT name AS n FROM hospitals WHERE id = $1 LIMIT 1`,
+    `SELECT name AS n FROM clinics WHERE id = $1 LIMIT 1`,
+    `SELECT name AS n FROM labs WHERE id = $1 LIMIT 1`,
+  ];
+  for (const sql of queries) {
+    try {
+      const r = await pool.query(sql, [org]);
+      const n = String(r.rows[0]?.n || '').trim();
+      if (n) return n.slice(0, 60);
+    } catch {
+      /* table/column may not exist in this env */
+    }
+  }
+  return String(fallback || 'the hospital').slice(0, 60);
+}
+
 /**
  * Create invite + send WhatsApp/SMS with secure registration link.
  */
@@ -87,6 +120,13 @@ export async function createRegistrationInvite({
   }
   if (!organizationId) {
     throw Object.assign(new Error('Organization required'), { status: 400 });
+  }
+
+  let displayHospital = String(hospitalName || '').trim();
+  if (looksLikeDeviceLabel(displayHospital)) {
+    displayHospital = await resolveOrgDisplayName(organizationId, 'the hospital');
+  } else {
+    displayHospital = displayHospital.slice(0, 60) || 'the hospital';
   }
 
   // Expire any prior pending invites for this phone+org
@@ -113,7 +153,7 @@ export async function createRegistrationInvite({
 
   // Business-initiated WhatsApp must use an approved Content template (not free-form session).
   const notify = await sendKioskRegistrationNotify(normalizedPhone, {
-    hospitalName,
+    hospitalName: displayHospital,
     expiresMin: INVITE_TTL_MIN,
     registerUrl: link,
     token: rawToken,
@@ -127,6 +167,7 @@ export async function createRegistrationInvite({
     [
       ins.rows[0].id,
       JSON.stringify({
+        hospitalName: displayHospital,
         notify: {
           ok: notify.ok,
           channels: notify.channels,
@@ -145,6 +186,7 @@ export async function createRegistrationInvite({
     inviteId: ins.rows[0].id,
     expiresAt: ins.rows[0].expires_at,
     phone: normalizedPhone,
+    hospitalName: displayHospital,
     linkSent: notify.ok,
     channels: notify.channels,
     notifyErrors: notify.errors || [],
@@ -158,6 +200,55 @@ export async function createRegistrationInvite({
     _rawTokenForTests: process.env.NODE_ENV === 'test' ? rawToken : undefined,
     registerUrlHint: link.replace(rawToken, '…'),
   };
+}
+
+/**
+ * Live Twilio delivery check for an invite (token-gated).
+ * Needed because messages.create() can succeed while WhatsApp later undelivers.
+ */
+export async function getInviteWhatsAppDelivery(rawToken) {
+  const invite = await getInviteByRawToken(rawToken);
+  if (!invite.success) return invite;
+  const sid = invite.prefill?.notify?.whatsappSid;
+  if (!sid) {
+    return {
+      success: true,
+      status: invite.status,
+      phone: invite.phone,
+      whatsappSid: null,
+      delivery: null,
+      message: 'No WhatsApp SID on this invite',
+      notify: invite.prefill?.notify || null,
+      hospitalName: invite.prefill?.hospitalName || null,
+    };
+  }
+  try {
+    const wa = (await import('./whatsapp-production.service.js')).default;
+    const msg = await wa.getMessageStatus(sid);
+    return {
+      success: true,
+      status: invite.status,
+      phone: invite.phone,
+      whatsappSid: sid,
+      hospitalName: invite.prefill?.hospitalName || null,
+      delivery: {
+        status: msg.status,
+        errorCode: msg.errorCode || null,
+        errorMessage: msg.errorMessage || null,
+        to: msg.to,
+        from: msg.from,
+        dateSent: msg.dateSent,
+        dateUpdated: msg.dateUpdated,
+      },
+      notify: invite.prefill?.notify || null,
+    };
+  } catch (e) {
+    return {
+      success: false,
+      message: e.message || 'Could not fetch WhatsApp delivery status',
+      whatsappSid: sid,
+    };
+  }
 }
 
 export async function getInviteByRawToken(rawToken) {

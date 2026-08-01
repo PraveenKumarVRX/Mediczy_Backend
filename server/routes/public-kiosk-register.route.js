@@ -6,6 +6,7 @@ import express from 'express';
 import fs from 'fs';
 import {
   getInviteByRawToken,
+  getInviteWhatsAppDelivery,
   completeInviteRegistration,
 } from '../services/kiosk-registration.service.js';
 import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
@@ -31,6 +32,23 @@ router.get('/:token', async (req, res) => {
   } catch (e) {
     console.error('[public-kiosk-reg] get:', e.message);
     res.status(500).json({ success: false, message: 'Could not open registration link' });
+  }
+});
+
+/**
+ * GET /api/public/kiosk-register/:token/notify-status
+ * Token-gated Twilio delivery status (diagnose "accepted but not received").
+ */
+router.get('/:token/notify-status', async (req, res) => {
+  try {
+    const result = await getInviteWhatsAppDelivery(req.params.token);
+    if (!result.success && !result.whatsappSid) {
+      return res.status(410).json(result);
+    }
+    res.status(result.success ? 200 : 502).json(result);
+  } catch (e) {
+    console.error('[public-kiosk-reg] notify-status:', e.message);
+    res.status(500).json({ success: false, message: 'Could not check WhatsApp status' });
   }
 });
 
