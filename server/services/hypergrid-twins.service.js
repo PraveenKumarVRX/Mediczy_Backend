@@ -1,10 +1,18 @@
 /**
  * HyperGrid Digital Twins Service
  *
- * Live, queryable models of physical entities.
- * Twins store: state, history, predicted risk, and associated events.
+ * Live, queryable state store for physical entities (device | patient | asset |
+ * hospital | claim | ambulance): attributes, observation history, and a risk score.
  *
- * Twin types: device | patient | asset | hospital | claim | ambulance
+ * CAPABILITY NOTE (do not overstate in model cards / regulatory docs):
+ * `computeRisk()` is a deterministic point-addition rule over the last 24h of
+ * observations (e.g. +50 for any abnormal vital, +40 for any device alert).
+ * It is NOT a trained predictive model and does not forecast deterioration,
+ * ICU transfer, mortality, or time-to-event — it only flags "something
+ * abnormal happened recently". If a genuine predictive twin is built later,
+ * document it as a separate, versioned model in
+ * ai-model-governance.service.js with its own model card; don't relabel this
+ * function in place.
  */
 
 import { connectPostgres } from '../db/postgres.js';

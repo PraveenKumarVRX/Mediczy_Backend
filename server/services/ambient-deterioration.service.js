@@ -1,5 +1,12 @@
 /**
  * GAP-IOT-002 — Ambient deterioration alerts on ward/ICU displays
+ *
+ * CAPABILITY NOTE (do not overstate in model cards / regulatory docs):
+ * "Ambient" here means the alert is broadcast to the ward/ICU ambient
+ * displays — this module does NOT perform passive/sensor-driven ambient
+ * monitoring. It recomputes NEWS2 from vitals already submitted via
+ * vitals-ews.service.js (manual entry or device-fed) and pushes a
+ * high/critical alert over SSE. There is no independent sensing here.
  */
 import { pushToZone } from './display-sse-broker.service.js';
 

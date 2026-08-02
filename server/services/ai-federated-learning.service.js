@@ -26,6 +26,15 @@
  * Integration:
  *   - HIS service submits updates after each scoring run
  *   - Triage service submits updates after confirmed outcomes
+ *
+ * CAPABILITY NOTE (do not overstate in model cards / regulatory docs):
+ * This service implements the aggregation half of federated learning only —
+ * differential-privacy noising + federated averaging of a `gradient_delta`
+ * object supplied by the caller. It does NOT run local training itself and
+ * does not compute gradients from patient data. As of this audit, no caller
+ * in this codebase performs real local model training and submits actual
+ * gradients — verify a real training loop exists per model before claiming
+ * "federated learning" is live for that model in any external-facing doc.
  */
 
 import pool from '../db/pgPool.js';

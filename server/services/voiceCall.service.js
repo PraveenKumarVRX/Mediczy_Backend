@@ -1,6 +1,15 @@
 /**
  * Voice Call Configuration Service
- * Supports virtual numbers, VoIP, and telecom providers for India
+ * Manages settings for virtual numbers / telecom providers for India.
+ *
+ * CAPABILITY NOTE (do not overstate in model cards / regulatory docs):
+ * This is configuration management only. No provider (Twilio, Exotel,
+ * Knowlarity, Ozonetel, Airtel IQ) is actually wired to a real telephony
+ * API — makeCall() throws rather than placing a call, and testProvider()
+ * only checks that credential fields are non-empty, not that they work.
+ * Real outbound/inbound voice calling needs an actual SDK integration
+ * (e.g. the `twilio` package already in package.json, used elsewhere for
+ * SMS/WhatsApp but not calls) plus a reachable webhook URL for status/TwiML.
  */
 
 import crypto from 'crypto';
@@ -287,25 +296,22 @@ class VoiceCallService {
 
   /**
    * Initiate call with specific provider
+   *
+   * NOT IMPLEMENTED: none of the per-provider methods below call a real
+   * telephony API — they build a plausible-looking response object and
+   * console.log it. This service is config/settings management only.
+   * Fail loudly here instead of returning a fake successful call, so
+   * callers (and anyone reading logs) can't mistake this for a real call.
+   * Wire a real SDK call in the relevant initiate*Call method, then remove
+   * this guard, when real credentials + webhook infra are available.
    */
   async initiateProviderCall(callData) {
     const provider = this.config.provider;
-    const providerConfig = this.config.providers[provider];
-
-    switch (provider) {
-      case 'twilio':
-        return await this.initiateTwilioCall(callData, providerConfig);
-      case 'exotel':
-        return await this.initiateExotelCall(callData, providerConfig);
-      case 'knowlarity':
-        return await this.initiateKnowlarityCall(callData, providerConfig);
-      case 'ozonetel':
-        return await this.initiateOzonetelCall(callData, providerConfig);
-      case 'airtel_iq':
-        return await this.initiateAirtelCall(callData, providerConfig);
-      default:
-        throw new Error(`Unsupported provider: ${provider}`);
-    }
+    throw new Error(
+      `Voice calling is not implemented for provider '${provider}'. ` +
+      `voiceCall.service.js only manages provider configuration; no real ` +
+      `telephony API integration exists yet.`
+    );
   }
 
   /**
@@ -463,9 +469,9 @@ class VoiceCallService {
         throw new Error('Twilio credentials not configured');
       }
 
-      return { 
-        success: true, 
-        message: 'Twilio configuration valid - Global reach including India',
+      return {
+        success: true,
+        message: 'Twilio credentials present (format check only — no live API call made; calling is not implemented)',
         localPresence: false,
         estimatedCost: '₹0.50-2.00 per minute'
       };
@@ -480,9 +486,9 @@ class VoiceCallService {
         throw new Error('Exotel virtual number not configured');
       }
 
-      return { 
-        success: true, 
-        message: 'Exotel configuration valid - Best for Indian market',
+      return {
+        success: true,
+        message: 'Exotel credentials present (format check only — no live API call made; calling is not implemented)',
         localPresence: true,
         estimatedCost: 'From ₹2000/month - Most cost effective for India'
       };
@@ -497,9 +503,9 @@ class VoiceCallService {
         throw new Error('Knowlarity API key not configured');
       }
 
-      return { 
-        success: true, 
-        message: 'Knowlarity configuration valid - Great for healthcare',
+      return {
+        success: true,
+        message: 'Knowlarity credentials present (format check only — no live API call made; calling is not implemented)',
         localPresence: true,
         estimatedCost: 'From ₹1500/month - Healthcare focused'
       };
@@ -514,9 +520,9 @@ class VoiceCallService {
         throw new Error('Ozonetel API key not configured');
       }
 
-      return { 
-        success: true, 
-        message: 'Ozonetel configuration valid - Healthcare platform',
+      return {
+        success: true,
+        message: 'Ozonetel credentials present (format check only — no live API call made; calling is not implemented)',
         localPresence: true,
         estimatedCost: 'Healthcare plans available'
       };
@@ -531,9 +537,9 @@ class VoiceCallService {
         throw new Error('Airtel IQ credentials not configured');
       }
 
-      return { 
-        success: true, 
-        message: 'Airtel IQ configuration valid - Enterprise grade',
+      return {
+        success: true,
+        message: 'Airtel IQ credentials present (format check only — no live API call made; calling is not implemented)',
         localPresence: true,
         estimatedCost: 'Enterprise pricing - Contact Airtel'
       };
