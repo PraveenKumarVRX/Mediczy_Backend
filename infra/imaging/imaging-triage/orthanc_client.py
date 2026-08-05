@@ -91,6 +91,50 @@ def fetch_first_instance_dicom(study_uid: str, orthanc_study_id: str | None) -> 
         return None
 
 
+MAX_SERIES_INSTANCES_FOR_VOLUME = int(os.getenv("MAX_SERIES_INSTANCES_FOR_VOLUME", "400"))
+
+
+def fetch_series_instances_dicom(
+    study_uid: str, orthanc_study_id: str | None
+) -> tuple[list[bytes], dict[str, Any]] | None:
+    """Return (list_of_dicom_bytes, series_meta) for the largest series in the
+    study (by instance count) — a proxy for "the real acquisition" vs a
+    1-3 image scout/localizer series. Capped at MAX_SERIES_INSTANCES_FOR_VOLUME
+    to bound memory/bandwidth on pathological studies."""
+    try:
+        meta = fetch_study_meta(study_uid, orthanc_study_id)
+        if not meta or not meta.get("series_ids"):
+            return None
+
+        best_series_id = None
+        best_instance_ids: list[str] = []
+        for series_id in meta["series_ids"]:
+            series_raw = _request(f"{ORTHANC_URL}/series/{series_id}")
+            series = json.loads(series_raw.decode())
+            instance_ids = series.get("Instances") or []
+            if len(instance_ids) > len(best_instance_ids):
+                best_series_id = series_id
+                best_instance_ids = instance_ids
+
+        if not best_series_id or not best_instance_ids:
+            return None
+
+        capped_ids = best_instance_ids[:MAX_SERIES_INSTANCES_FOR_VOLUME]
+        dicom_list = [
+            _request(f"{ORTHANC_URL}/instances/{iid}/file") for iid in capped_ids
+        ]
+        return dicom_list, {
+            "series_id": best_series_id,
+            "orthanc_study_id": meta["orthanc_study_id"],
+            "instance_count": len(best_instance_ids),
+            "instances_fetched": len(capped_ids),
+            "truncated": len(best_instance_ids) > MAX_SERIES_INSTANCES_FOR_VOLUME,
+            "modality": meta.get("modality"),
+        }
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, KeyError):
+        return None
+
+
 def orthanc_health() -> bool:
     try:
         _request(f"{ORTHANC_URL}/system")

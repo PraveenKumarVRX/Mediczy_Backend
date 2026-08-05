@@ -9,13 +9,46 @@
       "clinical_validation_required": true
     },
     "monai-unet": {
-      "modality": ["CT", "MRI"],
+      "modality": ["CT"],
+      "task": "organ segmentation (spleen) — NOT lung nodule detection",
+      "source": "MONAI Model Zoo bundle 'spleen_ct_segmentation' (Project-MONAI/model-zoo)",
       "weights": {
-        "CT": "ct_lung_nodule_unet.pt",
-        "MRI": "mri_brain_unet.pt"
+        "CT": "spleen_ct_segmentation/ (full bundle dir: configs/ + models/model.pt, fetched via monai.bundle.download)"
       },
-      "model_version": "monai-unet-{modality}-v1",
-      "clinical_validation_required": true
+      "model_version": "monai-bundle-spleen_ct_segmentation-v{bundle_version}",
+      "clinical_validation_required": true,
+      "clinical_use_gate_env": "MONAI_CT_UNET_CLINICAL_APPROVED",
+      "notes": "Weights present on disk does NOT enable this backend — see clinical_use_gate_env. MRI intentionally not wired (no standardized single-sequence Model Zoo bundle); a medical director must select one before implementation. Only used as a fallback in engine.py when neither totalsegmentator nor lung_nodule_detection is approved (least informative of the three CT backends). True lung-nodule *detection* is now implemented separately — see lung_nodule_detection below."
+    },
+    "totalsegmentator": {
+      "modality": ["CT"],
+      "task": "whole-body organ segmentation, 117 classes ('total' task, fast/3mm model)",
+      "source": "TotalSegmentator (Wasserthal et al.) — pip package, self-downloads its own nnU-Net weights on first run",
+      "weights": "auto-download to TOTALSEG_WEIGHTS_PATH/Dataset297_TotalSegmentator_total_3mm_1559subj on first approved use, or pre-fetch via scripts/download_weights.py --warmup-totalsegmentator",
+      "model_version": "totalsegmentator-total-fast-3mm-v2.17.0",
+      "clinical_validation_required": true,
+      "clinical_use_gate_env": "TOTALSEG_CLINICAL_APPROVED",
+      "notes": "Weights present on disk does NOT enable this backend — see clinical_use_gate_env. confidence_score is a coverage-based heuristic (organs found vs expected), NOT a per-voxel probability — this model's simple Python API returns hard labels only. Tried before the single-organ MONAI spleen bundle in the routing chain since it covers more organs."
+    },
+    "lung_nodule_detection": {
+      "modality": ["CT"],
+      "task": "3D lung nodule detection (discrete candidate boxes + scores), NOT segmentation",
+      "source": "MONAI Model Zoo bundle 'lung_nodule_ct_detection' — RetinaNet + ResNet50-3D-FPN, trained on LUNA16",
+      "weights": "lung_nodule_ct_detection/ (full bundle dir, fetched via monai.bundle.download)",
+      "model_version": "monai-bundle-lung_nodule_ct_detection-luna16-v1",
+      "clinical_validation_required": true,
+      "clinical_use_gate_env": "LUNG_NODULE_DETECTION_CLINICAL_APPROVED",
+      "notes": "Weights present on disk does NOT enable this backend. Runs in engine.py's CT multi-model merge alongside totalsegmentator (organ boundaries + discrete nodule candidates are complementary, both included in the merged result when both are approved). Sliding-window ROI reduced from the bundle's own default (512,512,192) to (96,96,48) for CPU tractability — a tuning choice that itself needs validation, not assumed equivalent to the bundle's documented config. Box coordinates are voxel-space, not yet transformed to patient world coordinates (needs full DICOM affine, only approximated here)."
+    },
+    "breast_density_classification": {
+      "modality": ["MG"],
+      "task": "BI-RADS breast density classification (A-D), NOT lesion/malignancy detection",
+      "source": "MONAI Model Zoo bundle 'breast_density_classification' — InceptionV3 (TorchVisionFCModel), 4-class",
+      "weights": "breast_density_classification/ (full bundle dir, fetched via monai.bundle.download)",
+      "model_version": "monai-bundle-breast_density_classification-v1",
+      "clinical_validation_required": true,
+      "clinical_use_gate_env": "BREAST_DENSITY_CLINICAL_APPROVED",
+      "notes": "Weights present on disk does NOT enable this backend. Single 2D image classification (not volumetric) — mammography goes through the existing single-instance DICOM fetch path, no series/volume assembly needed. Density category only, explicitly not framed as a cancer-detection output."
     },
     "nnunetv2": {
       "modality": ["CT"],

@@ -236,28 +236,37 @@ export const MODEL_CARDS = {
 
   'imaging-triage-v1': {
     componentName:      'Imaging AI Triage',
-    version:            'v1.3-cv-pipeline',
+    version:            'v1.6-cv-pipeline',
     regulatoryClass:    'Class IIb SaMD (moderate risk)',
     intendedUse:        'Screen imaging studies for review priorities and flag suspicious regions for radiologist attention. Informs worklist prioritization only.',
     notIntendedFor:     'Autonomous diagnosis; final clinical disposition without radiologist review.',
-    inputFeatures:      ['StudyInstanceUID', 'Modality', 'Orthanc DICOM pixels', 'Orthanc study reference'],
-    outputDescription:  'Findings with severity, confidence, inference_backend, feature_attributions, critical alert triggers.',
-    modelType:          'TorchXRayVision (CXR) + MONAI UNet (CT/MRI when weights mounted) + nnU-Net v2 (optional) + heuristic/LLM fallback',
+    inputFeatures:      ['StudyInstanceUID', 'Modality', 'Orthanc DICOM pixels (full series volume for CT/MR, single instance for XR/MG)', 'Orthanc study reference'],
+    outputDescription:  'Findings with severity, confidence, inference_backend, feature_attributions, critical alert triggers. For CT, findings from TotalSegmentator and the lung nodule detector are merged into one result when both are approved (complementary — organ boundaries vs. discrete candidate lesions).',
+    modelType:          'TorchXRayVision (CXR) + TotalSegmentator (CT, 117-class whole-body, gated) + MONAI "lung_nodule_ct_detection" RetinaNet (CT, discrete nodule candidates, gated) + MONAI "spleen_ct_segmentation" (CT, single-organ fallback, gated) + MONAI "breast_density_classification" InceptionV3 (MG, BI-RADS category, gated) + nnU-Net v2 (optional) + heuristic/LLM fallback',
     knownLimitations: [
-      'MONAI/nnU-Net weights require per-site clinical validation before production use',
-      'CT proxy via TorchXRayVision axial slice is screening-only — not a dedicated CT model',
+      'All four MONAI/TotalSegmentator CT/MG backends are real, working integrations but are TECHNICAL PROOFS-OF-CONCEPT, not clinically selected or validated models for this deployment — each disabled by default behind its own env-var gate, each requiring its own separate medical director approval (components: imaging-triage-totalsegmentator, imaging-triage-monai-ct-unet, imaging-triage-lung-nodule-detection, imaging-triage-breast-density)',
+      'Lung nodule detection outputs discrete candidate boxes with real per-box scores (genuinely different from segmentation) — but box coordinates are voxel-space, not yet transformed to patient world coordinates (needs a full DICOM affine, only approximated here); sliding-window ROI reduced from the bundle\'s own documented default for CPU tractability, a tuning choice needing its own validation',
+      'Breast density classifier outputs BI-RADS category (A-D) only — explicitly NOT a lesion or malignancy detector; do not conflate with cancer screening',
+      'TotalSegmentator confidence_score is a coverage-based heuristic (organs found vs. expected), NOT a per-voxel model probability — its simple Python API returns hard labels only; deliberately capped lower than backends with genuine softmax-derived confidence',
+      'MRI segmentation is not wired for any CT backend — no standardized single-sequence public bundle identified; requires medical-director model selection',
+      'Volumetric preprocessing uses approximate spacing (PixelSpacing + derived slice spacing from ImagePositionPatient or SliceThickness) rather than a full DICOM orientation/affine — spatially indicative, not spatially exact',
+      'Assessed but deliberately NOT implemented: brain CT hemorrhage/stroke models, per-organ ultrasound models, MedCLIP/BioViL embeddings, Swin UNETR (redundant with TotalSegmentator\'s broader organ coverage) — none had a real, verifiable, drop-in pretrained checkpoint with the same rigor applied to the four backends above; fabricating one would violate this component\'s own safety-control pattern',
+      'CT proxy via TorchXRayVision axial slice remains the fallback screening path when no CT backend is available/approved — screening-only, not a dedicated CT model',
       'False negatives possible for critical findings',
-      'Heuristic fallback when DICOM unavailable or weights not mounted'
+      'Heuristic fallback when DICOM unavailable or no CV backend available/approved'
     ],
     safetyControls: [
       'Critical findings trigger STAT queue bump + alert',
       'reviewTriage() endpoint for physician acknowledgment',
       'Quality gates on downstream report drafting',
-      'Model weight changes require governanceService.proposeChange() approval'
+      'Model weight changes require governanceService.proposeChange() approval',
+      'Every MONAI/TotalSegmentator backend has its own code-level gate (env var) independent of weights-on-disk — downloading weights alone never enables clinical use for any of them',
+      'Every volumetric backend declines to run on non-volumetric input (single 2D slice) rather than produce output from insufficient data',
+      'CT multi-model merge uses the MINIMUM confidence across contributing backends, not an average — a merge is never treated as more certain than its least-confident contributor'
     ],
-    changeControlPlan: 'Model weight or threshold changes require medical director approval via governance pipeline.',
+    changeControlPlan: 'Model weight or threshold changes require medical director approval via governance pipeline. Each backend requires its own separate approval before its env var is set: imaging-triage-totalsegmentator, imaging-triage-monai-ct-unet, imaging-triage-lung-nodule-detection, imaging-triage-breast-density.',
     lastValidatedAt:   null,
-    regulatoryNotes:   'Advisory triage only. CV backends emit feature_attributions for interpretability; radiologist sign-off mandatory.'
+    regulatoryNotes:   'Advisory triage only. CV backends emit feature_attributions for interpretability; radiologist sign-off mandatory. All CT/MG model outputs are explicitly labeled in findings text as technical proof-of-concept pending clinical validation.'
   },
 
   'admin-copilot-v1': {

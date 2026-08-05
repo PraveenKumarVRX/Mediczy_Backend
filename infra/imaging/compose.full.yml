@@ -120,6 +120,21 @@ services:
       MODEL_WEIGHTS_DIR: /app/models
       NNUNET_MODEL_FOLDER: ${NNUNET_MODEL_FOLDER:-}
       NNUNET_DATASET_NAME: ${NNUNET_DATASET_NAME:-Dataset001_Lung}
+      # MONAI CT bundle (spleen_ct_segmentation) safety gate — intentionally
+      # NOT defaulted to true anywhere. Set only after a medical director
+      # approves the pending governance change for
+      # component "imaging-triage-monai-ct-unet". See models/README.md.
+      MONAI_CT_UNET_CLINICAL_APPROVED: ${MONAI_CT_UNET_CLINICAL_APPROVED:-false}
+      # TotalSegmentator (whole-body CT segmentation) safety gate — same
+      # pattern, same reasoning, also not defaulted to true. See
+      # component "imaging-triage-totalsegmentator" in ai_model_change_log.
+      TOTALSEG_CLINICAL_APPROVED: ${TOTALSEG_CLINICAL_APPROVED:-false}
+      # Lung nodule detection (RetinaNet, LUNA16) and breast density
+      # classification (InceptionV3, BI-RADS) safety gates — same pattern.
+      # Components: imaging-triage-lung-nodule-detection,
+      # imaging-triage-breast-density.
+      LUNG_NODULE_DETECTION_CLINICAL_APPROVED: ${LUNG_NODULE_DETECTION_CLINICAL_APPROVED:-false}
+      BREAST_DENSITY_CLINICAL_APPROVED: ${BREAST_DENSITY_CLINICAL_APPROVED:-false}
     volumes:
       - ./imaging-triage/models:/app/models:ro
     ports:

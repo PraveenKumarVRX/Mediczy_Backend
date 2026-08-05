@@ -9,3 +9,16 @@ torch>=2.1.0
 torchvision>=0.16.0
 monai>=1.3.0
 torchxrayvision>=1.2.0
+# Required by monai.bundle.download() (MONAI Model Zoo fetch)
+requests>=2.31.0
+huggingface_hub>=0.20.0
+# Whole-body CT organ segmentation (fast/3mm 'total' task) — pulls in a
+# matching nnunetv2 automatically. NOTE: verified during integration that
+# torch/torchvision must both come from the same CPU wheel index
+# (download.pytorch.org/whl/cpu) or torchvision's native ops fail to
+# register — keep the --extra-index-url line above ordering intact.
+TotalSegmentator>=2.4.0
+# lung_nodule_detection.py (MONAI Model Zoo bundle, RetinaNet detector) and
+# breast_density_classifier.py (MONAI Model Zoo bundle, InceptionV3) both
+# load via monai.bundle.ConfigParser — no extra packages beyond monai/torch/
+# torchvision already listed above.

@@ -45,6 +45,87 @@ def dicom_bytes_to_hu_array(dicom_bytes: bytes) -> dict[str, Any] | None:
         return None
 
 
+def dicom_series_to_hu_volume(dicom_bytes_list: list[bytes]) -> dict[str, Any] | None:
+    """Assemble a list of single-slice DICOM instances into a real 3D HU
+    volume with (approximate) spacing, for use by genuinely volumetric
+    models (MONAI bundles, nnU-Net). Sorts by ImagePositionPatient z when
+    every slice has it (anatomically correct); falls back to InstanceNumber
+    otherwise. z-spacing is derived from the median consecutive slice delta
+    when position data is available, else SliceThickness, else a documented
+    fallback of 1.0mm — callers must treat spacing as approximate unless
+    z_spacing_source == 'image_position_patient'."""
+    if pydicom is None or not dicom_bytes_list:
+        return None
+
+    parsed = []
+    for raw in dicom_bytes_list:
+        try:
+            ds = pydicom.dcmread(raw)
+            if not hasattr(ds, "pixel_array"):
+                continue
+            arr = ds.pixel_array.astype(np.float32)
+            try:
+                arr = apply_modality_lut(arr, ds).astype(np.float32)
+            except Exception:
+                slope = float(getattr(ds, "RescaleSlope", 1) or 1)
+                intercept = float(getattr(ds, "RescaleIntercept", 0) or 0)
+                arr = arr * slope + intercept
+            ipp = getattr(ds, "ImagePositionPatient", None)
+            z = float(ipp[2]) if ipp and len(ipp) == 3 else None
+            instance_number = getattr(ds, "InstanceNumber", None)
+            parsed.append({
+                "arr": arr,
+                "z": z,
+                "instance_number": int(instance_number) if instance_number is not None else None,
+                "pixel_spacing": getattr(ds, "PixelSpacing", None),
+                "slice_thickness": getattr(ds, "SliceThickness", None),
+                "modality": str(getattr(ds, "Modality", "") or "").upper(),
+            })
+        except Exception:
+            continue
+
+    if not parsed:
+        return None
+
+    if all(p["z"] is not None for p in parsed):
+        parsed.sort(key=lambda p: p["z"])
+        z_positions = [p["z"] for p in parsed]
+        deltas = [abs(b - a) for a, b in zip(z_positions[:-1], z_positions[1:]) if abs(b - a) > 1e-6]
+        z_spacing = float(np.median(deltas)) if deltas else None
+        z_spacing_source = "image_position_patient" if z_spacing else "unknown"
+    else:
+        parsed.sort(key=lambda p: (p["instance_number"] if p["instance_number"] is not None else 0))
+        z_spacing = None
+        z_spacing_source = "instance_number_order_no_spacing"
+
+    if z_spacing is None:
+        thickness = next((p["slice_thickness"] for p in parsed if p["slice_thickness"]), None)
+        z_spacing = float(thickness) if thickness else 1.0
+        if z_spacing_source == "unknown":
+            z_spacing_source = "slice_thickness" if thickness else "fallback_1mm_unverified"
+
+    shapes = {p["arr"].shape for p in parsed}
+    if len(shapes) > 1:
+        # Mixed in-plane shapes (e.g. localizer mixed into the series) —
+        # keep only the modal (most common) shape to build a consistent volume.
+        from collections import Counter
+        target_shape = Counter(p["arr"].shape for p in parsed).most_common(1)[0][0]
+        parsed = [p for p in parsed if p["arr"].shape == target_shape]
+
+    volume = np.stack([p["arr"] for p in parsed], axis=0)  # (z, y, x)
+    pixel_spacing = next((p["pixel_spacing"] for p in parsed if p["pixel_spacing"]), None)
+    modality = parsed[0]["modality"]
+
+    return {
+        "hu_volume": volume,
+        "modality": modality,
+        "num_slices": volume.shape[0],
+        "pixel_spacing": [float(x) for x in pixel_spacing] if pixel_spacing else None,
+        "slice_spacing_mm": z_spacing,
+        "z_spacing_source": z_spacing_source,
+    }
+
+
 def _to_display_uint8(arr: np.ndarray, modality: str) -> np.ndarray:
     """Window for XR; soft-tissue window for CT slice."""
     a = arr.astype(np.float32)
