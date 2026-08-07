@@ -49,7 +49,7 @@ export const authCorporate = async (req, res, next) => {
 
     // DB re-validation
     const corporate = await Corporate.findByPk(corporateId, {
-      attributes: ['id', 'email', 'companyName', 'contactPersonName', 'status', 'isActive'],
+      attributes: ['id', 'email', 'companyName', 'contactPerson', 'status'],
     });
 
     if (!corporate) {
@@ -63,15 +63,12 @@ export const authCorporate = async (req, res, next) => {
         message: `Corporate account is ${corporate.status}. Contact admin.`,
       });
     }
-    if (corporate.isActive === false) {
-      return res.status(403).json({ success: false, message: 'Corporate account has been disabled.' });
-    }
 
     req.corporateUser = {
       id: corporate.id,
       email: corporate.email,
       companyName: corporate.companyName,
-      contactPersonName: corporate.contactPersonName,
+      contactPersonName: corporate.contactPerson,
       role: 'corporate',
       corporateId: corporate.id,
     };

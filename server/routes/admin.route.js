@@ -5081,6 +5081,10 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
       );
       CREATE INDEX IF NOT EXISTS idx_cwe_corporate ON corporate_wellness_events(corporate_id);
       CREATE INDEX IF NOT EXISTS idx_cwe_event_date ON corporate_wellness_events(event_date);
+      ALTER TABLE corporate_wellness_events ADD COLUMN IF NOT EXISTS invites_sent BOOLEAN DEFAULT FALSE;
+      ALTER TABLE corporate_wellness_events ADD COLUMN IF NOT EXISTS invites_sent_at TIMESTAMPTZ;
+      ALTER TABLE corporate_wellness_events ADD COLUMN IF NOT EXISTS participant_selection VARCHAR(50);
+      ALTER TABLE corporate_wellness_events ADD COLUMN IF NOT EXISTS total_invited INTEGER DEFAULT 0;
     `);
   } catch (e) {
     console.warn('[Wellness Calendar] Table setup warning:', e.message);

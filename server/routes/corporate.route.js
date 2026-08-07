@@ -1885,184 +1885,185 @@ router.get('/wellness-calendar/activities', authCorporate, async (req, res) => {
   }
 });
 
-// Create wellness activity
-router.post('/wellness-calendar/activities', authUser, async (req, res) => {
+// Create wellness activity — persists to corporate_wellness_events, scoped to the caller's own corporate
+router.post('/wellness-calendar/activities', authCorporate, async (req, res) => {
   try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
     const { title, description, type, date, startTime, endTime, location, speaker, capacity, theme } = req.body;
-    
-    const newActivity = {
-      id: `act-${Date.now()}`,
-      title,
-      description,
-      type,
-      date,
-      startTime,
-      endTime,
-      location,
-      speaker,
-      capacity: capacity || 50,
-      registered: 0,
-      status: 'scheduled',
-      theme,
-      participantSelection: 'all',
-      invitesSent: false,
-      totalInvited: 0,
-      reminders: { enabled: true, fifteenDays: true, threeDays: true, oneDayBefore: true },
-      createdAt: new Date().toISOString()
-    };
-    
-    wellnessActivities.push(newActivity);
-    
-    res.json({
-      success: true,
-      message: 'Activity created successfully',
-      data: newActivity
-    });
+
+    if (!title || !date) {
+      return res.status(400).json({ success: false, message: 'title and date are required' });
+    }
+
+    const themeName = theme || WELLNESS_THEMES[new Date(date).getMonth()]?.name || null;
+
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_wellness_events
+         (corporate_id, title, description, event_type, event_date, event_time, end_time,
+          location, organizer, max_participants, status, color)
+       VALUES (:corporateId, :title, :description, :type, :date, :startTime, :endTime,
+               :location, :speaker, :capacity, 'upcoming', 'teal')
+       RETURNING id, title, description, event_type AS type,
+                 TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
+                 TO_CHAR(event_time, 'HH24:MI') AS "startTime",
+                 TO_CHAR(end_time, 'HH24:MI') AS "endTime",
+                 location, organizer AS speaker, max_participants AS capacity,
+                 registered_count AS registered, status, color`,
+      {
+        replacements: {
+          corporateId, title: title.trim(), description: description || null,
+          type: type || 'talk', date, startTime: startTime || null, endTime: endTime || null,
+          location: location || null, speaker: speaker || null,
+          capacity: capacity ? parseInt(capacity, 10) : 50,
+        },
+        type: postgresSequelize.QueryTypes.INSERT
+      }
+    );
+    const newActivity = { ...(Array.isArray(rows) ? rows[0] : rows), theme: themeName, invitesSent: false, totalInvited: 0 };
+
+    res.json({ success: true, message: 'Activity created successfully', data: newActivity });
   } catch (error) {
     console.error('Error creating wellness activity:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create activity',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to create activity', error: error.message });
   }
 });
 
-// Update wellness activity
-router.put('/wellness-calendar/activities/:id', authUser, async (req, res) => {
+// Update wellness activity — scoped to the caller's own corporate
+router.put('/wellness-calendar/activities/:id', authCorporate, async (req, res) => {
   try {
-    const { id } = req.params;
-    const index = wellnessActivities.findIndex(a => a.id === id);
-    
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        message: 'Activity not found'
-      });
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    const eventId = parseInt(req.params.id, 10);
+    if (!eventId) return res.status(400).json({ success: false, message: 'Invalid activity ID' });
+
+    const { title, description, type, date, startTime, endTime, location, speaker, capacity, status, color } = req.body;
+
+    const updated = await postgresSequelize.query(
+      `UPDATE corporate_wellness_events SET
+         title = COALESCE(:title, title),
+         description = COALESCE(:description, description),
+         event_type = COALESCE(:type, event_type),
+         event_date = COALESCE(:date, event_date),
+         event_time = COALESCE(:startTime, event_time),
+         end_time = COALESCE(:endTime, end_time),
+         location = COALESCE(:location, location),
+         organizer = COALESCE(:speaker, organizer),
+         max_participants = COALESCE(:capacity, max_participants),
+         status = COALESCE(:status, status),
+         color = COALESCE(:color, color),
+         updated_at = NOW()
+       WHERE id = :eventId AND corporate_id = :corporateId
+       RETURNING id`,
+      {
+        replacements: {
+          eventId, corporateId, title: title?.trim() || null, description: description ?? null,
+          type: type || null, date: date || null, startTime: startTime || null, endTime: endTime || null,
+          location: location || null, speaker: speaker || null,
+          capacity: capacity ? parseInt(capacity, 10) : null, status: status || null, color: color || null,
+        },
+        type: postgresSequelize.QueryTypes.UPDATE
+      }
+    );
+    if (!updated || !updated[0] || updated[0].length === 0) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
     }
-    
-    wellnessActivities[index] = { ...wellnessActivities[index], ...req.body, updatedAt: new Date().toISOString() };
-    
-    res.json({
-      success: true,
-      message: 'Activity updated successfully',
-      data: wellnessActivities[index]
-    });
+    res.json({ success: true, message: 'Activity updated successfully' });
   } catch (error) {
     console.error('Error updating wellness activity:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update activity',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to update activity', error: error.message });
   }
 });
 
-// Delete wellness activity
-router.delete('/wellness-calendar/activities/:id', authUser, async (req, res) => {
+// Delete wellness activity — scoped to the caller's own corporate
+router.delete('/wellness-calendar/activities/:id', authCorporate, async (req, res) => {
   try {
-    const { id } = req.params;
-    const index = wellnessActivities.findIndex(a => a.id === id);
-    
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        message: 'Activity not found'
-      });
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    const eventId = parseInt(req.params.id, 10);
+    if (!eventId) return res.status(400).json({ success: false, message: 'Invalid activity ID' });
+
+    const [deletedRows] = await postgresSequelize.query(
+      `DELETE FROM corporate_wellness_events WHERE id = :eventId AND corporate_id = :corporateId RETURNING id`,
+      { replacements: { eventId, corporateId }, type: postgresSequelize.QueryTypes.INSERT }
+    );
+    if (!deletedRows || deletedRows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
     }
-    
-    wellnessActivities.splice(index, 1);
-    
-    res.json({
-      success: true,
-      message: 'Activity deleted successfully'
-    });
+    res.json({ success: true, message: 'Activity deleted successfully' });
   } catch (error) {
     console.error('Error deleting wellness activity:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete activity',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to delete activity', error: error.message });
   }
 });
 
-// Send invites for wellness activity
-router.post('/wellness-calendar/activities/:id/send-invites', authUser, async (req, res) => {
+// Send invites for wellness activity — persists invite status, scoped to the caller's own corporate
+router.post('/wellness-calendar/activities/:id/send-invites', authCorporate, async (req, res) => {
   try {
-    const { id } = req.params;
-    const { participantSelection, selectedDepartments, selectedLocations, totalParticipants } = req.body;
-    
-    const index = wellnessActivities.findIndex(a => a.id === id);
-    
-    if (index === -1) {
-      return res.status(404).json({
-        success: false,
-        message: 'Activity not found'
-      });
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    const eventId = parseInt(req.params.id, 10);
+    if (!eventId) return res.status(400).json({ success: false, message: 'Invalid activity ID' });
+
+    const { participantSelection, participantIds } = req.body;
+    const totalInvited = Array.isArray(participantIds) ? participantIds.length : (req.body.totalParticipants || 0);
+
+    const updated = await postgresSequelize.query(
+      `UPDATE corporate_wellness_events SET
+         invites_sent = TRUE,
+         invites_sent_at = NOW(),
+         notify_employees = TRUE,
+         participant_selection = :participantSelection,
+         total_invited = :totalInvited,
+         updated_at = NOW()
+       WHERE id = :eventId AND corporate_id = :corporateId
+       RETURNING id`,
+      {
+        replacements: { eventId, corporateId, participantSelection: participantSelection || 'all', totalInvited },
+        type: postgresSequelize.QueryTypes.UPDATE
+      }
+    );
+    if (!updated || !updated[0] || updated[0].length === 0) {
+      return res.status(404).json({ success: false, message: 'Activity not found' });
     }
-    
-    wellnessActivities[index] = {
-      ...wellnessActivities[index],
-      invitesSent: true,
-      invitesSentDate: new Date().toISOString(),
-      participantSelection,
-      selectedDepartments,
-      selectedLocations,
-      totalInvited: totalParticipants || 0
-    };
-    
-    res.json({
-      success: true,
-      message: `Invites sent to ${totalParticipants || 0} participants`,
-      data: wellnessActivities[index]
-    });
+    res.json({ success: true, message: `Invites sent to ${totalInvited} participants` });
   } catch (error) {
     console.error('Error sending invites:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send invites',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to send invites', error: error.message });
   }
 });
 
-// Get employee events (for employee wellness calendar view)
+// Get employee events (for employee wellness calendar view) — real, per-corporate DB data
 router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
   try {
-    // Return activities that are scheduled or ongoing
-    const employeeEvents = wellnessActivities
-      .filter(a => a.status === 'scheduled' || a.status === 'ongoing')
-      .map(a => ({
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        type: a.type,
-        date: a.date,
-        startTime: a.startTime,
-        endTime: a.endTime,
-        location: a.location,
-        speaker: a.speaker,
-        theme: a.theme,
-        capacity: a.capacity,
-        registered: a.registered,
-        isRegistered: false
-      }));
-    
-    res.json({
-      success: true,
-      data: {
-        events: employeeEvents,
-        themes: WELLNESS_THEMES
-      }
-    });
+    const [assoc] = await postgresSequelize.query(
+      `SELECT "entityId" AS "corporateId" FROM user_associations
+       WHERE "userId" = :userId AND "entityType" = 'corporate' AND role = 'employee' AND status = 'active'
+       LIMIT 1`,
+      { replacements: { userId: req.user?.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    if (!assoc) {
+      return res.json({ success: true, data: { events: [], themes: WELLNESS_THEMES } });
+    }
+
+    const rows = await postgresSequelize.query(
+      `SELECT id, title, description, event_type AS type,
+              TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
+              TO_CHAR(event_time, 'HH24:MI') AS "startTime",
+              TO_CHAR(end_time, 'HH24:MI') AS "endTime",
+              location, organizer AS speaker, max_participants AS capacity,
+              registered_count AS registered
+       FROM corporate_wellness_events
+       WHERE corporate_id = :corporateId
+         AND status IN ('upcoming', 'ongoing')
+         AND invites_sent = TRUE
+       ORDER BY event_date ASC`,
+      { replacements: { corporateId: assoc.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const employeeEvents = rows.map(r => ({ ...r, isRegistered: false }));
+
+    res.json({ success: true, data: { events: employeeEvents, themes: WELLNESS_THEMES } });
   } catch (error) {
     console.error('Error fetching employee wellness events:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch wellness events',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch wellness events', error: error.message });
   }
 });
 
@@ -2282,52 +2283,6 @@ router.get('/employees/:id', authCorporate, async (req, res) => {
     res.json({ success: true, data: { employee } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch employee', error: error.message });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Health Calendar Routes
-// ---------------------------------------------------------------------------
-router.get('/health-calendar/events', authCorporate, async (req, res) => {
-  try {
-    const corporateId = req.user?.corporateId || req.user?.organization_id;
-    const rows = await postgresSequelize.query(
-      `SELECT id, title, description, event_type AS type, TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
-              TO_CHAR(event_time, 'HH12:MI AM') AS time, location, max_participants AS participants,
-              registered_count AS "registeredCount", status, organizer, notify_employees AS "notifyEmployees"
-       FROM corporate_wellness_events
-       WHERE corporate_id = :corporateId
-       ORDER BY event_date ASC`,
-      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
-    );
-    res.json({ success: true, data: { events: rows } });
-  } catch (error) {
-    console.error('Error fetching health calendar events:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch health calendar events' });
-  }
-});
-
-router.post('/health-calendar/events', authCorporate, async (req, res) => {
-  try {
-    const corporateId = req.user?.corporateId || req.user?.organization_id;
-    const { title, description, type, date, time, location, participants, notes } = req.body;
-    if (!title || !date || !type) {
-      return res.status(400).json({ success: false, message: 'title, date, and type are required' });
-    }
-    const [result] = await postgresSequelize.query(
-      `INSERT INTO corporate_wellness_events (corporate_id, title, description, event_type, event_date, event_time, location, max_participants, created_by)
-       VALUES (:corporateId, :title, :description, :type, :date, :time, :location, :participants, :createdBy)
-       RETURNING id, title, event_type AS type, TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
-                 TO_CHAR(event_time, 'HH12:MI AM') AS time, location, max_participants AS participants, status`,
-      {
-        replacements: { corporateId, title, description: description || null, type, date, time: time || null, location: location || null, participants: participants || null, createdBy: req.user?.id },
-        type: postgresSequelize.QueryTypes.INSERT
-      }
-    );
-    res.json({ success: true, data: { event: result } });
-  } catch (error) {
-    console.error('Error creating health calendar event:', error);
-    res.status(500).json({ success: false, message: 'Failed to create health calendar event' });
   }
 });
 

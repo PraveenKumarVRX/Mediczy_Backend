@@ -101,7 +101,7 @@ interface WellnessActivity {
   speaker?: string;
   capacity?: number;
   registered?: number;
-  status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+  status: 'upcoming' | 'ongoing' | 'completed' | 'cancelled';
   theme: string;
   participantSelection?: ParticipantSelection;
   selectedDepartments?: string[];
@@ -295,7 +295,7 @@ const CorporateWellnessCalendar: React.FC = () => {
   const stats = useMemo(() => ({
     totalActivities: activities.length,
     thisMonthActivities: getActivitiesForMonth(currentMonth).length,
-    upcomingActivities: activities.filter(a => new Date(a.date) > new Date() && a.status === 'scheduled').length,
+    upcomingActivities: activities.filter(a => new Date(a.date) > new Date() && a.status === 'upcoming').length,
     completedActivities: activities.filter(a => a.status === 'completed').length
   }), [activities, currentMonth]);
 
@@ -372,19 +372,14 @@ const CorporateWellnessCalendar: React.FC = () => {
       // Generate ICS file content
       const icsContent = generateICSFile(activity);
 
-      // Call real API to send invites; fall back gracefully if not yet implemented
-      try {
-        await api.post(`/corporate/wellness-calendar/${encodeURIComponent(activity.id)}/send-invites`, {
-          participantIds: participants.map(p => p.id ?? p),
-          activityTitle: activity.title,
-          activityDate: activity.date,
-          activityTime: activity.time,
-          location: activity.location,
-        });
-      } catch (apiErr: any) {
-        // If endpoint not yet live (404/501), proceed with local update + ICS download
-        if (apiErr?.response?.status !== 404 && apiErr?.response?.status !== 501) throw apiErr;
-      }
+      // Persist invite status server-side, scoped to this corporate's event
+      await api.post(`/corporate/wellness-calendar/activities/${encodeURIComponent(activity.id)}/send-invites`, {
+        participantSelection: activity.participantSelection || 'all',
+        participantIds: participants.map(p => p.id ?? p),
+        activityTitle: activity.title,
+        activityDate: activity.date,
+        location: activity.location,
+      });
 
       // Update activity with invite status
       setActivities(prev => prev.map(a => 
@@ -417,58 +412,74 @@ const CorporateWellnessCalendar: React.FC = () => {
     }
   };
 
-  const handleCreateActivity = () => {
+  const handleCreateActivity = async () => {
     const theme = WELLNESS_THEMES[newActivity.date.getMonth()];
     const participantCount = getParticipantCount();
-    const activity: WellnessActivity = {
-      id: Date.now().toString(),
-      title: newActivity.title,
-      description: newActivity.description,
-      type: newActivity.type,
-      date: format(newActivity.date, 'yyyy-MM-dd'),
-      startTime: newActivity.startTime,
-      endTime: newActivity.endTime,
-      location: newActivity.location,
-      speaker: newActivity.speaker,
-      capacity: newActivity.capacity,
-      registered: 0,
-      status: 'scheduled',
-      theme: theme.name,
-      participantSelection: newActivity.participantSelection,
-      selectedDepartments: newActivity.selectedDepartments,
-      selectedLocations: newActivity.selectedLocations,
-      selectedFacilities: newActivity.selectedFacilities,
-      invitesSent: false,
-      totalInvited: participantCount,
-      reminders: newActivity.reminders
-    };
-    setActivities([...activities, activity]);
-    setCreateDialogOpen(false);
-    setNewActivity({
-      title: '',
-      description: '',
-      type: 'talk',
-      date: new Date(),
-      startTime: '10:00',
-      endTime: '12:00',
-      location: '',
-      speaker: '',
-      capacity: 50,
-      participantSelection: 'all',
-      selectedDepartments: [],
-      selectedLocations: [],
-      selectedFacilities: [],
-      reminders: {
-        enabled: true,
-        fifteenDays: true,
-        threeDays: true,
-        oneDayBefore: true
-      }
-    });
-    toast({
-      title: 'Activity Created!',
-      description: `${activity.title} has been added to the calendar for ${participantCount} participants.`
-    });
+    try {
+      const { data } = await api.post('/corporate/wellness-calendar/activities', {
+        title: newActivity.title,
+        description: newActivity.description,
+        type: newActivity.type,
+        date: format(newActivity.date, 'yyyy-MM-dd'),
+        startTime: newActivity.startTime,
+        endTime: newActivity.endTime,
+        location: newActivity.location,
+        speaker: newActivity.speaker,
+        capacity: newActivity.capacity,
+        theme: theme.name,
+      });
+      const created = data?.data;
+      if (!created) throw new Error('No activity returned from server');
+
+      const activity: WellnessActivity = {
+        ...created,
+        id: String(created.id),
+        theme: created.theme || theme.name,
+        // Participant-targeting criteria and reminder preferences are only
+        // persisted server-side once invites are actually sent — kept
+        // client-side here so the "Send Invites" step can reuse them.
+        participantSelection: newActivity.participantSelection,
+        selectedDepartments: newActivity.selectedDepartments,
+        selectedLocations: newActivity.selectedLocations,
+        selectedFacilities: newActivity.selectedFacilities,
+        invitesSent: false,
+        totalInvited: participantCount,
+        reminders: newActivity.reminders
+      };
+      setActivities(prev => [...prev, activity]);
+      setCreateDialogOpen(false);
+      setNewActivity({
+        title: '',
+        description: '',
+        type: 'talk',
+        date: new Date(),
+        startTime: '10:00',
+        endTime: '12:00',
+        location: '',
+        speaker: '',
+        capacity: 50,
+        participantSelection: 'all',
+        selectedDepartments: [],
+        selectedLocations: [],
+        selectedFacilities: [],
+        reminders: {
+          enabled: true,
+          fifteenDays: true,
+          threeDays: true,
+          oneDayBefore: true
+        }
+      });
+      toast({
+        title: 'Activity Created!',
+        description: `${activity.title} has been added to the calendar for ${participantCount} participants.`
+      });
+    } catch (error) {
+      toast({
+        title: 'Failed to Create Activity',
+        description: 'Please try again later.',
+        variant: 'destructive'
+      });
+    }
   };
 
   const handleViewActivity = (activity: WellnessActivity) => {
@@ -476,12 +487,21 @@ const CorporateWellnessCalendar: React.FC = () => {
     setViewActivityOpen(true);
   };
 
-  const handleDeleteActivity = (activityId: string) => {
-    setActivities(activities.filter(a => a.id !== activityId));
-    toast({
-      title: 'Activity Deleted',
-      description: 'The activity has been removed from the calendar.'
-    });
+  const handleDeleteActivity = async (activityId: string) => {
+    try {
+      await api.delete(`/corporate/wellness-calendar/activities/${encodeURIComponent(activityId)}`);
+      setActivities(prev => prev.filter(a => a.id !== activityId));
+      toast({
+        title: 'Activity Deleted',
+        description: 'The activity has been removed from the calendar.'
+      });
+    } catch (error) {
+      toast({
+        title: 'Failed to Delete Activity',
+        description: 'Please try again later.',
+        variant: 'destructive'
+      });
+    }
   };
 
   const getActivityTypeInfo = (type: ActivityType) => {
@@ -688,7 +708,7 @@ const CorporateWellnessCalendar: React.FC = () => {
                                 <Badge className={cn(
                                   'text-xs',
                                   activity.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                                  activity.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
+                                  activity.status === 'upcoming' ? 'bg-blue-100 text-blue-700' :
                                   'bg-slate-100 text-slate-700'
                                 )}>
                                   {activity.status}
@@ -1244,7 +1264,7 @@ const CorporateWellnessCalendar: React.FC = () => {
                             <p className="text-xs text-slate-500 mt-1">Not sent yet</p>
                           )}
                         </div>
-                        {!selectedActivity.invitesSent && selectedActivity.status === 'scheduled' && (
+                        {!selectedActivity.invitesSent && selectedActivity.status === 'upcoming' && (
                           <Button 
                             size="sm" 
                             className="bg-gradient-to-r from-teal-500 to-emerald-600"
@@ -1283,7 +1303,7 @@ const CorporateWellnessCalendar: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <Badge className={cn(
                         selectedActivity.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                        selectedActivity.status === 'scheduled' ? 'bg-blue-100 text-blue-700' :
+                        selectedActivity.status === 'upcoming' ? 'bg-blue-100 text-blue-700' :
                         selectedActivity.status === 'ongoing' ? 'bg-amber-100 text-amber-700' :
                         'bg-red-100 text-red-700'
                       )}>
