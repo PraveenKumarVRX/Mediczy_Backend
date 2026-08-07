@@ -162,6 +162,27 @@ export const MODEL_CARDS = {
     regulatoryNotes:   'Outputs must be reviewed by a licensed clinician before influencing any clinical decision.'
   },
 
+  'local-ollama-qwen2-1.5b': {
+    componentName:      'Local Ollama qwen2:1.5b (cloud-server CPU)',
+    version:            'qwen2:1.5b (Q4_0)',
+    regulatoryClass:    'Class IIb SaMD (moderate-high risk)',
+    intendedUse:        'Last-resort text-generation fallback within the llm-provider.js cascade when SIB/Groq/iSHA are all unavailable. Same clinical-reasoning-assistance scope as other cascade members when reached — decision support only, requires clinician review.',
+    notIntendedFor:     'Primary/preferred inference path; autonomous clinical decisions without physician review; any use requiring strong reasoning (1.5B is a small, fast model chosen for CPU feasibility, not clinical strength).',
+    provider:           'Ollama, running locally on the Mediczy cloud application server (systemd service, CPU inference)',
+    modelType:          'Quantized GGUF general-purpose LLM (Qwen2 1.5B, Q4_0), served via Ollama /api/chat',
+    trainingDataSource: 'Qwen2 base model general pretraining — no medical-specific fine-tuning or validation.',
+    knownLimitations: [
+      'No medical-specific fine-tuning or clinical validation whatsoever — smallest, weakest model in the cascade',
+      'Lowest cascade priority (95) — only ever reached if every other provider fails',
+      'CPU inference on the shared application server — latency and throughput far below GPU-served providers',
+      'Was previously mislabeled in code as "Indic-Gemma-2B", a different, unrelated model belonging to the offline_scribe service — corrected this change; no behavioral change to what model actually ran, only to the label and to circuit-breaker isolation from the newer gguf-workstation provider',
+    ],
+    samdClass:         'IIb',
+    lastAudited:       null,
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Disabled by default. Even once approved for the general cascade, its low priority and weak model size mean it should be treated purely as an availability fallback, never a preferred inference path. Outputs must be reviewed by a licensed clinician before influencing any clinical decision.'
+  },
+
   'isha-inc-gpt-oss-20b': {
     componentName:      'GPT-OSS-20B (isha-inc.com)',
     version:            'gpt-oss-20b-q4-k-m',

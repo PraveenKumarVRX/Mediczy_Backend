@@ -258,6 +258,33 @@ function getIshaIncClient() {
   return _clients.ishaInc;
 }
 
+// GPU workstation (RTX 3090, reached over the WireGuard tunnel, 10.99.0.4) —
+// runs llama.cpp's own `llama-server` binary, which serves an OpenAI-
+// compatible /v1/chat/completions API. This is NOT Ollama's protocol —
+// do not route these through callLocalSLM(). Two models are already running
+// there (confirmed live, not something this integration installs):
+// BiMediX2-8B on :8080 and MedGemma-27B-IQ3 on :8083. Both are candidates
+// for the report-drafting evaluation in imaging-report-drafter.service.js —
+// neither is enabled here until that evaluation and a governance approval
+// have both happened.
+function getWorkstationBimedixClient() {
+  if (!_clients.workstationBimedix) {
+    const baseURL = normalizeProviderUrl(getProviderEnv('WORKSTATION_BIMEDIX_URL'), 'http://10.99.0.4:8080') + '/v1';
+    const apiKey = getProviderEnv('WORKSTATION_LLM_API_KEY') || 'dev-key';
+    _clients.workstationBimedix = new OpenAI({ baseURL, apiKey });
+  }
+  return _clients.workstationBimedix;
+}
+
+function getWorkstationMedgemmaClient() {
+  if (!_clients.workstationMedgemma) {
+    const baseURL = normalizeProviderUrl(getProviderEnv('WORKSTATION_MEDGEMMA_URL'), 'http://10.99.0.4:8083') + '/v1';
+    const apiKey = getProviderEnv('WORKSTATION_LLM_API_KEY') || 'dev-key';
+    _clients.workstationMedgemma = new OpenAI({ baseURL, apiKey });
+  }
+  return _clients.workstationMedgemma;
+}
+
 // Strings that indicate any provider is returning a stub (no real inference backend).
 const STUB_RESPONSE_MARKERS = [
   'Integrate vLLM or llama.cpp backend',
@@ -267,7 +294,12 @@ const STUB_RESPONSE_MARKERS = [
 // In-memory circuit breakers for iSHA and isha-inc (same pattern as SIB)
 let _ishaFailures = 0, _ishaOpenUntil = 0;
 let _ishaIncFailures = 0, _ishaIncOpenUntil = 0;
-let _slmFailures = 0, _slmOpenUntil = 0;
+// Keyed by provider.name, NOT a shared scalar — callLocalSLM now serves more
+// than one Ollama-protocol endpoint (this server's cloud qwen2:1.5b AND a
+// workstation GGUF model over the WireGuard tunnel). A failure on one must
+// never open the circuit for the other.
+const _slmFailures = new Map();
+const _slmOpenUntil = new Map();
 
 function cbCheck(openUntil) { return Date.now() < openUntil; }
 function cbFail(getF, setF, getO, setO, name) {
@@ -277,14 +309,18 @@ function cbFail(getF, setF, getO, setO, name) {
 }
 
 /**
- * Call local SLM via Ollama (http://localhost:11434).
- * Uses Ollama's /api/chat endpoint — no external dependencies, runs on CPU.
+ * Call a local Ollama-protocol endpoint (/api/chat). Used both by the
+ * cloud-server's own last-resort qwen2:1.5b (provider 'local-slm') and any
+ * workstation GGUF model (provider 'gguf-workstation') — each provider's own
+ * baseUrl/model take priority over the generic env-var fallbacks, so the two
+ * never collide on a single global target.
  */
 async function callLocalSLM(provider, params) {
-  if (cbCheck(_slmOpenUntil)) throw new Error('local-slm circuit open');
+  const key = provider.name || 'local-slm';
+  if (cbCheck(_slmOpenUntil.get(key) || 0)) throw new Error(`${key} circuit open`);
 
-  const baseUrl = getProviderEnv('LOCAL_LLM_URL') || provider.baseUrl || 'http://localhost:11434';
-  const model   = getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b';
+  const baseUrl = provider.baseUrl || getProviderEnv('LOCAL_LLM_URL') || 'http://localhost:11434';
+  const model   = provider.model || getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b';
   const url     = `${baseUrl.replace(/\/$/, '')}/api/chat`;
   const controller = new AbortController();
   const timeoutId  = setTimeout(() => controller.abort(), 30_000);
@@ -305,14 +341,14 @@ async function callLocalSLM(provider, params) {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      throw new Error(`local-slm ${res.status}: ${errText.substring(0, 200)}`);
+      throw new Error(`${key} ${res.status}: ${errText.substring(0, 200)}`);
     }
 
     const data    = await res.json();
     const content = data.message?.content || '';
-    if (!content.trim()) throw new Error('local-slm (Ollama) returned empty response');
+    if (!content.trim()) throw new Error(`${key} (Ollama) returned empty response`);
 
-    _slmFailures = 0;
+    _slmFailures.set(key, 0);
     return {
       id: `slm-${Date.now()}`,
       object: 'chat.completion',
@@ -326,8 +362,14 @@ async function callLocalSLM(provider, params) {
     };
   } catch (err) {
     clearTimeout(timeoutId);
-    cbFail(() => _slmFailures, v => { _slmFailures = v; }, () => _slmOpenUntil, v => { _slmOpenUntil = v; }, 'local-slm');
-    if (err.name === 'AbortError') throw new Error('local-slm request timed out (30s)');
+    cbFail(
+      () => _slmFailures.get(key) || 0,
+      v => _slmFailures.set(key, v),
+      () => _slmOpenUntil.get(key) || 0,
+      v => _slmOpenUntil.set(key, v),
+      key,
+    );
+    if (err.name === 'AbortError') throw new Error(`${key} request timed out (30s)`);
     throw err;
   }
 }
@@ -386,6 +428,12 @@ async function callSib(params) {
         history: history.slice(-15),
         patient_id: params.patientId || params.userId || 'mediczy-backend',
         user_id: params.userId || 'mediczy-backend',
+        // Only genuine patient-facing clinical calls (a real patientId supplied
+        // by the caller) are subject to the GDPR/DPDP AI-consent gate on the SIB
+        // side — generic/non-clinical calls (admin & team copilot, HR text
+        // generation, etc.) never have a patient in the loop at all and were
+        // being blocked by the same gate, which was the actual reported bug.
+        is_patient_specific: Boolean(params.patientId),
         context: {
           source: 'llm-provider',
           model_hint: params.model,
@@ -503,7 +551,10 @@ const PROVIDERS = [
   {
     name: 'isha-inc',
     label: 'isha-inc.com direct (diagnostics only; app traffic goes through SIB)',
-    model: getProviderEnv('ISHA_INC_MODEL') || 'smart-orchestrator',
+    // Was 'smart-orchestrator' — removed from the host, confirmed 404
+    // "model_not_found" with the live server reporting only qwen3-8b-q5-k-m
+    // available. Same class of stale-model-ID bug as the earlier Groq fix.
+    model: getProviderEnv('ISHA_INC_MODEL') || 'qwen3-8b-q5-k-m',
     getClient: getIshaIncClient,
     useFetchIshaInc: true,
     priority: 92,
@@ -511,8 +562,11 @@ const PROVIDERS = [
   },
   {
     name: 'isha-insurance',
-    label: 'isha-inc.com MedGemma direct (diagnostics only; app traffic goes through SIB)',
-    model: 'medgemma-4b',
+    label: 'isha-inc.com direct (diagnostics only; app traffic goes through SIB)',
+    // Was 'medgemma-4b' — same host, same issue: that model is no longer
+    // available there either (only qwen3-8b-q5-k-m is). Renamed the label
+    // since it's no longer actually MedGemma.
+    model: 'qwen3-8b-q5-k-m',
     getClient: () => ({ available: true }),
     useFetchIshaInc: true,
     priority: 93,
@@ -520,12 +574,49 @@ const PROVIDERS = [
   },
   {
     name: 'local-slm',
-    label: 'Local Indic-Gemma-2B direct (disabled; Groq is the only non-SIB fallback)',
-    model: 'indic-gemma-2b-navarasa',
+    // Was mislabeled "Indic-Gemma-2B" — that model belongs to a different,
+    // unrelated service (offline_scribe/llm/indic_llm_engine.py). This
+    // provider actually talks to Ollama on THIS cloud server, confirmed
+    // running (systemd ollama.service, qwen2:1.5b pulled, localhost:11434).
+    label: 'Local Ollama qwen2:1.5b (cloud-server CPU, last-resort fallback)',
+    model: getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b',
     useFetch: false,
     useLocalSLM: true,
     baseUrl: getProviderEnv('LOCAL_LLM_URL') || 'http://localhost:11434',
     priority: 95,
+    disabled: true,
+  },
+  {
+    name: 'workstation-bimedix2-8b',
+    label: 'BiMediX2-8B on GPU workstation (llama.cpp, radiology report drafting — evaluation, not production)',
+    // Already running (confirmed live: llama-server -m BiMediX2-8B-hf.i1-Q6_K.gguf
+    // -c 16384 -np 8 -ngl 99 --port 8080) — this integration does not install
+    // or fine-tune it, only wires Mediczy to call it. A distinct serving
+    // location from the existing isha-buzz-bimedix2 model card (that one is
+    // the cloud ai.isha.buzz copy) — carded separately since it's a
+    // different environment/quant, not assumed identical behavior.
+    model: getProviderEnv('WORKSTATION_BIMEDIX_MODEL') || 'bimedix2-8b',
+    getClient: getWorkstationBimedixClient,
+    priority: 96,
+    // Stays disabled permanently in the GENERAL cascade — never let drug-
+    // interaction/triage/admin-copilot calls silently hit an unvalidated
+    // model over a WireGuard tunnel. Real usage is gated separately, at the
+    // imaging-report-drafter.service.js call site, behind
+    // IMAGING_GGUF_LLM_CLINICAL_APPROVED — see that file.
+    disabled: true,
+  },
+  {
+    name: 'workstation-medgemma-27b',
+    label: 'MedGemma-27B on GPU workstation (llama.cpp, radiology report drafting — evaluation, not production)',
+    // Already running (confirmed live: llama-server -m google_medgemma-27b-it-IQ3_M.gguf
+    // -c 256 -np 2 -ngl 50 --port 8083). Note the small -c 256 context on the
+    // live process — too small for a full structured-findings-to-report
+    // prompt as currently launched; the evaluation step must either request
+    // a larger context on that server or this will need its own launch
+    // profile before it's usable for report drafting specifically.
+    model: getProviderEnv('WORKSTATION_MEDGEMMA_MODEL') || 'medgemma-27b',
+    getClient: getWorkstationMedgemmaClient,
+    priority: 97,
     disabled: true,
   },
 ];
@@ -557,10 +648,16 @@ async function getModelConfig(name = 'isha-primary') {
  * Call a single provider's chat completion API.
  */
 async function callProvider(provider, params) {
+  // patientId/userId are consumed by name (callSib) — never spread into a
+  // third-party SDK request body. Groq/OpenAI reject unknown top-level
+  // properties outright (verified: Groq 400s with "property 'patientId' is
+  // unsupported"), so they must be stripped before reaching those SDKs.
+  const { patientId, userId, ...sdkParams } = params;
+
   // Cap max_tokens for models with lower context limits
-  let cappedParams = params;
-  if (provider.name === 'openai' && params.max_tokens > 4096) {
-    cappedParams = { ...params, max_tokens: 4096 };
+  let cappedParams = sdkParams;
+  if (provider.name === 'openai' && sdkParams.max_tokens > 4096) {
+    cappedParams = { ...sdkParams, max_tokens: 4096 };
   }
 
   // Merge any provider-specific extra body params (e.g. agent_type for iSHA)
@@ -573,9 +670,11 @@ async function callProvider(provider, params) {
     return callLocalSLM(provider, finalParams);
   }
 
-  // SIB FastAPI router (preferred primary path)
+  // SIB FastAPI router (preferred primary path) — needs patientId/userId to
+  // scope the GDPR/DPDP consent gate, so pass the original params, not the
+  // SDK-safe stripped copy.
   if (provider.useSib) {
-    return callSib(finalParams);
+    return callSib({ ...finalParams, patientId, userId });
   }
 
   // isha-inc.com: direct fetch to bypass Cloudflare OpenAI-SDK block
@@ -674,6 +773,10 @@ async function chat({
   cacheScope = null,       // tenant/patient/session scope required before caching clinical text
   cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
   cognitiveDecisionId = null,  // for outcome recording
+  patientId = null,        // real patient identifier — only set by genuinely patient-facing callers.
+                            // Forwarded to SIB as is_patient_specific to scope the GDPR/DPDP consent
+                            // gate to actual clinical calls; never set this for generic/HR/admin use.
+  userId = null,
 }) {
   messages = sanitizeMessagesForLlm(messages);
   const dbConfig = await getModelConfig();
@@ -770,6 +873,8 @@ async function chat({
       messages,
       temperature: temp,
       max_tokens: maxTok,
+      patientId,
+      userId,
     };
 
     if (tools && tools.length > 0) {

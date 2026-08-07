@@ -636,25 +636,33 @@ async def chat(request: Dict[str, Any]):
     declared_lang = request.get("language", "en")  # Language declared by frontend
 
     # ── GDPR/DPDP Consent Gate ──────────────────────────────────────────────
-    # AI medical consultation requires explicit user consent.
-    # Node.js backend sets consent_verified=True after checking users.consent_ai_consultation.
-    # Without this gate a patient could be processed without consent (GDPR Art. 7 violation).
-    consent_verified = request.get("consent_verified", False)
-    # In production with auth: verify consent from DB; for backward compat accept flag from caller
-    if not consent_verified and user_id and app_state.db:
-        try:
-            profile = await app_state.db.get_patient_context(str(user_id))
-            consent_verified = bool(profile.get("consent_ai_consultation", False))
-        except Exception:
-            consent_verified = True  # non-blocking: proceed if DB check fails
-    if not consent_verified:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=403, content={
-            "error": "Consent required",
-            "detail": "Patient has not consented to AI-powered medical consultation. "
-                      "Please obtain consent before proceeding.",
-            "regulation": "GDPR Art. 7 / DPDP §4"
-        })
+    # AI medical consultation requires explicit user consent — but only for
+    # calls that are actually ABOUT a specific patient. Generic/non-clinical
+    # callers (admin & team copilot, HR text generation, etc.) never have a
+    # patient in the loop and must not be blocked by a patient-consent check;
+    # the Node.js backend signals this via is_patient_specific (true only when
+    # a real patientId was supplied to server/services/ai-brain/llm-provider.js).
+    # Without this scoping, EVERY call was being rejected, not just patient ones.
+    is_patient_specific = request.get("is_patient_specific", False)
+    if is_patient_specific:
+        # Node.js backend sets consent_verified=True after checking users.consent_ai_consultation.
+        # Without this gate a patient could be processed without consent (GDPR Art. 7 violation).
+        consent_verified = request.get("consent_verified", False)
+        # In production with auth: verify consent from DB; for backward compat accept flag from caller
+        if not consent_verified and user_id and app_state.db:
+            try:
+                profile = await app_state.db.get_patient_context(str(user_id))
+                consent_verified = bool(profile.get("consent_ai_consultation", False))
+            except Exception:
+                consent_verified = True  # non-blocking: proceed if DB check fails
+        if not consent_verified:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=403, content={
+                "error": "Consent required",
+                "detail": "Patient has not consented to AI-powered medical consultation. "
+                          "Please obtain consent before proceeding.",
+                "regulation": "GDPR Art. 7 / DPDP §4"
+            })
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── Indic Language Translation (input) ──────────────────────────────────
