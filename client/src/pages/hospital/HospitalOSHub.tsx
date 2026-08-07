@@ -100,6 +100,7 @@ const SECTIONS: Section[] = [
     label: 'AI & Telehealth',
     modules: [
       { title: 'AI Scribe', description: 'Ambient voice-to-note', path: '/hospital/ai-scribe', icon: Mic, gradient: 'from-violet-500 to-indigo-600', badge: 'AI' },
+      { title: 'Clinical Intelligence', description: 'Live vitals · ECG · NEWS2 · SmartPharma CDSS', path: '/hospital/clinical-intelligence', icon: Activity, gradient: 'from-teal-500 to-cyan-600', badge: 'AI' },
       { title: 'Clinical CDSS', description: 'Triage & decision support', path: '/hospital/clinical-cdss', icon: Brain, gradient: 'from-fuchsia-500 to-purple-600', badge: 'AI' },
       { title: 'Voice Assistant', description: 'Hands-free doctor commands', path: '/hospital/voice-assistant', icon: Sparkles, gradient: 'from-cyan-400 to-teal-500', badge: 'AI' },
       { title: 'Post-Discharge Tele', description: 'Follow-up video consult', path: '/hospital/teleconsult', icon: Video, gradient: 'from-sky-400 to-blue-500' },
