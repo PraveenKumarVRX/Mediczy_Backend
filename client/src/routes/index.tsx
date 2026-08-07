@@ -370,6 +370,7 @@ const HospitalADTTransfer      = lazy(() => import("@/pages/hospital/HospitalADT
 const HospitalVitalsRecord     = lazy(() => import("@/pages/hospital/HospitalVitalsRecord"));
 const HospitalAIScribe         = lazy(() => import("@/pages/hospital/HospitalAIScribe"));
 const HospitalClinicalCDSS     = lazy(() => import("@/pages/hospital/HospitalClinicalCDSS"));
+const ClinicalIntelligenceHub  = lazy(() => import("@/pages/hospital/ClinicalIntelligenceHub"));
 const HospitalVoiceAssistantPage = lazy(() => import("@/pages/hospital/HospitalVoiceAssistantPage"));
 const HospitalTeleconsult      = lazy(() => import("@/pages/hospital/HospitalTeleconsult"));
 const HospitalICUBoard         = lazy(() => import("@/pages/hospital/HospitalICUBoard"));
@@ -1819,6 +1820,7 @@ const AppRoutes = () => {
         <Route path="/hospital/nurse-station"                           element={<HospitalNurseStation />} />
         <Route path="/hospital/ai-scribe"                             element={<HospitalAIScribe />} />
         <Route path="/hospital/clinical-cdss"                           element={<HospitalClinicalCDSS />} />
+        <Route path="/hospital/clinical-intelligence"                   element={<ClinicalIntelligenceHub />} />
         <Route path="/hospital/voice-assistant"                         element={<HospitalVoiceAssistantPage />} />
         <Route path="/hospital/teleconsult"                             element={<HospitalTeleconsult />} />
         <Route path="/hospital/icu-board"                               element={<HospitalICUBoard />} />
