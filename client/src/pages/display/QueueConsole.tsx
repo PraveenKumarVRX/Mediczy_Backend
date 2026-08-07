@@ -5,6 +5,7 @@ import { printQmsTokenSlip } from '@/utils/qmsPrintSlip';
 interface QueueEntry {
   id: number;
   tokenNumber: string;
+  department?: string;
   patientName: string;
   doctorName: string;
   counterId: string;
@@ -13,6 +14,8 @@ interface QueueEntry {
   estimatedWaitMinutes: number;
   queueType: string;
 }
+
+const NEXT_DEPTS = ['lab', 'radiology', 'pharmacy', 'opd', 'er'] as const;
 
 interface QueueAnalytics {
   byDepartment: Array<{ department: string; completed: number; active: number; p50_wait: number; p90_wait: number }>;
@@ -51,14 +54,27 @@ export default function QueueConsole() {
     return () => { es.close(); clearInterval(poll); };
   }, [zone, fetchConsole]);
 
-  const callEntry = async (id: number) => {
+  const authHeaders = () => {
     const token =
       localStorage.getItem('hospitalToken') ||
       localStorage.getItem('token') ||
       localStorage.getItem('doctorToken');
+    return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  };
+
+  const callEntry = async (id: number) => {
     await fetch(`/api/v1/queue/${id}/call-staff`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: authHeaders(),
+    });
+    fetchConsole();
+  };
+
+  const transferEntry = async (id: number, nextDepartment: string) => {
+    await fetch(`/api/v1/queue/${id}/transfer`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ nextDepartment }),
     });
     fetchConsole();
   };
@@ -94,6 +110,7 @@ export default function QueueConsole() {
                 <tr className="text-left text-gray-400 border-b border-gray-700">
                   <th className="py-2">Token</th>
                   <th>Patient</th>
+                  <th>Dept</th>
                   <th>Doctor</th>
                   <th>Counter</th>
                   <th>Status</th>
@@ -107,6 +124,7 @@ export default function QueueConsole() {
                   <tr key={e.id} className="border-b border-gray-800">
                     <td className="py-3 font-mono text-lg text-teal-300">{e.tokenNumber}</td>
                     <td>{e.patientName}</td>
+                    <td className="uppercase text-xs text-slate-400">{e.department || '—'}</td>
                     <td>{e.doctorName || '—'}</td>
                     <td>{e.counterId}</td>
                     <td><span className="px-2 py-1 rounded bg-gray-800">{e.status}</span></td>
@@ -117,6 +135,8 @@ export default function QueueConsole() {
                         type="button"
                         onClick={() => printQmsTokenSlip({
                           tokenNumber: e.tokenNumber,
+                          journeyToken: e.tokenNumber,
+                          department: e.department,
                           patientName: e.patientName,
                           doctorName: e.doctorName,
                           counterId: e.counterId,
@@ -129,6 +149,26 @@ export default function QueueConsole() {
                       </button>
                       {e.status === 'waiting' && (
                         <button type="button" onClick={() => callEntry(e.id)} className="px-3 py-1 bg-teal-700 rounded-lg text-xs">Call</button>
+                      )}
+                      {['waiting', 'called', 'serving'].includes(e.status) && (
+                        <select
+                          className="px-2 py-1 bg-slate-800 border border-slate-600 rounded-lg text-xs"
+                          defaultValue=""
+                          onChange={(ev) => {
+                            const dept = ev.target.value;
+                            if (dept) void transferEntry(e.id, dept);
+                            ev.target.value = '';
+                          }}
+                        >
+                          <option value="" disabled>
+                            Send to…
+                          </option>
+                          {NEXT_DEPTS.filter((d) => d !== e.department).map((d) => (
+                            <option key={d} value={d}>
+                              → {d}
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </td>
                   </tr>

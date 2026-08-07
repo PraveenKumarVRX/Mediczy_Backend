@@ -18,6 +18,8 @@ export type QmsPortal = 'hospital' | 'clinic' | 'lab';
 interface QmsEntry {
   id: number;
   tokenNumber: string;
+  journeyToken?: string;
+  department?: string;
   patientName?: string;
   doctorName?: string;
   counterId?: string;
@@ -26,8 +28,17 @@ interface QmsEntry {
   estimatedWaitMinutes?: number;
   queueType?: string;
   chiefComplaint?: string;
+  stepOrder?: number;
   metadata?: Record<string, unknown>;
 }
+
+const TRANSFER_DEPTS = [
+  { key: 'opd', label: 'OPD' },
+  { key: 'lab', label: 'Lab' },
+  { key: 'radiology', label: 'Radiology' },
+  { key: 'pharmacy', label: 'Pharmacy' },
+  { key: 'er', label: 'ER' },
+] as const;
 
 interface AadhaarFields {
   firstName?: string | null;
@@ -137,6 +148,7 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
   const [scanOpen, setScanOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [lookupToken, setLookupToken] = useState('');
   const [form, setForm] = useState<CheckInForm>(emptyForm);
   const [aadhaarSource, setAadhaarSource] = useState<string | null>(null);
   const [opds, setOpds] = useState<OpdRow[]>([]);
@@ -354,6 +366,49 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
     }
   };
 
+  const transfer = async (id: number, nextDepartment: string) => {
+    try {
+      const { data } = await api.post(`/qms/${id}/transfer`, { nextDepartment });
+      toast({
+        title: 'Token transferred',
+        description: data?.message || `Moved to ${nextDepartment} with same token ${data?.token || ''}`.trim(),
+      });
+      await refresh();
+    } catch (e: any) {
+      toast({
+        title: 'Transfer failed',
+        description: e?.response?.data?.message || e?.message || 'Try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const lookupJourney = async () => {
+    const t = lookupToken.trim();
+    if (!t) return;
+    try {
+      const { data } = await api.get(`/qms/journey/${encodeURIComponent(t)}`);
+      const j = data?.journey;
+      if (!j) {
+        toast({ title: 'Not found', description: 'No journey for this token today', variant: 'destructive' });
+        return;
+      }
+      const steps = (j.steps || [])
+        .map((s: { department?: string; status?: string }) => `${s.department}:${s.status}`)
+        .join(' → ');
+      toast({
+        title: `Token ${j.journeyToken || j.tokenNumber}`,
+        description: `${j.patientName || 'Patient'} · now ${j.currentDepartment || '—'} · ${steps}`,
+      });
+    } catch (e: any) {
+      toast({
+        title: 'Lookup failed',
+        description: e?.response?.data?.message || e?.message || 'Try again',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const active = useMemo(
     () => entries.filter((e) => ['waiting', 'called', 'serving'].includes(e.status)),
     [entries],
@@ -396,6 +451,25 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
               <Plus className="h-4 w-4" /> Walk-in check-in
             </Button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 items-end rounded-lg border bg-muted/30 px-3 py-3">
+          <div className="flex-1 min-w-[180px]">
+            <Label htmlFor="qms-lookup" className="text-xs text-muted-foreground">
+              Find journey by token (same T-### at every department)
+            </Label>
+            <Input
+              id="qms-lookup"
+              placeholder="e.g. T-014"
+              value={lookupToken}
+              onChange={(e) => setLookupToken(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && void lookupJourney()}
+              className="mt-1 font-mono"
+            />
+          </div>
+          <Button type="button" variant="secondary" size="sm" onClick={() => void lookupJourney()}>
+            Look up
+          </Button>
         </div>
 
         {(portal === 'hospital' || portal === 'clinic') && opds.length > 0 && (
@@ -457,6 +531,7 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
                     <tr className="text-left text-muted-foreground border-b">
                       <th className="py-2 pr-3">Token</th>
                       <th className="pr-3">Patient</th>
+                      <th className="pr-3">Dept</th>
                       <th className="pr-3">Status</th>
                       <th className="pr-3">ETA</th>
                       <th className="pr-3">Counter</th>
@@ -472,14 +547,16 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
                             className="hover:underline"
                             title="Print slip"
                             onClick={() => printQmsTokenSlip({
-                              tokenNumber: e.tokenNumber,
+                              tokenNumber: e.journeyToken || e.tokenNumber,
+                              journeyToken: e.journeyToken || e.tokenNumber,
+                              department: e.department,
                               patientName: e.patientName,
                               doctorName: e.doctorName,
                               counterId: e.counterId,
                               estimatedWaitMinutes: e.estimatedWaitMinutes,
                             })}
                           >
-                            {e.tokenNumber}
+                            {e.journeyToken || e.tokenNumber}
                           </button>
                           <Printer className="inline h-3.5 w-3.5 ml-1 opacity-50" />
                         </td>
@@ -488,6 +565,9 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
                           {e.doctorName ? (
                             <div className="text-xs text-muted-foreground">{e.doctorName}</div>
                           ) : null}
+                        </td>
+                        <td className="pr-3 uppercase text-xs font-semibold text-slate-600">
+                          {e.department || context.department || '—'}
                         </td>
                         <td className="pr-3">
                           <Badge variant="outline" className={statusTone(e.status)}>
@@ -510,6 +590,22 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
                             )}
                             {['waiting', 'called', 'serving'].includes(e.status) && (
                               <>
+                                <Select
+                                  onValueChange={(dept) => void transfer(e.id, dept)}
+                                >
+                                  <SelectTrigger className="h-8 w-[130px] text-xs">
+                                    <SelectValue placeholder="Send to…" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {TRANSFER_DEPTS.filter(
+                                      (d) => d.key !== (e.department || context.department),
+                                    ).map((d) => (
+                                      <SelectItem key={d.key} value={d.key}>
+                                        → {d.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                                 <Button size="sm" onClick={() => act(e.id, 'complete')}>
                                   Complete
                                 </Button>

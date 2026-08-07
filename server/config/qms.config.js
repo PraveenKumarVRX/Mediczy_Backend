@@ -18,7 +18,28 @@ export const QMS_PORTAL_DEFAULTS = {
     queueZone: 'lab-waiting',
     label: 'Lab collection',
   },
+  radiology: {
+    portal: 'radiology',
+    department: 'radiology',
+    queueZone: 'radiology-waiting',
+    label: 'Radiology',
+  },
+  pharmacy: {
+    portal: 'pharmacy',
+    department: 'pharmacy',
+    queueZone: 'pharmacy-waiting',
+    label: 'Pharmacy',
+  },
 };
+
+/** Departments a journey token can move through (same public T-###). */
+export const QMS_JOURNEY_DEPARTMENTS = [
+  { key: 'opd', label: 'OPD' },
+  { key: 'lab', label: 'Lab' },
+  { key: 'radiology', label: 'Radiology' },
+  { key: 'pharmacy', label: 'Pharmacy' },
+  { key: 'er', label: 'ER' },
+];
 
 function slug(s) {
   return String(s || '')

@@ -1,13 +1,26 @@
 /**
  * Hospital OS — unified smart queue service
  * Replaces fragmented checkin_tokens, queue_tokens, and display-only queue logic.
+ *
+ * Journey token: one public token (T-###) follows the patient across departments
+ * (kiosk/OPD → lab → radiology → pharmacy). Each stop is a new queue row that
+ * reuses the same token_number / journey_token.
  */
 
+import crypto from 'crypto';
 import pool from '../db/pgPool.js';
 import { pushQueueEvent, pushToZone } from './display-sse-broker.service.js';
 import * as queueNotify from './queue-notify.service.js';
 
 const DEPT_PREFIX = { opd: 'A', pharmacy: 'P', lab: 'L', er: 'ER', radiology: 'R' };
+export const JOURNEY_DEPARTMENTS = ['opd', 'lab', 'radiology', 'pharmacy', 'er'];
+export const DEFAULT_ZONE_BY_DEPT = {
+  opd: 'opd-waiting',
+  lab: 'lab-waiting',
+  radiology: 'radiology-waiting',
+  pharmacy: 'pharmacy-waiting',
+  er: 'er-waiting',
+};
 const ESI_PRIORITY = {
   'ESI-1': 100, resuscitation: 100,
   'ESI-2': 85, emergent: 85,
@@ -22,6 +35,14 @@ export async function ensureQueueTables() {
   if (_tablesReady) return;
   const { up } = await import('../migrations/20260617-hospital-queue-os.migration.js');
   await up();
+  try {
+    const { up: harden } = await import('../migrations/20260801-qms-hardening.migration.js');
+    await harden(pool);
+  } catch (_) { /* best-effort */ }
+  try {
+    const { up: journey } = await import('../migrations/20260807-qms-journey-token.migration.js');
+    await journey(pool);
+  } catch (_) { /* best-effort */ }
   _tablesReady = true;
 }
 
@@ -43,9 +64,46 @@ export function computePriorityScore({ triageLevel, queueType, priority }) {
 }
 
 /**
+ * Org-day public journey token — same number at every department stop.
+ * Format: T-001, T-002, …
+ */
+export async function nextJourneyToken(organizationId) {
+  await ensureQueueTables();
+  const org = defaultOrgId(organizationId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const upsert = await client.query(
+      `INSERT INTO hospital_queue_journey_sequences (organization_id, seq_date, last_seq)
+       VALUES ($1, CURRENT_DATE, 1)
+       ON CONFLICT (organization_id, seq_date)
+       DO UPDATE SET last_seq = hospital_queue_journey_sequences.last_seq + 1
+       RETURNING last_seq`,
+      [org],
+    );
+    await client.query('COMMIT');
+    const seq = upsert.rows[0]?.last_seq || 1;
+    return `T-${String(seq).padStart(3, '0')}`;
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch (_) {}
+    // Fallback if journey sequence table missing
+    const { rows } = await pool.query(
+      `SELECT COUNT(DISTINCT COALESCE(journey_token, token_number))::int AS c
+       FROM hospital_queue_entries
+       WHERE organization_id = $1 AND check_in_at::date = CURRENT_DATE`,
+      [org],
+    );
+    return `T-${String((rows[0]?.c || 0) + 1).padStart(3, '0')}`;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Token sequences are scoped per org + department + doctor (or queue zone).
  * Uses hospital_queue_token_sequences with row lock (no COUNT race).
  * Examples: A12-001 (doctor 12 OPD), A-001 (general OPD), L-003 (lab).
+ * Prefer nextJourneyToken() for the public patient-facing number.
  */
 export async function nextTokenNumber(organizationId, department = 'opd', { doctorId, queueZone } = {}) {
   await ensureQueueTables();
@@ -215,17 +273,25 @@ export async function checkIn({
   consentVersion,
   metadata = {},
   priorityScore,
+  /** Reuse an existing journey (transfer / continue) */
+  journeyId = null,
+  journeyToken = null,
+  parentEntryId = null,
+  stepOrder = 1,
+  nextDepartment = null,
 }) {
   await ensureQueueTables();
   const org = defaultOrgId(organizationId);
   // Prefer per-doctor OPD zone when doctor is known (multi-OPD hospitals)
-  let zone = queueZone || 'opd-waiting';
+  let zone = queueZone || DEFAULT_ZONE_BY_DEPT[department] || 'opd-waiting';
   if (department === 'opd' && doctorId && (!queueZone || queueZone === 'OPD-MAIN' || queueZone === 'opd-waiting')) {
     zone = `opd-doc-${parseInt(doctorId, 10)}`;
   }
   if (zone === 'OPD-MAIN') zone = 'opd-waiting';
 
-  const tokenNumber = await nextTokenNumber(org, department, { doctorId, queueZone: zone });
+  // Public token is journey-scoped (same at every department). Internal dept seq unused for display.
+  const tokenNumber = journeyToken || (await nextJourneyToken(org));
+  const resolvedJourneyId = journeyId || crypto.randomUUID();
   const resolvedPriority = priorityScore ?? computePriorityScore({ triageLevel, queueType });
   const resolvedCounter = counterId || doctorName || await assignCounter(org, zone);
   const estimatedWaitMinutes = await estimateWaitMinutes({ organizationId: org, doctorId, department });
@@ -234,27 +300,157 @@ export async function checkIn({
     `INSERT INTO hospital_queue_entries (
       organization_id, department, token_number, queue_zone, patient_id, patient_name,
       appointment_id, doctor_id, doctor_name, counter_id, queue_type, triage_level,
-      priority_score, chief_complaint, status, estimated_wait_minutes, consent_version, metadata
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17)
+      priority_score, chief_complaint, status, estimated_wait_minutes, consent_version, metadata,
+      journey_id, journey_token, parent_entry_id, step_order, next_department
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17,$18,$19,$20,$21,$22)
     RETURNING *`,
     [
       org, department, tokenNumber, zone, patientId || null, patientName || null,
       appointmentId || null, doctorId || null, doctorName || null, resolvedCounter,
       queueType, triageLevel || null, resolvedPriority, chiefComplaint || null,
       estimatedWaitMinutes, consentVersion || null, JSON.stringify(metadata),
+      resolvedJourneyId, tokenNumber, parentEntryId || null, stepOrder || 1, nextDepartment || null,
     ]
   );
   const entry = mapRow(rows[0]);
+  if (!entry) throw new Error('Queue check-in failed to persist entry');
   const board = await getBoardSnapshot({ organizationId: org, queueZone: zone, doctorId });
   pushQueueEvent(zone, 'queue_token_issued', { entry, board });
 
-  const meta = typeof entry.metadata === 'object' ? entry.metadata : {};
+  const meta = typeof entry.metadata === 'object' && entry.metadata ? entry.metadata : {};
   if (meta.notifyOptIn && meta.notifyPhone) {
     queueNotify.notifyQueueCheckIn({ ...entry, notifyOptIn: true }, meta.notifyPhone).catch(() => {});
   }
   queueNotify.refreshPositionNotifications(org, zone).catch(() => {});
 
   return entry;
+}
+
+/**
+ * Complete current department stop and enqueue the same journey token at the next department.
+ * Patient keeps the same public token (T-###) for Lab / Radiology / Pharmacy / OPD.
+ */
+export async function transferToDepartment(entryId, organizationId, nextDepartment, { notes, queueZone, doctorId, doctorName } = {}) {
+  await ensureQueueTables();
+  const org = defaultOrgId(organizationId);
+  const dept = String(nextDepartment || '').toLowerCase().trim();
+  if (!JOURNEY_DEPARTMENTS.includes(dept)) {
+    throw Object.assign(
+      new Error(`Invalid next department. Use one of: ${JOURNEY_DEPARTMENTS.join(', ')}`),
+      { status: 400 },
+    );
+  }
+
+  const current = await getEntryById(entryId, org);
+  if (!current) {
+    throw Object.assign(new Error('Queue entry not found'), { status: 404 });
+  }
+  if (!['waiting', 'called', 'serving', 'completed'].includes(current.status)) {
+    throw Object.assign(new Error(`Cannot transfer from status ${current.status}`), { status: 409 });
+  }
+  if (current.department === dept && ['waiting', 'called', 'serving'].includes(current.status)) {
+    throw Object.assign(new Error(`Patient is already active in ${dept}`), { status: 409 });
+  }
+
+  // One active stop per journey
+  const active = await pool.query(
+    `SELECT id, department, status FROM hospital_queue_entries
+     WHERE organization_id = $1 AND journey_id = $2::uuid
+       AND status IN ('waiting','called','serving')
+       AND id <> $3
+     LIMIT 1`,
+    [org, current.journeyId, current.id],
+  );
+  if (active.rows[0] && active.rows[0].department === dept) {
+    return {
+      from: current,
+      to: await getEntryById(active.rows[0].id, org),
+      reused: true,
+    };
+  }
+  if (active.rows[0]) {
+    throw Object.assign(
+      new Error(`Journey already active at ${active.rows[0].department} (complete or transfer that stop first)`),
+      { status: 409 },
+    );
+  }
+
+  let from = current;
+  if (current.status !== 'completed') {
+    from = await completeEntry(current.id, org);
+  }
+
+  await pool.query(
+    `UPDATE hospital_queue_entries SET next_department = $3, updated_at = NOW()
+     WHERE id = $1 AND organization_id = $2`,
+    [from.id, org, dept],
+  );
+
+  const zone = queueZone || DEFAULT_ZONE_BY_DEPT[dept] || `${dept}-waiting`;
+  const meta = {
+    ...(typeof from.metadata === 'object' && from.metadata ? from.metadata : {}),
+    transferredFrom: from.department,
+    transferredFromEntryId: from.id,
+    transferNotes: notes || undefined,
+    source: 'journey-transfer',
+  };
+
+  const to = await checkIn({
+    organizationId: org,
+    department: dept,
+    queueZone: zone,
+    patientId: from.patientId,
+    patientName: from.patientName,
+    appointmentId: from.appointmentId,
+    doctorId: doctorId || undefined,
+    doctorName: doctorName || undefined,
+    queueType: 'transfer',
+    chiefComplaint: notes || from.chiefComplaint,
+    metadata: meta,
+    journeyId: from.journeyId,
+    journeyToken: from.journeyToken || from.tokenNumber,
+    parentEntryId: from.id,
+    stepOrder: (from.stepOrder || 1) + 1,
+  });
+
+  pushQueueEvent(from.queueZone, 'queue_token_transferred', { from, to });
+  pushQueueEvent(to.queueZone, 'queue_token_issued', { entry: to });
+
+  return { from, to, reused: false };
+}
+
+/**
+ * Look up today's journey by public token (T-014 / legacy A-014).
+ * Returns active stop + full journey history.
+ */
+export async function findJourneyByToken(organizationId, tokenNumber) {
+  await ensureQueueTables();
+  const org = defaultOrgId(organizationId);
+  const token = String(tokenNumber || '').trim().toUpperCase();
+  if (!token) return null;
+
+  const { rows } = await pool.query(
+    `SELECT * FROM hospital_queue_entries
+     WHERE organization_id = $1
+       AND check_in_at::date = CURRENT_DATE
+       AND (UPPER(journey_token) = $2 OR UPPER(token_number) = $2)
+     ORDER BY COALESCE(step_order, 1) ASC, id ASC`,
+    [org, token],
+  );
+  if (!rows.length) return null;
+  const steps = rows.map(mapRow);
+  const active = steps.find((s) => ['waiting', 'called', 'serving'].includes(s.status)) || null;
+  const latest = steps[steps.length - 1];
+  return {
+    journeyId: latest.journeyId,
+    journeyToken: latest.journeyToken || latest.tokenNumber,
+    tokenNumber: latest.journeyToken || latest.tokenNumber,
+    patientName: latest.patientName,
+    patientId: latest.patientId,
+    active,
+    currentDepartment: active?.department || latest.department,
+    steps,
+  };
 }
 
 export async function getEntryById(id, organizationId) {
@@ -510,7 +706,7 @@ function mapRow(row) {
     id: row.id,
     organizationId: row.organization_id,
     department: row.department,
-    tokenNumber: row.token_number,
+    tokenNumber: row.journey_token || row.token_number,
     queueZone: row.queue_zone,
     patientId: row.patient_id,
     patientName: row.patient_name,
@@ -530,12 +726,20 @@ function mapRow(row) {
     servingAt: row.serving_at,
     completedAt: row.completed_at,
     metadata: row.metadata,
+    journeyId: row.journey_id,
+    journeyToken: row.journey_token || row.token_number,
+    parentEntryId: row.parent_entry_id,
+    stepOrder: row.step_order || 1,
+    nextDepartment: row.next_department || null,
   };
 }
 
 export default {
   ensureQueueTables,
   checkIn,
+  transferToDepartment,
+  findJourneyByToken,
+  nextJourneyToken,
   getBoardSnapshot,
   listDoctorQueue,
   callNext,
@@ -550,4 +754,6 @@ export default {
   getHospitalQueueAnalytics,
   getConsultDurationStats,
   parseKioskQrPayload,
+  JOURNEY_DEPARTMENTS,
+  DEFAULT_ZONE_BY_DEPT,
 };

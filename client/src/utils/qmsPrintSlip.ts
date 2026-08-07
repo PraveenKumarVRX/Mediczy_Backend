@@ -1,6 +1,8 @@
 export type QmsPrintSlip = {
   tokenNumber?: string;
   token_number?: string;
+  journeyToken?: string;
+  department?: string;
   patientName?: string;
   patient_name?: string;
   doctorName?: string;
@@ -15,6 +17,7 @@ export type QmsPrintSlip = {
   uhid?: string | null;
   appointmentTime?: string | null;
   hospitalName?: string;
+  note?: string;
 };
 
 /** Opens a printable OPD token slip (kiosk / reception). */
@@ -22,11 +25,12 @@ export function printQmsTokenSlip(token: QmsPrintSlip) {
   const w = window.open('', '_blank', 'width=420,height=640');
   if (!w) return;
 
-  const tokenNo = token.tokenNumber || token.token_number || '—';
+  const tokenNo = token.journeyToken || token.tokenNumber || token.token_number || '—';
   const patient = token.patientName || token.patient_name || 'Patient';
   const doctor = token.doctorName || token.doctor_name || '';
   const counter = token.counterId || token.counter_id || doctor || '—';
   const zone = token.queueZone || token.queue_zone || '';
+  const dept = token.department || '';
   const wait = token.estimatedWaitMinutes ?? token.estimated_wait_minutes;
   const hospital = token.hospitalName || 'MediQzy Hospital';
   const issued = new Date().toLocaleString();
@@ -43,10 +47,11 @@ export function printQmsTokenSlip(token: QmsPrintSlip) {
   hr { border: none; border-top: 1px solid #e2e8f0; margin: 12px 0; }
 </style></head><body>
   <h1>${hospital}</h1>
-  <div class="meta">OPD Queue Token Slip</div>
+  <div class="meta">Hospital Journey Token</div>
   <div class="box">
     <div class="token">${tokenNo}</div>
     <div class="meta"><strong>${patient}</strong></div>
+    ${dept ? `<div class="meta">Current: ${dept.toUpperCase()}</div>` : ''}
     ${doctor ? `<div class="meta">Doctor: ${doctor}</div>` : ''}
     ${token.specialization ? `<div class="meta">OPD: ${token.specialization}</div>` : ''}
     <div class="meta">Counter / Room: ${counter}</div>
@@ -57,7 +62,7 @@ export function printQmsTokenSlip(token: QmsPrintSlip) {
   <div class="meta">Issued: ${issued}</div>
   ${zone ? `<div class="meta">Zone: ${zone}</div>` : ''}
   <hr />
-  <div class="foot">A WhatsApp and SMS copy of this slip is sent when a mobile number is provided.<br/>Please wait to be called. Do not lose this slip.</div>
+  <div class="foot">Use this <strong>same token</strong> at OPD, Lab, Radiology and Pharmacy today.<br/>A WhatsApp/SMS copy is sent when a mobile is provided. Do not lose this slip.</div>
   <script>window.onload=function(){window.print();setTimeout(function(){window.close()},400)}</script>
 </body></html>`);
   w.document.close();

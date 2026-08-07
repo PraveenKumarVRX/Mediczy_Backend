@@ -6,11 +6,22 @@ One Queue Management System (QMS) for:
 
 | Portal | UI | Zone | Department | Tokens |
 |---|---|---|---|---|
-| Hospital | `/hospital/qms`, `/hospital/queue-console`, `/kiosk/checkin` | `opd-waiting` / `opd-doc-{id}` | `opd` | `A{doctorId}-###` |
-| Clinic | `/clinic/queue` | `clinic-waiting` / `opd-doc-{id}` | `opd` | `A{doctorId}-###` |
-| Lab | `/lab/qms` (patient) · `/lab/queue` remains sample workflow | `lab-waiting` | `lab` | `L-###` |
+| Hospital | `/hospital/qms` → kiosk, `/hospital/queue-console`, `/kiosk/checkin` | `opd-waiting` / `opd-doc-{id}` | `opd` | **`T-###` journey token** |
+| Clinic | `/clinic/queue` | `clinic-waiting` / `opd-doc-{id}` | `opd` | **`T-###`** (same) |
+| Lab | `/lab/qms` (patient) · `/lab/queue` remains sample workflow | `lab-waiting` | `lab` | **`T-###`** (same) |
+| Radiology / Pharmacy | Transfer from QMS / journey lookup | `radiology-waiting` / `pharmacy-waiting` | `radiology` / `pharmacy` | **`T-###`** (same) |
 
 Engine: `hospital_queue_entries` via `server/services/hospital-queue.service.js`.
+
+### Single journey token
+
+One public token (`T-001`, `T-002`, …) is issued at first check-in (kiosk / walk-in) and **reused** when the patient is sent to Lab, Radiology, or Pharmacy. Each stop is a new queue row with the same `journey_token` / `token_number`.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/qms/:id/transfer` | Complete current stop → enqueue same token at `nextDepartment` |
+| GET | `/api/qms/journey/:token` | Look up today’s journey (active dept + history) |
+| PATCH | `/api/qms/:id/complete` | Optional body `{ nextDepartment }` = complete + transfer |
 
 ## API (`/api/qms`)
 

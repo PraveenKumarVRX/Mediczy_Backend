@@ -118,9 +118,57 @@ router.patch('/:id/start', authDoctor, async (req, res) => {
 
 router.patch('/:id/complete', authDoctor, async (req, res) => {
   try {
-    const entry = await queue.completeEntry(parseInt(req.params.id, 10), orgFromReq(req));
+    const org = orgFromReq(req);
+    const id = parseInt(req.params.id, 10);
+    if (req.body?.nextDepartment) {
+      const result = await queue.transferToDepartment(id, org, req.body.nextDepartment, {
+        notes: req.body?.notes,
+        doctorId: req.body?.doctorId,
+        doctorName: req.body?.doctorName,
+      });
+      return res.json({
+        success: true,
+        data: result.from,
+        transfer: { to: result.to, token: result.to?.tokenNumber },
+      });
+    }
+    const entry = await queue.completeEntry(id, org);
     if (!entry) return res.status(404).json({ success: false, message: 'Not found' });
     res.json({ success: true, data: entry });
+  } catch (e) {
+    res.status(e.status || 500).json({ success: false, message: e.message });
+  }
+});
+
+/** POST /api/v1/queue/:id/transfer — same journey token → next department */
+router.post('/:id/transfer', authUser, requireRole('admin', 'hospital_admin', 'receptionist', 'doctor'), async (req, res) => {
+  try {
+    const nextDepartment = req.body?.nextDepartment || req.body?.department;
+    if (!nextDepartment) {
+      return res.status(400).json({ success: false, message: 'nextDepartment required' });
+    }
+    const result = await queue.transferToDepartment(
+      parseInt(req.params.id, 10),
+      orgFromReq(req),
+      nextDepartment,
+      {
+        notes: req.body?.notes,
+        queueZone: req.body?.queueZone,
+        doctorId: req.body?.doctorId,
+        doctorName: req.body?.doctorName,
+      },
+    );
+    res.json({ success: true, ...result, token: result.to?.tokenNumber });
+  } catch (e) {
+    res.status(e.status || 500).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/journey/:token', authUser, requireRole('admin', 'hospital_admin', 'receptionist', 'doctor', 'nurse'), async (req, res) => {
+  try {
+    const journey = await queue.findJourneyByToken(orgFromReq(req), req.params.token);
+    if (!journey) return res.status(404).json({ success: false, message: 'No journey for this token today' });
+    res.json({ success: true, journey });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }

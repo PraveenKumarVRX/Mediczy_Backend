@@ -10,8 +10,10 @@
  * POST   /check-in          — issue token (walk-in / Aadhaar-assisted) [legacy desk]
  * PATCH  /:id/call          — reception call
  * PATCH  /:id/start         — mark serving
- * PATCH  /:id/complete      — complete
+ * PATCH  /:id/complete      — complete (optional body.nextDepartment → transfer)
  * PATCH  /:id/no-show       — no-show
+ * POST   /:id/transfer      — complete + enqueue same journey token at next dept
+ * GET    /journey/:token    — look up today's journey by public token (T-014)
  * GET    /analytics         — today stats for tenant
  */
 import express from 'express';
@@ -71,8 +73,28 @@ router.get('/context', (req, res) => {
       },
       walkInKioskPath: '/kiosk/checkin',
       queueConsolePath: '/hospital/queue-console',
+      journeyDepartments: queue.JOURNEY_DEPARTMENTS,
+      journeyTokenNote:
+        'One public token (T-###) follows the patient across OPD → Lab → Radiology → Pharmacy.',
     },
   });
+});
+
+/**
+ * GET /api/qms/journey/:token
+ * Find today's patient journey by public token (same number at every department).
+ */
+router.get('/journey/:token', async (req, res) => {
+  try {
+    const journey = await queue.findJourneyByToken(req.qms.organizationId, req.params.token);
+    if (!journey) {
+      return res.status(404).json({ success: false, message: 'No journey found for this token today' });
+    }
+    res.json({ success: true, journey });
+  } catch (e) {
+    console.error('[qms] journey lookup error:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 /**
@@ -339,21 +361,62 @@ router.post('/check-in', async (req, res) => {
       success: true,
       entry,
       token: entry.tokenNumber,
+      journeyToken: entry.journeyToken || entry.tokenNumber,
+      journeyId: entry.journeyId,
       printSlip: {
         tokenNumber: entry.tokenNumber,
+        journeyToken: entry.journeyToken || entry.tokenNumber,
+        department: entry.department,
         patientName: entry.patientName,
         doctorName: entry.doctorName,
         counterId: entry.counterId,
         queueZone: entry.queueZone,
         estimatedWaitMinutes: entry.estimatedWaitMinutes,
         specialization: body.specialization || null,
+        note: 'Show this token at every department today',
       },
       whatsapp: Boolean(body.notifyPhone || body.phone),
-      message: `Token ${entry.tokenNumber} issued`,
+      message: `Journey token ${entry.tokenNumber} issued — use at OPD, Lab, Radiology, Pharmacy`,
     });
   } catch (e) {
     console.error('[qms] check-in error:', e.message);
     res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /api/qms/:id/transfer
+ * Body: { nextDepartment: 'lab'|'radiology'|'pharmacy'|'opd'|'er', notes? }
+ */
+router.post('/:id/transfer', async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid entry id' });
+    }
+    const nextDepartment = req.body?.nextDepartment || req.body?.department;
+    if (!nextDepartment) {
+      return res.status(400).json({
+        success: false,
+        message: 'nextDepartment is required (opd|lab|radiology|pharmacy|er)',
+      });
+    }
+    const result = await queue.transferToDepartment(id, req.qms.organizationId, nextDepartment, {
+      notes: req.body?.notes || req.body?.chiefComplaint,
+      queueZone: req.body?.queueZone || req.body?.zone,
+      doctorId: req.body?.doctorId,
+      doctorName: req.body?.doctorName,
+    });
+    res.json({
+      success: true,
+      ...result,
+      token: result.to?.tokenNumber,
+      message: `Token ${result.to?.tokenNumber} moved to ${result.to?.department}`,
+    });
+  } catch (e) {
+    const status = e.status || 500;
+    console.error('[qms] transfer error:', e.message);
+    res.status(status).json({ success: false, message: e.message });
   }
 });
 
@@ -367,6 +430,7 @@ async function staffTransition(req, res, status) {
     }
 
     let entry = null;
+    let transfer = null;
     if (status === 'called') {
       const { rows } = await pool.query(
         `UPDATE hospital_queue_entries
@@ -391,7 +455,18 @@ async function staffTransition(req, res, status) {
         pushQueueEvent(entry.queueZone, 'queue_token_serving', { entry, board });
       }
     } else if (status === 'completed') {
-      entry = await queue.completeEntry(id, org);
+      const nextDepartment = req.body?.nextDepartment;
+      if (nextDepartment) {
+        transfer = await queue.transferToDepartment(id, org, nextDepartment, {
+          notes: req.body?.notes,
+          queueZone: req.body?.queueZone,
+          doctorId: req.body?.doctorId,
+          doctorName: req.body?.doctorName,
+        });
+        entry = transfer.from;
+      } else {
+        entry = await queue.completeEntry(id, org);
+      }
     } else if (status === 'no_show') {
       entry = await queue.markNoShow(id, org, req.body?.reason);
     }
@@ -399,10 +474,17 @@ async function staffTransition(req, res, status) {
     if (!entry) {
       return res.status(404).json({ success: false, message: 'Queue entry not found for this tenant' });
     }
-    res.json({ success: true, data: entry });
+    res.json({
+      success: true,
+      data: entry,
+      transfer: transfer
+        ? { to: transfer.to, token: transfer.to?.tokenNumber, department: transfer.to?.department }
+        : null,
+    });
   } catch (e) {
+    const statusCode = e.status || 500;
     console.error(`[qms] ${status} error:`, e.message);
-    res.status(500).json({ success: false, message: e.message });
+    res.status(statusCode).json({ success: false, message: e.message });
   }
 }
 
