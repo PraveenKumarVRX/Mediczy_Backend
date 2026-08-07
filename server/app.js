@@ -168,6 +168,7 @@ import prescriptionRouter from './routes/prescription.route.js';
 import ehrRouter from './routes/ehr.route.js';
 import payrollRouter from './routes/payroll.route.js';
 import roadmapIntelligenceRouter from './routes/roadmap-intelligence.route.js';
+import clinicalIntelligenceRouter from './routes/clinical-intelligence.route.js';
 import hospitalDisplayRouter from './routes/hospital-display.route.js';
 import hospitalQueueRouter from './routes/hospital-queue.route.js';
 import qmsRouter from './routes/qms.route.js';
@@ -1400,6 +1401,7 @@ app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF 
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
 app.use('/api/payroll', payrollRouter);
 app.use('/api/roadmap-intelligence', roadmapIntelligenceRouter);
+app.use('/api/clinical-intelligence', sibAIGuard, attachAIReporter, clinicalIntelligenceRouter);
 app.use('/api/display', hospitalDisplayRouter);
 app.use('/api/display/kiosk', displayKioskRouter);
 app.use('/api/abdm/kiosk', abdmKioskRouter);
