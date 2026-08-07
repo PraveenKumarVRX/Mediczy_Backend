@@ -1952,31 +1952,31 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
     }
     
     const normalizedEmail = email.toLowerCase().trim();
-    
+
     // Check if user already exists
-    const [existingUser] = await postgresSequelize.query(`
+    const existingUsers = await postgresSequelize.query(`
       SELECT id FROM users WHERE email = :email
     `, {
       replacements: { email: normalizedEmail },
       type: postgresSequelize.QueryTypes.SELECT
     });
-    
-    if (existingUser && existingUser.length > 0) {
+
+    if (existingUsers && existingUsers.length > 0) {
       return res.status(409).json({
         success: false,
         message: 'User with this email already exists'
       });
     }
-    
+
     // Verify corporate exists
-    const [corporate] = await postgresSequelize.query(`
+    const corporates = await postgresSequelize.query(`
       SELECT id, "companyName" FROM corporates WHERE id = :corporateId
     `, {
       replacements: { corporateId },
       type: postgresSequelize.QueryTypes.SELECT
     });
-    
-    if (!corporate || corporate.length === 0) {
+
+    if (!corporates || corporates.length === 0) {
       return res.status(404).json({
         success: false,
         message: 'Corporate not found'

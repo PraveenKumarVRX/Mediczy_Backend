@@ -465,8 +465,8 @@ const PROVIDERS = [
   },
   {
     name: 'groq',
-    label: 'Groq (Llama 4 Scout 17B fallback)',
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    label: 'Groq (Llama 3.3 70B fallback)',
+    model: 'llama-3.3-70b-versatile',
     getClient: getGroqClient,
     priority: 1,
   },

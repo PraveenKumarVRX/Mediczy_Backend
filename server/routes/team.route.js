@@ -2909,8 +2909,10 @@ router.post('/ai/generate', authTeam, requirePermission('Corporate Management'),
       content = r?.content?.trim() || '';
     } catch (_) {}
     if (!content) {
-      const r = await llmProvider.chat({ messages: [{ role: 'user', content: prompt.trim() }], maxTokens, temperature, forceProvider: 'groq', skipCache: true });
-      content = r?.content?.trim() || '';
+      try {
+        const r = await llmProvider.chat({ messages: [{ role: 'user', content: prompt.trim() }], maxTokens, temperature, forceProvider: 'groq', skipCache: true });
+        content = r?.content?.trim() || '';
+      } catch (_) {}
     }
     if (!content) return res.status(500).json({ success: false, message: 'AI provider returned empty response' });
     res.json({ success: true, data: { content } });
