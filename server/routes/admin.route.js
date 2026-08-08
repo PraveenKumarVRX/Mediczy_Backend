@@ -2899,6 +2899,17 @@ function getDefaultCorporatePlanDates() {
   };
 }
 
+/** Normalize Sequelize INSERT…RETURNING / SELECT row payloads into a single object. */
+function firstReturningRow(queryResult) {
+  if (!queryResult) return null;
+  // QueryTypes.INSERT → [rows|row, rowCount]; QueryTypes.SELECT → rows[]
+  const head = Array.isArray(queryResult) ? queryResult[0] : queryResult;
+  if (!head) return null;
+  if (Array.isArray(head)) return head[0] || null;
+  if (typeof head === 'object') return head;
+  return null;
+}
+
 async function getActiveCorporateSubscriptionPlan({ corporateId, transaction = null }) {
   const [plan] = await postgresSequelize.query(
     `SELECT id, name, slug, price, currency, billing_cycle, metadata
@@ -2930,6 +2941,34 @@ async function requireActiveCorporatePlanOrThrow({ corporateId, transaction = nu
   const error = new Error('No active corporate plan found. Create/activate a corporate plan before adding employees or sending welcome emails.');
   error.statusCode = 412;
   throw error;
+}
+
+/**
+ * Resolve an active corporate plan for employee onboarding.
+ * Auto-creates a default plan when missing (same path as welcome-email bootstrap)
+ * so bulk uploads for new corporates (e.g. Truvae) are not blocked with HTTP 412.
+ */
+async function ensureActiveCorporatePlanForEmployees({ corporateId, corporate, transaction = null }) {
+  const existing = await getActiveCorporateSubscriptionPlan({ corporateId, transaction });
+  if (existing) return { plan: existing, autoCreated: false };
+
+  const companyName = corporate?.companyName || corporate?.name || `Corporate ${corporateId}`;
+  const created = await createDefaultCorporatePlanForCorporate({
+    corporateId,
+    companyName,
+    employeeCount: Number(corporate?.employeeCount) || 0,
+    transaction,
+  });
+  if (!created?.id) {
+    const error = new Error('No active corporate plan found. Create/activate a corporate plan before adding employees or sending welcome emails.');
+    error.statusCode = 412;
+    throw error;
+  }
+
+  console.log(`[Corporate Employees] Auto-created default plan ${created.id} (${created.slug}) for corporate ${corporateId}`);
+  // Re-read so callers always get the SELECT-shaped row (id/name/slug/…).
+  const plan = await getActiveCorporateSubscriptionPlan({ corporateId, transaction }) || created;
+  return { plan, autoCreated: true };
 }
 
 async function ensureCorporatePlanForWelcome({ corporateId, corporate, transaction = null }) {
@@ -2971,7 +3010,7 @@ async function createDefaultCorporatePlanForCorporate({ corporateId, companyName
   ];
   const pricePerEmployee = 250;
 
-  const [inserted] = await postgresSequelize.query(
+  const insertResult = await postgresSequelize.query(
     `INSERT INTO subscription_plans (
        name, slug, type, price, annual_price, currency, billing_cycle,
        description, features, metadata,
@@ -3012,7 +3051,7 @@ async function createDefaultCorporatePlanForCorporate({ corporateId, companyName
     }
   );
 
-  return inserted || null;
+  return firstReturningRow(insertResult);
 }
 
 async function assignUserToActiveCorporatePlan({ userId, corporateId, corporatePlan, transaction = null }) {
@@ -3136,9 +3175,13 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
       });
     }
 
-    const activeCorporatePlan = await requireActiveCorporatePlanOrThrow({ corporateId });
+    // Auto-bootstrap a default plan when missing — hard 412 blocked new corporates
+    // (Truvae and similar) from any bulk employee upload even though welcome-email
+    // already had ensureCorporatePlanForWelcome().
+    const { plan: activeCorporatePlan, autoCreated: planAutoCreated } =
+      await ensureActiveCorporatePlanForEmployees({ corporateId, corporate });
     
-    const results = { created: [], failed: [], qcLog: [] };
+    const results = { created: [], failed: [], qcLog: [], planAutoCreated };
 
     // ─── Internal QC pass ────────────────────────────────────────────────────
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -3268,7 +3311,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           const corpTenantId = corporate.dataValues?.tenant_id ?? corporate.tenant_id ?? null;
 
           const uniqueId = await generateGuaranteedUniqueId('U', 'users');
-          const [userResult] = await postgresSequelize.query(`
+          const userInsertResult = await postgresSequelize.query(`
             INSERT INTO users (
               email, password, "firstName", "lastName", role, status,
               "isCorporate", "isAdmin", "isTeam", "isVerified",
@@ -3313,7 +3356,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
             transaction: tx
           });
           
-          userId = userResult && userResult[0] ? userResult[0].id : null;
+          userId = firstReturningRow(userInsertResult)?.id || null;
           isNewUser = true;
 
           // Mark new employee as requiring a password change on first login
@@ -3585,6 +3628,9 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         qcRejected,
         failed: results.failed.length,
         welcomeEmailFailed,
+        planAutoCreated: !!planAutoCreated,
+        planId: activeCorporatePlan?.id || null,
+        planName: activeCorporatePlan?.name || null,
       },
       verification,
       results

@@ -354,6 +354,11 @@ const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
   'staff code': 'employeeId',
   'associate id': 'employeeId',
   'ninjacart id': 'employeeId',
+  'truvae id': 'employeeId',
+  'employee no': 'employeeId',
+  'employee number': 'employeeId',
+  'emp no': 'employeeId',
+  'personnel number': 'employeeId',
   department: 'department',
   dept: 'department',
   function: 'department',
@@ -4486,7 +4491,50 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     return employees;
   };
 
-  const readCSVRows = (text: string) => text.split('\n').map(line => line.split(','));
+  /** RFC4180-ish CSV split — handles quoted commas/newlines that naive split(',') breaks. */
+  const readCSVRows = (text: string): string[][] => {
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = '';
+    let inQuotes = false;
+    const input = String(text || '').replace(/^\uFEFF/, '');
+
+    for (let i = 0; i < input.length; i++) {
+      const ch = input[i];
+      const next = input[i + 1];
+      if (inQuotes) {
+        if (ch === '"' && next === '"') {
+          field += '"';
+          i++;
+        } else if (ch === '"') {
+          inQuotes = false;
+        } else {
+          field += ch;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+      } else if (ch === '\n') {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = '';
+      } else if (ch === '\r') {
+        // ignore; handle \r\n via \n
+      } else {
+        field += ch;
+      }
+    }
+    if (field.length > 0 || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+    return rows;
+  };
 
   // Parse CSV for bulk upload
   const parseCSV = (text: string) => parseBulkEmployeeRows(readCSVRows(text));
@@ -4790,12 +4838,22 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       }
     } catch (error: any) {
       const isTimeout = error?.code === 'ECONNABORTED' || String(error?.message || '').toLowerCase().includes('timeout');
+      const status = error?.response?.status;
+      const apiMessage = error.response?.data?.error || error.response?.data?.message;
+      let description = apiMessage || 'Failed to upload employees';
+      if (isTimeout) {
+        description = 'Large employee uploads can take more than 30 seconds. Refresh the employee list before retrying to avoid duplicates.';
+      } else if (status === 412) {
+        description = apiMessage || 'No active corporate plan. Open Plans for this corporate, activate one, then retry the upload.';
+      } else if (status === 403) {
+        description = apiMessage || 'You do not have access to this corporate. Ask an admin to assign you in Team Assignments.';
+      } else if (status === 401) {
+        description = 'Session expired. Sign in again to the team portal and retry.';
+      }
       toast({
         variant: 'destructive',
         title: isTimeout ? 'Upload still processing' : 'Upload failed',
-        description: isTimeout
-          ? 'Large employee uploads can take more than 30 seconds. Refresh the employee list before retrying to avoid duplicates.'
-          : (error.response?.data?.error || error.response?.data?.message || 'Failed to upload employees')
+        description,
       });
     } finally {
       setIsUploading(false);
