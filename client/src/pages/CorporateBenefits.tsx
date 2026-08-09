@@ -35,7 +35,11 @@ import {
   User,
   IndianRupee,
   AlertCircle,
-  Gift
+  Gift,
+  Video,
+  Percent,
+  Dumbbell,
+  Users
 } from "lucide-react";
 import api from "@/utils/api";
 import { useAuth } from "@/auth/AuthProvider";
@@ -65,6 +69,19 @@ interface CorporatePlan {
     ambulanceCoverage: boolean;
     wellnessCoverage: boolean;
     mentalHealthCoverage: boolean;
+  };
+  // Platform/perk access (Health Calendar, webinars, discounts) -- distinct
+  // from medical coverage above. Team-configured per corporate; previously
+  // saved but never read back anywhere in the product.
+  platformFeatures?: {
+    healthCalendar: boolean;
+    webinars: boolean;
+    labDiscount: boolean;
+    pharmacyDiscount: boolean;
+    discountCoupons: boolean;
+    gymMembership: boolean;
+    wellnessMembership: boolean;
+    wellnessPackageDiscounts: boolean;
   };
   coverage: {
     sumInsured: number;
@@ -263,6 +280,34 @@ const CorporateBenefits = () => {
     return labels[feature] || feature;
   };
 
+  const getPlatformFeatureIcon = (feature: string) => {
+    const icons: Record<string, any> = {
+      healthCalendar: CalendarCheck,
+      webinars: Video,
+      labDiscount: Percent,
+      pharmacyDiscount: Percent,
+      discountCoupons: Gift,
+      gymMembership: Dumbbell,
+      wellnessMembership: Users,
+      wellnessPackageDiscounts: Percent,
+    };
+    return icons[feature] || CheckCircle;
+  };
+
+  const getPlatformFeatureLabel = (feature: string) => {
+    const labels: Record<string, string> = {
+      healthCalendar: 'Health Calendar',
+      webinars: 'Webinars',
+      labDiscount: 'Lab Discount',
+      pharmacyDiscount: 'Pharmacy Discount',
+      discountCoupons: 'Discount Coupons',
+      gymMembership: 'Gym Membership',
+      wellnessMembership: 'Wellness Membership',
+      wellnessPackageDiscounts: 'Wellness Package Discounts',
+    };
+    return labels[feature] || feature;
+  };
+
   if (loading) {
     return (
       <CorporateLayout>
@@ -452,6 +497,34 @@ const CorporateBenefits = () => {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* Included Perks — platform/access features, distinct from medical
+                      coverage above. Team-configured per corporate; this is the direct
+                      fix for "customization isn't visible" (was previously write-only). */}
+                  {corporatePlan.platformFeatures && Object.values(corporatePlan.platformFeatures).some(Boolean) && (
+                    <Card className="bg-slate-900/50 border-slate-700/50">
+                      <CardHeader>
+                        <CardTitle className="text-slate-100 flex items-center gap-2">
+                          <Gift className="w-5 h-5 text-amber-400" />
+                          Included Perks
+                        </CardTitle>
+                        <p className="text-sm text-slate-500">Platform features and discount programs included in your plan.</p>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {Object.entries(corporatePlan.platformFeatures).map(([key, enabled]) => {
+                            const Icon = getPlatformFeatureIcon(key);
+                            return enabled ? (
+                              <div key={key} className="flex items-center gap-2 p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                                <Icon className="w-5 h-5 text-amber-400" />
+                                <span className="text-sm font-medium text-amber-300">{getPlatformFeatureLabel(key)}</span>
+                              </div>
+                            ) : null;
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Wellness & OPD Benefits — employer-funded, no insurer or policy behind these */}
                   <Card className="bg-emerald-950/10 border-emerald-500/20">

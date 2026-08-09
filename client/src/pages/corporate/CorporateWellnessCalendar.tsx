@@ -52,7 +52,8 @@ import {
   Mail,
   CheckCircle,
   UserPlus,
-  UsersRound
+  UsersRound,
+  AlertCircle
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
@@ -220,6 +221,9 @@ const downloadICSFile = (activity: WellnessActivity) => {
 const CorporateWellnessCalendar: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
+  // null = not yet known; true/false once the plan's real features load.
+  const [healthCalendarIncluded, setHealthCalendarIncluded] = useState<boolean | null>(null);
+  const [planName, setPlanName] = useState<string>('');
   const [activities, setActivities] = useState<WellnessActivity[]>([]);
   const [employees, setEmployees] = useState<Participant[]>([]);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -306,11 +310,23 @@ const CorporateWellnessCalendar: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [activitiesRes, empRes] = await Promise.all([
+      const [activitiesRes, empRes, benefitsRes] = await Promise.all([
         api.get('/corporate/wellness-calendar/activities').catch(() => ({ data: null })),
         api.get('/corporate/dashboard/employees-health').catch(() => ({ data: null })),
+        api.get('/corporate/my-benefits').catch(() => ({ data: null })),
       ]);
       setActivities(activitiesRes.data?.data?.activities || []);
+
+      const plan = benefitsRes.data?.data?.plan;
+      if (plan) {
+        setPlanName(plan.planName || '');
+        setHealthCalendarIncluded(Boolean(plan.platformFeatures?.healthCalendar));
+      } else {
+        // No linked plan at all -- don't claim the feature isn't included,
+        // just don't show a confirmation badge either.
+        setHealthCalendarIncluded(null);
+      }
+
       const empData = empRes.data?.data?.employees || [];
       setEmployees(empData.map((e: any) => ({
         id: String(e.id),
@@ -528,6 +544,7 @@ const CorporateWellnessCalendar: React.FC = () => {
           gradient="from-teal-500 to-emerald-600"
           showRefresh={true}
           onRefresh={loadData}
+          badge={healthCalendarIncluded && planName ? { text: `Included in your ${planName} plan`, variant: "emerald" } : undefined}
           stats={[
             { label: 'Total Activities', value: stats.totalActivities },
             { label: 'This Month', value: stats.thisMonthActivities },
@@ -535,6 +552,15 @@ const CorporateWellnessCalendar: React.FC = () => {
             { label: 'Completed', value: stats.completedActivities }
           ]}
         />
+
+        {healthCalendarIncluded === false && (
+          <Card className="bg-amber-950/20 border-amber-500/30">
+            <CardContent className="p-4 flex items-center gap-3 text-sm text-amber-300">
+              <AlertCircle className="h-5 w-5 flex-shrink-0" />
+              <span>Health Calendar isn't part of your current plan's included features. You can still see activities below if any have been scheduled -- contact your Mediczy account team to add this feature.</span>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Current Month Theme Banner */}
         <Card className={cn('bg-gradient-to-r text-white border-0', currentTheme.color)}>

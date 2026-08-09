@@ -412,8 +412,44 @@ const FEATURE_LABEL_ALIASES = {
   mentalHealthCoverage: ['mental health', 'mentalhealth'],
 };
 
+// Platform/perk features (Team-configured, e.g. via TeamCorporateManagement's
+// plan editor) are a distinct kind from medical coverage above -- they gate
+// access to product features (Wellness Calendar, webinars) or discount
+// programs, not what's medically covered. Key names match the source data
+// directly (no "Coverage" suffix); label aliases used for the array-shaped
+// features case, matching TeamCorporateManagement's planFeatureLabels.
+const PLATFORM_FEATURE_KEYS = [
+  'healthCalendar', 'webinars', 'labDiscount', 'pharmacyDiscount',
+  'discountCoupons', 'gymMembership', 'wellnessMembership', 'wellnessPackageDiscounts',
+];
+const PLATFORM_FEATURE_LABEL_ALIASES = {
+  healthCalendar: ['health calendar'],
+  webinars: ['webinars'],
+  labDiscount: ['lab discount'],
+  pharmacyDiscount: ['pharmacy discount'],
+  discountCoupons: ['discount coupons'],
+  gymMembership: ['gym membership'],
+  wellnessMembership: ['wellness membership'],
+  wellnessPackageDiscounts: ['wellness package discounts'],
+};
+
 function tagBenefitCategory(b) {
   return ['ipd', 'maternity'].includes(String(b.category || b.name || '').toLowerCase()) ? 'insurance' : 'wellness';
+}
+
+function extractPlatformFeatures(rawFeatures) {
+  const platformFeatures = {};
+  if (Array.isArray(rawFeatures)) {
+    const labels = new Set(rawFeatures.map((f) => String(f).trim().toLowerCase()));
+    for (const [key, aliases] of Object.entries(PLATFORM_FEATURE_LABEL_ALIASES)) {
+      platformFeatures[key] = aliases.some((a) => labels.has(a));
+    }
+  } else {
+    for (const key of PLATFORM_FEATURE_KEYS) {
+      platformFeatures[key] = Boolean(rawFeatures?.[key]);
+    }
+  }
+  return platformFeatures;
 }
 
 function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
@@ -429,6 +465,7 @@ function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
       features[destKey] = Boolean(planRow.features?.[srcKey]);
     }
   }
+  const platformFeatures = extractPlatformFeatures(planRow.features);
   return {
     id: String(planRow.id),
     planName: planRow.name,
@@ -450,6 +487,7 @@ function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
         }))
       : [],
     features,
+    platformFeatures,
     // Real plan config stores room rent / ICU rent / hospitalization windows as
     // descriptive text ("Single Room", "30 days"), not numeric day-counts or
     // per-day rupee rates -- displayed as-is rather than forced into a shape
@@ -542,6 +580,7 @@ router.get('/my-benefits', authUser, async (req, res) => {
         benefitCategory: tagBenefitCategory(b),
       })),
       features: planRecord?.features || {},
+      platformFeatures: extractPlatformFeatures(planRecord?.features),
       coverage: planRecord?.metadata?.coverage || {},
     };
     const usage = buildUsageSnapshot(userPlan);

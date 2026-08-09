@@ -25,6 +25,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "@/utils/api";
 
 interface SidebarItem {
   icon: React.ElementType;
@@ -65,6 +66,10 @@ const CorporateSidebar = () => {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [corporateName, setCorporateName] = useState<string>('');
+  // Wellness Calendar is a Team-configured plan feature (features.healthCalendar),
+  // not universal -- default true to avoid hiding it for the common case while
+  // the real value loads, corrected once the plan's actual features are known.
+  const [hasHealthCalendar, setHasHealthCalendar] = useState(true);
 
   useEffect(() => {
     try {
@@ -76,7 +81,23 @@ const CorporateSidebar = () => {
     } catch (e) {
       // ignore
     }
+
+    api.get('/corporate/my-benefits')
+      .then((res) => {
+        const platformFeatures = res.data?.data?.plan?.platformFeatures ?? res.data?.plan?.platformFeatures;
+        if (platformFeatures && typeof platformFeatures.healthCalendar === 'boolean') {
+          setHasHealthCalendar(platformFeatures.healthCalendar);
+        }
+      })
+      .catch(() => {
+        // Leave default (visible) on failure -- don't hide a real nav item
+        // because of a transient network error.
+      });
   }, []);
+
+  const visibleMainNavItems = mainNavItems.filter(
+    (item) => item.href !== '/corporate/wellness-calendar' || hasHealthCalendar
+  );
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -177,7 +198,7 @@ const CorporateSidebar = () => {
             </p>
           )}
           <div className="space-y-0.5">
-            {mainNavItems.map((item) => (
+            {visibleMainNavItems.map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
           </div>
