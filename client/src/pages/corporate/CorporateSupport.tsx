@@ -24,11 +24,11 @@ const CorporateSupport: React.FC = () => {
       const raw = localStorage.getItem('corporateData');
       const parsed = raw ? JSON.parse(raw) : null;
       const name = parsed?.name || 'Corporate User';
-      const email = parsed?.email || 'corporate@mediczy.com';
+      const email = parsed?.email || 'corporate@mediqzy.com';
       const userId = parsed?.id;
       return { name, email, role: 'corporate', userId };
     } catch {
-      return { name: 'Corporate User', email: 'corporate@mediczy.com', role: 'corporate' };
+      return { name: 'Corporate User', email: 'corporate@mediqzy.com', role: 'corporate' };
     }
   }, []);
 
@@ -94,24 +94,24 @@ const CorporateSupport: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = 'tel:+18001234567'}>
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.open('https://wa.me/918098998998', '_blank')}>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center gap-4">
               <div className="p-4 bg-blue-100 rounded-full">
                 <Phone className="h-8 w-8 text-blue-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg mb-2">Phone Support</h3>
-                <p className="text-sm text-slate-400 mb-4">Call us at +1 (800) 123-4567</p>
+                <h3 className="font-semibold text-lg mb-2">WhatsApp Support</h3>
+                <p className="text-sm text-slate-400 mb-4">Message us at +91 80989 98998</p>
                 <Button asChild variant="outline">
-                  <a href="tel:+18001234567">Call Now</a>
+                  <a href="https://wa.me/918098998998" target="_blank" rel="noopener noreferrer">Message on WhatsApp</a>
                 </Button>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = 'mailto:support@mediczy.com'}>
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = 'mailto:support@mediqzy.com'}>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center gap-4">
               <div className="p-4 bg-purple-100 rounded-full">
@@ -121,7 +121,7 @@ const CorporateSupport: React.FC = () => {
                 <h3 className="font-semibold text-lg mb-2">Email Support</h3>
                 <p className="text-sm text-slate-400 mb-4">Send us an email anytime</p>
                 <Button asChild variant="outline">
-                  <a href="mailto:support@mediczy.com">Send Email</a>
+                  <a href="mailto:support@mediqzy.com">Send Email</a>
                 </Button>
               </div>
             </div>

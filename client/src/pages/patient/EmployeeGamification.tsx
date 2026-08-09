@@ -45,7 +45,6 @@ import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 import { format, differenceInDays } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/auth/AuthProvider';
 
 interface Challenge {
   id: string;
@@ -98,6 +97,8 @@ interface TeamStats {
 }
 
 interface MyStats {
+  employeeId?: string | null;
+  department?: string | null;
   totalPoints: number;
   totalChallenges: number;
   completedChallenges: number;
@@ -118,6 +119,7 @@ interface Winner {
   score: number;
   reward: string;
   date: string;
+  isMe?: boolean;
 }
 
 const challengeTypes = [
@@ -127,269 +129,29 @@ const challengeTypes = [
   { value: 'sleep', label: 'Sleep', icon: Moon, color: 'from-purple-500 to-purple-600', bgColor: 'bg-purple-100 text-purple-700' },
   { value: 'hydration', label: 'Hydration', icon: Droplets, color: 'from-cyan-500 to-cyan-600', bgColor: 'bg-cyan-100 text-cyan-700' },
   { value: 'mindfulness', label: 'Mindfulness', icon: Brain, color: 'from-pink-500 to-pink-600', bgColor: 'bg-pink-100 text-pink-700' },
+  { value: 'weight-loss', label: 'Weight Loss', icon: TrendingUp, color: 'from-rose-500 to-rose-600', bgColor: 'bg-rose-100 text-rose-700' },
+  { value: 'custom', label: 'Custom', icon: Target, color: 'from-slate-500 to-slate-600', bgColor: 'bg-slate-100 text-slate-700' },
 ];
 
-// Sample data for the current user
-const currentUserData = {
-  id: 'emp-001',
-  name: 'You',
-  department: 'Engineering',
-  avatar: null
+const normalizeChallenge = (raw: any): Challenge => {
+  const typeConfig = challengeTypes.find(t => t.value === raw.type);
+  return {
+    ...raw,
+    icon: typeConfig?.icon || Target,
+    color: typeConfig?.color || 'from-slate-500 to-slate-600',
+  };
 };
-
-const generateSampleChallenges = (): Challenge[] => {
-  return [
-    {
-      id: '1',
-      title: 'New Year Step Challenge',
-      description: 'Walk 10,000 steps daily for the entire month. Track your steps and compete with colleagues!',
-      type: 'steps',
-      target: 300000,
-      unit: 'steps',
-      startDate: '2025-01-01',
-      endDate: '2025-01-31',
-      status: 'active',
-      totalParticipants: 127,
-      rewards: {
-        gold: 'Fitness Smartwatch + ₹5,000 Amazon Voucher',
-        silver: 'Wireless Earbuds + ₹3,000 Amazon Voucher',
-        bronze: 'Fitness Band + ₹2,000 Amazon Voucher'
-      },
-      icon: Footprints,
-      color: 'from-blue-500 to-blue-600',
-      myProgress: 185000,
-      myRank: 12,
-      myStreak: 15,
-      joined: true
-    },
-    {
-      id: '2',
-      title: 'Mindfulness Marathon',
-      description: 'Practice 10 minutes of meditation daily. Use any mindfulness app and log your sessions.',
-      type: 'mindfulness',
-      target: 300,
-      unit: 'minutes',
-      startDate: '2025-01-15',
-      endDate: '2025-02-15',
-      status: 'active',
-      totalParticipants: 89,
-      rewards: {
-        gold: 'Spa Voucher Worth ₹10,000',
-        silver: 'Meditation App Annual Subscription',
-        bronze: 'Aromatherapy Kit'
-      },
-      icon: Brain,
-      color: 'from-pink-500 to-pink-600',
-      myProgress: 120,
-      myRank: 8,
-      myStreak: 10,
-      joined: true
-    },
-    {
-      id: '3',
-      title: 'Hydration Heroes',
-      description: 'Drink 8 glasses of water daily. Stay hydrated and energized throughout the workday!',
-      type: 'hydration',
-      target: 240,
-      unit: 'glasses',
-      startDate: '2025-01-01',
-      endDate: '2025-01-31',
-      status: 'completed',
-      totalParticipants: 156,
-      rewards: {
-        gold: 'Premium Water Bottle Set + ₹3,000 Voucher',
-        silver: 'Smart Water Bottle',
-        bronze: 'Fruit Infuser Bottle'
-      },
-      icon: Droplets,
-      color: 'from-cyan-500 to-cyan-600',
-      myProgress: 240,
-      myRank: 3,
-      myStreak: 30,
-      joined: true
-    },
-    {
-      id: '4',
-      title: 'February Fitness Frenzy',
-      description: 'Complete 150 minutes of workout per week. Any form of exercise counts!',
-      type: 'workout',
-      target: 600,
-      unit: 'minutes',
-      startDate: '2025-02-01',
-      endDate: '2025-02-28',
-      status: 'upcoming',
-      totalParticipants: 45,
-      rewards: {
-        gold: 'Gym Membership (1 Year) + Sports Gear',
-        silver: 'Gym Membership (6 Months)',
-        bronze: 'Gym Membership (3 Months)'
-      },
-      icon: Dumbbell,
-      color: 'from-orange-500 to-orange-600',
-      myProgress: 0,
-      myRank: 0,
-      myStreak: 0,
-      joined: false
-    }
-  ];
-};
-
-const generateLeaderboard = (includeMe: boolean = true): LeaderboardEntry[] => {
-  const names = [
-    'Priya Sharma', 'Rahul Verma', 'Anita Gupta', 'Vikram Singh', 'Neha Patel',
-    'Amit Kumar', 'Kavita Joshi', 'Rajesh Nair', 'Deepika Mehta', 'Suresh Reddy',
-    'Pooja Agarwal', 'Arjun Malhotra', 'Sneha Iyer', 'Karthik Rao', 'Divya Pillai',
-    'Manish Tiwari', 'Ritu Saxena', 'Sanjay Pandey', 'Meera Krishnan', 'Varun Kapoor'
-  ];
-  
-  const departments = ['Engineering', 'HR', 'Finance', 'Marketing', 'Operations', 'Sales', 'Product', 'Design'];
-  
-  const leaderboard: LeaderboardEntry[] = names.map((name, index) => {
-    const baseScore = 95000 - (index * 3500) + Math.floor(Math.random() * 2000);
-    const previousRank = index + 1 + (Math.random() > 0.5 ? 1 : -1) * Math.floor(Math.random() * 3);
-    return {
-      rank: index + 1,
-      previousRank: Math.max(1, Math.min(20, previousRank)),
-      employeeId: `emp-${String(index + 2).padStart(3, '0')}`,
-      name,
-      department: departments[index % departments.length],
-      score: Math.max(0, baseScore),
-      progress: Math.min(100, Math.floor((baseScore / 300000) * 100)),
-      streak: Math.floor(Math.random() * 20) + 5,
-      badges: ['🔥', '⭐', '💪'].slice(0, Math.floor(Math.random() * 3) + 1),
-      medal: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? 'bronze' : undefined,
-      isMe: false
-    };
-  });
-
-  // Insert current user at position 12
-  if (includeMe) {
-    const myEntry: LeaderboardEntry = {
-      rank: 12,
-      previousRank: 15,
-      employeeId: 'emp-001',
-      name: 'You',
-      department: 'Engineering',
-      score: 61500,
-      progress: 62,
-      streak: 15,
-      badges: ['🔥', '⭐'],
-      isMe: true
-    };
-    leaderboard.splice(11, 0, myEntry);
-    // Adjust ranks after insertion
-    leaderboard.forEach((entry, idx) => {
-      entry.rank = idx + 1;
-    });
-  }
-
-  return leaderboard.slice(0, 20);
-};
-
-const generateTeamLeaderboard = (): TeamStats[] => {
-  const teams = [
-    { name: 'Tech Titans', dept: 'Engineering' },
-    { name: 'Finance Force', dept: 'Finance' },
-    { name: 'Marketing Mavericks', dept: 'Marketing' },
-    { name: 'HR Heroes', dept: 'HR' },
-    { name: 'Sales Stars', dept: 'Sales' },
-    { name: 'Ops Olympians', dept: 'Operations' },
-    { name: 'Product Panthers', dept: 'Product' },
-    { name: 'Design Dragons', dept: 'Design' }
-  ];
-
-  return teams.map((team, index) => ({
-    teamName: team.name,
-    department: team.dept,
-    totalMembers: Math.floor(Math.random() * 20) + 15,
-    activeMembers: Math.floor(Math.random() * 15) + 10,
-    avgScore: 85000 - (index * 5000) + Math.floor(Math.random() * 3000),
-    rank: index + 1,
-    previousRank: index + 1 + (Math.random() > 0.5 ? 1 : -1)
-  }));
-};
-
-const generateMyStats = (): MyStats => ({
-  totalPoints: 15750,
-  totalChallenges: 8,
-  completedChallenges: 5,
-  currentStreak: 15,
-  longestStreak: 28,
-  badges: [
-    { id: 'b1', name: 'First Steps', icon: '👟', earnedDate: '2024-12-01' },
-    { id: 'b2', name: 'Week Warrior', icon: '🔥', earnedDate: '2024-12-08' },
-    { id: 'b3', name: 'Hydration Hero', icon: '💧', earnedDate: '2024-12-15' },
-    { id: 'b4', name: 'Team Player', icon: '🤝', earnedDate: '2024-12-20' },
-    { id: 'b5', name: 'Mindful Master', icon: '🧘', earnedDate: '2025-01-10' },
-  ],
-  rank: 12,
-  previousRank: 15,
-  percentile: 88
-});
-
-const generateWinners = (): Winner[] => [
-  {
-    challengeId: '3',
-    challengeTitle: 'Hydration Heroes',
-    medal: 'gold',
-    name: 'Priya Sharma',
-    department: 'Engineering',
-    score: 248,
-    reward: 'Premium Water Bottle Set + ₹3,000 Voucher',
-    date: '2025-01-31'
-  },
-  {
-    challengeId: '3',
-    challengeTitle: 'Hydration Heroes',
-    medal: 'silver',
-    name: 'Rahul Verma',
-    department: 'Marketing',
-    score: 245,
-    reward: 'Smart Water Bottle',
-    date: '2025-01-31'
-  },
-  {
-    challengeId: '3',
-    challengeTitle: 'Hydration Heroes',
-    medal: 'bronze',
-    name: 'You',
-    department: 'Engineering',
-    score: 240,
-    reward: 'Fruit Infuser Bottle',
-    date: '2025-01-31'
-  },
-  {
-    challengeId: 'prev1',
-    challengeTitle: 'December Step Sprint',
-    medal: 'gold',
-    name: 'Vikram Singh',
-    department: 'Sales',
-    score: 320000,
-    reward: 'Fitness Smartwatch',
-    date: '2024-12-31'
-  },
-  {
-    challengeId: 'prev1',
-    challengeTitle: 'December Step Sprint',
-    medal: 'silver',
-    name: 'Neha Patel',
-    department: 'HR',
-    score: 305000,
-    reward: 'Wireless Earbuds',
-    date: '2024-12-31'
-  }
-];
 
 const EmployeeGamification: React.FC = () => {
   const { toast } = useToast();
-  const { currentUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [teamLeaderboard, setTeamLeaderboard] = useState<TeamStats[]>([]);
   const [myStats, setMyStats] = useState<MyStats | null>(null);
   const [winners, setWinners] = useState<Winner[]>([]);
-  const [selectedChallenge, setSelectedChallenge] = useState<string>('1');
+  const [selectedChallenge, setSelectedChallenge] = useState<string>('');
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('my-progress');
 
   useEffect(() => {
@@ -399,36 +161,60 @@ const EmployeeGamification: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      // Try to fetch from API
-      const [challengesRes, statsRes] = await Promise.all([
+      const [challengesRes, statsRes, teamsRes, winnersRes] = await Promise.all([
         api.get('/corporate/gamification/employee/challenges').catch(() => ({ data: null })),
-        api.get('/corporate/gamification/employee/stats').catch(() => ({ data: null }))
+        api.get('/corporate/gamification/employee/stats').catch(() => ({ data: null })),
+        api.get('/corporate/gamification/employee/teams').catch(() => ({ data: null })),
+        api.get('/corporate/gamification/employee/winners').catch(() => ({ data: null })),
       ]);
 
-      setChallenges(challengesRes.data?.data?.challenges || generateSampleChallenges());
-      setMyStats(statsRes.data?.data?.stats || generateMyStats());
-      setLeaderboard(generateLeaderboard());
-      setTeamLeaderboard(generateTeamLeaderboard());
-      setWinners(generateWinners());
-    } catch (error) {
-      setChallenges(generateSampleChallenges());
-      setMyStats(generateMyStats());
-      setLeaderboard(generateLeaderboard());
-      setTeamLeaderboard(generateTeamLeaderboard());
-      setWinners(generateWinners());
+      const loadedChallenges: Challenge[] = (challengesRes.data?.data?.challenges || []).map(normalizeChallenge);
+      setChallenges(loadedChallenges);
+      setMyStats(statsRes.data?.data?.stats || null);
+      setTeamLeaderboard(teamsRes.data?.data?.teams || []);
+      setWinners(winnersRes.data?.data?.winners || []);
+
+      if (!selectedChallenge) {
+        const firstBoardable = loadedChallenges.find(c => c.status === 'active' || c.status === 'completed');
+        if (firstBoardable) setSelectedChallenge(firstBoardable.id);
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Failed to load challenges',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleJoinChallenge = (challengeId: string) => {
-    setChallenges(prev => prev.map(c => 
-      c.id === challengeId ? { ...c, joined: true, myProgress: 0, myRank: c.totalParticipants + 1 } : c
-    ));
-    toast({
-      title: 'Challenge Joined!',
-      description: 'You have successfully joined the challenge. Start tracking your progress!'
-    });
+  useEffect(() => {
+    if (!selectedChallenge) { setLeaderboard([]); return; }
+    let cancelled = false;
+    setLeaderboardLoading(true);
+    api.get(`/corporate/gamification/employee/challenges/${encodeURIComponent(selectedChallenge)}/leaderboard`)
+      .then(({ data }) => { if (!cancelled) setLeaderboard((data as any)?.data?.leaderboard || []); })
+      .catch(() => { if (!cancelled) setLeaderboard([]); })
+      .finally(() => { if (!cancelled) setLeaderboardLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedChallenge]);
+
+  const handleJoinChallenge = async (challengeId: string) => {
+    try {
+      await api.post(`/corporate/gamification/employee/challenges/${encodeURIComponent(challengeId)}/join`);
+      toast({
+        title: 'Challenge Joined!',
+        description: 'You have successfully joined the challenge. Start tracking your progress!'
+      });
+      await loadData();
+    } catch (error: any) {
+      toast({
+        title: 'Failed to join challenge',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const activeChallenges = useMemo(() => challenges.filter(c => c.status === 'active' && c.joined), [challenges]);
@@ -664,7 +450,9 @@ const EmployeeGamification: React.FC = () => {
                   <Card className="bg-slate-50 dark:bg-slate-800/50 border-dashed">
                     <CardContent className="p-6 text-center">
                       <CheckCircle className="h-12 w-12 mx-auto text-emerald-500 mb-2" />
-                      <p className="text-slate-500">You've joined all available challenges!</p>
+                      <p className="text-slate-500">
+                        {challenges.length === 0 ? 'No wellness challenges have been set up yet.' : "You've joined all available challenges!"}
+                      </p>
                     </CardContent>
                   </Card>
                 ) : (
@@ -727,15 +515,19 @@ const EmployeeGamification: React.FC = () => {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex flex-wrap gap-4">
-                    {myStats.badges.map(badge => (
-                      <div key={badge.id} className="flex flex-col items-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                        <span className="text-3xl mb-1">{badge.icon}</span>
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">{badge.name}</span>
-                        <span className="text-xs text-slate-500">{format(new Date(badge.earnedDate), 'MMM d, yyyy')}</span>
-                      </div>
-                    ))}
-                  </div>
+                  {myStats.badges.length === 0 ? (
+                    <p className="text-sm text-slate-500">Badges aren't available yet — check back soon.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-4">
+                      {myStats.badges.map(badge => (
+                        <div key={badge.id} className="flex flex-col items-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
+                          <span className="text-3xl mb-1">{badge.icon}</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-white">{badge.name}</span>
+                          <span className="text-xs text-slate-500">{format(new Date(badge.earnedDate), 'MMM d, yyyy')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
@@ -794,6 +586,17 @@ const EmployeeGamification: React.FC = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {leaderboardLoading ? (
+                    <div className="flex items-center justify-center py-12 text-slate-400">
+                      <RefreshCw className="h-6 w-6 animate-spin" />
+                    </div>
+                  ) : leaderboard.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500">
+                      <Trophy className="h-10 w-10 mx-auto mb-2 opacity-40" />
+                      <p>No one has joined this challenge yet. Be the first!</p>
+                    </div>
+                  ) : (
+                  <>
                   {/* Top 3 Podium - Display order: Silver (2nd), Gold (1st), Bronze (3rd) */}
                   <div className="flex justify-center items-end gap-4 mb-6">
                     {[1, 0, 2].map((rank) => {
@@ -900,6 +703,8 @@ const EmployeeGamification: React.FC = () => {
                       ))}
                     </div>
                   </ScrollArea>
+                  </>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -918,9 +723,12 @@ const EmployeeGamification: React.FC = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {teamLeaderboard.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">No department rankings yet — join a challenge to get your team on the board.</p>
+                ) : (
                 <div className="space-y-3">
                   {teamLeaderboard.map((team) => {
-                    const isMyTeam = team.department === 'Engineering';
+                    const isMyTeam = Boolean(myStats?.department) && team.department === myStats?.department;
                     return (
                       <div
                         key={team.department}
@@ -972,6 +780,7 @@ const EmployeeGamification: React.FC = () => {
                     );
                   })}
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
@@ -989,9 +798,12 @@ const EmployeeGamification: React.FC = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent>
+                {winners.length === 0 ? (
+                  <p className="text-sm text-slate-500 text-center py-8">No completed challenges with winners yet.</p>
+                ) : (
                 <div className="space-y-4">
                   {winners.map((winner, index) => {
-                    const isMe = winner.name === 'You';
+                    const isMe = Boolean(winner.isMe);
                     const medalColors = {
                       gold: 'from-yellow-400 to-amber-500',
                       silver: 'from-slate-300 to-slate-400',
@@ -1047,6 +859,7 @@ const EmployeeGamification: React.FC = () => {
                     );
                   })}
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

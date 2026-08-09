@@ -43,11 +43,11 @@ const CorporateHelp: React.FC = () => {
       const raw = localStorage.getItem('corporateData');
       const parsed = raw ? JSON.parse(raw) : null;
       const name = parsed?.name || 'Corporate User';
-      const email = parsed?.email || 'corporate@mediczy.com';
+      const email = parsed?.email || 'corporate@mediqzy.com';
       const userId = parsed?.id;
       return { name, email, role: 'corporate', userId };
     } catch {
-      return { name: 'Corporate User', email: 'corporate@mediczy.com', role: 'corporate' };
+      return { name: 'Corporate User', email: 'corporate@mediqzy.com', role: 'corporate' };
     }
   }, []);
 
@@ -168,16 +168,16 @@ const CorporateHelp: React.FC = () => {
       link: '#live-chat'
     },
     {
-      title: 'Phone Support',
-      description: 'Call us at +91 800-123-4567',
+      title: 'WhatsApp Support',
+      description: 'Message us at +91 80989 98998',
       icon: <Phone className="h-6 w-6 text-orange-600" />,
-      link: 'tel:+918001234567'
+      link: 'https://wa.me/918098998998'
     },
     {
       title: 'Email Support',
       description: 'Send us an email',
       icon: <Mail className="h-6 w-6 text-red-600" />,
-      link: 'mailto:support@mediczy.com'
+      link: 'mailto:support@mediqzy.com'
     },
     {
       title: 'Knowledge Base',
@@ -362,7 +362,7 @@ const CorporateHelp: React.FC = () => {
                   </a>
                 </Button>
                 <Button asChild variant="outline">
-                  <a href="mailto:support@mediczy.com">
+                  <a href="mailto:support@mediqzy.com">
                     <Mail className="h-4 w-4 mr-2" />
                     Email Us
                   </a>

@@ -328,7 +328,6 @@ const corporatePlans = [
 ];
 
 const DEFAULT_PLAN_TEMPLATE = corporatePlans[0];
-const corporateAppointmentsStore = new Map();
 
 async function getActiveUserPlan(userId) {
   return await UserPlan.findOne({
@@ -374,15 +373,6 @@ function buildUsageSnapshot(userPlan) {
     amountUsed: usage.benefitINR?.total || usage.amountUsed || 0,
     amountLimit: benefitLimits.totalBenefitINR || benefitLimits.amountLimit || 8000
   };
-}
-
-function getUserAppointments(userId) {
-  return corporateAppointmentsStore.get(userId) || [];
-}
-
-function addUserAppointment(userId, appointment) {
-  const existing = corporateAppointmentsStore.get(userId) || [];
-  corporateAppointmentsStore.set(userId, [appointment, ...existing].slice(0, 25));
 }
 
 // Get user's corporate benefits/plan
@@ -676,9 +666,28 @@ router.get('/health-checkups', authUser, async (req, res) => {
   }
 });
 
+const mapCheckupBooking = (r) => ({
+  id: String(r.id),
+  appointmentId: `CHK-${r.id}`,
+  checkupName: r.checkupName || 'Annual Health Checkup',
+  appointmentType: r.appointmentType,
+  date: r.date ? r.date.toString().slice(0, 10) : r.date,
+  time: r.time,
+  hospital: r.hospital || 'Network Hospital',
+  location: r.location,
+  doctor: 'Corporate Wellness Team',
+  status: r.status,
+  bookedOn: r.createdAt ? r.createdAt.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+  claimAmount: 0,
+});
+
 router.get('/my-appointments', authUser, async (req, res) => {
   try {
-    const appointments = getUserAppointments(req.user.id);
+    const [rows] = await postgresSequelize.query(
+      `SELECT * FROM corporate_checkup_bookings WHERE "userId" = :userId ORDER BY date DESC, "createdAt" DESC LIMIT 25`,
+      { replacements: { userId: req.user.id } }
+    );
+    const appointments = rows.map(mapCheckupBooking);
     res.json({
       success: true,
       appointments,
@@ -697,8 +706,7 @@ router.get('/my-appointments', authUser, async (req, res) => {
 router.post('/book-checkup', authUser, async (req, res) => {
   try {
     const { checkupId, preferredDate, preferredTime, location, hospital, specialInstructions } = req.body || {};
-    
-    // Validate required fields
+
     if (!checkupId || !preferredDate || !preferredTime || !location) {
       return res.status(400).json({
         success: false,
@@ -712,7 +720,6 @@ router.post('/book-checkup', authUser, async (req, res) => {
       });
     }
 
-    // Validate user is authenticated
     if (!req.user || !req.user.id) {
       return res.status(401).json({
         success: false,
@@ -721,18 +728,14 @@ router.post('/book-checkup', authUser, async (req, res) => {
     }
 
     let activePlan = null;
-    
-    // Only try to fetch active plan for numeric user IDs in production
     if (Number.isInteger(parseInt(req.user.id))) {
       try {
         activePlan = await getActiveUserPlan(req.user.id);
       } catch (error) {
         console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
-        // Continue - corporate users might not have database records in dev/testing
       }
     }
-    
-    // For corporate users in development, we may not have a database record, so allow booking without an active plan
+
     if (!activePlan && process.env.NODE_ENV === 'production') {
       return res.status(400).json({
         success: false,
@@ -741,25 +744,21 @@ router.post('/book-checkup', authUser, async (req, res) => {
       });
     }
 
-    const appointment = {
-      id: `CHK-${Date.now()}`,
-      appointmentId: `CHK-${Math.floor(Math.random() * 1e6)}`,
-      userId: req.user.id,
-      checkupId,
-      checkupName: `Health Checkup ${checkupId}`,
-      appointmentType: 'Annual Health Checkup',
-      date: preferredDate,
-      time: preferredTime,
-      hospital: hospital || 'Network Hospital',
-      location,
-      doctor: 'Corporate Wellness Team',
-      status: 'scheduled',
-      bookedOn: new Date().toISOString().split('T')[0],
-      specialInstructions: specialInstructions || null,
-      claimAmount: 0
-    };
+    const [[row]] = await postgresSequelize.query(
+      `INSERT INTO corporate_checkup_bookings
+         ("userId", "checkupId", "checkupName", "appointmentType", date, time, hospital, location, status, "specialInstructions")
+       VALUES (:userId, :checkupId, :checkupName, 'Annual Health Checkup', :date, :time, :hospital, :location, 'scheduled', :specialInstructions)
+       RETURNING *`,
+      {
+        replacements: {
+          userId: req.user.id, checkupId, checkupName: `Health Checkup ${checkupId}`,
+          date: preferredDate, time: preferredTime, hospital: hospital || 'Network Hospital', location,
+          specialInstructions: specialInstructions || null,
+        },
+      }
+    );
 
-    addUserAppointment(req.user.id, appointment);
+    const appointment = mapCheckupBooking(row);
 
     res.status(201).json({
       success: true,
@@ -2597,33 +2596,77 @@ router.put('/challenges/:id', authCorporate, async (req, res) => {
 // Real per-employee leaderboard join table — currently no wearable/activity
 // data source feeds `score`, so every participant shows at 0 until such a
 // pipeline exists. Honest empty ranking, not a fabricated one.
+// Real per-employee activity data (daily_activity: steps, exercise_minutes,
+// sleep_hours, water_glasses, weight) is the only genuine scoring source in
+// this platform -- no separate points/badges engine exists. Challenge types
+// without a matching column (nutrition, mindfulness, custom) have no real
+// data source, so their score stays at whatever was explicitly recorded on
+// corporate_challenge_participants.score (0 unless something writes to it).
+function challengeScoreSql(type) {
+  switch (type) {
+    case 'steps': return `COALESCE(SUM(da.steps), 0)`;
+    case 'workout': return `COALESCE(SUM(da.exercise_minutes), 0)`;
+    case 'sleep': return `COALESCE(SUM(da.sleep_hours), 0)`;
+    case 'hydration': return `COALESCE(SUM(da.water_glasses), 0)`;
+    // Weight lost over the challenge window (first logged weight minus last) --
+    // "progress" here means kg lost, not a cumulative sum.
+    case 'weight-loss': return `GREATEST(0, COALESCE((array_agg(da.weight ORDER BY da.date ASC))[1] - (array_agg(da.weight ORDER BY da.date DESC))[1], 0))`;
+    default: return null;
+  }
+}
+
+async function computeLeaderboardRows(corporateId, challengeId) {
+  const [[challenge]] = await postgresSequelize.query(
+    `SELECT id, type, target, "startDate", "endDate" FROM corporate_challenges WHERE id = :challengeId AND corporate_id = :corporateId`,
+    { replacements: { challengeId, corporateId } }
+  );
+  if (!challenge) return null;
+
+  const scoreExpr = challengeScoreSql(challenge.type);
+  const activityJoin = scoreExpr
+    ? `LEFT JOIN daily_activity da ON da.user_id = p."userId" AND da.date BETWEEN c."startDate" AND c."endDate"`
+    : '';
+  // COALESCE(<computed or manual>, 0) as a bare alias -- Postgres only
+  // resolves ORDER BY against a *bare* output-column alias; wrapping the
+  // alias in another expression there makes it look for an input column of
+  // that name instead, which doesn't exist ("column computed_score does not
+  // exist"). So the COALESCE has to live in the SELECT list, not ORDER BY.
+  const scoreSelect = scoreExpr ? `COALESCE(${scoreExpr}, 0) AS computed_score` : `COALESCE(p.score, 0) AS computed_score`;
+
+  const [rows] = await postgresSequelize.query(
+    `SELECT p."employeeId", p.score AS manual_score, ce.department, u."firstName", u."lastName", ${scoreSelect}
+     FROM corporate_challenge_participants p
+     JOIN corporate_challenges c ON c.id = p.challenge_id AND c.corporate_id = :corporateId
+     LEFT JOIN corporate_employees ce ON ce.corporate_id = c.corporate_id AND ce."employeeId" = p."employeeId"
+     LEFT JOIN users u ON u.id = p."userId"
+     ${activityJoin}
+     WHERE p.challenge_id = :challengeId
+     GROUP BY p."employeeId", p.score, ce.department, u."firstName", u."lastName"
+     ORDER BY computed_score DESC`,
+    { replacements: { challengeId, corporateId } }
+  );
+
+  return rows.map((r, i) => ({
+    rank: i + 1,
+    employeeId: r.employeeId,
+    name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.employeeId,
+    department: r.department || '',
+    score: Number(r.computed_score ?? r.manual_score) || 0,
+    target: Number(challenge.target) || 0,
+    progress: 0,
+    streak: 0,
+    badges: [],
+    medal: i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : undefined,
+  }));
+}
+
 router.get('/gamification/challenges/:id/leaderboard', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
 
   try {
-    const [rows] = await postgresSequelize.query(
-      `SELECT p."employeeId", p.score, ce.department, u."firstName", u."lastName"
-       FROM corporate_challenge_participants p
-       JOIN corporate_challenges c ON c.id = p.challenge_id AND c.corporate_id = :corporateId
-       LEFT JOIN corporate_employees ce ON ce.corporate_id = c.corporate_id AND ce."employeeId" = p."employeeId"
-       LEFT JOIN users u ON u.id = p."userId"
-       WHERE p.challenge_id = :id
-       ORDER BY p.score DESC`,
-      { replacements: { id, corporateId } }
-    );
-    const leaderboard = rows.map((r, i) => ({
-      rank: i + 1,
-      employeeId: r.employeeId,
-      name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.employeeId,
-      department: r.department || '',
-      score: Number(r.score) || 0,
-      target: 0,
-      progress: 0,
-      streak: 0,
-      badges: [],
-      medal: i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : undefined,
-    }));
+    const leaderboard = await computeLeaderboardRows(corporateId, id);
+    if (leaderboard === null) return res.status(404).json({ success: false, message: 'Challenge not found' });
     res.json({ success: true, data: { leaderboard } });
   } catch (error) {
     console.error('[corporate] GET /gamification/challenges/:id/leaderboard error:', error.message);
@@ -2632,52 +2675,318 @@ router.get('/gamification/challenges/:id/leaderboard', authCorporate, async (req
 });
 
 // ---------------------------------------------------------------------------
-// Benefits & Health Checkup Booking Routes
+// Employee-facing gamification (join challenges, my progress, real
+// leaderboard-derived stats). Resolves the employee's corporateId +
+// employeeId from user_associations/corporate_employees -- authUser sessions
+// don't carry those directly.
 // ---------------------------------------------------------------------------
-let healthCheckupBookings = [];
+async function resolveEmployeeContext(userId) {
+  const [[assoc]] = await postgresSequelize.query(
+    `SELECT "entityId" AS "corporateId" FROM user_associations
+      WHERE "userId" = :userId AND "entityType" = 'corporate' AND status = 'active'
+      ORDER BY "createdAt" DESC LIMIT 1`,
+    { replacements: { userId } }
+  );
+  if (!assoc?.corporateId) return null;
+  const [[ce]] = await postgresSequelize.query(
+    `SELECT "employeeId", department FROM corporate_employees WHERE "userId" = :userId AND corporate_id = :corporateId`,
+    { replacements: { userId, corporateId: assoc.corporateId } }
+  );
+  return { corporateId: assoc.corporateId, employeeId: ce?.employeeId || null, department: ce?.department || null };
+}
 
-router.post('/benefits/book-checkup', authUser, async (req, res) => {
+// Real day-streak: consecutive calendar days (ending today or yesterday)
+// with at least one logged daily_activity row for this user.
+async function computeActivityStreak(userId) {
+  const [rows] = await postgresSequelize.query(
+    `SELECT DISTINCT date FROM daily_activity WHERE user_id = :userId ORDER BY date DESC LIMIT 400`,
+    { replacements: { userId } }
+  );
+  if (!rows.length) return 0;
+  const dates = rows.map((r) => new Date(r.date).toISOString().slice(0, 10));
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  if (dates[0] !== today && dates[0] !== yesterday) return 0;
+  let streak = 1;
+  for (let i = 1; i < dates.length; i++) {
+    const prev = new Date(dates[i - 1]);
+    const cur = new Date(dates[i]);
+    if ((prev - cur) / 86400000 === 1) streak++;
+    else break;
+  }
+  return streak;
+}
+
+router.get('/gamification/employee/challenges', authUser, async (req, res) => {
   try {
-    const { checkupType, preferredDate, preferredTime, location, notes } = req.body;
-    const userId = req.user.id;
+    const ctx = await resolveEmployeeContext(req.user.id);
+    if (!ctx) return res.json({ success: true, data: { challenges: [] } });
 
-    if (!checkupType || !preferredDate) {
-      return res.status(400).json({
-        success: false,
-        message: 'Checkup type and preferred date are required'
+    const [rows] = await postgresSequelize.query(
+      `SELECT c.*,
+         (SELECT COUNT(*) FROM corporate_challenge_participants WHERE challenge_id = c.id)::int AS "totalParticipants",
+         EXISTS(SELECT 1 FROM corporate_challenge_participants WHERE challenge_id = c.id AND "userId" = :userId) AS joined
+       FROM corporate_challenges c
+       WHERE c.corporate_id = :corporateId AND c.status IN ('draft', 'active', 'completed')
+       ORDER BY c."startDate" DESC`,
+      { replacements: { corporateId: ctx.corporateId, userId: req.user.id } }
+    );
+
+    const today = new Date().toISOString().slice(0, 10);
+    const challenges = [];
+    for (const r of rows) {
+      const startDate = r.startDate ? r.startDate.toString().slice(0, 10) : null;
+      const endDate = r.endDate ? r.endDate.toString().slice(0, 10) : null;
+      const status = r.status === 'draft'
+        ? (startDate && startDate > today ? 'upcoming' : 'active')
+        : r.status;
+      if (r.status === 'cancelled') continue;
+
+      let myProgress = 0;
+      let myRank = 0;
+      if (r.joined) {
+        const board = await computeLeaderboardRows(ctx.corporateId, r.id);
+        const mine = board?.find((b) => b.employeeId === ctx.employeeId);
+        myProgress = mine?.score || 0;
+        myRank = mine?.rank || 0;
+      }
+
+      challenges.push({
+        id: String(r.id),
+        title: r.title,
+        description: r.description || '',
+        type: r.type,
+        target: Number(r.target),
+        unit: r.unit,
+        startDate,
+        endDate,
+        status,
+        totalParticipants: r.totalParticipants,
+        rewards: r.rewards || {},
+        myProgress,
+        myRank,
+        myStreak: r.joined ? await computeActivityStreak(req.user.id) : 0,
+        joined: Boolean(r.joined),
       });
     }
 
-    const booking = {
-      id: `BK${Date.now()}`,
-      userId,
-      checkupType,
-      preferredDate,
-      preferredTime: preferredTime || '10:00 AM',
-      location: location || 'Main Medical Center',
-      notes: notes || '',
-      status: 'pending',
-      createdAt: new Date().toISOString()
-    };
-
-    healthCheckupBookings.push(booking);
-
-    res.status(201).json({
-      success: true,
-      message: 'Health checkup booked successfully',
-      data: { booking }
-    });
+    res.json({ success: true, data: { challenges } });
   } catch (error) {
-    console.error('Error booking health checkup:', error);
-    res.status(500).json({ success: false, message: 'Failed to book health checkup', error: error.message });
+    console.error('[corporate] GET /gamification/employee/challenges error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load challenges' });
   }
 });
 
-router.get('/benefits/bookings', authUser, async (req, res) => {
-  const userId = req.user.id;
-  const userBookings = healthCheckupBookings.filter(b => b.userId === userId);
-  res.json({ success: true, data: { bookings: userBookings } });
+router.post('/gamification/employee/challenges/:id/join', authUser, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const ctx = await resolveEmployeeContext(req.user.id);
+    if (!ctx || !ctx.employeeId) {
+      return res.status(403).json({ success: false, message: 'No corporate employee record found for this account' });
+    }
+    const [[challenge]] = await postgresSequelize.query(
+      `SELECT id, status FROM corporate_challenges WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId: ctx.corporateId } }
+    );
+    if (!challenge) return res.status(404).json({ success: false, message: 'Challenge not found' });
+    if (challenge.status === 'completed' || challenge.status === 'cancelled') {
+      return res.status(400).json({ success: false, message: `Cannot join a ${challenge.status} challenge` });
+    }
+
+    await postgresSequelize.query(
+      `INSERT INTO corporate_challenge_participants (challenge_id, "userId", "employeeId", score)
+       VALUES (:id, :userId, :employeeId, 0)
+       ON CONFLICT (challenge_id, "employeeId") DO NOTHING`,
+      { replacements: { id, userId: req.user.id, employeeId: ctx.employeeId } }
+    );
+
+    res.status(201).json({ success: true, message: 'Joined challenge' });
+  } catch (error) {
+    console.error('[corporate] POST /gamification/employee/challenges/:id/join error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to join challenge' });
+  }
 });
+
+router.get('/gamification/employee/stats', authUser, async (req, res) => {
+  try {
+    const ctx = await resolveEmployeeContext(req.user.id);
+    if (!ctx || !ctx.employeeId) {
+      return res.json({ success: true, data: { stats: { employeeId: null, department: null, totalPoints: 0, totalChallenges: 0, completedChallenges: 0, currentStreak: 0, longestStreak: 0, badges: [], rank: 0, percentile: 0 } } });
+    }
+
+    const [joined] = await postgresSequelize.query(
+      `SELECT c.id, c.status FROM corporate_challenge_participants p
+       JOIN corporate_challenges c ON c.id = p.challenge_id
+       WHERE p."employeeId" = :employeeId AND c.corporate_id = :corporateId`,
+      { replacements: { employeeId: ctx.employeeId, corporateId: ctx.corporateId } }
+    );
+
+    // Rank/percentile computed relative to everyone else who shares at least
+    // one of this employee's joined challenges -- there's no platform-wide
+    // "points" concept to rank against otherwise.
+    let totalPoints = 0;
+    const peerTotals = new Map();
+    for (const c of joined) {
+      const board = await computeLeaderboardRows(ctx.corporateId, c.id);
+      for (const entry of board || []) {
+        peerTotals.set(entry.employeeId, (peerTotals.get(entry.employeeId) || 0) + entry.score);
+      }
+      const mine = board?.find((b) => b.employeeId === ctx.employeeId);
+      totalPoints += mine?.score || 0;
+    }
+    const ranked = Array.from(peerTotals.entries()).sort((a, b) => b[1] - a[1]);
+    const myIndex = ranked.findIndex(([empId]) => empId === ctx.employeeId);
+    const rank = myIndex >= 0 ? myIndex + 1 : 0;
+    const percentile = ranked.length && rank ? Math.round(((ranked.length - rank) / ranked.length) * 100) : 0;
+
+    const currentStreak = await computeActivityStreak(req.user.id);
+    const [[longest]] = await postgresSequelize.query(
+      `WITH d AS (
+         SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date))::int * INTERVAL '1 day' AS grp
+         FROM (SELECT DISTINCT date FROM daily_activity WHERE user_id = :userId) x
+       )
+       SELECT COALESCE(MAX(cnt), 0)::int AS longest FROM (SELECT COUNT(*) AS cnt FROM d GROUP BY grp) y`,
+      { replacements: { userId: req.user.id } }
+    );
+
+    // No badge-awarding engine exists in this platform -- honestly empty
+    // rather than a fabricated achievement list.
+    const stats = {
+      employeeId: ctx.employeeId,
+      department: ctx.department,
+      totalPoints,
+      totalChallenges: joined.length,
+      completedChallenges: joined.filter((c) => c.status === 'completed').length,
+      currentStreak,
+      longestStreak: longest?.longest || 0,
+      badges: [],
+      rank,
+      percentile,
+    };
+
+    res.json({ success: true, data: { stats } });
+  } catch (error) {
+    console.error('[corporate] GET /gamification/employee/stats error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load stats' });
+  }
+});
+
+// Department-level rankings: average real score across each department's
+// participants, for the corporate's currently active/completed challenges.
+router.get('/gamification/employee/teams', authUser, async (req, res) => {
+  try {
+    const ctx = await resolveEmployeeContext(req.user.id);
+    if (!ctx) return res.json({ success: true, data: { teams: [] } });
+
+    const [challenges] = await postgresSequelize.query(
+      `SELECT id FROM corporate_challenges WHERE corporate_id = :corporateId AND status IN ('active', 'completed')`,
+      { replacements: { corporateId: ctx.corporateId } }
+    );
+
+    const deptScores = new Map();
+    const deptMembers = new Map();
+    for (const c of challenges) {
+      const board = await computeLeaderboardRows(ctx.corporateId, c.id);
+      for (const entry of board || []) {
+        if (!entry.department) continue;
+        deptScores.set(entry.department, (deptScores.get(entry.department) || 0) + entry.score);
+        if (!deptMembers.has(entry.department)) deptMembers.set(entry.department, new Set());
+        deptMembers.get(entry.department).add(entry.employeeId);
+      }
+    }
+
+    const [totalsRows] = await postgresSequelize.query(
+      `SELECT department, COUNT(*)::int AS total FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true AND department IS NOT NULL GROUP BY department`,
+      { replacements: { corporateId: ctx.corporateId } }
+    );
+    const totalsByDept = Object.fromEntries(totalsRows.map((r) => [r.department, r.total]));
+
+    const teams = Array.from(deptScores.entries())
+      .map(([department, totalScore]) => {
+        const activeMembers = deptMembers.get(department)?.size || 0;
+        return {
+          teamName: department,
+          department,
+          totalMembers: totalsByDept[department] || activeMembers,
+          activeMembers,
+          avgScore: activeMembers ? Math.round(totalScore / activeMembers) : 0,
+        };
+      })
+      .sort((a, b) => b.avgScore - a.avgScore)
+      .map((t, i) => ({ ...t, rank: i + 1 }));
+
+    res.json({ success: true, data: { teams } });
+  } catch (error) {
+    console.error('[corporate] GET /gamification/employee/teams error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load team rankings' });
+  }
+});
+
+// Winners: real top-3 participants of each completed challenge.
+router.get('/gamification/employee/winners', authUser, async (req, res) => {
+  try {
+    const ctx = await resolveEmployeeContext(req.user.id);
+    if (!ctx) return res.json({ success: true, data: { winners: [] } });
+
+    const [completed] = await postgresSequelize.query(
+      `SELECT id, title, rewards, "endDate" FROM corporate_challenges WHERE corporate_id = :corporateId AND status = 'completed' ORDER BY "endDate" DESC LIMIT 10`,
+      { replacements: { corporateId: ctx.corporateId } }
+    );
+
+    const winners = [];
+    for (const c of completed) {
+      const board = await computeLeaderboardRows(ctx.corporateId, c.id);
+      const rewards = c.rewards || {};
+      (board || []).slice(0, 3).forEach((entry, i) => {
+        if (!entry.score) return;
+        const medal = ['gold', 'silver', 'bronze'][i];
+        winners.push({
+          challengeId: String(c.id),
+          challengeTitle: c.title,
+          medal,
+          name: entry.name,
+          department: entry.department,
+          score: entry.score,
+          reward: rewards[medal] || '',
+          date: c.endDate ? c.endDate.toString().slice(0, 10) : null,
+          isMe: entry.employeeId === ctx.employeeId,
+        });
+      });
+    }
+
+    res.json({ success: true, data: { winners } });
+  } catch (error) {
+    console.error('[corporate] GET /gamification/employee/winners error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load winners' });
+  }
+});
+
+// Employee-facing leaderboard view for a single challenge -- same real
+// scoring as the HR endpoint above, but scoped/authorized for authUser
+// sessions (an HR-only authCorporate token can't view this).
+router.get('/gamification/employee/challenges/:id/leaderboard', authUser, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const ctx = await resolveEmployeeContext(req.user.id);
+    if (!ctx) return res.json({ success: true, data: { leaderboard: [] } });
+
+    const leaderboard = await computeLeaderboardRows(ctx.corporateId, id);
+    if (leaderboard === null) return res.status(404).json({ success: false, message: 'Challenge not found' });
+
+    res.json({
+      success: true,
+      data: { leaderboard: leaderboard.map((entry) => ({ ...entry, isMe: entry.employeeId === ctx.employeeId })) },
+    });
+  } catch (error) {
+    console.error('[corporate] GET /gamification/employee/challenges/:id/leaderboard error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load leaderboard' });
+  }
+});
+
+// Note: an earlier /benefits/book-checkup + /benefits/bookings pair (a
+// second, unrelated in-memory array) was removed here — dead code with no
+// frontend caller, duplicating the real /book-checkup + /my-appointments
+// endpoints above (now backed by corporate_checkup_bookings).
 
 // ---------------------------------------------------------------------------
 // Employee Details Route

@@ -61,7 +61,10 @@ export const BRAND = {
   // Support info
   support: {
     email: 'support@mediqzy.com',
-    phone: '+91 1800-XXX-XXXX',
+    // Real, actively-used Twilio WhatsApp Business number (see
+    // TWILIO_WHATSAPP_NUMBER) — there is no separate voice support line
+    // configured anywhere in the system.
+    phone: '+91 8098998998',
     website: 'https://mediqzy.com',
   },
   
