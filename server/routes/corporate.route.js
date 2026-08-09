@@ -429,11 +429,36 @@ const FEATURE_KEY_MAP = {
   ambulance: 'ambulanceCoverage', wellness: 'wellnessCoverage', mentalHealth: 'mentalHealthCoverage',
 };
 
+// subscription_plans.features is inconsistently shaped across real rows --
+// some corporates have {opd: true, ipd: false, ...}, others have a plain
+// label array like ["OPD","Mental Health","Health Calendar"]. Handle both
+// rather than silently reporting every feature as false for the array shape
+// (confirmed live: was happening for at least 2 real corporate accounts).
+const FEATURE_LABEL_ALIASES = {
+  opdCoverage: ['opd'],
+  ipdCoverage: ['ipd'],
+  maternityCoverage: ['maternity'],
+  dentalCoverage: ['dental'],
+  pharmacyCoverage: ['pharmacy'],
+  diagnosticsCoverage: ['diagnostics'],
+  homecareCoverage: ['homecare'],
+  ambulanceCoverage: ['ambulance'],
+  wellnessCoverage: ['wellness'],
+  mentalHealthCoverage: ['mental health', 'mentalhealth'],
+};
+
 function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
   const meta = planRow.metadata || {};
   const features = {};
-  for (const [srcKey, destKey] of Object.entries(FEATURE_KEY_MAP)) {
-    features[destKey] = Boolean(planRow.features?.[srcKey]);
+  if (Array.isArray(planRow.features)) {
+    const labels = new Set(planRow.features.map((f) => String(f).trim().toLowerCase()));
+    for (const [destKey, aliases] of Object.entries(FEATURE_LABEL_ALIASES)) {
+      features[destKey] = aliases.some((a) => labels.has(a));
+    }
+  } else {
+    for (const [srcKey, destKey] of Object.entries(FEATURE_KEY_MAP)) {
+      features[destKey] = Boolean(planRow.features?.[srcKey]);
+    }
   }
   return {
     id: String(planRow.id),
@@ -1741,6 +1766,16 @@ router.post('/claims', authUser, async (req, res) => {
     }
     if (!userId) {
       return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    if (req.user?.role === 'corporate' || req.user?.userType === 'corporate') {
+      // req.user.id here is corporates.id, not a real users.id -- there is no
+      // employee-selection step in this flow, so filing "on behalf of" isn't
+      // supported yet. Previously this silently 500'd on a foreign-key
+      // violation (submitted_by referencing a non-existent users.id).
+      return res.status(400).json({
+        success: false,
+        message: 'HR cannot submit a claim directly from this form yet -- claims must be filed by the employee themselves.',
+      });
     }
 
     const [assoc] = await postgresSequelize.query(
