@@ -334,7 +334,7 @@ async function runQcSweep() {
           const ids = expired.map(r => r.sub_id);
           try {
             await pool.query(`
-              UPDATE user_subscriptions SET status = 'INACTIVE', updated_at = NOW()
+              UPDATE user_subscriptions SET status = 'EXPIRED', updated_at = NOW()
               WHERE id = ANY($1::int[])
             `, [ids]);
             corpResult.expiredPlansFixed = expired.length;

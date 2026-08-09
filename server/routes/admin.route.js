@@ -3062,7 +3062,7 @@ async function assignUserToActiveCorporatePlan({ userId, corporateId, corporateP
 
   await postgresSequelize.query(
     `UPDATE user_subscriptions us
-        SET status = 'INACTIVE',
+        SET status = 'CANCELLED',
             updated_at = NOW()
       WHERE us.user_id = :userId
         AND us.status = 'ACTIVE'

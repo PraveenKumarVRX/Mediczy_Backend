@@ -44,9 +44,14 @@ const postgresSequelize = new Sequelize(database, username, password, {
     idle: 30000,
     evict: 30000
   },
+  // Query-level auto-retry is unsafe for non-idempotent writes: a slow-but-successful
+  // INSERT can get silently re-sent, collide with itself on a unique constraint, and
+  // poison the transaction -- surfacing as a misleading "current transaction is aborted"
+  // error that masks the real cause (confirmed live: bulk employee upload, Aug 2026).
+  // Connection-level resilience is handled separately by connectToPostgresDB()'s retry
+  // and the pg pool itself, not by retrying already-dispatched queries.
   retry: {
-    max: 3,
-    timeout: 3000
+    max: 0
   },
   benchmark: process.env.NODE_ENV === 'development',
   define: {
