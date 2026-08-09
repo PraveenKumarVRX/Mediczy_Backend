@@ -45,6 +45,18 @@ services:
       ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
       ORTHANC__DICOM_WEB__ENABLE_WADO: "true"
       ORTHANC__DICOM_WEB__WADO_ROOT: "/wado"
+      # AwsS3Storage plugin -- on-prem PACS MinIO via Cloudflare Tunnel.
+      # HybridMode=WriteToObjectStorage: new files -> MinIO, existing local
+      # studies stay readable from disk as fallback. Existing data untouched.
+      AWS_S3_STORAGE_PLUGIN_ENABLED: ${AWS_S3_STORAGE_PLUGIN_ENABLED:-false}
+      ORTHANC__AWS_S3_STORAGE__BUCKET_NAME: ${S3_STORAGE_BUCKET_NAME:-}
+      ORTHANC__AWS_S3_STORAGE__REGION: us-east-1
+      ORTHANC__AWS_S3_STORAGE__ENDPOINT: ${S3_STORAGE_ENDPOINT:-}
+      ORTHANC__AWS_S3_STORAGE__ACCESS_KEY: ${S3_STORAGE_ACCESS_KEY:-}
+      ORTHANC__AWS_S3_STORAGE__SECRET_KEY: ${S3_STORAGE_SECRET_KEY:-}
+      ORTHANC__AWS_S3_STORAGE__VIRTUAL_ADDRESSING: "false"
+      ORTHANC__AWS_S3_STORAGE__STORAGE_STRUCTURE: flat
+      ORTHANC__AWS_S3_STORAGE__HYBRID_MODE: WriteToObjectStorage
     healthcheck:
       test: ["CMD-SHELL", "python3 /probes/test-aliveness.py --user=$${ORTHANC_USER:-pacs} --pwd=$${ORTHANC_PASSWORD}"]
       interval: 15s
