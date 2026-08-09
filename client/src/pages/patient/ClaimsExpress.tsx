@@ -69,6 +69,7 @@ interface ClaimsApiItem {
   id?: string | number;
   claimNumber?: string;
   type?: string;
+  benefitCategory?: 'insurance' | 'wellness';
   amount?: number;
   approvedAmount?: number;
   status?: string;
@@ -143,6 +144,7 @@ const toUiClaim = (claim: ClaimsApiItem, index: number) => {
   return {
     id: String(claim.id || claim.claimNumber || `claim-${index}`),
     type: (claim.type || 'opd').toLowerCase(),
+    benefitCategory: claim.benefitCategory === 'insurance' ? 'insurance' as const : 'wellness' as const,
     hospital: claim.hospital || claim.providerName || 'Provider not specified',
     date: created,
     amount,
@@ -446,9 +448,18 @@ export default function ClaimsExpress() {
                             <p className="text-[10px] text-slate-500">{claim.hospital}</p>
                           </div>
                         </div>
-                        <Badge className={`${st.bg} ${st.color} border-0 text-[10px] gap-1`}>
-                          <StIcon className="h-3 w-3" /> {st.label}
-                        </Badge>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge className={`${st.bg} ${st.color} border-0 text-[10px] gap-1`}>
+                            <StIcon className="h-3 w-3" /> {st.label}
+                          </Badge>
+                          <Badge variant="outline" className={`text-[9px] border-0 ${
+                            claim.benefitCategory === 'insurance'
+                              ? 'bg-blue-500/10 text-blue-300'
+                              : 'bg-emerald-500/10 text-emerald-300'
+                          }`}>
+                            {claim.benefitCategory === 'insurance' ? 'Insurance' : 'Wellness / OPD'}
+                          </Badge>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-3 gap-3 mb-3">
@@ -535,7 +546,10 @@ export default function ClaimsExpress() {
                           <Badge className={`${st.bg} ${st.color} border-0 text-[9px]`}>{st.label}</Badge>
                         </div>
                         <div className="flex items-center justify-between mt-0.5">
-                          <p className="text-[10px] text-slate-500">{claim.id} • {new Date(claim.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}</p>
+                          <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                            <span className={`inline-block w-1.5 h-1.5 rounded-full ${claim.benefitCategory === 'insurance' ? 'bg-blue-400' : 'bg-emerald-400'}`} />
+                            {claim.id} • {new Date(claim.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                          </p>
                           <div className="text-right">
                             <span className="text-xs font-bold text-white">₹{claim.settled.toLocaleString()}</span>
                             {claim.settled !== claim.amount && (
@@ -779,10 +793,17 @@ export default function ClaimsExpress() {
             return (
               <>
                 <DialogHeader>
-                  <DialogTitle className="text-lg flex items-center gap-2">
+                  <DialogTitle className="text-lg flex items-center gap-2 flex-wrap">
                     {selectedClaim.id}
                     <Badge className={`${st.bg} ${st.color} border-0 text-[10px] gap-1`}>
                       <StIcon className="h-3 w-3" /> {st.label}
+                    </Badge>
+                    <Badge variant="outline" className={`text-[10px] border-0 ${
+                      selectedClaim.benefitCategory === 'insurance'
+                        ? 'bg-blue-500/10 text-blue-300'
+                        : 'bg-emerald-500/10 text-emerald-300'
+                    }`}>
+                      {selectedClaim.benefitCategory === 'insurance' ? 'Insurance' : 'Wellness / OPD'}
                     </Badge>
                   </DialogTitle>
                 </DialogHeader>
