@@ -84,16 +84,23 @@ interface PlanUsage {
   amountLimit: number;
 }
 
+// Real checkup data (from GET /corporate/health-checkups) reflects an actual
+// plan benefit -- there's no real per-package test-list/pricing catalog
+// anywhere in the platform, so those fields stay optional rather than
+// fabricated when absent.
 interface HealthCheckup {
   id: string;
   name: string;
   description: string;
-  tests: string[];
-  duration: string;
-  fasting: boolean;
-  price: number;
+  limit?: string | null;
+  validFrom?: string | null;
+  validTo?: string | null;
+  tests?: string[];
+  duration?: string;
+  fasting?: boolean;
+  price?: number;
   discountedPrice?: number;
-  category: 'Basic' | 'Comprehensive' | 'Advanced' | 'Specialized';
+  category?: 'Basic' | 'Comprehensive' | 'Advanced' | 'Specialized';
   ageGroup?: string;
   gender?: 'Male' | 'Female' | 'All';
 }
@@ -166,114 +173,19 @@ const CorporateBenefits = () => {
       setViewMode(planRes?.data?.data?.viewMode === 'company' ? 'company' : 'personal');
 
       const checkupsPayload = checkupsRes?.data?.checkups || checkupsRes?.data?.data?.checkups;
-      setHealthCheckups(checkupsPayload || generateSampleCheckups());
+      setHealthCheckups(Array.isArray(checkupsPayload) ? checkupsPayload : []);
 
       const appointmentsPayload = appointmentsRes?.data?.appointments || appointmentsRes?.data?.data?.appointments;
       setMyAppointments(appointmentsPayload || []);
     } catch (err) {
       console.error('Failed to load data', err);
       setCorporatePlan(null);
-      setHealthCheckups(generateSampleCheckups());
+      setHealthCheckups([]);
       setMyAppointments([]);
     } finally {
       setLoading(false);
     }
   };
-
-  const generateSampleCheckups = (): HealthCheckup[] => [
-    {
-      id: 'chk1',
-      name: 'Basic Health Checkup',
-      description: 'Essential health screening with basic tests',
-      tests: ['CBC', 'Blood Sugar', 'Lipid Profile', 'Kidney Function', 'Liver Function', 'Thyroid', 'Blood Pressure', 'BMI'],
-      duration: '2-3 hours',
-      fasting: true,
-      price: 2500,
-      discountedPrice: 500,
-      category: 'Basic',
-      ageGroup: '18-60 years',
-      gender: 'All'
-    },
-    {
-      id: 'chk2',
-      name: 'Comprehensive Health Checkup',
-      description: 'Detailed health assessment with advanced tests',
-      tests: ['CBC', 'Blood Sugar (Fasting & PP)', 'HbA1c', 'Lipid Profile', 'Kidney Function', 'Liver Function', 'Thyroid Profile', 'Vitamin D', 'Vitamin B12', 'ECG', 'Chest X-Ray', 'USG Abdomen', 'Blood Pressure', 'BMI'],
-      duration: '4-5 hours',
-      fasting: true,
-      price: 5000,
-      discountedPrice: 1000,
-      category: 'Comprehensive',
-      ageGroup: '30-70 years',
-      gender: 'All'
-    },
-    {
-      id: 'chk3',
-      name: 'Cardiac Health Checkup',
-      description: 'Specialized heart health assessment',
-      tests: ['ECG', '2D Echo', 'Treadmill Test', 'Lipid Profile', 'hs-CRP', 'Homocysteine', 'Blood Pressure Monitoring', 'Cardiac Enzyme Panel'],
-      duration: '3-4 hours',
-      fasting: true,
-      price: 6500,
-      discountedPrice: 2000,
-      category: 'Specialized',
-      ageGroup: '35+ years',
-      gender: 'All'
-    },
-    {
-      id: 'chk4',
-      name: 'Diabetes Screening',
-      description: 'Complete diabetes assessment and management',
-      tests: ['Fasting Blood Sugar', 'PP Blood Sugar', 'HbA1c', 'Insulin Levels', 'Kidney Function', 'Lipid Profile', 'Microalbuminuria', 'Retinal Screening'],
-      duration: '2-3 hours',
-      fasting: true,
-      price: 3500,
-      discountedPrice: 800,
-      category: 'Specialized',
-      ageGroup: '25+ years',
-      gender: 'All'
-    },
-    {
-      id: 'chk5',
-      name: 'Women\'s Wellness Package',
-      description: 'Comprehensive health checkup for women',
-      tests: ['CBC', 'Blood Sugar', 'Thyroid Profile', 'Vitamin D', 'Iron Studies', 'Calcium', 'Pap Smear', 'Mammography', 'Bone Density', 'Hormonal Profile', 'USG Pelvis'],
-      duration: '4-5 hours',
-      fasting: true,
-      price: 7000,
-      discountedPrice: 1500,
-      category: 'Comprehensive',
-      ageGroup: '25-65 years',
-      gender: 'Female'
-    },
-    {
-      id: 'chk6',
-      name: 'Men\'s Health Package',
-      description: 'Complete health screening for men',
-      tests: ['CBC', 'Blood Sugar', 'Lipid Profile', 'Liver Function', 'Kidney Function', 'Thyroid', 'PSA', 'Testosterone', 'Vitamin D', 'ECG', 'Stress Test'],
-      duration: '3-4 hours',
-      fasting: true,
-      price: 6000,
-      discountedPrice: 1200,
-      category: 'Comprehensive',
-      ageGroup: '30-70 years',
-      gender: 'Male'
-    },
-    {
-      id: 'chk7',
-      name: 'Senior Citizen Checkup',
-      description: 'Specialized health screening for elderly',
-      tests: ['CBC', 'Blood Sugar', 'HbA1c', 'Lipid Profile', 'Kidney Function', 'Liver Function', 'Thyroid', 'Vitamin D', 'Vitamin B12', 'ECG', '2D Echo', 'Chest X-Ray', 'Bone Density', 'Cognitive Assessment'],
-      duration: '5-6 hours',
-      fasting: true,
-      price: 8500,
-      discountedPrice: 2000,
-      category: 'Advanced',
-      ageGroup: '60+ years',
-      gender: 'All'
-    }
-  ];
-
 
   const handleBookCheckup = (checkup: HealthCheckup) => {
     setSelectedCheckup(checkup);
@@ -309,12 +221,12 @@ const CorporateBenefits = () => {
   };
 
   const filteredCheckups = healthCheckups.filter(checkup => {
-    const matchesSearch = searchQuery === '' || 
+    const matchesSearch = searchQuery === '' ||
       checkup.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       checkup.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      checkup.tests.some(test => test.toLowerCase().includes(searchQuery.toLowerCase()));
-    
-    const matchesCategory = categoryFilter === 'all' || checkup.category === categoryFilter;
+      (checkup.tests || []).some(test => test.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchesCategory = categoryFilter === 'all' || !checkup.category || checkup.category === categoryFilter;
 
     return matchesSearch && matchesCategory;
   });
@@ -631,21 +543,27 @@ const CorporateBenefits = () => {
                           <CardTitle className="text-xl text-slate-100">{checkup.name}</CardTitle>
                           <p className="text-sm text-slate-400 mt-1">{checkup.description}</p>
                         </div>
-                        <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 border">
-                          {checkup.category}
-                        </Badge>
+                        {checkup.category && (
+                          <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 border">
+                            {checkup.category}
+                          </Badge>
+                        )}
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="grid grid-cols-2 gap-2 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Clock className="w-4 h-4 text-slate-500" />
-                          <span className="text-slate-300">{checkup.duration}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <TestTube className="w-4 h-4 text-slate-500" />
-                          <span className="text-slate-300">{checkup.tests.length} tests</span>
-                        </div>
+                        {checkup.duration && (
+                          <div className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-slate-500" />
+                            <span className="text-slate-300">{checkup.duration}</span>
+                          </div>
+                        )}
+                        {checkup.tests && checkup.tests.length > 0 && (
+                          <div className="flex items-center gap-2">
+                            <TestTube className="w-4 h-4 text-slate-500" />
+                            <span className="text-slate-300">{checkup.tests.length} tests</span>
+                          </div>
+                        )}
                         {checkup.ageGroup && (
                           <div className="flex items-center gap-2">
                             <User className="w-4 h-4 text-slate-500" />
@@ -658,40 +576,62 @@ const CorporateBenefits = () => {
                             <span className="text-orange-400">Fasting required</span>
                           </div>
                         )}
+                        {checkup.limit && (
+                          <div className="flex items-center gap-2 col-span-2">
+                            <CalendarCheck className="w-4 h-4 text-emerald-400" />
+                            <span className="text-emerald-400">{checkup.limit}</span>
+                          </div>
+                        )}
+                        {(checkup.validFrom || checkup.validTo) && (
+                          <div className="flex items-center gap-2 col-span-2 text-slate-500">
+                            <Calendar className="w-4 h-4" />
+                            <span>
+                              {checkup.validFrom ? new Date(checkup.validFrom).toLocaleDateString() : '—'}
+                              {' – '}
+                              {checkup.validTo ? new Date(checkup.validTo).toLocaleDateString() : '—'}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
-                      <div className="bg-slate-800/50 p-3 rounded-lg">
-                        <p className="text-xs text-slate-400 mb-2">Tests Included:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {checkup.tests.slice(0, 6).map((test, idx) => (
-                            <Badge key={idx} variant="outline" className="text-xs">
-                              {test}
-                            </Badge>
-                          ))}
-                          {checkup.tests.length > 6 && (
-                            <Badge variant="outline" className="text-xs">
-                              +{checkup.tests.length - 6} more
-                            </Badge>
-                          )}
+                      {checkup.tests && checkup.tests.length > 0 && (
+                        <div className="bg-slate-800/50 p-3 rounded-lg">
+                          <p className="text-xs text-slate-400 mb-2">Tests Included:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {checkup.tests.slice(0, 6).map((test, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">
+                                {test}
+                              </Badge>
+                            ))}
+                            {checkup.tests.length > 6 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{checkup.tests.length - 6} more
+                              </Badge>
+                            )}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="flex justify-between items-center pt-3 border-t">
                         <div>
-                          {checkup.discountedPrice ? (
-                            <div>
-                              <p className="text-sm text-slate-500 line-through">₹{checkup.price}</p>
-                              <p className="text-2xl font-bold text-emerald-400 flex items-center">
+                          {checkup.price ? (
+                            checkup.discountedPrice ? (
+                              <div>
+                                <p className="text-sm text-slate-500 line-through">₹{checkup.price}</p>
+                                <p className="text-2xl font-bold text-emerald-400 flex items-center">
+                                  <IndianRupee className="w-5 h-5" />
+                                  {checkup.discountedPrice}
+                                </p>
+                                <p className="text-xs text-emerald-500">Corporate benefit applied</p>
+                              </div>
+                            ) : (
+                              <p className="text-2xl font-bold text-slate-100 flex items-center">
                                 <IndianRupee className="w-5 h-5" />
-                                {checkup.discountedPrice}
+                                {checkup.price}
                               </p>
-                              <p className="text-xs text-emerald-500">Corporate benefit applied</p>
-                            </div>
+                            )
                           ) : (
-                            <p className="text-2xl font-bold text-slate-100 flex items-center">
-                              <IndianRupee className="w-5 h-5" />
-                              {checkup.price}
-                            </p>
+                            <p className="text-sm text-emerald-400 font-medium">Included in your corporate plan</p>
                           )}
                         </div>
                         <Button onClick={() => handleBookCheckup(checkup)}>
@@ -702,6 +642,15 @@ const CorporateBenefits = () => {
                     </CardContent>
                   </Card>
                 ))}
+                {filteredCheckups.length === 0 && (
+                  <Card className="bg-slate-900/40 border-slate-700/40 md:col-span-2">
+                    <CardContent className="py-12 text-center">
+                      <TestTube className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                      <p className="text-slate-300 font-medium">No health checkup benefit configured</p>
+                      <p className="text-sm text-slate-500 mt-1">This corporate's plan doesn't currently include a health checkup benefit.</p>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             </TabsContent>
 

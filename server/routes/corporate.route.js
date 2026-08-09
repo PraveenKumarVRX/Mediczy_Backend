@@ -376,41 +376,6 @@ function buildUsageSnapshot(userPlan) {
   };
 }
 
-function deriveHealthCheckups(planRecord) {
-  const packageData = planRecord?.healthCheckPackage || planRecord?.healthCheckPackages;
-  if (packageData?.checkups && Array.isArray(packageData.checkups)) {
-    return packageData.checkups;
-  }
-  return [
-    {
-      id: 'chk-basic',
-      name: 'Basic Health Checkup',
-      description: 'Essential screening covering CBC, lipid profile, and vitals',
-      tests: ['CBC', 'Blood Sugar', 'Lipid Profile', 'Blood Pressure', 'BMI'],
-      duration: '2 hours',
-      fasting: true,
-      price: 2000,
-      discountedPrice: planRecord?.planType === 'elite' ? 0 : 500,
-      category: 'Basic',
-      ageGroup: '18-40 years',
-      gender: 'All'
-    },
-    {
-      id: 'chk-comprehensive',
-      name: 'Comprehensive Health Checkup',
-      description: 'Advanced tests with imaging for preventive diagnostics',
-      tests: ['CBC', 'HbA1c', 'LFT', 'KFT', 'Vitamin D', 'Vitamin B12', 'ECG'],
-      duration: '4 hours',
-      fasting: true,
-      price: 5000,
-      discountedPrice: planRecord?.planType === 'elite' ? 0 : 1000,
-      category: 'Comprehensive',
-      ageGroup: '25-60 years',
-      gender: 'All'
-    }
-  ];
-}
-
 function getUserAppointments(userId) {
   return corporateAppointmentsStore.get(userId) || [];
 }
@@ -598,25 +563,67 @@ router.get('/my-benefits', authUser, async (req, res) => {
   }
 });
 
+// Real checkup availability comes from the corporate's actual subscription
+// plan (a "Wellness"/health-checkup benefit line item, e.g. "Annual Health
+// Checkup, Once per year"), not a fabricated multi-tier package catalog --
+// no such catalog exists anywhere in the platform's real data. Employee
+// enrollment/validity comes from user_health_packages when present.
 router.get('/health-checkups', authUser, async (req, res) => {
   try {
-    let activePlan = null;
-    
-    // Only try to fetch active plan for numeric user IDs in production
-    if (Number.isInteger(parseInt(req.user.id))) {
-      try {
-        activePlan = await getActiveUserPlan(req.user.id);
-      } catch (error) {
-        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
-        // Continue - corporate users might not have database records in dev/testing
+    const isCorporateSession = req.user?.role === 'corporate' || req.user?.userType === 'corporate';
+    let corporateId = req.user?.corporateId || req.user?.organization_id;
+    let enrollment = null;
+
+    if (!isCorporateSession) {
+      const [assoc] = await postgresSequelize.query(
+        `SELECT "entityId" AS "corporateId" FROM user_associations
+          WHERE "userId" = :userId AND "entityType" = 'corporate' AND status = 'active'
+          ORDER BY "createdAt" DESC LIMIT 1`,
+        { replacements: { userId: req.user.id } }
+      );
+      corporateId = assoc[0]?.corporateId || null;
+
+      if (corporateId) {
+        const [pkgRows] = await postgresSequelize.query(
+          `SELECT "packageName", "validFrom", "validTo" FROM user_health_packages
+            WHERE "userId" = :userId AND status = 'active' ORDER BY "createdAt" DESC LIMIT 1`,
+          { replacements: { userId: req.user.id } }
+        );
+        enrollment = pkgRows[0] || null;
       }
     }
 
-    const planConfig = activePlan?.plan?.toJSON();
-    const checkups = deriveHealthCheckups(planConfig);
+    if (!corporateId) {
+      return res.json({ success: true, linkedPlan: false, checkups: [], data: { checkups: [] } });
+    }
+
+    const [planRows] = await postgresSequelize.query(
+      `SELECT metadata FROM subscription_plans
+        WHERE type = 'CORPORATE' AND is_active = true AND (metadata->>'corporateId')::int = :corporateId
+        ORDER BY created_at DESC LIMIT 1`,
+      { replacements: { corporateId } }
+    );
+    const benefits = planRows[0]?.metadata?.benefits;
+    const checkupBenefit = Array.isArray(benefits)
+      ? benefits.find((b) => b.isIncluded && /health.*check|checkup/i.test(`${b.name || ''} ${b.category || ''}`))
+      : null;
+
+    if (!checkupBenefit) {
+      return res.json({ success: true, linkedPlan: Boolean(planRows[0]), checkups: [], data: { checkups: [] } });
+    }
+
+    const checkups = [{
+      id: 'plan-annual-checkup',
+      name: checkupBenefit.name || 'Annual Health Checkup',
+      description: checkupBenefit.description || 'Included as part of your corporate health plan.',
+      limit: checkupBenefit.limit || null,
+      validFrom: enrollment?.validFrom ? new Date(enrollment.validFrom).toISOString().slice(0, 10) : null,
+      validTo: enrollment?.validTo ? new Date(enrollment.validTo).toISOString().slice(0, 10) : null,
+    }];
+
     res.json({
       success: true,
-      linkedPlan: Boolean(activePlan),
+      linkedPlan: true,
       checkups,
       data: { checkups }
     });
