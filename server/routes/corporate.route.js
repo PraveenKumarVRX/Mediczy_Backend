@@ -421,51 +421,135 @@ function addUserAppointment(userId, appointment) {
 }
 
 // Get user's corporate benefits/plan
+// Real subscription_plans.features uses short keys (opd, ipd, ...); the
+// frontend's CorporatePlan interface expects the *Coverage suffix form.
+const FEATURE_KEY_MAP = {
+  opd: 'opdCoverage', ipd: 'ipdCoverage', maternity: 'maternityCoverage', dental: 'dentalCoverage',
+  pharmacy: 'pharmacyCoverage', diagnostics: 'diagnosticsCoverage', homecare: 'homecareCoverage',
+  ambulance: 'ambulanceCoverage', wellness: 'wellnessCoverage', mentalHealth: 'mentalHealthCoverage',
+};
+
+function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
+  const meta = planRow.metadata || {};
+  const features = {};
+  for (const [srcKey, destKey] of Object.entries(FEATURE_KEY_MAP)) {
+    features[destKey] = Boolean(planRow.features?.[srcKey]);
+  }
+  return {
+    id: String(planRow.id),
+    planName: planRow.name,
+    corporateName,
+    validFrom: meta.validFrom || null,
+    validTo: meta.validTo || null,
+    planType: meta.planType || 'Standard',
+    benefits: Array.isArray(meta.benefits)
+      ? meta.benefits.filter((b) => b.isIncluded).map((b) => ({
+          category: b.category || b.name,
+          description: b.description || b.name,
+          coverage: b.coverage || b.limit || '',
+          limit: b.limit || undefined,
+        }))
+      : [],
+    features,
+    // Real plan config stores room rent / ICU rent / hospitalization windows as
+    // descriptive text ("Single Room", "30 days"), not numeric day-counts or
+    // per-day rupee rates -- displayed as-is rather than forced into a shape
+    // the source data doesn't actually have.
+    coverage: {
+      sumInsured: Number(meta.coverage?.sumInsured) || 0,
+      roomRent: meta.coverage?.roomRent || null,
+      icuRent: meta.coverage?.icuRent || null,
+      preHospitalization: meta.coverage?.prePolicyMedical || null,
+      postHospitalization: meta.coverage?.postPolicyMedical || null,
+    },
+  };
+}
+
 router.get('/my-benefits', authUser, async (req, res) => {
   try {
+    // Resolve real company name from corporates table (JWT doesn't carry it)
+    let resolvedCompanyName = req.user?.corporateName || req.user?.companyName;
+    const corporateId = req.user?.corporateId || req.user?.id;
+    if (!resolvedCompanyName && corporateId) {
+      try {
+        const [corpRow] = await postgresSequelize.query(
+          `SELECT "companyName" FROM corporates WHERE id = :corporateId LIMIT 1`,
+          { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        if (corpRow?.companyName) resolvedCompanyName = corpRow.companyName;
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    // HR/corporate-admin logins don't have a personal insurance plan -- a
+    // corporate entity isn't a patient. Show the company's actual subscribed
+    // plan instead of one employee's usage.
+    if (req.user?.role === 'corporate' || req.user?.userType === 'corporate') {
+      const [planRows] = await postgresSequelize.query(
+        `SELECT id, name, tier, price, currency, billing_cycle, features, metadata
+           FROM subscription_plans
+          WHERE type = 'CORPORATE' AND is_active = true
+            AND (metadata->>'corporateId')::int = :corporateId
+          ORDER BY created_at DESC LIMIT 1`,
+        { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (!planRows) {
+        return res.json({ success: true, linkedPlan: false, plan: null, usage: null, data: { linkedPlan: false, plan: null, usage: null, viewMode: 'company' } });
+      }
+
+      const [enrollment] = await postgresSequelize.query(
+        `SELECT used_count AS covered, max_employees AS total
+           FROM corporate_plan_sponsorships WHERE corporate_id = :corporateId AND is_active = true
+          ORDER BY created_at DESC LIMIT 1`,
+        { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+
+      const planPayload = mapSubscriptionPlanToCorporatePlan(planRows, resolvedCompanyName);
+      return res.json({
+        success: true,
+        linkedPlan: true,
+        plan: planPayload,
+        usage: null,
+        data: { linkedPlan: true, plan: planPayload, usage: null, viewMode: 'company', enrollment: enrollment || null },
+      });
+    }
+
+    // Employee/patient view: their own personal plan usage.
     let activePlan = null;
-    
-    // Only try to fetch active plan for numeric user IDs in production
     if (Number.isInteger(parseInt(req.user.id))) {
       try {
         activePlan = await getActiveUserPlan(req.user.id);
       } catch (error) {
         console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
-        // Continue - corporate users might not have database records in dev/testing
       }
     }
 
-    // Resolve real company name from corporates table (JWT doesn't carry it)
-    let resolvedCompanyName = req.user?.corporateName || req.user?.companyName;
-    if (!resolvedCompanyName) {
-      const corporateId = req.user?.corporateId || req.user?.id;
-      if (corporateId) {
-        try {
-          const [corpRow] = await postgresSequelize.query(
-            `SELECT "companyName" FROM corporates WHERE id = :corporateId LIMIT 1`,
-            { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
-          );
-          if (corpRow?.companyName) resolvedCompanyName = corpRow.companyName;
-        } catch (e) {
-          // ignore — fallback to default below
-        }
-      }
+    if (!activePlan) {
+      return res.json({ success: true, linkedPlan: false, plan: null, usage: null, data: { linkedPlan: false, plan: null, usage: null, viewMode: 'personal' } });
     }
 
-    const userContext = { ...req.user, corporateName: resolvedCompanyName, companyName: resolvedCompanyName };
-    const planPayload = normalizePlanPayload(activePlan?.plan?.toJSON(), activePlan?.toJSON(), userContext);
-    const usage = buildUsageSnapshot(activePlan?.toJSON());
+    const planRecord = activePlan.plan?.toJSON();
+    const userPlan = activePlan.toJSON();
+    const planPayload = {
+      id: String(planRecord?.id ?? userPlan?.membershipPlanId ?? ''),
+      planName: planRecord?.name || planRecord?.planName || 'Health Plan',
+      corporateName: resolvedCompanyName || null,
+      validFrom: userPlan?.startDate || null,
+      validTo: userPlan?.endDate || null,
+      planType: planRecord?.tier ? String(planRecord.tier) : (planRecord?.planType || 'Standard'),
+      benefits: planRecord?.benefits || planRecord?.metadata?.benefits || [],
+      features: planRecord?.features || {},
+      coverage: planRecord?.metadata?.coverage || {},
+    };
+    const usage = buildUsageSnapshot(userPlan);
 
     res.json({
       success: true,
-      linkedPlan: Boolean(activePlan),
+      linkedPlan: true,
       plan: planPayload,
       usage,
-      data: {
-        linkedPlan: Boolean(activePlan),
-        plan: planPayload,
-        usage
-      }
+      data: { linkedPlan: true, plan: planPayload, usage, viewMode: 'personal' }
     });
   } catch (error) {
     console.error('Error fetching corporate benefits:', error);

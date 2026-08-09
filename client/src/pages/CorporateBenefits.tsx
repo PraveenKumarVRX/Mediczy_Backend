@@ -67,10 +67,10 @@ interface CorporatePlan {
   };
   coverage: {
     sumInsured: number;
-    roomRentLimit: number;
-    icuRentLimit: number;
-    preHospitalizationDays: number;
-    postHospitalizationDays: number;
+    roomRent: string | null;
+    icuRent: string | null;
+    preHospitalization: string | null;
+    postHospitalization: string | null;
   };
 }
 
@@ -127,6 +127,7 @@ const CorporateBenefits = () => {
   const [activeTab, setActiveTab] = useState('benefits');
   const [loading, setLoading] = useState(true);
   const [corporatePlan, setCorporatePlan] = useState<CorporatePlan | null>(null);
+  const [viewMode, setViewMode] = useState<'company' | 'personal'>('personal');
   const [healthCheckups, setHealthCheckups] = useState<HealthCheckup[]>([]);
   const [myAppointments, setMyAppointments] = useState<MyAppointment[]>([]);
   const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null);
@@ -157,103 +158,26 @@ const CorporateBenefits = () => {
         api.get('/corporate/my-appointments').catch(() => ({ data: null }))
       ]);
 
-      const planPayload = planRes?.data?.plan || planRes?.data?.data?.plan || planRes?.data || null;
+      const planPayload = planRes?.data?.plan || planRes?.data?.data?.plan || null;
       const usagePayload = planRes?.data?.usage || planRes?.data?.data?.usage || null;
-      setCorporatePlan(planPayload || generateSamplePlan());
+      setCorporatePlan(planPayload);
       setPlanUsage(usagePayload);
+      setViewMode(planRes?.data?.data?.viewMode === 'company' ? 'company' : 'personal');
 
       const checkupsPayload = checkupsRes?.data?.checkups || checkupsRes?.data?.data?.checkups;
       setHealthCheckups(checkupsPayload || generateSampleCheckups());
 
       const appointmentsPayload = appointmentsRes?.data?.appointments || appointmentsRes?.data?.data?.appointments;
-      setMyAppointments(appointmentsPayload || generateSampleAppointments());
+      setMyAppointments(appointmentsPayload || []);
     } catch (err) {
       console.error('Failed to load data', err);
-      setCorporatePlan(generateSamplePlan());
+      setCorporatePlan(null);
       setHealthCheckups(generateSampleCheckups());
-      setMyAppointments(generateSampleAppointments());
+      setMyAppointments([]);
     } finally {
       setLoading(false);
     }
   };
-
-  const generateSamplePlan = (): CorporatePlan => ({
-    id: 'plan1',
-    planName: 'Corporate Wellness Plan',
-    corporateName: currentUser?.corporateName || 'Your Company',
-    validFrom: '2024-01-01',
-    validTo: '2024-12-31',
-    planType: 'Premium',
-    benefits: [
-      {
-        category: 'OPD Coverage',
-        description: 'Outpatient consultations and diagnostics',
-        coverage: '₹50,000 per year',
-        limit: '₹1,000 per visit'
-      },
-      {
-        category: 'IPD Coverage',
-        description: 'Hospitalization and surgery expenses',
-        coverage: '₹5,00,000 per year',
-        limit: 'Room rent: ₹5,000/day'
-      },
-      {
-        category: 'Annual Health Checkup',
-        description: 'Comprehensive health screening',
-        coverage: '₹5,000 per year',
-        limit: 'Once per year'
-      },
-      {
-        category: 'Preventive Care',
-        description: 'Vaccinations and preventive screenings',
-        coverage: '₹10,000 per year',
-        limit: 'As per schedule'
-      },
-      {
-        category: 'Pharmacy',
-        description: 'Prescribed medicines',
-        coverage: '₹25,000 per year',
-        limit: '80% reimbursement'
-      },
-      {
-        category: 'Diagnostics',
-        description: 'Lab tests and imaging',
-        coverage: '₹30,000 per year',
-        limit: 'As prescribed'
-      },
-      {
-        category: 'Mental Health',
-        description: 'Counseling and therapy sessions',
-        coverage: '₹20,000 per year',
-        limit: '10 sessions/year'
-      },
-      {
-        category: 'Wellness Programs',
-        description: 'Fitness and wellness activities',
-        coverage: '₹15,000 per year',
-        limit: 'Gym, yoga, etc.'
-      }
-    ],
-    features: {
-      opdCoverage: true,
-      ipdCoverage: true,
-      maternityCoverage: true,
-      dentalCoverage: true,
-      pharmacyCoverage: true,
-      diagnosticsCoverage: true,
-      homecareCoverage: true,
-      ambulanceCoverage: true,
-      wellnessCoverage: true,
-      mentalHealthCoverage: true
-    },
-    coverage: {
-      sumInsured: 500000,
-      roomRentLimit: 5000,
-      icuRentLimit: 8000,
-      preHospitalizationDays: 60,
-      postHospitalizationDays: 90
-    }
-  });
 
   const generateSampleCheckups = (): HealthCheckup[] => [
     {
@@ -349,22 +273,6 @@ const CorporateBenefits = () => {
     }
   ];
 
-  const generateSampleAppointments = (): MyAppointment[] => [
-    {
-      id: 'apt1',
-      appointmentId: 'CHK2024001',
-      checkupName: 'Basic Health Checkup',
-      appointmentType: 'Annual Health Checkup',
-      date: '2024-11-28',
-      time: '8:00 AM',
-      hospital: 'Apollo Hospital',
-      location: 'Banjara Hills, Hyderabad',
-      doctor: 'Dr. Sharma',
-      status: 'scheduled',
-      bookedOn: '2024-11-20',
-      claimAmount: 2000
-    }
-  ];
 
   const handleBookCheckup = (checkup: HealthCheckup) => {
     setSelectedCheckup(checkup);
@@ -464,12 +372,12 @@ const CorporateBenefits = () => {
             description="View your benefits, book health checkups, and manage appointments"
             gradient="from-emerald-600 to-emerald-800"
             badge={corporatePlan ? { text: corporatePlan.corporateName, variant: "emerald" } : undefined}
-            stats={[
-              { label: 'Plan Type', value: corporatePlan?.planType || 'Premium' },
-              { label: 'Sum Insured', value: `₹${(corporatePlan?.coverage.sumInsured || 500000).toLocaleString()}` },
-              { label: 'OPD Used', value: planUsage ? `${planUsage.opdUsed}/${planUsage.opdLimit}` : '0/10' },
-              { label: 'Valid Till', value: corporatePlan?.validTo ? new Date(corporatePlan.validTo).toLocaleDateString() : 'Dec 2024' },
-            ]}
+            stats={corporatePlan ? [
+              { label: 'Plan Type', value: corporatePlan.planType },
+              { label: 'Sum Insured', value: corporatePlan.coverage.sumInsured ? `₹${corporatePlan.coverage.sumInsured.toLocaleString()}` : '—' },
+              ...(planUsage ? [{ label: 'OPD Used', value: `${planUsage.opdUsed}/${planUsage.opdLimit}` }] : []),
+              { label: 'Valid Till', value: corporatePlan.validTo ? new Date(corporatePlan.validTo).toLocaleDateString() : '—' },
+            ] : []}
           />
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 max-w-7xl mx-auto">
@@ -518,19 +426,21 @@ const CorporateBenefits = () => {
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
                           <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Sum Insured</p>
-                          <p className="text-2xl font-bold text-emerald-400">₹{((corporatePlan.coverage?.sumInsured ?? 500000) / 100000).toFixed(1)}L</p>
+                          <p className="text-2xl font-bold text-emerald-400">
+                            {corporatePlan.coverage?.sumInsured ? `₹${corporatePlan.coverage.sumInsured.toLocaleString()}` : '—'}
+                          </p>
                         </div>
                         <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
                           <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Room Rent</p>
-                          <p className="text-2xl font-bold text-emerald-400">₹{(corporatePlan.coverage?.roomRentLimit ?? 5000).toLocaleString()}<span className="text-sm text-slate-400">/day</span></p>
+                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.roomRent || '—'}</p>
                         </div>
                         <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
                           <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Pre-Hospitalization</p>
-                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.preHospitalizationDays ?? 60}<span className="text-sm text-slate-400"> days</span></p>
+                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.preHospitalization || '—'}</p>
                         </div>
                         <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
                           <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Post-Hospitalization</p>
-                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.postHospitalizationDays ?? 90}<span className="text-sm text-slate-400"> days</span></p>
+                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.postHospitalization || '—'}</p>
                         </div>
                       </div>
                     </div>
@@ -622,6 +532,19 @@ const CorporateBenefits = () => {
                     </CardContent>
                   </Card>
                 </>
+              )}
+              {!corporatePlan && (
+                <Card className="bg-slate-900/50 border-slate-700/50">
+                  <CardContent className="py-12 text-center">
+                    <Shield className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                    <p className="text-slate-300 font-medium">No active plan on record</p>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {viewMode === 'company'
+                        ? 'This company has no active corporate plan configured yet.'
+                        : 'Contact your HR team to get enrolled in a corporate health plan.'}
+                    </p>
+                  </CardContent>
+                </Card>
               )}
             </TabsContent>
 
