@@ -310,24 +310,50 @@ const CorporateWellnessCalendar: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const [activitiesRes, empRes, benefitsRes] = await Promise.all([
-        api.get('/corporate/wellness-calendar/activities').catch(() => ({ data: null })),
-        api.get('/corporate/dashboard/employees-health').catch(() => ({ data: null })),
-        api.get('/corporate/my-benefits').catch(() => ({ data: null })),
+      // Capture real failures (auth expiry, network errors) instead of
+      // silently coercing them to "no data" -- an empty activities list and
+      // a failed session look identical to the user otherwise.
+      const [activitiesRes, empRes, benefitsRes] = await Promise.allSettled([
+        api.get('/corporate/wellness-calendar/activities'),
+        api.get('/corporate/dashboard/employees-health'),
+        api.get('/corporate/my-benefits'),
       ]);
-      setActivities(activitiesRes.data?.data?.activities || []);
 
-      const plan = benefitsRes.data?.data?.plan;
+      const authFailed = [activitiesRes, empRes, benefitsRes].some(
+        (r) => r.status === 'rejected' && (r.reason as any)?.response?.status === 401
+      );
+      if (authFailed) {
+        toast({
+          variant: 'destructive',
+          title: 'Session expired',
+          description: 'Please log out and log back in to see your wellness calendar.',
+        });
+        setActivities([]);
+        return;
+      }
+
+      if (activitiesRes.status === 'fulfilled') {
+        setActivities(activitiesRes.value.data?.data?.activities || []);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Failed to load activities',
+          description: 'Please try refreshing. If this keeps happening, contact support.',
+        });
+        setActivities([]);
+      }
+
+      const plan = benefitsRes.status === 'fulfilled' ? benefitsRes.value.data?.data?.plan : null;
       if (plan) {
         setPlanName(plan.planName || '');
         setHealthCalendarIncluded(Boolean(plan.platformFeatures?.healthCalendar));
       } else {
-        // No linked plan at all -- don't claim the feature isn't included,
-        // just don't show a confirmation badge either.
+        // No linked plan (or that call failed) -- don't claim the feature
+        // isn't included, just don't show a confirmation badge either.
         setHealthCalendarIncluded(null);
       }
 
-      const empData = empRes.data?.data?.employees || [];
+      const empData = empRes.status === 'fulfilled' ? (empRes.value.data?.data?.employees || []) : [];
       setEmployees(empData.map((e: any) => ({
         id: String(e.id),
         name: e.name,
