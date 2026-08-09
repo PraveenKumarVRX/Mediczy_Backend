@@ -52,6 +52,7 @@ interface CorporatePlan {
     description: string;
     coverage: string;
     limit?: string;
+    benefitCategory: 'insurance' | 'wellness';
   }[];
   features: {
     opdCoverage: boolean;
@@ -400,13 +401,11 @@ const CorporateBenefits = () => {
             <TabsContent value="benefits" className="space-y-6">
               {corporatePlan && (
                 <>
-                  {/* Plan Overview Card */}
+                  {/* Plan identity strip — no insurance-style claims here, just what plan this is */}
                   <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-600/20 via-slate-900 to-slate-950 border border-emerald-500/25 shadow-xl shadow-slate-950/40">
-                    {/* Ambient glow */}
                     <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
                     <div className="relative p-6">
-                      {/* Header row */}
-                      <div className="flex items-start justify-between mb-6">
+                      <div className="flex items-start justify-between">
                         <div className="flex items-center gap-3">
                           <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
                             <Shield className="w-5 h-5 text-white" />
@@ -422,29 +421,66 @@ const CorporateBenefits = () => {
                           {corporatePlan.planType}
                         </Badge>
                       </div>
-                      {/* Stats grid */}
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
-                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Sum Insured</p>
-                          <p className="text-2xl font-bold text-emerald-400">
-                            {corporatePlan.coverage?.sumInsured ? `₹${corporatePlan.coverage.sumInsured.toLocaleString()}` : '—'}
-                          </p>
-                        </div>
-                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
-                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Room Rent</p>
-                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.roomRent || '—'}</p>
-                        </div>
-                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
-                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Pre-Hospitalization</p>
-                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.preHospitalization || '—'}</p>
-                        </div>
-                        <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
-                          <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Post-Hospitalization</p>
-                          <p className="text-2xl font-bold text-emerald-400">{corporatePlan.coverage?.postHospitalization || '—'}</p>
-                        </div>
-                      </div>
                     </div>
                   </div>
+
+                  {/* Insurance Coverage — only shown when hospitalization/IPD is genuinely active on this plan */}
+                  {corporatePlan.features?.ipdCoverage && (
+                    <Card className="bg-blue-950/20 border-blue-500/25">
+                      <CardHeader>
+                        <CardTitle className="text-slate-100 flex items-center gap-2">
+                          <Shield className="w-5 h-5 text-blue-400" />
+                          Insurance Coverage (Hospitalization)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Sum Insured</p>
+                            <p className="text-2xl font-bold text-blue-400">
+                              {corporatePlan.coverage?.sumInsured ? `₹${corporatePlan.coverage.sumInsured.toLocaleString()}` : '—'}
+                            </p>
+                          </div>
+                          <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Room Rent</p>
+                            <p className="text-2xl font-bold text-blue-400">{corporatePlan.coverage?.roomRent || '—'}</p>
+                          </div>
+                          <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Pre-Hospitalization</p>
+                            <p className="text-2xl font-bold text-blue-400">{corporatePlan.coverage?.preHospitalization || '—'}</p>
+                          </div>
+                          <div className="text-center p-4 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                            <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Post-Hospitalization</p>
+                            <p className="text-2xl font-bold text-blue-400">{corporatePlan.coverage?.postHospitalization || '—'}</p>
+                          </div>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {(corporatePlan.benefits || []).filter((b) => b.benefitCategory === 'insurance').map((benefit, idx) => (
+                            <div key={idx} className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                              <div className="flex justify-between items-start">
+                                <div className="flex-1">
+                                  <h3 className="font-semibold text-slate-100">{benefit.category}</h3>
+                                  <p className="text-sm text-slate-400 mt-1">{benefit.description}</p>
+                                </div>
+                                <div className="text-right ml-4">
+                                  <p className="font-bold text-blue-400">{benefit.coverage}</p>
+                                  {benefit.limit && <p className="text-xs text-slate-500 mt-1">{benefit.limit}</p>}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {!corporatePlan.features?.ipdCoverage && (
+                    <Card className="bg-slate-900/40 border-slate-700/40">
+                      <CardContent className="py-6 flex items-center gap-3 text-sm text-slate-400">
+                        <Shield className="w-5 h-5 text-slate-600 flex-shrink-0" />
+                        <span>This plan does not include hospitalization/IPD insurance coverage. Benefits below are employer-funded wellness and OPD reimbursements, not insurance.</span>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {planUsage && (
                     <Card className="bg-slate-900/50 border-slate-700/50">
@@ -505,14 +541,18 @@ const CorporateBenefits = () => {
                     </CardContent>
                   </Card>
 
-                  {/* Benefits List */}
-                  <Card className="bg-slate-900/50 border-slate-700/50">
+                  {/* Wellness & OPD Benefits — employer-funded, no insurer or policy behind these */}
+                  <Card className="bg-emerald-950/10 border-emerald-500/20">
                     <CardHeader>
-                      <CardTitle className="text-slate-100">Benefit Details</CardTitle>
+                      <CardTitle className="text-slate-100 flex items-center gap-2">
+                        <Heart className="w-5 h-5 text-emerald-400" />
+                        Wellness &amp; OPD Benefits
+                      </CardTitle>
+                      <p className="text-sm text-slate-500">Employer-funded reimbursements — not insurance coverage.</p>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {(corporatePlan.benefits || []).map((benefit, idx) => (
+                        {(corporatePlan.benefits || []).filter((b) => b.benefitCategory !== 'insurance').map((benefit, idx) => (
                           <div key={idx} className="p-4 bg-slate-800/50 rounded-lg border border-slate-700/50">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">
@@ -520,7 +560,7 @@ const CorporateBenefits = () => {
                                 <p className="text-sm text-slate-400 mt-1">{benefit.description}</p>
                               </div>
                               <div className="text-right ml-4">
-                                <p className="font-bold text-blue-400">{benefit.coverage}</p>
+                                <p className="font-bold text-emerald-400">{benefit.coverage}</p>
                                 {benefit.limit && (
                                   <p className="text-xs text-slate-500 mt-1">{benefit.limit}</p>
                                 )}
@@ -528,6 +568,9 @@ const CorporateBenefits = () => {
                             </div>
                           </div>
                         ))}
+                        {(corporatePlan.benefits || []).filter((b) => b.benefitCategory !== 'insurance').length === 0 && (
+                          <p className="text-sm text-slate-500 text-center py-6">No wellness/OPD benefits configured on this plan.</p>
+                        )}
                       </div>
                     </CardContent>
                   </Card>

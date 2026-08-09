@@ -12,7 +12,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useSmartBenefits } from '@/hooks/patient/useSmartBenefits';
+import { useSmartBenefits, type BenefitPlan, type Claim } from '@/hooks/patient/useSmartBenefits';
 import { useNavigate, Link } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -37,22 +37,7 @@ import { useAuth } from '@/auth/AuthProvider';
 import MainLayout from '@/components/layout/MainLayout';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-interface BenefitPlan {
-  id: string;
-  name: string;
-  type: 'gmc' | 'gpa' | 'gtl' | 'opd' | 'dental' | 'vision' | 'wellness' | 'topup' | 'parents' | 'personal';
-  insurer: string;
-  insurerLogo?: string;
-  policyNumber: string;
-  sumInsured: number;
-  utilized: number;
-  remaining: number;
-  familyCovered: number;
-  validFrom: string;
-  validTo: string;
-  features: string[];
-  sublimits: { name: string; limit: number; used: number }[];
-}
+const insurerLabel = (plan: BenefitPlan) => plan.insurer || 'Employer-funded (no third-party insurer)';
 
 interface FamilyMember {
   id: string;
@@ -64,20 +49,6 @@ interface FamilyMember {
   eCardId?: string;
   lastClaim?: string;
   healthScore?: number;
-}
-
-interface Claim {
-  id: string;
-  claimNumber: string;
-  type: string;
-  amount: number;
-  approvedAmount?: number;
-  status: 'submitted' | 'under_review' | 'approved' | 'rejected' | 'settled' | 'info_needed';
-  hospital?: string;
-  date: string;
-  member: string;
-  documents: number;
-  timeline: { step: string; date: string; status: string }[];
 }
 
 // ─── Gradient Helpers ────────────────────────────────────────────────────────
@@ -159,96 +130,6 @@ const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹
 const fmtFull = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 const MOTION_STAGGER = 0.08;
 
-const defaultBenefitPlans: BenefitPlan[] = [
-  {
-    id: 'gmc', name: 'Group Mediclaim', type: 'gmc', insurer: 'ICICI Lombard',
-    policyNumber: 'GMC-2026-IND-4851', sumInsured: 500000, utilized: 45000,
-    remaining: 455000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Cashless at 6000+ hospitals', 'No waiting period', 'Pre & post hospitalization', 'Day care procedures', 'Ambulance cover ₹2,500', 'Maternity benefit ₹50,000'],
-    sublimits: [
-      { name: 'Room Rent', limit: 5000, used: 0 },
-      { name: 'ICU', limit: 10000, used: 0 },
-      { name: 'Maternity', limit: 50000, used: 0 },
-      { name: 'Ambulance', limit: 2500, used: 0 },
-    ],
-  },
-  {
-    id: 'gpa', name: 'Group Personal Accident', type: 'gpa', insurer: 'Tata AIG',
-    policyNumber: 'GPA-2026-TATA-1187', sumInsured: 1000000, utilized: 0,
-    remaining: 1000000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Accidental death cover', 'Permanent disability cover', 'Temporary total disability', 'Education benefit', 'Ambulance support'],
-    sublimits: [
-      { name: 'Accidental Death', limit: 1000000, used: 0 },
-      { name: 'Permanent Disability', limit: 1000000, used: 0 },
-      { name: 'Weekly Benefit', limit: 10000, used: 0 },
-    ],
-  },
-  {
-    id: 'topup', name: 'Super Top Up', type: 'topup', insurer: 'Care Health',
-    policyNumber: 'STU-2026-CARE-5590', sumInsured: 1000000, utilized: 0,
-    remaining: 1000000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Coverage above deductible', 'Family floater top-up', 'Multiple claims aggregation', 'Cashless hospitalization after threshold'],
-    sublimits: [
-      { name: 'Deductible', limit: 300000, used: 0 },
-      { name: 'Top-up Cover', limit: 1000000, used: 0 },
-    ],
-  },
-  {
-    id: 'parents', name: 'Parents Mediclaim', type: 'parents', insurer: 'Aditya Birla Health',
-    policyNumber: 'PMC-2026-ABHI-4412', sumInsured: 300000, utilized: 0,
-    remaining: 300000, familyCovered: 2, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Parent hospitalization cover', 'Cashless network access', 'Day care procedures', 'Pre & post hospitalization'],
-    sublimits: [
-      { name: 'Hospitalization', limit: 300000, used: 0 },
-      { name: 'Room Rent', limit: 3000, used: 0 },
-    ],
-  },
-  {
-    id: 'personal', name: 'Personal Health Insurance', type: 'personal', insurer: 'HDFC ERGO',
-    policyNumber: 'PHI-2026-HDFC-6729', sumInsured: 500000, utilized: 0,
-    remaining: 500000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Individual health cover', 'Cashless hospitalization', 'Annual health checkup', 'No-claim bonus eligibility'],
-    sublimits: [
-      { name: 'Hospitalization', limit: 500000, used: 0 },
-      { name: 'Health Checkup', limit: 3000, used: 0 },
-    ],
-  },
-  {
-    id: 'opd', name: 'OPD Benefit', type: 'opd', insurer: 'Star Health',
-    policyNumber: 'OPD-2026-STR-9012', sumInsured: 15000, utilized: 3200,
-    remaining: 11800, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Doctor consultations', 'Medicines', 'Diagnostics', 'Physiotherapy'],
-    sublimits: [
-      { name: 'Consultation', limit: 5000, used: 2000 },
-      { name: 'Medicines', limit: 5000, used: 1200 },
-      { name: 'Diagnostics', limit: 5000, used: 0 },
-    ],
-  },
-  {
-    id: 'gtl', name: 'Group Term Life', type: 'gtl', insurer: 'HDFC Life',
-    policyNumber: 'GTL-2026-HDFC-3341', sumInsured: 2500000, utilized: 0,
-    remaining: 2500000, familyCovered: 1, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Death benefit 25L', 'Accidental death 50L', 'Terminal illness cover'],
-    sublimits: [],
-  },
-  {
-    id: 'dental', name: 'Dental & Vision', type: 'dental', insurer: 'Niva Bupa',
-    policyNumber: 'DNT-2026-NIVA-7802', sumInsured: 10000, utilized: 0,
-    remaining: 10000, familyCovered: 4, validFrom: '2026-04-01', validTo: '2027-03-31',
-    features: ['Dental checkup', 'Cleaning & scaling', 'Eye exam', 'Spectacles allowance'],
-    sublimits: [
-      { name: 'Dental', limit: 5000, used: 0 },
-      { name: 'Vision', limit: 5000, used: 0 },
-    ],
-  },
-];
-
-const mergeExpectedBenefitPlans = (incoming: BenefitPlan[]) => {
-  const byType = new Set(incoming.map((plan) => plan.type));
-  const byName = new Set(incoming.map((plan) => plan.name.toLowerCase()));
-  const missing = defaultBenefitPlans.filter((plan) => !byType.has(plan.type) && !byName.has(plan.name.toLowerCase()));
-  return [...incoming, ...missing];
-};
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function SmartBenefitsHub() {
@@ -262,11 +143,8 @@ export default function SmartBenefitsHub() {
 
   // ── Data loading delegated to hook ──────────────────────────────────────
   const {
-    plans: rawPlans, family, claims, loading, claimsDataStatus, refresh: loadBenefitsData
+    plans, family, claims, loading, claimsDataStatus, refresh: loadBenefitsData
   } = useSmartBenefits();
-
-  // Apply local merge for expected plan display (preserves existing UX)
-  const plans = mergeExpectedBenefitPlans(rawPlans);
 
   const totalSumInsured = plans.reduce((s, p) => s + p.sumInsured, 0);
   const totalUtilized = plans.reduce((s, p) => s + p.utilized, 0);
@@ -412,7 +290,7 @@ export default function SmartBenefitsHub() {
                               </div>
                               <div>
                                 <h3 className="font-semibold text-white text-sm">{plan.name}</h3>
-                                <p className="text-white/70 text-xs">{plan.insurer} • {plan.policyNumber}</p>
+                                <p className="text-white/70 text-xs">{insurerLabel(plan)}{plan.policyNumber ? ` • ${plan.policyNumber}` : ''}</p>
                               </div>
                             </div>
                             <Badge className="bg-white/20 text-white border-0 text-[10px]">
@@ -423,7 +301,9 @@ export default function SmartBenefitsHub() {
                         <CardContent className="p-4">
                           <div className="flex items-center justify-between mb-3">
                             <div>
-                              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Sum Insured</p>
+                              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
+                                {plan.isEmployerFunded ? 'Benefit Limit' : 'Sum Insured'}
+                              </p>
                               <p className="text-lg font-bold text-white">{fmtFull(plan.sumInsured)}</p>
                             </div>
                             <div className="text-right">
@@ -476,6 +356,14 @@ export default function SmartBenefitsHub() {
                     </motion.div>
                   );
                 })}
+
+                {plans.length === 0 && !loading && (
+                  <div className="text-center py-12">
+                    <Shield className="h-12 w-12 text-slate-700 mx-auto mb-3" />
+                    <p className="text-slate-500 text-sm">No active benefit plans on record.</p>
+                    <p className="text-slate-600 text-xs mt-1">Contact your HR team if you believe this is incorrect.</p>
+                  </div>
+                )}
 
                 {/* Quick Actions */}
                 <div className="grid grid-cols-2 gap-3 mt-6">
@@ -753,7 +641,7 @@ export default function SmartBenefitsHub() {
                       </div>
                       <QrCode className="h-6 w-6 text-white/60" />
                     </div>
-                    <h3 className="text-base font-bold text-white">{eCardPlan.insurer}</h3>
+                    <h3 className="text-base font-bold text-white">{insurerLabel(eCardPlan)}</h3>
                     <p className="text-xs text-white/60 mb-3">{eCardPlan.name}</p>
                     {/* Covered members */}
                     <div className="flex flex-wrap gap-1.5 mb-4">
@@ -766,7 +654,7 @@ export default function SmartBenefitsHub() {
                     <div className="flex items-center justify-between border-t border-white/10 pt-3">
                       <div>
                         <p className="text-[9px] text-white/50 mb-0.5">Policy No.</p>
-                        <p className="text-[11px] font-mono text-white/80">{eCardPlan.policyNumber}</p>
+                        <p className="text-[11px] font-mono text-white/80">{eCardPlan.policyNumber || '—'}</p>
                       </div>
                       <div className="text-center">
                         <p className="text-[9px] text-white/50 mb-0.5">Cover</p>
@@ -829,7 +717,7 @@ export default function SmartBenefitsHub() {
                     </div>
                     <div>
                       <h2 className="font-bold text-white">{selectedPlan.name}</h2>
-                      <p className="text-xs text-white/70">{selectedPlan.insurer}</p>
+                      <p className="text-xs text-white/70">{insurerLabel(selectedPlan)}</p>
                     </div>
                   </div>
                 </div>

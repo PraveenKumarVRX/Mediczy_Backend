@@ -19,6 +19,7 @@ interface Claim {
   employeeName: string;
   employeeId: string;
   claimType: string;
+  benefitCategory: 'insurance' | 'wellness';
   amount: string;
   submittedDate: string;
   status: 'pending' | 'approved' | 'rejected' | 'processing' | 'paid';
@@ -32,7 +33,7 @@ const CorporateClaims: React.FC = () => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [isSubmitDialogOpen, setIsSubmitDialogOpen] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<'all' | 'insurance' | 'wellness'>('all');
 
   const [claims, setClaims] = useState<Claim[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -86,10 +87,11 @@ const CorporateClaims: React.FC = () => {
         claim.claimType.toLowerCase().includes(searchQuery.toLowerCase());
 
       const matchesStatus = statusFilter === 'all' || claim.status === statusFilter;
+      const matchesCategory = categoryFilter === 'all' || claim.benefitCategory === categoryFilter;
 
-      return matchesSearch && matchesStatus;
+      return matchesSearch && matchesStatus && matchesCategory;
     });
-  }, [claims, searchQuery, statusFilter]);
+  }, [claims, searchQuery, statusFilter, categoryFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -122,55 +124,6 @@ const CorporateClaims: React.FC = () => {
     }
   };
 
-  const [claimForm, setClaimForm] = useState({
-    claimType: '',
-    amount: '',
-    provider: '',
-    serviceDate: '',
-    description: ''
-  });
-  const [claimFiles, setClaimFiles] = useState<File[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmitClaim = async () => {
-    if (!claimForm.claimType || !claimForm.amount) {
-      toast({
-        title: "Missing fields",
-        description: "Please fill in claim type and amount.",
-        variant: "destructive"
-      });
-      return;
-    }
-    try {
-      setIsSubmitting(true);
-      const formData = new FormData();
-      formData.append('type', claimForm.claimType);
-      formData.append('amount', claimForm.amount);
-      formData.append('provider', claimForm.provider);
-      formData.append('serviceDate', claimForm.serviceDate);
-      formData.append('description', claimForm.description);
-      claimFiles.forEach((file) => formData.append('documents', file));
-      await api.post('/corporate/claims', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      toast({
-        title: "Claim Submitted",
-        description: "Your insurance claim has been submitted successfully."
-      });
-      setIsSubmitDialogOpen(false);
-      setClaimForm({ claimType: '', amount: '', provider: '', serviceDate: '', description: '' });
-      setClaimFiles([]);
-      loadClaims();
-    } catch (error: any) {
-      toast({
-        title: "Submission failed",
-        description: error?.response?.data?.message || "Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   const handleView = (claim: Claim) => {
     setSelectedClaim(claim);
@@ -221,8 +174,8 @@ const CorporateClaims: React.FC = () => {
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
         <CorporatePageHeader
           icon={Receipt}
-          title="Insurance Claims Management"
-          description="Track, manage, and process employee insurance claims and reimbursements"
+          title="Claims Management"
+          description="Review employee insurance and wellness reimbursement claims. Employees file claims from their own app; HR reviews and approves here."
           gradient="from-cyan-500 to-cyan-700"
           badge={`${claims.length} Claims`}
           showSearch={true}
@@ -238,111 +191,7 @@ const CorporateClaims: React.FC = () => {
             { label: 'Approved', value: stats.approved },
             { label: 'Total Amount', value: `₹${stats.totalAmount.toLocaleString()}` },
           ]}
-          showAdd={true}
-          addLabel="Submit New Claim"
-          onAdd={() => setIsSubmitDialogOpen(true)}
         />
-
-        <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
-          <DialogContent className="sm:max-w-[525px]">
-            <DialogHeader>
-              <DialogTitle>Submit Insurance Claim</DialogTitle>
-              <DialogDescription>
-                Fill in the claim details and upload supporting documents
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="employee">Employee</Label>
-                <Select>
-                  <SelectTrigger id="employee">
-                    <SelectValue placeholder="Select employee" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="emp1">John Smith - EMP001</SelectItem>
-                    <SelectItem value="emp2">Emily Davis - EMP002</SelectItem>
-                    <SelectItem value="emp3">Robert Wilson - EMP003</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="claimType">Claim Type</Label>
-                <Select value={claimForm.claimType} onValueChange={(value) => setClaimForm((prev) => ({ ...prev, claimType: value }))}>
-                  <SelectTrigger id="claimType">
-                    <SelectValue placeholder="Select claim type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="medical">Medical Consultation</SelectItem>
-                    <SelectItem value="dental">Dental Care</SelectItem>
-                    <SelectItem value="vision">Vision Care</SelectItem>
-                    <SelectItem value="prescription">Prescription Medication</SelectItem>
-                    <SelectItem value="mental">Mental Health</SelectItem>
-                    <SelectItem value="lab">Laboratory Tests</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="amount">Claim Amount</Label>
-                  <Input
-                    id="amount"
-                    type="text"
-                    placeholder="$0.00"
-                    value={claimForm.amount}
-                    onChange={(e) => setClaimForm((prev) => ({ ...prev, amount: e.target.value }))}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="serviceDate">Service Date</Label>
-                  <Input
-                    id="serviceDate"
-                    type="date"
-                    value={claimForm.serviceDate}
-                    onChange={(e) => setClaimForm((prev) => ({ ...prev, serviceDate: e.target.value }))}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="provider">Healthcare Provider</Label>
-                <Input
-                  id="provider"
-                  placeholder="Provider name"
-                  value={claimForm.provider}
-                  onChange={(e) => setClaimForm((prev) => ({ ...prev, provider: e.target.value }))}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description">Description</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Describe the medical service..."
-                  value={claimForm.description}
-                  onChange={(e) => setClaimForm((prev) => ({ ...prev, description: e.target.value }))}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="documents">Upload Documents</Label>
-                <Input
-                  id="documents"
-                  type="file"
-                  multiple
-                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                  onChange={(e) => setClaimFiles(Array.from(e.target.files ?? []))}
-                />
-                {claimFiles.length > 0 && (
-                  <p className="text-xs text-emerald-400">{claimFiles.length} file(s) selected</p>
-                )}
-                <p className="text-xs text-slate-400">Upload receipts, prescriptions, and medical reports (PDF, JPG, PNG)</p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsSubmitDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSubmitClaim}>Submit Claim</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="sm:max-w-[600px]">
@@ -489,6 +338,16 @@ const CorporateClaims: React.FC = () => {
                 <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={categoryFilter} onValueChange={(v) => setCategoryFilter(v as typeof categoryFilter)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Filter by category" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Insurance & Wellness</SelectItem>
+                <SelectItem value="insurance">Insurance only</SelectItem>
+                <SelectItem value="wellness">Wellness / OPD only</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex justify-end mb-4">
@@ -511,6 +370,14 @@ const CorporateClaims: React.FC = () => {
                             {getStatusIcon(claim.status)}
                             <span className="capitalize">{claim.status}</span>
                           </div>
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={claim.benefitCategory === 'insurance'
+                            ? 'border-blue-500/40 text-blue-300 bg-blue-500/10'
+                            : 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10'}
+                        >
+                          {claim.benefitCategory === 'insurance' ? 'Insurance' : 'Wellness / OPD'}
                         </Badge>
                       </div>
 

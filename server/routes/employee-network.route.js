@@ -9,6 +9,16 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
+
+// insurance_claims.claim_type is CHECK-constrained to cashless/reimbursement/
+// emergency -- the human-readable claim type (opd/dental/etc, from
+// ClaimsExpress's CLAIM_TYPES) goes in metadata.category instead, same
+// pattern used for corporate-side wellness claims. Hospitalization and
+// maternity are genuine insurance-rider categories; everything else here
+// (opd/pharmacy/dental/vision) is an employer-funded wellness reimbursement,
+// never billed through a TPA.
+const INSURANCE_CLAIM_TYPES = new Set(['hospitalization', 'maternity']);
 
 const router = express.Router();
 
@@ -284,9 +294,13 @@ router.get('/benefits', authUser, async (req, res) => {
               mp.type AS plan_type,
               mp.benefits AS plan_benefits,
               mp.features AS plan_features,
-              mp.metadata AS plan_metadata
+              mp.metadata AS plan_metadata,
+              sp.name AS sub_plan_name,
+              sp.metadata AS sub_plan_metadata,
+              sp.features AS sub_plan_features
          FROM user_plans up
          LEFT JOIN membership_plans mp ON mp.id = up."membershipPlanId"
+         LEFT JOIN subscription_plans sp ON sp.id = (up.metadata->>'subscriptionPlanId')::int
         WHERE up."userId" = :userId
           AND up.status = 'active'
         ORDER BY COALESCE(up."startDate", up."createdAt") DESC`,
@@ -296,31 +310,40 @@ router.get('/benefits', authUser, async (req, res) => {
     const plans = rows.map((row, idx) => {
       const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
       const planMetadata = row.plan_metadata && typeof row.plan_metadata === 'object' ? row.plan_metadata : {};
-      const sourceName = row.plan_name || row.plan_code || `Corporate Plan ${idx + 1}`;
+      // subscription_plans (real corporate benefit plan config, same source
+      // as /corporate/my-benefits) is the most authoritative when linked --
+      // falls back to membership_plans/user_plans metadata only if absent.
+      const subMeta = row.sub_plan_metadata && typeof row.sub_plan_metadata === 'object' ? row.sub_plan_metadata : {};
+      const sourceName = row.sub_plan_name || row.plan_name || row.plan_code || `Corporate Plan ${idx + 1}`;
       const planType = inferPlanType(`${row.plan_type || ''} ${sourceName}`);
-      const sumInsured = Number(metadata.sumInsured || planMetadata.sumInsured || 500000);
+      const sumInsured = Number(subMeta.coverage?.sumInsured ?? metadata.sumInsured ?? planMetadata.sumInsured ?? 0);
       const utilized = Number(metadata.utilizedAmount || metadata.utilized || 0);
       const remaining = Math.max(0, sumInsured - utilized);
       const familyCovered = Number(metadata.familyCovered || metadata.maxFamilyMembers || 1);
-      const policyNumber = metadata.policyNumber || planMetadata.policyNumber || `CORP-${row.plan_id || row.id}`;
-      const featureList = Array.isArray(row.plan_benefits)
-        ? row.plan_benefits
-        : Array.isArray(row.plan_features)
-          ? row.plan_features
-          : [];
+      const featureList = Array.isArray(subMeta.benefits)
+        ? subMeta.benefits.filter((b) => b.isIncluded).map((b) => b.description || b.name)
+        : Array.isArray(row.plan_benefits)
+          ? row.plan_benefits
+          : Array.isArray(row.plan_features)
+            ? row.plan_features
+            : [];
 
       return {
         id: String(row.plan_id || row.id),
         name: sourceName,
         type: planType,
-        insurer: metadata.insurer || planMetadata.insurer || corp.companyName || 'Corporate Insurance',
-        policyNumber,
+        // No real insurer backs an employer-funded corporate plan -- do not
+        // fabricate one (was previously falling back to the employer's own
+        // name, or a generic "Corporate Insurance" placeholder).
+        insurer: subMeta.insurer || planMetadata.insurer || null,
+        isEmployerFunded: !subMeta.insurer && !planMetadata.insurer,
+        policyNumber: subMeta.policyNumber || planMetadata.policyNumber || null,
         sumInsured,
         utilized,
         remaining,
         familyCovered,
-        validFrom: toISODate(row.start_date) || toISODate(new Date()),
-        validTo: toISODate(row.end_date) || toISODate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+        validFrom: subMeta.validFrom || toISODate(row.start_date) || toISODate(new Date()),
+        validTo: subMeta.validTo || toISODate(row.end_date) || toISODate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
         features: featureList.map((item) => String(item)).slice(0, 8),
         sublimits: []
       };
@@ -354,28 +377,41 @@ router.get('/claims', authUser, async (req, res) => {
       });
     }
 
-    const rows = await postgresSequelize.query(
-      `SELECT id,
-              claim_number,
-              claim_type,
-              status,
-              claim_amount,
-              approved_amount,
-              insurance_provider,
-              submitted_date,
-              created_at,
-              documents
-         FROM insurance_claims
-        WHERE patient_id = :userId
-        ORDER BY COALESCE(submitted_date, created_at) DESC
-        LIMIT 50`,
-      { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
-    );
+    const organizationId = Number(req.user.organization_id || req.user.organizationId || corp.corporateId);
+    const tx = await postgresSequelize.transaction();
+    let rows;
+    try {
+      await setRlsContext(tx, { orgId: organizationId, userId: req.user.id });
+      [rows] = await postgresSequelize.query(
+        `SELECT id,
+                claim_number,
+                claim_type,
+                benefit_category,
+                metadata,
+                status,
+                claim_amount,
+                approved_amount,
+                insurance_provider,
+                submitted_date,
+                created_at,
+                documents
+           FROM insurance_claims
+          WHERE patient_id = :userId
+          ORDER BY COALESCE(submitted_date, created_at) DESC
+          LIMIT 50`,
+        { replacements: { userId: req.user.id }, transaction: tx }
+      );
+      await tx.commit();
+    } catch (err) {
+      await tx.rollback().catch(() => {});
+      throw err;
+    }
 
     const claims = rows.map((row) => ({
       id: String(row.id),
       claimNumber: row.claim_number || `CLM-${row.id}`,
-      type: row.claim_type || 'Insurance',
+      type: row.metadata?.category || row.claim_type || 'Insurance',
+      benefitCategory: row.benefit_category || 'insurance',
       amount: Number(row.claim_amount || 0),
       approvedAmount: row.approved_amount != null ? Number(row.approved_amount) : undefined,
       status: normalizeClaimStatus(row.status),
@@ -429,7 +465,8 @@ router.post('/claims', authUser, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid claim amount is required' });
     }
 
-    const claimLabel = String(type || claimType || 'opd').slice(0, 100);
+    const claimLabel = String(type || claimType || 'opd').slice(0, 100).toLowerCase();
+    const benefitCategory = INSURANCE_CLAIM_TYPES.has(claimLabel) ? 'insurance' : 'wellness';
     const provider = String(hospital || '').trim().slice(0, 200) || 'Provider not specified';
     const submittedDate = toISODate(date) || toISODate(new Date());
     const claimNumber = `CLM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -441,52 +478,67 @@ router.post('/claims', authUser, async (req, res) => {
       req.user.organization_id || req.user.organizationId || corp.corporateId
     );
 
-    const [insertResult] = await postgresSequelize.query(
-      `INSERT INTO insurance_claims (
-          claim_number,
-          patient_id,
-          organization_id,
-          claim_type,
-          status,
-          claim_amount,
-          insurance_provider,
-          diagnosis,
-          notes,
-          documents,
-          submitted_date,
-          created_at,
-          updated_at
-       ) VALUES (
-          :claimNumber,
-          :patientId,
-          :organizationId,
-          :claimType,
-          'submitted',
-          :claimAmount,
-          :provider,
-          :diagnosis,
-          :notes,
-          :documents,
-          :submittedDate,
-          NOW(),
-          NOW()
-       )
-       RETURNING id, claim_number, claim_type, status, claim_amount, insurance_provider, submitted_date, created_at, documents`,
-      {
-        replacements: {
-          claimNumber,
-          patientId: req.user.id,
-          organizationId,
-          claimType: claimLabel,
-          claimAmount,
-          provider,
-          diagnosis: diagnosis ? String(diagnosis).slice(0, 500) : null,
-          notes: notes ? String(notes).slice(0, 1000) : null,
-          documents: JSON.stringify(docs),
-          submittedDate,
+    const tx = await postgresSequelize.transaction();
+    let insertResult;
+    try {
+      await setRlsContext(tx, { orgId: organizationId, userId: req.user.id });
+      [insertResult] = await postgresSequelize.query(
+        `INSERT INTO insurance_claims (
+            claim_number,
+            patient_id,
+            organization_id,
+            claim_type,
+            benefit_category,
+            status,
+            claim_amount,
+            insurance_provider,
+            diagnosis,
+            notes,
+            documents,
+            metadata,
+            submitted_date,
+            created_at,
+            updated_at
+         ) VALUES (
+            :claimNumber,
+            :patientId,
+            :organizationId,
+            'reimbursement',
+            :benefitCategory,
+            'submitted',
+            :claimAmount,
+            :provider,
+            :diagnosis,
+            :notes,
+            :documents,
+            :metadata,
+            :submittedDate,
+            NOW(),
+            NOW()
+         )
+         RETURNING id, claim_number, claim_type, benefit_category, status, claim_amount, insurance_provider, submitted_date, created_at, documents, metadata`,
+        {
+          replacements: {
+            claimNumber,
+            patientId: req.user.id,
+            organizationId,
+            benefitCategory,
+            claimAmount,
+            provider,
+            diagnosis: diagnosis ? String(diagnosis).slice(0, 500) : null,
+            notes: notes ? String(notes).slice(0, 1000) : null,
+            documents: JSON.stringify(docs),
+            metadata: JSON.stringify({ category: claimLabel }),
+            submittedDate,
+          },
+          transaction: tx,
         }
-      }
-    );
+      );
+      await tx.commit();
+    } catch (err) {
+      await tx.rollback().catch(() => {});
+      throw err;
+    }
 
     const row = Array.isArray(insertResult) ? insertResult[0] : insertResult;
     if (!row) {
@@ -499,7 +551,8 @@ router.post('/claims', authUser, async (req, res) => {
       claim: {
         id: String(row.id),
         claimNumber: row.claim_number,
-        type: row.claim_type,
+        type: row.metadata?.category || claimLabel,
+        benefitCategory: row.benefit_category,
         amount: Number(row.claim_amount || 0),
         status: normalizeClaimStatus(row.status),
         hospital: row.insurance_provider || undefined,

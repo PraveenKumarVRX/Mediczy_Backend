@@ -6,24 +6,23 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '@/utils/api';
 
+// Matches the real shape returned by GET /employee/benefits (employee-network.route.js).
+// insurer/policyNumber are null for employer-funded plans -- never fabricated.
 export interface BenefitPlan {
   id: string;
   name: string;
-  type: string;
-  provider: string;
-  coverageAmount: number;
+  type: 'gmc' | 'gpa' | 'gtl' | 'opd' | 'dental' | 'vision' | 'wellness' | 'topup' | 'parents' | 'personal';
+  insurer: string | null;
+  isEmployerFunded?: boolean;
+  policyNumber: string | null;
   sumInsured: number;
-  premium: number;
-  startDate: string;
-  endDate: string;
-  status: 'active' | 'expired' | 'pending';
-  members: number;
-  policyNumber: string;
-  benefits: string[];
-  eCardAvailable: boolean;
-  cashlessNetwork: number;
-  roomRentLimit?: string;
-  copay?: number;
+  utilized: number;
+  remaining: number;
+  familyCovered: number;
+  validFrom: string;
+  validTo: string;
+  features: string[];
+  sublimits: { name: string; limit: number; used: number }[];
 }
 
 export interface FamilyMember {
@@ -35,16 +34,20 @@ export interface FamilyMember {
   planId: string;
 }
 
+// Matches the real shape returned by GET /employee/claims (employee-network.route.js).
 export interface Claim {
   id: string;
   claimNumber: string;
   type: string;
+  benefitCategory: 'insurance' | 'wellness';
   amount: number;
-  status: 'pending' | 'approved' | 'rejected' | 'processing';
-  submittedDate: string;
-  processedDate?: string;
-  hospital: string;
-  description: string;
+  approvedAmount?: number;
+  status: 'submitted' | 'under_review' | 'approved' | 'rejected' | 'settled' | 'info_needed';
+  hospital?: string;
+  date: string;
+  member: string;
+  documents: unknown[];
+  timeline: { step: string; date: string; status: string }[];
 }
 
 const getToken = () => localStorage.getItem('token');

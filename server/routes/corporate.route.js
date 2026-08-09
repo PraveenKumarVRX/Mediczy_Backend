@@ -447,6 +447,10 @@ const FEATURE_LABEL_ALIASES = {
   mentalHealthCoverage: ['mental health', 'mentalhealth'],
 };
 
+function tagBenefitCategory(b) {
+  return ['ipd', 'maternity'].includes(String(b.category || b.name || '').toLowerCase()) ? 'insurance' : 'wellness';
+}
+
 function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
   const meta = planRow.metadata || {};
   const features = {};
@@ -467,12 +471,17 @@ function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
     validFrom: meta.validFrom || null,
     validTo: meta.validTo || null,
     planType: meta.planType || 'Standard',
+    // IPD/Maternity are genuine insurance-rider categories; everything else
+    // (OPD, Pharmacy, Diagnostics, Dental, Wellness, Mental Health, etc.) is
+    // an employer-funded wellness/OPD benefit, not insurance -- surfaced
+    // separately so the UI never presents one as the other.
     benefits: Array.isArray(meta.benefits)
       ? meta.benefits.filter((b) => b.isIncluded).map((b) => ({
           category: b.category || b.name,
           description: b.description || b.name,
           coverage: b.coverage || b.limit || '',
           limit: b.limit || undefined,
+          benefitCategory: tagBenefitCategory(b),
         }))
       : [],
     features,
@@ -563,7 +572,10 @@ router.get('/my-benefits', authUser, async (req, res) => {
       validFrom: userPlan?.startDate || null,
       validTo: userPlan?.endDate || null,
       planType: planRecord?.tier ? String(planRecord.tier) : (planRecord?.planType || 'Standard'),
-      benefits: planRecord?.benefits || planRecord?.metadata?.benefits || [],
+      benefits: (planRecord?.benefits || planRecord?.metadata?.benefits || []).map((b) => ({
+        ...b,
+        benefitCategory: tagBenefitCategory(b),
+      })),
       features: planRecord?.features || {},
       coverage: planRecord?.metadata?.coverage || {},
     };
@@ -1641,6 +1653,7 @@ const CLAIMS_SELECT = `
          COALESCE(NULLIF(TRIM(CONCAT(u."firstName", ' ', u."lastName")), ''), u.email) AS "employeeName",
          ce."employeeId" AS "employeeId",
          COALESCE(ic.metadata->>'category', ic.claim_type) AS "claimType",
+         ic.benefit_category AS "benefitCategory",
          ic.claim_amount AS amount,
          to_char(ic.submitted_date, 'YYYY-MM-DD') AS "submittedDate",
          ic.status,
@@ -1754,103 +1767,9 @@ router.get('/claims/management/:id/download', authCorporate, async (req, res) =>
   return res.status(200).send(csv);
 });
 
-// Submit a new claim (employee-facing, not HR). organization_id is set to the
-// employee's corporate so HR's org-scoped RLS context can see it later.
-router.post('/claims', authUser, async (req, res) => {
-  try {
-    const { type, amount, description, documents, provider, serviceDate } = req.body;
-    const userId = req.user?.id;
-
-    if (!type || !amount) {
-      return res.status(400).json({ success: false, message: 'Claim type and amount are required' });
-    }
-    if (!userId) {
-      return res.status(401).json({ success: false, message: 'Authentication required' });
-    }
-    if (req.user?.role === 'corporate' || req.user?.userType === 'corporate') {
-      // req.user.id here is corporates.id, not a real users.id -- there is no
-      // employee-selection step in this flow, so filing "on behalf of" isn't
-      // supported yet. Previously this silently 500'd on a foreign-key
-      // violation (submitted_by referencing a non-existent users.id).
-      return res.status(400).json({
-        success: false,
-        message: 'HR cannot submit a claim directly from this form yet -- claims must be filed by the employee themselves.',
-      });
-    }
-
-    const [assoc] = await postgresSequelize.query(
-      `SELECT "entityId" AS "corporateId" FROM user_associations
-        WHERE "userId" = :userId AND "entityType" = 'corporate' AND status = 'active'
-        ORDER BY "createdAt" DESC LIMIT 1`,
-      { replacements: { userId } }
-    );
-    const corporateId = assoc[0]?.corporateId || null;
-
-    const submittedDate = new Date().toISOString().slice(0, 10);
-    const claimNumber = `CLM${Date.now()}`;
-    const docsArray = Array.isArray(documents) ? documents : [];
-
-    const tx = await postgresSequelize.transaction();
-    let rows;
-    try {
-      await setRlsContext(tx, { orgId: corporateId || 0, userId });
-      [rows] = await postgresSequelize.query(
-        `INSERT INTO insurance_claims (
-           claim_number, patient_id, organization_id, claim_type, claim_amount, status,
-           insurance_provider, submitted_date, notes, documents, metadata, submitted_by
-         ) VALUES (
-           :claimNumber, :userId, :corporateId, 'reimbursement', :amount, 'pending',
-           :provider, :submittedDate, :description, :documents::jsonb, :metadata::jsonb, :userId
-         ) RETURNING claim_number AS id, claim_amount AS amount, status`,
-        {
-          replacements: {
-            claimNumber,
-            userId,
-            corporateId,
-            amount: Number(amount),
-            provider: provider || null,
-            submittedDate: serviceDate || submittedDate,
-            description: description || '',
-            documents: JSON.stringify(docsArray),
-            metadata: JSON.stringify({ category: type }),
-          },
-          transaction: tx,
-        }
-      );
-      await tx.commit();
-    } catch (err) {
-      await tx.rollback().catch(() => {});
-      throw err;
-    }
-
-    res.json({
-      success: true,
-      message: 'Claim submitted successfully',
-      data: {
-        claim: {
-          id: claimNumber,
-          employeeName: req.user?.firstName ? `${req.user.firstName} ${req.user.lastName || ''}`.trim() : (req.user?.email || 'Corporate User'),
-          employeeId: req.user?.employeeId || String(userId),
-          claimType: type,
-          amount: rows[0].amount,
-          submittedDate,
-          status: rows[0].status,
-          provider: provider || 'Not specified',
-          serviceDate: serviceDate || submittedDate,
-          description: description || '',
-          documents: docsArray.length,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('Error submitting claim:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to submit claim',
-      error: error.message
-    });
-  }
-});
+// Claim submission lives at POST /api/employee/claims (employee-network.route.js,
+// powers SmartBenefitsHub/ClaimsExpress) -- that's the one real submission
+// path; this corporate router only reviews/manages what lands there.
 
 // Get network hospitals/providers
 router.get('/network-providers', authUser, async (req, res) => {
