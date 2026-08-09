@@ -33,15 +33,29 @@ const CorporateSettings: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Controlled general form
+  // Controlled general form — seeded from the logged-in corporate's real
+  // profile where available; overwritten by saved settings once loaded.
+  let seedCompanyName = '';
+  let seedEmail = '';
+  try {
+    const corporateDataStr = localStorage.getItem('corporateData');
+    if (corporateDataStr) {
+      const corporateData = JSON.parse(corporateDataStr);
+      seedCompanyName = corporateData?.companyName || corporateData?.name || '';
+      seedEmail = corporateData?.email || '';
+    }
+  } catch (e) {
+    // ignore
+  }
+
   const [general, setGeneral] = useState({
-    companyName: 'TechCorp Industries',
-    industry: 'technology',
-    employeeCount: '250',
-    timezone: 'est',
-    address: '123 Business St, Suite 100, New York, NY 10001',
-    phone: '+1 (555) 123-4567',
-    email: 'hr@techcorp.com',
+    companyName: seedCompanyName,
+    industry: '',
+    employeeCount: '',
+    timezone: 'Asia/Kolkata',
+    address: '',
+    phone: '',
+    email: seedEmail,
     fiscalYear: 'january',
     checkupFrequency: 'yearly',
     mandatoryCheckups: true,
@@ -71,8 +85,30 @@ const CorporateSettings: React.FC = () => {
   });
 
   // Controlled billing/integration
-  const [billing, setBilling] = useState({ billingEmail: 'billing@techcorp.com', billingCycle: 'annual' });
-  const [integrations, setIntegrations] = useState({ hrms: true, insuranceApi: true, telemedicine: false, wearables: false, calendar: true });
+  const [billing, setBilling] = useState({ billingEmail: seedEmail, billingCycle: 'annual' });
+  const [integrations, setIntegrations] = useState({ hrms: false, insuranceApi: false, telemedicine: false, wearables: false, calendar: false });
+
+  const loadSettings = async () => {
+    try {
+      const { data } = await api.get('/corporate/settings');
+      const saved = (data as any)?.data?.settings || {};
+      if (saved.general) setGeneral((prev) => ({ ...prev, ...saved.general }));
+      if (saved.notifs) setNotifs((prev) => ({ ...prev, ...saved.notifs }));
+      if (saved.security) setSecurity((prev) => ({ ...prev, ...saved.security }));
+      if (saved.billing) setBilling((prev) => ({ ...prev, ...saved.billing }));
+      if (saved.integrations) setIntegrations((prev) => ({ ...prev, ...saved.integrations }));
+    } catch (error: any) {
+      toast({
+        title: 'Failed to load settings',
+        description: error?.response?.data?.message || 'Showing defaults — changes may not reflect prior saves.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   const validateAndSave = () => {
     const empCount = parseInt(general.employeeCount, 10);

@@ -31,6 +31,7 @@ interface Employee {
 type EmployeeFormState = {
   employeeId: string;
   name: string;
+  email: string;
   businessUnit: string;
   department: string;
   designation: string;
@@ -43,6 +44,7 @@ type EmployeeFormState = {
 const emptyEmployeeForm = (): EmployeeFormState => ({
   employeeId: '',
   name: '',
+  email: '',
   businessUnit: '',
   department: '',
   designation: '',
@@ -128,6 +130,7 @@ const CorporateEmployees: React.FC = () => {
     setForm({
       employeeId: emp.employeeId,
       name: emp.name,
+      email: emp.email || '',
       businessUnit: emp.businessUnit || '',
       department: emp.department,
       designation: emp.designation,
@@ -365,6 +368,13 @@ const CorporateEmployees: React.FC = () => {
               <div className="grid gap-2">
                 <Label htmlFor="name">Name</Label>
                 <Input id="name" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} placeholder="employee@company.com — required to send app invites" />
               </div>
             </div>
 
@@ -702,11 +712,11 @@ const CorporateEmployees: React.FC = () => {
             <div className="text-xs text-slate-400 space-y-1">
               <p className="font-semibold">Required Fields:</p>
               <ul className="list-disc list-inside ml-2 space-y-0.5">
-                <li>name, email, department</li>
+                <li>employeeId, name</li>
               </ul>
               <p className="font-semibold mt-2">Optional Fields:</p>
               <ul className="list-disc list-inside ml-2 space-y-0.5">
-                <li>employeeId, phone, businessUnit, designation, joiningDate, healthStatus, lastCheckup, wellnessPlan</li>
+                <li>email (needed to send app invites), businessUnit, department, designation, joiningDate</li>
               </ul>
             </div>
           </div>

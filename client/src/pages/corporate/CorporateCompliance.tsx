@@ -13,12 +13,6 @@ const CorporateCompliance: React.FC = () => {
           title="Compliance Management"
           description="Ensure regulatory compliance, data privacy, and maintain security standards"
           gradient="from-slate-600 to-slate-800"
-          stats={[
-            { label: 'HIPAA Status', value: 'Compliant' },
-            { label: 'Encryption', value: 'AES-256' },
-            { label: 'Audit Logs', value: '2,547' },
-            { label: 'Last Audit', value: 'Dec 2024' },
-          ]}
         />
 
         <Card>

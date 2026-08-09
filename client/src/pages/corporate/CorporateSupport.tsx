@@ -86,9 +86,9 @@ const CorporateSupport: React.FC = () => {
                 <MessageCircle className="h-8 w-8 text-green-600" />
               </div>
               <div>
-                <h3 className="font-semibold text-lg mb-2">Live Chat</h3>
-                <p className="text-sm text-slate-400 mb-4">Chat with our support team in real-time</p>
-                <Button onClick={() => setTicketOpen(true)}>Start Chat</Button>
+                <h3 className="font-semibold text-lg mb-2">Support Ticket</h3>
+                <p className="text-sm text-slate-400 mb-4">Send a request to our support team</p>
+                <Button onClick={() => setTicketOpen(true)}>Create Ticket</Button>
               </div>
             </div>
           </CardContent>

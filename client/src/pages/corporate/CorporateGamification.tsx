@@ -155,12 +155,20 @@ const CorporateGamification: React.FC = () => {
     bronzeReward: ''
   });
 
-  const stats = useMemo(() => ({
-    totalChallenges: challenges.length,
-    activeChallenges: challenges.filter(c => c.status === 'active').length,
-    totalParticipants: challenges.reduce((sum, c) => sum + c.participants, 0),
-    completedChallenges: challenges.filter(c => c.status === 'completed').length
-  }), [challenges]);
+  const stats = useMemo(() => {
+    const activeAndCompleted = challenges.filter(c => c.status === 'active' || c.status === 'completed');
+    const withEmployees = activeAndCompleted.filter(c => c.totalEmployees > 0);
+    const avgEngagement = withEmployees.length
+      ? Math.round(withEmployees.reduce((sum, c) => sum + (c.participants / c.totalEmployees) * 100, 0) / withEmployees.length)
+      : null;
+    return {
+      totalChallenges: challenges.length,
+      activeChallenges: challenges.filter(c => c.status === 'active').length,
+      totalParticipants: challenges.reduce((sum, c) => sum + c.participants, 0),
+      completedChallenges: challenges.filter(c => c.status === 'completed').length,
+      avgEngagement,
+    };
+  }, [challenges]);
 
   const filteredChallenges = useMemo(() => {
     if (challengeFilter === 'all') return challenges;
@@ -411,21 +419,20 @@ const CorporateGamification: React.FC = () => {
               <CardTitle className="text-sm font-medium text-blue-100">Avg Engagement</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">73%</div>
+              <div className="text-3xl font-bold">{stats.avgEngagement !== null ? `${stats.avgEngagement}%` : '—'}</div>
               <p className="text-xs text-blue-200 mt-1">
-                <TrendingUp className="inline h-3 w-3 mr-1" />
-                +12% this month
+                {stats.avgEngagement !== null ? 'Participants / eligible employees' : 'No active or completed challenges yet'}
               </p>
             </CardContent>
           </Card>
 
           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white border-0">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-purple-100">Rewards Given</CardTitle>
+              <CardTitle className="text-sm font-medium text-purple-100">Draft Challenges</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold">₹1.2L</div>
-              <p className="text-xs text-purple-200 mt-1">This quarter</p>
+              <div className="text-3xl font-bold">{challenges.filter(c => c.status === 'draft').length}</div>
+              <p className="text-xs text-purple-200 mt-1">Not yet launched</p>
             </CardContent>
           </Card>
         </div>

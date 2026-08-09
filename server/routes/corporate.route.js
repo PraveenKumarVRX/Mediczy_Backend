@@ -967,9 +967,12 @@ router.get('/employees', authCorporate, async (req, res) => {
            ce.designation,
            ce."joiningDate",
            ce."isActive",
+           ce.email AS on_file_email,
+           ce.metadata,
+           ce."userId",
            u."firstName",
            u."lastName",
-           u.email,
+           u.email AS user_email,
            u."phoneNumber"
          FROM corporate_employees ce
          LEFT JOIN users u ON u.id = ce."userId"
@@ -977,20 +980,33 @@ router.get('/employees', authCorporate, async (req, res) => {
          ORDER BY ce."createdAt" DESC`,
         { replacements: { corporateId } }
       );
-      employees = rows.map((r) => ({
-        id: r.employeeId,
-        employeeId: r.employeeId,
-        name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.email || r.employeeId,
-        email: r.email || '',
-        phone: r.phoneNumber || '',
-        businessUnit: r.business_unit || '',
-        department: r.department || 'General',
-        designation: r.designation || '',
-        joiningDate: r.joiningDate ? r.joiningDate.toString().slice(0, 10) : '',
-        healthStatus: 'good',
-        lastCheckup: '',
-        insurancePlan: 'Standard Plan',
-      }));
+      employees = rows.map((r) => {
+        const meta = r.metadata || {};
+        const name = [r.firstName, r.lastName].filter(Boolean).join(' ')
+          || [meta.firstName, meta.lastName].filter(Boolean).join(' ')
+          || r.user_email || r.on_file_email || r.employeeId;
+        const email = r.user_email || r.on_file_email || '';
+        let appStatus;
+        if (meta.appAccessDisabled) appStatus = 'inactive';
+        else if (r.userId || meta.profileActivation === 'active') appStatus = 'active';
+        else if (meta.invitedAt) appStatus = 'invited';
+        else appStatus = 'not_invited';
+        return {
+          id: r.employeeId,
+          employeeId: r.employeeId,
+          name,
+          email,
+          phone: r.phoneNumber || '',
+          businessUnit: r.business_unit || '',
+          department: r.department || 'General',
+          designation: r.designation || '',
+          joiningDate: r.joiningDate ? r.joiningDate.toString().slice(0, 10) : '',
+          healthStatus: 'good',
+          lastCheckup: '',
+          insurancePlan: 'Standard Plan',
+          appStatus,
+        };
+      });
     } catch (dbErr) {
       console.error('[corporate] GET /employees DB error:', dbErr.message);
     }
@@ -1032,6 +1048,7 @@ router.get('/employees', authCorporate, async (req, res) => {
             healthStatus: 'Not Assessed',
             lastCheckup: '',
             insurancePlan: '',
+            appStatus: 'active',
           };
         });
       } catch (uaErr) {
@@ -1133,7 +1150,7 @@ router.post('/employees', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
-  const { employeeId, name, businessUnit, department, designation, joiningDate } = req.body || {};
+  const { employeeId, name, email, businessUnit, department, designation, joiningDate } = req.body || {};
 
   if (!name || !employeeId) {
     return res.status(400).json({ success: false, message: 'name and employeeId are required' });
@@ -1141,6 +1158,7 @@ router.post('/employees', authCorporate, async (req, res) => {
 
   try {
     const normalizedEmployeeId = String(employeeId).trim();
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
     const [firstName, ...lastNameParts] = String(name).trim().split(/\s+/);
     const metadata = JSON.stringify({
       firstName,
@@ -1150,9 +1168,10 @@ router.post('/employees', authCorporate, async (req, res) => {
     });
 
     await postgresSequelize.query(
-      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, NULL, :employeeId, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
+       VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
        ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
+         email=COALESCE(:email, corporate_employees.email),
          business_unit=:businessUnit,
          department=:department,
          designation=:designation,
@@ -1165,10 +1184,10 @@ router.post('/employees', authCorporate, async (req, res) => {
          END,
          "isActive"=true,
          "updatedAt"=NOW()`,
-      { replacements: { corporateId, employeeId: normalizedEmployeeId, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
+      { replacements: { corporateId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
     );
 
-    const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan' };
+    const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: normalizedEmail || '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan', appStatus: 'not_invited' };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
     console.error('[corporate] POST /employees error:', err.message);
@@ -1179,13 +1198,32 @@ router.post('/employees', authCorporate, async (req, res) => {
 router.put('/employees/:id', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const { businessUnit, department, designation, joiningDate } = req.body || {};
+  const { businessUnit, department, designation, joiningDate, appStatus } = req.body || {};
+
+  // appStatus is HR-driven app-access enable/disable; 'invited'/'active' via
+  // signup and invite flows can't be forced here, but HR can always disable
+  // or re-enable access for an employee.
+  let metadataPatch = null;
+  if (appStatus === 'inactive') metadataPatch = { appAccessDisabled: true };
+  else if (appStatus === 'active') metadataPatch = { appAccessDisabled: false };
 
   try {
     const [rows] = await postgresSequelize.query(
-      `UPDATE corporate_employees SET business_unit=COALESCE(:businessUnit, business_unit), department=COALESCE(:department, department), designation=COALESCE(:designation, designation), "joiningDate"=COALESCE(:joiningDate, "joiningDate"), "updatedAt"=NOW()
+      `UPDATE corporate_employees SET
+         business_unit=COALESCE(:businessUnit, business_unit),
+         department=COALESCE(:department, department),
+         designation=COALESCE(:designation, designation),
+         "joiningDate"=COALESCE(:joiningDate, "joiningDate"),
+         metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
+         "updatedAt"=NOW()
        WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING *`,
-      { replacements: { corporateId, id, businessUnit: businessUnit || null, department: department || null, designation: designation || null, joiningDate: joiningDate || null } }
+      {
+        replacements: {
+          corporateId, id,
+          businessUnit: businessUnit || null, department: department || null, designation: designation || null, joiningDate: joiningDate || null,
+          metadataPatch: metadataPatch ? JSON.stringify(metadataPatch) : null,
+        },
+      }
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
     return res.json({ success: true, data: { employee: { ...rows[0], businessUnit: rows[0].business_unit || businessUnit || '', ...(req.body || {}) } } });
@@ -1243,10 +1281,12 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
       });
 
       // Upsert corporate_employees record
+      const normalizedEmail = emp.email ? String(emp.email).trim().toLowerCase() : null;
       await postgresSequelize.query(
-        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, NULL, :employeeId, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
+        `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
+         VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
          ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
+           email=COALESCE(:email, corporate_employees.email),
            business_unit=:businessUnit,
            department=:department,
            designation=:designation,
@@ -1259,7 +1299,7 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
            END,
            "isActive"=true,
            "updatedAt"=NOW()`,
-        { replacements: { corporateId, employeeId: generatedEmployeeId, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
+        { replacements: { corporateId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
       );
 
       successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name });
@@ -1280,13 +1320,126 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
 
 // Download employee template CSV
 router.get('/employees/download-template', authCorporate, async (req, res) => {
-  const csvHeader = 'employeeId,name,businessUnit,department,designation,joiningDate\n';
-  const csvSample = 'EMP001,John Doe,Technology BU,Engineering,Software Engineer,2024-01-15\n';
+  const csvHeader = 'employeeId,name,email,businessUnit,department,designation,joiningDate\n';
+  const csvSample = 'EMP001,John Doe,john.doe@example.com,Technology BU,Engineering,Software Engineer,2024-01-15\n';
   const csvTemplate = csvHeader + csvSample;
   
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="employee_template.csv"');
   res.send(csvTemplate);
+});
+
+// Send an "activate your Mediczy app account" invite email to an employee
+// on file. Requires a real email address (from corporate_employees.email or
+// a linked users row) — there is no other channel to deliver this to.
+router.post('/employees/send-invite', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { employeeId } = req.body || {};
+  if (!corporateId || !employeeId) {
+    return res.status(400).json({ success: false, message: 'employeeId is required' });
+  }
+
+  try {
+    const [[row]] = await postgresSequelize.query(
+      `SELECT ce.email AS on_file_email, ce.metadata, ce."userId", u.email AS user_email, u."firstName", u."lastName"
+       FROM corporate_employees ce
+       LEFT JOIN users u ON u.id = ce."userId"
+       WHERE ce.corporate_id = :corporateId AND ce."employeeId" = :employeeId`,
+      { replacements: { corporateId, employeeId } }
+    );
+    if (!row) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    const email = row.user_email || row.on_file_email;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'No email on file for this employee. Add one via Edit Employee first.' });
+    }
+
+    const meta = row.metadata || {};
+    const firstName = row.firstName || meta.firstName || 'there';
+    const lastName = row.lastName || meta.lastName || '';
+
+    // corporate_employees.email doesn't get a Mediczy account created until
+    // the employee self-activates via their Employee ID (user.route.js), so
+    // this invite points them at that flow rather than pre-provisioning a
+    // password — email.service.js (the other candidate here) is CJS-style
+    // `require()` code that throws under this project's ESM runtime, so it
+    // cannot be used for this or any other transactional email.
+    const { sendTransactionalEmail } = await import('../services/welcome-email.service.js');
+    await sendTransactionalEmail({
+      to: email,
+      subject: `You're invited to the Mediqzy Employee Health Portal`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #0f766e;">Hi ${firstName},</h2>
+          <p style="font-size: 15px; line-height: 1.6; color: #374151;">
+            Your employer has set up your health benefits account on the Mediqzy Employee Health Portal.
+          </p>
+          <p style="font-size: 15px; line-height: 1.6; color: #374151;">
+            Activate it using your Employee ID: <strong>${employeeId}</strong>
+          </p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="https://app.mediqzy.com/register" style="background-color: #0f766e; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;">
+              Activate My Account →
+            </a>
+          </div>
+        </div>
+      `,
+    });
+
+    await postgresSequelize.query(
+      `UPDATE corporate_employees SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('invitedAt', :invitedAt::text), "updatedAt" = NOW()
+       WHERE corporate_id = :corporateId AND "employeeId" = :employeeId`,
+      { replacements: { corporateId, employeeId, invitedAt: new Date().toISOString() } }
+    );
+
+    return res.json({ success: true, message: `Invite sent to ${email}` });
+  } catch (err) {
+    console.error('[corporate] POST /employees/send-invite error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to send invite' });
+  }
+});
+
+// Trigger the standard employee-facing password-reset OTP flow on behalf of
+// HR. HR never sets or sees the password — this only sends the same
+// email/SMS/WhatsApp OTP an employee would get from "Forgot password".
+router.post('/employees/reset-password', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { employeeId } = req.body || {};
+  if (!corporateId || !employeeId) {
+    return res.status(400).json({ success: false, message: 'employeeId is required' });
+  }
+
+  try {
+    const [[row]] = await postgresSequelize.query(
+      `SELECT ce.email AS on_file_email, ce."userId", u.email AS user_email
+       FROM corporate_employees ce
+       LEFT JOIN users u ON u.id = ce."userId"
+       WHERE ce.corporate_id = :corporateId AND ce."employeeId" = :employeeId`,
+      { replacements: { corporateId, employeeId } }
+    );
+    if (!row) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    if (!row.userId) {
+      return res.status(400).json({ success: false, message: 'This employee has not activated their app account yet — send an invite instead.' });
+    }
+
+    const email = row.user_email || row.on_file_email;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'No email on file for this employee.' });
+    }
+
+    const passwordResetService = (await import('../services/password-reset.service.js')).default;
+    const result = await passwordResetService.requestPasswordReset({ email, userType: 'user' });
+
+    if (!result?.success) {
+      return res.status(400).json({ success: false, message: result?.message || 'Failed to start password reset' });
+    }
+
+    return res.json({ success: true, message: `Password reset code sent to ${email}` });
+  } catch (err) {
+    console.error('[corporate] POST /employees/reset-password error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to trigger password reset' });
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2170,59 +2323,78 @@ router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Settings Routes
+// Settings Routes — real per-corporate row (corporate_settings table).
+// The settings object shape is owned by the frontend (general/notifs/
+// security/billing/integrations); stored as an opaque JSONB blob and
+// shallow-merged on write, same semantics as the old in-memory object had
+// minus the cross-tenant leakage (every corporate now gets its own row).
 // ---------------------------------------------------------------------------
-let corporateSettings = {
-  general: {
-    companyName: 'Acme Corporation',
-    industry: 'Technology',
-    timezone: 'Asia/Kolkata',
-    language: 'en'
-  },
-  notifications: {
-    emailNotifications: true,
-    smsNotifications: false,
-    pushNotifications: true,
-    weeklyDigest: true
-  },
-  security: {
-    twoFactorEnabled: false,
-    sessionTimeout: 30,
-    ipWhitelist: []
-  },
-  healthProgram: {
-    trackSteps: true,
-    trackSleep: true,
-    trackNutrition: true,
-    trackMentalHealth: true,
-    alertThreshold: 70
-  }
-};
-
 router.get('/settings', authCorporate, async (req, res) => {
-  res.json({ success: true, data: { settings: corporateSettings } });
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { settings: rows[0]?.settings || {} } });
+  } catch (error) {
+    console.error('[corporate] GET /settings error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load settings' });
+  }
 });
 
 router.put('/settings', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
   try {
-    const updates = req.body;
-    corporateSettings = { ...corporateSettings, ...updates };
-    res.json({ success: true, message: 'Settings saved successfully', data: { settings: corporateSettings } });
+    const updates = req.body || {};
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_settings (corporate_id, settings)
+       VALUES (:corporateId, CAST(:updates AS JSONB))
+       ON CONFLICT (corporate_id) DO UPDATE SET
+         settings = corporate_settings.settings || CAST(:updates AS JSONB),
+         "updatedAt" = NOW()
+       RETURNING settings`,
+      { replacements: { corporateId, updates: JSON.stringify(updates) } }
+    );
+    return res.json({ success: true, message: 'Settings saved successfully', data: { settings: rows[0].settings } });
   } catch (error) {
-    console.error('Error saving settings:', error);
+    console.error('[corporate] PUT /settings error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to save settings', error: error.message });
   }
 });
 
 // ---------------------------------------------------------------------------
-// Appointments Routes (for schedule appointment)
+// Appointments Routes (HR-scheduled employee health appointments — internal
+// scheduling/reminder records, distinct from the doctor-marketplace booking
+// pipeline behind /corporate/dashboard/appointments). Real per-corporate
+// table (corporate_scheduled_appointments); previously an in-memory array
+// that GET never read from, so booked appointments silently vanished.
 // ---------------------------------------------------------------------------
-let corporateAppointments = [];
+const mapScheduledAppointment = (r) => ({
+  id: String(r.id),
+  employeeId: r.employeeId,
+  employeeName: r.employeeName || 'Unknown Employee',
+  department: r.department || 'General',
+  appointmentType: r.appointmentType,
+  doctorName: r.doctorName || 'TBD',
+  facility: r.facility || 'Main Medical Center',
+  date: r.date ? r.date.toString().slice(0, 10) : r.date,
+  time: r.time,
+  status: r.status,
+  notes: r.notes || '',
+});
 
 router.post('/appointments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
   try {
     const { employeeId, employeeName, department, appointmentType, doctorName, facility, date, time, notes } = req.body;
-    
+
     if (!employeeId || !appointmentType || !date || !time) {
       return res.status(400).json({
         success: false,
@@ -2230,46 +2402,122 @@ router.post('/appointments', authCorporate, async (req, res) => {
       });
     }
 
-    const newAppointment = {
-      id: `APT${Date.now()}`,
-      employeeId,
-      employeeName: employeeName || 'Unknown Employee',
-      department: department || 'General',
-      appointmentType,
-      doctorName: doctorName || 'TBD',
-      facility: facility || 'Main Medical Center',
-      date,
-      time,
-      status: 'scheduled',
-      notes: notes || '',
-      createdAt: new Date().toISOString()
-    };
-
-    corporateAppointments.push(newAppointment);
+    const [[row]] = await postgresSequelize.query(
+      `INSERT INTO corporate_scheduled_appointments
+         (corporate_id, "employeeId", "employeeName", department, "appointmentType", "doctorName", facility, date, time, status, notes)
+       VALUES (:corporateId, :employeeId, :employeeName, :department, :appointmentType, :doctorName, :facility, :date, :time, 'scheduled', :notes)
+       RETURNING *`,
+      {
+        replacements: {
+          corporateId, employeeId, employeeName: employeeName || 'Unknown Employee', department: department || 'General',
+          appointmentType, doctorName: doctorName || 'TBD', facility: facility || 'Main Medical Center', date, time, notes: notes || '',
+        },
+      }
+    );
 
     res.status(201).json({
       success: true,
       message: 'Appointment scheduled successfully',
-      data: { appointment: newAppointment }
+      data: { appointment: mapScheduledAppointment(row) }
     });
   } catch (error) {
-    console.error('Error scheduling appointment:', error);
+    console.error('[corporate] POST /appointments error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to schedule appointment', error: error.message });
   }
 });
 
-router.get('/appointments', authCorporate, getCorporateAppointments);
+router.put('/appointments/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { status, date, time, notes } = req.body || {};
+
+  const allowedStatuses = ['scheduled', 'completed', 'cancelled', 'no-show'];
+  if (status && !allowedStatuses.includes(status)) {
+    return res.status(400).json({ success: false, message: `status must be one of: ${allowedStatuses.join(', ')}` });
+  }
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `UPDATE corporate_scheduled_appointments SET
+         status = COALESCE(:status, status),
+         date = COALESCE(:date, date),
+         time = COALESCE(:time, time),
+         notes = COALESCE(:notes, notes),
+         "updatedAt" = NOW()
+       WHERE id = :id AND corporate_id = :corporateId RETURNING *`,
+      { replacements: { id, corporateId, status: status || null, date: date || null, time: time || null, notes: notes || null } }
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Appointment not found' });
+    res.json({ success: true, data: { appointment: mapScheduledAppointment(rows[0]) } });
+  } catch (error) {
+    console.error('[corporate] PUT /appointments/:id error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to update appointment', error: error.message });
+  }
+});
+
+router.get('/appointments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT * FROM corporate_scheduled_appointments WHERE corporate_id = :corporateId ORDER BY date DESC, "createdAt" DESC`,
+      { replacements: { corporateId } }
+    );
+    res.json({ success: true, data: { appointments: rows.map(mapScheduledAppointment) } });
+  } catch (error) {
+    console.error('[corporate] GET /appointments error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load appointments' });
+  }
+});
 
 // ---------------------------------------------------------------------------
-// Challenges Routes (for gamification)
+// Challenges Routes (for gamification) — real per-corporate DB rows.
+// Participant counts are real (corporate_challenge_participants); there is
+// currently no wearable/activity-tracking pipeline feeding per-employee
+// progress, so the leaderboard below honestly returns each joined
+// participant at score 0 rather than inventing step/activity numbers.
 // ---------------------------------------------------------------------------
-let corporateChallenges = [];
-
 router.get('/challenges', authCorporate, async (req, res) => {
-  res.json({ success: true, data: { challenges: corporateChallenges } });
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT c.*, COUNT(p.id)::int AS participants,
+         (SELECT COUNT(*) FROM corporate_employees WHERE corporate_id = c.corporate_id AND "isActive" = true)::int AS "totalEmployees"
+       FROM corporate_challenges c
+       LEFT JOIN corporate_challenge_participants p ON p.challenge_id = c.id
+       WHERE c.corporate_id = :corporateId
+       GROUP BY c.id
+       ORDER BY c."createdAt" DESC`,
+      { replacements: { corporateId } }
+    );
+    const challenges = rows.map((r) => ({
+      id: String(r.id),
+      title: r.title,
+      description: r.description || '',
+      type: r.type,
+      target: Number(r.target),
+      unit: r.unit,
+      startDate: r.startDate ? r.startDate.toString().slice(0, 10) : r.startDate,
+      endDate: r.endDate ? r.endDate.toString().slice(0, 10) : r.endDate,
+      status: r.status,
+      participants: r.participants,
+      totalEmployees: r.totalEmployees,
+      rewards: r.rewards || {},
+    }));
+    return res.json({ success: true, data: { challenges } });
+  } catch (error) {
+    console.error('[corporate] GET /challenges error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load challenges' });
+  }
 });
 
 router.post('/challenges', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
   try {
     const { title, description, type, target, unit, startDate, endDate, rewards } = req.body;
 
@@ -2280,23 +2528,37 @@ router.post('/challenges', authCorporate, async (req, res) => {
       });
     }
 
-    const newChallenge = {
-      id: `CHL${Date.now()}`,
-      title,
-      description: description || '',
-      type,
-      target,
-      unit: unit || 'points',
-      startDate,
-      endDate,
-      status: 'draft',
-      participants: 0,
-      totalEmployees: corporateEmployees.length,
-      rewards: rewards || { gold: 'TBD', silver: 'TBD', bronze: 'TBD' },
-      createdAt: new Date().toISOString()
-    };
+    const [[row]] = await postgresSequelize.query(
+      `INSERT INTO corporate_challenges (corporate_id, title, description, type, target, unit, "startDate", "endDate", status, rewards)
+       VALUES (:corporateId, :title, :description, :type, :target, :unit, :startDate, :endDate, 'draft', CAST(:rewards AS JSONB))
+       RETURNING *`,
+      {
+        replacements: {
+          corporateId, title, description: description || '', type, target, unit: unit || 'points', startDate, endDate,
+          rewards: JSON.stringify(rewards || { gold: 'TBD', silver: 'TBD', bronze: 'TBD' }),
+        },
+      }
+    );
 
-    corporateChallenges.push(newChallenge);
+    const [[{ count: totalEmployees }]] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+      { replacements: { corporateId } }
+    );
+
+    const newChallenge = {
+      id: String(row.id),
+      title: row.title,
+      description: row.description || '',
+      type: row.type,
+      target: Number(row.target),
+      unit: row.unit,
+      startDate: row.startDate ? row.startDate.toString().slice(0, 10) : row.startDate,
+      endDate: row.endDate ? row.endDate.toString().slice(0, 10) : row.endDate,
+      status: row.status,
+      participants: 0,
+      totalEmployees,
+      rewards: row.rewards || {},
+    };
 
     res.status(201).json({
       success: true,
@@ -2304,23 +2566,68 @@ router.post('/challenges', authCorporate, async (req, res) => {
       data: { challenge: newChallenge }
     });
   } catch (error) {
-    console.error('Error creating challenge:', error);
+    console.error('[corporate] POST /challenges error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to create challenge', error: error.message });
   }
 });
 
 router.put('/challenges/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { status } = req.body || {};
+
   try {
-    const { id } = req.params;
-    const updates = req.body;
-    const index = corporateChallenges.findIndex(c => c.id === id);
-    if (index === -1) {
-      return res.status(404).json({ success: false, message: 'Challenge not found' });
-    }
-    corporateChallenges[index] = { ...corporateChallenges[index], ...updates };
-    res.json({ success: true, data: { challenge: corporateChallenges[index] } });
+    const [rows] = await postgresSequelize.query(
+      `UPDATE corporate_challenges SET status = COALESCE(:status, status), "updatedAt" = NOW()
+       WHERE id = :id AND corporate_id = :corporateId RETURNING *`,
+      { replacements: { id, corporateId, status: status || null } }
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Challenge not found' });
+    const r = rows[0];
+    res.json({
+      success: true,
+      data: { challenge: { id: String(r.id), title: r.title, description: r.description || '', type: r.type, target: Number(r.target), unit: r.unit, startDate: r.startDate ? r.startDate.toString().slice(0, 10) : r.startDate, endDate: r.endDate ? r.endDate.toString().slice(0, 10) : r.endDate, status: r.status, rewards: r.rewards || {} } },
+    });
   } catch (error) {
+    console.error('[corporate] PUT /challenges/:id error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to update challenge', error: error.message });
+  }
+});
+
+// Real per-employee leaderboard join table — currently no wearable/activity
+// data source feeds `score`, so every participant shows at 0 until such a
+// pipeline exists. Honest empty ranking, not a fabricated one.
+router.get('/gamification/challenges/:id/leaderboard', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT p."employeeId", p.score, ce.department, u."firstName", u."lastName"
+       FROM corporate_challenge_participants p
+       JOIN corporate_challenges c ON c.id = p.challenge_id AND c.corporate_id = :corporateId
+       LEFT JOIN corporate_employees ce ON ce.corporate_id = c.corporate_id AND ce."employeeId" = p."employeeId"
+       LEFT JOIN users u ON u.id = p."userId"
+       WHERE p.challenge_id = :id
+       ORDER BY p.score DESC`,
+      { replacements: { id, corporateId } }
+    );
+    const leaderboard = rows.map((r, i) => ({
+      rank: i + 1,
+      employeeId: r.employeeId,
+      name: [r.firstName, r.lastName].filter(Boolean).join(' ') || r.employeeId,
+      department: r.department || '',
+      score: Number(r.score) || 0,
+      target: 0,
+      progress: 0,
+      streak: 0,
+      badges: [],
+      medal: i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : undefined,
+    }));
+    res.json({ success: true, data: { leaderboard } });
+  } catch (error) {
+    console.error('[corporate] GET /gamification/challenges/:id/leaderboard error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load leaderboard' });
   }
 });
 

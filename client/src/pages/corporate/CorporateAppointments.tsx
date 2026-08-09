@@ -35,14 +35,6 @@ interface EmployeeOption {
   location?: string;
 }
 
-const sampleEmployees: EmployeeOption[] = [
-  { id: 'EMP001', name: 'John Smith',    department: 'Engineering', businessUnit: 'Digital Business',   location: 'Mumbai' },
-  { id: 'EMP002', name: 'Emily Davis',   department: 'Marketing',   businessUnit: 'North Region',        location: 'Delhi' },
-  { id: 'EMP003', name: 'Robert Wilson', department: 'Finance',     businessUnit: 'Corporate Services',  location: 'Bengaluru' },
-  { id: 'EMP004', name: 'Maria Garcia',  department: 'HR',          businessUnit: 'Corporate Services',  location: 'Mumbai' },
-  { id: 'EMP005', name: 'David Lee',     department: 'Operations',  businessUnit: 'South Region',        location: 'Chennai' },
-];
-
 // ── Appointment type catalogue ────────────────────────────────────────────
 type ProviderApiType = 'doctor' | 'hospital' | 'lab' | 'clinic';
 
@@ -75,74 +67,6 @@ const PROVIDER_META: Record<ProviderApiType, { label: string; color: string; Ico
   clinic:   { label: 'Clinic',   color: 'text-rose-400 bg-rose-500/15',       Icon: Microscope },
 };
 
-const sampleAppointments: Appointment[] = [
-  {
-    id: 'APT001',
-    employeeName: 'John Smith',
-    employeeId: 'EMP001',
-    department: 'Engineering',
-    appointmentType: 'Annual Health Checkup',
-    doctorName: 'Dr. Sarah Johnson',
-    facility: 'City Medical Center',
-    date: '2024-01-15',
-    time: '10:00 AM',
-    status: 'scheduled',
-    notes: 'Regular annual checkup as per company policy'
-  },
-  {
-    id: 'APT002',
-    employeeName: 'Emily Davis',
-    employeeId: 'EMP002',
-    department: 'Marketing',
-    appointmentType: 'Dental Checkup',
-    doctorName: 'Dr. Michael Brown',
-    facility: 'Dental Care Plus',
-    date: '2024-01-14',
-    time: '02:30 PM',
-    status: 'completed',
-    notes: 'Completed without issues'
-  },
-  {
-    id: 'APT003',
-    employeeName: 'Robert Wilson',
-    employeeId: 'EMP003',
-    department: 'Finance',
-    appointmentType: 'Eye Examination',
-    doctorName: 'Dr. Lisa Anderson',
-    facility: 'Vision Care Clinic',
-    date: '2024-01-13',
-    time: '11:00 AM',
-    status: 'cancelled',
-    notes: 'Employee requested cancellation'
-  },
-  {
-    id: 'APT004',
-    employeeName: 'Maria Garcia',
-    employeeId: 'EMP004',
-    department: 'HR',
-    appointmentType: 'Mental Health Consultation',
-    doctorName: 'Dr. James Taylor',
-    facility: 'Wellness Counseling Center',
-    date: '2024-01-16',
-    time: '03:00 PM',
-    status: 'scheduled',
-    notes: 'Confidential session'
-  },
-  {
-    id: 'APT005',
-    employeeName: 'David Lee',
-    employeeId: 'EMP005',
-    department: 'Operations',
-    appointmentType: 'Vaccination',
-    doctorName: 'Dr. Patricia White',
-    facility: 'City Medical Center',
-    date: '2024-01-12',
-    time: '09:00 AM',
-    status: 'no-show',
-    notes: 'Did not attend scheduled appointment'
-  }
-];
-
 const CorporateAppointments: React.FC = () => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
@@ -151,7 +75,7 @@ const CorporateAppointments: React.FC = () => {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>(sampleEmployees);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   // Reschedule modal state
   const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
@@ -282,10 +206,10 @@ const CorporateAppointments: React.FC = () => {
       const list = ((data as any)?.data?.appointments || []) as Appointment[];
       setAppointments(list);
     } catch (error: any) {
-      setAppointments(sampleAppointments);
+      setAppointments([]);
       toast({
         title: 'Failed to load appointments',
-        description: error?.response?.data?.message || 'Showing sample appointments.',
+        description: error?.response?.data?.message || 'Please try again.',
         variant: 'destructive'
       });
     } finally {
@@ -306,9 +230,14 @@ const CorporateAppointments: React.FC = () => {
           location: emp.location || emp.city || '',
         }))
         .filter((emp) => emp.id && emp.name);
-      setEmployeeOptions(mapped.length ? mapped : sampleEmployees);
-    } catch (error) {
-      setEmployeeOptions(sampleEmployees);
+      setEmployeeOptions(mapped);
+    } catch (error: any) {
+      setEmployeeOptions([]);
+      toast({
+        title: 'Failed to load employees',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -379,12 +308,18 @@ const CorporateAppointments: React.FC = () => {
     setIsCancelOpen(true);
   };
 
-  const confirmCancel = () => {
+  const confirmCancel = async () => {
     if (!cancellingAppt) return;
-    setAppointments((prev) => prev.map((a) => a.id === cancellingAppt.id ? { ...a, status: 'cancelled', notes: 'Cancelled by admin' } : a));
-    toast({ title: 'Appointment cancelled', description: `${cancellingAppt.employeeName}'s appointment was cancelled.` });
-    setIsCancelOpen(false);
-    setCancellingAppt(null);
+    try {
+      await api.put(`/corporate/appointments/${encodeURIComponent(cancellingAppt.id)}`, { status: 'cancelled', notes: 'Cancelled by admin' });
+      setAppointments((prev) => prev.map((a) => a.id === cancellingAppt.id ? { ...a, status: 'cancelled', notes: 'Cancelled by admin' } : a));
+      toast({ title: 'Appointment cancelled', description: `${cancellingAppt.employeeName}'s appointment was cancelled.` });
+    } catch (error: any) {
+      toast({ title: 'Failed to cancel appointment', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setIsCancelOpen(false);
+      setCancellingAppt(null);
+    }
   };
 
   const handleReschedule = (appointment: Appointment) => {
@@ -394,15 +329,20 @@ const CorporateAppointments: React.FC = () => {
     setIsRescheduleOpen(true);
   };
 
-  const confirmReschedule = () => {
+  const confirmReschedule = async () => {
     if (!reschedulingAppt || !rescheduleDate || !rescheduleTime) {
       toast({ title: 'Missing fields', description: 'Please provide both date and time.', variant: 'destructive' });
       return;
     }
-    setAppointments((prev) => prev.map((a) => a.id === reschedulingAppt.id ? { ...a, date: rescheduleDate, time: rescheduleTime, status: 'scheduled' } : a));
-    toast({ title: 'Appointment rescheduled', description: `${reschedulingAppt.employeeName} moved to ${rescheduleDate} at ${rescheduleTime}.` });
-    setIsRescheduleOpen(false);
-    setReschedulingAppt(null);
+    try {
+      await api.put(`/corporate/appointments/${encodeURIComponent(reschedulingAppt.id)}`, { date: rescheduleDate, time: rescheduleTime, status: 'scheduled' });
+      setAppointments((prev) => prev.map((a) => a.id === reschedulingAppt.id ? { ...a, date: rescheduleDate, time: rescheduleTime, status: 'scheduled' } : a));
+      toast({ title: 'Appointment rescheduled', description: `${reschedulingAppt.employeeName} moved to ${rescheduleDate} at ${rescheduleTime}.` });
+      setIsRescheduleOpen(false);
+      setReschedulingAppt(null);
+    } catch (error: any) {
+      toast({ title: 'Failed to reschedule appointment', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
+    }
   };
 
   const handleMarkCompleted = (appointment: Appointment) => {
@@ -410,12 +350,18 @@ const CorporateAppointments: React.FC = () => {
     setIsCompleteOpen(true);
   };
 
-  const confirmComplete = () => {
+  const confirmComplete = async () => {
     if (!completingAppt) return;
-    setAppointments((prev) => prev.map((a) => a.id === completingAppt.id ? { ...a, status: 'completed' } : a));
-    toast({ title: 'Marked as completed', description: `${completingAppt.employeeName}'s appointment marked completed.` });
-    setIsCompleteOpen(false);
-    setCompletingAppt(null);
+    try {
+      await api.put(`/corporate/appointments/${encodeURIComponent(completingAppt.id)}`, { status: 'completed' });
+      setAppointments((prev) => prev.map((a) => a.id === completingAppt.id ? { ...a, status: 'completed' } : a));
+      toast({ title: 'Marked as completed', description: `${completingAppt.employeeName}'s appointment marked completed.` });
+    } catch (error: any) {
+      toast({ title: 'Failed to mark as completed', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setIsCompleteOpen(false);
+      setCompletingAppt(null);
+    }
   };
 
   const handleRefresh = () => {
