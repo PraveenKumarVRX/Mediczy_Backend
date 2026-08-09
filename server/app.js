@@ -1,4 +1,9 @@
 import './telemetry.js';
+// Must load before any router is defined: patches Express so a rejected
+// promise inside an async route handler is forwarded to error middleware
+// instead of escaping as an unhandled rejection (which was crashing worker
+// processes on unexpected DB errors -- confirmed live, Aug 2026).
+import 'express-async-errors';
 import express from "express";
 import dotenv from "dotenv";
 if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
@@ -1949,5 +1954,18 @@ cron.schedule('0 1 25 * *', async () => {
 // ============== SCM: PAR Auto-Reorder (every 6h) ==============
 import { startScmParReorderCron } from './services/scm-par-reorder-cron.service.js';
 startScmParReorderCron();
+
+// Final catch-all error handler -- must be the last middleware. Anything
+// that reaches here (including async route errors forwarded by
+// express-async-errors) gets a clean JSON 500 instead of crashing the
+// process or leaking Express's default HTML error page.
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  logger.error('[unhandled route error]', { path: req.path, method: req.method, error: err?.message, stack: err?.stack });
+  res.status(err?.statusCode || 500).json({
+    success: false,
+    message: process.env.NODE_ENV === 'production' ? 'Internal server error' : (err?.message || 'Internal server error'),
+  });
+});
 
 export default app;

@@ -12,14 +12,9 @@ import {
 } from '../controller/corporate.controller.js';
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
-
-// ---------------------------------------------------------------------------
-// NOTE: Corporate portal feature endpoints below are implemented with an
-// in-memory store so the UI can be functional end-to-end in dev/demo.
-// Replace with database-backed services in production.
-// ---------------------------------------------------------------------------
 
 const toCsv = (rows, headers) => {
   const escapeCell = (value) => {
@@ -171,98 +166,6 @@ let corporateEmployees = [
   },
 ];
 
-// Departments
-let corporateDepartments = [
-  {
-    id: 'DEPT001',
-    name: 'Engineering',
-    manager: 'Sarah Johnson',
-    employeeCount: 85,
-    healthScore: 76,
-    checkupCompletion: 82,
-    budget: '$125,000',
-    location: 'Building A, Floor 3',
-    description: 'Software development and technical infrastructure team',
-  },
-  {
-    id: 'DEPT002',
-    name: 'Marketing',
-    manager: 'Michael Brown',
-    employeeCount: 42,
-    healthScore: 81,
-    checkupCompletion: 90,
-    budget: '$75,000',
-    location: 'Building B, Floor 2',
-    description: 'Brand management, digital marketing, and communications',
-  },
-  {
-    id: 'DEPT003',
-    name: 'Sales',
-    manager: 'Emily Davis',
-    employeeCount: 58,
-    healthScore: 73,
-    checkupCompletion: 75,
-    budget: '$95,000',
-    location: 'Building A, Floor 2',
-    description: 'Client acquisition and revenue generation',
-  },
-  {
-    id: 'DEPT004',
-    name: 'Finance',
-    manager: 'Robert Wilson',
-    employeeCount: 35,
-    healthScore: 79,
-    checkupCompletion: 88,
-    budget: '$85,000',
-    location: 'Building C, Floor 4',
-    description: 'Financial planning, accounting, and analysis',
-  },
-  {
-    id: 'DEPT005',
-    name: 'Human Resources',
-    manager: 'Lisa Anderson',
-    employeeCount: 28,
-    healthScore: 84,
-    checkupCompletion: 95,
-    budget: '$65,000',
-    location: 'Building B, Floor 1',
-    description: 'Talent acquisition, employee relations, and benefits',
-  },
-  {
-    id: 'DEPT006',
-    name: 'Operations',
-    manager: 'David Martinez',
-    employeeCount: 30,
-    healthScore: 74,
-    checkupCompletion: 80,
-    budget: '$70,000',
-    location: 'Building C, Floor 1',
-    description: 'Business operations and logistics management',
-  },
-];
-
-// Notifications
-let corporateNotifications = [
-  {
-    id: 'NOTIF-001',
-    type: 'health_alert',
-    title: 'High risk cases detected',
-    message: '3 employees moved to high/critical risk this week.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 4).toISOString(),
-    read: false,
-    priority: 'high',
-  },
-  {
-    id: 'NOTIF-002',
-    type: 'claim_status',
-    title: 'Claims processed',
-    message: '2 claims approved, 1 requires more documents.',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 26).toISOString(),
-    read: true,
-    priority: 'medium',
-  },
-];
-
 // Risk monitor alert configuration
 let corporateRiskAlertsConfig = {
   enabled: true,
@@ -274,164 +177,6 @@ let corporateRiskAlertsConfig = {
     medium: 55,
   },
 };
-
-// Claims (corporate portal / management)
-let corporateClaims = [
-  {
-    id: 'CLM2024001',
-    employeeName: 'John Smith',
-    employeeId: 'EMP001',
-    claimType: 'Medical Consultation',
-    amount: '$350.00',
-    submittedDate: '2024-01-15',
-    status: 'approved',
-    provider: 'City Medical Center',
-    serviceDate: '2024-01-10',
-    description: 'Annual health checkup and blood work',
-    documents: 3,
-  },
-  {
-    id: 'CLM2024002',
-    employeeName: 'Emily Davis',
-    employeeId: 'EMP002',
-    claimType: 'Dental Care',
-    amount: '$450.00',
-    submittedDate: '2024-01-14',
-    status: 'processing',
-    provider: 'Dental Care Plus',
-    serviceDate: '2024-01-12',
-    description: 'Root canal treatment and crown',
-    documents: 2,
-  },
-  {
-    id: 'CLM2024003',
-    employeeName: 'Robert Wilson',
-    employeeId: 'EMP003',
-    claimType: 'Prescription Medication',
-    amount: '$120.00',
-    submittedDate: '2024-01-13',
-    status: 'paid',
-    provider: 'HealthPlus Pharmacy',
-    serviceDate: '2024-01-11',
-    description: 'Prescribed medication for chronic condition',
-    documents: 1,
-  },
-  {
-    id: 'CLM2024004',
-    employeeName: 'Maria Garcia',
-    employeeId: 'EMP004',
-    claimType: 'Mental Health',
-    amount: '$200.00',
-    submittedDate: '2024-01-12',
-    status: 'pending',
-    provider: 'Wellness Counseling Center',
-    serviceDate: '2024-01-09',
-    description: 'Therapy sessions (3 sessions)',
-    documents: 4,
-  },
-  {
-    id: 'CLM2024005',
-    employeeName: 'David Lee',
-    employeeId: 'EMP005',
-    claimType: 'Vision Care',
-    amount: '$280.00',
-    submittedDate: '2024-01-11',
-    status: 'rejected',
-    provider: 'Vision Care Clinic',
-    serviceDate: '2024-01-08',
-    description: 'Eye examination and prescription glasses',
-    documents: 2,
-  },
-  {
-    id: 'CLM2024006',
-    employeeName: 'Sarah Johnson',
-    employeeId: 'EMP006',
-    claimType: 'Laboratory Tests',
-    amount: '$175.00',
-    submittedDate: '2024-01-10',
-    status: 'approved',
-    provider: 'Diagnostic Lab Services',
-    serviceDate: '2024-01-07',
-    description: 'Blood tests and diagnostic imaging',
-    documents: 3,
-  },
-];
-
-// Complaints
-let corporateComplaints = [
-  {
-    id: 'CMP2024001',
-    employeeName: 'John Smith',
-    employeeId: 'EMP001',
-    category: 'Insurance Coverage',
-    subject: 'Claim processing delay',
-    description: 'My insurance claim for dental work has been pending for over 30 days without any update.',
-    priority: 'high',
-    status: 'in-progress',
-    submittedDate: '2024-01-10',
-    assignedTo: 'Sarah Johnson',
-    lastUpdate: '2024-01-15',
-  },
-];
-
-// Reports
-let corporateReports = [
-  {
-    id: 'RPT001',
-    title: 'Monthly Health Metrics Report',
-    description: 'Comprehensive overview of employee health metrics for January 2024',
-    category: 'Health Metrics',
-    generatedDate: '2024-01-31',
-    period: 'January 2024',
-    format: 'PDF',
-    size: '2.4 MB',
-    status: 'ready',
-  },
-  {
-    id: 'RPT002',
-    title: 'Claims Analysis Report',
-    description: 'Detailed analysis of insurance claims submitted and processed',
-    category: 'Claims',
-    generatedDate: '2024-01-30',
-    period: 'Q4 2023',
-    format: 'Excel',
-    size: '1.8 MB',
-    status: 'ready',
-  },
-  {
-    id: 'RPT004',
-    title: 'Risk Assessment Summary',
-    description: 'Summary of identified health risks and intervention outcomes',
-    category: 'Risk Analysis',
-    generatedDate: '2024-01-28',
-    period: 'January 2024',
-    format: 'PDF',
-    size: '1.9 MB',
-    status: 'ready',
-  },
-];
-
-// Billing history
-let corporateBillingHistory = [
-  {
-    id: 'INV-2024-001',
-    date: '2024-01-01',
-    period: 'Jan 2024',
-    plan: 'Enterprise Plan',
-    amount: 4999,
-    currency: 'USD',
-    status: 'paid',
-  },
-  {
-    id: 'INV-2023-012',
-    date: '2023-12-01',
-    period: 'Dec 2023',
-    plan: 'Enterprise Plan',
-    amount: 4999,
-    currency: 'USD',
-    status: 'paid',
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Corporate authentication & dashboard intelligence endpoints
@@ -1000,17 +745,35 @@ router.get('/claims', authUser, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/notifications', authCorporate, async (req, res) => {
-  return res.json({ success: true, data: { notifications: corporateNotifications } });
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { notifications: [] } });
+  const [rows] = await postgresSequelize.query(
+    `SELECT id, type, title, message, priority, read, "created_at" AS "createdAt"
+       FROM corporate_notifications
+      WHERE corporate_id = :corporateId
+      ORDER BY created_at DESC
+      LIMIT 200`,
+    { replacements: { corporateId } }
+  );
+  return res.json({ success: true, data: { notifications: rows } });
 });
 
 router.post('/notifications/:id/read', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  corporateNotifications = corporateNotifications.map((n) => (n.id === id ? { ...n, read: true } : n));
+  await postgresSequelize.query(
+    `UPDATE corporate_notifications SET read = true WHERE id = :id AND corporate_id = :corporateId`,
+    { replacements: { id, corporateId } }
+  );
   return res.json({ success: true });
 });
 
 router.post('/notifications/read-all', authCorporate, async (req, res) => {
-  corporateNotifications = corporateNotifications.map((n) => ({ ...n, read: true }));
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  await postgresSequelize.query(
+    `UPDATE corporate_notifications SET read = true WHERE corporate_id = :corporateId`,
+    { replacements: { corporateId } }
+  );
   return res.json({ success: true });
 });
 
@@ -1360,53 +1123,74 @@ router.get('/employees/download-template', authCorporate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Corporate portal: Business Units (in-memory store)
+// Corporate portal: Business Units
 // ---------------------------------------------------------------------------
-let corporateBusinessUnits = [
-  { id: 'BU001', name: 'North Region', head: 'James Carter', employeeCount: 120, healthScore: 78, checkupCompletion: 85, budget: '$200,000', region: 'North', description: 'North region operations and sales' },
-  { id: 'BU002', name: 'South Region', head: 'Priya Sharma', employeeCount: 95, healthScore: 82, checkupCompletion: 88, budget: '$175,000', region: 'South', description: 'South region client management' },
-  { id: 'BU003', name: 'Digital Business', head: 'Chen Wei', employeeCount: 68, healthScore: 80, checkupCompletion: 91, budget: '$150,000', region: 'Global', description: 'Digital products and e-commerce' },
-  { id: 'BU004', name: 'Corporate Services', head: 'Nina Patel', employeeCount: 45, healthScore: 75, checkupCompletion: 83, budget: '$100,000', region: 'HQ', description: 'Shared services and support functions' },
-];
+
+async function withComputedHeadcount(rows, corporateId, groupColumn) {
+  if (rows.length === 0) return rows;
+  const [countRows] = await postgresSequelize.query(
+    `SELECT ${groupColumn} AS name, COUNT(*)::int AS cnt
+       FROM corporate_employees
+      WHERE corporate_id = :corporateId AND "isActive" = true AND ${groupColumn} IS NOT NULL
+      GROUP BY ${groupColumn}`,
+    { replacements: { corporateId } }
+  );
+  const counts = Object.fromEntries(countRows.map((r) => [String(r.name).toLowerCase(), r.cnt]));
+  return rows.map((r) => ({ ...r, employeeCount: counts[String(r.name).toLowerCase()] || 0, healthScore: null, checkupCompletion: null }));
+}
 
 router.get('/business-units', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const q = String(req.query.q || '').trim().toLowerCase();
-  let units = [...corporateBusinessUnits];
+  if (!corporateId) return res.json({ success: true, data: { businessUnits: [] } });
+  const [rows] = await postgresSequelize.query(
+    `SELECT id, name, head, budget, region, description FROM corporate_business_units
+      WHERE corporate_id = :corporateId ORDER BY created_at DESC`,
+    { replacements: { corporateId } }
+  );
+  let units = await withComputedHeadcount(rows, corporateId, 'business_unit');
   if (q) units = units.filter((u) => [u.name, u.head, u.region].some((f) => String(f || '').toLowerCase().includes(q)));
   return res.json({ success: true, data: { businessUnits: units } });
 });
 
 router.post('/business-units', authCorporate, async (req, res) => {
-  const { name, head, employeeCount, healthScore, checkupCompletion, budget, region, description } = req.body || {};
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { name, head, budget, region, description } = req.body || {};
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
   if (!name) return res.status(400).json({ success: false, message: 'name is required' });
-  const created = {
-    id: `BU${String(Date.now()).slice(-6)}`,
-    name,
-    head: head || 'Unassigned',
-    employeeCount: Number.isFinite(Number(employeeCount)) ? Number(employeeCount) : 0,
-    healthScore: Number.isFinite(Number(healthScore)) ? Number(healthScore) : 75,
-    checkupCompletion: Number.isFinite(Number(checkupCompletion)) ? Number(checkupCompletion) : 80,
-    budget: budget || '$0',
-    region: region || '',
-    description: description || '',
-  };
-  corporateBusinessUnits = [created, ...corporateBusinessUnits];
-  return res.status(201).json({ success: true, data: { businessUnit: created } });
+  const [rows] = await postgresSequelize.query(
+    `INSERT INTO corporate_business_units (corporate_id, name, head, budget, region, description)
+     VALUES (:corporateId, :name, :head, :budget, :region, :description)
+     RETURNING id, name, head, budget, region, description`,
+    { replacements: { corporateId, name, head: head || 'Unassigned', budget: budget || null, region: region || null, description: description || null } }
+  );
+  return res.status(201).json({ success: true, data: { businessUnit: { ...rows[0], employeeCount: 0, healthScore: null, checkupCompletion: null } } });
 });
 
 router.put('/business-units/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const idx = corporateBusinessUnits.findIndex((u) => u.id === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: 'Business unit not found' });
-  corporateBusinessUnits[idx] = { ...corporateBusinessUnits[idx], ...(req.body || {}) };
-  return res.json({ success: true, data: { businessUnit: corporateBusinessUnits[idx] } });
+  const { name, head, budget, region, description } = req.body || {};
+  const [rows] = await postgresSequelize.query(
+    `UPDATE corporate_business_units SET
+       name = COALESCE(:name, name), head = COALESCE(:head, head), budget = COALESCE(:budget, budget),
+       region = COALESCE(:region, region), description = COALESCE(:description, description), updated_at = NOW()
+     WHERE id = :id AND corporate_id = :corporateId
+     RETURNING id, name, head, budget, region, description`,
+    { replacements: { id, corporateId, name: name ?? null, head: head ?? null, budget: budget ?? null, region: region ?? null, description: description ?? null } }
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Business unit not found' });
+  return res.json({ success: true, data: { businessUnit: rows[0] } });
 });
 
 router.delete('/business-units/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const before = corporateBusinessUnits.length;
-  corporateBusinessUnits = corporateBusinessUnits.filter((u) => u.id !== id);
-  if (corporateBusinessUnits.length === before) return res.status(404).json({ success: false, message: 'Business unit not found' });
+  const [rows] = await postgresSequelize.query(
+    `DELETE FROM corporate_business_units WHERE id = :id AND corporate_id = :corporateId RETURNING id`,
+    { replacements: { id, corporateId } }
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Business unit not found' });
   return res.json({ success: true });
 });
 
@@ -1415,8 +1199,15 @@ router.delete('/business-units/:id', authCorporate, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/departments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const q = String(req.query.q || '').trim().toLowerCase();
-  let departments = [...corporateDepartments];
+  if (!corporateId) return res.json({ success: true, data: { departments: [] } });
+  const [rows] = await postgresSequelize.query(
+    `SELECT id, name, manager, budget, location, description FROM corporate_departments
+      WHERE corporate_id = :corporateId ORDER BY created_at DESC`,
+    { replacements: { corporateId } }
+  );
+  let departments = await withComputedHeadcount(rows, corporateId, 'department');
   if (q) {
     departments = departments.filter((d) =>
       [d.name, d.manager, d.location].some((field) => String(field || '').toLowerCase().includes(q))
@@ -1426,36 +1217,43 @@ router.get('/departments', authCorporate, async (req, res) => {
 });
 
 router.post('/departments', authCorporate, async (req, res) => {
-  const { name, manager, employeeCount, healthScore, checkupCompletion, budget, location, description } = req.body || {};
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { name, manager, budget, location, description } = req.body || {};
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
   if (!name) return res.status(400).json({ success: false, message: 'name is required' });
-  const created = {
-    id: `DEPT${String(Date.now()).slice(-6)}`,
-    name,
-    manager: manager || 'Unassigned',
-    employeeCount: Number.isFinite(employeeCount) ? employeeCount : 0,
-    healthScore: Number.isFinite(healthScore) ? healthScore : 75,
-    checkupCompletion: Number.isFinite(checkupCompletion) ? checkupCompletion : 80,
-    budget: budget || '$0',
-    location: location || '',
-    description: description || '',
-  };
-  corporateDepartments = [created, ...corporateDepartments];
-  return res.status(201).json({ success: true, data: { department: created } });
+  const [rows] = await postgresSequelize.query(
+    `INSERT INTO corporate_departments (corporate_id, name, manager, budget, location, description)
+     VALUES (:corporateId, :name, :manager, :budget, :location, :description)
+     RETURNING id, name, manager, budget, location, description`,
+    { replacements: { corporateId, name, manager: manager || 'Unassigned', budget: budget || null, location: location || null, description: description || null } }
+  );
+  return res.status(201).json({ success: true, data: { department: { ...rows[0], employeeCount: 0, healthScore: null, checkupCompletion: null } } });
 });
 
 router.put('/departments/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const idx = corporateDepartments.findIndex((d) => d.id === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: 'Department not found' });
-  corporateDepartments[idx] = { ...corporateDepartments[idx], ...(req.body || {}) };
-  return res.json({ success: true, data: { department: corporateDepartments[idx] } });
+  const { name, manager, budget, location, description } = req.body || {};
+  const [rows] = await postgresSequelize.query(
+    `UPDATE corporate_departments SET
+       name = COALESCE(:name, name), manager = COALESCE(:manager, manager), budget = COALESCE(:budget, budget),
+       location = COALESCE(:location, location), description = COALESCE(:description, description), updated_at = NOW()
+     WHERE id = :id AND corporate_id = :corporateId
+     RETURNING id, name, manager, budget, location, description`,
+    { replacements: { id, corporateId, name: name ?? null, manager: manager ?? null, budget: budget ?? null, location: location ?? null, description: description ?? null } }
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Department not found' });
+  return res.json({ success: true, data: { department: rows[0] } });
 });
 
 router.delete('/departments/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const before = corporateDepartments.length;
-  corporateDepartments = corporateDepartments.filter((d) => d.id !== id);
-  if (corporateDepartments.length === before) return res.status(404).json({ success: false, message: 'Department not found' });
+  const [rows] = await postgresSequelize.query(
+    `DELETE FROM corporate_departments WHERE id = :id AND corporate_id = :corporateId RETURNING id`,
+    { replacements: { id, corporateId } }
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Department not found' });
   return res.json({ success: true });
 });
 
@@ -1463,57 +1261,116 @@ router.delete('/departments/:id', authCorporate, async (req, res) => {
 // Corporate portal: Reports
 // ---------------------------------------------------------------------------
 
+function reportRowShape(r) {
+  return {
+    id: String(r.id),
+    title: r.title,
+    description: `${r.category || 'Custom'} report for ${r.period || 'the requested period'}`,
+    category: r.category,
+    generatedDate: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '',
+    period: r.period,
+    format: r.format,
+    size: '—',
+    status: r.status,
+  };
+}
+
 router.get('/reports', authCorporate, async (req, res) => {
-  return res.json({ success: true, data: { reports: corporateReports } });
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { reports: [] } });
+  const [rows] = await postgresSequelize.query(
+    `SELECT id, title, category, period, format, status, created_at
+       FROM corporate_generated_reports WHERE corporate_id = :corporateId
+      ORDER BY created_at DESC`,
+    { replacements: { corporateId } }
+  );
+  return res.json({ success: true, data: { reports: rows.map(reportRowShape) } });
 });
 
 router.post('/reports/generate', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
   const { type, period, format } = req.body || {};
-  const now = new Date();
-  const created = {
-    id: `RPT${String(Date.now()).slice(-6)}`,
-    title: type || 'Custom Report',
-    description: 'Generated on demand',
-    category: type || 'Custom',
-    generatedDate: now.toISOString().slice(0, 10),
-    period: period || 'Custom',
-    format: format || 'CSV',
-    size: '—',
-    status: 'ready',
-  };
-  corporateReports = [created, ...corporateReports];
-  return res.status(201).json({ success: true, data: { report: created } });
+  const [rows] = await postgresSequelize.query(
+    `INSERT INTO corporate_generated_reports (corporate_id, title, category, period, format, status, generated_by)
+     VALUES (:corporateId, :title, :category, :period, :format, 'ready', :generatedBy)
+     RETURNING id, title, category, period, format, status, created_at`,
+    {
+      replacements: {
+        corporateId,
+        title: type || 'Custom Report',
+        category: type || 'Custom',
+        period: period || 'Custom',
+        format: format || 'CSV',
+        generatedBy: req.user?.id || null,
+      },
+    }
+  );
+  return res.status(201).json({ success: true, data: { report: reportRowShape(rows[0]) } });
 });
 
 router.get('/reports/:id/preview', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const report = corporateReports.find((r) => r.id === id);
-  if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
-  return res.json({ success: true, data: { report } });
+  const [rows] = await postgresSequelize.query(
+    `SELECT id, title, category, period, format, status, created_at
+       FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
+    { replacements: { id, corporateId } }
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Report not found' });
+  return res.json({ success: true, data: { report: reportRowShape(rows[0]) } });
 });
 
 router.get('/reports/:id/download', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const report = corporateReports.find((r) => r.id === id);
+  const [rows] = await postgresSequelize.query(
+    `SELECT id, title, category, period, format, status, created_at
+       FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
+    { replacements: { id, corporateId } }
+  );
+  const report = rows[0];
   if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
 
-  // For now, generate a simple CSV payload
-  const rows = [
-    { key: 'id', value: report.id },
-    { key: 'title', value: report.title },
-    { key: 'category', value: report.category },
-    { key: 'period', value: report.period },
-    { key: 'generatedDate', value: report.generatedDate },
-    { key: 'status', value: report.status },
-  ];
-  const csv = toCsv(rows, ['key', 'value']);
+  // Pull real underlying data for the report's category rather than just echoing metadata.
+  let csv;
+  const category = String(report.category || '').toLowerCase();
+  if (category.includes('claim')) {
+    const [claimRows] = await postgresSequelize.query(
+      `SELECT ic.claim_number, ic.claim_type, ic.claim_amount, ic.status, ic.submitted_date
+         FROM insurance_claims ic
+         JOIN user_associations ua ON ua."userId" = ic.patient_id
+        WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
+        ORDER BY ic.submitted_date DESC`,
+      { replacements: { corporateId } }
+    );
+    csv = toCsv(claimRows, ['claim_number', 'claim_type', 'claim_amount', 'status', 'submitted_date']);
+  } else if (category.includes('risk') || category.includes('health')) {
+    const [riskRows] = await postgresSequelize.query(
+      `SELECT u."firstName", u."lastName", r.risk_level, r.overall_score, r.created_at
+         FROM ai_health_risk_scores r
+         JOIN user_associations ua ON ua."userId" = r.patient_id
+         JOIN users u ON u.id = r.patient_id
+        WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
+        ORDER BY r.created_at DESC`,
+      { replacements: { corporateId } }
+    );
+    csv = toCsv(riskRows, ['firstName', 'lastName', 'risk_level', 'overall_score', 'created_at']);
+  } else {
+    const [empRows] = await postgresSequelize.query(
+      `SELECT ce."employeeId", ce.department, ce.designation, u."firstName", u."lastName", u.email
+         FROM corporate_employees ce LEFT JOIN users u ON u.id = ce."userId"
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true`,
+      { replacements: { corporateId } }
+    );
+    csv = toCsv(empRows, ['employeeId', 'department', 'designation', 'firstName', 'lastName', 'email']);
+  }
 
-  const fileBase = `${report.id}`;
   const format = String(req.query.format || report.format || 'csv').toLowerCase();
   const ext = format === 'excel' ? 'csv' : format === 'pdf' ? 'pdf' : 'csv';
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename=${fileBase}.${ext}`);
+  res.setHeader('Content-Disposition', `attachment; filename=RPT${report.id}.${ext}`);
   return res.status(200).send(csv);
 });
 
@@ -1531,14 +1388,28 @@ router.put('/risk-monitor/alerts', authCorporate, async (req, res) => {
 });
 
 router.get('/risk-monitor/export', authCorporate, async (req, res) => {
-  // Minimal export: employees list with risk-related fields if present
-  const rows = corporateEmployees.map((e) => ({
-    employeeId: e.employeeId,
-    name: e.name,
-    department: e.department,
-    healthStatus: e.healthStatus,
-    lastCheckup: e.lastCheckup,
-  }));
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  let rows = [];
+  if (corporateId) {
+    const [dbRows] = await postgresSequelize.query(
+      `SELECT
+         ce."employeeId",
+         COALESCE(NULLIF(TRIM(CONCAT(u."firstName", ' ', u."lastName")), ''), u.email, ce."employeeId") AS name,
+         ce.department,
+         COALESCE(r.risk_level, 'not_assessed') AS "healthStatus",
+         to_char(r.created_at, 'YYYY-MM-DD') AS "lastCheckup"
+       FROM corporate_employees ce
+       LEFT JOIN users u ON u.id = ce."userId"
+       LEFT JOIN LATERAL (
+         SELECT risk_level, created_at FROM ai_health_risk_scores
+          WHERE patient_id = ce."userId" ORDER BY created_at DESC LIMIT 1
+       ) r ON true
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+       ORDER BY ce."createdAt" DESC`,
+      { replacements: { corporateId } }
+    );
+    rows = dbRows;
+  }
   const csv = toCsv(rows, ['employeeId', 'name', 'department', 'healthStatus', 'lastCheckup']);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename=risk-monitor.csv');
@@ -1550,10 +1421,22 @@ router.get('/risk-monitor/export', authCorporate, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/complaints', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const q = String(req.query.q || '').trim().toLowerCase();
   const status = String(req.query.status || '').trim();
-  let complaints = [...corporateComplaints];
-  if (status && status !== 'all') complaints = complaints.filter((c) => c.status === status);
+  if (!corporateId) return res.json({ success: true, data: { complaints: [] } });
+
+  let sql = `SELECT id, employee_name AS "employeeName", employee_id AS "employeeId", category, subject, description,
+                    priority, status, assigned_to AS "assignedTo",
+                    to_char(submitted_date, 'YYYY-MM-DD') AS "submittedDate",
+                    to_char(updated_at, 'YYYY-MM-DD') AS "lastUpdate"
+               FROM corporate_complaints WHERE corporate_id = :corporateId`;
+  const replacements = { corporateId };
+  if (status && status !== 'all') { sql += ' AND status = :status'; replacements.status = status; }
+  sql += ' ORDER BY submitted_date DESC';
+  const [rows] = await postgresSequelize.query(sql, { replacements });
+
+  let complaints = rows;
   if (q) {
     complaints = complaints.filter((c) =>
       [c.employeeName, c.subject, c.category].some((field) => String(field || '').toLowerCase().includes(q))
@@ -1563,37 +1446,41 @@ router.get('/complaints', authCorporate, async (req, res) => {
 });
 
 router.post('/complaints', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { category, subject, description, priority, employeeName, employeeId } = req.body || {};
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
   if (!category || !subject || !description) {
     return res.status(400).json({ success: false, message: 'category, subject, and description are required' });
   }
-
-  const now = new Date();
-  const created = {
-    id: `CMP${String(Date.now()).slice(-6)}`,
-    employeeName: employeeName || '—',
-    employeeId: employeeId || '—',
-    category,
-    subject,
-    description,
-    priority: priority || 'medium',
-    status: 'open',
-    submittedDate: now.toISOString().slice(0, 10),
-    assignedTo: 'Unassigned',
-    lastUpdate: now.toISOString().slice(0, 10),
-  };
-  corporateComplaints = [created, ...corporateComplaints];
-  return res.status(201).json({ success: true, data: { complaint: created } });
+  const [rows] = await postgresSequelize.query(
+    `INSERT INTO corporate_complaints (corporate_id, employee_name, employee_id, category, subject, description, priority)
+     VALUES (:corporateId, :employeeName, :employeeId, :category, :subject, :description, :priority)
+     RETURNING id, employee_name AS "employeeName", employee_id AS "employeeId", category, subject, description,
+               priority, status, assigned_to AS "assignedTo",
+               to_char(submitted_date, 'YYYY-MM-DD') AS "submittedDate",
+               to_char(updated_at, 'YYYY-MM-DD') AS "lastUpdate"`,
+    { replacements: { corporateId, employeeName: employeeName || null, employeeId: employeeId || null, category, subject, description, priority: priority || 'medium' } }
+  );
+  return res.status(201).json({ success: true, data: { complaint: rows[0] } });
 });
 
 router.put('/complaints/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const idx = corporateComplaints.findIndex((c) => c.id === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: 'Complaint not found' });
-  const next = { ...corporateComplaints[idx], ...(req.body || {}) };
-  next.lastUpdate = new Date().toISOString().slice(0, 10);
-  corporateComplaints[idx] = next;
-  return res.json({ success: true, data: { complaint: next } });
+  const { status, priority, assignedTo } = req.body || {};
+  const [rows] = await postgresSequelize.query(
+    `UPDATE corporate_complaints SET
+       status = COALESCE(:status, status), priority = COALESCE(:priority, priority),
+       assigned_to = COALESCE(:assignedTo, assigned_to), updated_at = NOW()
+     WHERE id = :id AND corporate_id = :corporateId
+     RETURNING id, employee_name AS "employeeName", employee_id AS "employeeId", category, subject, description,
+               priority, status, assigned_to AS "assignedTo",
+               to_char(submitted_date, 'YYYY-MM-DD') AS "submittedDate",
+               to_char(updated_at, 'YYYY-MM-DD') AS "lastUpdate"`,
+    { replacements: { id, corporateId, status: status ?? null, priority: priority ?? null, assignedTo: assignedTo ?? null } }
+  );
+  if (!rows[0]) return res.status(404).json({ success: false, message: 'Complaint not found' });
+  return res.json({ success: true, data: { complaint: rows[0] } });
 });
 
 // ---------------------------------------------------------------------------
@@ -1601,12 +1488,30 @@ router.put('/complaints/:id', authCorporate, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/billing/history', authCorporate, async (req, res) => {
-  return res.json({ success: true, data: { invoices: corporateBillingHistory } });
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { invoices: [] } });
+  const [rows] = await postgresSequelize.query(
+    `SELECT invoice_number AS id, to_char(invoice_date, 'YYYY-MM-DD') AS date, period,
+            plan_name AS plan, amount, currency, status
+       FROM corporate_billing_history
+      WHERE corporate_id = :corporateId
+      ORDER BY invoice_date DESC`,
+    { replacements: { corporateId } }
+  );
+  return res.json({ success: true, data: { invoices: rows } });
 });
 
 router.get('/billing/invoices/:id/download', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const invoice = corporateBillingHistory.find((inv) => inv.id === id);
+  const [rows] = await postgresSequelize.query(
+    `SELECT invoice_number AS id, to_char(invoice_date, 'YYYY-MM-DD') AS date, period,
+            plan_name AS plan, amount, currency, status
+       FROM corporate_billing_history
+      WHERE corporate_id = :corporateId AND invoice_number = :id`,
+    { replacements: { corporateId, id } }
+  );
+  const invoice = rows[0];
   if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
 
   const csv = toCsv([invoice], ['id', 'date', 'period', 'plan', 'amount', 'currency', 'status']);
@@ -1619,91 +1524,204 @@ router.get('/billing/invoices/:id/download', authCorporate, async (req, res) => 
 // Corporate portal: Claims management
 // ---------------------------------------------------------------------------
 
+// insurance_claims.claim_type is constrained to cashless/reimbursement/emergency;
+// the human-readable category (e.g. "Dental Care") is kept in metadata->>'category'
+// and surfaced back out as claimType so the corporate UI is unaffected.
+const CLAIMS_SELECT = `
+  SELECT ic.claim_number AS id,
+         COALESCE(NULLIF(TRIM(CONCAT(u."firstName", ' ', u."lastName")), ''), u.email) AS "employeeName",
+         ce."employeeId" AS "employeeId",
+         COALESCE(ic.metadata->>'category', ic.claim_type) AS "claimType",
+         ic.claim_amount AS amount,
+         to_char(ic.submitted_date, 'YYYY-MM-DD') AS "submittedDate",
+         ic.status,
+         COALESCE(ic.insurance_provider, 'Not specified') AS provider,
+         to_char(COALESCE((ic.hospitalization_details->>'serviceDate')::date, ic.submitted_date), 'YYYY-MM-DD') AS "serviceDate",
+         COALESCE(ic.notes, '') AS description,
+         COALESCE(jsonb_array_length(ic.documents), 0) AS documents
+    FROM insurance_claims ic
+    JOIN user_associations ua ON ua."userId" = ic.patient_id AND ua."entityType" = 'corporate'
+    LEFT JOIN users u ON u.id = ic.patient_id
+    LEFT JOIN corporate_employees ce ON ce."userId" = ic.patient_id AND ce.corporate_id = ua."entityId"
+   WHERE ua."entityId" = :corporateId`;
+
+// insurance_claims has row-level security (organization_id = current_org_id()
+// OR patient_id = current_app_user_id()) -- every query here MUST run inside
+// a transaction with RLS context set via setRlsContext(), using the
+// corporate's id as org_id, or Postgres silently returns/writes nothing.
 router.get('/claims/management', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const q = String(req.query.q || '').trim().toLowerCase();
   const status = String(req.query.status || '').trim();
-  let claims = [...corporateClaims];
-  if (status && status !== 'all') claims = claims.filter((c) => c.status === status);
-  if (q) {
-    claims = claims.filter((c) =>
-      [c.employeeName, c.employeeId, c.id, c.claimType].some((field) =>
-        String(field || '').toLowerCase().includes(q)
-      )
-    );
+  if (!corporateId) return res.json({ success: true, data: { claims: [] } });
+
+  const tx = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(tx, { orgId: corporateId, userId: 0 });
+    let sql = `${CLAIMS_SELECT}`;
+    const replacements = { corporateId };
+    if (status && status !== 'all') { sql += ' AND ic.status = :status'; replacements.status = status; }
+    sql += ' ORDER BY ic.submitted_date DESC NULLS LAST';
+    const [rows] = await postgresSequelize.query(sql, { replacements, transaction: tx });
+    await tx.commit();
+
+    let claims = rows;
+    if (q) {
+      claims = claims.filter((c) =>
+        [c.employeeName, c.employeeId, c.id, c.claimType].some((field) =>
+          String(field || '').toLowerCase().includes(q)
+        )
+      );
+    }
+    return res.json({ success: true, data: { claims } });
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
   }
-  return res.json({ success: true, data: { claims } });
 });
 
 router.put('/claims/management/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const idx = corporateClaims.findIndex((c) => c.id === id);
-  if (idx === -1) return res.status(404).json({ success: false, message: 'Claim not found' });
-  const next = { ...corporateClaims[idx], ...(req.body || {}) };
-  corporateClaims[idx] = next;
-  return res.json({ success: true, data: { claim: next } });
+  const { status } = req.body || {};
+  if (!status) return res.status(400).json({ success: false, message: 'status is required' });
+
+  const tx = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(tx, { orgId: corporateId, userId: 0 });
+
+    // Verify the claim actually belongs to this corporate before mutating it.
+    const [owned] = await postgresSequelize.query(
+      `SELECT ic.id FROM insurance_claims ic
+         JOIN user_associations ua ON ua."userId" = ic.patient_id AND ua."entityType" = 'corporate'
+        WHERE ic.claim_number = :id AND ua."entityId" = :corporateId`,
+      { replacements: { id, corporateId }, transaction: tx }
+    );
+    if (!owned[0]) {
+      await tx.rollback();
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    await postgresSequelize.query(
+      `UPDATE insurance_claims SET status = :status,
+              approved_at = CASE WHEN :status = 'approved' THEN NOW() ELSE approved_at END,
+              rejected_at = CASE WHEN :status = 'rejected' THEN NOW() ELSE rejected_at END,
+              updated_at = NOW()
+        WHERE id = :claimId`,
+      { replacements: { status, claimId: owned[0].id }, transaction: tx }
+    );
+
+    const [rows] = await postgresSequelize.query(`${CLAIMS_SELECT} AND ic.claim_number = :id`, { replacements: { corporateId, id }, transaction: tx });
+    await tx.commit();
+    return res.json({ success: true, data: { claim: rows[0] } });
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
+  }
 });
 
 router.get('/claims/management/:id/download', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
-  const claim = corporateClaims.find((c) => c.id === id);
+
+  const tx = await postgresSequelize.transaction();
+  let claim;
+  try {
+    await setRlsContext(tx, { orgId: corporateId, userId: 0 });
+    const [rows] = await postgresSequelize.query(`${CLAIMS_SELECT} AND ic.claim_number = :id`, { replacements: { corporateId, id }, transaction: tx });
+    await tx.commit();
+    claim = rows[0];
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
+  }
   if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
   const csv = toCsv(
     [claim],
-    [
-      'id',
-      'employeeName',
-      'employeeId',
-      'claimType',
-      'amount',
-      'submittedDate',
-      'status',
-      'provider',
-      'serviceDate',
-      'description',
-      'documents',
-    ]
+    ['id', 'employeeName', 'employeeId', 'claimType', 'amount', 'submittedDate', 'status', 'provider', 'serviceDate', 'description', 'documents']
   );
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename=${claim.id}.csv`);
   return res.status(200).send(csv);
 });
 
-// Submit a new claim
+// Submit a new claim (employee-facing, not HR). organization_id is set to the
+// employee's corporate so HR's org-scoped RLS context can see it later.
 router.post('/claims', authUser, async (req, res) => {
   try {
-    const { type, amount, description, appointmentId, documents, provider, serviceDate } = req.body;
+    const { type, amount, description, documents, provider, serviceDate } = req.body;
     const userId = req.user?.id;
 
     if (!type || !amount) {
-      return res.status(400).json({
-        success: false,
-        message: 'Claim type and amount are required'
-      });
+      return res.status(400).json({ success: false, message: 'Claim type and amount are required' });
+    }
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
     }
 
+    const [assoc] = await postgresSequelize.query(
+      `SELECT "entityId" AS "corporateId" FROM user_associations
+        WHERE "userId" = :userId AND "entityType" = 'corporate' AND status = 'active'
+        ORDER BY "createdAt" DESC LIMIT 1`,
+      { replacements: { userId } }
+    );
+    const corporateId = assoc[0]?.corporateId || null;
+
     const submittedDate = new Date().toISOString().slice(0, 10);
-    const normalizedAmount = typeof amount === 'number' ? amount.toFixed(2) : String(amount);
+    const claimNumber = `CLM${Date.now()}`;
+    const docsArray = Array.isArray(documents) ? documents : [];
 
-    const newClaim = {
-      id: `CLM${Date.now()}`,
-      employeeName: req.user?.firstName ? `${req.user.firstName} ${req.user.lastName || ''}`.trim() : (req.user?.email || 'Corporate User'),
-      employeeId: req.user?.employeeId || String(userId || 'EMP-UNKNOWN'),
-      claimType: type,
-      amount: normalizedAmount,
-      submittedDate,
-      status: 'pending',
-      provider: provider || 'Unknown Provider',
-      serviceDate: serviceDate || submittedDate,
-      description: description || '',
-      documents: Array.isArray(documents) ? documents.length : (documents ? Number(documents) : 0)
-    };
-
-    corporateClaims.unshift(newClaim);
+    const tx = await postgresSequelize.transaction();
+    let rows;
+    try {
+      await setRlsContext(tx, { orgId: corporateId || 0, userId });
+      [rows] = await postgresSequelize.query(
+        `INSERT INTO insurance_claims (
+           claim_number, patient_id, organization_id, claim_type, claim_amount, status,
+           insurance_provider, submitted_date, notes, documents, metadata, submitted_by
+         ) VALUES (
+           :claimNumber, :userId, :corporateId, 'reimbursement', :amount, 'pending',
+           :provider, :submittedDate, :description, :documents::jsonb, :metadata::jsonb, :userId
+         ) RETURNING claim_number AS id, claim_amount AS amount, status`,
+        {
+          replacements: {
+            claimNumber,
+            userId,
+            corporateId,
+            amount: Number(amount),
+            provider: provider || null,
+            submittedDate: serviceDate || submittedDate,
+            description: description || '',
+            documents: JSON.stringify(docsArray),
+            metadata: JSON.stringify({ category: type }),
+          },
+          transaction: tx,
+        }
+      );
+      await tx.commit();
+    } catch (err) {
+      await tx.rollback().catch(() => {});
+      throw err;
+    }
 
     res.json({
       success: true,
       message: 'Claim submitted successfully',
-      data: { claim: newClaim }
+      data: {
+        claim: {
+          id: claimNumber,
+          employeeName: req.user?.firstName ? `${req.user.firstName} ${req.user.lastName || ''}`.trim() : (req.user?.email || 'Corporate User'),
+          employeeId: req.user?.employeeId || String(userId),
+          claimType: type,
+          amount: rows[0].amount,
+          submittedDate,
+          status: rows[0].status,
+          provider: provider || 'Not specified',
+          serviceDate: serviceDate || submittedDate,
+          description: description || '',
+          documents: docsArray.length,
+        },
+      },
     });
   } catch (error) {
     console.error('Error submitting claim:', error);
