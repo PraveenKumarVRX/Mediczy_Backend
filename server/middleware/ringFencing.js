@@ -721,8 +721,15 @@ const PUBLIC_ENDPOINTS = [
   '/api/broker-integrations/webhooks',
   '/api/orthanc/webhook',
   '/api/orthanc/health',
+  '/api/orthanc/sync-study', // Same verifyWebhook static-secret auth as /api/orthanc/webhook — was missing, caused 401 NO_TOKEN before verifyWebhook ever ran
+
   '/api/imaging/session/validate',
   '/api/imaging/health',
+  // STOW-RS ingest — has its own authAnyDicom (lab/user JWT, or trusted internal bridge
+  // token + X-Tenant-Id). Same reasoning as /api/orthanc/webhook above: a static bridge
+  // secret isn't a JWT, so ring-fencing's unconditional jwt.verify() rejected it before
+  // authAnyDicom's own bridge-token branch ever ran.
+  '/api/hypergrid/dicom/studies',
   '/api/homecare/login',
   '/api/homecare/book',    // Patient homecare booking (public — no auth required)
   '/api/corporate/login',

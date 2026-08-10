@@ -1,6 +1,9 @@
 #!/bin/sh
 # Poll Orthanc for new instances and forward to Mediczy HyperGrid STOW-RS.
 # For production, prefer Orthanc Lua webhook → POST /api/orthanc/webhook
+#
+# Uses Orthanc's /changes API (sequence-based change feed), not /system —
+# /system has no "LastChange" field, so a naive grep against it never matches.
 
 ORTHANC_URL="${ORTHANC_URL:-http://orthanc:8042}"
 MEDICZY_API_URL="${MEDICZY_API_URL:-http://host.docker.internal:8888}"
@@ -18,22 +21,36 @@ SECRET_HDR=""
 
 echo "[orthanc-bridge] polling $ORTHANC_URL → $MEDICZY_API_URL every ${POLL_INTERVAL_SEC}s (user=$ORTHANC_USER)"
 
-LAST_CHANGE=0
+SINCE=0
 
 while true; do
-  CHANGE=$(curl -sf $AUTH "$ORTHANC_URL/system" | sed -n 's/.*"LastChange"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
-  if [ -n "$CHANGE" ] && [ "$CHANGE" != "$LAST_CHANGE" ]; then
-    echo "[orthanc-bridge] change detected ($CHANGE)"
-    INSTANCES=$(curl -sf $AUTH "$ORTHANC_URL/instances?since=$LAST_CHANGE" 2>/dev/null || curl -sf $AUTH "$ORTHANC_URL/instances")
-    for ID in $INSTANCES; do
-      [ -z "$ID" ] && continue
-      ID=$(echo "$ID" | tr -d '[],"')
+  DONE=false
+  while [ "$DONE" != "true" ]; do
+    RESP=$(curl -sf $AUTH "$ORTHANC_URL/changes?since=$SINCE&limit=100")
+    if [ -z "$RESP" ]; then
+      echo "[orthanc-bridge] /changes query failed, will retry next cycle" >&2
+      break
+    fi
+
+    IDS=$(echo "$RESP" | awk -F'"' '
+      $2=="ChangeType" { ct=$4 }
+      $2=="ID" { id=$4 }
+      /^[[:space:]]*\}/ { if (ct=="NewInstance" && id!="") print id; ct=""; id="" }
+    ')
+
+    for ID in $IDS; do
       curl -sf -X POST $SECRET_HDR \
         -H "Content-Type: application/json" \
         -d "{\"Event\":\"NewInstance\",\"ID\":\"$ID\"}" \
-        "$MEDICZY_API_URL/api/orthanc/webhook" && echo " synced $ID" || echo " failed $ID"
+        "$MEDICZY_API_URL/api/orthanc/webhook" >/dev/null \
+        && echo "[orthanc-bridge] synced $ID" \
+        || echo "[orthanc-bridge] failed $ID" >&2
     done
-    LAST_CHANGE=$CHANGE
-  fi
+
+    NEW_LAST=$(echo "$RESP" | sed -n 's/.*"Last"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1)
+    DONE=$(echo "$RESP" | sed -n 's/.*"Done"[[:space:]]*:[[:space:]]*\([a-z]*\).*/\1/p' | head -1)
+    [ -n "$NEW_LAST" ] && SINCE="$NEW_LAST"
+    [ -z "$DONE" ] && DONE="true"
+  done
   sleep "$POLL_INTERVAL_SEC"
 done

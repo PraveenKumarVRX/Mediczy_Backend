@@ -58,7 +58,21 @@ const authDicomAccess = (req, res, next) => {
   });
 };
 
+// Trusted machine-to-machine callers (the Orthanc→HyperGrid bridge) present a static
+// shared secret, not a signed JWT — same trust boundary as orthanc-webhook.route.js's
+// verifyWebhook. Tenant comes from a header since this runs before multer parses the body.
+const BRIDGE_TOKEN = process.env.ORTHANC_BRIDGE_TOKEN || process.env.MEDICZY_INTERNAL_TOKEN || '';
+
 const authAnyDicom = (req, res, next) => {
+  const authHeader0 = req.headers.authorization || '';
+  if (BRIDGE_TOKEN && authHeader0 === `Bearer ${BRIDGE_TOKEN}`) {
+    const tid = parseInt(req.headers['x-tenant-id'], 10);
+    if (!tid) {
+      return res.status(400).json({ success: false, message: 'X-Tenant-Id header required for internal bridge auth' });
+    }
+    req.user = { id: 0, tenantId: tid, role: 'internal-bridge' };
+    return next();
+  }
   const queryToken = req.query.access_token || req.query.token;
   if (queryToken && !req.headers.authorization) {
     req.headers.authorization = `Bearer ${queryToken}`;

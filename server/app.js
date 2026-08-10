@@ -721,7 +721,10 @@ const globalLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.DISABLE_RATE_LIMIT === 'true',
+  // Loopback-only exemption: internal service-to-service calls (e.g. the Orthanc->HyperGrid
+  // bridge forwarding one HTTP request per DICOM instance, easily hundreds per study) can't
+  // originate from outside this box, so they can't be the abuse this limiter guards against.
+  skip: (req) => process.env.DISABLE_RATE_LIMIT === 'true' || req.ip === '127.0.0.1' || req.ip === '::1',
 });
 
 const authLimiter = rateLimit({

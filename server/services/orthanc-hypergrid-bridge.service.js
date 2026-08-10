@@ -10,6 +10,8 @@ import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';
 const ORTHANC_URL = (process.env.ORTHANC_URL || 'http://127.0.0.1:8042').replace(/\/$/, '');
 const MEDICZY_API_URL = process.env.MEDICZY_API_URL || process.env.API_BASE_URL || 'http://127.0.0.1:8888';
 const BRIDGE_TOKEN = process.env.ORTHANC_BRIDGE_TOKEN || process.env.MEDICZY_INTERNAL_TOKEN || '';
+// Single-tenant default until per-modality tenant resolution exists (see dicom_modalities).
+const DEFAULT_BRIDGE_TENANT_ID = process.env.MEDICZY_IMAGING_BRIDGE_TENANT_ID || '';
 
 function orthancAuthHeader() {
   return orthancBasicAuthHeader({ defaultUser: 'pacs' });
@@ -55,6 +57,8 @@ export async function forwardToHyperGridStow(dicomBuffer, meta = {}, tenantId = 
 
   const headers = { ...form.getHeaders() };
   if (BRIDGE_TOKEN) headers.Authorization = `Bearer ${BRIDGE_TOKEN}`;
+  const resolvedTenantId = tenantId || DEFAULT_BRIDGE_TENANT_ID;
+  if (resolvedTenantId) headers['X-Tenant-Id'] = String(resolvedTenantId);
 
   const res = await fetch(`${MEDICZY_API_URL}/api/hypergrid/dicom/studies`, {
     method: 'POST',
@@ -105,9 +109,11 @@ export async function syncOrthancStudy(studyId) {
     timeout: 30000,
   });
   if (!res.ok) throw new Error(`Orthanc study list failed: ${res.status}`);
-  const instanceIds = await res.json();
+  // /studies/:id/instances returns full instance objects, not plain ID strings.
+  const instances = await res.json();
   const results = [];
-  for (const id of instanceIds) {
+  for (const inst of instances) {
+    const id = inst?.ID || inst;
     try {
       results.push(await handleOrthancNewInstance({ ID: id }));
     } catch (err) {
