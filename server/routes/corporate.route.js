@@ -2276,7 +2276,27 @@ router.post('/wellness-calendar/activities/:id/send-invites', authCorporate, asy
     if (!updated || !updated[0] || updated[0].length === 0) {
       return res.status(404).json({ success: false, message: 'Activity not found' });
     }
-    res.json({ success: true, message: `Invites sent to ${totalInvited} participants` });
+
+    // Persist who was actually invited so the employee calendar can show
+    // real per-employee RSVP state instead of nothing (previously no
+    // per-recipient record existed at all -- only this aggregate count).
+    let actuallyInvited = 0;
+    if (Array.isArray(participantIds) && participantIds.length > 0) {
+      const [rows] = await postgresSequelize.query(
+        `INSERT INTO corporate_wellness_event_rsvps (event_id, "userId", "employeeId", status)
+         SELECT :eventId, ce."userId", ce."employeeId", 'pending'
+         FROM corporate_employees ce
+         WHERE ce.corporate_id = :corporateId
+           AND ce."employeeId" IN (:participantIds)
+           AND ce."userId" IS NOT NULL
+         ON CONFLICT (event_id, "userId") DO NOTHING
+         RETURNING id`,
+        { replacements: { eventId, corporateId, participantIds } }
+      );
+      actuallyInvited = rows.length;
+    }
+
+    res.json({ success: true, message: `Invites sent to ${actuallyInvited || totalInvited} participants` });
   } catch (error) {
     console.error('Error sending invites:', error);
     res.status(500).json({ success: false, message: 'Failed to send invites', error: error.message });
@@ -2297,27 +2317,84 @@ router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
       return res.json({ success: true, data: { events: [], themes: WELLNESS_THEMES } });
     }
 
+    // Only events this employee actually has an RSVP row for -- previously
+    // every active employee saw every invites_sent event regardless of who
+    // was actually selected as a recipient, because no per-employee invite
+    // record existed at all until now.
     const rows = await postgresSequelize.query(
-      `SELECT id, title, description, event_type AS type,
-              TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
-              TO_CHAR(event_time, 'HH24:MI') AS "startTime",
-              TO_CHAR(end_time, 'HH24:MI') AS "endTime",
-              location, organizer AS speaker, max_participants AS capacity,
-              registered_count AS registered
-       FROM corporate_wellness_events
-       WHERE corporate_id = :corporateId
-         AND status IN ('upcoming', 'ongoing')
-         AND invites_sent = TRUE
-       ORDER BY event_date ASC`,
-      { replacements: { corporateId: assoc.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      `SELECT e.id, e.title, e.description, e.event_type AS type,
+              TO_CHAR(e.event_date, 'YYYY-MM-DD') AS date,
+              TO_CHAR(e.event_time, 'HH24:MI') AS "startTime",
+              TO_CHAR(e.end_time, 'HH24:MI') AS "endTime",
+              e.location, e.organizer AS speaker, e.max_participants AS capacity,
+              e.registered_count AS registered,
+              r.status AS "myRsvp",
+              TO_CHAR(r.invited_at, 'YYYY-MM-DD') AS "invitedDate"
+       FROM corporate_wellness_events e
+       JOIN corporate_wellness_event_rsvps r ON r.event_id = e.id AND r."userId" = :userId
+       WHERE e.corporate_id = :corporateId
+         AND e.status IN ('upcoming', 'ongoing')
+         AND e.invites_sent = TRUE
+       ORDER BY e.event_date ASC`,
+      { replacements: { corporateId: assoc.corporateId, userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
-    const employeeEvents = rows.map(r => ({ ...r, isRegistered: false }));
-
-    res.json({ success: true, data: { events: employeeEvents, themes: WELLNESS_THEMES } });
+    res.json({ success: true, data: { events: rows, themes: WELLNESS_THEMES } });
   } catch (error) {
     console.error('Error fetching employee wellness events:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch wellness events', error: error.message });
+  }
+});
+
+// Real RSVP submission -- was previously a client-only `setTimeout` with no
+// backend call at all, so an employee's response was never actually
+// recorded anywhere and HR had no real registered-employee data.
+router.post('/wellness-calendar/employee/events/:id/rsvp', authUser, async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  const { status } = req.body || {};
+  if (!eventId) return res.status(400).json({ success: false, message: 'Invalid event ID' });
+  if (!['confirmed', 'declined'].includes(status)) {
+    return res.status(400).json({ success: false, message: "status must be 'confirmed' or 'declined'" });
+  }
+
+  const tx = await postgresSequelize.transaction();
+  try {
+    const [[existing]] = await postgresSequelize.query(
+      `SELECT status FROM corporate_wellness_event_rsvps WHERE event_id = :eventId AND "userId" = :userId FOR UPDATE`,
+      { replacements: { eventId, userId: req.user.id }, transaction: tx }
+    );
+    if (!existing) {
+      await tx.rollback();
+      return res.status(404).json({ success: false, message: 'You were not invited to this event' });
+    }
+
+    await postgresSequelize.query(
+      `UPDATE corporate_wellness_event_rsvps SET status = :status, responded_at = NOW()
+       WHERE event_id = :eventId AND "userId" = :userId`,
+      { replacements: { eventId, userId: req.user.id, status }, transaction: tx }
+    );
+
+    // Keep the event's registered_count in sync with real confirmations.
+    const wasConfirmed = existing.status === 'confirmed';
+    const nowConfirmed = status === 'confirmed';
+    if (wasConfirmed !== nowConfirmed) {
+      await postgresSequelize.query(
+        `UPDATE corporate_wellness_events SET registered_count = GREATEST(0, registered_count + :delta), updated_at = NOW() WHERE id = :eventId`,
+        { replacements: { eventId, delta: nowConfirmed ? 1 : -1 }, transaction: tx }
+      );
+    }
+
+    const [[updated]] = await postgresSequelize.query(
+      `SELECT registered_count AS registered FROM corporate_wellness_events WHERE id = :eventId`,
+      { replacements: { eventId }, transaction: tx }
+    );
+
+    await tx.commit();
+    res.json({ success: true, data: { myRsvp: status, registered: updated?.registered ?? 0 } });
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    console.error('Error submitting RSVP:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit RSVP', error: error.message });
   }
 });
 

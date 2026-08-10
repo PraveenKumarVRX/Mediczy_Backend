@@ -183,7 +183,19 @@ const EmployeeWellnessCalendar: React.FC = () => {
     try {
       setLoading(true);
       const res = await api.get('/corporate/wellness-calendar/employee/events');
-      setEvents(res.data?.data?.events || []);
+      const rawEvents: any[] = res.data?.data?.events || [];
+      const mapped: WellnessEvent[] = rawEvents.map((r) => {
+        const month = new Date(r.date).getMonth();
+        const theme = WELLNESS_THEMES[month] || WELLNESS_THEMES[0];
+        const typeInfo = ACTIVITY_TYPES.find(t => t.value === r.type) || { icon: CalendarCheck };
+        return {
+          ...r,
+          theme: theme.name,
+          icon: typeInfo.icon,
+          color: theme.color,
+        };
+      });
+      setEvents(mapped);
     } catch (error: any) {
       setEvents([]);
       toast({
@@ -199,20 +211,20 @@ const EmployeeWellnessCalendar: React.FC = () => {
   const handleRSVP = async (eventId: string, status: 'confirmed' | 'declined') => {
     setRsvpLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      setEvents(prev => prev.map(e => 
-        e.id === eventId ? { ...e, myRsvp: status, registered: status === 'confirmed' ? e.registered + 1 : e.registered } : e
+      const { data } = await api.post(`/corporate/wellness-calendar/employee/events/${encodeURIComponent(eventId)}/rsvp`, { status });
+      const registered = data?.data?.registered;
+
+      setEvents(prev => prev.map(e =>
+        e.id === eventId ? { ...e, myRsvp: status, registered: typeof registered === 'number' ? registered : e.registered } : e
       ));
-      
+
       if (selectedEvent?.id === eventId) {
-        setSelectedEvent(prev => prev ? { ...prev, myRsvp: status } : null);
+        setSelectedEvent(prev => prev ? { ...prev, myRsvp: status, registered: typeof registered === 'number' ? registered : prev.registered } : null);
       }
 
       toast({
         title: status === 'confirmed' ? 'You\'re In! 🎉' : 'RSVP Declined',
-        description: status === 'confirmed' 
+        description: status === 'confirmed'
           ? 'You have confirmed your attendance. A calendar invite has been sent to your email.'
           : 'You have declined this event. You can change your response anytime.'
       });
@@ -220,10 +232,10 @@ const EmployeeWellnessCalendar: React.FC = () => {
       if (status === 'confirmed' && selectedEvent) {
         downloadICSFile(selectedEvent);
       }
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to update RSVP. Please try again.',
+        description: error?.response?.data?.message || 'Failed to update RSVP. Please try again.',
         variant: 'destructive'
       });
     } finally {
