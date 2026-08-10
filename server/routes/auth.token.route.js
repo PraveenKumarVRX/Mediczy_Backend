@@ -11,6 +11,7 @@ import {
 import { rotatePortalRefreshToken } from '../services/token-revocation.service.js';
 import User from '../models/postgres/user.model.postgres.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
+import { Corporate } from '../models/index.js';
 import { COOKIE_NAMES, setAuthCookies, clearAuthCookies } from '../config/cookies.config.js';
 import jwt from 'jsonwebtoken';
 
@@ -46,6 +47,42 @@ const tryRotateDoctorRefreshToken = async (refreshToken, req) => {
   };
 };
 
+const tryRotateCorporateRefreshToken = async (refreshToken, req) => {
+  const decoded = jwt.decode(refreshToken);
+  if (!decoded || decoded.portal !== 'corporate' || decoded.tokenType !== 'refresh') {
+    return null;
+  }
+
+  const deviceFp = req.headers['x-device-fingerprint'] || req.body?.deviceFingerprint || null;
+  const result = await rotatePortalRefreshToken(refreshToken, {
+    portal: 'corporate',
+    deviceFp,
+    resolvePayload: async (payload) => {
+      const corporate = await Corporate.findByPk(payload.userId);
+      if (!corporate) return null;
+      const status = String(corporate.status || '').toLowerCase();
+      if (!['active', 'pending'].includes(status)) return null;
+      return {
+        id: corporate.id,
+        userId: corporate.id,
+        corporateId: corporate.id,
+        email: corporate.email,
+        role: 'corporate',
+        userType: 'corporate',
+      };
+    },
+  });
+
+  if (!result) return null;
+  return {
+    accessToken: result.accessToken,
+    token: result.accessToken,
+    refreshToken: result.refreshToken,
+    expiresIn: 900,
+    role: 'corporate',
+  };
+};
+
 /**
  * POST /api/auth/refresh
  * Rotate refresh token — returns new 15-min access + new refresh token.
@@ -74,6 +111,16 @@ router.post('/refresh', async (req, res) => {
         return res.json({
           success: true,
           ...doctorResult,
+        });
+      }
+    }
+
+    if (!result) {
+      const corporateResult = await tryRotateCorporateRefreshToken(refreshToken, req);
+      if (corporateResult) {
+        return res.json({
+          success: true,
+          ...corporateResult,
         });
       }
     }

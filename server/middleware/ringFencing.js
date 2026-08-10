@@ -726,6 +726,15 @@ const PUBLIC_ENDPOINTS = [
   '/api/homecare/login',
   '/api/homecare/book',    // Patient homecare booking (public — no auth required)
   '/api/corporate/login',
+  // The actual (v1) token-refresh endpoint used by the doctor, patient, and
+  // corporate silent-refresh flows in api.ts -- only /api/v2/auth/refresh
+  // was ever exempted here, so every call to this one was rejected with a
+  // 401 before it could even verify the refresh token, silently defeating
+  // silent refresh platform-wide (the access token is always self-verified
+  // downstream in auth.token.route.js; ring-fencing gating it first is
+  // circular for exactly the case it exists to handle: an expired access
+  // token).
+  '/api/auth/refresh',
   '/api/ngo/login',
   '/api/oauth',
   '/oauth',  // OAuth 2.0 SSO endpoints (Rocket.Chat integration)

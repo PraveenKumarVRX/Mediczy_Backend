@@ -91,7 +91,7 @@ export const corporateLogin = async (req, res) => {
     // Issue JTI-tracked token (enables revocation + device fingerprint)
     const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
     const deviceFp = req.headers['x-device-fingerprint'] || null;
-    const { accessToken: token } = await issuePortalTokenPair(
+    const { accessToken: token, refreshToken } = await issuePortalTokenPair(
       {
         id: corporateRecord.id,
         userId: corporateRecord.id,
@@ -108,6 +108,10 @@ export const corporateLogin = async (req, res) => {
     return res.json({
       success: true,
       token,
+      // The access token is 15 minutes -- without this, the frontend has no
+      // way to silently renew it and every corporate HR session hard-401s
+      // across the whole portal after 15 minutes with no recovery.
+      refreshToken,
       user: {
         id: corporateRecord.id,
         email: corporateRecord.email,

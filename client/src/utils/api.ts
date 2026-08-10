@@ -395,6 +395,73 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // Corporate 401 — attempt silent token refresh before redirecting to login.
+    // Corporate access tokens are 15 minutes; without this block every HR
+    // session hard-401s across the whole portal after 15 minutes with no way
+    // to recover short of a manual re-login (login() already stores the
+    // refresh token issued at login under the shared "refreshToken" key).
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      typeof window !== "undefined" &&
+      getUserType() === "corporate"
+    ) {
+      originalRequest._retry = true;
+      const refreshToken = window.localStorage.getItem("refreshToken");
+
+      if (refreshToken) {
+        if (_isRefreshing) {
+          return new Promise<string>((resolve) => {
+            _refreshQueue.push(resolve);
+          }).then((newToken) => {
+            (originalRequest as any).headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${newToken}`,
+            };
+            return api(originalRequest);
+          });
+        }
+
+        _isRefreshing = true;
+        try {
+          const { data } = await axios.post(
+            `${api.defaults.baseURL}/auth/refresh`,
+            { refreshToken },
+            { skipAuth: true } as any
+          );
+          if (data.success && data.accessToken) {
+            window.localStorage.setItem("corporateToken", data.accessToken);
+            window.localStorage.setItem("token", data.accessToken);
+            if (data.refreshToken) {
+              window.localStorage.setItem("refreshToken", data.refreshToken);
+            }
+            _refreshQueue.forEach((cb) => cb(data.accessToken));
+            _refreshQueue = [];
+            (originalRequest as any).headers = {
+              ...(originalRequest.headers || {}),
+              Authorization: `Bearer ${data.accessToken}`,
+            };
+            return api(originalRequest);
+          }
+        } catch {
+          // Refresh failed — fall through to clear session
+        } finally {
+          _isRefreshing = false;
+        }
+      }
+
+      // No refresh token or refresh failed — clear session and redirect to corporate login.
+      window.localStorage.removeItem("corporateToken");
+      window.localStorage.removeItem("corporateData");
+      window.localStorage.removeItem("refreshToken");
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("userType");
+      if (!window.location.pathname.startsWith("/corporate/login")) {
+        window.location.href = "/corporate/login";
+      }
+      return Promise.reject(error);
+    }
+
     // Lab 401 — clear stale token and redirect to lab login
     if (
       error.response?.status === 401 &&
