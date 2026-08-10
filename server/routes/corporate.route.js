@@ -605,9 +605,10 @@ router.get('/health-checkups', authUser, async (req, res) => {
 
     if (!isCorporateSession) {
       const [assoc] = await postgresSequelize.query(
-        `SELECT "entityId" AS "corporateId" FROM user_associations
-          WHERE "userId" = :userId AND "entityType" = 'corporate' AND status = 'active'
-          ORDER BY "createdAt" DESC LIMIT 1`,
+        `SELECT ua."entityId" AS "corporateId" FROM user_associations ua
+          JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
+          WHERE ua."userId" = :userId AND ua."entityType" = 'corporate' AND ua.status = 'active'
+          ORDER BY ua."createdAt" DESC LIMIT 1`,
         { replacements: { userId: req.user.id } }
       );
       corporateId = assoc[0]?.corporateId || null;
@@ -2307,9 +2308,10 @@ router.post('/wellness-calendar/activities/:id/send-invites', authCorporate, asy
 router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
   try {
     const [assoc] = await postgresSequelize.query(
-      `SELECT "entityId" AS "corporateId" FROM user_associations
-       WHERE "userId" = :userId AND "entityType" = 'corporate' AND role = 'employee' AND status = 'active'
-       LIMIT 1`,
+      `SELECT ua."entityId" AS "corporateId" FROM user_associations ua
+       JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
+       WHERE ua."userId" = :userId AND ua."entityType" = 'corporate' AND ua.role = 'employee' AND ua.status = 'active'
+       ORDER BY ua."createdAt" DESC LIMIT 1`,
       { replacements: { userId: req.user?.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
@@ -2759,9 +2761,10 @@ router.get('/gamification/challenges/:id/leaderboard', authCorporate, async (req
 // ---------------------------------------------------------------------------
 async function resolveEmployeeContext(userId) {
   const [[assoc]] = await postgresSequelize.query(
-    `SELECT "entityId" AS "corporateId" FROM user_associations
-      WHERE "userId" = :userId AND "entityType" = 'corporate' AND status = 'active'
-      ORDER BY "createdAt" DESC LIMIT 1`,
+    `SELECT ua."entityId" AS "corporateId" FROM user_associations ua
+      JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
+      WHERE ua."userId" = :userId AND ua."entityType" = 'corporate' AND ua.status = 'active'
+      ORDER BY ua."createdAt" DESC LIMIT 1`,
     { replacements: { userId } }
   );
   if (!assoc?.corporateId) return null;

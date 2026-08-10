@@ -430,8 +430,10 @@ async function findUserByEmployeeId(empId, corporateId = null) {
              ua.metadata->>'employeeId' AS "employeeId"
       FROM user_associations ua
       JOIN users u ON u.id = ua."userId"
+      JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
       WHERE ua."entityType" = 'corporate'
         AND ua.role = 'employee'
+        AND ua.status = 'active'
         AND UPPER(ua.metadata->>'employeeId') = :empId`;
     const replacements = { empId: normalised };
 
@@ -439,8 +441,9 @@ async function findUserByEmployeeId(empId, corporateId = null) {
       query += ` AND ua."entityId" = :corporateId`;
       replacements.corporateId = corporateId;
     }
-    // Prefer records where lastName is populated (deduplicates split vs combined names)
-    query += ` ORDER BY (CASE WHEN u."lastName" IS NOT NULL AND u."lastName" != '' THEN 0 ELSE 1 END) ASC LIMIT 1`;
+    // Prefer records where lastName is populated (deduplicates split vs combined names),
+    // then most-recent association as a deterministic tiebreak for genuine multi-corp cases.
+    query += ` ORDER BY (CASE WHEN u."lastName" IS NOT NULL AND u."lastName" != '' THEN 0 ELSE 1 END) ASC, ua."createdAt" DESC LIMIT 1`;
 
     const [rows] = await postgresSequelize.query(query, { replacements });
     return rows[0] || null;
@@ -459,9 +462,12 @@ async function getCorporateEmployeeMeta(userId) {
     const [rows] = await postgresSequelize.query(
       `SELECT ua."entityId" AS "corporateId", ua.metadata->>'employeeId' AS "employeeId"
        FROM user_associations ua
+       JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
        WHERE ua."userId" = :userId
          AND ua."entityType" = 'corporate'
          AND ua.role = 'employee'
+         AND ua.status = 'active'
+       ORDER BY ua."createdAt" DESC
        LIMIT 1`,
       { replacements: { userId } }
     );

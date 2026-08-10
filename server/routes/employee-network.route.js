@@ -61,11 +61,12 @@ async function getUserCorporate(userId) {
   const [row] = await postgresSequelize.query(
     `SELECT ua."entityId" AS "corporateId", c."companyName"
        FROM user_associations ua
-       JOIN corporates c ON c.id = ua."entityId"
+       JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
       WHERE ua."userId"    = :userId
         AND ua."entityType" = 'corporate'
         AND ua.role         = 'employee'
         AND ua.status       = 'active'
+      ORDER BY ua."createdAt" DESC
       LIMIT 1`,
     { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
   );

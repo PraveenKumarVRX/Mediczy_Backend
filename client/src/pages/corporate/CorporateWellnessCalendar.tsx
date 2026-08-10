@@ -64,7 +64,14 @@ import { cn } from '@/lib/utils';
 // silently displayed under the wrong category here.
 type ActivityType = 'Wellness Session' | 'Health Checkup' | 'Fitness Activity' | 'Mental Health' | 'Yoga & Meditation' | 'Nutrition Workshop' | 'Sports Day' | 'Safety Training' | 'Other';
 type ViewMode = 'monthly' | 'quarterly' | 'annual';
-type ParticipantSelection = 'all' | 'department' | 'location' | 'facility' | 'custom';
+// 'location'/'facility' targeting was removed: no employee record anywhere
+// in the platform has ever had a real location/facility value (not even a
+// database column for it), and the selectable options were a hardcoded
+// fake list ('Mumbai HQ', 'Tower A', ...) unrelated to any real corporate's
+// offices -- selecting either always matched zero real employees. 'custom'
+// (hand-pick from the real employee roster) replaces them with something
+// that actually works with real data.
+type ParticipantSelection = 'all' | 'department' | 'custom';
 
 interface WellnessTheme {
   month: number;
@@ -106,8 +113,6 @@ interface WellnessActivity {
   theme: string;
   participantSelection?: ParticipantSelection;
   selectedDepartments?: string[];
-  selectedLocations?: string[];
-  selectedFacilities?: string[];
   selectedEmployeeIds?: string[];
   invitesSent?: boolean;
   invitesSentDate?: string;
@@ -115,10 +120,6 @@ interface WellnessActivity {
   totalInvited?: number;
 }
 
-// Sample data
-const DEPARTMENTS = ['Engineering', 'Marketing', 'Sales', 'Finance', 'Operations', 'HR', 'Product', 'Design', 'Customer Support', 'Legal'];
-const LOCATIONS = ['Mumbai HQ', 'Bangalore Office', 'Delhi Office', 'Chennai Office', 'Hyderabad Office', 'Pune Office'];
-const FACILITIES = ['Main Building', 'Annex Building', 'Tower A', 'Tower B', 'Remote/WFH'];
 
 const WELLNESS_THEMES: WellnessTheme[] = [
   { month: 0, name: 'New Year Wellness Kickoff', description: 'Start the year with health goals and resolutions', color: 'from-blue-500 to-blue-600', icon: Sparkles },
@@ -228,6 +229,13 @@ const CorporateWellnessCalendar: React.FC = () => {
   const [planName, setPlanName] = useState<string>('');
   const [activities, setActivities] = useState<WellnessActivity[]>([]);
   const [employees, setEmployees] = useState<Participant[]>([]);
+  // Real, derived from the actual roster -- replaces a hardcoded fake
+  // department list that didn't match any real corporate's structure.
+  const realDepartments = useMemo(
+    () => Array.from(new Set(employees.map(e => e.department).filter(Boolean))).sort(),
+    [employees]
+  );
+  const [employeePickerSearch, setEmployeePickerSearch] = useState('');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('monthly');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -252,8 +260,7 @@ const CorporateWellnessCalendar: React.FC = () => {
     capacity: 50,
     participantSelection: 'all' as ParticipantSelection,
     selectedDepartments: [] as string[],
-    selectedLocations: [] as string[],
-    selectedFacilities: [] as string[],
+    selectedEmployeeIds: [] as string[],
     reminders: {
       enabled: true,
       fifteenDays: true,
@@ -376,16 +383,14 @@ const CorporateWellnessCalendar: React.FC = () => {
   const handleToday = () => setCurrentDate(new Date());
 
   // Get participants based on selection criteria
-  const getSelectedParticipants = (selection: ParticipantSelection, depts: string[], locs: string[], facilities: string[]): Participant[] => {
+  const getSelectedParticipants = (selection: ParticipantSelection, depts: string[], employeeIds: string[]): Participant[] => {
     switch (selection) {
       case 'all':
         return employees;
       case 'department':
         return employees.filter(e => depts.includes(e.department));
-      case 'location':
-        return employees.filter(e => locs.includes(e.location));
-      case 'facility':
-        return employees.filter(e => facilities.includes(e.facility));
+      case 'custom':
+        return employees.filter(e => employeeIds.includes(e.id));
       default:
         return employees;
     }
@@ -396,8 +401,7 @@ const CorporateWellnessCalendar: React.FC = () => {
     const participants = getSelectedParticipants(
       newActivity.participantSelection,
       newActivity.selectedDepartments,
-      newActivity.selectedLocations,
-      newActivity.selectedFacilities
+      newActivity.selectedEmployeeIds
     );
     return participants.length;
   };
@@ -409,8 +413,7 @@ const CorporateWellnessCalendar: React.FC = () => {
       const participants = getSelectedParticipants(
         activity.participantSelection || 'all',
         activity.selectedDepartments || [],
-        activity.selectedLocations || [],
-        activity.selectedFacilities || []
+        activity.selectedEmployeeIds || []
       );
 
       // Generate ICS file content
@@ -484,8 +487,7 @@ const CorporateWellnessCalendar: React.FC = () => {
         // client-side here so the "Send Invites" step can reuse them.
         participantSelection: newActivity.participantSelection,
         selectedDepartments: newActivity.selectedDepartments,
-        selectedLocations: newActivity.selectedLocations,
-        selectedFacilities: newActivity.selectedFacilities,
+        selectedEmployeeIds: newActivity.selectedEmployeeIds,
         invitesSent: false,
         totalInvited: participantCount,
         reminders: newActivity.reminders
@@ -504,8 +506,7 @@ const CorporateWellnessCalendar: React.FC = () => {
         capacity: 50,
         participantSelection: 'all',
         selectedDepartments: [],
-        selectedLocations: [],
-        selectedFacilities: [],
+        selectedEmployeeIds: [],
         reminders: {
           enabled: true,
           fifteenDays: true,
@@ -1034,12 +1035,11 @@ const CorporateWellnessCalendar: React.FC = () => {
                 
                 <RadioGroup 
                   value={newActivity.participantSelection} 
-                  onValueChange={(v) => setNewActivity({ 
-                    ...newActivity, 
+                  onValueChange={(v) => setNewActivity({
+                    ...newActivity,
                     participantSelection: v as ParticipantSelection,
                     selectedDepartments: [],
-                    selectedLocations: [],
-                    selectedFacilities: []
+                    selectedEmployeeIds: []
                   })}
                   className="grid grid-cols-2 gap-3"
                 >
@@ -1058,17 +1058,10 @@ const CorporateWellnessCalendar: React.FC = () => {
                     </Label>
                   </div>
                   <div className="flex items-center space-x-2 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                    <RadioGroupItem value="location" id="location" />
-                    <Label htmlFor="location" className="cursor-pointer flex-1">
-                      <div className="font-medium">By Location</div>
-                      <div className="text-xs text-slate-500">Select locations</div>
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                    <RadioGroupItem value="facility" id="facility" />
-                    <Label htmlFor="facility" className="cursor-pointer flex-1">
-                      <div className="font-medium">By Facility</div>
-                      <div className="text-xs text-slate-500">Select facilities</div>
+                    <RadioGroupItem value="custom" id="custom" />
+                    <Label htmlFor="custom" className="cursor-pointer flex-1">
+                      <div className="font-medium">Custom</div>
+                      <div className="text-xs text-slate-500">Hand-pick employees</div>
                     </Label>
                   </div>
                 </RadioGroup>
@@ -1077,74 +1070,70 @@ const CorporateWellnessCalendar: React.FC = () => {
                 {newActivity.participantSelection === 'department' && (
                   <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
                     <Label className="text-sm font-medium">Select Departments</Label>
-                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                      {DEPARTMENTS.map(dept => (
-                        <div key={dept} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={dept}
-                            checked={newActivity.selectedDepartments.includes(dept)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setNewActivity({ ...newActivity, selectedDepartments: [...newActivity.selectedDepartments, dept] });
-                              } else {
-                                setNewActivity({ ...newActivity, selectedDepartments: newActivity.selectedDepartments.filter(d => d !== dept) });
-                              }
-                            }}
-                          />
-                          <Label htmlFor={dept} className="text-sm cursor-pointer">{dept}</Label>
-                        </div>
-                      ))}
-                    </div>
+                    {realDepartments.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic">No department data on file for your employee roster yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
+                        {realDepartments.map(dept => (
+                          <div key={dept} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={dept}
+                              checked={newActivity.selectedDepartments.includes(dept)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setNewActivity({ ...newActivity, selectedDepartments: [...newActivity.selectedDepartments, dept] });
+                                } else {
+                                  setNewActivity({ ...newActivity, selectedDepartments: newActivity.selectedDepartments.filter(d => d !== dept) });
+                                }
+                              }}
+                            />
+                            <Label htmlFor={dept} className="text-sm cursor-pointer">{dept}</Label>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
 
-                {/* Location Selection */}
-                {newActivity.participantSelection === 'location' && (
+                {/* Custom employee picker -- search the real roster and hand-pick */}
+                {newActivity.participantSelection === 'custom' && (
                   <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                    <Label className="text-sm font-medium">Select Locations</Label>
-                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                      {LOCATIONS.map(loc => (
-                        <div key={loc} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={loc}
-                            checked={newActivity.selectedLocations.includes(loc)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setNewActivity({ ...newActivity, selectedLocations: [...newActivity.selectedLocations, loc] });
-                              } else {
-                                setNewActivity({ ...newActivity, selectedLocations: newActivity.selectedLocations.filter(l => l !== loc) });
-                              }
-                            }}
-                          />
-                          <Label htmlFor={loc} className="text-sm cursor-pointer">{loc}</Label>
-                        </div>
-                      ))}
+                    <Label className="text-sm font-medium">Select Employees</Label>
+                    <Input
+                      placeholder="Search by name or email…"
+                      value={employeePickerSearch}
+                      onChange={(e) => setEmployeePickerSearch(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-200 dark:divide-slate-600 border border-slate-200 dark:border-slate-600 rounded-md">
+                      {employees
+                        .filter(e => {
+                          const q = employeePickerSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return e.name.toLowerCase().includes(q) || e.email.toLowerCase().includes(q);
+                        })
+                        .slice(0, 100)
+                        .map(emp => (
+                          <label key={emp.id} htmlFor={`emp-${emp.id}`} className="flex items-center gap-2 px-2 py-1.5 text-xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700">
+                            <Checkbox
+                              id={`emp-${emp.id}`}
+                              checked={newActivity.selectedEmployeeIds.includes(emp.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setNewActivity({ ...newActivity, selectedEmployeeIds: [...newActivity.selectedEmployeeIds, emp.id] });
+                                } else {
+                                  setNewActivity({ ...newActivity, selectedEmployeeIds: newActivity.selectedEmployeeIds.filter(id => id !== emp.id) });
+                                }
+                              }}
+                            />
+                            <span className="truncate flex-1">{emp.name}{emp.department ? ` · ${emp.department}` : ''}</span>
+                          </label>
+                        ))}
+                      {employees.length === 0 && (
+                        <p className="text-xs text-slate-500 italic p-2">No employees loaded.</p>
+                      )}
                     </div>
-                  </div>
-                )}
-
-                {/* Facility Selection */}
-                {newActivity.participantSelection === 'facility' && (
-                  <div className="space-y-2 p-3 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
-                    <Label className="text-sm font-medium">Select Facilities</Label>
-                    <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                      {FACILITIES.map(fac => (
-                        <div key={fac} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={fac}
-                            checked={newActivity.selectedFacilities.includes(fac)}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setNewActivity({ ...newActivity, selectedFacilities: [...newActivity.selectedFacilities, fac] });
-                              } else {
-                                setNewActivity({ ...newActivity, selectedFacilities: newActivity.selectedFacilities.filter(f => f !== fac) });
-                              }
-                            }}
-                          />
-                          <Label htmlFor={fac} className="text-sm cursor-pointer">{fac}</Label>
-                        </div>
-                      ))}
-                    </div>
+                    <p className="text-xs text-slate-500">{newActivity.selectedEmployeeIds.length} selected</p>
                   </div>
                 )}
 
@@ -1304,8 +1293,7 @@ const CorporateWellnessCalendar: React.FC = () => {
                       <p className="text-xs text-emerald-600 dark:text-emerald-500">
                         Selection: {selectedActivity.participantSelection === 'all' ? 'All Employees' :
                           selectedActivity.participantSelection === 'department' ? `Departments: ${selectedActivity.selectedDepartments?.join(', ') || 'None'}` :
-                          selectedActivity.participantSelection === 'location' ? `Locations: ${selectedActivity.selectedLocations?.join(', ') || 'None'}` :
-                          selectedActivity.participantSelection === 'facility' ? `Facilities: ${selectedActivity.selectedFacilities?.join(', ') || 'None'}` :
+                          selectedActivity.participantSelection === 'custom' ? `${selectedActivity.selectedEmployeeIds?.length || 0} hand-picked employees` :
                           'All Employees'}
                       </p>
                     </div>
@@ -1476,8 +1464,7 @@ const CorporateWellnessCalendar: React.FC = () => {
                       {selectedActivity.totalInvited || getSelectedParticipants(
                         selectedActivity.participantSelection || 'all',
                         selectedActivity.selectedDepartments || [],
-                        selectedActivity.selectedLocations || [],
-                        selectedActivity.selectedFacilities || []
+                        selectedActivity.selectedEmployeeIds || []
                       ).length} employees
                     </span>
                   </div>

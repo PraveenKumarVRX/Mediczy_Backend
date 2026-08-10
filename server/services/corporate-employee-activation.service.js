@@ -12,6 +12,7 @@ export async function hasActiveCorporateEmployment(userId) {
   const { rows } = await pool.query(
     `SELECT 1
        FROM user_associations ua
+       JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
       WHERE ua."userId" = $1
         AND ua."entityType" = 'corporate'
         AND ua.role = 'employee'
@@ -37,10 +38,12 @@ export async function reactivateCorporateEmployeeAccount(userId, { client = null
   const { rows: links } = await q(
     `SELECT ua."entityId" AS corporate_id
        FROM user_associations ua
+       JOIN corporates c ON c.id = ua."entityId" AND LOWER(c.status) = 'active'
       WHERE ua."userId" = $1
         AND ua."entityType" = 'corporate'
         AND ua.role = 'employee'
         AND ua.status = 'active'
+      ORDER BY ua."createdAt" DESC
       LIMIT 1`,
     [userId]
   );
