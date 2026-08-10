@@ -667,6 +667,69 @@ router.get('/health-checkups', authUser, async (req, res) => {
   }
 });
 
+// HR-facing, read-only view of the real health checkup packages Team has
+// configured for this corporate (user_health_packages) -- e.g. Pre-Employment
+// vs Annual Health Checkup, each with its own real test list. HR cannot
+// create or edit packages here; that stays a Team-only action.
+router.get('/health-packages', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT "packageId", "packageName", "packageDetails",
+              MIN("validFrom") AS "validFrom", MAX("validTo") AS "validTo",
+              COUNT(*)::int AS "employeeCount"
+       FROM user_health_packages
+       WHERE corporate_id = :corporateId
+       GROUP BY "packageId", "packageName", "packageDetails"
+       ORDER BY "packageName" ASC`,
+      { replacements: { corporateId } }
+    );
+
+    const packages = rows
+      .map((r) => ({
+        ...r,
+        packageDetails: typeof r.packageDetails === 'string' ? JSON.parse(r.packageDetails || '{}') : (r.packageDetails || {}),
+      }))
+      // Exclude the generic placeholder auto-created alongside the base
+      // subscription plan (packageDetails = {}) -- not a real customized
+      // package, nothing meaningful to show HR.
+      .filter((r) => Object.keys(r.packageDetails).length > 0)
+      .map((r) => ({
+        id: r.packageId,
+        name: r.packageName,
+        // Packages created before the pre_employment/annual/other type field
+        // existed carry whatever free-text type Team used at the time (e.g.
+        // "health_checkup") -- normalize anything unrecognized to 'other' so
+        // it still shows up in the byType breakdown instead of silently
+        // vanishing from every bucket.
+        type: ['pre_employment', 'annual'].includes(r.packageDetails.type) ? r.packageDetails.type : 'other',
+        tests: Array.isArray(r.packageDetails.tests) ? r.packageDetails.tests : [],
+        price: Number(r.packageDetails.cost ?? r.packageDetails.price ?? 0) || null,
+        description: r.packageDetails.description || null,
+        employeeCount: r.employeeCount,
+        validFrom: r.validFrom ? new Date(r.validFrom).toISOString().slice(0, 10) : null,
+        validTo: r.validTo ? new Date(r.validTo).toISOString().slice(0, 10) : null,
+      }));
+
+    res.json({
+      success: true,
+      data: {
+        packages,
+        byType: {
+          pre_employment: packages.filter((p) => p.type === 'pre_employment'),
+          annual: packages.filter((p) => p.type === 'annual'),
+          other: packages.filter((p) => p.type === 'other'),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[corporate] GET /health-packages error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to load health packages' });
+  }
+});
+
 const mapCheckupBooking = (r) => ({
   id: String(r.id),
   appointmentId: `CHK-${r.id}`,

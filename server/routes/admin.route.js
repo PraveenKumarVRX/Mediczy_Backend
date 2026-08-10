@@ -5045,7 +5045,8 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
     const uhpPackages = await postgresSequelize.query(`
       SELECT "packageId", "packageName", "packageDetails",
              MIN("validFrom") AS "validFrom",
-             MAX("validTo") AS "validTo"
+             MAX("validTo") AS "validTo",
+             COUNT(*)::int AS "employeeCount"
       FROM user_health_packages
       WHERE corporate_id = :corporateId
       GROUP BY "packageId", "packageName", "packageDetails"
@@ -5977,46 +5978,11 @@ router.post('/corporate-package-assignments', authUser, requireRole(['admin', 't
   }
 });
 
-/**
- * Get Health Packages for Corporate
- * GET /api/admin/corporate-health-packages/:corporateId
- */
-router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team']), async (req, res) => {
-  try {
-    const { corporateId } = req.params;
-    
-    // Get all unique packages assigned to this corporate's employees
-    const packages = await postgresSequelize.query(`
-      SELECT DISTINCT ON (uhp."packageId")
-        uhp."packageId", uhp."packageName", uhp."packageDetails",
-        uhp."validFrom", uhp."validTo", uhp.status,
-        COUNT(uhp."userId") OVER (PARTITION BY uhp."packageId") as "employeeCount"
-      FROM user_health_packages uhp
-      WHERE uhp.corporate_id = :corporateId
-      ORDER BY uhp."packageId",
-               (CASE WHEN uhp."packageDetails" != '{}'::jsonb THEN 0 ELSE 1 END) ASC,
-               uhp."createdAt" DESC
-    `, {
-      replacements: { corporateId },
-      type: postgresSequelize.QueryTypes.SELECT
-    });
-    
-    return res.json({
-      success: true,
-      packages: packages.map(p => ({
-        ...p,
-        packageDetails: typeof p.packageDetails === 'string' ? JSON.parse(p.packageDetails) : p.packageDetails
-      }))
-    });
-  } catch (error) {
-    console.error('Failed to get corporate health packages:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to get health packages',
-      error: error.message
-    });
-  }
-});
+// Note: a second, unreachable GET /corporate-health-packages/:corporateId
+// (Express matches the first-registered route above) was removed here --
+// its one real improvement, a per-package employeeCount, has been merged
+// into the live handler instead of leaving dead code with a slightly
+// different response shape around.
 
 // Admin creates internal users
 router.post('/users', authUser, requireRole('admin'), createInternalUser);

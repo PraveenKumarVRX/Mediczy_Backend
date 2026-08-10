@@ -102,9 +102,10 @@ interface PlanUsage {
 }
 
 // Real checkup data (from GET /corporate/health-checkups) reflects an actual
-// plan benefit -- there's no real per-package test-list/pricing catalog
-// anywhere in the platform, so those fields stay optional rather than
-// fabricated when absent.
+// plan benefit; those fields stay optional rather than fabricated when
+// absent. Real per-package test lists/pricing do exist (Team-configured,
+// see HealthPackage below via GET /corporate/health-packages) -- they just
+// aren't part of this single-benefit lookup.
 interface HealthCheckup {
   id: string;
   name: string;
@@ -120,6 +121,22 @@ interface HealthCheckup {
   category?: 'Basic' | 'Comprehensive' | 'Advanced' | 'Specialized';
   ageGroup?: string;
   gender?: 'Male' | 'Female' | 'All';
+}
+
+// Team-configured checkup packages (GET /corporate/health-packages, HR
+// read-only view of user_health_packages). Distinct from HealthCheckup
+// above, which reflects a single generic plan benefit line, not a
+// real per-package test list.
+interface HealthPackage {
+  id: string;
+  name: string;
+  type: 'pre_employment' | 'annual' | 'other';
+  tests: string[];
+  price: number | null;
+  description: string | null;
+  employeeCount: number;
+  validFrom: string | null;
+  validTo: string | null;
 }
 
 interface BookingDetails {
@@ -154,6 +171,7 @@ const CorporateBenefits = () => {
   const [corporatePlan, setCorporatePlan] = useState<CorporatePlan | null>(null);
   const [viewMode, setViewMode] = useState<'company' | 'personal'>('personal');
   const [healthCheckups, setHealthCheckups] = useState<HealthCheckup[]>([]);
+  const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([]);
   const [myAppointments, setMyAppointments] = useState<MyAppointment[]>([]);
   const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null);
   const [selectedCheckup, setSelectedCheckup] = useState<HealthCheckup | null>(null);
@@ -177,10 +195,12 @@ const CorporateBenefits = () => {
     try {
       setLoading(true);
       
-      const [planRes, checkupsRes, appointmentsRes] = await Promise.all([
+      const [planRes, checkupsRes, appointmentsRes, packagesRes] = await Promise.all([
         api.get('/corporate/my-benefits').catch(() => ({ data: null })),
         api.get('/corporate/health-checkups').catch(() => ({ data: null })),
-        api.get('/corporate/my-appointments').catch(() => ({ data: null }))
+        api.get('/corporate/my-appointments').catch(() => ({ data: null })),
+        // HR-only (authCorporate) -- 403s harmlessly for an employee session.
+        api.get('/corporate/health-packages').catch(() => ({ data: null }))
       ]);
 
       const planPayload = planRes?.data?.plan || planRes?.data?.data?.plan || null;
@@ -194,11 +214,15 @@ const CorporateBenefits = () => {
 
       const appointmentsPayload = appointmentsRes?.data?.appointments || appointmentsRes?.data?.data?.appointments;
       setMyAppointments(appointmentsPayload || []);
+
+      const packagesPayload = packagesRes?.data?.data?.packages;
+      setHealthPackages(Array.isArray(packagesPayload) ? packagesPayload : []);
     } catch (err) {
       console.error('Failed to load data', err);
       setCorporatePlan(null);
       setHealthCheckups([]);
       setMyAppointments([]);
+      setHealthPackages([]);
     } finally {
       setLoading(false);
     }
@@ -578,6 +602,80 @@ const CorporateBenefits = () => {
 
             {/* Health Checkups Tab */}
             <TabsContent value="checkups" className="space-y-4">
+              {/* Health Checkup Packages -- HR-only, read-only view of what
+                  Team has configured (Pre-Employment / Annual / Other),
+                  each with a real test list and real employee assignment
+                  count. Team customizes these; HR views them here. */}
+              {viewMode === 'company' && (
+                <Card className="bg-slate-900/50 border-slate-700/50">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-slate-100 flex items-center gap-2">
+                      <TestTube className="w-5 h-5 text-emerald-400" />
+                      Health Checkup Packages
+                    </CardTitle>
+                    <p className="text-sm text-slate-400">
+                      Configured by your Mediqzy account team. Contact them to add or change a package.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    {healthPackages.length === 0 ? (
+                      <div className="text-center py-8 text-slate-500">
+                        <TestTube className="w-10 h-10 mx-auto mb-2 opacity-40" />
+                        <p>No customized health checkup packages configured yet.</p>
+                        <p className="text-sm mt-1">Ask your Mediqzy account team to set up Pre-Employment or Annual Health Checkup packages for your employees.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {([
+                          { key: 'pre_employment' as const, label: 'Pre-Employment Health Checkup' },
+                          { key: 'annual' as const, label: 'Annual Health Checkup' },
+                          { key: 'other' as const, label: 'Other Packages' },
+                        ]).map(({ key, label }) => {
+                          const group = healthPackages.filter(p => p.type === key);
+                          if (group.length === 0) return null;
+                          return (
+                            <div key={key}>
+                              <h4 className="text-sm font-semibold text-slate-300 uppercase tracking-wide mb-3">{label}</h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {group.map(pkg => (
+                                  <Card key={pkg.id} className="bg-slate-800/50 border-slate-700/50">
+                                    <CardContent className="pt-4 space-y-2">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <p className="font-medium text-slate-100">{pkg.name}</p>
+                                        {pkg.price != null && (
+                                          <span className="text-emerald-400 font-semibold flex items-center gap-0.5 shrink-0">
+                                            <IndianRupee className="w-3.5 h-3.5" />{pkg.price.toLocaleString()}
+                                          </span>
+                                        )}
+                                      </div>
+                                      {pkg.description && <p className="text-sm text-slate-400">{pkg.description}</p>}
+                                      <div className="flex items-center gap-4 text-sm text-slate-400 pt-1">
+                                        <span className="flex items-center gap-1"><TestTube className="w-3.5 h-3.5" />{pkg.tests.length} tests</span>
+                                        <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{pkg.employeeCount} employees</span>
+                                      </div>
+                                      {pkg.tests.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 pt-1">
+                                          {pkg.tests.slice(0, 4).map((t, i) => (
+                                            <Badge key={i} variant="outline" className="text-xs font-normal border-slate-600 text-slate-400">{t}</Badge>
+                                          ))}
+                                          {pkg.tests.length > 4 && (
+                                            <Badge variant="outline" className="text-xs font-normal border-slate-600 text-slate-500">+{pkg.tests.length - 4} more</Badge>
+                                          )}
+                                        </div>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Filters */}
               <Card className="p-4 bg-slate-900/50 border-slate-700/50">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

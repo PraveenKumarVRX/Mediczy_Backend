@@ -178,12 +178,16 @@ interface ClinicPartner {
   status: string;
 }
 
+type HealthPackageType = 'pre_employment' | 'annual' | 'other';
+
 interface HealthPackage {
   id: string;
   name: string;
   tests: string[];
   price: number;
   validityDays: number;
+  type?: HealthPackageType;
+  employeeCount?: number;
 }
 
 interface WellnessEvent {
@@ -883,6 +887,7 @@ const TeamCorporateManagement = () => {
   const [newPackage, setNewPackage] = useState({
     name: '',
     description: '',
+    type: 'annual' as HealthPackageType,
     tests: [] as string[],
     price: '',
     validityDays: '365'
@@ -2820,7 +2825,9 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             name: pkg.packageName || details.name || 'Health Package',
             tests: details.tests || [],
             price: Number(details.cost || details.price || 0),
-            validityDays
+            validityDays,
+            type: details.type as HealthPackageType | undefined,
+            employeeCount: typeof pkg.employeeCount === 'number' ? pkg.employeeCount : undefined
           } as HealthPackage;
         });
         setHealthPackages(packages);
@@ -5031,6 +5038,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
     setNewPackage({
       name: pkg.name,
       description: '',
+      type: pkg.type || 'annual',
       tests: pkg.tests,
       price: pkg.price.toString(),
       validityDays: pkg.validityDays.toString()
@@ -5038,31 +5046,47 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
     setShowEditPackageDialog(true);
   };
 
-  // Save Package Edit
+  // Save Package Edit -- reuses the same upsert endpoint create uses: calling
+  // it again with the existing packageId updates packageDetails/packageName
+  // on every employee currently assigned to it (ON CONFLICT DO UPDATE).
+  // Previously this only ever touched local React state, so an "edited"
+  // package silently reverted to its old values on refresh.
   const handleSavePackageEdit = async () => {
-    if (!editingPackage) return;
-    
+    if (!editingPackage || !selectedCorporate?.id) return;
+
     try {
-      // Update local state
-      setHealthPackages(prev => prev.map(pkg => 
-        pkg.id === editingPackage.id 
-          ? { ...pkg, name: newPackage.name, tests: newPackage.tests, price: parseFloat(newPackage.price), validityDays: parseInt(newPackage.validityDays) }
-          : pkg
-      ));
-      
+      const token = localStorage.getItem('teamToken');
+      await api.post('/admin/corporate-package-assignments', {
+        corporateId: selectedCorporate.id,
+        packageId: editingPackage.id,
+        packageName: newPackage.name,
+        packageDetails: {
+          tests: newPackage.tests,
+          price: parseFloat(newPackage.price),
+          description: newPackage.description,
+          type: newPackage.type,
+        },
+        employeeIds: 'all',
+        validityDays: parseInt(newPackage.validityDays) || 365,
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      await fetchHealthPackages(selectedCorporate.id);
+
       toast({
         title: 'Package Updated',
         description: `${newPackage.name} has been updated successfully`
       });
-      
+
       setShowEditPackageDialog(false);
       setEditingPackage(null);
-      setNewPackage({ name: '', description: '', tests: [], price: '', validityDays: '365' });
+      setNewPackage({ name: '', description: '', type: 'annual', tests: [], price: '', validityDays: '365' });
     } catch (error: any) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to update package'
+        description: error?.response?.data?.message || 'Failed to update package'
       });
     }
   };
@@ -5258,6 +5282,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
           tests:       newPackage.tests,
           price:       parseFloat(newPackage.price),
           description: newPackage.description,
+          type:        newPackage.type,
         },
         employeeIds:  'all',
         validityDays: parseInt(newPackage.validityDays) || 365,
@@ -5279,7 +5304,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         name: newPackage.name,
         tests: newPackage.tests,
         price: parseFloat(newPackage.price),
-        validityDays: parseInt(newPackage.validityDays) || 365
+        validityDays: parseInt(newPackage.validityDays) || 365,
+        type: newPackage.type
       };
       setHealthPackages(prev => [...prev, newPkg]);
       toast({
@@ -5290,7 +5316,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
     }
 
     setShowAddPackageDialog(false);
-    setNewPackage({ name: '', description: '', tests: [], price: '', validityDays: '365' });
+    setNewPackage({ name: '', description: '', type: 'annual', tests: [], price: '', validityDays: '365' });
   };
 
   const handleCreatePlan = async () => {
@@ -7438,16 +7464,26 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       healthPackages.map((pkg, index) => (
                         <Card key={pkg.id}>
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-lg flex items-center gap-2">
-                              {index % 3 === 0 ? <Heart className="h-5 w-5 text-red-500" /> : 
-                               index % 3 === 1 ? <Stethoscope className="h-5 w-5 text-blue-500" /> :
-                               <Activity className="h-5 w-5 text-green-500" />}
-                              {pkg.name}
-                            </CardTitle>
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-lg flex items-center gap-2">
+                                {index % 3 === 0 ? <Heart className="h-5 w-5 text-red-500" /> :
+                                 index % 3 === 1 ? <Stethoscope className="h-5 w-5 text-blue-500" /> :
+                                 <Activity className="h-5 w-5 text-green-500" />}
+                                {pkg.name}
+                              </CardTitle>
+                              {pkg.type && (
+                                <Badge variant="outline" className="text-xs shrink-0">
+                                  {pkg.type === 'pre_employment' ? 'Pre-Employment' : pkg.type === 'annual' ? 'Annual' : 'Other'}
+                                </Badge>
+                              )}
+                            </div>
                           </CardHeader>
                           <CardContent>
                             <p className="text-xl font-bold">₹{pkg.price.toLocaleString()}</p>
-                            <p className="text-sm text-muted-foreground">{pkg.tests.length} tests included</p>
+                            <p className="text-sm text-muted-foreground">
+                              {pkg.tests.length} tests included
+                              {typeof pkg.employeeCount === 'number' && ` · ${pkg.employeeCount} employees assigned`}
+                            </p>
                             <div className="mt-4 space-y-2">
                               {pkg.tests.slice(0, 3).map((test, i) => (
                                 <div key={i} className="flex items-center gap-2 text-sm">
@@ -8801,16 +8837,27 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Package Name</Label>
-                <Input 
+                <Input
                   placeholder="Executive Health Checkup"
                   value={newPackage.name}
                   onChange={(e) => setNewPackage({...newPackage, name: e.target.value})}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Checkup Type</Label>
+                <Select value={newPackage.type} onValueChange={(v) => setNewPackage({...newPackage, type: v as HealthPackageType})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pre_employment">Pre-Employment Health Checkup</SelectItem>
+                    <SelectItem value="annual">Annual Health Checkup</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Price (₹)</Label>
-                  <Input 
+                  <Input
                     type="number"
                     placeholder="4500"
                     value={newPackage.price}
@@ -8819,7 +8866,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 </div>
                 <div className="space-y-2">
                   <Label>Validity (Days)</Label>
-                  <Input 
+                  <Input
                     type="number"
                     placeholder="365"
                     value={newPackage.validityDays}
@@ -8834,10 +8881,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     {newPackage.tests.map((test, idx) => (
                       <Badge key={idx} variant="secondary" className="flex items-center gap-1">
                         {test}
-                        <button 
+                        <button
                           className="ml-1 hover:text-red-500"
                           onClick={() => setNewPackage({
-                            ...newPackage, 
+                            ...newPackage,
                             tests: newPackage.tests.filter((_, i) => i !== idx)
                           })}
                         >
@@ -8848,7 +8895,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   </div>
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <Input 
+                  <Input
                     placeholder="Add new test..."
                     id="new-test-input"
                     onKeyDown={(e) => {
@@ -9879,11 +9926,22 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Package Name *</Label>
-                <Input 
+                <Input
                   placeholder="e.g., Executive Health Checkup"
                   value={newPackage.name}
                   onChange={(e) => setNewPackage({...newPackage, name: e.target.value})}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Checkup Type</Label>
+                <Select value={newPackage.type} onValueChange={(v) => setNewPackage({...newPackage, type: v as HealthPackageType})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pre_employment">Pre-Employment Health Checkup</SelectItem>
+                    <SelectItem value="annual">Annual Health Checkup</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
