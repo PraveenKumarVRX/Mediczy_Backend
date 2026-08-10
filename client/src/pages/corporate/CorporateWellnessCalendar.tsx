@@ -19,10 +19,6 @@ import {
   Plus,
   ChevronLeft,
   ChevronRight,
-  Mic,
-  Video,
-  Tent,
-  Users,
   Trophy,
   Heart,
   Brain,
@@ -38,7 +34,6 @@ import {
   Download,
   RefreshCw,
   Sparkles,
-  Target,
   Stethoscope,
   Pill,
   Activity,
@@ -62,7 +57,12 @@ import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, startOfYear, addDays, subDays } from 'date-fns';
 import { cn } from '@/lib/utils';
 
-type ActivityType = 'talk' | 'webinar' | 'health-camp' | 'demonstration' | 'challenge' | 'screening' | 'workshop';
+// Must match the categories Team login actually writes to event_type
+// (TeamCorporateManagement.tsx's eventTypeColors) — this page and Team's
+// used to have two independently-invented taxonomies that never matched,
+// so every event created via Team (the only real creation path so far)
+// silently displayed under the wrong category here.
+type ActivityType = 'Wellness Session' | 'Health Checkup' | 'Fitness Activity' | 'Mental Health' | 'Yoga & Meditation' | 'Nutrition Workshop' | 'Sports Day' | 'Safety Training' | 'Other';
 type ViewMode = 'monthly' | 'quarterly' | 'annual';
 type ParticipantSelection = 'all' | 'department' | 'location' | 'facility' | 'custom';
 
@@ -136,13 +136,15 @@ const WELLNESS_THEMES: WellnessTheme[] = [
 ];
 
 const ACTIVITY_TYPES = [
-  { value: 'talk', label: 'Health Talk', icon: Mic, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-  { value: 'webinar', label: 'Webinar', icon: Video, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-  { value: 'health-camp', label: 'Health Camp', icon: Tent, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-  { value: 'demonstration', label: 'Demonstration', icon: Users, color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
-  { value: 'challenge', label: 'Challenge', icon: Trophy, color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
-  { value: 'screening', label: 'Health Screening', icon: Stethoscope, color: 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400' },
-  { value: 'workshop', label: 'Workshop', icon: Target, color: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-400' },
+  { value: 'Wellness Session', label: 'Wellness Session', icon: Sparkles, color: 'bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400' },
+  { value: 'Health Checkup', label: 'Health Checkup', icon: Stethoscope, color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+  { value: 'Fitness Activity', label: 'Fitness Activity', icon: Dumbbell, color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' },
+  { value: 'Mental Health', label: 'Mental Health', icon: Brain, color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+  { value: 'Yoga & Meditation', label: 'Yoga & Meditation', icon: Heart, color: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' },
+  { value: 'Nutrition Workshop', label: 'Nutrition Workshop', icon: Apple, color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+  { value: 'Sports Day', label: 'Sports Day', icon: Trophy, color: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' },
+  { value: 'Safety Training', label: 'Safety Training', icon: Shield, color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
+  { value: 'Other', label: 'Other', icon: Activity, color: 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400' },
 ];
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -241,7 +243,7 @@ const CorporateWellnessCalendar: React.FC = () => {
   const [newActivity, setNewActivity] = useState({
     title: '',
     description: '',
-    type: 'talk' as ActivityType,
+    type: 'Wellness Session' as ActivityType,
     date: new Date(),
     startTime: '10:00',
     endTime: '12:00',
@@ -493,7 +495,7 @@ const CorporateWellnessCalendar: React.FC = () => {
       setNewActivity({
         title: '',
         description: '',
-        type: 'talk',
+        type: 'Wellness Session',
         date: new Date(),
         startTime: '10:00',
         endTime: '12:00',
@@ -547,7 +549,16 @@ const CorporateWellnessCalendar: React.FC = () => {
   };
 
   const getActivityTypeInfo = (type: ActivityType) => {
-    return ACTIVITY_TYPES.find(t => t.value === type) || ACTIVITY_TYPES[0];
+    // Falling back to ACTIVITY_TYPES[0] here previously mislabeled any
+    // unrecognized type as a specific *wrong* category (e.g. a real "Health
+    // Checkup" event silently showing as "Health Talk"). Echo the raw value
+    // instead so an unmapped type is visibly itself, not a false match.
+    return ACTIVITY_TYPES.find(t => t.value === type) || {
+      value: type,
+      label: type || 'Other',
+      icon: Activity,
+      color: 'bg-slate-100 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400',
+    };
   };
 
   if (loading) {

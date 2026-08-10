@@ -22,8 +22,6 @@ import {
   Dumbbell,
   Apple,
   Stethoscope,
-  Video,
-  Mic,
   Target,
   AlertCircle,
   CalendarCheck,
@@ -45,7 +43,9 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/auth/AuthProvider';
 import { Calendar } from '@/components/ui/calendar';
 
-type ActivityType = 'talk' | 'webinar' | 'health-camp' | 'demonstration' | 'challenge' | 'screening' | 'workshop';
+// Must match the categories Team login actually writes to event_type
+// (TeamCorporateManagement.tsx's eventTypeColors / CorporateWellnessCalendar.tsx).
+type ActivityType = 'Wellness Session' | 'Health Checkup' | 'Fitness Activity' | 'Mental Health' | 'Yoga & Meditation' | 'Nutrition Workshop' | 'Sports Day' | 'Safety Training' | 'Other';
 type RSVPStatus = 'pending' | 'confirmed' | 'declined' | 'attended' | 'missed';
 
 interface WellnessEvent {
@@ -78,13 +78,15 @@ interface MonthTheme {
 }
 
 const ACTIVITY_TYPES: { value: ActivityType; label: string; icon: React.ElementType; color: string }[] = [
-  { value: 'talk', label: 'Health Talk', icon: Mic, color: 'bg-blue-100 text-blue-700' },
-  { value: 'webinar', label: 'Webinar', icon: Video, color: 'bg-purple-100 text-purple-700' },
-  { value: 'health-camp', label: 'Health Camp', icon: Stethoscope, color: 'bg-red-100 text-red-700' },
-  { value: 'demonstration', label: 'Demo', icon: Target, color: 'bg-orange-100 text-orange-700' },
-  { value: 'challenge', label: 'Challenge', icon: Trophy, color: 'bg-amber-100 text-amber-700' },
-  { value: 'screening', label: 'Screening', icon: Heart, color: 'bg-pink-100 text-pink-700' },
-  { value: 'workshop', label: 'Workshop', icon: Brain, color: 'bg-teal-100 text-teal-700' },
+  { value: 'Wellness Session', label: 'Wellness Session', icon: Sparkles, color: 'bg-teal-100 text-teal-700' },
+  { value: 'Health Checkup', label: 'Health Checkup', icon: Stethoscope, color: 'bg-blue-100 text-blue-700' },
+  { value: 'Fitness Activity', label: 'Fitness Activity', icon: Dumbbell, color: 'bg-orange-100 text-orange-700' },
+  { value: 'Mental Health', label: 'Mental Health', icon: Brain, color: 'bg-purple-100 text-purple-700' },
+  { value: 'Yoga & Meditation', label: 'Yoga & Meditation', icon: Heart, color: 'bg-indigo-100 text-indigo-700' },
+  { value: 'Nutrition Workshop', label: 'Nutrition Workshop', icon: Apple, color: 'bg-green-100 text-green-700' },
+  { value: 'Sports Day', label: 'Sports Day', icon: Trophy, color: 'bg-red-100 text-red-700' },
+  { value: 'Safety Training', label: 'Safety Training', icon: AlertCircle, color: 'bg-yellow-100 text-yellow-700' },
+  { value: 'Other', label: 'Other', icon: CalendarCheck, color: 'bg-slate-100 text-slate-700' },
 ];
 
 const WELLNESS_THEMES: MonthTheme[] = [
@@ -103,58 +105,6 @@ const WELLNESS_THEMES: MonthTheme[] = [
 ];
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-const generateSampleEvents = (): WellnessEvent[] => {
-  const currentYear = new Date().getFullYear();
-  const events: WellnessEvent[] = [];
-  
-  const sampleEvents = [
-    { title: 'New Year Health Goals Workshop', type: 'workshop' as ActivityType, month: 0, day: 8, rsvp: 'confirmed' as RSVPStatus },
-    { title: 'Kickstart Your Fitness Webinar', type: 'webinar' as ActivityType, month: 0, day: 15, rsvp: 'confirmed' as RSVPStatus },
-    { title: 'Heart Health Awareness Talk', type: 'talk' as ActivityType, month: 1, day: 12, rsvp: 'pending' as RSVPStatus },
-    { title: 'Blood Pressure Screening Camp', type: 'health-camp' as ActivityType, month: 1, day: 20, rsvp: 'pending' as RSVPStatus },
-    { title: 'Healthy Cooking Demonstration', type: 'demonstration' as ActivityType, month: 2, day: 10, rsvp: 'pending' as RSVPStatus },
-    { title: 'Nutrition & Diet Planning Webinar', type: 'webinar' as ActivityType, month: 2, day: 18, rsvp: 'pending' as RSVPStatus },
-    { title: 'Stress Management Workshop', type: 'workshop' as ActivityType, month: 3, day: 8, rsvp: 'pending' as RSVPStatus },
-    { title: 'Mindfulness Meditation Session', type: 'talk' as ActivityType, month: 3, day: 22, rsvp: 'pending' as RSVPStatus },
-    { title: '10K Steps Challenge Kickoff', type: 'challenge' as ActivityType, month: 4, day: 1, rsvp: 'pending' as RSVPStatus },
-    { title: 'Office Yoga Session', type: 'demonstration' as ActivityType, month: 4, day: 15, rsvp: 'pending' as RSVPStatus },
-    { title: 'Work-Life Balance Webinar', type: 'webinar' as ActivityType, month: 5, day: 10, rsvp: 'pending' as RSVPStatus },
-    { title: 'Family Wellness Day', type: 'health-camp' as ActivityType, month: 5, day: 25, rsvp: 'pending' as RSVPStatus },
-    // Past events
-    { title: 'December Wellness Wrap-up', type: 'workshop' as ActivityType, month: 11, day: 15, rsvp: 'attended' as RSVPStatus, year: currentYear - 1 },
-    { title: 'Holiday Health Tips', type: 'talk' as ActivityType, month: 11, day: 20, rsvp: 'missed' as RSVPStatus, year: currentYear - 1 },
-  ];
-
-  sampleEvents.forEach((evt, index) => {
-    const eventYear = (evt as any).year || currentYear;
-    const theme = WELLNESS_THEMES[evt.month];
-    const typeInfo = ACTIVITY_TYPES.find(t => t.value === evt.type) || ACTIVITY_TYPES[0];
-    
-    events.push({
-      id: `evt-${index + 1}`,
-      title: evt.title,
-      description: `Join us for ${evt.title.toLowerCase()} as part of our ${theme.name} initiative. This is a great opportunity to learn and improve your health.`,
-      type: evt.type,
-      date: `${eventYear}-${String(evt.month + 1).padStart(2, '0')}-${String(evt.day).padStart(2, '0')}`,
-      startTime: evt.type === 'webinar' ? '14:00' : '10:00',
-      endTime: evt.type === 'webinar' ? '15:00' : '12:00',
-      location: evt.type === 'webinar' ? 'Online (Zoom Link will be shared)' : 'Conference Room A, Office Building',
-      speaker: ['Dr. Priya Sharma', 'Dr. Rajesh Kumar', 'Wellness Coach Anita', 'Dr. Vikram Singh'][index % 4],
-      capacity: evt.type === 'webinar' ? 500 : evt.type === 'health-camp' ? 200 : 50,
-      registered: Math.floor(Math.random() * 40) + 10,
-      theme: theme.name,
-      icon: typeInfo.icon,
-      color: theme.color,
-      myRsvp: evt.rsvp,
-      invitedDate: `${eventYear}-${String(evt.month + 1).padStart(2, '0')}-01`,
-      reminderSent: evt.rsvp === 'confirmed',
-      rewards: evt.type === 'challenge' ? '500 Wellness Points + Badge' : undefined
-    });
-  });
-
-  return events;
-};
 
 // Generate ICS file for calendar download
 const generateICSFile = (event: WellnessEvent): string => {
@@ -232,10 +182,15 @@ const EmployeeWellnessCalendar: React.FC = () => {
   const loadData = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/corporate/wellness-calendar/employee/events').catch(() => ({ data: null }));
-      setEvents(res.data?.data?.events || generateSampleEvents());
-    } catch (error) {
-      setEvents(generateSampleEvents());
+      const res = await api.get('/corporate/wellness-calendar/employee/events');
+      setEvents(res.data?.data?.events || []);
+    } catch (error: any) {
+      setEvents([]);
+      toast({
+        title: 'Failed to load wellness calendar',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive',
+      });
     } finally {
       setLoading(false);
     }
@@ -319,7 +274,14 @@ const EmployeeWellnessCalendar: React.FC = () => {
   }), [upcomingEvents, myConfirmedEvents, pendingInvites, events]);
 
   const getActivityTypeInfo = (type: ActivityType) => {
-    return ACTIVITY_TYPES.find(t => t.value === type) || ACTIVITY_TYPES[0];
+    // Echo the raw value on an unrecognized type instead of silently
+    // mislabeling it as a specific wrong category (see CorporateWellnessCalendar.tsx).
+    return ACTIVITY_TYPES.find(t => t.value === type) || {
+      value: type,
+      label: type || 'Other',
+      icon: CalendarCheck,
+      color: 'bg-slate-100 text-slate-700',
+    };
   };
 
   const getRsvpBadge = (status: RSVPStatus) => {
