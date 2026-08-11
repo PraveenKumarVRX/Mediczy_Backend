@@ -43,15 +43,26 @@ interface ImagingStudy {
 // ─── Constants ───────────────────────────────────────────────────────────────
 const STUDY_TYPES = ["All", "CT", "MRI", "USG", "Echo", "Cathlab", "X-Ray", "Other"] as const;
 
-const STUDY_META: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+const STUDY_META: Record<string, { icon: React.ElementType; color: string; bg: string; label?: string }> = {
   CT:      { icon: ScanLine,  color: "text-blue-400",    bg: "bg-blue-500/15" },
   MRI:     { icon: Activity,  color: "text-purple-400",  bg: "bg-purple-500/15" },
+  // DICOM short code stored by Orthanc/PACS — treat as MRI in the doctor UI
+  MR:      { icon: Activity,  color: "text-purple-400",  bg: "bg-purple-500/15", label: "MRI" },
   USG:     { icon: Waves,     color: "text-cyan-400",    bg: "bg-cyan-500/15" },
+  US:      { icon: Waves,     color: "text-cyan-400",    bg: "bg-cyan-500/15", label: "USG" },
   Echo:    { icon: Heart,     color: "text-red-400",     bg: "bg-red-500/15" },
   Cathlab: { icon: Radio,     color: "text-orange-400",  bg: "bg-orange-500/15" },
+  XA:      { icon: Radio,     color: "text-orange-400",  bg: "bg-orange-500/15", label: "Cathlab" },
   "X-Ray": { icon: Zap,       color: "text-amber-400",   bg: "bg-amber-500/15" },
+  CR:      { icon: Zap,       color: "text-amber-400",   bg: "bg-amber-500/15", label: "X-Ray" },
+  DX:      { icon: Zap,       color: "text-amber-400",   bg: "bg-amber-500/15", label: "X-Ray" },
   Other:   { icon: FileText,  color: "text-slate-400",   bg: "bg-slate-500/15" },
 };
+
+function modalityLabel(modality: string) {
+  const meta = STUDY_META[modality] || STUDY_META[modality?.toUpperCase?.()] || STUDY_META.Other;
+  return meta.label || modality || "Other";
+}
 
 function formatBytes(b: number) {
   if (b < 1024) return `${b} B`;
@@ -412,42 +423,73 @@ const REPORT_STATUS_COLORS: Record<string, string> = {
   Pending:  'bg-gray-800 text-gray-400',
 };
 
-function ReferredStudiesPanel() {
+function ReferredStudiesPanel({
+  onCount,
+  initialModality = 'All',
+}: {
+  onCount?: (n: number) => void;
+  initialModality?: string;
+}) {
   const { toast } = useToast();
   const [studies, setStudies]         = useState<RisStudy[]>([]);
   const [loading, setLoading]         = useState(false);
   const [search, setSearch]           = useState('');
+  const [activeModality, setActiveModality] = useState(initialModality);
   const [viewer, setViewer]           = useState<RisStudy | null>(null);
   const [reportStudy, setReportStudy] = useState<RisStudy | null>(null);
   const [reportText, setReportText]   = useState('');
-  const doctorToken = localStorage.getItem('token') || '';
+  const doctorToken =
+    localStorage.getItem('doctorToken') ||
+    localStorage.getItem('token') ||
+    '';
 
   const fetch = useCallback(async () => {
     setLoading(true);
     try {
       const params: Record<string, string> = {};
       if (search.trim()) params.patientName = search.trim();
+      if (activeModality && activeModality !== 'All') params.modality = activeModality;
       const { data } = await api.get('/doctors/ris-referred', { params });
-      setStudies(data.studies || []);
+      const rows = data.studies || [];
+      setStudies(rows);
+      onCount?.(typeof data.total === 'number' ? data.total : rows.length);
     } catch (err: any) {
       toast({ title: 'Failed to load referred studies', description: err.response?.data?.message || err.message, variant: 'destructive' });
       setStudies([]);
+      onCount?.(0);
     } finally {
       setLoading(false);
     }
-  }, [search, toast]);
+  }, [search, activeModality, toast, onCount]);
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetch(); }, [fetch]);
 
   useEffect(() => {
-    const t = setTimeout(() => fetch(), 400);
-    return () => clearTimeout(t);
-  }, [search]); // eslint-disable-line
+    setActiveModality(initialModality || 'All');
+  }, [initialModality]);
 
   return (
     <div className="space-y-4">
-      {/* Search + refresh */}
-      <div className="flex gap-3">
+      {/* Search + modality + refresh */}
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-1.5 flex-wrap">
+          {STUDY_TYPES.map(t => {
+            const m = t !== 'All' ? (STUDY_META[t] || STUDY_META.Other) : null;
+            return (
+              <button key={t} type="button" onClick={() => setActiveModality(t)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all',
+                  activeModality === t
+                    ? m ? `${m.bg} ${m.color} border-current` : 'bg-indigo-500/15 text-indigo-300 border-indigo-400/50'
+                    : 'bg-slate-800/60 text-slate-400 border-slate-700/60 hover:border-slate-500'
+                )}>
+                {m && <m.icon className="w-3.5 h-3.5" />}
+                {t}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
           <Input
@@ -460,6 +502,7 @@ function ReferredStudiesPanel() {
         <button onClick={fetch} className="p-2 rounded-xl bg-slate-800/60 border border-slate-700/60 text-slate-400 hover:text-white transition-colors" title="Refresh">
           <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
         </button>
+        </div>
       </div>
 
       {loading ? (
@@ -479,7 +522,7 @@ function ReferredStudiesPanel() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {studies.map(s => {
-            const meta = STUDY_META[s.modality] || STUDY_META.Other;
+            const meta = STUDY_META[s.modality] || STUDY_META[String(s.modality || '').toUpperCase()] || STUDY_META.Other;
             return (
               <div
                 key={String(s.id)}
@@ -496,7 +539,7 @@ function ReferredStudiesPanel() {
                 </div>
                 <p className="text-white font-semibold text-sm mt-2 truncate">{s.patient_name}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-md', meta.bg, meta.color)}>{s.modality}</span>
+                  <span className={cn('text-[10px] font-bold px-1.5 py-0.5 rounded-md', meta.bg, meta.color)}>{modalityLabel(s.modality)}</span>
                   {s.study_description && <span className="text-slate-400 text-[11px] truncate">{s.study_description}</span>}
                 </div>
                 <div className="flex items-center gap-3 mt-2">
@@ -600,7 +643,7 @@ function ReferredStudiesPanel() {
 export default function DoctorImaging() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const [view, setView]               = useState<'my-studies' | 'referred'>('my-studies');
+  const [view, setView]               = useState<'my-studies' | 'referred'>('referred');
   const [studies, setStudies]         = useState<ImagingStudy[]>([]);
   const [loading, setLoading]         = useState(false);
   const [activeType, setActiveType]   = useState<string>("All");
@@ -608,6 +651,7 @@ export default function DoctorImaging() {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [showUpload, setShowUpload]   = useState(false);
   const [deleting, setDeleting]       = useState<number | null>(null);
+  const [referredCount, setReferredCount] = useState<number | null>(null);
 
   const fetchStudies = useCallback(async () => {
     setLoading(true);
@@ -625,7 +669,17 @@ export default function DoctorImaging() {
     }
   }, [activeType, search, toast]);
 
+  const fetchReferredCount = useCallback(async () => {
+    try {
+      const { data } = await api.get('/doctors/ris-referred', { params: { limit: 1 } });
+      setReferredCount(typeof data.total === 'number' ? data.total : (data.studies || []).length);
+    } catch {
+      /* badge is optional */
+    }
+  }, []);
+
   useEffect(() => { fetchStudies(); }, [fetchStudies]);
+  useEffect(() => { fetchReferredCount(); }, [fetchReferredCount]);
 
   // Debounce search
   useEffect(() => {
@@ -673,6 +727,14 @@ export default function DoctorImaging() {
                 className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all', view === 'referred' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white')}
               >
                 <FlaskConical className="w-3.5 h-3.5" /> Lab Referred
+                {typeof referredCount === 'number' && referredCount > 0 && (
+                  <span className={cn(
+                    'ml-0.5 min-w-[1.25rem] h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center',
+                    view === 'referred' ? 'bg-white/20 text-white' : 'bg-indigo-500/30 text-indigo-200'
+                  )}>
+                    {referredCount}
+                  </span>
+                )}
               </button>
             </div>
             {view === 'my-studies' && (
@@ -684,11 +746,28 @@ export default function DoctorImaging() {
           </div>
         </div>
 
-        {/* Referred studies panel */}
-        {view === 'referred' && <ReferredStudiesPanel />}
+        {/* Referred studies panel — lab/PACS MRI etc. land here via referring_doctor_id */}
+        {view === 'referred' && (
+          <ReferredStudiesPanel
+            onCount={setReferredCount}
+            initialModality={activeType}
+          />
+        )}
 
         {/* Filters — only shown for My Studies */}
         {view === 'my-studies' && (<>
+        {activeType === 'MRI' && studies.length === 0 && (referredCount ?? 0) > 0 && (
+          <div className="flex items-start gap-2 rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-3 py-2.5 text-sm text-indigo-100">
+            <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-indigo-300" />
+            <div>
+              Lab MRI studies appear under{" "}
+              <button type="button" className="underline font-semibold text-white" onClick={() => setView('referred')}>
+                Lab Referred
+              </button>
+              {" "}({referredCount} study{referredCount === 1 ? '' : 'ies'}). DICOM modality code is usually <span className="font-mono">MR</span>.
+            </div>
+          </div>
+        )}
         <div className="flex flex-col sm:flex-row gap-3">
           {/* Study type tabs */}
           <div className="flex gap-1.5 flex-wrap">

@@ -13,6 +13,7 @@ import fs      from 'fs';
 import { fileURLToPath } from 'url';
 import { authUser as authDoctor } from '../middleware/auth.middleware.js';
 import pool from '../db/pgPool.js';
+import { expandModalityFilter } from '../utils/imaging-modality.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router    = express.Router();
@@ -43,7 +44,11 @@ router.get('/', authDoctor, async (req, res) => {
     const params     = [doctorId];
     let p = 2;
 
-    if (modality)    { conditions.push(`modality = $${p++}`);           params.push(modality.toUpperCase()); }
+    if (modality) {
+      const mods = expandModalityFilter(modality);
+      conditions.push(`UPPER(TRIM(modality)) = ANY($${p++}::text[])`);
+      params.push(mods);
+    }
     if (status)      { conditions.push(`status = $${p++}`);             params.push(status); }
     if (patientName) { conditions.push(`patient_name ILIKE $${p++}`);   params.push(`%${patientName}%`); }
     if (from)        { conditions.push(`study_date >= $${p++}`);        params.push(from); }
