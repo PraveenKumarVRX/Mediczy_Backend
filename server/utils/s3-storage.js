@@ -31,13 +31,45 @@ export const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'ap-south-1',
 });
 
+// DICOM/imaging objects live on the dedicated on-prem PACS MinIO — the same instance
+// Orthanc's own AwsS3Storage plugin writes to — not on AWS S3. Kept as a separate client
+// (different endpoint, credentials, and path-style addressing) from the general s3Client
+// above, which non-imaging uploads (prescriptions, chat attachments, etc.) still use.
+export function isPacsMinioConfigured() {
+  return Boolean(process.env.PACS_MINIO_ENDPOINT && process.env.PACS_MINIO_ACCESS_KEY);
+}
+
+export const pacsMinioClient = isPacsMinioConfigured()
+  ? new S3Client({
+      region: process.env.PACS_MINIO_REGION || 'us-east-1',
+      endpoint: process.env.PACS_MINIO_ENDPOINT,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: process.env.PACS_MINIO_ACCESS_KEY,
+        secretAccessKey: process.env.PACS_MINIO_SECRET_KEY,
+      },
+    })
+  : null;
+
+export function getPacsMinioBucket() {
+  return process.env.PACS_MINIO_BUCKET || 'pacs-entity-001';
+}
+
 export function getUploadsBucket() {
   return process.env.S3_UPLOADS_BUCKET || 'mediczy-uploads';
 }
 
 export function getImagingDailyBucket(tenantId = null) {
+  if (pacsMinioClient) return getPacsMinioBucket();
   if (tenantId != null) return getImagingDailyBucketForTenant(tenantId);
   return sharedImagingDailyBucket();
+}
+
+/** Client to use for a given object key — pacs-minio for imaging keys when configured. */
+function clientForKey(key) {
+  const prefix = String(key || '').split('/')[0];
+  if (pacsMinioClient && IMAGING_PREFIXES.has(prefix)) return pacsMinioClient;
+  return s3Client;
 }
 
 export function getS3Region() {
@@ -87,7 +119,9 @@ export function imagingTenantPrefix(folder, tenantId) {
 /** Resolve which bucket holds a key. */
 export function resolveBucketForKey(key) {
   const prefix = String(key || '').split('/')[0];
-  if (IMAGING_PREFIXES.has(prefix)) return resolveImagingBucketFromKey(key);
+  if (IMAGING_PREFIXES.has(prefix)) {
+    return pacsMinioClient ? getPacsMinioBucket() : resolveImagingBucketFromKey(key);
+  }
   return getUploadsBucket();
 }
 
@@ -98,12 +132,14 @@ export function resolveBucketForKey(key) {
 export function s3Storage(folder, opts = {}) {
   const resolveTenant = opts.resolveTenant || resolveTenantIdFromReq;
   const isImaging = IMAGING_PREFIXES.has(folder);
+  const usePacsMinio = isImaging && Boolean(pacsMinioClient);
 
   return multerS3({
-    s3: s3Client,
+    s3: usePacsMinio ? pacsMinioClient : s3Client,
     bucket(req, _file, cb) {
       try {
         if (!isImaging) return cb(null, getUploadsBucket());
+        if (usePacsMinio) return cb(null, getPacsMinioBucket());
         const tid = resolveTenant(req);
         // Fire-and-forget ensure (idempotent); don't block key generation on slow CreateBucket
         ensureTenantImagingStorage(tid).catch(() => {});
@@ -113,7 +149,9 @@ export function s3Storage(folder, opts = {}) {
       }
     },
     contentType: multerS3.AUTO_CONTENT_TYPE,
-    serverSideEncryption: 'AES256',
+    // pacs-minio isn't confirmed to have SSE-S3/KMS configured (Orthanc's own writes to
+    // this same bucket don't request it); AWS S3 always supports it for non-imaging uploads.
+    ...(usePacsMinio ? {} : { serverSideEncryption: 'AES256' }),
     key(req, file, cb) {
       try {
         if (isImaging) {
@@ -134,22 +172,38 @@ export function s3Storage(folder, opts = {}) {
   });
 }
 
-async function tryBuckets(key, fn) {
+/** (bucket, client) candidates for a key — pacs-minio first for imaging keys (where
+ * everything now actually lives), legacy AWS S3 locations as a fallback safety net for
+ * anything not yet migrated. */
+function candidatesForKey(key) {
+  const client = clientForKey(key);
   const primary = resolveBucketForKey(key);
   const uploads = getUploadsBucket();
   const shared = sharedImagingDailyBucket();
   const tid = parseTenantIdFromKey(key);
-  const candidates = [...new Set([
-    primary,
-    shared,
-    uploads,
-    tid ? getImagingDailyBucketForTenant(tid) : null,
-  ].filter(Boolean))];
+  const seen = new Set();
+  const out = [];
+  const add = (bucket, c) => {
+    if (!bucket || seen.has(`${c === s3Client ? 'aws' : 'minio'}:${bucket}`)) return;
+    seen.add(`${c === s3Client ? 'aws' : 'minio'}:${bucket}`);
+    out.push({ bucket, client: c });
+  };
+  add(primary, client);
+  if (client !== s3Client) {
+    // Legacy AWS S3 fallback for imaging keys uploaded before the pacs-minio switch.
+    add(shared, s3Client);
+    add(uploads, s3Client);
+    if (tid) add(getImagingDailyBucketForTenant(tid), s3Client);
+  }
+  return out;
+}
 
+async function tryBuckets(key, fn) {
+  const candidates = candidatesForKey(key);
   let lastErr;
-  for (const bucket of candidates) {
+  for (const { bucket, client } of candidates) {
     try {
-      return await fn(bucket);
+      return await fn(bucket, client);
     } catch (err) {
       lastErr = err;
     }
@@ -158,17 +212,17 @@ async function tryBuckets(key, fn) {
 }
 
 export async function s3PresignedUrl(key, expiresIn = 3600) {
-  return tryBuckets(key, async (bucket) => {
-    await s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+  return tryBuckets(key, async (bucket, client) => {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
     const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-    return getSignedUrl(s3Client, cmd, { expiresIn });
+    return getSignedUrl(client, cmd, { expiresIn });
   });
 }
 
 export async function s3GetObjectBuffer(key) {
-  return tryBuckets(key, async (bucket) => {
+  return tryBuckets(key, async (bucket, client) => {
     const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
-    const res = await s3Client.send(cmd);
+    const res = await client.send(cmd);
     const chunks = [];
     for await (const chunk of res.Body) chunks.push(chunk);
     return Buffer.concat(chunks);
