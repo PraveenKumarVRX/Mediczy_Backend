@@ -117,6 +117,7 @@ export default function LabPacsDevices() {
   const [querying, setQuerying] = useState(false);
   const [selectedUids, setSelectedUids] = useState<Set<string>>(new Set());
   const [retrieving, setRetrieving] = useState(false);
+  const [syncingRis, setSyncingRis] = useState(false);
   const [echoing, setEchoing] = useState<string | null>(null);
 
   useEffect(() => {
@@ -282,6 +283,24 @@ export default function LabPacsDevices() {
     }
   };
 
+  /** Backfill Lab RIS from studies already in Orthanc (MRI PC C-STORE / missed webhook). */
+  const syncRisFromOrthanc = async () => {
+    setSyncingRis(true);
+    setError(null);
+    try {
+      const { data } = await api.post(
+        '/lab/ris/sync-from-orthanc',
+        { limit: 100 },
+        { headers: authHeaders, timeout: 180000 },
+      );
+      setSuccess(data.message || 'Orthanc studies synced to RIS worklist');
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Orthanc → RIS sync failed');
+    } finally {
+      setSyncingRis(false);
+    }
+  };
+
   const syncedCount = modalities.filter((m) => m.orthanc_synced).length;
   const presetList = (presets.length
     ? presets
@@ -428,7 +447,7 @@ export default function LabPacsDevices() {
               <p className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
                 Configure C-STORE destination AE{' '}
                 <span className="font-mono text-primary">{localAet}</span> on port{' '}
-                <span className="font-mono text-primary">{localPort}</span>. Studies land in Orthanc automatically.
+                <span className="font-mono text-primary">{localPort}</span>. Studies auto-register on the Lab RIS worklist (and doctor Lab Referred when a referring doctor is set).
               </p>
             </div>
             <div className="group rounded-2xl border border-slate-200/90 bg-white/70 p-5 backdrop-blur transition hover:border-accent/40 dark:border-slate-700/80 dark:bg-slate-900/50">
@@ -437,9 +456,28 @@ export default function LabPacsDevices() {
               </div>
               <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Pull from this console</h2>
               <p className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-400">
-                Register the modality below, run C-ECHO, then C-FIND / C-MOVE to import studies into the RIS worklist.
+                Register the MRI/modality below, run C-ECHO, then C-FIND / C-MOVE — pulled studies are written to Orthanc and the RIS worklist automatically.
               </p>
             </div>
+          </section>
+
+          <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white/70 px-5 py-4 backdrop-blur dark:border-slate-700/80 dark:bg-slate-900/50">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Sync Orthanc → RIS</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                Use when the local MRI PC already sent studies to Orthanc and you need them on the Mediczy RIS/LIS worklist.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={syncingRis || !pacs?.online}
+              onClick={syncRisFromOrthanc}
+              className="shrink-0"
+            >
+              {syncingRis ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
+              Sync to RIS
+            </Button>
           </section>
 
           {/* Toasts */}

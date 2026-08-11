@@ -49,7 +49,12 @@ ORTHANC_PASSWORD=...
 ORTHANC_AET=MEDICZY
 ORTHANC_DICOM_PORT=4242
 ORTHANC_WEBHOOK_SECRET=...
+# Auto-register Orthanc studies onto Lab RIS / doctor Lab Referred
+ORTHANC_DEFAULT_LAB_ID=2368
+ORTHANC_DEFAULT_REFERRING_DOCTOR_ID=70
 ```
+
+`ORTHANC_DEFAULT_LAB_ID` is required for true C-STORE auto-ingest (MRI PC → Orthanc webhook → `ris_studies`). Without it, pull from **PACS Settings** still registers RIS using the signed-in lab id.
 
 ## Start Orthanc + OHIF
 
@@ -80,6 +85,32 @@ docker compose up -d
 docker logs mediczy-orthanc --tail 80
 ```
 
+## Auto-upload: local MRI PC → Mediczy RIS / LIS
+
+Local MRI consoles typically C-STORE into Orthanc. Mediczy then auto-creates / updates Lab RIS rows:
+
+```
+MRI PC ──C-STORE──► Orthanc (:4242 AE MEDICZY)
+                      │
+                      ├─ webhook NewInstance / StableStudy
+                      │    → HyperGrid STOW (best effort)
+                      │    → ensureRisStudyFromOrthancIngest → ris_studies
+                      │
+                      └─ Lab PACS Settings C-FIND → C-MOVE pull
+                           → ensureRisStudiesForStudyUids → ris_studies
+```
+
+Also available for backfill / missed webhooks:
+
+- UI: **PACS Settings → Sync to RIS**, or **RIS Worklist → Sync Orthanc**
+- API: `POST /api/lab/ris/sync-from-orthanc` `{ "limit": 100 }`
+
+Referring doctor for doctor portal **Lab Referred**:
+
+1. DICOM `ReferringPhysicianName` matched to `doctors.name`, or
+2. `ORTHANC_DEFAULT_REFERRING_DOCTOR_ID`, or
+3. Optional `referring_doctor_id` on retrieve/sync body
+
 ## APIs
 
 ```
@@ -90,6 +121,7 @@ POST /api/dicom/modalities
 POST /api/dicom/modalities/:name/echo
 POST /api/dicom/modalities/:name/query
 POST /api/dicom/modalities/:name/retrieve   # body: { study_instance_uids: [...] }
+POST /api/lab/ris/sync-from-orthanc        # backfill Orthanc → ris_studies
 ```
 
 All require lab JWT (`Authorization: Bearer <labToken>`).
@@ -105,4 +137,4 @@ All require lab JWT (`Authorization: Bearer <labToken>`).
 | CR | Computed Radiography |
 | MG | Mammography |
 
-After pull, the Orthanc → HyperGrid bridge syncs studies into `hg_dicom_*` / RIS worklist for viewing.
+After push or pull, studies appear on `/lab/ris` automatically. Doctor Lab Referred sees them when `referring_doctor_id` is resolved.

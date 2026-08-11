@@ -671,6 +671,7 @@ const LabRIS: React.FC = () => {
   const [filterFrom, setFilterFrom]   = useState('');
   const [filterTo, setFilterTo]       = useState('');
   const [showUpload, setShowUpload]   = useState(false);
+  const [syncingOrthanc, setSyncingOrthanc] = useState(false);
   const [criticalAlerts, setCriticalAlerts] = useState<CriticalAlertItem[]>([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
@@ -895,6 +896,30 @@ const LabRIS: React.FC = () => {
     }
   };
 
+  const syncFromOrthanc = async () => {
+    if (!token || syncingOrthanc) return;
+    setSyncingOrthanc(true);
+    setError(null);
+    try {
+      const res = await axios.post(
+        `${API_BASE}/sync-from-orthanc`,
+        { limit: 100 },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 180000 },
+      );
+      if (res.data?.success) {
+        await fetchStudies(1);
+      } else {
+        setError(res.data?.message || 'Orthanc sync failed');
+      }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { message?: string } }; message?: string })
+        ?.response?.data?.message || (e as { message?: string })?.message || 'Orthanc sync failed';
+      setError(msg);
+    } finally {
+      setSyncingOrthanc(false);
+    }
+  };
+
   const handleDelete = async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!window.confirm('Delete this study and its file?')) return;
@@ -954,6 +979,16 @@ const LabRIS: React.FC = () => {
               >
                 <HardDrive size={12} className="text-teal-400" />
                 PACS Settings
+              </button>
+              <button
+                type="button"
+                onClick={syncFromOrthanc}
+                disabled={syncingOrthanc}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-xs font-medium text-slate-200 transition-colors disabled:opacity-50"
+                title="Register studies already in Orthanc (local MRI PC) onto this RIS worklist"
+              >
+                <RefreshCw size={12} className={syncingOrthanc ? 'animate-spin text-teal-400' : 'text-teal-400'} />
+                {syncingOrthanc ? 'Syncing…' : 'Sync Orthanc'}
               </button>
               <button
                 onClick={() => setShowUpload(true)}

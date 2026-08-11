@@ -68,35 +68,97 @@ export async function forwardToHyperGridStow(dicomBuffer, meta = {}, tenantId = 
 }
 
 /**
- * Handle Orthanc webhook payload (NewInstance).
+ * Handle Orthanc webhook payload (NewInstance / StableStudy).
+ * Forwards to HyperGrid and auto-registers the study on Lab RIS.
  */
 export async function handleOrthancNewInstance(payload) {
-  const instanceId = payload?.ID || payload?.id;
-  if (!instanceId) return { skipped: true, reason: 'no instance id' };
+  const instanceId = payload?.ID || payload?.id || payload?.instanceId;
+  const studyId = payload?.studyId || payload?.ParentStudy || payload?.parentStudy;
+  if (!instanceId && !studyId) return { skipped: true, reason: 'no instance id' };
 
-  const meta = await fetchOrthancInstanceMetadata(instanceId);
+  let meta = {};
+  let buffer = null;
+  let resolvedInstanceId = instanceId;
+
+  if (instanceId) {
+    meta = await fetchOrthancInstanceMetadata(instanceId);
+    buffer = await fetchOrthancInstance(instanceId);
+  } else if (studyId) {
+    // StableStudy — pick first instance for tags + optional STOW
+    const { listOrthancStudyInstances, fetchOrthancStudy } = await import('./orthanc-pacs.service.js');
+    const instances = await listOrthancStudyInstances(studyId);
+    resolvedInstanceId = instances[0] || null;
+    if (!resolvedInstanceId) return { skipped: true, reason: 'empty study' };
+    meta = await fetchOrthancInstanceMetadata(resolvedInstanceId);
+    buffer = await fetchOrthancInstance(resolvedInstanceId);
+    try {
+      const studyMeta = await fetchOrthancStudy(studyId);
+      if (studyMeta?.MainDicomTags) {
+        meta.StudyMainDicomTags = studyMeta.MainDicomTags;
+      }
+    } catch (_) { /* optional */ }
+  }
+
   const mainTags = meta?.MainDicomTags || {};
+  const studyTags = meta?.StudyMainDicomTags || meta?.ParentStudyMainDicomTags || {};
   const parsedMeta = {
-    studyInstanceUID: mainTags.StudyInstanceUID,
+    studyInstanceUID: mainTags.StudyInstanceUID || studyTags.StudyInstanceUID,
     seriesInstanceUID: mainTags.SeriesInstanceUID,
     sopInstanceUID: mainTags.SOPInstanceUID,
-    patientId: mainTags.PatientID,
-    patientName: mainTags.PatientName,
-    modality: mainTags.Modality,
-    studyDate: mainTags.StudyDate,
-    studyDescription: mainTags.StudyDescription,
-    accessionNumber: mainTags.AccessionNumber,
+    patientId: mainTags.PatientID || studyTags.PatientID,
+    patientName: mainTags.PatientName || studyTags.PatientName,
+    modality: mainTags.Modality || studyTags.ModalitiesInStudy?.split?.('\\')?.[0],
+    studyDate: mainTags.StudyDate || studyTags.StudyDate,
+    studyDescription: mainTags.StudyDescription || studyTags.StudyDescription,
+    accessionNumber: mainTags.AccessionNumber || studyTags.AccessionNumber,
+    patientSex: mainTags.PatientSex || studyTags.PatientSex,
+    patientBirthDate: mainTags.PatientBirthDate || studyTags.PatientBirthDate,
+    referringPhysician: mainTags.ReferringPhysicianName || studyTags.ReferringPhysicianName,
   };
 
-  const buffer = await fetchOrthancInstance(instanceId);
-  const result = await forwardToHyperGridStow(buffer, parsedMeta);
+  let result = {};
+  try {
+    result = await forwardToHyperGridStow(buffer, parsedMeta, payload?.tenantId || null);
+  } catch (stowErr) {
+    // Still register RIS even if HyperGrid STOW auth is misconfigured
+    logger.warn('[OrthancBridge] HyperGrid STOW failed; continuing RIS auto-ingest', {
+      error: stowErr.message,
+    });
+    result = { studyInstanceUID: parsedMeta.studyInstanceUID, stowError: stowErr.message };
+  }
 
-  logger.info('[OrthancBridge] Instance forwarded to HyperGrid', {
-    instanceId,
-    studyInstanceUID: result.studyInstanceUID,
+  let ris = null;
+  try {
+    const { ensureRisStudyFromOrthancIngest } = await import('./imaging/imaging-ris-auto-ingest.service.js');
+    const remoteAet = payload?.RemoteAET || payload?.remoteAet || meta?.RemoteAET || null;
+    ris = await ensureRisStudyFromOrthancIngest({
+      labId: payload?.tenantId || payload?.labId || process.env.ORTHANC_DEFAULT_LAB_ID || null,
+      remoteAet,
+      orthancStudyId: meta?.ParentStudy || studyId || result.orthancStudyId || null,
+      orthancInstanceId: resolvedInstanceId,
+      tags: parsedMeta,
+      referringDoctorId: payload?.referringDoctorId || process.env.ORTHANC_DEFAULT_REFERRING_DOCTOR_ID || null,
+      fileMeta: {
+        fileName: `${parsedMeta.sopInstanceUID || parsedMeta.studyInstanceUID || 'instance'}.dcm`,
+        filePath: result.filePath || result.s3Key || `orthanc://${resolvedInstanceId}`,
+        s3Key: result.s3Key || result.filePath || null,
+        fileSize: buffer?.length || 0,
+        mimeType: 'application/dicom',
+      },
+    });
+  } catch (risErr) {
+    logger.warn('[OrthancBridge] RIS auto-ingest failed', { error: risErr.message });
+    ris = { success: false, error: risErr.message };
+  }
+
+  logger.info('[OrthancBridge] Instance forwarded', {
+    instanceId: resolvedInstanceId,
+    studyInstanceUID: result.studyInstanceUID || parsedMeta.studyInstanceUID,
+    risCreated: ris?.created,
+    risStudyId: ris?.study?.id,
   });
 
-  return { success: true, instanceId, ...result };
+  return { success: true, instanceId: resolvedInstanceId, ...result, ris };
 }
 
 export async function syncOrthancStudy(studyId) {
