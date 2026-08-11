@@ -12,7 +12,7 @@ const DEFAULT_TEMPLATES = [
     macros: ['{{technique}}', '{{findings}}', '{{impression}}'],
   },
   {
-    modality: 'MRI',
+    modality: 'MR', // real DICOM modality code — 'MRI' never matches a real study's modality tag
     name: 'MRI Brain — Standard',
     body: 'TECHNIQUE:\n{{technique}}\n\nFINDINGS:\n{{findings}}\n\nIMPRESSION:\n{{impression}}',
     macros: ['{{technique}}', '{{findings}}', '{{impression}}'],
@@ -27,11 +27,15 @@ const DEFAULT_TEMPLATES = [
 
 export async function ensureDefaultTemplates(tenantId) {
   for (const tpl of DEFAULT_TEMPLATES) {
+    // $1/$2 are reused inside the correlated WHERE NOT EXISTS subquery below — Postgres's
+    // parser can't always unify a placeholder's type across the outer SELECT list and a
+    // subquery comparison in this pattern, and errors "inconsistent types deduced for
+    // parameter $N" at prepare time. Explicit casts remove the ambiguity.
     await pool.query(
       `INSERT INTO ris_report_templates (tenant_id, modality, name, body, macros, is_default)
-       SELECT $1,$2,$3,$4,$5::jsonb,TRUE
+       SELECT $1::bigint,$2::varchar,$3,$4,$5::jsonb,TRUE
        WHERE NOT EXISTS (
-         SELECT 1 FROM ris_report_templates WHERE tenant_id = $1 AND modality = $2 AND is_default = TRUE
+         SELECT 1 FROM ris_report_templates WHERE tenant_id = $1::bigint AND modality = $2::varchar AND is_default = TRUE
        )`,
       [tenantId, tpl.modality, tpl.name, tpl.body, JSON.stringify(tpl.macros)],
     );

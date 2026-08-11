@@ -9,14 +9,14 @@ export function buildOhifViewerUrl(studyInstanceUID: string): string {
 
 export async function openOhifViewer(studyInstanceUID: string, apiPost = defaultSessionPost): Promise<Window | null> {
   if (!studyInstanceUID) return null;
-  await apiPost('/imaging/session');
+  await apiPost('/imaging/session', { studyInstanceUID });
   const url = buildOhifViewerUrl(studyInstanceUID);
   return window.open(url, '_blank', 'noopener,noreferrer');
 }
 
-async function defaultSessionPost(path: string) {
+async function defaultSessionPost(path: string, body?: Record<string, unknown>) {
   const { default: api } = await import('@/utils/api');
-  await api.post(path);
+  await api.post(path, body);
 }
 
 export type OhifMeasurementPayload = {

@@ -1,6 +1,10 @@
 /** @type {AppConfig} */
 window.config = {
-  routerBasename: '/',
+  // Served under /ohif/ via nginx proxy — React Router needs this to match routes
+  // like /viewer against the real browser path /ohif/viewer. Left as '/' the router
+  // couldn't match any route against the actual URL, rendering a blank screen even
+  // though the JS bundle loaded and Cornerstone initialized fine.
+  routerBasename: '/ohif/',
   showStudyList: true,
   extensions: [],
   modes: [],

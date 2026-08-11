@@ -11,6 +11,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLab } from '../middleware/authLab.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { getOrthancHealth } from '../services/orthanc-pacs.service.js';
+import pool from '../db/pgPool.js';
 
 const router = express.Router();
 const PACS_COOKIE = 'pacs_session';
@@ -23,17 +24,38 @@ const COOKIE_OPTS = {
   path: '/',
 };
 
-function signPacsToken(user) {
+function signPacsToken(user, tenantId) {
   return jwt.sign(
     {
       sub: user.id || user.userId,
-      tenantId: user.tenantId || user.id,
+      tenantId,
       role: user.role,
       purpose: 'pacs',
     },
     JWT_CONFIG.SECRET,
     { expiresIn: '1h' },
   );
+}
+
+// A doctor's own id is not a tenant — the hospital/lab whose PACS device produced the
+// study is. Doctor JWTs carry no tenantId at all (see doctor.enhanced.route.js), so the
+// naive `user.tenantId || user.id` fallback used to sign a session scoped to the doctor's
+// own id, which never matches any real hg_dicom_studies row. Resolve the real tenant from
+// the specific study the doctor is entitled to view via a ris_studies referral, so the
+// session is scoped only to what they were actually referred, not a blanket tenant grant.
+async function resolveTenantId(user, studyInstanceUID) {
+  if (user.role !== 'doctor') return user.tenantId || user.id;
+  if (!studyInstanceUID) return user.id; // no study context — session won't resolve any data, matches prior behavior
+  const referral = await pool.query(
+    `SELECT 1 FROM ris_studies WHERE referring_doctor_id = $1 AND study_instance_uid = $2 LIMIT 1`,
+    [user.id, studyInstanceUID],
+  );
+  if (!referral.rows.length) return user.id; // not entitled — falls back to a tenant that won't resolve this study
+  const study = await pool.query(
+    `SELECT tenant_id FROM hg_dicom_studies WHERE study_instance_uid = $1 LIMIT 1`,
+    [studyInstanceUID],
+  );
+  return study.rows[0]?.tenant_id || user.id;
 }
 
 function authImagingUser(req, res, next) {
@@ -58,7 +80,8 @@ function authImagingUser(req, res, next) {
 }
 
 router.post('/session', authImagingUser, async (req, res) => {
-  const token = signPacsToken(req.user);
+  const tenantId = await resolveTenantId(req.user, req.body?.studyInstanceUID);
+  const token = signPacsToken(req.user, tenantId);
   res.cookie(PACS_COOKIE, token, COOKIE_OPTS);
   const orthanc = await getOrthancHealth();
   return res.json({

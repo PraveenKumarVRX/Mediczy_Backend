@@ -14,7 +14,7 @@ MODALITY_HINTS: dict[str, list[dict[str, Any]]] = {
         {"label": "Lung parenchyma review", "severity": "low", "note": "Screen for nodules or consolidation.", "location": "lungs"},
         {"label": "Mediastinum review", "severity": "low", "note": "Assess lymph nodes and great vessels.", "location": "mediastinum"},
     ],
-    "MRI": [
+    "MR": [
         {"label": "Signal abnormality review", "severity": "low", "note": "Compare with prior if available."},
     ],
     "XR": [

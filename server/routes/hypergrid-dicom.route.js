@@ -24,6 +24,9 @@ import {
   instanceToDicomJson,
   groupInstancesBySeries,
   parseDicomBuffer,
+  extractFramePixelData,
+  buildMultipartRelated,
+  imagePixelTagsFromBuffer,
   DEFAULT_SERIES_UID,
 } from '../services/dicomweb-ohif.service.js';
 
@@ -87,6 +90,22 @@ const authAnyDicom = (req, res, next) => {
       }
       req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: decoded.tenantId || decoded.id };
       return next();
+    } catch {
+      // Fall through to regular authUser handling.
+    }
+  }
+  // The OHIF viewer's own DICOMweb (QIDO/WADO) fetches carry no Authorization header —
+  // imagingViewer.ts's openOhifViewer() relies entirely on the pacs_session HttpOnly
+  // cookie (imaging-session.route.js), which until now only gated nginx's auth_request
+  // on the static /ohif/ shell, never the actual study-data API calls the shell makes.
+  const pacsToken = req.cookies?.pacs_session;
+  if (pacsToken) {
+    try {
+      const decoded = jwt.verify(pacsToken, JWT_CONFIG.SECRET);
+      if (decoded?.purpose === 'pacs') {
+        req.user = { id: decoded.sub, tenantId: decoded.tenantId, role: decoded.role };
+        return next();
+      }
     } catch {
       // Fall through to regular authUser handling.
     }
@@ -340,6 +359,34 @@ router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async
   }
 });
 
+// ── WADO-RS: series metadata — OHIF's dicomweb-client fetches this per series before
+// it knows what instances/frames to render; was entirely missing, causing every series
+// to fail to load despite the study and series lists themselves resolving correctly.
+router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async (req, res) => {
+  try {
+    const pool = await connectPostgres();
+    const tid = tenantId(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid);
+    if (!study) return res.status(404).json([]);
+    const instances = await loadInstances(pool, req.params.studyUID, tid, req.params.seriesUID);
+    // Rows/Columns/BitsAllocated/PhotometricInterpretation etc. aren't stored in
+    // hg_dicom_instances — parsed from each real file so cornerstone can actually
+    // interpret the pixel bytes returned by the frames endpoint (see imagePixelTagsFromBuffer).
+    const payload = await Promise.all(instances.map(async (inst) => {
+      let pixelTags = null;
+      try {
+        const buf = await s3GetObjectBuffer(inst.file_path);
+        pixelTags = imagePixelTagsFromBuffer(buf);
+      } catch { /* fall back to metadata without pixel tags */ }
+      return instanceToDicomJson(study, inst, pixelTags);
+    }));
+    res.setHeader('Content-Type', 'application/dicom+json');
+    return res.json(payload);
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to retrieve series metadata' });
+  }
+});
+
 async function streamInstance(req, res) {
   const pool = await connectPostgres();
   const tid = tenantId(req);
@@ -366,8 +413,25 @@ async function streamInstance(req, res) {
     ipAddress: req.ip,
     userAgent: req.get('user-agent'),
   }).catch(() => {});
+  if (req.path.includes('/frames/')) {
+    // WADO-RS frame retrieval must return the raw pixel payload for the requested
+    // frame (correctly split by transfer syntax), not the whole .dcm file — the
+    // cornerstone image loader can't decode a full DICOM P10 buffer as if it were
+    // bare pixel data (was returning `content-type: application/dicom` for the
+    // entire file here, which decoded as garbage/undefined in the browser).
+    const buf = await s3GetObjectBuffer(inst.file_path);
+    const frameNumber = parseInt(req.params.frame, 10) || 1;
+    const frame = extractFramePixelData(buf, frameNumber);
+    if (!frame) return res.status(404).json({ success: false, message: 'Frame not found' });
+    const { body, boundary } = buildMultipartRelated([{ bytes: frame.bytes, contentType: frame.contentType }]);
+    // transfer-syntax tells cornerstone's WADO-RS loader how to interpret the raw bytes
+    // (uncompressed vs. which compression codec) — application/octet-stream alone is
+    // ambiguous and the loader silently mis-decodes without it (PS3.18 requirement).
+    res.setHeader('Content-Type', `multipart/related; type="${frame.contentType}"; transfer-syntax="${frame.transferSyntaxUID}"; boundary="${boundary}"`);
+    return res.send(body);
+  }
   const accept = String(req.headers.accept || '').toLowerCase();
-  if (accept.includes('application/dicom') || req.path.includes('/frames/')) {
+  if (accept.includes('application/dicom')) {
     const buf = await s3GetObjectBuffer(inst.file_path);
     res.setHeader('Content-Type', inst.content_type || 'application/dicom');
     return res.send(buf);
