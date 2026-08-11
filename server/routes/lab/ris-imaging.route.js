@@ -3,6 +3,7 @@
  *
  * POST   /api/lab/ris/upload          — upload DICOM / image / video
  * POST   /api/lab/ris/upload-series   — batch DICOM instances (one study)
+ * POST   /api/lab/ris/sync-from-orthanc — backfill RIS from Orthanc (MRI auto-ingest)
  * GET    /api/lab/ris/studies         — list studies (PACS worklist)
  * GET    /api/lab/ris/file/:id        — serve file (authenticated)
  * GET    /api/lab/ris/:id             — get study metadata
@@ -752,6 +753,38 @@ router.post('/upload-series', authLab, upload.array('files', 100), async (req, r
     console.error('[RIS] Batch upload error:', err);
     (req.files || []).forEach((f) => { try { fs.unlinkSync(f.path); } catch {} });
     return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── POST /sync-from-orthanc — register Orthanc studies onto Lab RIS worklist ─
+router.post('/sync-from-orthanc', authLab, async (req, res) => {
+  try {
+    const { syncRisStudiesFromOrthanc } = await import(
+      '../../services/imaging/imaging-ris-auto-ingest.service.js'
+    );
+    const limit = Math.min(parseInt(req.body?.limit || req.query?.limit || '100', 10) || 100, 500);
+    const referringDoctorId = req.body?.referring_doctor_id
+      || req.body?.referringDoctorId
+      || null;
+
+    const summary = await syncRisStudiesFromOrthanc({
+      labId: req.lab.id,
+      limit,
+      referringDoctorId,
+    });
+
+    if (!summary.success) {
+      return res.status(400).json(summary);
+    }
+
+    return res.json({
+      success: true,
+      message: `Synced Orthanc → RIS: ${summary.created} new, ${summary.updated} updated (${summary.scanned} scanned).`,
+      ...summary,
+    });
+  } catch (err) {
+    console.error('[RIS] Orthanc sync error:', err);
+    return res.status(502).json({ success: false, message: err.message || 'Orthanc sync failed' });
   }
 });
 

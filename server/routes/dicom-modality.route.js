@@ -350,9 +350,28 @@ router.post('/modalities/:name/retrieve', async (req, res) => {
       targetAet: req.body?.target_aet || null,
     });
 
+    // Register pulled studies on Lab RIS worklist (does not wait for webhook alone)
+    let risResults = [];
+    try {
+      const { ensureRisStudiesForStudyUids } = await import('../services/imaging/imaging-ris-auto-ingest.service.js');
+      // Give Orthanc a moment to index C-MOVE objects
+      await new Promise((r) => setTimeout(r, 1500));
+      risResults = await ensureRisStudiesForStudyUids({
+        labId: tid,
+        studyInstanceUIDs: uids.map(String),
+        referringDoctorId: req.body?.referring_doctor_id || req.body?.referringDoctorId || null,
+      });
+    } catch (risErr) {
+      risResults = [{ success: false, error: risErr.message }];
+    }
+
+    const risCreated = risResults.filter((r) => r.created).length;
+    const risUpdated = risResults.filter((r) => r.success && !r.created).length;
+
     res.json({
       success: true,
-      message: `Retrieve started for ${uids.length} study(ies). Images will appear in RIS/PACS after Orthanc → HyperGrid bridge sync.`,
+      message: `Retrieved ${uids.length} study(ies) into Orthanc. RIS worklist: ${risCreated} new, ${risUpdated} updated.`,
+      ris: risResults,
       ...result,
     });
   } catch (err) {

@@ -29,6 +29,9 @@ export function parseDicomUids(buffer) {
     const studyDate = get('x00080020');
     const studyDescription = get('x00081030');
     const accessionNumber = get('x00080050');
+    const patientSex = get('x00100040');
+    const patientBirthDate = get('x00100030');
+    const referringPhysician = get('x00080090');
     const isDicom = Boolean(studyInstanceUID && sopInstanceUID);
     return {
       isDicom,
@@ -41,6 +44,9 @@ export function parseDicomUids(buffer) {
       studyDate,
       studyDescription,
       accessionNumber,
+      patientSex,
+      patientBirthDate,
+      referringPhysician,
     };
   } catch (err) {
     return { isDicom: false, error: err.message };
@@ -205,6 +211,79 @@ export async function getOrthancHealth() {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+}
+
+/** Look up Orthanc study resource by StudyInstanceUID. */
+export async function fetchOrthancStudyByUid(studyInstanceUID) {
+  const uid = String(studyInstanceUID || '').trim();
+  if (!uid) return null;
+  const res = await fetch(`${ORTHANC_URL}/tools/find`, {
+    method: 'POST',
+    headers: { ...basicAuthHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      Level: 'Study',
+      Query: { StudyInstanceUID: uid },
+      Expand: true,
+    }),
+    timeout: 30000,
+  });
+  if (!res.ok) throw new Error(`Orthanc find failed: ${res.status}`);
+  const rows = await res.json();
+  if (Array.isArray(rows) && rows.length) {
+    return typeof rows[0] === 'string'
+      ? fetchOrthancStudy(rows[0])
+      : rows[0];
+  }
+  return null;
+}
+
+export async function fetchOrthancStudy(studyId) {
+  const res = await fetch(`${ORTHANC_URL}/studies/${studyId}`, {
+    headers: basicAuthHeader(),
+    timeout: 30000,
+  });
+  if (!res.ok) throw new Error(`Orthanc study fetch failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listOrthancStudyInstances(studyId) {
+  const res = await fetch(`${ORTHANC_URL}/studies/${studyId}/instances`, {
+    headers: basicAuthHeader(),
+    timeout: 30000,
+  });
+  if (!res.ok) throw new Error(`Orthanc study instances failed: ${res.status}`);
+  const rows = await res.json();
+  return Array.isArray(rows) ? rows.map((r) => (typeof r === 'string' ? r : r.ID)).filter(Boolean) : [];
+}
+
+/** List recent Orthanc studies (for RIS backfill / sync). */
+export async function listOrthancStudies({ limit = 100 } = {}) {
+  const capped = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
+  const res = await fetch(`${ORTHANC_URL}/tools/find`, {
+    method: 'POST',
+    headers: { ...basicAuthHeader(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      Level: 'Study',
+      Query: {},
+      Expand: true,
+      Limit: capped,
+    }),
+    timeout: 60000,
+  });
+  if (!res.ok) throw new Error(`Orthanc study list failed: ${res.status}`);
+  const rows = await res.json();
+  if (!Array.isArray(rows)) return [];
+  const out = [];
+  for (const row of rows) {
+    if (typeof row === 'string') {
+      try {
+        out.push(await fetchOrthancStudy(row));
+      } catch (_) { /* skip bad id */ }
+    } else if (row?.ID || row?.MainDicomTags) {
+      out.push(row);
+    }
+  }
+  return out;
 }
 
 /** STOW multiple DICOM instances (series / batch upload). */
