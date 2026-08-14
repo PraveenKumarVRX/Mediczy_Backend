@@ -39,6 +39,16 @@ def run_study_inference(
     if meta and meta.get("modality"):
         mod = norm_modality(str(meta["modality"]).split("\\")[0])
 
+    if mod in ("MR", "MRI") and not monai_unet.available(mod):
+        result = infer_heuristic(mod, meta)
+        result["orthanc_meta"] = meta
+        result["dicom_loaded"] = False
+        result["preprocessing"] = {
+            "source": "metadata_only",
+            "quality_flags": ["mri_model_not_enabled", "pixel_data_not_loaded"],
+        }
+        return result
+
     if mod in VOLUMETRIC_MODALITIES:
         series_pack = fetch_series_instances_dicom(study_uid, orthanc_study_id)
         if series_pack:
