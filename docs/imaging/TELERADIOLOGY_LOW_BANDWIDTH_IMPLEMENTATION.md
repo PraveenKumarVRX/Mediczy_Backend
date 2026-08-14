@@ -50,6 +50,25 @@ Doctors must be able to open CT and MRI studies remotely with diagnostic fidelit
    - Non-image DICOM objects are excluded from OHIF image stacks.
    - Additional DICOM geometry, slice, and windowing tags are included where available.
 
+6. AI/GPU readiness
+   - Adds authenticated readiness endpoint:
+     - `/api/hypergrid/dicom/studies/:studyUID/ai-readiness`
+   - Reports non-PHI series-level readiness for GPU inference:
+     - image instance availability
+     - rows/columns
+     - pixel spacing
+     - image position/orientation
+     - slice thickness fallback
+     - transfer syntax
+     - low-slice-count warnings
+   - The Python imaging-triage service now returns preprocessing provenance with AI outputs.
+   - CT/MR volume assembly filters scouts/localizers, removes shape outliers, sorts using ImagePositionPatient/ImageOrientationPatient where available, and reports quality flags.
+
+7. Mobile/iPad viewer launch
+   - Phone-like viewports open OHIF in the same tab to avoid popup/fullscreen failures.
+   - iPad/desktop keep a dedicated viewer tab.
+   - Poor connections or browser Save-Data mode launch in preview mode; diagnostic mode remains available for final interpretation.
+
 ## Operating Modes
 
 ### Constrained
@@ -100,6 +119,7 @@ Live DICOMweb checks should verify:
 - `X-Mediqzy-Imaging-Mode` changes when `Save-Data: on` is supplied
 - metadata/frame responses include private cache headers
 - metrics appear in `/api/imaging/platform/metrics`
+- `/api/hypergrid/dicom/studies/:studyUID/ai-readiness` returns at least one `gpuReady` CT/MR series before requesting high-confidence AI reporting.
 
 ## Next Phases
 
@@ -111,15 +131,21 @@ Live DICOMweb checks should verify:
    - Add server-side decompression/transcoding for JPEG lossless, JPEG-LS, JPEG 2000, and RLE.
    - Then enable rendered previews for all modalities and scanner transfer syntaxes.
 
-3. Edge acceleration
+3. GPU inference hardening
+   - Add a validated GPU worker contract that consumes full CT/MR series volumes, not screenshots or rendered JPEGs.
+   - Store preprocessing quality flags with each AI report draft.
+   - Block or downgrade AI confidence when geometry, spacing, or slice order is incomplete.
+   - Add modality-specific normalization profiles for CT brain, CT chest, CT abdomen, MR brain, and MR spine.
+
+4. Edge acceleration
    - Put static OHIF assets behind CloudFront with Brotli and HTTP/3.
    - Keep DICOM PHI endpoints private/authenticated and avoid public edge caching unless a compliant signed/private cache design is approved.
 
-4. Progressive transfer syntax pilot
+5. Progressive transfer syntax pilot
    - Evaluate HTJ2K for future archive normalization.
    - Do not migrate diagnostic storage until viewer, archive, codec, and regulatory validation are complete.
 
-5. Reading-room SLOs
+6. Reading-room SLOs
    - Track p95 metadata latency, p95 first frame latency, frame error rate, and bytes per opened study.
    - Suggested initial targets:
      - metadata p95 below 1200 ms for 300-slice studies

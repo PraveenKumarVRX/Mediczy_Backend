@@ -199,6 +199,15 @@ function shouldExposeInstanceToOhif(pixelTags) {
   return pixelTags?._hasPixelData !== false;
 }
 
+function firstTagValue(tags, tagId) {
+  const value = tags?.[tagId]?.Value;
+  return Array.isArray(value) ? value[0] : undefined;
+}
+
+function modalityIsVolumetric(modality) {
+  return ['CT', 'MR', 'MRI'].includes(String(modality || '').toUpperCase());
+}
+
 async function getDicomInstanceBuffer(inst) {
   if (isOrthancFilePath(inst.file_path)) {
     const instanceId = inst.orthanc_instance_id || orthancInstanceIdFromPath(inst.file_path);
@@ -706,6 +715,94 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
     return res.json(payload);
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve series metadata' });
+  }
+});
+
+router.get('/studies/:studyUID/ai-readiness', authAnyDicom, async (req, res) => {
+  const startedAt = Date.now();
+  const policy = dicomPolicyForRequest(req);
+  try {
+    const pool = await connectPostgres();
+    const tid = tenantId(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid);
+    if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
+    const instances = await loadInstances(pool, req.params.studyUID, tid);
+    const grouped = groupInstancesBySeries(instances);
+    const series = [];
+
+    for (const [seriesUid, insts] of grouped.entries()) {
+      const sampledTags = (await mapWithConcurrency(insts.slice(0, Math.min(insts.length, 8)), 4, async (inst) => {
+        try {
+          return await getPixelTagsForInstance(inst);
+        } catch {
+          return { _parseFailed: true };
+        }
+      })).filter((tags) => shouldExposeInstanceToOhif(tags));
+
+      const imageInstances = sampledTags.length ? insts.length : 0;
+      const first = sampledTags[0] || {};
+      const modality = insts[0]?.modality || study.modality || 'OT';
+      const rows = firstTagValue(first, '00280010');
+      const columns = firstTagValue(first, '00280011');
+      const pixelSpacing = firstTagValue(first, '00280030');
+      const imagePosition = firstTagValue(first, '00200032');
+      const imageOrientation = firstTagValue(first, '00200037');
+      const sliceThickness = firstTagValue(first, '00180050');
+      const transferSyntaxUID = firstTagValue(first, '00020010');
+      const warnings = [];
+      if (!imageInstances) warnings.push('no_pixel_instances');
+      if (modalityIsVolumetric(modality) && imageInstances < 8) warnings.push('low_slice_count_for_volume_ai');
+      if (!rows || !columns) warnings.push('missing_rows_or_columns');
+      if (!pixelSpacing) warnings.push('missing_pixel_spacing');
+      if (modalityIsVolumetric(modality) && (!imagePosition || !imageOrientation)) warnings.push('missing_position_or_orientation');
+      if (modalityIsVolumetric(modality) && !sliceThickness && !imagePosition) warnings.push('unverified_slice_spacing');
+      if (!transferSyntaxUID) warnings.push('missing_transfer_syntax');
+
+      series.push({
+        seriesInstanceUID: seriesUid,
+        modality,
+        instanceCount: insts.length,
+        sampledImageInstances: sampledTags.length,
+        imageInstances,
+        transferSyntaxUID: transferSyntaxUID || null,
+        geometry: {
+          rows: rows ? Number(rows) : null,
+          columns: columns ? Number(columns) : null,
+          pixelSpacing: pixelSpacing || null,
+          hasImagePosition: Boolean(imagePosition),
+          hasImageOrientation: Boolean(imageOrientation),
+          sliceThickness: sliceThickness || null,
+        },
+        gpuReady: warnings.length === 0,
+        warnings,
+      });
+    }
+
+    const volumetricSeries = series.filter((s) => modalityIsVolumetric(s.modality) && s.imageInstances > 1);
+    const readySeries = series.filter((s) => s.gpuReady);
+    const elapsed = Date.now() - startedAt;
+    recordDicomMetric('dicomweb_ai_readiness_requests', 1, {
+      mode: policy.mode,
+      status: 'ok',
+      modality: study.modality || 'OT',
+    });
+    setDicomCacheHeaders(res, 'metadata', policy);
+    setServerTiming(res, 'dicomweb-ai-readiness', startedAt);
+    return res.json({
+      success: true,
+      studyInstanceUID: cleanDicomUid(req.params.studyUID),
+      modality: study.modality || 'OT',
+      elapsedMs: elapsed,
+      summary: {
+        seriesCount: series.length,
+        readySeriesCount: readySeries.length,
+        volumetricSeriesCount: volumetricSeries.length,
+        gpuReady: readySeries.length > 0,
+      },
+      series,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Failed to assess AI readiness' });
   }
 });
 

@@ -3,15 +3,63 @@
  */
 const OHIF_BASE = import.meta.env.VITE_OHIF_BASE_PATH || '/ohif';
 
-export function buildOhifViewerUrl(studyInstanceUID: string): string {
-  return `${OHIF_BASE}/viewer?StudyInstanceUIDs=${encodeURIComponent(studyInstanceUID)}`;
+export type OhifViewerMode = 'diagnostic' | 'balanced' | 'preview';
+
+export type OhifViewerLaunchOptions = {
+  mode?: OhifViewerMode;
+  target?: '_blank' | '_self';
+};
+
+function cleanStudyInstanceUID(studyInstanceUID: string): string {
+  return String(studyInstanceUID || '').trim().replace(/,+$/g, '').trim();
 }
 
-export async function openOhifViewer(studyInstanceUID: string, apiPost = defaultSessionPost): Promise<Window | null> {
-  if (!studyInstanceUID) return null;
-  await apiPost('/imaging/session', { studyInstanceUID });
-  const url = buildOhifViewerUrl(studyInstanceUID);
-  return window.open(url, '_blank', 'noopener,noreferrer');
+function isPhoneLikeViewport(): boolean {
+  if (typeof window === 'undefined') return false;
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
+  return coarsePointer && Math.min(window.innerWidth, window.innerHeight) < 768;
+}
+
+function defaultViewerMode(): OhifViewerMode {
+  if (typeof navigator !== 'undefined' && 'connection' in navigator) {
+    const connection = (navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }).connection;
+    if (connection?.saveData || ['slow-2g', '2g', '3g'].includes(String(connection?.effectiveType || '').toLowerCase())) {
+      return 'preview';
+    }
+  }
+  return isPhoneLikeViewport() ? 'preview' : 'diagnostic';
+}
+
+export function buildOhifViewerUrl(studyInstanceUID: string, options: OhifViewerLaunchOptions = {}): string {
+  const uid = cleanStudyInstanceUID(studyInstanceUID);
+  const mode = options.mode || defaultViewerMode();
+  const params = new URLSearchParams({
+    StudyInstanceUIDs: uid,
+    quality: mode === 'preview' ? 'preview' : mode,
+    viewport: isPhoneLikeViewport() ? 'phone' : 'large',
+  });
+  return `${OHIF_BASE}/viewer?${params.toString()}`;
+}
+
+export async function openOhifViewer(
+  studyInstanceUID: string,
+  apiPost = defaultSessionPost,
+  options: OhifViewerLaunchOptions = {},
+): Promise<Window | null> {
+  const uid = cleanStudyInstanceUID(studyInstanceUID);
+  if (!uid) return null;
+  await apiPost('/imaging/session', { studyInstanceUID: uid });
+  const url = buildOhifViewerUrl(uid, options);
+  const target = options.target || (isPhoneLikeViewport() ? '_self' : '_blank');
+  if (target === '_self') {
+    window.location.assign(url);
+    return window;
+  }
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) window.location.assign(url);
+  return opened;
 }
 
 async function defaultSessionPost(path: string, body?: Record<string, unknown>) {

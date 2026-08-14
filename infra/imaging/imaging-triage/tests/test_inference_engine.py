@@ -63,6 +63,44 @@ def test_run_study_inference_routes_pixels(mock_meta, mock_dicom, mock_pixels, m
     assert result["dicom_loaded"] is True
     assert result["inference_backend"] == "torchxrayvision"
     assert result["findings"][0]["label"] == "Pneumonia"
+    assert result["preprocessing"] is None
+
+
+@patch("inference.engine._route_pixels")
+@patch("inference.engine.dicom_series_to_hu_volume")
+@patch("inference.engine.fetch_series_instances_dicom")
+@patch("inference.engine.fetch_study_meta")
+def test_run_study_inference_exposes_volume_preprocessing(mock_meta, mock_series, mock_volume, mock_route):
+    mock_meta.return_value = {"modality": "CT"}
+    mock_series.return_value = ([b"dicom1", b"dicom2"], {"series_id": "series-a"})
+    mock_volume.return_value = {
+        "hu_volume": np.zeros((12, 64, 64), dtype=np.float32),
+        "modality": "CT",
+        "num_slices": 12,
+        "pixel_spacing": [0.7, 0.7],
+        "slice_spacing_mm": 1.0,
+        "z_spacing_source": "image_position_patient",
+        "preprocessing": {
+            "source": "series_volume",
+            "dtype": "float32",
+            "shape_zyx": [12, 64, 64],
+            "quality_flags": [],
+        },
+    }
+    mock_route.return_value = {
+        "findings": [],
+        "measurements": [],
+        "critical": False,
+        "confidence_score": 0.7,
+        "model_version": "ct-model",
+        "inference_backend": "gpu",
+        "feature_attributions": [],
+    }
+    result = run_study_inference("1.2.3", "CT", "orthanc-id")
+    assert result["dicom_loaded"] is True
+    assert result["volumetric"] is True
+    assert result["preprocessing"]["source"] == "series_volume"
+    assert result["preprocessing"]["shape_zyx"] == [12, 64, 64]
 
 
 def test_torchxray_available_import():

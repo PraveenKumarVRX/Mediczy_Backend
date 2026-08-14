@@ -56,6 +56,14 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
       modelVersion = body.model_version || modelVersion;
       inferenceBackend = body.inference_backend || inferenceBackend;
       featureAttributions = body.feature_attributions || [];
+      if (body.preprocessing) {
+        featureAttributions.push({
+          feature: 'dicom_preprocessing',
+          direction: 'metadata',
+          attribution: 1,
+          details: body.preprocessing,
+        });
+      }
     } else {
       findings = withLlmFallbackDisclaimer(await llmTriageFallback(modality, studyInstanceUID));
       confidence = LLM_FALLBACK_MAX_CONFIDENCE;

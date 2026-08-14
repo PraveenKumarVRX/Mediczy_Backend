@@ -51,6 +51,7 @@ class TriageResponse(BaseModel):
     inference_backend: str = "heuristic"
     feature_attributions: list[dict[str, Any]] = Field(default_factory=list)
     orthanc_meta: dict[str, Any] | None = None
+    preprocessing: dict[str, Any] | None = None
     dicom_loaded: bool = False
     disclaimer: str = "Advisory only — radiologist review required."
 
@@ -64,6 +65,7 @@ class AnalyzeResponse(BaseModel):
     inference_backend: str = "heuristic"
     feature_attributions: list[dict[str, Any]] = Field(default_factory=list)
     orthanc_meta: dict[str, Any] | None = None
+    preprocessing: dict[str, Any] | None = None
     dicom_loaded: bool = False
     disclaimer: str = "Structured screening output — not a diagnosis."
 
@@ -125,6 +127,7 @@ def triage(req: TriageRequest) -> TriageResponse:
         inference_backend=str(result.get("inference_backend", "heuristic")),
         feature_attributions=list(result.get("feature_attributions") or []),
         orthanc_meta=result.get("orthanc_meta"),
+        preprocessing=result.get("preprocessing"),
         dicom_loaded=bool(result.get("dicom_loaded")),
     )
 
@@ -141,5 +144,6 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
         inference_backend=str(result.get("inference_backend", "heuristic")),
         feature_attributions=list(result.get("feature_attributions") or []),
         orthanc_meta=result.get("orthanc_meta"),
+        preprocessing=result.get("preprocessing"),
         dicom_loaded=bool(result.get("dicom_loaded")),
     )

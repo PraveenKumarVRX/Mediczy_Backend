@@ -59,6 +59,7 @@ def run_study_inference(
                     result["series_meta"] = series_meta
                     result["dicom_loaded"] = True
                     result["volumetric"] = True
+                    result["preprocessing"] = volume.get("preprocessing")
                     return result
 
     dicom_pack = fetch_first_instance_dicom(study_uid, orthanc_study_id)
@@ -73,11 +74,16 @@ def run_study_inference(
                 result["instance_meta"] = inst_meta
                 result["dicom_loaded"] = True
                 result["volumetric"] = False
+                result["preprocessing"] = pixels.get("preprocessing")
                 return result
 
     result = infer_heuristic(mod, meta)
     result["orthanc_meta"] = meta
     result["dicom_loaded"] = False
+    result["preprocessing"] = {
+        "source": "metadata_only",
+        "quality_flags": ["pixel_data_not_loaded"],
+    }
     return result
 
 
