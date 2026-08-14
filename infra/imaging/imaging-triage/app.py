@@ -107,6 +107,15 @@ def health() -> dict[str, Any]:
         "ok": True,
         "service": "imaging-triage",
         "version": "1.3.0",
+    }
+
+
+@app.get("/health/deep")
+def health_deep() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "service": "imaging-triage",
+        "version": "1.3.0",
         "orthanc_reachable": orthanc_health(),
         "models": get_model_status(),
     }
