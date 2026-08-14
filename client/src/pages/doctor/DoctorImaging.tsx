@@ -10,6 +10,7 @@ import {
   Trash2, ChevronLeft, ChevronRight, Download, Play, FileText,
   ScanLine, Activity, Waves, Heart, Radio, Zap, RefreshCw,
   Filter, Calendar, User, FlaskConical, Eye, AlertCircle,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import api from "@/utils/api";
@@ -430,6 +431,7 @@ function ReferredStudiesPanel({
   onCount?: (n: number) => void;
   initialModality?: string;
 }) {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const [studies, setStudies]         = useState<RisStudy[]>([]);
   const [loading, setLoading]         = useState(false);
@@ -565,6 +567,18 @@ function ReferredStudiesPanel({
                   <Eye className="w-3 h-3 mr-1" />
                   {s.is_dicom && s.study_instance_uid ? 'Open in OHIF' : 'View Study'}
                 </Button>
+                {s.is_dicom && s.study_instance_uid && (
+                  <Button
+                    size="sm"
+                    className="mt-2 w-full h-7 text-[11px] bg-cyan-700/40 hover:bg-cyan-700/70 text-cyan-200 border border-cyan-700/40"
+                    onClick={e => {
+                      e.stopPropagation();
+                      navigate(`/doctor/imaging/3d/${encodeURIComponent(String(s.study_instance_uid || '').replace(/,+$/g, ''))}`);
+                    }}
+                  >
+                    <BrainCircuit className="w-3 h-3 mr-1" /> 3D + AI CDSS
+                  </Button>
+                )}
                 {s.is_dicom && (
                   <Button
                     size="sm"
@@ -641,7 +655,6 @@ function ReferredStudiesPanel({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function DoctorImaging() {
-  const navigate = useNavigate();
   const { toast } = useToast();
   const [view, setView]               = useState<'my-studies' | 'referred'>('referred');
   const [studies, setStudies]         = useState<ImagingStudy[]>([]);

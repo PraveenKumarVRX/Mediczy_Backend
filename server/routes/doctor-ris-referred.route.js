@@ -105,6 +105,31 @@ router.get('/file/:id', authDoctor, async (req, res) => {
   }
 });
 
+// ─── GET /api/doctors/ris-referred/by-study/:studyInstanceUID ────────────────
+// Direct-link lookup for the 3D/CDSS workspace. Still scoped to the
+// authenticated doctor's referred studies only.
+router.get('/by-study/:studyInstanceUID', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.user?.id;
+    if (!doctorId) return res.status(401).json({ success: false, message: 'Not authenticated' });
+    const studyUID = String(req.params.studyInstanceUID || '').trim().replace(/,+$/g, '').trim();
+    if (!studyUID) return res.status(400).json({ success: false, message: 'studyInstanceUID required' });
+
+    const row = await pool.query(
+      `SELECT ${STUDY_COLS}
+       FROM ris_studies
+       WHERE study_instance_uid = $1 AND referring_doctor_id = $2
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [studyUID, doctorId]
+    );
+    if (!row.rows.length) return res.status(404).json({ success: false, message: 'Not found' });
+    return res.json({ success: true, study: row.rows[0] });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ─── GET /api/doctors/ris-referred/:id ───────────────────────────────────────
 router.get('/:id', authDoctor, async (req, res) => {
   try {

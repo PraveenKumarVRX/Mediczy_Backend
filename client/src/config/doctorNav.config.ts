@@ -71,6 +71,7 @@ export const DOCTOR_NAV_ITEMS: DoctorNavItem[] = [
     category: 'More',
     subItems: [
       { label: 'Medical Imaging', path: '/doctor/imaging' },
+      { label: '3D Imaging CDSS', path: '/doctor/imaging' },
       { label: 'Webinars', path: '/doctor/webinars' },
     ],
   },

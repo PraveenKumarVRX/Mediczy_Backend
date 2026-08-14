@@ -122,6 +122,7 @@ const ContactUs      = lazy(() => import("@/pages/ContactUs"));
 // ─── Doctor ──────────────────────────────────────────────────────────────────
 const DoctorDashboard          = lazy(() => import("@/pages/doctor/DoctorDashboard"));
 const DoctorImaging            = lazy(() => import("@/pages/doctor/DoctorImaging"));
+const DoctorImaging3D          = lazy(() => import("@/pages/doctor/DoctorImaging3D"));
 const DoctorMobileHome         = lazy(() => import("@/pages/doctor/DoctorMobileHome"));
 const DoctorAppointments       = lazy(() => import("@/pages/doctor/DoctorAppointments"));
 const DoctorAppointmentSettings = lazy(() => import("@/pages/doctor/DoctorAppointmentSettings"));
@@ -1081,6 +1082,7 @@ const AppRoutes = () => {
         <Route path="/doctor/assistant"           element={<DoctorVoiceAssistant />} />
         <Route path="/doctor/messages"            element={<DoctorMessaging />} />
         <Route path="/doctor/imaging"             element={<DoctorImaging />} />
+        <Route path="/doctor/imaging/3d/:studyUID" element={<DoctorImaging3D />} />
         <Route path="/doctor/webinars"            element={<DoctorWebinarDashboard />} />
         <Route path="/doctor/webinar/:webinarId/host" element={<WebinarRoomPage isHost={true} />} />
         {/* HealthOS — explicit routes (also mounted via portalClinicalRoutes below) */}

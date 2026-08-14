@@ -14,4 +14,10 @@ describe('imagingViewer', () => {
     expect(url).toContain('StudyInstanceUIDs=1.2.840.10008');
     expect(url).toContain('quality=preview');
   });
+
+  it('adds workspace viewport hint for embedded 3D CDSS launches', () => {
+    const url = buildOhifViewerUrl('1.2.3.4', { mode: 'diagnostic', viewport: 'workspace' });
+    expect(url).toContain('quality=diagnostic');
+    expect(url).toContain('viewport=workspace');
+  });
 });

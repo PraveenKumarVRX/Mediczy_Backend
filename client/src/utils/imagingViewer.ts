@@ -8,6 +8,7 @@ export type OhifViewerMode = 'diagnostic' | 'balanced' | 'preview';
 export type OhifViewerLaunchOptions = {
   mode?: OhifViewerMode;
   target?: '_blank' | '_self';
+  viewport?: 'phone' | 'large' | 'workspace';
 };
 
 function cleanStudyInstanceUID(studyInstanceUID: string): string {
@@ -38,7 +39,7 @@ export function buildOhifViewerUrl(studyInstanceUID: string, options: OhifViewer
   const params = new URLSearchParams({
     StudyInstanceUIDs: uid,
     quality: mode === 'preview' ? 'preview' : mode,
-    viewport: isPhoneLikeViewport() ? 'phone' : 'large',
+    viewport: options.viewport || (isPhoneLikeViewport() ? 'phone' : 'large'),
   });
   return `${OHIF_BASE}/viewer?${params.toString()}`;
 }

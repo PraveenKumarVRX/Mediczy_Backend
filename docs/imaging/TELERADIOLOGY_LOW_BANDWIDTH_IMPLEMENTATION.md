@@ -69,6 +69,14 @@ Doctors must be able to open CT and MRI studies remotely with diagnostic fidelit
    - iPad/desktop keep a dedicated viewer tab.
    - Poor connections or browser Save-Data mode launch in preview mode; diagnostic mode remains available for final interpretation.
 
+8. 3D CT/MRI + CDSS workspace
+   - Adds doctor route:
+     - `/doctor/imaging/3d/:studyUID`
+   - Embeds the authenticated OHIF/Cornerstone3D viewer beside a clinical decision-support panel.
+   - Shows GPU readiness, series quality, workflow, AI triage, measurements, longitudinal context, and report-draft actions.
+   - Creates a study-scoped `pacs_session` before loading OHIF and uses the same cookie-scoped DICOMweb path for AI readiness, so referred-doctor access is tenant-correct.
+   - Adds a MONAI/TotalSegmentator readiness plan: CT studies route toward TotalSegmentator CT workflows; MRI studies route toward MONAI MRI workflows. The next production step is a GPU worker endpoint that consumes the selected series UID, runs segmentation, stores DICOM SEG/NIfTI outputs, and returns overlay references to the workspace.
+
 ## Operating Modes
 
 ### Constrained
@@ -133,6 +141,7 @@ Live DICOMweb checks should verify:
 
 3. GPU inference hardening
    - Add a validated GPU worker contract that consumes full CT/MR series volumes, not screenshots or rendered JPEGs.
+   - Connect the 3D/CDSS workspace MONAI/TotalSegmentator plan to the GPU worker queue.
    - Store preprocessing quality flags with each AI report draft.
    - Block or downgrade AI confidence when geometry, spacing, or slice order is incomplete.
    - Add modality-specific normalization profiles for CT brain, CT chest, CT abdomen, MR brain, and MR spine.
