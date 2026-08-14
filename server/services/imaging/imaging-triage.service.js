@@ -5,22 +5,31 @@
 import pool from '../../db/pgPool.js';
 import fetch from 'node-fetch';
 import { publishEvent, KAFKA_TOPICS } from '../../config/kafka.js';
-import llmProvider from '../ai-brain/llm-provider.js';
 import { recordMetric } from './imaging-observability.service.js';
 
 const TRIAGE_URL = process.env.IMAGING_TRIAGE_URL || 'http://127.0.0.1:8010';
+const TRIAGE_TIMEOUT_MS = parseInt(process.env.IMAGING_TRIAGE_TIMEOUT_MS || '30000', 10);
 
-/** Text-only LLM path never saw pixels — must not look like a real CV read. */
-const LLM_FALLBACK_MAX_CONFIDENCE = 0.2;
-const LLM_FALLBACK_DISCLAIMER = {
-  label: 'No image analysis performed',
-  severity: 'info',
-  note: 'Text-only LLM fallback — pixel data was not analyzed. Physician review required before any clinical action.',
+const TRIAGE_UNAVAILABLE_MAX_CONFIDENCE = 0.05;
+const TRIAGE_UNAVAILABLE_FINDING = {
+  label: 'Image AI unavailable',
+  severity: 'warning',
+  note: 'The imaging AI service did not return a result in time. Pixel data was not analyzed. Physician review required.',
 };
 
-function withLlmFallbackDisclaimer(findings) {
-  const list = Array.isArray(findings) ? findings.filter(Boolean) : [];
-  return [LLM_FALLBACK_DISCLAIMER, ...list];
+async function postTriageToInference(payload) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TRIAGE_TIMEOUT_MS);
+  try {
+    return await fetch(`${TRIAGE_URL}/triage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function requestTriage({ studyId, studyInstanceUID, tenantId, modality, orthancStudyId }) {
@@ -43,11 +52,10 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
   let featureAttributions = [];
 
   try {
-    const res = await fetch(`${TRIAGE_URL}/triage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ study_instance_uid: studyInstanceUID, modality, orthanc_study_id: orthancStudyId }),
-      timeout: 120000,
+    const res = await postTriageToInference({
+      study_instance_uid: studyInstanceUID,
+      modality,
+      orthanc_study_id: orthancStudyId,
     });
     if (res.ok) {
       const body = await res.json();
@@ -65,16 +73,16 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
         });
       }
     } else {
-      findings = withLlmFallbackDisclaimer(await llmTriageFallback(modality, studyInstanceUID));
-      confidence = LLM_FALLBACK_MAX_CONFIDENCE;
-      modelVersion = 'llm-fallback-v1';
-      inferenceBackend = 'llm-fallback';
+      findings = [{ ...TRIAGE_UNAVAILABLE_FINDING, note: `${TRIAGE_UNAVAILABLE_FINDING.note} Inference status: ${res.status}.` }];
+      confidence = TRIAGE_UNAVAILABLE_MAX_CONFIDENCE;
+      modelVersion = 'imaging-triage-unavailable-v1';
+      inferenceBackend = 'unavailable';
     }
-  } catch {
-    findings = withLlmFallbackDisclaimer(await llmTriageFallback(modality, studyInstanceUID));
-    confidence = LLM_FALLBACK_MAX_CONFIDENCE;
-    modelVersion = 'llm-fallback-v1';
-    inferenceBackend = 'llm-fallback';
+  } catch (err) {
+    findings = [{ ...TRIAGE_UNAVAILABLE_FINDING, note: `${TRIAGE_UNAVAILABLE_FINDING.note} ${err?.name === 'AbortError' ? 'Inference timed out.' : 'Inference request failed.'}` }];
+    confidence = TRIAGE_UNAVAILABLE_MAX_CONFIDENCE;
+    modelVersion = 'imaging-triage-unavailable-v1';
+    inferenceBackend = 'unavailable';
   }
 
   const r = await pool.query(
@@ -138,26 +146,6 @@ export async function getTriageModelStatus() {
       status: 0,
       message: err.message || 'imaging-triage service unavailable',
     };
-  }
-}
-
-async function llmTriageFallback(modality, studyInstanceUID) {
-  const resp = await llmProvider.chat({
-    messages: [
-      {
-        role: 'system',
-        content: 'You are an imaging triage assistant. Return JSON array of {label, severity, note}. NOT a diagnosis — flag for radiologist review only.',
-      },
-      { role: 'user', content: `Screening triage for ${modality} study ${studyInstanceUID}. List 0-3 items to review.` },
-    ],
-    maxTokens: 400,
-    temperature: 0.1,
-  });
-  try {
-    const match = (resp.content || '').match(/\[[\s\S]*\]/);
-    return match ? JSON.parse(match[0]) : [{ label: 'Review required', severity: 'low', note: resp.content?.slice(0, 200) }];
-  } catch {
-    return [{ label: 'Manual review', severity: 'low', note: 'AI triage unavailable' }];
   }
 }
 
