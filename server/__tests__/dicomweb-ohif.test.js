@@ -37,6 +37,24 @@ describe('dicomweb-ohif', () => {
     expect(json['0020000E'].Value[0]).toBe('5.5.5');
   });
 
+  it('does not leak internal parsed-file markers into DICOM JSON', () => {
+    const json = instanceToDicomJson(
+      { study_instance_uid: '1.2.3', modality: 'MR' },
+      { sop_instance_uid: '9.9.9', series_instance_uid: '5.5.5' },
+      {
+        sopClassUid: '1.2.840.10008.5.1.4.1.1.4',
+        _hasPixelData: true,
+        _parseFailed: false,
+        '00280010': { vr: 'US', Value: ['224'] },
+      },
+    );
+    expect(json.sopClassUid).toBeUndefined();
+    expect(json._hasPixelData).toBeUndefined();
+    expect(json._parseFailed).toBeUndefined();
+    expect(json['00080016'].Value[0]).toBe('1.2.840.10008.5.1.4.1.1.4');
+    expect(json['00280010'].Value[0]).toBe('224');
+  });
+
   it('adds transfer syntax to WADO-RS multipart frame parts', () => {
     const { body } = buildMultipartRelated([{
       bytes: Buffer.from([1, 2, 3]),

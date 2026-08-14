@@ -70,6 +70,8 @@ export function instanceToDicomJson(study, inst, pixelTags = null) {
   const sopClassUid = pixelTags?.sopClassUid || inst.sop_class_uid || '1.2.840.10008.5.1.4.1.1.2';
   const cleanPixelTags = { ...(pixelTags || {}) };
   delete cleanPixelTags.sopClassUid;
+  delete cleanPixelTags._hasPixelData;
+  delete cleanPixelTags._parseFailed;
   const out = {
     '0020000D': tag('UI', inst.study_instance_uid || study.study_instance_uid),
     '0020000E': tag('UI', seriesUid),
@@ -107,9 +109,14 @@ export function imagePixelTagsFromBuffer(buffer) {
       return s ? s.split('\\').filter((v) => v !== '') : null;
     };
     const transferSyntaxUID = dataSet.string('x00020010') || '1.2.840.10008.1.2.1';
+    const hasPixelData = Boolean(dataSet.elements.x7fe00010);
     return {
       sopClassUid: dataSet.string('x00080016') || null, // real SOPClassUID (not a {vr,Value} tag — consumed and stripped by instanceToDicomJson)
+      _hasPixelData: hasPixelData,
       '00020010': tag('UI', transferSyntaxUID), // TransferSyntaxUID
+      '00080021': tag('DA', dataSet.string('x00080021')), // SeriesDate
+      '00080031': tag('TM', dataSet.string('x00080031')), // SeriesTime
+      '00180050': tag('DS', multi('x00180050')), // SliceThickness
       '00280002': tag('US', us('x00280002')), // SamplesPerPixel
       '00280004': tag('CS', dataSet.string('x00280004')), // PhotometricInterpretation
       '00280006': tag('US', us('x00280006')), // PlanarConfiguration
@@ -125,9 +132,13 @@ export function imagePixelTagsFromBuffer(buffer) {
       '00281051': tag('DS', multi('x00281051')), // WindowWidth
       '00281052': tag('DS', multi('x00281052')), // RescaleIntercept
       '00281053': tag('DS', multi('x00281053')), // RescaleSlope
+      '00200011': tag('IS', dataSet.string('x00200011')), // SeriesNumber
+      '00200032': tag('DS', multi('x00200032')), // ImagePositionPatient
+      '00200037': tag('DS', multi('x00200037')), // ImageOrientationPatient
+      '00201041': tag('DS', multi('x00201041')), // SliceLocation
     };
   } catch {
-    return {};
+    return { _parseFailed: true };
   }
 }
 

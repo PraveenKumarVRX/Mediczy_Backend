@@ -51,6 +51,22 @@ const upload = multer({
   limits: { fileSize: 512 * 1024 * 1024 },
 });
 
+function setDicomCacheHeaders(res, scope = 'metadata') {
+  const maxAgeByScope = {
+    list: 60,
+    metadata: 3600,
+    frame: 3600,
+    instance: 3600,
+  };
+  const maxAge = maxAgeByScope[scope] || maxAgeByScope.metadata;
+  res.setHeader('Cache-Control', `private, max-age=${maxAge}, stale-while-revalidate=300`);
+  res.setHeader('Vary', 'Authorization, Cookie, Accept');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (scope === 'frame') {
+    res.setHeader('Accept-Ranges', 'none');
+  }
+}
+
 router.use((req, res, next) => {
   const origin = process.env.OHIF_CORS_ORIGIN || req.headers.origin || '*';
   res.header('Access-Control-Allow-Origin', origin);
@@ -143,6 +159,10 @@ function isOrthancFilePath(filePath) {
 
 function orthancInstanceIdFromPath(filePath) {
   return String(filePath || '').replace(/^orthanc:\/\//, '').trim();
+}
+
+function shouldExposeInstanceToOhif(pixelTags) {
+  return pixelTags?._hasPixelData !== false;
 }
 
 async function getDicomInstanceBuffer(inst) {
@@ -462,9 +482,11 @@ router.get('/studies', authAnyDicom, async (req, res) => {
     );
 
     if (wantsDicomJson(req)) {
+      setDicomCacheHeaders(res, 'list');
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(r.rows.map((row) => studyToDicomJson(row, row.instance_count)));
     }
+    setDicomCacheHeaders(res, 'list');
     res.json({ success: true, studies: r.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to query studies' });
@@ -487,9 +509,11 @@ router.get('/series', authAnyDicom, async (req, res) => {
       seriesToDicomJson(study, seriesUid, insts),
     );
     if (wantsDicomJson(req)) {
+      setDicomCacheHeaders(res, 'list');
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(series);
     }
+    setDicomCacheHeaders(res, 'list');
     return res.json({ success: true, series });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to query series' });
@@ -508,9 +532,11 @@ router.get('/instances', authAnyDicom, async (req, res) => {
     const instances = await loadInstances(pool, StudyInstanceUID, tid, SeriesInstanceUID || null);
     const payload = instances.map((inst) => instanceToDicomJson(study, inst));
     if (wantsDicomJson(req)) {
+      setDicomCacheHeaders(res, 'metadata');
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(payload);
     }
+    setDicomCacheHeaders(res, 'metadata');
     return res.json({ success: true, instances });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to query instances' });
@@ -526,9 +552,11 @@ router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
     const instances = await loadInstances(pool, req.params.studyUID, tid);
     if (wantsDicomJson(req)) {
+      setDicomCacheHeaders(res, 'metadata');
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json([studyToDicomJson(study, instances.length)]);
     }
+    setDicomCacheHeaders(res, 'metadata');
     res.json({ success: true, study, instances });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve study' });
@@ -548,9 +576,11 @@ router.get('/studies/:studyUID/series', authAnyDicom, async (req, res) => {
       seriesToDicomJson(study, seriesUid, insts),
     );
     if (wantsDicomJson(req)) {
+      setDicomCacheHeaders(res, 'list');
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(series);
     }
+    setDicomCacheHeaders(res, 'list');
     return res.json({ success: true, series });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve series' });
@@ -567,9 +597,11 @@ router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async
     const instances = await loadInstances(pool, req.params.studyUID, tid, req.params.seriesUID);
     const payload = instances.map((inst) => instanceToDicomJson(study, inst));
     if (wantsDicomJson(req)) {
+      setDicomCacheHeaders(res, 'metadata');
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(payload);
     }
+    setDicomCacheHeaders(res, 'metadata');
     return res.json({ success: true, instances });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve instances' });
@@ -589,13 +621,15 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
     // Rows/Columns/BitsAllocated/PhotometricInterpretation etc. aren't stored in
     // hg_dicom_instances — parsed from each real file so cornerstone can actually
     // interpret the pixel bytes returned by the frames endpoint (see imagePixelTagsFromBuffer).
-    const payload = await mapWithConcurrency(instances, OHIF_METADATA_CONCURRENCY, async (inst) => {
+    const payload = (await mapWithConcurrency(instances, OHIF_METADATA_CONCURRENCY, async (inst) => {
       let pixelTags = null;
       try {
         pixelTags = await getPixelTagsForInstance(inst);
       } catch { /* fall back to metadata without pixel tags */ }
+      if (!shouldExposeInstanceToOhif(pixelTags)) return null;
       return instanceToDicomJson(study, inst, pixelTags);
-    });
+    })).filter(Boolean);
+    setDicomCacheHeaders(res, 'metadata');
     res.setHeader('Content-Type', 'application/dicom+json');
     return res.json(payload);
   } catch (err) {
@@ -639,7 +673,21 @@ async function streamInstance(req, res) {
     // entire file here, which decoded as garbage/undefined in the browser).
     const buf = await getDicomInstanceBuffer(inst);
     const frameNumber = parseInt(req.params.frame, 10) || 1;
-    const frame = extractFramePixelData(buf, frameNumber);
+    let frame;
+    try {
+      frame = extractFramePixelData(buf, frameNumber);
+    } catch (err) {
+      console.warn('[DICOM] Frame extraction failed:', {
+        studyUID,
+        seriesUID: seriesUID || inst.series_instance_uid,
+        sopUID,
+        message: err?.message || String(err),
+      });
+      return res.status(415).json({
+        success: false,
+        message: 'Frame transfer syntax is unsupported or pixel data is malformed',
+      });
+    }
     if (!frame) return res.status(404).json({ success: false, message: 'Frame not found' });
     const { body, boundary } = buildMultipartRelated([{
       bytes: frame.bytes,
@@ -649,17 +697,20 @@ async function streamInstance(req, res) {
     // transfer-syntax tells cornerstone's WADO-RS loader how to interpret the raw bytes
     // (uncompressed vs. which compression codec) — application/octet-stream alone is
     // ambiguous and the loader silently mis-decodes without it (PS3.18 requirement).
+    setDicomCacheHeaders(res, 'frame');
     res.setHeader('Content-Type', `multipart/related; type="${frame.contentType}"; transfer-syntax="${frame.transferSyntaxUID}"; boundary="${boundary}"`);
     return res.send(body);
   }
   const accept = String(req.headers.accept || '').toLowerCase();
   if (accept.includes('application/dicom')) {
     const buf = await getDicomInstanceBuffer(inst);
+    setDicomCacheHeaders(res, 'instance');
     res.setHeader('Content-Type', inst.content_type || 'application/dicom');
     return res.send(buf);
   }
   if (isOrthancFilePath(inst.file_path)) {
     const buf = await getDicomInstanceBuffer(inst);
+    setDicomCacheHeaders(res, 'instance');
     res.setHeader('Content-Type', inst.content_type || 'application/dicom');
     return res.send(buf);
   }
