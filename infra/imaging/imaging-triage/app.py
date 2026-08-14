@@ -96,7 +96,34 @@ def _dicts_to_measurements(raw: list[dict[str, Any]]) -> list[Measurement]:
     ]
 
 
+def _norm_modality(modality: str) -> str:
+    return (modality or "OT").upper().replace("X-RAY", "XR")
+
+
+def _metadata_only_mri(study_uid: str, modality: str, orthanc_study_id: str | None) -> dict[str, Any] | None:
+    mod = _norm_modality(modality)
+    if mod not in ("MR", "MRI"):
+        return None
+
+    from inference.heuristic import infer_heuristic
+    from orthanc_client import fetch_study_meta
+
+    meta = fetch_study_meta(study_uid, orthanc_study_id)
+    result = infer_heuristic(mod, meta)
+    result["orthanc_meta"] = meta
+    result["dicom_loaded"] = False
+    result["preprocessing"] = {
+        "source": "metadata_only",
+        "quality_flags": ["mri_model_not_enabled", "pixel_data_not_loaded"],
+    }
+    return result
+
+
 def _run_inference(study_uid: str, modality: str, orthanc_study_id: str | None) -> dict[str, Any]:
+    mri_result = _metadata_only_mri(study_uid, modality, orthanc_study_id)
+    if mri_result:
+        return mri_result
+
     from inference.engine import run_study_inference
 
     return run_study_inference(study_uid, modality, orthanc_study_id)
