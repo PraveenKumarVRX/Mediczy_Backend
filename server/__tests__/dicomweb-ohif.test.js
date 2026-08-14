@@ -1,4 +1,5 @@
 import {
+  buildMultipartRelated,
   studyToDicomJson,
   instanceToDicomJson,
   groupInstancesBySeries,
@@ -34,5 +35,16 @@ describe('dicomweb-ohif', () => {
     );
     expect(json['00080018'].Value[0]).toBe('9.9.9');
     expect(json['0020000E'].Value[0]).toBe('5.5.5');
+  });
+
+  it('adds transfer syntax to WADO-RS multipart frame parts', () => {
+    const { body } = buildMultipartRelated([{
+      bytes: Buffer.from([1, 2, 3]),
+      contentType: 'application/octet-stream',
+      transferSyntaxUID: '1.2.840.10008.1.2.1',
+    }]);
+    expect(body.toString('latin1')).toContain(
+      'Content-Type: application/octet-stream; transfer-syntax=1.2.840.10008.1.2.1',
+    );
   });
 });

@@ -106,8 +106,10 @@ export function imagePixelTagsFromBuffer(buffer) {
       const s = dataSet.string(t);
       return s ? s.split('\\').filter((v) => v !== '') : null;
     };
+    const transferSyntaxUID = dataSet.string('x00020010') || '1.2.840.10008.1.2.1';
     return {
       sopClassUid: dataSet.string('x00080016') || null, // real SOPClassUID (not a {vr,Value} tag — consumed and stripped by instanceToDicomJson)
+      '00020010': tag('UI', transferSyntaxUID), // TransferSyntaxUID
       '00280002': tag('US', us('x00280002')), // SamplesPerPixel
       '00280004': tag('CS', dataSet.string('x00280004')), // PhotometricInterpretation
       '00280006': tag('US', us('x00280006')), // PlanarConfiguration
@@ -222,7 +224,8 @@ export function buildMultipartRelated(parts) {
   const boundary = `mediczy-wado-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const chunks = [];
   for (const part of parts) {
-    chunks.push(Buffer.from(`--${boundary}\r\nContent-Type: ${part.contentType}\r\n\r\n`));
+    const transferSyntax = part.transferSyntaxUID ? `; transfer-syntax=${part.transferSyntaxUID}` : '';
+    chunks.push(Buffer.from(`--${boundary}\r\nContent-Type: ${part.contentType}${transferSyntax}\r\n\r\n`));
     chunks.push(Buffer.from(part.bytes));
     chunks.push(Buffer.from('\r\n'));
   }

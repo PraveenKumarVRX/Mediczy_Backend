@@ -605,7 +605,11 @@ async function streamInstance(req, res) {
     const frameNumber = parseInt(req.params.frame, 10) || 1;
     const frame = extractFramePixelData(buf, frameNumber);
     if (!frame) return res.status(404).json({ success: false, message: 'Frame not found' });
-    const { body, boundary } = buildMultipartRelated([{ bytes: frame.bytes, contentType: frame.contentType }]);
+    const { body, boundary } = buildMultipartRelated([{
+      bytes: frame.bytes,
+      contentType: frame.contentType,
+      transferSyntaxUID: frame.transferSyntaxUID,
+    }]);
     // transfer-syntax tells cornerstone's WADO-RS loader how to interpret the raw bytes
     // (uncompressed vs. which compression codec) — application/octet-stream alone is
     // ambiguous and the loader silently mis-decodes without it (PS3.18 requirement).
