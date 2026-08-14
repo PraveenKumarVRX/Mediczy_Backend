@@ -4,6 +4,9 @@ TorchXRayVision (CXR), MONAI UNet, nnU-Net v2 when weights are mounted.
 """
 from __future__ import annotations
 
+import importlib.util
+import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -100,6 +103,73 @@ def _norm_modality(modality: str) -> str:
     return (modality or "OT").upper().replace("X-RAY", "XR")
 
 
+def _env_true(name: str) -> bool:
+    return os.getenv(name, "false").strip().lower() == "true"
+
+
+def _package_present(name: str) -> bool:
+    return importlib.util.find_spec(name) is not None
+
+
+def _model_weights_dir() -> Path:
+    return Path(os.getenv("MODEL_WEIGHTS_DIR", "/app/models"))
+
+
+def _monai_bundle_downloaded(bundle_name: str) -> bool:
+    bundle_dir = _model_weights_dir() / bundle_name
+    return (bundle_dir / "configs" / "inference.json").is_file() and (
+        (bundle_dir / "models" / "model.pt").is_file()
+        or (bundle_dir / "models" / "model.ts").is_file()
+    )
+
+
+def _totalseg_downloaded() -> bool:
+    task_dir = "Dataset297_TotalSegmentator_total_3mm_1559subj"
+    candidates = [
+        Path(os.getenv("TOTALSEG_WEIGHTS_DIR", "")),
+        Path.home() / ".totalsegmentator" / "nnunet" / "results",
+    ]
+    return any(base and (base / task_dir).is_dir() for base in candidates)
+
+
+def _lightweight_model_status() -> dict[str, Any]:
+    monai_present = _package_present("monai")
+    ct_bundle = os.getenv("MONAI_CT_BUNDLE_NAME", "spleen_ct_segmentation")
+    lung_bundle = os.getenv("MONAI_LUNG_NODULE_BUNDLE_NAME", "lung_nodule_ct_detection")
+    breast_bundle = os.getenv("MONAI_BREAST_DENSITY_BUNDLE_NAME", "breast_density_classification")
+    ct_downloaded = _monai_bundle_downloaded(ct_bundle)
+    lung_downloaded = _monai_bundle_downloaded(lung_bundle)
+    breast_downloaded = _monai_bundle_downloaded(breast_bundle)
+    nnunet_folder = os.getenv("NNUNET_MODEL_FOLDER", "")
+
+    return {
+        "lightweight": True,
+        "torchxrayvision": _package_present("torchxrayvision"),
+        "monai_ct_unet": monai_present and ct_downloaded and _env_true("MONAI_CT_UNET_CLINICAL_APPROVED"),
+        "monai_ct_unet_downloaded": ct_downloaded,
+        "monai_mri_unet": False,
+        "totalsegmentator_ct": (
+            _package_present("totalsegmentator")
+            and _totalseg_downloaded()
+            and _env_true("TOTALSEG_CLINICAL_APPROVED")
+        ),
+        "totalsegmentator_ct_downloaded": _totalseg_downloaded(),
+        "lung_nodule_detection_ct": (
+            monai_present
+            and lung_downloaded
+            and _env_true("LUNG_NODULE_DETECTION_CLINICAL_APPROVED")
+        ),
+        "lung_nodule_detection_ct_downloaded": lung_downloaded,
+        "breast_density_mg": (
+            monai_present
+            and breast_downloaded
+            and _env_true("BREAST_DENSITY_CLINICAL_APPROVED")
+        ),
+        "breast_density_mg_downloaded": breast_downloaded,
+        "nnunetv2": bool(nnunet_folder) and Path(nnunet_folder).is_dir() and _package_present("nnunetv2"),
+    }
+
+
 def _metadata_only_mri(study_uid: str, modality: str, orthanc_study_id: str | None) -> dict[str, Any] | None:
     mod = _norm_modality(modality)
     if mod not in ("MR", "MRI"):
@@ -153,9 +223,7 @@ def health_deep() -> dict[str, Any]:
 
 @app.get("/models/status")
 def models_status() -> dict[str, Any]:
-    from inference.engine import get_model_status
-
-    return get_model_status()
+    return _lightweight_model_status()
 
 
 @app.post("/triage", response_model=TriageResponse)

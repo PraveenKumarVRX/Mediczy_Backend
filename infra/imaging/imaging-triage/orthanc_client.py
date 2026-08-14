@@ -15,6 +15,8 @@ if not ORTHANC_PASSWORD:
     raise RuntimeError(
         "ORTHANC_PASSWORD is required. Refusing to authenticate to Orthanc with an insecure default."
     )
+ORTHANC_REQUEST_TIMEOUT_SECONDS = float(os.getenv("ORTHANC_REQUEST_TIMEOUT_SECONDS", "60"))
+ORTHANC_METADATA_TIMEOUT_SECONDS = float(os.getenv("ORTHANC_METADATA_TIMEOUT_SECONDS", "5"))
 
 
 def auth_header() -> str:
@@ -22,14 +24,20 @@ def auth_header() -> str:
     return f"Basic {token}"
 
 
-def _request(url: str, method: str = "GET", data: bytes | None = None, headers: dict | None = None) -> bytes:
+def _request(
+    url: str,
+    method: str = "GET",
+    data: bytes | None = None,
+    headers: dict | None = None,
+    timeout: float | None = None,
+) -> bytes:
     hdrs = {"Authorization": auth_header(), **(headers or {})}
     req = urllib.request.Request(url, data=data, method=method, headers=hdrs)
-    with urllib.request.urlopen(req, timeout=60) as res:
+    with urllib.request.urlopen(req, timeout=timeout or ORTHANC_REQUEST_TIMEOUT_SECONDS) as res:
         return res.read()
 
 
-def resolve_study_id(study_uid: str, orthanc_study_id: str | None) -> str | None:
+def resolve_study_id(study_uid: str, orthanc_study_id: str | None, timeout: float | None = None) -> str | None:
     if orthanc_study_id:
         return orthanc_study_id
     body = json.dumps({"Level": "Study", "Query": {"StudyInstanceUID": study_uid}}).encode()
@@ -38,17 +46,23 @@ def resolve_study_id(study_uid: str, orthanc_study_id: str | None) -> str | None
         method="POST",
         data=body,
         headers={"Content-Type": "application/json"},
+        timeout=timeout,
     )
     ids = json.loads(raw.decode())
     return ids[0] if ids else None
 
 
-def fetch_study_meta(study_uid: str, orthanc_study_id: str | None) -> dict[str, Any] | None:
+def fetch_study_meta(
+    study_uid: str,
+    orthanc_study_id: str | None,
+    timeout: float | None = None,
+) -> dict[str, Any] | None:
     try:
-        sid = resolve_study_id(study_uid, orthanc_study_id)
+        request_timeout = timeout or ORTHANC_METADATA_TIMEOUT_SECONDS
+        sid = resolve_study_id(study_uid, orthanc_study_id, timeout=request_timeout)
         if not sid:
             return None
-        raw = _request(f"{ORTHANC_URL}/studies/{sid}")
+        raw = _request(f"{ORTHANC_URL}/studies/{sid}", timeout=request_timeout)
         data = json.loads(raw.decode())
         tags = data.get("MainDicomTags", {})
         return {
@@ -137,7 +151,7 @@ def fetch_series_instances_dicom(
 
 def orthanc_health() -> bool:
     try:
-        _request(f"{ORTHANC_URL}/system")
+        _request(f"{ORTHANC_URL}/system", timeout=3)
         return True
     except Exception:
         return False

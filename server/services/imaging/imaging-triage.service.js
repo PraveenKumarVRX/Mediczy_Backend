@@ -9,6 +9,7 @@ import { recordMetric } from './imaging-observability.service.js';
 
 const TRIAGE_URL = process.env.IMAGING_TRIAGE_URL || 'http://127.0.0.1:8010';
 const TRIAGE_TIMEOUT_MS = parseInt(process.env.IMAGING_TRIAGE_TIMEOUT_MS || '30000', 10);
+const TRIAGE_EVENT_TIMEOUT_MS = parseInt(process.env.IMAGING_TRIAGE_EVENT_TIMEOUT_MS || '500', 10);
 
 const TRIAGE_UNAVAILABLE_MAX_CONFIDENCE = 0.05;
 const TRIAGE_UNAVAILABLE_FINDING = {
@@ -32,6 +33,22 @@ async function postTriageToInference(payload) {
   }
 }
 
+async function publishTriageEvent(topic, payload) {
+  let timer;
+  try {
+    await Promise.race([
+      publishEvent(topic, payload),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, TRIAGE_EVENT_TIMEOUT_MS);
+      }),
+    ]);
+  } catch {
+    // Event delivery is advisory for this request path; don't block the doctor UI.
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function requestTriage({ studyId, studyInstanceUID, tenantId, modality, orthancStudyId }) {
   await pool.query(
     `INSERT INTO imaging_ai_triage (study_id, study_instance_uid, tenant_id, modality, status)
@@ -40,9 +57,9 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
     [studyId, studyInstanceUID, tenantId, modality],
   ).catch(() => {});
 
-  await publishEvent(KAFKA_TOPICS.IMAGING_AI_TRIAGE_REQUESTED, {
+  await publishTriageEvent(KAFKA_TOPICS.IMAGING_AI_TRIAGE_REQUESTED, {
     studyId, studyInstanceUID, tenantId, modality,
-  }).catch(() => {});
+  });
 
   const start = Date.now();
   let findings = [];
@@ -113,9 +130,9 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
     modality,
     inference_backend: inferenceBackend,
   });
-  await publishEvent(KAFKA_TOPICS.IMAGING_AI_TRIAGE_COMPLETE, {
+  await publishTriageEvent(KAFKA_TOPICS.IMAGING_AI_TRIAGE_COMPLETE, {
     studyId, studyInstanceUID, findings, confidence, modelVersion, inferenceBackend,
-  }).catch(() => {});
+  });
 
   const { evaluateCriticalFindings } = await import('./imaging-critical-alerts.service.js');
   await evaluateCriticalFindings({
