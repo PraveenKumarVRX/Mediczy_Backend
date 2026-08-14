@@ -501,6 +501,9 @@ function isIshaConfigured() {
   );
 }
 const ISHA_DIRECT_ENABLED = isIshaConfigured();
+const MEDIQZY_AI_PRIMARY_PROVIDER = String(getProviderEnv('MEDIQZY_AI_PRIMARY_PROVIDER') || 'isha').toLowerCase();
+const ISHA_LLM_AGENT_TYPE = getProviderEnv('ISHA_LLM_AGENT_TYPE') || getProviderEnv('ISHA_AGENT_TYPE') || 'Claims';
+const ISHA_PRIMARY_ENABLED = MEDIQZY_AI_PRIMARY_PROVIDER === 'isha' && ISHA_DIRECT_ENABLED;
 
 const PROVIDERS = [
   {
@@ -509,14 +512,14 @@ const PROVIDERS = [
     model: getProviderEnv('SIB_MODEL') || 'sib-router',
     getClient: () => ({ available: true }),
     useSib: true,
-    priority: 0,
+    priority: ISHA_PRIMARY_ENABLED ? 10 : 0,
   },
   {
     name: 'groq',
     label: 'Groq (Llama 3.3 70B fallback)',
     model: 'llama-3.3-70b-versatile',
     getClient: getGroqClient,
-    priority: 1,
+    priority: ISHA_PRIMARY_ENABLED ? 20 : 1,
   },
   {
     name: 'openai',
@@ -532,11 +535,11 @@ const PROVIDERS = [
     model: getProviderEnv('ISHA_LLM_MODEL') || 'bi-medix2',
     getClient: () => ({ available: true }),
     useFetch: true,
-    priority: 2,
+    priority: ISHA_PRIMARY_ENABLED ? 0 : 2,
     // Enabled as a genuine cascade fallback whenever iSHA credentials are set.
     // Falls through gracefully (cascade continues) if the endpoint is unreachable.
     disabled: !ISHA_DIRECT_ENABLED,
-    extraBody: { agent_type: 'Clinical' },
+    extraBody: { agent_type: ISHA_LLM_AGENT_TYPE },
   },
   {
     name: 'isha-reflex',
@@ -546,7 +549,7 @@ const PROVIDERS = [
     useFetch: true,
     priority: 91,
     disabled: true,
-    extraBody: { agent_type: 'Clinical' },
+    extraBody: { agent_type: ISHA_LLM_AGENT_TYPE },
   },
   {
     name: 'isha-inc',
@@ -830,8 +833,19 @@ async function chat({
     if (requestedProvider !== forceProvider) {
       console.log('[LLM] Routing forceProvider=' + forceProvider + ' through SIB gateway');
     }
-    const forced = PROVIDERS.find(p => p.name === requestedProvider);
+    let forced = PROVIDERS.find(p => p.name === requestedProvider);
     if (!forced) throw new Error('Unknown provider: ' + forceProvider);
+    if (
+      ISHA_PRIMARY_ENABLED &&
+      requestedProvider === 'sib' &&
+      !['false', '0', 'no'].includes(String(getProviderEnv('ROUTE_FORCED_SIB_TO_ISHA') || 'true').toLowerCase())
+    ) {
+      const ishaProvider = PROVIDERS.find(p => p.name === 'isha' && !p.disabled);
+      if (ishaProvider) {
+        console.log('[LLM] Routing forceProvider=sib through iSHA.buzz primary provider');
+        forced = ishaProvider;
+      }
+    }
     if (forced.disabled && !ALLOW_DIRECT_AI_PROVIDERS) {
       throw new Error('Provider ' + forceProvider + ' is disabled for app traffic');
     }
@@ -858,7 +872,7 @@ async function chat({
     providersToTry = preferred ? [preferred, ...rest] : PROVIDERS.filter(p => !p.disabled);
     console.log(`[LLM] CognitiveTier=${cognitiveTier} → preferred=${preferredName}, cascade=[${providersToTry.map(p => p.name).join('→')}]`);
   } else {
-    providersToTry = PROVIDERS.filter(p => !p.disabled); // All enabled in cascade order
+    providersToTry = PROVIDERS.filter(p => !p.disabled).sort((a, b) => a.priority - b.priority); // All enabled in cascade order
   }
 
   const cascade = [];       // Track which providers were attempted
