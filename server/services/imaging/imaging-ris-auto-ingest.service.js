@@ -15,6 +15,23 @@ function numOrNull(v) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+async function getDoctorDisplayName(doctorId, fallbackName = null) {
+  if (!doctorId) return fallbackName || null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT CONCAT_WS(' ', NULLIF(TRIM("firstName"), ''), NULLIF(TRIM("lastName"), '')) AS name
+         FROM doctors
+        WHERE id = $1
+        LIMIT 1`,
+      [doctorId],
+    );
+    return rows[0]?.name || fallbackName || null;
+  } catch (err) {
+    logger.warn('[RIS-AutoIngest] doctor display-name lookup failed', { error: err.message });
+    return fallbackName || null;
+  }
+}
+
 /**
  * Resolve which lab/clinic owns an Orthanc ingest.
  * Priority: explicit → ORTHANC_DEFAULT_LAB_ID → dicom_modalities.ae_title match.
@@ -59,12 +76,12 @@ export async function resolveReferringDoctor({
 } = {}) {
   const explicit = numOrNull(referringDoctorId);
   if (explicit) {
-    return { id: explicit, name: referringPhysician || null };
+    return { id: explicit, name: await getDoctorDisplayName(explicit, referringPhysician) };
   }
 
   const envDoc = numOrNull(process.env.ORTHANC_DEFAULT_REFERRING_DOCTOR_ID);
   if (envDoc) {
-    return { id: envDoc, name: referringPhysician || null };
+    return { id: envDoc, name: await getDoctorDisplayName(envDoc, referringPhysician) };
   }
 
   const name = String(referringPhysician || '').trim();
@@ -73,13 +90,15 @@ export async function resolveReferringDoctor({
   const cleaned = name.replace(/^dr\.?\s+/i, '').trim();
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, email
+      `SELECT id,
+              CONCAT_WS(' ', NULLIF(TRIM("firstName"), ''), NULLIF(TRIM("lastName"), '')) AS name,
+              email
          FROM doctors
         WHERE COALESCE(status, 'active') IN ('active', 'verified', 'approved')
           AND (
-            LOWER(TRIM(name)) = LOWER(TRIM($1))
-            OR LOWER(TRIM(name)) = LOWER(TRIM($2))
-            OR LOWER(name) LIKE LOWER($3)
+            LOWER(TRIM(CONCAT_WS(' ', NULLIF(TRIM("firstName"), ''), NULLIF(TRIM("lastName"), '')))) = LOWER(TRIM($1))
+            OR LOWER(TRIM(CONCAT_WS(' ', NULLIF(TRIM("firstName"), ''), NULLIF(TRIM("lastName"), '')))) = LOWER(TRIM($2))
+            OR LOWER(CONCAT_WS(' ', NULLIF(TRIM("firstName"), ''), NULLIF(TRIM("lastName"), ''))) LIKE LOWER($3)
             OR LOWER(email) = LOWER($4)
           )
         ORDER BY id ASC

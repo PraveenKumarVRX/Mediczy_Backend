@@ -31,7 +31,7 @@ import {
 } from '../services/imaging/imaging-vna.service.js';
 import { getStudyPlatformSummary } from '../services/imaging/imaging-ingest.service.js';
 import { generateReportDraft, getLatestDraft, approveDraft } from '../services/imaging/imaging-report-drafter.service.js';
-import { assertStudyAccess } from '../services/imaging/imaging-study-access.service.js';
+import { assertStudyAccess, assertStudyAccessByStudyUid } from '../services/imaging/imaging-study-access.service.js';
 import { getInterpretationForStudy } from '../services/imaging/imaging-interpretability.service.js';
 import { runVnaLifecycleJob } from '../services/imaging/imaging-vna.service.js';
 import { compareWithPriorStudies } from '../services/imaging/imaging-prior-comparison.service.js';
@@ -159,25 +159,29 @@ router.get('/triage/models/status', authImaging, async (_req, res) => {
 });
 
 router.get('/triage/:studyInstanceUID', authImaging, async (req, res) => {
-  const row = await getTriageForStudy(req.params.studyInstanceUID, getTenantId(req));
-  return res.json({ success: true, triage: row });
+  try {
+    const { tenantId } = await assertStudyAccessByStudyUid(req.params.studyInstanceUID, req);
+    const row = await getTriageForStudy(req.params.studyInstanceUID, tenantId);
+    return res.json({ success: true, triage: row });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, message: err.message });
+  }
 });
 
 router.post('/triage/:studyId/request', authImaging, async (req, res) => {
-  const r = await pool.query(
-    `SELECT id, study_instance_uid, modality, orthanc_study_id FROM ris_studies WHERE id = $1 AND lab_id = $2`,
-    [parseInt(req.params.studyId, 10), getTenantId(req)],
-  );
-  const study = r.rows[0];
-  if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
-  const triage = await requestTriage({
-    studyId: study.id,
-    studyInstanceUID: study.study_instance_uid,
-    tenantId: getTenantId(req),
-    modality: study.modality,
-    orthancStudyId: study.orthanc_study_id,
-  });
-  return res.json({ success: true, triage, disclaimer: 'AI triage is advisory only — physician review required.' });
+  try {
+    const { study, tenantId } = await assertStudyAccess(parseInt(req.params.studyId, 10), req);
+    const triage = await requestTriage({
+      studyId: study.id,
+      studyInstanceUID: study.study_instance_uid,
+      tenantId,
+      modality: study.modality,
+      orthancStudyId: study.orthanc_study_id,
+    });
+    return res.json({ success: true, triage, disclaimer: 'AI triage is advisory only — physician review required.' });
+  } catch (err) {
+    return res.status(err.status || 500).json({ success: false, message: err.message });
+  }
 });
 
 router.post('/triage/:id/review', authImaging, async (req, res) => {

@@ -52,6 +52,9 @@ export async function getInterpretationForStudy(studyId, tenantId) {
     `SELECT * FROM imaging_report_interpretations
      WHERE study_id = $1 AND tenant_id = $2 ORDER BY created_at DESC LIMIT 1`,
     [studyId, tenantId],
-  );
+  ).catch((err) => {
+    if (err?.code === '42P01') return { rows: [] };
+    throw err;
+  });
   return r.rows[0] || null;
 }
