@@ -207,7 +207,39 @@ export function extractFramePixelData(buffer, frameNumber = 1) {
     : (TRANSFER_SYNTAX_MIME[transferSyntaxUID] || 'application/octet-stream');
 
   if (pixelDataElement.encapsulatedPixelData) {
-    const frame = dicomParser.readEncapsulatedImageFrame(dataSet, pixelDataElement, frameNumber - 1);
+    const frameIndex = frameNumber - 1;
+    let frame;
+    try {
+      frame = dicomParser.readEncapsulatedImageFrame(dataSet, pixelDataElement, frameIndex);
+    } catch (err) {
+      const message = String(err?.message || err || '');
+      const fragments = pixelDataElement.fragments || [];
+      if (!message.includes('basicOffsetTable has zero entries')) throw err;
+
+      // Some valid JPEG-compressed DICOM files omit the Basic Offset Table. Dicom-parser
+      // can synthesize one from JPEG EOI markers; without this, WADO frame retrieval
+      // returns 500 for Philips MR JPEG lossless series and OHIF shows "Something went wrong".
+      try {
+        const offsets = dicomParser.createJPEGBasicOffsetTable(dataSet, pixelDataElement, fragments);
+        if (offsets?.length) {
+          frame = dicomParser.readEncapsulatedImageFrame(dataSet, pixelDataElement, frameIndex, offsets, fragments);
+        }
+      } catch {
+        // Fall through to the single-frame compatibility path below.
+      }
+
+      if (!frame) {
+        const numberOfFrames = parseInt(dataSet.string('x00280008') || '1', 10) || 1;
+        if (numberOfFrames > 1) throw err;
+        frame = dicomParser.readEncapsulatedPixelDataFromFragments(
+          dataSet,
+          pixelDataElement,
+          0,
+          fragments.length,
+          fragments,
+        );
+      }
+    }
     return { bytes: frame, contentType, transferSyntaxUID };
   }
 

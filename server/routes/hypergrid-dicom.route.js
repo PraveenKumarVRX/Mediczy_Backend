@@ -41,6 +41,9 @@ import {
 } from '../services/orthanc-hypergrid-bridge.service.js';
 
 const router = express.Router();
+const PIXEL_TAG_CACHE_MAX = parseInt(process.env.OHIF_PIXEL_TAG_CACHE_MAX || '3000', 10);
+const OHIF_METADATA_CONCURRENCY = Math.max(1, parseInt(process.env.OHIF_METADATA_CONCURRENCY || '12', 10));
+const pixelTagCache = new Map();
 const upload = multer({
   storage: s3Storage('dicom', {
     resolveTenant: (req) => req.user?.tenantId || req.user?.id || req.lab?.id,
@@ -149,6 +152,40 @@ async function getDicomInstanceBuffer(inst) {
     return fetchOrthancInstance(instanceId);
   }
   return s3GetObjectBuffer(inst.file_path);
+}
+
+async function getPixelTagsForInstance(inst) {
+  const key = inst.orthanc_instance_id || inst.file_path || inst.sop_instance_uid;
+  if (key && pixelTagCache.has(key)) {
+    const cached = pixelTagCache.get(key);
+    pixelTagCache.delete(key);
+    pixelTagCache.set(key, cached);
+    return cached;
+  }
+  const buf = await getDicomInstanceBuffer(inst);
+  const tags = imagePixelTagsFromBuffer(buf);
+  if (key && PIXEL_TAG_CACHE_MAX > 0) {
+    pixelTagCache.set(key, tags);
+    while (pixelTagCache.size > PIXEL_TAG_CACHE_MAX) {
+      const oldest = pixelTagCache.keys().next().value;
+      pixelTagCache.delete(oldest);
+    }
+  }
+  return tags;
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const out = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const current = nextIndex;
+      nextIndex += 1;
+      out[current] = await mapper(items[current], current);
+    }
+  });
+  await Promise.all(workers);
+  return out;
 }
 
 function resolveStudyModality(risStudy, orthancStudy, seriesRows) {
@@ -552,14 +589,13 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
     // Rows/Columns/BitsAllocated/PhotometricInterpretation etc. aren't stored in
     // hg_dicom_instances — parsed from each real file so cornerstone can actually
     // interpret the pixel bytes returned by the frames endpoint (see imagePixelTagsFromBuffer).
-    const payload = await Promise.all(instances.map(async (inst) => {
+    const payload = await mapWithConcurrency(instances, OHIF_METADATA_CONCURRENCY, async (inst) => {
       let pixelTags = null;
       try {
-        const buf = await getDicomInstanceBuffer(inst);
-        pixelTags = imagePixelTagsFromBuffer(buf);
+        pixelTags = await getPixelTagsForInstance(inst);
       } catch { /* fall back to metadata without pixel tags */ }
       return instanceToDicomJson(study, inst, pixelTags);
-    }));
+    });
     res.setHeader('Content-Type', 'application/dicom+json');
     return res.json(payload);
   } catch (err) {
