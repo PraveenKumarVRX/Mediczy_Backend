@@ -16,6 +16,7 @@ import { canonicalizeAppointmentTime } from '../utils/appointmentSlotTime.js';
 import { checkDoctorConflict, checkPatientConflict } from '../services/appointmentEligibility.service.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import redisClient from '../config/redis.js';
+import { Op } from 'sequelize';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -954,6 +955,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
     const { Doctor, Appointment } = await import('../models/index.js');
     const { User } = await import('../models/user.model.intelligent.js');
     const crypto = await import('crypto');
+    const guestIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
     
     // Check if user is authenticated (optional for emergencies)
     let user = null;
@@ -1026,7 +1028,6 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
       }
     } else {
       // Guest users (unauthenticated) — allow but track by IP to prevent abuse
-      const guestIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
       mlog("Emergency guest access", { ip: guestIp });
       
       // Check how many guest emergency appointments were created from this IP in last 24h
@@ -1035,7 +1036,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
         where: {
           userId: null,
           sourceChannel: 'emergency_triage',
-          createdAt: { [Symbol.for('gte')]: oneDayAgo }
+          createdAt: { [Op.gte]: oneDayAgo }
         }
       });
       
@@ -2321,4 +2322,3 @@ router.get('/health-summary', authUser, async (req, res) => {
 });
 
 export default router;
-

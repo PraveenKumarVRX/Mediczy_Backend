@@ -20,8 +20,13 @@ jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({
 }));
 
 jest.unstable_mockModule('../models/index.js', () => ({
+  User: {
+    findByPk: jest.fn()
+  },
   Appointment: {
-    findAll: mockAppointmentFindAll
+    findAll: mockAppointmentFindAll,
+    findByPk: jest.fn(),
+    findOne: jest.fn()
   },
   Doctor: {
     findAll: jest.fn(),

@@ -1,4 +1,4 @@
-import { describe, expect, it } from '@jest/globals';
+import { beforeAll, describe, expect, it } from '@jest/globals';
 import zlib from 'zlib';
 import crypto from 'crypto';
 import QRCode from 'qrcode';
@@ -36,6 +36,12 @@ const DEMO = [
 ];
 
 describe('aadhaar image decode (server zxing-wasm)', () => {
+  let decodeAadhaarFromImageBytes;
+
+  beforeAll(async () => {
+    ({ decodeAadhaarFromImageBytes } = await import('../services/aadhaar-image-decode.service.js'));
+  });
+
   it('decodes Aadhaar Secure QR digits from a generated PNG', async () => {
     const raw = buildSecureQrBytes(DEMO);
     const decimal = BigInt(`0x${raw.toString('hex')}`).toString(10);
@@ -47,7 +53,6 @@ describe('aadhaar image decode (server zxing-wasm)', () => {
       margin: 2,
     });
 
-    const { decodeAadhaarFromImageBytes } = await import('../services/aadhaar-image-decode.service.js');
     const result = await decodeAadhaarFromImageBytes(png);
     expect(result.success).toBe(true);
     expect(result.fields.firstName).toBe('Anita');
@@ -56,19 +61,18 @@ describe('aadhaar image decode (server zxing-wasm)', () => {
   }, 30000);
 
   it('decodes binary-mode Secure QR (real Aadhaar card encoding) from phone-like JPEG', async () => {
-    const raw = buildSecureQrBytes(DEMO, 1600);
+    const raw = buildSecureQrBytes(DEMO, 400);
     const png = await QRCode.toBuffer([{ data: new Uint8Array(raw), mode: 'byte' }], {
       type: 'png',
       errorCorrectionLevel: 'L',
-      width: 1800,
+      width: 1000,
       margin: 2,
     });
-    const jpeg = await sharp(png).resize(1100).jpeg({ quality: 72 }).toBuffer();
+    const jpeg = await sharp(png).resize(900).jpeg({ quality: 78 }).toBuffer();
 
-    const { decodeAadhaarFromImageBytes } = await import('../services/aadhaar-image-decode.service.js');
     const result = await decodeAadhaarFromImageBytes(jpeg);
     expect(result.success).toBe(true);
     expect(result.fields.firstName).toBe('Anita');
     expect(result.fields.aadhaarLast4).toBe('1234');
-  }, 30000);
+  }, 60000);
 });

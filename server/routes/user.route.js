@@ -99,8 +99,12 @@ const isLoopbackRequest = (req) => {
     forwarded.includes('::1');
 };
 
-// OTPs must never be returned in API responses — retrieve from server logs for testing.
-const shouldIncludeOtpInResponse = (_req) => false;
+// OTPs must never be returned in normal API responses. A local-only debug escape
+// exists for intentional QA runs and is hard-disabled in production.
+const shouldIncludeOtpInResponse = (req) =>
+  process.env.OTP_DEBUG_RESPONSE === 'true' &&
+  process.env.NODE_ENV !== 'production' &&
+  isLoopbackRequest(req);
 
 const buildInactiveAccountContext = async (userId) => {
   try {
