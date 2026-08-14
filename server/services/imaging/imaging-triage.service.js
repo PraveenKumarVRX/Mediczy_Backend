@@ -117,6 +117,30 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
   return r.rows[0];
 }
 
+export async function getTriageModelStatus() {
+  try {
+    const res = await fetch(`${TRIAGE_URL}/models/status`, { timeout: 10000 });
+    if (!res.ok) {
+      return {
+        available: false,
+        status: res.status,
+        message: `imaging-triage model status failed (${res.status})`,
+      };
+    }
+    return {
+      available: true,
+      status: res.status,
+      models: await res.json(),
+    };
+  } catch (err) {
+    return {
+      available: false,
+      status: 0,
+      message: err.message || 'imaging-triage service unavailable',
+    };
+  }
+}
+
 async function llmTriageFallback(modality, studyInstanceUID) {
   const resp = await llmProvider.chat({
     messages: [

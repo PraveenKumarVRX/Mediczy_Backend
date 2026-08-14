@@ -18,7 +18,7 @@ import {
 } from '../services/imaging/imaging-report-templates.service.js';
 import { searchImaging, indexStudyDocument } from '../services/imaging/imaging-search.service.js';
 import {
-  requestTriage, getTriageForStudy, reviewTriage,
+  requestTriage, getTriageForStudy, getTriageModelStatus, reviewTriage,
 } from '../services/imaging/imaging-triage.service.js';
 import {
   createSession, addAnnotation, listAnnotations, registerCollabSSE, getCollabStats,
@@ -153,6 +153,11 @@ router.post('/search/reindex/:studyId', authImaging, async (req, res) => {
 });
 
 // ─── AI triage (SaMD — physician review required) ────────────────────────────
+router.get('/triage/models/status', authImaging, async (_req, res) => {
+  const status = await getTriageModelStatus();
+  return res.json({ success: true, ...status });
+});
+
 router.get('/triage/:studyInstanceUID', authImaging, async (req, res) => {
   const row = await getTriageForStudy(req.params.studyInstanceUID, getTenantId(req));
   return res.json({ success: true, triage: row });

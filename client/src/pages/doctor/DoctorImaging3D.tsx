@@ -12,6 +12,7 @@ import {
   Layers3,
   Loader2,
   Maximize2,
+  Play,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -71,6 +72,27 @@ type AiReadiness = {
     gpuReady: boolean;
   };
   series: AiReadinessSeries[];
+};
+
+type AiTriage = {
+  id?: number;
+  status?: string;
+  findings?: Array<{
+    label?: string;
+    severity?: string;
+    note?: string;
+    location?: string;
+  }>;
+  confidence_score?: number;
+  model_version?: string;
+  inference_backend?: string;
+  feature_attributions?: Array<Record<string, unknown>>;
+};
+
+type ModelStatus = {
+  available: boolean;
+  models?: Record<string, boolean>;
+  message?: string;
 };
 
 function cleanUid(value: string | undefined) {
@@ -201,6 +223,9 @@ export default function DoctorImaging3D() {
   const [error, setError] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [draftText, setDraftText] = useState("");
+  const [triage, setTriage] = useState<AiTriage | null>(null);
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [runningTriage, setRunningTriage] = useState(false);
 
   const score = readinessScore(readiness);
   const segmentation = segmentationProfile(study, readiness);
@@ -225,6 +250,18 @@ export default function DoctorImaging3D() {
       });
       if (!readinessRes.ok) throw new Error(`AI readiness failed (${readinessRes.status})`);
       setReadiness(await readinessRes.json() as AiReadiness);
+      const [triageRes, modelStatusRes] = await Promise.allSettled([
+        api.get(`/imaging/platform/triage/${encodeURIComponent(studyUID)}`),
+        api.get("/imaging/platform/triage/models/status"),
+      ]);
+      if (triageRes.status === "fulfilled") setTriage(triageRes.value.data?.triage || null);
+      if (modelStatusRes.status === "fulfilled") {
+        setModelStatus({
+          available: Boolean(modelStatusRes.value.data?.available),
+          models: modelStatusRes.value.data?.models || {},
+          message: modelStatusRes.value.data?.message,
+        });
+      }
       setViewerUrl(buildOhifViewerUrl(studyUID, { mode: "diagnostic", viewport: "workspace" }));
     } catch (err: any) {
       setError(err.response?.data?.message || err.message || "Unable to load 3D workspace");
@@ -262,6 +299,26 @@ export default function DoctorImaging3D() {
       setDraftText(err.response?.data?.message || err.message || "Draft generation failed.");
     } finally {
       setDrafting(false);
+    }
+  };
+
+  const runSegmentationTriage = async () => {
+    if (!study?.id) return;
+    setRunningTriage(true);
+    try {
+      const { data } = await api.post(`/imaging/platform/triage/${study.id}/request`);
+      setTriage(data?.triage || null);
+    } catch (err: any) {
+      setTriage({
+        status: "failed",
+        findings: [{
+          label: "AI triage unavailable",
+          severity: "warning",
+          note: err.response?.data?.message || err.message || "Unable to run imaging AI.",
+        }],
+      });
+    } finally {
+      setRunningTriage(false);
     }
   };
 
@@ -399,8 +456,66 @@ export default function DoctorImaging3D() {
                         </div>
                         <p className="mt-1 text-xs text-slate-400">{segmentation.model}</p>
                         <p className="mt-1 text-[11px] text-slate-500">{segmentation.detail}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="h-8 bg-cyan-600 text-white hover:bg-cyan-700"
+                            disabled={!study || !segmentation.runnable || runningTriage}
+                            onClick={runSegmentationTriage}
+                          >
+                            {runningTriage ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
+                            Run AI
+                          </Button>
+                          <span className="text-[11px] text-slate-500">
+                            {modelStatus?.available ? "Inference service online" : modelStatus?.message || "Checking inference service"}
+                          </span>
+                        </div>
                       </div>
                     </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-300" /> AI Segmentation Output
+                      </div>
+                      <Badge className="bg-slate-800 text-slate-300">
+                        {triage?.inference_backend || triage?.status || "not run"}
+                      </Badge>
+                    </div>
+                    {triage ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-400">
+                          <div className="rounded-md bg-slate-900 p-2">
+                            <div className="text-slate-500">Confidence</div>
+                            <div className="text-sm font-semibold text-slate-200">
+                              {typeof triage.confidence_score === "number" ? `${Math.round(triage.confidence_score * 100)}%` : "-"}
+                            </div>
+                          </div>
+                          <div className="rounded-md bg-slate-900 p-2">
+                            <div className="text-slate-500">Model</div>
+                            <div className="truncate text-sm font-semibold text-slate-200">{triage.model_version || "-"}</div>
+                          </div>
+                        </div>
+                        {(triage.findings || []).slice(0, 4).map((finding, index) => (
+                          <div key={`${finding.label || "finding"}-${index}`} className="rounded-md bg-slate-900 p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="truncate text-xs font-medium text-slate-200">{finding.label || "Finding"}</span>
+                              <Badge className="bg-slate-800 text-slate-300">{finding.severity || "info"}</Badge>
+                            </div>
+                            {finding.note ? <p className="mt-1 text-[11px] text-slate-500">{finding.note}</p> : null}
+                          </div>
+                        ))}
+                        {!triage.findings?.length ? (
+                          <p className="text-[11px] text-slate-500">No findings returned yet. Run AI after confirming the volume is correct.</p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-slate-500">
+                        Runs the existing imaging-triage service. CT can use approved TotalSegmentator/MONAI backends; MRI remains review-gated until an approved MRI bundle is selected.
+                      </p>
+                    )}
                   </div>
 
                   <div className="rounded-lg border border-slate-800 bg-slate-950/70 p-3">
