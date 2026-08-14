@@ -9,7 +9,6 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from inference.engine import get_model_status, norm_modality, run_study_inference
 from orthanc_client import orthanc_health
 
 app = FastAPI(title="MediQzy Imaging Triage", version="1.3.0")
@@ -98,6 +97,8 @@ def _dicts_to_measurements(raw: list[dict[str, Any]]) -> list[Measurement]:
 
 
 def _run_inference(study_uid: str, modality: str, orthanc_study_id: str | None) -> dict[str, Any]:
+    from inference.engine import run_study_inference
+
     return run_study_inference(study_uid, modality, orthanc_study_id)
 
 
@@ -112,6 +113,8 @@ def health() -> dict[str, Any]:
 
 @app.get("/health/deep")
 def health_deep() -> dict[str, Any]:
+    from inference.engine import get_model_status
+
     return {
         "ok": True,
         "service": "imaging-triage",
@@ -123,6 +126,8 @@ def health_deep() -> dict[str, Any]:
 
 @app.get("/models/status")
 def models_status() -> dict[str, Any]:
+    from inference.engine import get_model_status
+
     return get_model_status()
 
 
