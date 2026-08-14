@@ -29,6 +29,16 @@ import {
   imagePixelTagsFromBuffer,
   DEFAULT_SERIES_UID,
 } from '../services/dicomweb-ohif.service.js';
+import {
+  fetchOrthancStudyByUid,
+  formatDicomStudyDate,
+  listOrthancStudyInstances,
+} from '../services/orthanc-pacs.service.js';
+import {
+  fetchOrthancInstance,
+  fetchOrthancInstanceMetadata,
+  fetchOrthancSeriesMetadata,
+} from '../services/orthanc-hypergrid-bridge.service.js';
 
 const router = express.Router();
 const upload = multer({
@@ -117,21 +127,191 @@ function tenantId(req) {
   return req.user?.tenantId || req.user?.id;
 }
 
-async function loadStudy(pool, studyUID, tid) {
+function cleanDicomUid(value) {
+  return String(value || '')
+    .trim()
+    .replace(/,+$/g, '')
+    .trim();
+}
+
+function isOrthancFilePath(filePath) {
+  return String(filePath || '').startsWith('orthanc://');
+}
+
+function orthancInstanceIdFromPath(filePath) {
+  return String(filePath || '').replace(/^orthanc:\/\//, '').trim();
+}
+
+async function getDicomInstanceBuffer(inst) {
+  if (isOrthancFilePath(inst.file_path)) {
+    const instanceId = inst.orthanc_instance_id || orthancInstanceIdFromPath(inst.file_path);
+    if (!instanceId) throw new Error('Orthanc instance id missing');
+    return fetchOrthancInstance(instanceId);
+  }
+  return s3GetObjectBuffer(inst.file_path);
+}
+
+function resolveStudyModality(risStudy, orthancStudy, seriesRows) {
+  const risModality = risStudy?.modality && risStudy.modality !== 'OT' ? risStudy.modality : null;
+  const modalitiesInStudy = orthancStudy?.MainDicomTags?.ModalitiesInStudy?.split?.('\\')?.[0];
+  const firstSeriesModality = seriesRows.find((s) => s.modality)?.modality;
+  return risModality || modalitiesInStudy || firstSeriesModality || 'OT';
+}
+
+async function loadRisStudyForTenant(pool, studyUID, tid) {
   const r = await pool.query(
-    `SELECT * FROM hg_dicom_studies WHERE study_instance_uid = $1 AND tenant_id = $2`,
-    [studyUID, tid],
+    `SELECT * FROM ris_studies
+     WHERE study_instance_uid = $1
+       AND ($2::bigint IS NULL OR lab_id = $2 OR tenant_id = $2)
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [studyUID, tid || null],
   );
   return r.rows[0] || null;
 }
 
+async function ensureStudyIndexedFromOrthanc(pool, studyUID, tid) {
+  const uid = cleanDicomUid(studyUID);
+  if (!uid || !tid) return null;
+
+  const risStudy = await loadRisStudyForTenant(pool, uid, tid);
+  if (!risStudy) return null;
+
+  const orthancStudy = await fetchOrthancStudyByUid(uid).catch(() => null);
+  if (!orthancStudy?.ID) return null;
+
+  const orthancInstanceIds = await listOrthancStudyInstances(orthancStudy.ID).catch(() => []);
+  if (!orthancInstanceIds.length) return null;
+
+  const seriesCache = new Map();
+  const instanceRows = [];
+
+  for (const instanceId of orthancInstanceIds) {
+    try {
+      const meta = await fetchOrthancInstanceMetadata(instanceId);
+      const mainTags = meta?.MainDicomTags || {};
+      const seriesId = meta?.ParentSeries;
+      let seriesTags = {};
+      if (seriesId) {
+        if (!seriesCache.has(seriesId)) {
+          const seriesMeta = await fetchOrthancSeriesMetadata(seriesId).catch(() => null);
+          seriesCache.set(seriesId, seriesMeta?.MainDicomTags || {});
+        }
+        seriesTags = seriesCache.get(seriesId) || {};
+      }
+      const sopUid = mainTags.SOPInstanceUID;
+      if (!sopUid) continue;
+      instanceRows.push({
+        orthancInstanceId: instanceId,
+        sopInstanceUid: sopUid,
+        seriesInstanceUid: seriesTags.SeriesInstanceUID || mainTags.SeriesInstanceUID || DEFAULT_SERIES_UID,
+        modality: seriesTags.Modality || mainTags.Modality || risStudy.modality || 'OT',
+        instanceNumber: parseInt(mainTags.InstanceNumber || '1', 10) || 1,
+      });
+    } catch (err) {
+      console.warn('[DICOM] Orthanc lazy index instance skipped:', err?.message || err);
+    }
+  }
+
+  if (!instanceRows.length) return null;
+  const modality = resolveStudyModality(risStudy, orthancStudy, instanceRows);
+  const studyTags = orthancStudy.MainDicomTags || {};
+  const patientTags = orthancStudy.PatientMainDicomTags || {};
+
+  const studyRes = await pool.query(
+    `INSERT INTO hg_dicom_studies
+       (study_instance_uid, patient_id, patient_name, modality, study_date, study_description,
+        accession_number, tenant_id, created_by, num_instances, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW())
+     ON CONFLICT (study_instance_uid, tenant_id)
+     DO UPDATE SET patient_name = COALESCE(EXCLUDED.patient_name, hg_dicom_studies.patient_name),
+                   modality = COALESCE(EXCLUDED.modality, hg_dicom_studies.modality),
+                   study_date = COALESCE(EXCLUDED.study_date, hg_dicom_studies.study_date),
+                   study_description = COALESCE(EXCLUDED.study_description, hg_dicom_studies.study_description),
+                   accession_number = COALESCE(EXCLUDED.accession_number, hg_dicom_studies.accession_number),
+                   num_instances = EXCLUDED.num_instances,
+                   updated_at = NOW()
+     RETURNING *`,
+    [
+      uid,
+      patientTags.PatientID || risStudy.patient_id || null,
+      patientTags.PatientName || risStudy.patient_name || null,
+      modality,
+      formatDicomStudyDate(studyTags.StudyDate) || risStudy.study_date || null,
+      studyTags.StudyDescription || risStudy.study_description || null,
+      studyTags.AccessionNumber || risStudy.accession_number || null,
+      tid,
+      tid,
+      instanceRows.length,
+    ],
+  );
+
+  const values = [];
+  const placeholders = [];
+  instanceRows.forEach((row, idx) => {
+    const base = idx * 9;
+    placeholders.push(`($${base + 1},$${base + 2},$${base + 3},$${base + 4},$${base + 5},$${base + 6},$${base + 7},$${base + 8},$${base + 9},NOW())`);
+    values.push(
+      row.sopInstanceUid,
+      uid,
+      row.seriesInstanceUid,
+      `orthanc://${row.orthancInstanceId}`,
+      'application/dicom',
+      row.modality,
+      row.instanceNumber,
+      tid,
+      row.orthancInstanceId,
+    );
+  });
+
+  await pool.query(
+    `INSERT INTO hg_dicom_instances
+       (sop_instance_uid, study_instance_uid, series_instance_uid, file_path, content_type,
+        modality, instance_number, tenant_id, orthanc_instance_id, created_at)
+     VALUES ${placeholders.join(',')}
+     ON CONFLICT (sop_instance_uid, tenant_id)
+     DO UPDATE SET study_instance_uid = EXCLUDED.study_instance_uid,
+                   series_instance_uid = EXCLUDED.series_instance_uid,
+                   file_path = EXCLUDED.file_path,
+                   content_type = EXCLUDED.content_type,
+                   modality = EXCLUDED.modality,
+                   instance_number = EXCLUDED.instance_number,
+                   orthanc_instance_id = EXCLUDED.orthanc_instance_id,
+                   updated_at = NOW()`,
+    values,
+  );
+
+  await pool.query(
+    `UPDATE ris_studies
+     SET modality = CASE WHEN modality IS NULL OR modality = 'OT' THEN $3 ELSE modality END,
+         series_count = GREATEST(COALESCE(series_count, 0), $4),
+         image_count = GREATEST(COALESCE(image_count, 0), $5),
+         updated_at = NOW()
+     WHERE id = $1 AND lab_id = $2`,
+    [risStudy.id, tid, modality, seriesCache.size || 1, instanceRows.length],
+  ).catch(() => {});
+
+  return studyRes.rows[0] || null;
+}
+
+async function loadStudy(pool, studyUID, tid) {
+  const uid = cleanDicomUid(studyUID);
+  const r = await pool.query(
+    `SELECT * FROM hg_dicom_studies WHERE study_instance_uid = $1 AND tenant_id = $2`,
+    [uid, tid],
+  );
+  return r.rows[0] || await ensureStudyIndexedFromOrthanc(pool, uid, tid);
+}
+
 async function loadInstances(pool, studyUID, tid, seriesUID = null) {
+  const uid = cleanDicomUid(studyUID);
+  const series = cleanDicomUid(seriesUID);
   const r = await pool.query(
     `SELECT * FROM hg_dicom_instances
      WHERE study_instance_uid = $1 AND tenant_id = $2
        AND ($3::text IS NULL OR series_instance_uid = $3)
      ORDER BY instance_number NULLS LAST, created_at ASC`,
-    [studyUID, tid, seriesUID],
+    [uid, tid, series || null],
   );
   return r.rows;
 }
@@ -375,7 +555,7 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
     const payload = await Promise.all(instances.map(async (inst) => {
       let pixelTags = null;
       try {
-        const buf = await s3GetObjectBuffer(inst.file_path);
+        const buf = await getDicomInstanceBuffer(inst);
         pixelTags = imagePixelTagsFromBuffer(buf);
       } catch { /* fall back to metadata without pixel tags */ }
       return instanceToDicomJson(study, inst, pixelTags);
@@ -390,7 +570,9 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
 async function streamInstance(req, res) {
   const pool = await connectPostgres();
   const tid = tenantId(req);
-  const { studyUID, seriesUID, sopUID } = req.params;
+  const studyUID = cleanDicomUid(req.params.studyUID);
+  const seriesUID = cleanDicomUid(req.params.seriesUID);
+  const sopUID = cleanDicomUid(req.params.sopUID);
   const r = await pool.query(
     `SELECT i.* FROM hg_dicom_instances i
      WHERE i.sop_instance_uid = $1 AND i.study_instance_uid = $2 AND i.tenant_id = $3
@@ -419,7 +601,7 @@ async function streamInstance(req, res) {
     // cornerstone image loader can't decode a full DICOM P10 buffer as if it were
     // bare pixel data (was returning `content-type: application/dicom` for the
     // entire file here, which decoded as garbage/undefined in the browser).
-    const buf = await s3GetObjectBuffer(inst.file_path);
+    const buf = await getDicomInstanceBuffer(inst);
     const frameNumber = parseInt(req.params.frame, 10) || 1;
     const frame = extractFramePixelData(buf, frameNumber);
     if (!frame) return res.status(404).json({ success: false, message: 'Frame not found' });
@@ -432,7 +614,12 @@ async function streamInstance(req, res) {
   }
   const accept = String(req.headers.accept || '').toLowerCase();
   if (accept.includes('application/dicom')) {
-    const buf = await s3GetObjectBuffer(inst.file_path);
+    const buf = await getDicomInstanceBuffer(inst);
+    res.setHeader('Content-Type', inst.content_type || 'application/dicom');
+    return res.send(buf);
+  }
+  if (isOrthancFilePath(inst.file_path)) {
+    const buf = await getDicomInstanceBuffer(inst);
     res.setHeader('Content-Type', inst.content_type || 'application/dicom');
     return res.send(buf);
   }

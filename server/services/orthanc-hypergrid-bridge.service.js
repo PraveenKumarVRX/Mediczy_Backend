@@ -35,6 +35,15 @@ export async function fetchOrthancInstanceMetadata(instanceId) {
   return res.json();
 }
 
+export async function fetchOrthancSeriesMetadata(seriesId) {
+  const res = await fetch(`${ORTHANC_URL}/series/${seriesId}`, {
+    headers: orthancAuthHeader(),
+    timeout: 15000,
+  });
+  if (!res.ok) throw new Error(`Orthanc series metadata failed: ${res.status}`);
+  return res.json();
+}
+
 /**
  * POST DICOM buffer to HyperGrid STOW-RS.
  */

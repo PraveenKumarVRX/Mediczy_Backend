@@ -47,15 +47,11 @@ async function resolveTenantId(user, studyInstanceUID) {
   if (user.role !== 'doctor') return user.tenantId || user.id;
   if (!studyInstanceUID) return user.id; // no study context — session won't resolve any data, matches prior behavior
   const referral = await pool.query(
-    `SELECT 1 FROM ris_studies WHERE referring_doctor_id = $1 AND study_instance_uid = $2 LIMIT 1`,
+    `SELECT lab_id, tenant_id FROM ris_studies WHERE referring_doctor_id = $1 AND study_instance_uid = $2 LIMIT 1`,
     [user.id, studyInstanceUID],
   );
   if (!referral.rows.length) return user.id; // not entitled — falls back to a tenant that won't resolve this study
-  const study = await pool.query(
-    `SELECT tenant_id FROM hg_dicom_studies WHERE study_instance_uid = $1 LIMIT 1`,
-    [studyInstanceUID],
-  );
-  return study.rows[0]?.tenant_id || user.id;
+  return referral.rows[0]?.tenant_id || referral.rows[0]?.lab_id || user.id;
 }
 
 function authImagingUser(req, res, next) {
