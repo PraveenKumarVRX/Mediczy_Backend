@@ -4,6 +4,7 @@
  * and builds standard WADO-RS paths.
  */
 import dicomParser from 'dicom-parser';
+import sharp from 'sharp';
 
 export const DEFAULT_SERIES_UID = '2.25.1';
 
@@ -28,6 +29,50 @@ export function formatDicomDate(d) {
   if (!d) return null;
   const s = d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
   return s.replace(/-/g, '');
+}
+
+export function buildAdaptiveDicomPolicy(headers = {}, query = {}) {
+  const saveData = String(headers['save-data'] || '').toLowerCase() === 'on';
+  const ect = String(headers.ect || headers['effective-connection-type'] || '').toLowerCase();
+  const requestedMode = String(query.imagingMode || query.quality || query.bandwidth || '').toLowerCase();
+  const lowBandwidthRequested = ['low', 'preview', 'thumbnail', 'constrained'].includes(requestedMode);
+  const diagnosticRequested = ['diagnostic', 'full', 'lossless'].includes(requestedMode);
+  const constrainedNetwork = saveData || ['slow-2g', '2g', '3g'].includes(ect) || lowBandwidthRequested;
+  const mode = diagnosticRequested ? 'diagnostic' : (constrainedNetwork ? 'constrained' : 'balanced');
+
+  if (mode === 'constrained') {
+    return {
+      mode,
+      lowBandwidth: true,
+      prefetchWindow: 2,
+      metadataCacheSeconds: 3600,
+      frameCacheSeconds: 7200,
+      renderedMaxWidth: 768,
+      renderedJpegQuality: 62,
+    };
+  }
+
+  if (mode === 'diagnostic') {
+    return {
+      mode,
+      lowBandwidth: false,
+      prefetchWindow: 16,
+      metadataCacheSeconds: 3600,
+      frameCacheSeconds: 3600,
+      renderedMaxWidth: 2048,
+      renderedJpegQuality: 90,
+    };
+  }
+
+  return {
+    mode,
+    lowBandwidth: false,
+    prefetchWindow: 8,
+    metadataCacheSeconds: 3600,
+    frameCacheSeconds: 3600,
+    renderedMaxWidth: 1024,
+    renderedJpegQuality: 76,
+  };
 }
 
 export function studyToDicomJson(study, instanceCount = 0) {
@@ -260,6 +305,103 @@ export function extractFramePixelData(buffer, frameNumber = 1) {
   const start = pixelDataElement.dataOffset + frameIndex * frameLength;
   const bytes = byteArray.slice(start, start + frameLength);
   return { bytes, contentType, transferSyntaxUID };
+}
+
+function firstDicomNumber(value, fallback = null) {
+  if (value == null || value === '') return fallback;
+  const first = String(value).split('\\')[0];
+  const parsed = Number(first);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function rawPixelToGrayscale8(dataSet, frameBytes) {
+  const rows = dataSet.uint16('x00280010');
+  const columns = dataSet.uint16('x00280011');
+  if (!rows || !columns) throw new Error('Rows/Columns missing');
+
+  const samplesPerPixel = dataSet.uint16('x00280002') || 1;
+  const bitsAllocated = dataSet.uint16('x00280100') || 16;
+  const pixelRepresentation = dataSet.uint16('x00280103') || 0;
+  const photometric = String(dataSet.string('x00280004') || 'MONOCHROME2').toUpperCase();
+  const slope = firstDicomNumber(dataSet.string('x00281053'), 1);
+  const intercept = firstDicomNumber(dataSet.string('x00281052'), 0);
+  const windowCenter = firstDicomNumber(dataSet.string('x00281050'));
+  const windowWidth = firstDicomNumber(dataSet.string('x00281051'));
+  const count = rows * columns;
+  const out = Buffer.alloc(count);
+
+  if (samplesPerPixel !== 1) throw new Error('Only monochrome rendered previews are supported');
+  if (![8, 16].includes(bitsAllocated)) throw new Error(`Unsupported BitsAllocated ${bitsAllocated}`);
+
+  const values = new Float64Array(count);
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  const view = new DataView(frameBytes.buffer, frameBytes.byteOffset, frameBytes.byteLength);
+
+  for (let i = 0; i < count; i += 1) {
+    let raw;
+    if (bitsAllocated === 8) {
+      raw = pixelRepresentation ? view.getInt8(i) : view.getUint8(i);
+    } else {
+      raw = pixelRepresentation ? view.getInt16(i * 2, true) : view.getUint16(i * 2, true);
+    }
+    const value = raw * slope + intercept;
+    values[i] = value;
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+
+  let low;
+  let high;
+  if (windowCenter != null && windowWidth && windowWidth > 1) {
+    low = windowCenter - windowWidth / 2;
+    high = windowCenter + windowWidth / 2;
+  } else {
+    low = min;
+    high = max > min ? max : min + 1;
+  }
+
+  const scale = 255 / (high - low || 1);
+  for (let i = 0; i < count; i += 1) {
+    let pixel = Math.round((values[i] - low) * scale);
+    if (pixel < 0) pixel = 0;
+    if (pixel > 255) pixel = 255;
+    out[i] = photometric === 'MONOCHROME1' ? 255 - pixel : pixel;
+  }
+
+  return { pixels: out, rows, columns };
+}
+
+export async function renderFramePreviewJpeg(buffer, frameNumber = 1, options = {}) {
+  const byteArray = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const dataSet = dicomParser.parseDicom(byteArray);
+  const transferSyntaxUID = dataSet.string('x00020010') || '1.2.840.10008.1.2.1';
+  if (!UNCOMPRESSED_SYNTAXES.has(transferSyntaxUID)) {
+    throw new Error(`Rendered previews require server-side decompression for transfer syntax ${transferSyntaxUID}`);
+  }
+
+  const frame = extractFramePixelData(byteArray, frameNumber);
+  if (!frame) return null;
+
+  const { pixels, rows, columns } = rawPixelToGrayscale8(dataSet, frame.bytes);
+  const maxWidth = Math.max(128, Math.min(parseInt(options.maxWidth || '1024', 10) || 1024, 4096));
+  const quality = Math.max(40, Math.min(parseInt(options.quality || '76', 10) || 76, 95));
+  const bytes = await sharp(pixels, {
+    raw: { width: columns, height: rows, channels: 1 },
+  })
+    .resize({ width: maxWidth, height: maxWidth, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality, mozjpeg: true })
+    .toBuffer();
+
+  return {
+    bytes,
+    contentType: 'image/jpeg',
+    transferSyntaxUID,
+    sourceRows: rows,
+    sourceColumns: columns,
+    quality,
+    maxWidth,
+  };
 }
 
 /** WADO-RS multipart/related response body for one or more frame parts. */

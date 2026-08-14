@@ -1,5 +1,6 @@
 import {
   buildMultipartRelated,
+  buildAdaptiveDicomPolicy,
   studyToDicomJson,
   instanceToDicomJson,
   groupInstancesBySeries,
@@ -64,5 +65,20 @@ describe('dicomweb-ohif', () => {
     expect(body.toString('latin1')).toContain(
       'Content-Type: application/octet-stream; transfer-syntax=1.2.840.10008.1.2.1',
     );
+  });
+
+  it('selects constrained imaging policy for save-data clients', () => {
+    const policy = buildAdaptiveDicomPolicy({ 'save-data': 'on', ect: '3g' }, {});
+    expect(policy.mode).toBe('constrained');
+    expect(policy.lowBandwidth).toBe(true);
+    expect(policy.prefetchWindow).toBeLessThan(8);
+    expect(policy.frameCacheSeconds).toBeGreaterThanOrEqual(3600);
+  });
+
+  it('allows diagnostic imaging policy override', () => {
+    const policy = buildAdaptiveDicomPolicy({ 'save-data': 'on', ect: '2g' }, { quality: 'diagnostic' });
+    expect(policy.mode).toBe('diagnostic');
+    expect(policy.lowBandwidth).toBe(false);
+    expect(policy.prefetchWindow).toBeGreaterThan(8);
   });
 });

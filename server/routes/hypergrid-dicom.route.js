@@ -25,10 +25,13 @@ import {
   groupInstancesBySeries,
   parseDicomBuffer,
   extractFramePixelData,
+  renderFramePreviewJpeg,
   buildMultipartRelated,
   imagePixelTagsFromBuffer,
+  buildAdaptiveDicomPolicy,
   DEFAULT_SERIES_UID,
 } from '../services/dicomweb-ohif.service.js';
+import { recordMetric } from '../services/imaging/imaging-observability.service.js';
 import {
   fetchOrthancStudyByUid,
   formatDicomStudyDate,
@@ -51,20 +54,37 @@ const upload = multer({
   limits: { fileSize: 512 * 1024 * 1024 },
 });
 
-function setDicomCacheHeaders(res, scope = 'metadata') {
+function setDicomCacheHeaders(res, scope = 'metadata', policy = null) {
+  const adaptivePolicy = policy || buildAdaptiveDicomPolicy();
   const maxAgeByScope = {
     list: 60,
-    metadata: 3600,
-    frame: 3600,
-    instance: 3600,
+    metadata: adaptivePolicy.metadataCacheSeconds,
+    frame: adaptivePolicy.frameCacheSeconds,
+    instance: adaptivePolicy.frameCacheSeconds,
+    rendered: adaptivePolicy.frameCacheSeconds,
   };
   const maxAge = maxAgeByScope[scope] || maxAgeByScope.metadata;
   res.setHeader('Cache-Control', `private, max-age=${maxAge}, stale-while-revalidate=300`);
   res.setHeader('Vary', 'Authorization, Cookie, Accept');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  if (scope === 'frame') {
+  res.setHeader('X-Mediqzy-Imaging-Mode', adaptivePolicy.mode);
+  res.setHeader('X-Mediqzy-Low-Bandwidth', adaptivePolicy.lowBandwidth ? 'true' : 'false');
+  res.setHeader('X-Mediqzy-Prefetch-Window', String(adaptivePolicy.prefetchWindow));
+  if (scope === 'frame' || scope === 'rendered') {
     res.setHeader('Accept-Ranges', 'none');
   }
+}
+
+function dicomPolicyForRequest(req) {
+  return buildAdaptiveDicomPolicy(req.headers || {}, req.query || {});
+}
+
+function setServerTiming(res, name, startedAt) {
+  res.setHeader('Server-Timing', `${name};dur=${Math.max(0, Date.now() - startedAt)}`);
+}
+
+function recordDicomMetric(metricName, value, labels = {}) {
+  recordMetric(metricName, value, labels).catch(() => {});
 }
 
 router.use((req, res, next) => {
@@ -72,6 +92,20 @@ router.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', origin);
   res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Accept');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Expose-Headers', [
+    'Accept-Ranges',
+    'Cache-Control',
+    'Server-Timing',
+    'X-Mediqzy-Frame-Bytes',
+    'X-Mediqzy-Imaging-Mode',
+    'X-Mediqzy-Low-Bandwidth',
+    'X-Mediqzy-Metadata-Instances',
+    'X-Mediqzy-Prefetch-Window',
+    'X-Mediqzy-Rendered-Jpeg-Quality',
+    'X-Mediqzy-Rendered-Max-Width',
+    'X-Mediqzy-Source-Columns',
+    'X-Mediqzy-Source-Rows',
+  ].join(', '));
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   return next();
 });
@@ -459,6 +493,8 @@ router.post('/studies', authAnyDicom, upload.array('files'), async (req, res) =>
 // ── QIDO-RS: studies ──────────────────────────────────────────────────────────
 router.get('/studies', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const { PatientID, patientId, Modality, modality, StudyDate, studyDate, limit = 50, page = 1 } = req.query;
     const pid = PatientID || patientId;
     const mod = Modality || modality;
@@ -482,11 +518,13 @@ router.get('/studies', authAnyDicom, async (req, res) => {
     );
 
     if (wantsDicomJson(req)) {
-      setDicomCacheHeaders(res, 'list');
+      setDicomCacheHeaders(res, 'list', policy);
+      setServerTiming(res, 'dicomweb-studies', startedAt);
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(r.rows.map((row) => studyToDicomJson(row, row.instance_count)));
     }
-    setDicomCacheHeaders(res, 'list');
+    setDicomCacheHeaders(res, 'list', policy);
+    setServerTiming(res, 'dicomweb-studies', startedAt);
     res.json({ success: true, studies: r.rows });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to query studies' });
@@ -496,6 +534,8 @@ router.get('/studies', authAnyDicom, async (req, res) => {
 // ── QIDO-RS: series (all tenants studies) ───────────────────────────────────
 router.get('/series', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const { StudyInstanceUID, studyUID } = req.query;
     const uid = StudyInstanceUID || studyUID;
     if (!uid) return res.status(400).json({ success: false, message: 'StudyInstanceUID required' });
@@ -509,11 +549,13 @@ router.get('/series', authAnyDicom, async (req, res) => {
       seriesToDicomJson(study, seriesUid, insts),
     );
     if (wantsDicomJson(req)) {
-      setDicomCacheHeaders(res, 'list');
+      setDicomCacheHeaders(res, 'list', policy);
+      setServerTiming(res, 'dicomweb-series', startedAt);
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(series);
     }
-    setDicomCacheHeaders(res, 'list');
+    setDicomCacheHeaders(res, 'list', policy);
+    setServerTiming(res, 'dicomweb-series', startedAt);
     return res.json({ success: true, series });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to query series' });
@@ -523,6 +565,8 @@ router.get('/series', authAnyDicom, async (req, res) => {
 // ── QIDO-RS: instances ────────────────────────────────────────────────────────
 router.get('/instances', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const { StudyInstanceUID, SeriesInstanceUID } = req.query;
     if (!StudyInstanceUID) return res.status(400).json({ success: false, message: 'StudyInstanceUID required' });
     const pool = await connectPostgres();
@@ -532,11 +576,13 @@ router.get('/instances', authAnyDicom, async (req, res) => {
     const instances = await loadInstances(pool, StudyInstanceUID, tid, SeriesInstanceUID || null);
     const payload = instances.map((inst) => instanceToDicomJson(study, inst));
     if (wantsDicomJson(req)) {
-      setDicomCacheHeaders(res, 'metadata');
+      setDicomCacheHeaders(res, 'metadata', policy);
+      setServerTiming(res, 'dicomweb-instances', startedAt);
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(payload);
     }
-    setDicomCacheHeaders(res, 'metadata');
+    setDicomCacheHeaders(res, 'metadata', policy);
+    setServerTiming(res, 'dicomweb-instances', startedAt);
     return res.json({ success: true, instances });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to query instances' });
@@ -546,17 +592,21 @@ router.get('/instances', authAnyDicom, async (req, res) => {
 // ── WADO-RS: study metadata (legacy + OHIF) ───────────────────────────────────
 router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
     const study = await loadStudy(pool, req.params.studyUID, tid);
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
     const instances = await loadInstances(pool, req.params.studyUID, tid);
     if (wantsDicomJson(req)) {
-      setDicomCacheHeaders(res, 'metadata');
+      setDicomCacheHeaders(res, 'metadata', policy);
+      setServerTiming(res, 'dicomweb-study', startedAt);
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json([studyToDicomJson(study, instances.length)]);
     }
-    setDicomCacheHeaders(res, 'metadata');
+    setDicomCacheHeaders(res, 'metadata', policy);
+    setServerTiming(res, 'dicomweb-study', startedAt);
     res.json({ success: true, study, instances });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve study' });
@@ -566,6 +616,8 @@ router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
 // ── QIDO-RS: series for study ─────────────────────────────────────────────────
 router.get('/studies/:studyUID/series', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
     const study = await loadStudy(pool, req.params.studyUID, tid);
@@ -576,11 +628,13 @@ router.get('/studies/:studyUID/series', authAnyDicom, async (req, res) => {
       seriesToDicomJson(study, seriesUid, insts),
     );
     if (wantsDicomJson(req)) {
-      setDicomCacheHeaders(res, 'list');
+      setDicomCacheHeaders(res, 'list', policy);
+      setServerTiming(res, 'dicomweb-series', startedAt);
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(series);
     }
-    setDicomCacheHeaders(res, 'list');
+    setDicomCacheHeaders(res, 'list', policy);
+    setServerTiming(res, 'dicomweb-series', startedAt);
     return res.json({ success: true, series });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve series' });
@@ -590,6 +644,8 @@ router.get('/studies/:studyUID/series', authAnyDicom, async (req, res) => {
 // ── QIDO-RS: instances for series ─────────────────────────────────────────────
 router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
     const study = await loadStudy(pool, req.params.studyUID, tid);
@@ -597,11 +653,13 @@ router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async
     const instances = await loadInstances(pool, req.params.studyUID, tid, req.params.seriesUID);
     const payload = instances.map((inst) => instanceToDicomJson(study, inst));
     if (wantsDicomJson(req)) {
-      setDicomCacheHeaders(res, 'metadata');
+      setDicomCacheHeaders(res, 'metadata', policy);
+      setServerTiming(res, 'dicomweb-instances', startedAt);
       res.setHeader('Content-Type', 'application/dicom+json');
       return res.json(payload);
     }
-    setDicomCacheHeaders(res, 'metadata');
+    setDicomCacheHeaders(res, 'metadata', policy);
+    setServerTiming(res, 'dicomweb-instances', startedAt);
     return res.json({ success: true, instances });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Failed to retrieve instances' });
@@ -613,6 +671,8 @@ router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async
 // to fail to load despite the study and series lists themselves resolving correctly.
 router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async (req, res) => {
   try {
+    const startedAt = Date.now();
+    const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
     const study = await loadStudy(pool, req.params.studyUID, tid);
@@ -629,7 +689,19 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
       if (!shouldExposeInstanceToOhif(pixelTags)) return null;
       return instanceToDicomJson(study, inst, pixelTags);
     })).filter(Boolean);
-    setDicomCacheHeaders(res, 'metadata');
+    const elapsed = Date.now() - startedAt;
+    recordDicomMetric('dicomweb_metadata_requests', 1, {
+      mode: policy.mode,
+      modality: study.modality || 'OT',
+      status: 'ok',
+    });
+    recordDicomMetric('dicomweb_metadata_latency_ms', elapsed, {
+      mode: policy.mode,
+      modality: study.modality || 'OT',
+    });
+    setDicomCacheHeaders(res, 'metadata', policy);
+    setServerTiming(res, 'dicomweb-metadata', startedAt);
+    res.setHeader('X-Mediqzy-Metadata-Instances', String(payload.length));
     res.setHeader('Content-Type', 'application/dicom+json');
     return res.json(payload);
   } catch (err) {
@@ -638,6 +710,8 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
 });
 
 async function streamInstance(req, res) {
+  const startedAt = Date.now();
+  const policy = dicomPolicyForRequest(req);
   const pool = await connectPostgres();
   const tid = tenantId(req);
   const studyUID = cleanDicomUid(req.params.studyUID);
@@ -673,6 +747,54 @@ async function streamInstance(req, res) {
     // entire file here, which decoded as garbage/undefined in the browser).
     const buf = await getDicomInstanceBuffer(inst);
     const frameNumber = parseInt(req.params.frame, 10) || 1;
+    if (req.path.endsWith('/rendered')) {
+      try {
+        const rendered = await renderFramePreviewJpeg(buf, frameNumber, {
+          maxWidth: req.query.maxWidth || policy.renderedMaxWidth,
+          quality: req.query.jpegQuality || req.query.renderQuality || policy.renderedJpegQuality,
+        });
+        if (!rendered) return res.status(404).json({ success: false, message: 'Rendered frame not found' });
+        const elapsed = Date.now() - startedAt;
+        recordDicomMetric('dicomweb_rendered_frame_requests', 1, {
+          mode: policy.mode,
+          modality: inst.modality || 'OT',
+          status: 'ok',
+        });
+        recordDicomMetric('dicomweb_rendered_frame_latency_ms', elapsed, {
+          mode: policy.mode,
+          modality: inst.modality || 'OT',
+        });
+        recordDicomMetric('dicomweb_rendered_frame_bytes', rendered.bytes.length, {
+          mode: policy.mode,
+          modality: inst.modality || 'OT',
+        });
+        setDicomCacheHeaders(res, 'rendered', policy);
+        setServerTiming(res, 'dicomweb-rendered-frame', startedAt);
+        res.setHeader('Content-Type', rendered.contentType);
+        res.setHeader('X-Mediqzy-Source-Rows', String(rendered.sourceRows));
+        res.setHeader('X-Mediqzy-Source-Columns', String(rendered.sourceColumns));
+        res.setHeader('X-Mediqzy-Rendered-Max-Width', String(rendered.maxWidth));
+        res.setHeader('X-Mediqzy-Rendered-Jpeg-Quality', String(rendered.quality));
+        return res.send(rendered.bytes);
+      } catch (err) {
+        console.warn('[DICOM] Rendered frame failed:', {
+          studyUID,
+          seriesUID: seriesUID || inst.series_instance_uid,
+          sopUID,
+          message: err?.message || String(err),
+        });
+        recordDicomMetric('dicomweb_rendered_frame_requests', 1, {
+          mode: policy.mode,
+          modality: inst.modality || 'OT',
+          status: 'unsupported',
+        });
+        return res.status(415).json({
+          success: false,
+          message: 'Rendered preview is unsupported for this transfer syntax',
+        });
+      }
+    }
+
     let frame;
     try {
       frame = extractFramePixelData(buf, frameNumber);
@@ -682,6 +804,11 @@ async function streamInstance(req, res) {
         seriesUID: seriesUID || inst.series_instance_uid,
         sopUID,
         message: err?.message || String(err),
+      });
+      recordDicomMetric('dicomweb_frame_requests', 1, {
+        mode: policy.mode,
+        modality: inst.modality || 'OT',
+        status: 'unsupported',
       });
       return res.status(415).json({
         success: false,
@@ -697,20 +824,41 @@ async function streamInstance(req, res) {
     // transfer-syntax tells cornerstone's WADO-RS loader how to interpret the raw bytes
     // (uncompressed vs. which compression codec) — application/octet-stream alone is
     // ambiguous and the loader silently mis-decodes without it (PS3.18 requirement).
-    setDicomCacheHeaders(res, 'frame');
+    const elapsed = Date.now() - startedAt;
+    recordDicomMetric('dicomweb_frame_requests', 1, {
+      mode: policy.mode,
+      modality: inst.modality || 'OT',
+      status: 'ok',
+      transferSyntaxUID: frame.transferSyntaxUID,
+    });
+    recordDicomMetric('dicomweb_frame_latency_ms', elapsed, {
+      mode: policy.mode,
+      modality: inst.modality || 'OT',
+      transferSyntaxUID: frame.transferSyntaxUID,
+    });
+    recordDicomMetric('dicomweb_frame_bytes', body.length, {
+      mode: policy.mode,
+      modality: inst.modality || 'OT',
+      transferSyntaxUID: frame.transferSyntaxUID,
+    });
+    setDicomCacheHeaders(res, 'frame', policy);
+    setServerTiming(res, 'dicomweb-frame', startedAt);
+    res.setHeader('X-Mediqzy-Frame-Bytes', String(body.length));
     res.setHeader('Content-Type', `multipart/related; type="${frame.contentType}"; transfer-syntax="${frame.transferSyntaxUID}"; boundary="${boundary}"`);
     return res.send(body);
   }
   const accept = String(req.headers.accept || '').toLowerCase();
   if (accept.includes('application/dicom')) {
     const buf = await getDicomInstanceBuffer(inst);
-    setDicomCacheHeaders(res, 'instance');
+    setDicomCacheHeaders(res, 'instance', policy);
+    setServerTiming(res, 'dicomweb-instance', startedAt);
     res.setHeader('Content-Type', inst.content_type || 'application/dicom');
     return res.send(buf);
   }
   if (isOrthancFilePath(inst.file_path)) {
     const buf = await getDicomInstanceBuffer(inst);
-    setDicomCacheHeaders(res, 'instance');
+    setDicomCacheHeaders(res, 'instance', policy);
+    setServerTiming(res, 'dicomweb-instance', startedAt);
     res.setHeader('Content-Type', inst.content_type || 'application/dicom');
     return res.send(buf);
   }
@@ -721,6 +869,7 @@ async function streamInstance(req, res) {
 // ── WADO-RS: retrieve instance (OHIF standard path) ───────────────────────────
 router.get('/studies/:studyUID/series/:seriesUID/instances/:sopUID', authAnyDicom, streamInstance);
 router.get('/studies/:studyUID/series/:seriesUID/instances/:sopUID/frames/:frame', authAnyDicom, streamInstance);
+router.get('/studies/:studyUID/series/:seriesUID/instances/:sopUID/frames/:frame/rendered', authAnyDicom, streamInstance);
 
 // ── Legacy instance file redirect ─────────────────────────────────────────────
 router.get('/studies/:studyUID/instances/:sopUID/file', authAnyDicom, async (req, res) => {
