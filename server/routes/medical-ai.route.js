@@ -17,6 +17,8 @@ import { checkDoctorConflict, checkPatientConflict } from '../services/appointme
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import redisClient from '../config/redis.js';
 import { Op } from 'sequelize';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -1087,7 +1089,7 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
     
     // Calculate consultation fee (for credit tracking)
     const consultationFee = parseFloat(doctor.onlineConsultationFee || doctor.consultationFees || 500);
-    const isUsingCredit = creditsUsed < creditLimit && !paymentMethod;
+    const isUsingCredit = !!user && creditsUsed < creditLimit && !paymentMethod;
     const isPayingWithHC = paymentMethod === 'hc' && canProceedWithHC;
 
     // Generate unique room ID for LiveKit
@@ -1123,51 +1125,77 @@ router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, as
     const patientEmail = user ? user.email : (guestEmail || '');
     const patientPhone = user ? (user.phoneNumber || '') : (guestPhone || '');
     
-    // Create emergency appointment record with credit/pay-later flag
-    const appointment = await Appointment.create({
-      userId: patientId, // NULL for guest users
-      patientId: patientId, // NULL for guest users
-      patientName: patientName,
-      patientEmail: patientEmail,
-      patientPhone: patientPhone,
-      doctorId: doctor.id,
-      doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
-      specialization: doctor.specialization,
-      appointmentDate: new Date(),
-      appointmentTime: new Date().toTimeString().slice(0, 5),
-      status: 'confirmed',
-      reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
-      symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : ['Emergency triage consultation']),
-      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Patient Type: ${user ? 'Registered' : 'Guest'} | Payment: ${isPayingWithHC ? 'HEALTH_COINS' : (isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending')}`,
-      notes_json: {
-        triageId,
-        urgencyLevel,
-        symptoms,
-        roomId,
-        type: 'emergency_triage',
-        initiatedAt: new Date().toISOString(),
-        guestAccess: !user,
-        paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
-        creditUsed: isUsingCredit && user ? true : false,
-        healthCoinsUsed: isPayingWithHC ? 50 : 0,
-        consultationFee: consultationFee
-      },
-      consultationType: 'video',
-      meetingId: roomId,
-      paymentStatus: isPayingWithHC ? 'paid' : (isUsingCredit ? 'credit' : 'pending'),
-      paymentAmount: consultationFee,
-      sourceChannel: 'emergency_triage'
-    });
-    
-    // Update user's emergency credit usage if using credit (only for authenticated users)
-    if (isUsingCredit && user) {
-      await User.update({
-        emergencyTriageCreditsUsed: creditsUsed + 1,
-        emergencyTriagePendingAmount: pendingAmount + consultationFee
-      }, {
-        where: { id: user.id }
+    // Create emergency appointment record with an RLS context that matches the
+    // selected doctor/org. Guest calls have no patient identity, so doctorId is
+    // the only guaranteed policy match when the doctor is independent.
+    const appointmentOrgId = doctor.organization_id || doctor.tenantId || null;
+    const appointmentTenantId = doctor.tenantId || null;
+    const appointmentRlsUserId = user ? user.id : doctor.id;
+    let appointment;
+    let rlsTransaction;
+
+    try {
+      rlsTransaction = await postgresSequelize.transaction();
+      await setRlsContext(rlsTransaction, {
+        orgId: appointmentOrgId || appointmentTenantId || 0,
+        userId: appointmentRlsUserId,
+        isPlatformAdmin: false
       });
-      mlog("Emergency credit used", { userId: user.id });
+
+      appointment = await Appointment.create({
+        userId: patientId, // NULL for guest users
+        patientId: patientId, // NULL for guest users
+        patientName: patientName,
+        patientEmail: patientEmail,
+        patientPhone: patientPhone || 'N/A',
+        doctorId: doctor.id,
+        doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
+        specialization: doctor.specialization,
+        appointmentDate: new Date(),
+        appointmentTime: new Date().toTimeString().slice(0, 5),
+        status: 'confirmed',
+        reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
+        symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : ['Emergency triage consultation']),
+        notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Patient Type: ${user ? 'Registered' : 'Guest'} | Payment: ${isPayingWithHC ? 'HEALTH_COINS' : (isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending')}`,
+        notes_json: {
+          triageId,
+          urgencyLevel,
+          symptoms,
+          roomId,
+          type: 'emergency_triage',
+          initiatedAt: new Date().toISOString(),
+          guestAccess: !user,
+          paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
+          creditUsed: isUsingCredit,
+          healthCoinsUsed: isPayingWithHC ? 50 : 0,
+          consultationFee: consultationFee
+        },
+        consultationType: 'online',
+        meetingId: roomId,
+        paymentStatus: isPayingWithHC ? 'paid' : 'pending',
+        paymentAmount: consultationFee,
+        organization_id: appointmentOrgId,
+        organization_type: doctor.organization_type || (appointmentOrgId ? 'clinic' : 'individual'),
+        tenant_id: appointmentTenantId,
+        sourceChannel: 'emergency_triage'
+      }, { transaction: rlsTransaction });
+
+      // Update user's emergency credit usage if using credit (only for authenticated users)
+      if (isUsingCredit && user) {
+        await User.update({
+          emergencyTriageCreditsUsed: creditsUsed + 1,
+          emergencyTriagePendingAmount: pendingAmount + consultationFee
+        }, {
+          where: { id: user.id },
+          transaction: rlsTransaction
+        });
+        mlog("Emergency credit used", { userId: user.id });
+      }
+
+      await rlsTransaction.commit();
+    } catch (appointmentError) {
+      if (rlsTransaction) await rlsTransaction.rollback().catch(() => {});
+      throw appointmentError;
     }
 
     // LiveKit URLs (tokenized when config is available)
