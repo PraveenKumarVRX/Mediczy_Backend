@@ -57,10 +57,6 @@ export async function requestTriage({ studyId, studyInstanceUID, tenantId, modal
     [studyId, studyInstanceUID, tenantId, modality],
   ).catch(() => {});
 
-  await publishTriageEvent(KAFKA_TOPICS.IMAGING_AI_TRIAGE_REQUESTED, {
-    studyId, studyInstanceUID, tenantId, modality,
-  });
-
   const start = Date.now();
   let findings = [];
   let confidence = 0;
