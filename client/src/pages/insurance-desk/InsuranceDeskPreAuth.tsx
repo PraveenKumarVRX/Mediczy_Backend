@@ -16,7 +16,7 @@ import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, ArrowRightCircle,
   ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, MinusCircle, Plus, Download,
-  CalendarClock, Stethoscope, Receipt, BedDouble,
+  CalendarClock, Stethoscope, Receipt, BedDouble, Send, ShieldQuestion,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -85,6 +85,7 @@ interface PreAuth {
   rejectedAt?: string;
   rejectionReason?: string | null;
   patient?: { id: number; firstName: string; lastName: string; email?: string } | null;
+  admissionDetails?: { insurerCode?: string; insurerName?: string } | null;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -108,10 +109,11 @@ const CHECK_ICON: Record<AuditCheck['status'], JSX.Element> = {
   not_applicable: <MinusCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />,
 };
 
-function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convertingId, onAudit, onDownload, downloadingId }: {
+function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convertingId, onAudit, onDownload, downloadingId, onSubmitNhcx, submittingNhcxId }: {
   rows: PreAuth[]; loading: boolean; emptyLabel: string; dateField: 'submittedAt' | 'approvedAt' | 'rejectedAt';
   onConvert?: (row: PreAuth) => void; convertingId?: number | null; onAudit?: (row: PreAuth) => void;
   onDownload: (row: PreAuth) => void; downloadingId: number | null;
+  onSubmitNhcx?: (row: PreAuth) => void; submittingNhcxId?: number | null;
 }) {
   if (loading) {
     return (
@@ -159,7 +161,13 @@ function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convert
               <TableCell>{formatDate(row[dateField])}</TableCell>
               <TableCell>
                 <div className="flex gap-1.5">
-                  <Button size="sm" variant="ghost" className="h-7 px-2" disabled={downloadingId === row.id} onClick={() => onDownload(row)} title="Print / download pre-auth form">
+                  {onSubmitNhcx && (
+                    <Button size="sm" className="gap-1 bg-teal-600 hover:bg-teal-700" disabled={submittingNhcxId === row.id} onClick={() => onSubmitNhcx(row)} title="Submit electronically via NHCX">
+                      {submittingNhcxId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      Submit via NHCX
+                    </Button>
+                  )}
+                  <Button size="sm" variant="ghost" className="h-7 px-2" disabled={downloadingId === row.id} onClick={() => onDownload(row)} title="Print / download pre-auth form (reference copy)">
                     {downloadingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                   </Button>
                   {onAudit && (
@@ -191,6 +199,8 @@ const InsuranceDeskPreAuth = () => {
   const [error, setError] = useState<string | null>(null);
   const [convertingId, setConvertingId] = useState<number | null>(null);
   const [convertMessage, setConvertMessage] = useState<string | null>(null);
+  const [submittingNhcxId, setSubmittingNhcxId] = useState<number | null>(null);
+  const [nhcxMessage, setNhcxMessage] = useState<string | null>(null);
 
   const [auditOpen, setAuditOpen] = useState(false);
   const [auditingRow, setAuditingRow] = useState<PreAuth | null>(null);
@@ -208,8 +218,44 @@ const InsuranceDeskPreAuth = () => {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [payerAdvisory, setPayerAdvisory] = useState<string | null>(null);
+  const [eligibility, setEligibility] = useState<{ status?: string; sumInsured?: number; balance?: number; copay?: string; networkHospital?: boolean; exclusions?: string[] } | null>(null);
+  const [eligibilityChecked, setEligibilityChecked] = useState(false);
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
+  const [eligibilityError, setEligibilityError] = useState<string | null>(null);
 
   const selectedInsurer = INSURERS.find((i) => i.code === newPreAuth.insurerCode) || null;
+
+  // Real eligibility verification instead of blind manual entry — this is the
+  // gap that made the form "not like IHX": staff typed a Sum Insured nobody
+  // had confirmed. Reuses the same checkEligibility path InsuranceDeskAdmissions
+  // uses, which fixed a live bug (variable shadowing) that made every call 500.
+  const verifyEligibility = async () => {
+    if (!newPreAuth.patientId.trim() || !newPreAuth.policyNumber.trim() || !selectedInsurer) {
+      setEligibilityError('Enter Patient ID, Policy Number, and Insurer first.');
+      return;
+    }
+    setCheckingEligibility(true);
+    setEligibilityError(null);
+    try {
+      const { data } = await api.get(`/hospital/insurance/patient/${newPreAuth.patientId.trim()}/eligibility`, {
+        params: { policyNumber: newPreAuth.policyNumber.trim(), insuranceProvider: selectedInsurer.label },
+      });
+      setEligibility(data.eligibility || null);
+      setEligibilityChecked(true);
+      if (selectedInsurer.kind !== 'government' && data.eligibility?.sumInsured) {
+        setNewPreAuth((p) => ({ ...p, sumInsured: String(data.eligibility.sumInsured) }));
+      }
+    } catch (err: any) {
+      setEligibility(null);
+      setEligibilityChecked(false);
+      setEligibilityError(err?.response?.data?.message || 'Could not verify eligibility — enter details manually.');
+    } finally {
+      setCheckingEligibility(false);
+    }
+  };
+
+  // Re-verification needed whenever the identifying details change.
+  useEffect(() => { setEligibilityChecked(false); setEligibility(null); }, [newPreAuth.patientId, newPreAuth.policyNumber, newPreAuth.insurerCode]);
 
   // Real payer-specific business rule, reused from claims-rules-engine.service.js
   // (previously only applied at claim submission — surfaced here, before the
@@ -335,6 +381,8 @@ const InsuranceDeskPreAuth = () => {
       });
       setShowNew(false);
       setNewPreAuth(emptyNewPreAuth);
+      setEligibility(null);
+      setEligibilityChecked(false);
       setTab('pending');
       load('pending');
       loadKpiStats();
@@ -361,6 +409,32 @@ const InsuranceDeskPreAuth = () => {
       setError(err?.response?.data?.message || 'Could not download PDF.');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  // Electronic submission via NHCX — the actual IHX-style path, previously
+  // built (nhcx-client.service.js, POST /nhcx/preauth-submit) but never wired
+  // into this UI, leaving "download a PDF" as the only action on a pre-auth.
+  const submitPreAuthViaNhcx = async (row: PreAuth) => {
+    setSubmittingNhcxId(row.id);
+    setNhcxMessage(null);
+    setError(null);
+    try {
+      const { data } = await api.post('/hospital/insurance/nhcx/preauth-submit', {
+        preAuthNumber: row.preAuthNumber,
+        patientName: row.patient ? `${row.patient.firstName} ${row.patient.lastName}` : undefined,
+        policyNumber: row.policyNumber,
+        insurerCode: row.admissionDetails?.insurerCode,
+      });
+      setNhcxMessage(
+        data.sent
+          ? `${row.preAuthNumber} submitted to NHCX (ref: ${data.correlationId}).`
+          : `${row.preAuthNumber}: ${data.message || data.error || 'NHCX not configured yet — the request is saved, but not electronically sent. Use the print/download form as a fallback.'}`
+      );
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Could not submit via NHCX.');
+    } finally {
+      setSubmittingNhcxId(null);
     }
   };
 
@@ -445,6 +519,7 @@ const InsuranceDeskPreAuth = () => {
         <CardContent>
           {error && <p className="text-sm text-amber-600 mb-3">{error}</p>}
           {convertMessage && <p className="text-sm text-emerald-600 mb-3">{convertMessage}</p>}
+          {nhcxMessage && <p className="text-sm text-teal-700 dark:text-teal-400 mb-3">{nhcxMessage}</p>}
 
           {/* KPI tiles double as quick filters — click to jump to that tab */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
@@ -473,7 +548,11 @@ const InsuranceDeskPreAuth = () => {
               <TabsTrigger value="rejected">Rejected</TabsTrigger>
             </TabsList>
             <TabsContent value="pending">
-              <PreAuthTable rows={rowsByTab.pending} loading={loading} emptyLabel="No pending pre-authorizations." dateField="submittedAt" onDownload={downloadPdf} downloadingId={downloadingId} />
+              <PreAuthTable
+                rows={rowsByTab.pending} loading={loading} emptyLabel="No pending pre-authorizations." dateField="submittedAt"
+                onDownload={downloadPdf} downloadingId={downloadingId}
+                onSubmitNhcx={submitPreAuthViaNhcx} submittingNhcxId={submittingNhcxId}
+              />
             </TabsContent>
             <TabsContent value="approved">
               <PreAuthTable
@@ -609,6 +688,31 @@ const InsuranceDeskPreAuth = () => {
                   <Building2 className="h-3.5 w-3.5 shrink-0" /> {selectedInsurer.label} settles by fixed package rate, not a sum-insured-based policy — the cost breakup below is an internal planning estimate.
                 </p>
               )}
+
+              <div className="mt-3">
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={verifyEligibility} disabled={checkingEligibility || !newPreAuth.patientId.trim() || !newPreAuth.policyNumber.trim() || !selectedInsurer}>
+                  {checkingEligibility ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldQuestion className="h-3.5 w-3.5" />}
+                  Verify Eligibility
+                </Button>
+                {eligibilityError && <p className="text-xs text-red-600 mt-2">{eligibilityError}</p>}
+                {eligibilityChecked && eligibility && (
+                  <div className={`mt-2 rounded-lg border p-3 text-xs ${eligibility.status === 'eligible' ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30' : 'border-amber-300 bg-amber-50 dark:bg-amber-950/30'}`}>
+                    <div className="flex items-center gap-2 font-medium">
+                      {eligibility.status === 'eligible' ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <XCircle className="h-3.5 w-3.5 text-amber-600" />}
+                      {eligibility.status === 'eligible' ? 'Verified eligible for cashless treatment' : 'Verification returned: not confirmed eligible'}
+                      {eligibility.networkHospital && <Badge className="bg-emerald-100 text-emerald-700 ml-auto">Network Hospital</Badge>}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-muted-foreground">
+                      {eligibility.sumInsured != null && <span>Sum Insured: <b className="text-foreground">₹{Number(eligibility.sumInsured).toLocaleString('en-IN')}</b></span>}
+                      {eligibility.balance != null && <span>Balance: <b className="text-foreground">₹{Number(eligibility.balance).toLocaleString('en-IN')}</b></span>}
+                      {eligibility.copay && <span>Co-pay: <b className="text-foreground">{eligibility.copay}</b></span>}
+                    </div>
+                    {eligibility.exclusions && eligibility.exclusions.length > 0 && (
+                      <p className="mt-1.5 text-muted-foreground">Exclusions: {eligibility.exclusions.join(', ')}</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div>

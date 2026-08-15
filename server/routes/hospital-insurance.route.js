@@ -2194,13 +2194,18 @@ router.get('/patient/:patientId/eligibility', authUser, requireRole(['hospital',
   query('insuranceProvider').optional()
 ], async (req, res) => {
   try {
-    const { policyNumber, insuranceProvider } = req.query;
+    // Named requestedProvider, not insuranceProvider — the imported
+    // insurance-provider.service.js module is also named insuranceProvider;
+    // destructuring req.query into the same name silently shadowed it,
+    // so this endpoint called .checkEligibility on a plain string and threw
+    // "insuranceProvider.checkEligibility is not a function" on every call.
+    const { policyNumber, insuranceProvider: requestedProvider } = req.query;
     const patientId = req.params.patientId;
 
     // Check cache first
     const cacheKey = `eligibility:${policyNumber}`;
     const cached = await cacheService.get(cacheKey);
-    
+
     if (cached) {
       return res.json({
         success: true,
@@ -2211,13 +2216,13 @@ router.get('/patient/:patientId/eligibility', authUser, requireRole(['hospital',
 
     // Get patient details
     const patient = await User.findByPk(patientId);
-    
+
     if (!patient) {
       return res.status(404).json({ success: false, message: 'Patient not found' });
     }
 
     // Check eligibility with insurance provider
-    const provider = insuranceProvider || 'Star Health'; // Default provider
+    const provider = requestedProvider || 'Star Health'; // Default provider
     const eligibility = await insuranceProvider.checkEligibility(
       policyNumber,
       provider,
