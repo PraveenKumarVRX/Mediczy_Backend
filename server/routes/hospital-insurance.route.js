@@ -7,7 +7,7 @@ import { Router } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
-import { body, query, param } from 'express-validator';
+import { body, query, param, validationResult } from 'express-validator';
 import InsuranceClaim from '../models/postgres/insuranceClaim.model.postgres.js';
 import PreAuthorization from '../models/postgres/preAuthorization.model.postgres.js';
 import InsurancePortalWorkspace from '../models/postgres/insurancePortalWorkspace.model.postgres.js';
@@ -3031,6 +3031,9 @@ router.get('/claims/:claimId/denials', authUser, requireRole(['hospital', 'admin
   param('claimId').isInt(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
 
@@ -3050,6 +3053,9 @@ router.post('/claims/:claimId/denials', authUser, requireRole(['hospital', 'admi
   body('deniedAmount').optional().isNumeric(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
 
@@ -3075,6 +3081,9 @@ router.post('/claims/:claimId/denials/:denialId/appeal', authUser, requireRole([
   param('denialId').isInt(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
 
@@ -3093,6 +3102,9 @@ router.post('/claims/:claimId/denials/:denialId/resolve', authUser, requireRole(
   body('notes').optional().isString(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
     if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
 
@@ -3688,6 +3700,9 @@ router.post('/nhcx/eligibility-check', authUser, requireRole(['hospital', 'admin
   body('insurerCode').notEmpty(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const scope = resolvePortalScope(req);
     const result = await nhcxClient.submitEligibilityCheck({ ...req.body, hospitalId: scope.hospitalId });
     await logNhcxActivity(scope.organizationId, 'eligibility-check', result, req.user.id);
@@ -3705,6 +3720,9 @@ router.post('/nhcx/preauth-submit', authUser, requireRole(['hospital', 'admin'])
   body('insurerCode').notEmpty(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const scope = resolvePortalScope(req);
     const result = await nhcxClient.submitPreAuth({ ...req.body, hospitalId: scope.hospitalId });
     await logNhcxActivity(scope.organizationId, 'preauth-submit', result, req.user.id);
@@ -3722,6 +3740,9 @@ router.post('/nhcx/claim-submit', authUser, requireRole(['hospital', 'admin']), 
   body('insurerCode').notEmpty(),
 ], async (req, res) => {
   try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
     const scope = resolvePortalScope(req);
     const result = await nhcxClient.submitClaim({ ...req.body, hospitalId: scope.hospitalId });
     await logNhcxActivity(scope.organizationId, 'claim-submit', result, req.user.id);
@@ -3765,8 +3786,42 @@ const INSURER_CREDENTIAL_ENV_VARS = {
   'Bajaj Allianz':  ['BAJAJ_ALLIANZ_API_KEY'],
 };
 
+/**
+ * Real claim + pre-auth volume by insurer, scoped to this hospital — answers
+ * "which credentials should we chase first" with actual usage instead of a
+ * guess. Grouped by insurance_provider_id (the normalized FK both
+ * insurance_claims and pre_authorizations carry), not the free-text
+ * insurance_provider column, so it only counts entries actually linked to a
+ * named provider. Returns an empty list honestly when there's no data yet —
+ * this hospital has zero claims recorded as of 2026-08-15, so today it's an
+ * empty state, not a fabricated ranking.
+ */
+const getInsurerVolume = async (organizationId) => {
+  const { rows } = await pgPool.query(
+    `SELECT ip.id, ip.name, COALESCE(c.claim_count, 0) AS claim_count, COALESCE(pa.preauth_count, 0) AS preauth_count,
+            COALESCE(c.claim_count, 0) + COALESCE(pa.preauth_count, 0) AS total_count
+     FROM insurance_providers ip
+     LEFT JOIN (
+       SELECT insurance_provider_id, COUNT(*) AS claim_count
+       FROM insurance_claims WHERE organization_id = $1 AND insurance_provider_id IS NOT NULL
+       GROUP BY insurance_provider_id
+     ) c ON c.insurance_provider_id = ip.id
+     LEFT JOIN (
+       SELECT insurance_provider_id, COUNT(*) AS preauth_count
+       FROM pre_authorizations WHERE organization_id = $1 AND insurance_provider_id IS NOT NULL
+       GROUP BY insurance_provider_id
+     ) pa ON pa.insurance_provider_id = ip.id
+     WHERE COALESCE(c.claim_count, 0) + COALESCE(pa.preauth_count, 0) > 0
+     ORDER BY total_count DESC
+     LIMIT 10`,
+    [organizationId]
+  );
+  return rows.map((r) => ({ id: r.id, name: r.name, claimCount: Number(r.claim_count), preAuthCount: Number(r.preauth_count), totalCount: Number(r.total_count) }));
+};
+
 router.get('/tpa/readiness', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
   try {
+    const scope = resolvePortalScope(req);
     const providers = tpaAggregator.getAvailableProviders().map((p) => {
       const envVarsNeeded = TPA_CREDENTIAL_ENV_VARS[p.id] || [];
       return {
@@ -3782,6 +3837,11 @@ router.get('/tpa/readiness', authUser, requireRole(['hospital', 'admin']), async
       configured: envVarsNeeded.every((v) => Boolean(process.env[v])),
     }));
 
+    const insurerVolume = await getInsurerVolume(scope.organizationId).catch((e) => {
+      console.warn('Insurer volume lookup skipped:', e.message);
+      return [];
+    });
+
     res.json({
       success: true,
       summary: {
@@ -3792,6 +3852,7 @@ router.get('/tpa/readiness', authUser, requireRole(['hospital', 'admin']), async
       },
       providers,
       insurers,
+      insurerVolume,
     });
   } catch (error) {
     console.error('TPA readiness fetch error:', error);

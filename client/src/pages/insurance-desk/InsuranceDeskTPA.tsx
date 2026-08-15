@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, Plus, Phone, Mail, Megaphone,
-  Radio, CheckCircle2, XCircle,
+  Radio, CheckCircle2, XCircle, TrendingUp,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -44,6 +44,7 @@ const InsuranceDeskTPA = () => {
   const [providers, setProviders] = useState<TpaProvider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(true);
   const [readiness, setReadiness] = useState<Record<string, { configured: boolean; envVarsNeeded: string[] }>>({});
+  const [insurerVolume, setInsurerVolume] = useState<Array<{ id: number; name: string; claimCount: number; preAuthCount: number; totalCount: number }>>([]);
   const [claimIdInput, setClaimIdInput] = useState('');
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [statusResult, setStatusResult] = useState<TpaStatusResult | null>(null);
@@ -82,6 +83,7 @@ const InsuranceDeskTPA = () => {
       const map: Record<string, { configured: boolean; envVarsNeeded: string[] }> = {};
       (data.providers || []).forEach((p: any) => { map[p.id] = { configured: p.configured, envVarsNeeded: p.envVarsNeeded || [] }; });
       setReadiness(map);
+      setInsurerVolume(data.insurerVolume || []);
     } catch {
       setReadiness({});
     }
@@ -175,6 +177,40 @@ const InsuranceDeskTPA = () => {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-teal-600" /> Which Credentials To Chase First</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {insurerVolume.length === 0 ? (
+                <p className="text-xs text-muted-foreground border-2 border-dashed rounded-lg p-4 text-center">
+                  No claims or pre-authorizations recorded against a named insurer yet — this ranks insurers by real
+                  claim volume the moment data exists, instead of a guess. Check back once claims start flowing.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  {insurerVolume.map((iv, i) => (
+                    <div key={iv.id} className="flex items-center justify-between gap-3 text-sm border rounded-lg p-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs text-muted-foreground w-5">#{i + 1}</span>
+                        <span className="font-medium">{iv.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span>{iv.claimCount} claim{iv.claimCount === 1 ? '' : 's'}</span>
+                        <span>{iv.preAuthCount} pre-auth{iv.preAuthCount === 1 ? '' : 's'}</span>
+                        <Badge variant="outline" className="border-teal-400 text-teal-700 dark:text-teal-300">{iv.totalCount} total</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-3">
+                Ranked by real claim + pre-auth volume for this hospital — the credentials worth chasing first are
+                whichever named insurer/TPA shows up here, not a fixed list.
+              </p>
             </CardContent>
           </Card>
 

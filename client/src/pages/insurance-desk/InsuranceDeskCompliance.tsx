@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  ShieldCheck, RefreshCw, Loader2, Landmark, Globe2, Fingerprint, Receipt, BadgeCheck, CheckCircle2, XCircle, Clock, Send,
+  ShieldCheck, RefreshCw, Loader2, Landmark, Globe2, Fingerprint, Receipt, BadgeCheck, CheckCircle2, XCircle, Clock, Send, History, AlertTriangle,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { navSections } from './navSections';
@@ -35,6 +35,7 @@ interface Consent { id: string; patient: string; purpose: string; hiu: string; s
 interface TariffItem { id: string; payerName: string; payerType: string; category: string; serviceName: string; unit: string; grossRate: number; contractedRate: number; validTo: string }
 interface Empanelment { id: string; insurer: string; type: string; status: string; expiryDate: string; daysToExpiry: number; panelCode: string; accreditationStatus: string; complianceScore: number }
 interface ComplianceItem { id: string; category: string; item: string; status: string; expiry: string | null }
+interface NhcxActivityEntry { id: number; workflow: string; correlation_id: string | null; configured: boolean; sent: boolean; error: string | null; created_at: string }
 
 const STATUS_DOT: Record<string, string> = {
   ready: 'text-emerald-600', active: 'text-emerald-600', valid: 'text-emerald-600', granted: 'text-emerald-600', verified: 'text-emerald-600',
@@ -61,6 +62,8 @@ const InsuranceDeskCompliance = () => {
   const [nhcxForm, setNhcxForm] = useState({ facilityId: '', mobile: '', email: '' });
   const [submittingNhcx, setSubmittingNhcx] = useState(false);
   const [nhcxSubmitError, setNhcxSubmitError] = useState<string | null>(null);
+  const [nhcxActivity, setNhcxActivity] = useState<NhcxActivityEntry[]>([]);
+  const [nhcxActivityLoading, setNhcxActivityLoading] = useState(false);
 
   const [abdmFacilityId, setAbdmFacilityId] = useState('');
   const [submittingAbdm, setSubmittingAbdm] = useState(false);
@@ -84,7 +87,19 @@ const InsuranceDeskCompliance = () => {
     }
   }, []);
 
-  useEffect(() => { load(tab); }, [tab, load]);
+  const loadNhcxActivity = useCallback(async () => {
+    setNhcxActivityLoading(true);
+    try {
+      const { data } = await api.get('/hospital/insurance/nhcx/activity');
+      setNhcxActivity(data.activity || []);
+    } catch {
+      setNhcxActivity([]);
+    } finally {
+      setNhcxActivityLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(tab); if (tab === 'nhcx') loadNhcxActivity(); }, [tab, load, loadNhcxActivity]);
 
   const submitNhcxOnboarding = async () => {
     if (!nhcx) return;
@@ -206,7 +221,9 @@ const InsuranceDeskCompliance = () => {
                     <>
                       <div className="flex items-center gap-3">
                         <Badge variant="outline" className="text-sm">{nhcx.environment}</Badge>
-                        <Badge className="bg-amber-100 text-amber-700">{nhcx.activationStatus}</Badge>
+                        <Badge className={nhcx.activationStatus === 'Sandbox Ready'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                          : 'bg-muted text-muted-foreground'}>{nhcx.activationStatus}</Badge>
                       </div>
 
                       <Card>
@@ -268,6 +285,35 @@ const InsuranceDeskCompliance = () => {
                             </CardContent></Card>
                           ))}
                         </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-sm font-medium flex items-center gap-1.5"><History className="h-3.5 w-3.5" /> Recent Activity</p>
+                          <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={loadNhcxActivity}>
+                            <RefreshCw className="h-3 w-3" /> Refresh
+                          </Button>
+                        </div>
+                        {nhcxActivityLoading ? (
+                          <div className="h-16 flex items-center justify-center text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /></div>
+                        ) : nhcxActivity.length === 0 ? (
+                          <p className="text-xs text-muted-foreground border-2 border-dashed rounded-lg p-4 text-center">
+                            No NHCX calls yet — eligibility checks, pre-auth, and claim submissions made through NHCX will appear here.
+                          </p>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {nhcxActivity.map((a) => (
+                              <div key={a.id} className="flex items-center justify-between gap-2 text-xs border rounded-lg p-2.5">
+                                <div className="flex items-center gap-2">
+                                  {a.sent ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />}
+                                  <span className="font-medium capitalize">{a.workflow.replace(/-/g, ' ')}</span>
+                                  {a.error && <span className="text-muted-foreground truncate max-w-[240px]">{a.error}</span>}
+                                </div>
+                                <span className="text-muted-foreground shrink-0">{new Date(a.created_at).toLocaleString('en-IN')}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

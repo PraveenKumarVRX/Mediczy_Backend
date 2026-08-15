@@ -501,11 +501,23 @@ class PDFGeneratorService {
 
         // ── PART F: ESTIMATED COST BREAKUP ───────────────────────────────────
         y = sectionHeader('PART F  –  ESTIMATED COST BREAKUP', y);
-        const estimatedAmount = preAuth.estimatedAmount || 0;
         const days    = Number(ad.expectedDuration) || 0;
         const icuDays = Number(ad.icuDays) || 0;
-        const roomCost = (Number(ad.roomRatePerDay) || 0) * days;
-        const icuCost  = (Number(ad.icuRate) || 0) * icuDays;
+        const roomCost           = (Number(ad.roomRatePerDay) || 0) * days;
+        const icuCost            = (Number(ad.icuRate) || 0) * icuDays;
+        const surgeonFees        = Number(ad.surgeonFees) || 0;
+        const anaesthetistFees   = Number(ad.anaesthetistFees) || 0;
+        const otCharges          = Number(ad.otCharges) || 0;
+        const medicinesCost      = Number(ad.medicinesCost) || 0;
+        const investigationsCost = Number(ad.investigationsCost) || 0;
+        const physioCost         = Number(ad.physioCost) || 0;
+        const miscCharges        = Number(ad.miscCharges) || 0;
+        const itemizedTotal = roomCost + icuCost + surgeonFees + anaesthetistFees + otCharges
+          + medicinesCost + investigationsCost + physioCost + miscCharges;
+        // Prefer the itemized sum when any line item is present (the request
+        // form always sends all of them together); fall back to the top-level
+        // estimatedAmount for older pre-auths created before itemization existed.
+        const estimatedAmount = itemizedTotal > 0 ? itemizedTotal : (preAuth.estimatedAmount || 0);
 
         // Table header
         const tblX = 48, tblW = W - 6;
@@ -517,16 +529,17 @@ class PDFGeneratorService {
            .text('Est. Amount (₹)', tblX + tblW * 0.65 + 3, y + 3, { width: tblW * 0.32 });
         y += 14;
 
+        const fmt = (n) => n > 0 ? `₹${n.toLocaleString('en-IN')}` : '___________';
         const costItems = [
-          ['Room / Bed Charges',                    roomCost > 0 ? `₹${roomCost.toLocaleString('en-IN')}` : '___________'],
-          ['ICU Charges',                           icuCost > 0  ? `₹${icuCost.toLocaleString('en-IN')}`  : '___________'],
-          ['Surgeon / Specialist Fees',             '___________'],
-          ['Anaesthetist Fees',                     '___________'],
-          ['OT Charges / Procedure Charges',        '___________'],
-          ['Medicines, Consumables & Implants',     '___________'],
-          ['Investigations / Lab / Radiology',      '___________'],
-          ['Physiotherapy / Rehabilitation',        '___________'],
-          ['Other Miscellaneous Charges',           '___________'],
+          ['Room / Bed Charges',                    fmt(roomCost)],
+          ['ICU Charges',                           fmt(icuCost)],
+          ['Surgeon / Specialist Fees',             fmt(surgeonFees)],
+          ['Anaesthetist Fees',                     fmt(anaesthetistFees)],
+          ['OT Charges / Procedure Charges',        fmt(otCharges)],
+          ['Medicines, Consumables & Implants',     fmt(medicinesCost)],
+          ['Investigations / Lab / Radiology',      fmt(investigationsCost)],
+          ['Physiotherapy / Rehabilitation',        fmt(physioCost)],
+          ['Other Miscellaneous Charges',           fmt(miscCharges)],
         ];
         costItems.forEach(([label, val], i) => {
           const bg = i % 2 === 0 ? '#FFFFFF' : '#F9FAFB';

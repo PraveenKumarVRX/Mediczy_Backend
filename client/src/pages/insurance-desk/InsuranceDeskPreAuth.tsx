@@ -11,15 +11,59 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, RefreshCw, Loader2, ArrowRightCircle,
   ClipboardCheck, CheckCircle2, XCircle, AlertTriangle, MinusCircle, Plus, Download,
-  CalendarClock,
+  CalendarClock, Stethoscope, Receipt, BedDouble,
 } from 'lucide-react';
 import api from '@/utils/api';
 
 import { navSections } from './navSections';
+
+// Mirrors the insurerCode keys server/services/pdf-generator.service.js knows how
+// to brand the printed form for (direct-settlement insurers and TPA-routed ones
+// via its INSURER_DEFAULT_TPA map) — picking one here is what makes the printed
+// pre-auth form auto-select the right TPA letterhead and IRDAI license number.
+const INSURERS: { code: string; label: string }[] = [
+  { code: 'star_health', label: 'Star Health & Allied Insurance' },
+  { code: 'icici_lombard', label: 'ICICI Lombard General Insurance' },
+  { code: 'care_health', label: 'Care Health Insurance' },
+  { code: 'bajaj_allianz', label: 'Bajaj Allianz General Insurance' },
+  { code: 'niva_bupa', label: 'Niva Bupa Health Insurance' },
+  { code: 'manipal_cigna', label: 'ManipalCigna Health Insurance' },
+  { code: 'galaxy', label: 'Galaxy Health Insurance' },
+  { code: 'new_india', label: 'New India Assurance' },
+  { code: 'united_india', label: 'United India Insurance' },
+  { code: 'oriental', label: 'Oriental Insurance' },
+  { code: 'hdfc_ergo', label: 'HDFC ERGO General Insurance' },
+  { code: 'tata_aig', label: 'Tata AIG General Insurance' },
+  { code: 'sbi_general', label: 'SBI General Insurance' },
+  { code: 'national', label: 'National Insurance' },
+  { code: 'aditya_birla', label: 'Aditya Birla Health Insurance' },
+  { code: 'future_generali', label: 'Future Generali India Insurance' },
+  { code: 'reliance', label: 'Reliance General Insurance' },
+  { code: 'go_digit', label: 'Go Digit General Insurance' },
+  { code: 'cghs', label: 'CGHS (Government)' },
+  { code: 'esic', label: 'ESIC (Government)' },
+  { code: 'iffco_tokio', label: 'IFFCO Tokio General Insurance' },
+  { code: 'royal_sundaram', label: 'Royal Sundaram General Insurance' },
+  { code: 'liberty', label: 'Liberty General Insurance' },
+  { code: 'cholamandalam', label: 'Cholamandalam MS General Insurance' },
+];
+
+const emptyNewPreAuth = {
+  patientId: '', policyNumber: '', insurerCode: '', sumInsured: '',
+  admissionType: 'planned', admissionDate: '', doctorName: '', ward: '',
+  roomRatePerDay: '', estimatedDuration: '', icuDays: '', icuRate: '',
+  diagnosis: '', icdCode: '', procedure: '', procedureCode: '',
+  proposedTreatment: '', clinicalJustification: '', pastHospitalization: '', surgicalManagement: '',
+  surgeonFees: '', anaesthetistFees: '', otCharges: '', medicinesCost: '', investigationsCost: '', physioCost: '', miscCharges: '',
+  remarks: '',
+};
+
+const num = (v: string) => (v.trim() ? Number(v) : 0);
 
 interface PreAuth {
   id: number;
@@ -108,7 +152,7 @@ function PreAuthTable({ rows, loading, emptyLabel, dateField, onConvert, convert
               <TableCell>{formatDate(row[dateField])}</TableCell>
               <TableCell>
                 <div className="flex gap-1.5">
-                  <Button size="sm" variant="ghost" className="h-7 px-2" disabled={downloadingId === row.id} onClick={() => onDownload(row)}>
+                  <Button size="sm" variant="ghost" className="h-7 px-2" disabled={downloadingId === row.id} onClick={() => onDownload(row)} title="Print / download pre-auth form">
                     {downloadingId === row.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                   </Button>
                   {onAudit && (
@@ -153,12 +197,15 @@ const InsuranceDeskPreAuth = () => {
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
   const [showNew, setShowNew] = useState(false);
-  const [newPreAuth, setNewPreAuth] = useState({
-    patientId: '', policyNumber: '', insurer: '', ward: '', admissionDate: '',
-    estimatedAmount: '', estimatedDuration: '', diagnosis: '', plannedProcedures: '', remarks: '',
-  });
+  const [newPreAuth, setNewPreAuth] = useState(emptyNewPreAuth);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const roomCost = num(newPreAuth.roomRatePerDay) * num(newPreAuth.estimatedDuration);
+  const icuCost = num(newPreAuth.icuRate) * num(newPreAuth.icuDays);
+  const otherCosts = num(newPreAuth.surgeonFees) + num(newPreAuth.anaesthetistFees) + num(newPreAuth.otCharges)
+    + num(newPreAuth.medicinesCost) + num(newPreAuth.investigationsCost) + num(newPreAuth.physioCost) + num(newPreAuth.miscCharges);
+  const totalEstimate = roomCost + icuCost + otherCosts;
 
   const load = useCallback(async (which: 'pending' | 'approved' | 'rejected') => {
     setLoading(true);
@@ -199,32 +246,61 @@ const InsuranceDeskPreAuth = () => {
 
   const createPreAuth = async () => {
     const patientId = parseInt(newPreAuth.patientId, 10);
-    const estimatedAmount = parseFloat(newPreAuth.estimatedAmount);
-    if (!patientId || !newPreAuth.policyNumber.trim() || !(estimatedAmount >= 0)) {
-      setCreateError('Patient ID, policy number, and a valid estimated amount are required.');
+    if (!patientId || !newPreAuth.policyNumber.trim() || !newPreAuth.insurerCode || !newPreAuth.diagnosis.trim()) {
+      setCreateError('Patient ID, policy number, insurer, and diagnosis are required.');
+      return;
+    }
+    if (!(totalEstimate > 0)) {
+      setCreateError('Enter at least one cost estimate line item (room rate, procedure charges, etc.).');
       return;
     }
     setCreating(true);
     setCreateError(null);
     try {
+      const insurer = INSURERS.find((i) => i.code === newPreAuth.insurerCode);
       await api.post('/hospital/insurance/pre-auth/new', {
         patientId,
         policyNumber: newPreAuth.policyNumber.trim(),
-        estimatedAmount,
-        diagnosis: newPreAuth.diagnosis.trim() || undefined,
+        estimatedAmount: totalEstimate,
+        diagnosis: newPreAuth.diagnosis.trim(),
         estimatedDuration: newPreAuth.estimatedDuration ? parseInt(newPreAuth.estimatedDuration, 10) : undefined,
-        plannedProcedures: newPreAuth.plannedProcedures.trim()
-          ? newPreAuth.plannedProcedures.split(',').map((p) => p.trim()).filter(Boolean)
-          : undefined,
+        plannedProcedures: newPreAuth.procedure.trim() ? [{
+          description: newPreAuth.procedure.trim(),
+          code: newPreAuth.procedureCode.trim() || undefined,
+          icdCode: newPreAuth.icdCode.trim() || undefined,
+          proposedTreatment: newPreAuth.proposedTreatment.trim() || undefined,
+        }] : [],
         remarks: newPreAuth.remarks.trim() || undefined,
         admissionDetails: {
-          insurer: newPreAuth.insurer.trim() || undefined,
-          ward: newPreAuth.ward.trim() || 'General',
+          insurerCode: newPreAuth.insurerCode,
+          insurerName: insurer?.label,
+          sumInsured: newPreAuth.sumInsured ? Number(newPreAuth.sumInsured) : undefined,
+          admissionType: newPreAuth.admissionType,
           admissionDate: newPreAuth.admissionDate || undefined,
+          doctorName: newPreAuth.doctorName.trim() || undefined,
+          ward: newPreAuth.ward.trim() || 'General',
+          roomRatePerDay: newPreAuth.roomRatePerDay ? Number(newPreAuth.roomRatePerDay) : undefined,
+          icuDays: newPreAuth.icuDays ? Number(newPreAuth.icuDays) : undefined,
+          icuRate: newPreAuth.icuRate ? Number(newPreAuth.icuRate) : undefined,
+          diagnosis: newPreAuth.diagnosis.trim(),
+          icdCode: newPreAuth.icdCode.trim() || undefined,
+          procedure: newPreAuth.procedure.trim() || undefined,
+          procedureCode: newPreAuth.procedureCode.trim() || undefined,
+          proposedTreatment: newPreAuth.proposedTreatment.trim() || undefined,
+          clinicalJustification: newPreAuth.clinicalJustification.trim() || undefined,
+          pastHospitalization: newPreAuth.pastHospitalization.trim() || undefined,
+          surgicalManagement: newPreAuth.surgicalManagement.trim() || undefined,
+          surgeonFees: num(newPreAuth.surgeonFees) || undefined,
+          anaesthetistFees: num(newPreAuth.anaesthetistFees) || undefined,
+          otCharges: num(newPreAuth.otCharges) || undefined,
+          medicinesCost: num(newPreAuth.medicinesCost) || undefined,
+          investigationsCost: num(newPreAuth.investigationsCost) || undefined,
+          physioCost: num(newPreAuth.physioCost) || undefined,
+          miscCharges: num(newPreAuth.miscCharges) || undefined,
         },
       });
       setShowNew(false);
-      setNewPreAuth({ patientId: '', policyNumber: '', insurer: '', ward: '', admissionDate: '', estimatedAmount: '', estimatedDuration: '', diagnosis: '', plannedProcedures: '', remarks: '' });
+      setNewPreAuth(emptyNewPreAuth);
       setTab('pending');
       load('pending');
       loadKpiStats();
@@ -446,53 +522,175 @@ const InsuranceDeskPreAuth = () => {
       </Dialog>
 
       <Dialog open={showNew} onOpenChange={(open) => { setShowNew(open); if (!open) setCreateError(null); }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Request Pre-Authorization</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-5">
             {createError && <p className="text-sm text-red-600">{createError}</p>}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Patient ID</Label>
-                <Input value={newPreAuth.patientId} onChange={(e) => setNewPreAuth((p) => ({ ...p, patientId: e.target.value }))} placeholder="e.g. 9" />
+            <p className="text-xs text-muted-foreground -mt-2">
+              These fields populate the printed IRDAI-format pre-authorization form (Parts C–F) — the insurer you
+              pick here selects that TPA's letterhead and reference-number field automatically.
+            </p>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5"><UserCheck className="h-3.5 w-3.5" /> Patient &amp; Policy</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Patient ID *</Label>
+                  <Input value={newPreAuth.patientId} onChange={(e) => setNewPreAuth((p) => ({ ...p, patientId: e.target.value }))} placeholder="e.g. 9" />
+                </div>
+                <div>
+                  <Label>Policy Number *</Label>
+                  <Input value={newPreAuth.policyNumber} onChange={(e) => setNewPreAuth((p) => ({ ...p, policyNumber: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Insurer *</Label>
+                  <Select value={newPreAuth.insurerCode} onValueChange={(v) => setNewPreAuth((p) => ({ ...p, insurerCode: v }))}>
+                    <SelectTrigger><SelectValue placeholder="Select insurer" /></SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {INSURERS.map((i) => <SelectItem key={i.code} value={i.code}>{i.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Sum Insured (₹)</Label>
+                  <Input type="number" value={newPreAuth.sumInsured} onChange={(e) => setNewPreAuth((p) => ({ ...p, sumInsured: e.target.value }))} placeholder="e.g. 500000" />
+                </div>
               </div>
-              <div>
-                <Label>Policy Number</Label>
-                <Input value={newPreAuth.policyNumber} onChange={(e) => setNewPreAuth((p) => ({ ...p, policyNumber: e.target.value }))} />
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5"><BedDouble className="h-3.5 w-3.5" /> Admission</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Type of Admission</Label>
+                  <Select value={newPreAuth.admissionType} onValueChange={(v) => setNewPreAuth((p) => ({ ...p, admissionType: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="planned">Planned</SelectItem>
+                      <SelectItem value="emergency">Emergency</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Planned Admission Date</Label>
+                  <Input type="date" value={newPreAuth.admissionDate} onChange={(e) => setNewPreAuth((p) => ({ ...p, admissionDate: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Treating Doctor</Label>
+                  <Input value={newPreAuth.doctorName} onChange={(e) => setNewPreAuth((p) => ({ ...p, doctorName: e.target.value }))} placeholder="Dr. Name" />
+                </div>
+                <div>
+                  <Label>Expected Duration (days)</Label>
+                  <Input type="number" value={newPreAuth.estimatedDuration} onChange={(e) => setNewPreAuth((p) => ({ ...p, estimatedDuration: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Ward / Room Type</Label>
+                  <Input value={newPreAuth.ward} onChange={(e) => setNewPreAuth((p) => ({ ...p, ward: e.target.value }))} placeholder="General" />
+                </div>
+                <div>
+                  <Label>Room Tariff / Day (₹)</Label>
+                  <Input type="number" value={newPreAuth.roomRatePerDay} onChange={(e) => setNewPreAuth((p) => ({ ...p, roomRatePerDay: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Expected ICU Days</Label>
+                  <Input type="number" value={newPreAuth.icuDays} onChange={(e) => setNewPreAuth((p) => ({ ...p, icuDays: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>ICU Tariff / Day (₹)</Label>
+                  <Input type="number" value={newPreAuth.icuRate} onChange={(e) => setNewPreAuth((p) => ({ ...p, icuRate: e.target.value }))} />
+                </div>
               </div>
-              <div>
-                <Label>Insurer / TPA</Label>
-                <Input value={newPreAuth.insurer} onChange={(e) => setNewPreAuth((p) => ({ ...p, insurer: e.target.value }))} placeholder="e.g. Star Health" />
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5"><Stethoscope className="h-3.5 w-3.5" /> Diagnosis &amp; Clinical Details</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Primary Diagnosis *</Label>
+                  <Input value={newPreAuth.diagnosis} onChange={(e) => setNewPreAuth((p) => ({ ...p, diagnosis: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>ICD-10 Code</Label>
+                  <Input value={newPreAuth.icdCode} onChange={(e) => setNewPreAuth((p) => ({ ...p, icdCode: e.target.value }))} placeholder="e.g. K35.8" />
+                </div>
+                <div>
+                  <Label>Proposed Procedure</Label>
+                  <Input value={newPreAuth.procedure} onChange={(e) => setNewPreAuth((p) => ({ ...p, procedure: e.target.value }))} placeholder="e.g. Laparoscopic Cholecystectomy" />
+                </div>
+                <div>
+                  <Label>Procedure Code</Label>
+                  <Input value={newPreAuth.procedureCode} onChange={(e) => setNewPreAuth((p) => ({ ...p, procedureCode: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <Label>Proposed Treatment Plan</Label>
+                  <Textarea rows={2} value={newPreAuth.proposedTreatment} onChange={(e) => setNewPreAuth((p) => ({ ...p, proposedTreatment: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <Label>Clinical Justification</Label>
+                  <Textarea rows={2} value={newPreAuth.clinicalJustification} onChange={(e) => setNewPreAuth((p) => ({ ...p, clinicalJustification: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Past Hospitalization (last 4 yrs)</Label>
+                  <Input value={newPreAuth.pastHospitalization} onChange={(e) => setNewPreAuth((p) => ({ ...p, pastHospitalization: e.target.value }))} placeholder="None" />
+                </div>
+                <div>
+                  <Label>Surgical Management</Label>
+                  <Input value={newPreAuth.surgicalManagement} onChange={(e) => setNewPreAuth((p) => ({ ...p, surgicalManagement: e.target.value }))} />
+                </div>
               </div>
-              <div>
-                <Label>Ward / Room Category</Label>
-                <Input value={newPreAuth.ward} onChange={(e) => setNewPreAuth((p) => ({ ...p, ward: e.target.value }))} placeholder="General" />
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-1.5"><Receipt className="h-3.5 w-3.5" /> Estimated Cost Breakup</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">Room / Bed Charges</span>
+                  <span className="font-medium tabular-nums">₹{roomCost.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">ICU Charges</span>
+                  <span className="font-medium tabular-nums">₹{icuCost.toLocaleString('en-IN')}</span>
+                </div>
+                <div>
+                  <Label>Surgeon / Specialist Fees (₹)</Label>
+                  <Input type="number" value={newPreAuth.surgeonFees} onChange={(e) => setNewPreAuth((p) => ({ ...p, surgeonFees: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Anaesthetist Fees (₹)</Label>
+                  <Input type="number" value={newPreAuth.anaesthetistFees} onChange={(e) => setNewPreAuth((p) => ({ ...p, anaesthetistFees: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>OT / Procedure Charges (₹)</Label>
+                  <Input type="number" value={newPreAuth.otCharges} onChange={(e) => setNewPreAuth((p) => ({ ...p, otCharges: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Medicines, Consumables &amp; Implants (₹)</Label>
+                  <Input type="number" value={newPreAuth.medicinesCost} onChange={(e) => setNewPreAuth((p) => ({ ...p, medicinesCost: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Investigations / Lab / Radiology (₹)</Label>
+                  <Input type="number" value={newPreAuth.investigationsCost} onChange={(e) => setNewPreAuth((p) => ({ ...p, investigationsCost: e.target.value }))} />
+                </div>
+                <div>
+                  <Label>Physiotherapy / Rehabilitation (₹)</Label>
+                  <Input type="number" value={newPreAuth.physioCost} onChange={(e) => setNewPreAuth((p) => ({ ...p, physioCost: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <Label>Other Miscellaneous Charges (₹)</Label>
+                  <Input type="number" value={newPreAuth.miscCharges} onChange={(e) => setNewPreAuth((p) => ({ ...p, miscCharges: e.target.value }))} />
+                </div>
               </div>
-              <div>
-                <Label>Admission Date</Label>
-                <Input type="date" value={newPreAuth.admissionDate} onChange={(e) => setNewPreAuth((p) => ({ ...p, admissionDate: e.target.value }))} />
+              <div className="flex items-center justify-between rounded-md bg-teal-600 text-white px-3 py-2.5 mt-3 text-sm">
+                <span className="font-medium">Total Estimated Amount</span>
+                <span className="font-bold tabular-nums text-base">₹{totalEstimate.toLocaleString('en-IN')}</span>
               </div>
-              <div>
-                <Label>Expected Duration (days)</Label>
-                <Input type="number" value={newPreAuth.estimatedDuration} onChange={(e) => setNewPreAuth((p) => ({ ...p, estimatedDuration: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label>Diagnosis</Label>
-                <Input value={newPreAuth.diagnosis} onChange={(e) => setNewPreAuth((p) => ({ ...p, diagnosis: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label>Planned Procedure(s)</Label>
-                <Input value={newPreAuth.plannedProcedures} onChange={(e) => setNewPreAuth((p) => ({ ...p, plannedProcedures: e.target.value }))} placeholder="Comma-separated, e.g. Laparoscopic Cholecystectomy" />
-              </div>
-              <div className="col-span-2">
-                <Label>Estimated Amount</Label>
-                <Input type="number" value={newPreAuth.estimatedAmount} onChange={(e) => setNewPreAuth((p) => ({ ...p, estimatedAmount: e.target.value }))} />
-              </div>
-              <div className="col-span-2">
-                <Label>Remarks</Label>
-                <Textarea rows={2} value={newPreAuth.remarks} onChange={(e) => setNewPreAuth((p) => ({ ...p, remarks: e.target.value }))} />
-              </div>
+            </div>
+
+            <div>
+              <Label>Remarks</Label>
+              <Textarea rows={2} value={newPreAuth.remarks} onChange={(e) => setNewPreAuth((p) => ({ ...p, remarks: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
