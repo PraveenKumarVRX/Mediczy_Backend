@@ -193,21 +193,31 @@ export async function runPreAuthBundling(organizationId) {
     WHERE a.organization_id = :orgId
       AND a.status = 'active'
       AND a.payer_type IN ('insurance','tpa','corporate')
+      AND EXISTS (SELECT 1 FROM users u WHERE u.id = a.patient_id)
       AND NOT EXISTS (
-        SELECT 1 FROM hmis_preauth_requests p WHERE p.admission_id = a.id
+        SELECT 1 FROM pre_authorizations p WHERE p.admission_id = a.id
       )
     LIMIT 20
   `, { orgId: organizationId });
 
   const initiated = [];
   for (const adm of needsPreauth) {
+    // pre_authorizations requires pre_auth_number/policy_number/diagnosis/admission_details —
+    // draft in sensible placeholders; insurance-desk staff fill in the real values on submit.
     await sequelize.query(`
-      INSERT INTO hmis_preauth_requests
-        (admission_id, patient_id, organization_id, status, estimated_amount, request_notes)
-      VALUES (:admId, :patId, :orgId, 'draft', 0, 'Auto-initiated by automation engine')
+      INSERT INTO pre_authorizations
+        (pre_auth_number, patient_id, hospital_id, organization_id, policy_number,
+         admission_id, admission_details, estimated_amount, diagnosis, status, remarks)
+      VALUES
+        ('DRAFT-' || :admId || '-' || extract(epoch from now())::bigint, :patId, :orgId, :orgId, 'PENDING_ENTRY',
+         :admId, jsonb_build_object('autoInitiated', true, 'payerType', :payerType),
+         0, COALESCE(:diagnosis, 'Pending clinical review'), 'pending', 'Auto-initiated by automation engine')
       ON CONFLICT DO NOTHING
     `, {
-      replacements: { admId: adm.admission_id, patId: adm.patient_id, orgId: organizationId }
+      replacements: {
+        admId: adm.admission_id, patId: adm.patient_id, orgId: organizationId,
+        payerType: adm.payer_type, diagnosis: adm.diagnosis || null
+      }
     }).catch(() => {});
     initiated.push({ admissionId: adm.admission_id, payerType: adm.payer_type });
   }

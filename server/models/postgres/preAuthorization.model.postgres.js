@@ -65,6 +65,18 @@ const PreAuthorization = sequelize.define('PreAuthorization', {
     field: 'admission_details',
     comment: 'Includes: admissionType, admissionDate, expectedDuration, roomType, etc.'
   },
+  admissionId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'admission_id',
+    comment: 'Links to ip_admissions.id when raised from an active admission'
+  },
+  otBookingId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'ot_booking_id',
+    comment: 'Links to the OT booking that triggered this pre-authorization, if any'
+  },
   estimatedAmount: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
@@ -180,7 +192,9 @@ const PreAuthorization = sequelize.define('PreAuthorization', {
     { fields: ['status'] },
     { fields: ['organization_id'] },
     { fields: ['submitted_at'] },
-    { fields: ['expires_at'] }
+    { fields: ['expires_at'] },
+    { fields: ['admission_id'] },
+    { fields: ['ot_booking_id'] }
   ]
 });
 

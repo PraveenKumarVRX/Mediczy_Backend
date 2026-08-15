@@ -258,7 +258,7 @@ export async function getExecutiveDailyDigest(organizationId) {
       qOne(`SELECT COUNT(*) AS count FROM vital_alerts WHERE organization_id=:orgId AND status='active' AND severity IN('red','orange')`, { orgId: organizationId }),
       qOne(`SELECT ROUND(100.0*COUNT(*) FILTER (WHERE status='administered')/NULLIF(COUNT(*),0),1) AS pct FROM medication_administrations WHERE organization_id=:orgId AND DATE(scheduled_time)=CURRENT_DATE`, { orgId: organizationId }),
       qOne(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='completed') AS done FROM ot_bookings WHERE organization_id=:orgId AND DATE(scheduled_start)=CURRENT_DATE`, { orgId: organizationId }),
-      qOne(`SELECT COUNT(*) AS count FROM hmis_preauth_requests WHERE organization_id=:orgId AND status IN('draft','pending','submitted')`, { orgId: organizationId }),
+      qOne(`SELECT COUNT(*) AS count FROM pre_authorizations WHERE organization_id=:orgId AND status = 'pending'`, { orgId: organizationId }),
     ]);
 
   return {
@@ -286,9 +286,13 @@ export async function getExecutiveDailyDigest(organizationId) {
 export async function getPreAuthStatusReport(organizationId, { days = 30 } = {}) {
   const since = new Date(Date.now() - days * 86400000).toISOString();
   const [summary, byStatus, byInsurer] = await Promise.all([
-    qOne(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='approved') AS approved, COUNT(*) FILTER (WHERE status='denied') AS denied, COUNT(*) FILTER (WHERE status IN('pending','submitted')) AS pending, ROUND(AVG(estimated_amount),2) AS avg_amount, ROUND(SUM(approved_amount) FILTER (WHERE status='approved'),2) AS total_approved_amount FROM hmis_preauth_requests WHERE organization_id=:orgId AND created_at>=:since`, { orgId: organizationId, since }),
-    q(`SELECT status, COUNT(*) AS count, ROUND(AVG(estimated_amount),2) AS avg_amount FROM hmis_preauth_requests WHERE organization_id=:orgId AND created_at>=:since GROUP BY status ORDER BY count DESC`, { orgId: organizationId, since }),
-    q(`SELECT insurer_name, COUNT(*) AS total, COUNT(*) FILTER (WHERE status='approved') AS approved, COUNT(*) FILTER (WHERE status='denied') AS denied FROM hmis_preauth_requests WHERE organization_id=:orgId AND created_at>=:since AND insurer_name IS NOT NULL GROUP BY insurer_name ORDER BY total DESC LIMIT 10`, { orgId: organizationId, since }),
+    qOne(`SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE status='approved') AS approved, COUNT(*) FILTER (WHERE status='rejected') AS denied, COUNT(*) FILTER (WHERE status='pending') AS pending, ROUND(AVG(estimated_amount),2) AS avg_amount, ROUND(SUM(approved_amount) FILTER (WHERE status='approved'),2) AS total_approved_amount FROM pre_authorizations WHERE organization_id=:orgId AND created_at>=:since`, { orgId: organizationId, since }),
+    q(`SELECT status, COUNT(*) AS count, ROUND(AVG(estimated_amount),2) AS avg_amount FROM pre_authorizations WHERE organization_id=:orgId AND created_at>=:since GROUP BY status ORDER BY count DESC`, { orgId: organizationId, since }),
+    q(`SELECT COALESCE(ip.name, 'Unknown') AS insurer_name, COUNT(*) AS total, COUNT(*) FILTER (WHERE pa.status='approved') AS approved, COUNT(*) FILTER (WHERE pa.status='rejected') AS denied
+       FROM pre_authorizations pa
+       LEFT JOIN insurance_providers ip ON ip.id = pa.insurance_provider_id
+       WHERE pa.organization_id=:orgId AND pa.created_at>=:since
+       GROUP BY COALESCE(ip.name, 'Unknown') ORDER BY total DESC LIMIT 10`, { orgId: organizationId, since }),
   ]);
 
   return {

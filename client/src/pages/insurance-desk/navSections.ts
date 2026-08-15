@@ -2,12 +2,13 @@ import type { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import {
   ShieldCheck, ClipboardList, FileText, Building2, UserCheck,
   Search, BarChart3, Settings, HelpCircle, Mail, Scale, Landmark,
-  ShieldQuestion, MessageSquare, ArrowLeftRight,
+  ShieldQuestion, MessageSquare, ArrowLeftRight, Bed,
 } from 'lucide-react';
 
 export const navSections: DeptNavSection[] = [
   { title: 'Overview', items: [{ icon: ShieldCheck, label: 'Dashboard', href: '/insurance-desk/dashboard' }] },
   { title: 'Claims & Auth', items: [
+    { icon: Bed,           label: 'Admissions',          href: '/insurance-desk/admissions' },
     { icon: ClipboardList, label: 'Pre-Authorization',   href: '/insurance-desk/pre-auth' },
     { icon: FileText,      label: 'Active Claims',       href: '/insurance-desk/claims' },
     { icon: FileText,      label: 'Documents',           href: '/insurance-desk/documents' },

@@ -19,6 +19,16 @@ export interface DeptAuthData {
   [key: string]: unknown;
 }
 
+// insurance-desk only: a hospital that logs in via the older, shared-tenant-
+// credential flow (hospital-insurance/auth/login, still fully functional —
+// see routes/hospital-insurance/auth.routes.js) lands on this same portal
+// instead of the retired pages/hospital-insurance/* tree. That token has a
+// different shape (no tokenType/jti) and is verified through its own
+// endpoint, not /hospital/auth/verify.
+const LEGACY_BRIDGE: Record<string, { tokenKey: string; verifyPath: string }> = {
+  'insurance-desk': { tokenKey: 'hospitalInsuranceToken', verifyPath: '/hospital-insurance/auth/verify' },
+};
+
 export function useDeptAuth(deptKey: string, loginPath: string) {
   const navigate = useNavigate();
   const [deptData, setDeptData] = useState<DeptAuthData | null>(null);
@@ -27,12 +37,32 @@ export function useDeptAuth(deptKey: string, loginPath: string) {
   const tokenKey   = `${deptKey}Token`;
   const refreshKey = `${deptKey}RefreshToken`;
   const dataKey    = `${deptKey}Data`;
+  const legacy     = LEGACY_BRIDGE[deptKey];
 
   useEffect(() => {
     const token = localStorage.getItem(tokenKey);
-    if (!token) {
+    const legacyToken = !token && legacy ? localStorage.getItem(legacy.tokenKey) : null;
+
+    if (!token && !legacyToken) {
       navigate(loginPath);
       setIsLoading(false);
+      return;
+    }
+
+    if (legacyToken) {
+      api
+        .get(legacy.verifyPath, {
+          headers: { Authorization: `Bearer ${legacyToken}` },
+          skipAuth: true,
+        } as any)
+        .then((res) => {
+          setDeptData(res.data?.user ?? null);
+        })
+        .catch(() => {
+          localStorage.removeItem(legacy.tokenKey);
+          navigate(loginPath);
+        })
+        .finally(() => setIsLoading(false));
       return;
     }
 
@@ -67,7 +97,7 @@ export function useDeptAuth(deptKey: string, loginPath: string) {
         }
       })
       .finally(() => setIsLoading(false));
-   
+
   }, [deptKey, loginPath]);
 
   const logout = useCallback(async () => {
@@ -79,8 +109,15 @@ export function useDeptAuth(deptKey: string, loginPath: string) {
       );
     } catch { /* ignore */ }
     clearDeptSession(deptKey);
+    if (legacy) {
+      localStorage.removeItem(legacy.tokenKey);
+      localStorage.removeItem('hospitalInsuranceData');
+      localStorage.removeItem('hospitalInsuranceSlug');
+      localStorage.removeItem('token');
+      localStorage.removeItem('userType');
+    }
     navigate(loginPath);
-  }, [navigate, deptKey, loginPath, refreshKey]);
+  }, [navigate, deptKey, loginPath, refreshKey, legacy]);
 
   return { deptData, isLoading, logout };
 }

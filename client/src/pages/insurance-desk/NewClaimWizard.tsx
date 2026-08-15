@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Search, Loader2, Wallet, FileUp, CheckCircle2, ArrowRight, ArrowLeft,
   UserCheck, ClipboardList, Upload, ClipboardCheck, AlertTriangle, XCircle,
@@ -39,8 +40,9 @@ const STEPS = [
 const formatCurrency = (amount?: number | null) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount || 0);
 
-const emptyClaimForm = { policyNumber: '', insuranceProvider: '', claimAmount: '', diagnosis: '', ward: '' };
+const emptyClaimForm = { policyNumber: '', insuranceProvider: '', claimAmount: '', diagnosis: '', ward: '', claimType: 'cashless', schemeName: '' };
 const DOC_TYPES = ['discharge_summary', 'bills', 'investigation_reports', 'prescription'];
+const SCHEME_NAMES = ['CGHS', 'RGHS', 'Ayushman Bharat', 'ECHS', 'Other'];
 
 const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
   open: boolean;
@@ -140,6 +142,8 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
         policyNumber: claimForm.policyNumber.trim(),
         insuranceProvider: claimForm.insuranceProvider.trim() || undefined,
         claimAmount,
+        claimType: claimForm.claimType,
+        schemeName: claimForm.claimType === 'government_scheme' ? (claimForm.schemeName || undefined) : undefined,
         diagnosis: claimForm.diagnosis.trim() || undefined,
         hospitalizationDetails: { ward: claimForm.ward.trim() || 'General', diagnosis: claimForm.diagnosis.trim() || undefined },
       });
@@ -256,12 +260,36 @@ const NewClaimWizard = ({ open, onOpenChange, onCreated }: {
                 {createError && <p className="text-sm text-red-600">{createError}</p>}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
+                    <Label>Claim Type</Label>
+                    <Select value={claimForm.claimType} onValueChange={(v) => setClaimForm((c) => ({ ...c, claimType: v }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cashless">Cashless</SelectItem>
+                        <SelectItem value="reimbursement">Reimbursement</SelectItem>
+                        <SelectItem value="emergency">Emergency</SelectItem>
+                        <SelectItem value="government_scheme">Government Scheme</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {claimForm.claimType === 'government_scheme' ? (
+                    <div>
+                      <Label>Scheme</Label>
+                      <Select value={claimForm.schemeName} onValueChange={(v) => setClaimForm((c) => ({ ...c, schemeName: v }))}>
+                        <SelectTrigger><SelectValue placeholder="Select scheme" /></SelectTrigger>
+                        <SelectContent>
+                          {SCHEME_NAMES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label>Insurer / TPA</Label>
+                      <Input value={claimForm.insuranceProvider} onChange={(e) => setClaimForm((c) => ({ ...c, insuranceProvider: e.target.value }))} placeholder="e.g. Star Health" />
+                    </div>
+                  )}
+                  <div>
                     <Label>Policy Number</Label>
                     <Input value={claimForm.policyNumber} onChange={(e) => setClaimForm((c) => ({ ...c, policyNumber: e.target.value }))} />
-                  </div>
-                  <div>
-                    <Label>Insurer / TPA</Label>
-                    <Input value={claimForm.insuranceProvider} onChange={(e) => setClaimForm((c) => ({ ...c, insuranceProvider: e.target.value }))} placeholder="e.g. Star Health" />
                   </div>
                   <div>
                     <Label>Ward</Label>

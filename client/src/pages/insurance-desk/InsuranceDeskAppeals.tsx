@@ -8,8 +8,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  ShieldCheck, RefreshCw, Loader2, Bot, Sparkles, Send, Scale,
+  ShieldCheck, RefreshCw, Loader2, Bot, Sparkles, Send, Scale, Gauge, AlertTriangle,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { navSections } from './navSections';
@@ -22,6 +23,21 @@ interface Appeal {
   rejectionReason?: string | null;
   appealCount: number;
   latestAppeal?: { appealedAt: string; appealReason: string; supportingNotes?: string } | null;
+}
+
+interface ClaimDenial {
+  id: number;
+  denialCode?: string | null;
+  denialReason?: string | null;
+  deniedAmount?: number | null;
+  status: string;
+  appealLetter?: string | null;
+}
+
+interface DenialRisk {
+  riskScore?: number;
+  riskLevel?: string;
+  recommendations?: string[];
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -46,6 +62,15 @@ const InsuranceDeskAppeals = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState<string | null>(null);
 
+  const [denials, setDenials] = useState<ClaimDenial[]>([]);
+  const [denialsLoading, setDenialsLoading] = useState(false);
+
+  const [riskForm, setRiskForm] = useState({
+    documentationComplete: 'yes', preAuthPresent: 'yes', codeMismatch: 'no', payerHistoryDenialRate: '10',
+  });
+  const [riskResult, setRiskResult] = useState<DenialRisk | null>(null);
+  const [riskLoading, setRiskLoading] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -61,13 +86,43 @@ const InsuranceDeskAppeals = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const openDraft = (appeal: Appeal) => {
+  const openDraft = async (appeal: Appeal) => {
     setSelected(appeal);
     setRejectionReasonInput(appeal.rejectionReason || '');
     setDraftError(null);
     setDraftSubject('');
     setDraftBody('');
     setSubmitted(null);
+    setDenials([]);
+    setRiskResult(null);
+
+    setDenialsLoading(true);
+    try {
+      const { data } = await api.get(`/hospital/insurance/claims/${appeal.claimId}/denials`);
+      setDenials(data.denials || []);
+    } catch {
+      // Non-fatal — denial-code context is supplementary, the query_history
+      // reason above already carries the core information.
+    } finally {
+      setDenialsLoading(false);
+    }
+  };
+
+  const checkDenialRisk = async () => {
+    setRiskLoading(true);
+    try {
+      const { data } = await api.post('/roadmap-intelligence/revenue-cycle/denial-risk', {
+        documentationComplete: riskForm.documentationComplete === 'yes',
+        preAuthPresent: riskForm.preAuthPresent === 'yes',
+        codeMismatch: riskForm.codeMismatch === 'yes',
+        payerHistoryDenialRate: Number(riskForm.payerHistoryDenialRate || 0),
+      });
+      setRiskResult(data?.data ?? null);
+    } catch (err: any) {
+      setDraftError(err?.response?.data?.message || 'Could not calculate denial risk.');
+    } finally {
+      setRiskLoading(false);
+    }
   };
 
   const draftAppeal = async () => {
@@ -171,6 +226,25 @@ const InsuranceDeskAppeals = () => {
             <DialogTitle className="flex items-center gap-2"><Bot className="h-4 w-4 text-teal-600" /> AI-Drafted Appeal — {selected?.claimNumber}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            {denialsLoading ? (
+              <p className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Loading denial record…</p>
+            ) : denials.length > 0 && (
+              <div className="rounded-lg border bg-muted/30 p-2.5 text-xs space-y-1">
+                {denials.map((d) => (
+                  <div key={d.id} className="flex items-center justify-between gap-2">
+                    <span>
+                      {d.denialCode && <span className="font-mono mr-1.5">{d.denialCode}</span>}
+                      {d.denialReason || 'No reason recorded'}
+                    </span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {d.deniedAmount != null && <span className="font-medium">₹{Number(d.deniedAmount).toLocaleString('en-IN')}</span>}
+                      <Badge variant="outline" className="text-[10px]">{d.status}</Badge>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div>
               <Label>Denial/query reason (as stated by insurer)</Label>
               <Textarea rows={2} value={rejectionReasonInput} onChange={(e) => setRejectionReasonInput(e.target.value)} />
@@ -191,6 +265,60 @@ const InsuranceDeskAppeals = () => {
                   </div>
                 )}
               </>
+            )}
+
+            {!submitted && (
+              <div className="border-t pt-3 space-y-2">
+                <p className="text-xs font-medium flex items-center gap-1.5 text-muted-foreground"><Gauge className="h-3.5 w-3.5" /> Future-claim denial risk (AI)</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px]">Documentation complete?</Label>
+                    <Select value={riskForm.documentationComplete} onValueChange={(v) => setRiskForm((s) => ({ ...s, documentationComplete: v }))}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Pre-auth on file?</Label>
+                    <Select value={riskForm.preAuthPresent} onValueChange={(v) => setRiskForm((s) => ({ ...s, preAuthPresent: v }))}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Code mismatch risk?</Label>
+                    <Select value={riskForm.codeMismatch} onValueChange={(v) => setRiskForm((s) => ({ ...s, codeMismatch: v }))}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="no">No</SelectItem><SelectItem value="yes">Yes</SelectItem></SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[11px]">Payer's historical denial rate (%)</Label>
+                    <Input className="h-8 text-xs" type="number" min={0} max={100} value={riskForm.payerHistoryDenialRate}
+                      onChange={(e) => setRiskForm((s) => ({ ...s, payerHistoryDenialRate: e.target.value }))} />
+                  </div>
+                </div>
+                <Button size="sm" variant="outline" className="gap-1 w-full" onClick={checkDenialRisk} disabled={riskLoading}>
+                  {riskLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Gauge className="h-3.5 w-3.5" />}
+                  Estimate Risk
+                </Button>
+                {riskResult && (
+                  <div className="rounded-lg border p-2.5 text-xs flex items-start gap-2 bg-muted/30">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-medium">
+                        {riskResult.riskLevel ? `${riskResult.riskLevel} risk` : 'Risk estimate'}
+                        {riskResult.riskScore != null && <span className="text-muted-foreground font-normal"> — score {riskResult.riskScore}</span>}
+                      </p>
+                      {riskResult.recommendations && riskResult.recommendations.length > 0 && (
+                        <ul className="list-disc pl-4 mt-1 space-y-0.5 text-muted-foreground">
+                          {riskResult.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           {!submitted && draftBody && (

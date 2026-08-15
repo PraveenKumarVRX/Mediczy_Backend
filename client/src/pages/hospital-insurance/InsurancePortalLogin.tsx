@@ -30,7 +30,11 @@ const InsurancePortalLogin = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
 
-  const goToDashboard = (slug: string) => navigate(`/hospital/${slug}/insurance/dashboard`, { replace: true });
+  // pages/hospital-insurance/* is retired 2026-08-15 — this login (shared
+  // hospital-tenant credential, still fully functional) now lands on the
+  // fully-featured insurance-desk portal instead. useHospDeptAuth's
+  // LEGACY_BRIDGE picks up hospitalInsuranceToken from here automatically.
+  const goToDashboard = (_slug: string) => navigate('/insurance-desk/dashboard', { replace: true });
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalInsuranceToken');

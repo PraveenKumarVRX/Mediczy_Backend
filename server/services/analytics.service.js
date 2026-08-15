@@ -69,8 +69,8 @@ export async function getCommandCenter(organizationId) {
 
       // Pre-auths pending
       qOne(`SELECT COUNT(*) AS count
-            FROM hmis_preauth_requests
-            WHERE organization_id = :orgId AND status IN ('draft','pending','submitted')`, { orgId: organizationId }),
+            FROM pre_authorizations
+            WHERE organization_id = :orgId AND status = 'pending'`, { orgId: organizationId }),
 
       // ICU census
       qOne(`SELECT COUNT(*) FILTER (WHERE status = 'active') AS active
@@ -338,13 +338,13 @@ export async function getQualityKPIs(organizationId, { days = 30 } = {}) {
     // Pre-auth completeness and approval rate
     qOne(`SELECT
             COUNT(*) FILTER (WHERE status = 'approved') AS approved,
-            COUNT(*) FILTER (WHERE status = 'denied')   AS denied,
-            COUNT(*) FILTER (WHERE status = 'submitted' OR status = 'approved' OR status = 'denied') AS submitted,
-            CASE WHEN COUNT(*) FILTER (WHERE status IN ('approved','denied')) > 0
+            COUNT(*) FILTER (WHERE status = 'rejected')  AS denied,
+            COUNT(*) FILTER (WHERE status IN ('approved','rejected')) AS submitted,
+            CASE WHEN COUNT(*) FILTER (WHERE status IN ('approved','rejected')) > 0
               THEN ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'approved')
-                / NULLIF(COUNT(*) FILTER (WHERE status IN ('approved','denied')), 0), 1)
+                / NULLIF(COUNT(*) FILTER (WHERE status IN ('approved','rejected')), 0), 1)
               ELSE 0 END AS approval_pct
-          FROM hmis_preauth_requests
+          FROM pre_authorizations
           WHERE organization_id = :orgId
             AND created_at >= :since`, { orgId: organizationId, since }),
 
@@ -443,9 +443,9 @@ export async function getFinancialKPIs(organizationId, { days = 30 } = {}) {
             ROUND(SUM(approved_amount), 2)   AS total_approved,
             ROUND(SUM(estimated_amount), 2)  AS total_requested,
             COUNT(*) FILTER (WHERE status = 'approved') AS approved_count
-          FROM hmis_preauth_requests
+          FROM pre_authorizations
           WHERE organization_id = :orgId
-            AND status IN ('approved','partial')
+            AND status = 'approved'
             AND created_at >= :since`, { orgId: organizationId, since }),
   ]);
 

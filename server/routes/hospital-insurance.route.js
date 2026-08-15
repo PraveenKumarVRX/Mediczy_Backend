@@ -22,11 +22,15 @@ import { validateClaimForSubmission } from '../services/claims-rules-engine.serv
 import { extractClaimFields } from '../services/insurance-document-ai.service.js';
 import { runPreDischargeAudit } from '../services/insurance-pre-discharge-audit.service.js';
 import { draftAppealLetter, checkDocumentationGaps } from '../services/insurance-ai-copilot.service.js';
+import ClaimDenial from '../models/postgres/claimDenial.model.postgres.js';
+import denialService from '../services/denial-management.service.js';
 import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { notifyClaimStatusChange, generateStatusQrCode } from '../services/insurance-claim-notify.service.js';
+import nhcxClient, { isNhcxConfigured } from '../services/nhcx-client.service.js';
+import pgPool from '../db/pgPool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -253,7 +257,9 @@ const buildDefaultGovtSchemes = () => ({
 const buildDefaultNHCX = () => ({
   onboardingStep: 0,
   environment: 'Sandbox',
-  activationStatus: 'Not Active',
+  // Computed, not hardcoded — reflects whether NHCX_CLIENT_ID/SECRET are
+  // actually set, so this never claims readiness the platform doesn't have.
+  activationStatus: isNhcxConfigured() ? 'Sandbox Ready' : 'Not Configured',
   hfrData: {
     facilityId: '', facilityName: '', ownershipCode: '', facilityType: '', systemOfMedicine: 'modern',
     longitude: '', latitude: '', address: '', state: '', district: '', pin: '',
@@ -266,7 +272,7 @@ const buildDefaultNHCX = () => ({
     { item: 'Valid ROHINI ID', done: false },
     { item: 'ABDM Health ID Integration', done: false },
     { item: 'Digital Signing Certificate (DSC)', done: false },
-    { item: 'NHCX Sandbox Access', done: false },
+    { item: 'NHCX Sandbox Access', done: isNhcxConfigured() },
     { item: 'FHIR R4 Resource Support', done: true },
     { item: 'API Endpoint Configuration', done: false },
   ],
@@ -890,6 +896,7 @@ router.post('/claims/new', authUser, requireRole(['hospital', 'admin']), [
       insuranceProvider,
       claimAmount,
       claimType,
+      schemeName,
       hospitalizationDetails,
       documents,
       diagnosis,
@@ -913,6 +920,7 @@ router.post('/claims/new', authUser, requireRole(['hospital', 'admin']), [
       insuranceProvider: insuranceProvider || req.body.insurer || null,
       claimAmount,
       claimType: claimType || 'cashless',
+      schemeName: claimType === 'government_scheme' ? (schemeName || null) : null,
       status: 'draft',
       hospitalizationDetails,
       documents: documents || [],
@@ -2984,6 +2992,23 @@ router.post('/claims/:claimId/appeal', authUser, requireRole(['hospital', 'admin
       lastModifiedBy: req.user.id
     }, { transaction }));
 
+    // Two-way sync: if this claim already has a claim_denials record (created
+    // via the /denials endpoints below, or from the Accounts/billing module),
+    // keep it in step instead of letting the two views silently diverge.
+    try {
+      const linkedDenial = await ClaimDenial.findOne({ where: { claimId: claim.id }, order: [['createdAt', 'DESC']] });
+      if (linkedDenial && linkedDenial.status !== 'resolved') {
+        await linkedDenial.update({
+          status: 'appealed',
+          appealLetter: linkedDenial.appealLetter || `${appealReason}\n\n${supportingNotes || ''}`.trim(),
+          appealedAt: new Date(),
+          appealedBy: req.user.id,
+        });
+      }
+    } catch (syncError) {
+      console.warn('claim_denials sync on appeal skipped:', syncError.message);
+    }
+
     res.json({
       success: true,
       message: 'Appeal submitted successfully. Claim moved to pending review.',
@@ -2991,6 +3016,95 @@ router.post('/claims/:claimId/appeal', authUser, requireRole(['hospital', 'admin
     });
   } catch (error) {
     console.error('Appeal submission error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * Denial management (claim_denials) — surfaced in the insurance-desk module
+ * for the first time 2026-08-15. Previously only reachable via the Accounts
+ * /hospital/billing/denials endpoints; these wrap the same
+ * denial-management.service.js functions so both modules share one system
+ * of record instead of two.
+ */
+router.get('/claims/:claimId/denials', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
+
+    const all = await denialService.listDenials(claim.hospitalId || claim.organizationId, { limit: 20 });
+    const denials = all.filter((d) => d.claimId === claim.id || d.claimNumber === claim.claimNumber);
+    res.json({ success: true, denials });
+  } catch (error) {
+    console.error('List claim denials error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/claims/:claimId/denials', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  body('denialCode').optional().isString(),
+  body('denialReason').notEmpty().withMessage('Denial reason is required'),
+  body('deniedAmount').optional().isNumeric(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
+
+    const denial = await denialService.createDenial(claim.hospitalId || claim.organizationId, {
+      organizationId: claim.organizationId,
+      claimId: claim.id,
+      claimNumber: claim.claimNumber,
+      patientId: claim.patientId,
+      denialCode: req.body.denialCode,
+      denialReason: req.body.denialReason,
+      deniedAmount: req.body.deniedAmount,
+    }, req.user.id);
+
+    res.status(201).json({ success: true, denial });
+  } catch (error) {
+    console.error('Create claim denial error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/claims/:claimId/denials/:denialId/appeal', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  param('denialId').isInt(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
+
+    const result = await denialService.draftAppeal(claim.hospitalId || claim.organizationId, parseInt(req.params.denialId), req.user.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Draft denial appeal error:', error);
+    res.status(error.message === 'Denial not found' ? 404 : 500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/claims/:claimId/denials/:denialId/resolve', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  param('denialId').isInt(),
+  body('resolution').optional().isString(),
+  body('notes').optional().isString(),
+], async (req, res) => {
+  try {
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
+
+    const result = await denialService.resolveDenial(
+      claim.hospitalId || claim.organizationId,
+      parseInt(req.params.denialId),
+      { resolution: req.body.resolution, notes: req.body.notes },
+      req.user.id
+    );
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Resolve claim denial error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });
@@ -3549,6 +3663,153 @@ router.put('/portal/compliance/:section(govt-schemes|nhcx|abdm|tariff|empanelmen
     res.json({ success: true, data });
   } catch (error) {
     console.error('Portal compliance update error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * NHCX (National Health Claims Exchange) integration — 2026-08-15. Real FHIR
+ * bundle construction + gateway call when NHCX_CLIENT_ID/SECRET are set;
+ * an honest "not configured" result otherwise (see nhcx-client.service.js).
+ * Every call is logged to nhcx_activity_log so the compliance page shows
+ * genuine activity instead of a static tracker.
+ */
+const logNhcxActivity = async (organizationId, workflow, result, userId) => {
+  await pgPool.query(
+    `INSERT INTO nhcx_activity_log (organization_id, workflow, correlation_id, configured, sent, error, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [organizationId, workflow, result.correlationId || null, Boolean(result.configured), Boolean(result.sent), result.error || null, userId || null]
+  ).catch((e) => console.warn('nhcx_activity_log insert skipped:', e.message));
+};
+
+router.post('/nhcx/eligibility-check', authUser, requireRole(['hospital', 'admin']), [
+  body('patientName').notEmpty(),
+  body('policyNumber').notEmpty(),
+  body('insurerCode').notEmpty(),
+], async (req, res) => {
+  try {
+    const scope = resolvePortalScope(req);
+    const result = await nhcxClient.submitEligibilityCheck({ ...req.body, hospitalId: scope.hospitalId });
+    await logNhcxActivity(scope.organizationId, 'eligibility-check', result, req.user.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('NHCX eligibility check error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/nhcx/preauth-submit', authUser, requireRole(['hospital', 'admin']), [
+  body('preAuthNumber').notEmpty(),
+  body('patientName').notEmpty(),
+  body('policyNumber').notEmpty(),
+  body('insurerCode').notEmpty(),
+], async (req, res) => {
+  try {
+    const scope = resolvePortalScope(req);
+    const result = await nhcxClient.submitPreAuth({ ...req.body, hospitalId: scope.hospitalId });
+    await logNhcxActivity(scope.organizationId, 'preauth-submit', result, req.user.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('NHCX pre-auth submit error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/nhcx/claim-submit', authUser, requireRole(['hospital', 'admin']), [
+  body('claimNumber').notEmpty(),
+  body('patientName').notEmpty(),
+  body('policyNumber').notEmpty(),
+  body('insurerCode').notEmpty(),
+], async (req, res) => {
+  try {
+    const scope = resolvePortalScope(req);
+    const result = await nhcxClient.submitClaim({ ...req.body, hospitalId: scope.hospitalId });
+    await logNhcxActivity(scope.organizationId, 'claim-submit', result, req.user.id);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('NHCX claim submit error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * TPA/insurer credential-readiness — 2026-08-15. Turns "nobody knows what's
+ * missing" into a live checklist: which of the 17 coded TPA connectors and
+ * 4 insurer eligibility clients actually have credentials configured, and
+ * exactly which env var to set to turn each one on. No secrets are returned.
+ */
+const TPA_CREDENTIAL_ENV_VARS = {
+  heritage:    ['HERITAGE_TPA_AUTH_ID'],
+  mdindia:     ['MDINDIA_TPA_USERNAME', 'MDINDIA_TPA_PASSWORD'],
+  healthindia: ['HEALTHINDIA_TPA_AUTH_TOKEN', 'HEALTHINDIA_TPA_CLIENT_ID'],
+  care:        ['CARE_TPA_PARTNER_ID', 'CARE_TPA_PARTNER_KEY'],
+  fgi:         ['FGI_TPA_CLIENT_ID', 'FGI_TPA_CLIENT_SECRET', 'FGI_TPA_API_KEY'],
+  godigit:     ['GODIGIT_TPA_CLIENT_ID', 'GODIGIT_TPA_CLIENT_SECRET'],
+  icici:       ['ICICI_TPA_USERNAME', 'ICICI_TPA_PASSWORD'],
+  mediassist:  ['MEDIASSIST_TPA_CLIENT_ID', 'MEDIASSIST_TPA_USERNAME', 'MEDIASSIST_TPA_PASSWORD'],
+  starhealth:  ['STARHEALTH_TPA_USERNAME', 'STARHEALTH_TPA_PASSWORD', 'STARHEALTH_TPA_PARTNER_ID'],
+  fhpl:        ['FHPL_TPA_USERNAME', 'FHPL_TPA_PASSWORD', 'FHPL_TPA_CLIENT_ID'],
+  medsave:     ['MEDSAVE_TPA_CLIENT_ID', 'MEDSAVE_TPA_SECRET', 'MEDSAVE_TPA_API_KEY'],
+  nivabupa:    ['NIVABUPA_TPA_USERNAME', 'NIVABUPA_TPA_PASSWORD', 'NIVABUPA_TPA_API_KEY'],
+  paramount:   ['PARAMOUNT_TPA_USERNAME', 'PARAMOUNT_TPA_PASSWORD', 'PARAMOUNT_TPA_CLIENT_ID'],
+  raksha:      ['RAKSHA_TPA_API_KEY', 'RAKSHA_TPA_SECRET'],
+  vidal:       ['VIDAL_TPA_CLIENT_ID', 'VIDAL_TPA_SECRET', 'VIDAL_TPA_API_KEY'],
+  volo:        ['VOLO_TPA_USERNAME', 'VOLO_TPA_PASSWORD', 'VOLO_TPA_PARTNER_ID'],
+  ewat:        ['EWAT_TPA_API_KEY', 'EWAT_TPA_PARTNER_ID'],
+};
+
+const INSURER_CREDENTIAL_ENV_VARS = {
+  'Star Health':    ['STAR_HEALTH_API_KEY'],
+  'HDFC ERGO':      ['HDFC_ERGO_API_KEY'],
+  'ICICI Lombard':  ['ICICI_LOMBARD_API_KEY'],
+  'Bajaj Allianz':  ['BAJAJ_ALLIANZ_API_KEY'],
+};
+
+router.get('/tpa/readiness', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const providers = tpaAggregator.getAvailableProviders().map((p) => {
+      const envVarsNeeded = TPA_CREDENTIAL_ENV_VARS[p.id] || [];
+      return {
+        ...p,
+        envVarsNeeded,
+        configured: envVarsNeeded.length > 0 && envVarsNeeded.every((v) => Boolean(process.env[v])),
+      };
+    });
+
+    const insurers = Object.entries(INSURER_CREDENTIAL_ENV_VARS).map(([name, envVarsNeeded]) => ({
+      name,
+      envVarsNeeded,
+      configured: envVarsNeeded.every((v) => Boolean(process.env[v])),
+    }));
+
+    res.json({
+      success: true,
+      summary: {
+        tpasConfigured: providers.filter((p) => p.configured).length,
+        tpasTotal: providers.length,
+        insurersConfigured: insurers.filter((i) => i.configured).length,
+        insurersTotal: insurers.length,
+      },
+      providers,
+      insurers,
+    });
+  } catch (error) {
+    console.error('TPA readiness fetch error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/nhcx/activity', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const scope = resolvePortalScope(req);
+    const { rows } = await pgPool.query(
+      `SELECT id, workflow, correlation_id, configured, sent, error, created_at
+       FROM nhcx_activity_log WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50`,
+      [scope.organizationId]
+    );
+    res.json({ success: true, activity: rows, configured: isNhcxConfigured() });
+  } catch (error) {
+    console.error('NHCX activity fetch error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

@@ -172,8 +172,8 @@ export async function getDischargeDelayForecast(organizationId) {
       EXISTS(SELECT 1 FROM billing_estimates be
              WHERE be.admission_id = a.id AND be.status = 'approved') AS billing_cleared,
       -- Pre-auth status
-      EXISTS(SELECT 1 FROM hmis_preauth_requests pr
-             WHERE pr.admission_id = a.id AND pr.status IN ('submitted','pending','draft')) AS preauth_pending
+      EXISTS(SELECT 1 FROM pre_authorizations pr
+             WHERE pr.admission_id = a.id AND pr.status = 'pending') AS preauth_pending
     FROM ip_admissions a
     LEFT JOIN wards w ON w.id = a.ward_id
     LEFT JOIN discharge_readiness_items r ON r.admission_id = a.id

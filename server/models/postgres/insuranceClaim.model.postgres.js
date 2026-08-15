@@ -111,8 +111,14 @@ const InsuranceClaim = sequelize.define('InsuranceClaim', {
     field: 'claim_type',
     defaultValue: 'cashless',
     validate: {
-      isIn: [['cashless', 'reimbursement', 'emergency']]
+      isIn: [['cashless', 'reimbursement', 'emergency', 'government_scheme']]
     }
+  },
+  schemeName: {
+    type: DataTypes.STRING(40),
+    allowNull: true,
+    field: 'scheme_name',
+    comment: 'Government scheme name when claimType is government_scheme, e.g. CGHS, RGHS, Ayushman Bharat, ECHS'
   },
   status: {
     type: DataTypes.STRING(20),

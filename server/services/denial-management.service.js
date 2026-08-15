@@ -1,92 +1,108 @@
 /**
- * Denial management — insurance claim denials workflow
+ * Denial management — insurance claim denials workflow.
+ *
+ * Refactored 2026-08-15 onto the `ClaimDenial` model (was raw `pool.query`
+ * against a runtime-created table with no FK integrity — see
+ * server/migrations/20260815-claim-denials-integrity.migration.js). Exported
+ * function signatures are unchanged so existing callers
+ * (server/routes/hospital/billing.route.js,
+ * server/services/ai-brain/tools/module-tools.js) need no changes.
  */
-import pool from '../db/pgPool.js';
-
-async function ensureTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS claim_denials (
-      id BIGSERIAL PRIMARY KEY,
-      hospital_id INTEGER NOT NULL,
-      claim_id INTEGER,
-      claim_number VARCHAR(80),
-      patient_id INTEGER,
-      denial_code VARCHAR(40),
-      denial_reason TEXT,
-      denied_amount NUMERIC(14,2) DEFAULT 0,
-      status VARCHAR(30) DEFAULT 'open',
-      appeal_letter TEXT,
-      appealed_at TIMESTAMPTZ,
-      appealed_by INTEGER,
-      resolved_at TIMESTAMPTZ,
-      resolution_notes TEXT,
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_denials_hospital ON claim_denials(hospital_id, status);
-  `);
-}
+import ClaimDenial from '../models/postgres/claimDenial.model.postgres.js';
+import InsuranceClaim from '../models/postgres/insuranceClaim.model.postgres.js';
+import { draftAppealLetter } from './insurance-ai-copilot.service.js';
 
 export async function listDenials(hospitalId, { status, limit = 50 } = {}) {
-  await ensureTables();
-  const params = [hospitalId];
-  let clause = '';
-  if (status) {
-    params.push(status);
-    clause = ` AND status = $${params.length}`;
-  }
-  params.push(Math.min(100, limit));
-  const { rows } = await pool.query(
-    `SELECT * FROM claim_denials WHERE hospital_id = $1 ${clause}
-     ORDER BY created_at DESC LIMIT $${params.length}`,
-    params
-  );
-  return rows;
+  const where = { hospitalId };
+  if (status) where.status = status;
+  const rows = await ClaimDenial.findAll({
+    where,
+    order: [['createdAt', 'DESC']],
+    limit: Math.min(100, limit),
+  });
+  return rows.map((r) => r.toJSON());
 }
 
 export async function createDenial(hospitalId, data, actorId) {
-  await ensureTables();
-  const r = await pool.query(
-    `INSERT INTO claim_denials
-       (hospital_id, claim_id, claim_number, patient_id, denial_code, denial_reason, denied_amount, status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'open') RETURNING *`,
-    [
-      hospitalId, data.claimId || null, data.claimNumber || null, data.patientId || null,
-      data.denialCode || null, data.denialReason || null, Number(data.deniedAmount) || 0,
-    ]
-  );
+  const denial = await ClaimDenial.create({
+    hospitalId,
+    organizationId: data.organizationId || hospitalId,
+    claimId: data.claimId || null,
+    claimNumber: data.claimNumber || null,
+    patientId: data.patientId || null,
+    denialCode: data.denialCode || null,
+    denialReason: data.denialReason || null,
+    deniedAmount: Number(data.deniedAmount) || 0,
+    status: 'open',
+  });
+
   if (data.claimId) {
-    await pool.query(`UPDATE insurance_claims SET status = 'denied', updated_at = NOW() WHERE id = $1`, [data.claimId]).catch(() => {});
+    // Route through the same model/hook path the insurance-desk claims flow
+    // uses elsewhere, so updatedAt/audit bookkeeping stays consistent instead
+    // of a bare fire-and-forget UPDATE.
+    await InsuranceClaim.update(
+      { status: 'denied', lastModifiedBy: actorId || null },
+      { where: { id: data.claimId } }
+    ).catch(() => {});
   }
-  return r.rows[0];
+
+  return denial.toJSON();
 }
 
+/**
+ * Drafts (and persists) an appeal letter for a denial. When the denial is
+ * linked to a real claim, this now delegates to the same LLM-backed
+ * draftAppealLetter() the insurance-desk AI co-pilot uses
+ * (insurance-ai-copilot.service.js) instead of a hardcoded template — the two
+ * previously-separate drafting paths are unified into the one that's real.
+ * Falls back to a plain template only when there's no linked claim to draft
+ * facts from (e.g. a denial recorded before any claim existed in the system).
+ */
 export async function draftAppeal(hospitalId, denialId, actorId) {
-  await ensureTables();
-  const d = await pool.query(`SELECT * FROM claim_denials WHERE id = $1 AND hospital_id = $2`, [denialId, hospitalId]);
-  if (!d.rows[0]) throw new Error('Denial not found');
+  const denial = await ClaimDenial.findOne({ where: { id: denialId, hospitalId } });
+  if (!denial) throw new Error('Denial not found');
 
-  const letter = `Appeal for claim ${d.rows[0].claim_number || denialId}
-Denial code: ${d.rows[0].denial_code || 'N/A'}
-Reason cited: ${d.rows[0].denial_reason || 'Not specified'}
-Amount disputed: ₹${d.rows[0].denied_amount}
+  let letter;
+  if (denial.claimId) {
+    const claim = await InsuranceClaim.findByPk(denial.claimId);
+    if (claim) {
+      const draft = await draftAppealLetter(claim, {
+        rejectionReason: denial.denialReason || claim.rejectionReason,
+        additionalContext: denial.denialCode ? `Denial code: ${denial.denialCode}` : undefined,
+      });
+      letter = `${draft.subject}\n\n${draft.body}`;
+    }
+  }
+
+  if (!letter) {
+    letter = `Appeal for claim ${denial.claimNumber || denialId}
+Denial code: ${denial.denialCode || 'N/A'}
+Reason cited: ${denial.denialReason || 'Not specified'}
+Amount disputed: Rs. ${denial.deniedAmount}
 
 We respectfully request reconsideration based on medical necessity and policy coverage.
 Please find enclosed clinical documentation supporting this claim.`;
+  }
 
-  await pool.query(
-    `UPDATE claim_denials SET appeal_letter = $2, status = 'appeal_drafted', appealed_at = NOW(), appealed_by = $3, updated_at = NOW() WHERE id = $1`,
-    [denialId, letter, actorId || null]
-  );
+  await denial.update({
+    appealLetter: letter,
+    status: 'appeal_drafted',
+    appealedAt: new Date(),
+    appealedBy: actorId || null,
+  });
+
   return { denialId, appealLetter: letter };
 }
 
 export async function resolveDenial(hospitalId, denialId, { resolution, notes }, actorId) {
-  await ensureTables();
-  await pool.query(
-    `UPDATE claim_denials SET status = $2, resolution_notes = $3, resolved_at = NOW(), updated_at = NOW() WHERE id = $1 AND hospital_id = $4`,
-    [denialId, resolution || 'resolved', notes || null, hospitalId]
-  );
+  const denial = await ClaimDenial.findOne({ where: { id: denialId, hospitalId } });
+  if (!denial) throw new Error('Denial not found');
+
+  await denial.update({
+    status: resolution || 'resolved',
+    resolutionNotes: notes || null,
+    resolvedAt: new Date(),
+  });
   return { success: true, denialId };
 }
 

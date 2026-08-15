@@ -459,34 +459,6 @@ const PharmacySupportPage        = lazyNamed(_PharmacyModulePages, "PharmacySupp
 
 // ─── Hospital Insurance Portal ───────────────────────────────────────────────
 const InsurancePortalLogin       = lazy(() => import("@/pages/hospital-insurance/InsurancePortalLogin"));
-const InsurancePortalDashboard   = lazy(() => import("@/pages/hospital-insurance/InsurancePortalDashboard"));
-const InsuranceClaimsPage        = lazy(() => import("@/pages/hospital-insurance/InsuranceClaimsPage"));
-const InsurancePreAuthPage       = lazy(() => import("@/pages/hospital-insurance/InsurancePreAuthPage"));
-const InsuranceReconciliationPage = lazy(() => import("@/pages/hospital-insurance/InsuranceReconciliationPage"));
-const InsuranceDocumentsPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceDocumentsPage"));
-const InsuranceHospitalProfilePage = lazy(() => import("@/pages/hospital-insurance/InsuranceHospitalProfilePage"));
-const InsuranceAnalyticsPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceAnalyticsPage"));
-const InsuranceTasksPage         = lazy(() => import("@/pages/hospital-insurance/InsuranceTasksPage"));
-const InsurancePayerManagementPage = lazy(() => import("@/pages/hospital-insurance/InsurancePayerManagementPage"));
-const InsuranceCourierTrackingPage = lazy(() => import("@/pages/hospital-insurance/InsuranceCourierTrackingPage"));
-const InsuranceNHCXPage          = lazy(() => import("@/pages/hospital-insurance/InsuranceNHCXPage"));
-const InsuranceABDMPage          = lazy(() => import("@/pages/hospital-insurance/InsuranceABDMPage"));
-const InsuranceCalendarPage      = lazy(() => import("@/pages/hospital-insurance/InsuranceCalendarPage"));
-const InsuranceInventoryPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceInventoryPage"));
-const InsuranceBulkUploadPage    = lazy(() => import("@/pages/hospital-insurance/InsuranceBulkUploadPage"));
-const InsuranceSearchPage        = lazy(() => import("@/pages/hospital-insurance/InsuranceSearchPage"));
-const InsuranceSettingsPage      = lazy(() => import("@/pages/hospital-insurance/InsuranceSettingsPage"));
-const InsuranceNotificationsPage = lazy(() => import("@/pages/hospital-insurance/InsuranceNotificationsPage"));
-const InsuranceAdmissionPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceAdmissionPage"));
-const InsuranceDischargePage     = lazy(() => import("@/pages/hospital-insurance/InsuranceDischargePage"));
-const InsuranceMessagesPage      = lazy(() => import("@/pages/hospital-insurance/InsuranceMessagesPage"));
-const InsuranceDenialsPage       = lazy(() => import("@/pages/hospital-insurance/InsuranceDenialsPage"));
-const InsuranceTariffPage        = lazy(() => import("@/pages/hospital-insurance/InsuranceTariffPage"));
-const InsuranceEmpanelmentPage   = lazy(() => import("@/pages/hospital-insurance/InsuranceEmpanelmentPage"));
-const InsuranceReportsPage       = lazy(() => import("@/pages/hospital-insurance/InsuranceReportsPage"));
-const InsuranceSLAPage           = lazy(() => import("@/pages/hospital-insurance/InsuranceSLAPage"));
-const InsuranceGovtSchemesPage   = lazy(() => import("@/pages/hospital-insurance/InsuranceGovtSchemesPage"));
-const InsuranceEmailInboxPage    = lazy(() => import("@/pages/hospital-insurance/InsuranceEmailInboxPage"));
 
 // ─── Ambulance ───────────────────────────────────────────────────────────────
 const AmbulanceRegister  = lazy(() => import("@/pages/ambulance/AmbulanceRegister"));
@@ -748,6 +720,7 @@ const InsuranceDeskLogin     = lazy(() => import("@/pages/insurance-desk/Insuran
 const InsuranceDeskDashboard = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDashboard"));
 // Real, API-backed pages (wired to the hospital-insurance backend):
 const InsuranceDeskPreAuthPage         = lazy(() => import("@/pages/insurance-desk/InsuranceDeskPreAuth"));
+const InsuranceDeskAdmissionsPage      = lazy(() => import("@/pages/insurance-desk/InsuranceDeskAdmissions"));
 const InsuranceDeskClaimsPage          = lazy(() => import("@/pages/insurance-desk/InsuranceDeskClaims"));
 const InsuranceDeskDocumentsPage       = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDocuments"));
 const InsuranceDeskEmailInboxPage      = lazy(() => import("@/pages/insurance-desk/InsuranceDeskEmailInbox"));
@@ -1539,43 +1512,16 @@ const AppRoutes = () => {
         <Route path="/aggregator/settings"      element={<div>Settings</div>} />
         <Route path="/aggregator/support"       element={<div>Support</div>} />
 
-        {/* ── Hospital Insurance Portal ─────────────────────────────── */}
-        {/* Login: public entry point (no slug needed yet) */}
-        <Route path="/hospital-insurance/auth/login"      element={<Navigate to="/hospital-insurance/login" replace />} />
+        {/* ── Hospital Insurance Portal (legacy shared-credential login) ── */}
+        {/* pages/hospital-insurance/* retired 2026-08-15 — consolidated into
+            /insurance-desk/*. This login stays functional (some hospitals may
+            only have the shared tenant credential, not per-staff accounts)
+            and now lands on the insurance-desk portal; see LEGACY_BRIDGE in
+            useHospDeptAuth.ts and InsurancePortalLogin.tsx's goToDashboard. */}
         <Route path="/hospital-insurance/login"           element={<InsurancePortalLogin />} />
-        {/* Legacy redirects — send back to login so the slug is re-established */}
         <Route path="/hospital-insurance/*"               element={<Navigate to="/hospital-insurance/login" replace />} />
-        {/* Slug-scoped insurance portal: /hospital/:slug/insurance/* */}
         <Route path="/hospital/:slug/hr/login"                  element={<HRLogin />} />
-        <Route path="/hospital/:slug/insurance/dashboard"       element={<InsurancePortalDashboard />} />
-        <Route path="/hospital/:slug/insurance/claims"          element={<InsuranceClaimsPage />} />
-        <Route path="/hospital/:slug/insurance/pre-auth"        element={<InsurancePreAuthPage />} />
-        <Route path="/hospital/:slug/insurance/pre-auth/*"      element={<InsurancePreAuthPage />} />
-        <Route path="/hospital/:slug/insurance/reconciliation"  element={<InsuranceReconciliationPage />} />
-        <Route path="/hospital/:slug/insurance/documents"       element={<InsuranceDocumentsPage />} />
-        <Route path="/hospital/:slug/insurance/hospital-profile" element={<InsuranceHospitalProfilePage />} />
-        <Route path="/hospital/:slug/insurance/analytics"       element={<InsuranceAnalyticsPage />} />
-        <Route path="/hospital/:slug/insurance/tasks"           element={<InsuranceTasksPage />} />
-        <Route path="/hospital/:slug/insurance/payer-management" element={<InsurancePayerManagementPage />} />
-        <Route path="/hospital/:slug/insurance/courier"         element={<InsuranceCourierTrackingPage />} />
-        <Route path="/hospital/:slug/insurance/nhcx"            element={<InsuranceNHCXPage />} />
-        <Route path="/hospital/:slug/insurance/abdm"            element={<InsuranceABDMPage />} />
-        <Route path="/hospital/:slug/insurance/calendar"        element={<InsuranceCalendarPage />} />
-        <Route path="/hospital/:slug/insurance/inventory"       element={<InsuranceInventoryPage />} />
-        <Route path="/hospital/:slug/insurance/bulk-upload"     element={<InsuranceBulkUploadPage />} />
-        <Route path="/hospital/:slug/insurance/search"          element={<InsuranceSearchPage />} />
-        <Route path="/hospital/:slug/insurance/settings"        element={<InsuranceSettingsPage />} />
-        <Route path="/hospital/:slug/insurance/notifications"   element={<InsuranceNotificationsPage />} />
-        <Route path="/hospital/:slug/insurance/admission"       element={<InsuranceAdmissionPage />} />
-        <Route path="/hospital/:slug/insurance/discharge"       element={<InsuranceDischargePage />} />
-        <Route path="/hospital/:slug/insurance/messages"        element={<InsuranceMessagesPage />} />
-        <Route path="/hospital/:slug/insurance/denials"         element={<InsuranceDenialsPage />} />
-        <Route path="/hospital/:slug/insurance/tariff"          element={<InsuranceTariffPage />} />
-        <Route path="/hospital/:slug/insurance/empanelment"     element={<InsuranceEmpanelmentPage />} />
-        <Route path="/hospital/:slug/insurance/reports"         element={<InsuranceReportsPage />} />
-        <Route path="/hospital/:slug/insurance/sla"             element={<InsuranceSLAPage />} />
-        <Route path="/hospital/:slug/insurance/govt-schemes"    element={<InsuranceGovtSchemesPage />} />
-        <Route path="/hospital/:slug/insurance/email-inbox"       element={<InsuranceEmailInboxPage />} />
+        <Route path="/hospital/:slug/insurance/*"               element={<Navigate to="/hospital-insurance/login" replace />} />
 
         {/* ── Accounts Dept ───────────────────────────────────────────── */}
         <Route path="/accounts/login"            element={<AccountsLogin />} />
@@ -1714,6 +1660,7 @@ const AppRoutes = () => {
         <Route path="/insurance-desk/login"             element={<InsuranceDeskLogin />} />
         <Route path="/insurance-desk/dashboard"         element={<InsuranceDeskDashboard />} />
         <Route path="/insurance-desk/pre-auth"          element={<InsuranceDeskPreAuthPage />} />
+        <Route path="/insurance-desk/admissions"        element={<InsuranceDeskAdmissionsPage />} />
         <Route path="/insurance-desk/claims"            element={<InsuranceDeskClaimsPage />} />
         <Route path="/insurance-desk/claims/:id"        element={<InsuranceDeskClaimDetailPage />} />
         <Route path="/insurance-desk/documents"         element={<InsuranceDeskDocumentsPage />} />

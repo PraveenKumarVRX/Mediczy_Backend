@@ -43,6 +43,7 @@ const InsuranceDeskTPA = () => {
 
   const [providers, setProviders] = useState<TpaProvider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(true);
+  const [readiness, setReadiness] = useState<Record<string, { configured: boolean; envVarsNeeded: string[] }>>({});
   const [claimIdInput, setClaimIdInput] = useState('');
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [statusResult, setStatusResult] = useState<TpaStatusResult | null>(null);
@@ -75,7 +76,18 @@ const InsuranceDeskTPA = () => {
     }
   }, []);
 
-  useEffect(() => { load(); loadProviders(); }, [load, loadProviders]);
+  const loadReadiness = useCallback(async () => {
+    try {
+      const { data } = await api.get('/hospital/insurance/tpa/readiness');
+      const map: Record<string, { configured: boolean; envVarsNeeded: string[] }> = {};
+      (data.providers || []).forEach((p: any) => { map[p.id] = { configured: p.configured, envVarsNeeded: p.envVarsNeeded || [] }; });
+      setReadiness(map);
+    } catch {
+      setReadiness({});
+    }
+  }, []);
+
+  useEffect(() => { load(); loadProviders(); loadReadiness(); }, [load, loadProviders, loadReadiness]);
 
   const checkClaimStatus = async () => {
     const claimId = claimIdInput.trim();
@@ -184,21 +196,36 @@ const InsuranceDeskTPA = () => {
                         <TableHead>Pre-Auth</TableHead>
                         <TableHead>e-Card</TableHead>
                         <TableHead>Network Hospitals</TableHead>
+                        <TableHead>Credentials</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {providers.map((p) => (
-                        <TableRow key={p.id}>
-                          <TableCell className="font-medium">{p.name}</TableCell>
-                          {(['claims', 'claimStatus', 'preAuth', 'ecard', 'networkHospitals'] as const).map((cap) => (
-                            <TableCell key={cap}>
-                              {p.capabilities?.[cap]
-                                ? <Badge variant="outline" className="border-emerald-400 text-emerald-700 dark:text-emerald-300">Connected</Badge>
-                                : <Badge variant="outline" className="text-muted-foreground">—</Badge>}
+                      {providers.map((p) => {
+                        const r = readiness[p.id];
+                        return (
+                          <TableRow key={p.id}>
+                            <TableCell className="font-medium">{p.name}</TableCell>
+                            {(['claims', 'claimStatus', 'preAuth', 'ecard', 'networkHospitals'] as const).map((cap) => (
+                              <TableCell key={cap}>
+                                {p.capabilities?.[cap]
+                                  ? <Badge variant="outline" className="border-emerald-400 text-emerald-700 dark:text-emerald-300">Connected</Badge>
+                                  : <Badge variant="outline" className="text-muted-foreground">—</Badge>}
+                              </TableCell>
+                            ))}
+                            <TableCell>
+                              {!r ? (
+                                <Badge variant="outline" className="text-muted-foreground">—</Badge>
+                              ) : r.configured ? (
+                                <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">Configured</Badge>
+                              ) : (
+                                <Badge variant="outline" className="border-amber-400 text-amber-700 dark:text-amber-300" title={`Set: ${r.envVarsNeeded.join(', ')}`}>
+                                  Missing {r.envVarsNeeded.length} var{r.envVarsNeeded.length === 1 ? '' : 's'}
+                                </Badge>
+                              )}
                             </TableCell>
-                          ))}
-                        </TableRow>
-                      ))}
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
