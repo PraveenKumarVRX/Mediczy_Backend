@@ -26,35 +26,42 @@ import { navSections } from './navSections';
 // to brand the printed form for (direct-settlement insurers and TPA-routed ones
 // via its INSURER_DEFAULT_TPA map) — picking one here is what makes the printed
 // pre-auth form auto-select the right TPA letterhead and IRDAI license number.
-const INSURERS: { code: string; label: string }[] = [
-  { code: 'star_health', label: 'Star Health & Allied Insurance' },
-  { code: 'icici_lombard', label: 'ICICI Lombard General Insurance' },
-  { code: 'care_health', label: 'Care Health Insurance' },
-  { code: 'bajaj_allianz', label: 'Bajaj Allianz General Insurance' },
-  { code: 'niva_bupa', label: 'Niva Bupa Health Insurance' },
-  { code: 'manipal_cigna', label: 'ManipalCigna Health Insurance' },
-  { code: 'galaxy', label: 'Galaxy Health Insurance' },
-  { code: 'new_india', label: 'New India Assurance' },
-  { code: 'united_india', label: 'United India Insurance' },
-  { code: 'oriental', label: 'Oriental Insurance' },
-  { code: 'hdfc_ergo', label: 'HDFC ERGO General Insurance' },
-  { code: 'tata_aig', label: 'Tata AIG General Insurance' },
-  { code: 'sbi_general', label: 'SBI General Insurance' },
-  { code: 'national', label: 'National Insurance' },
-  { code: 'aditya_birla', label: 'Aditya Birla Health Insurance' },
-  { code: 'future_generali', label: 'Future Generali India Insurance' },
-  { code: 'reliance', label: 'Reliance General Insurance' },
-  { code: 'go_digit', label: 'Go Digit General Insurance' },
-  { code: 'cghs', label: 'CGHS (Government)' },
-  { code: 'esic', label: 'ESIC (Government)' },
-  { code: 'iffco_tokio', label: 'IFFCO Tokio General Insurance' },
-  { code: 'royal_sundaram', label: 'Royal Sundaram General Insurance' },
-  { code: 'liberty', label: 'Liberty General Insurance' },
-  { code: 'cholamandalam', label: 'Cholamandalam MS General Insurance' },
+//
+// `kind` drives real payer-specific form behavior (see auditPayerKind below):
+//  - direct: insurer settles claims itself, no TPA in the loop
+//  - tpa: a separate TPA processes the claim on the insurer's behalf — the
+//    TPA's reference/auth number is assigned on approval, not known at intake
+//  - government: CGHS/ESIC price by fixed package rate, not sum-insured-based
+//    cover, and identify the patient by beneficiary ID, not a policy number
+const INSURERS: { code: string; label: string; kind: 'direct' | 'tpa' | 'government'; tpaName?: string }[] = [
+  { code: 'star_health', label: 'Star Health & Allied Insurance', kind: 'direct' },
+  { code: 'icici_lombard', label: 'ICICI Lombard General Insurance', kind: 'direct' },
+  { code: 'care_health', label: 'Care Health Insurance', kind: 'direct' },
+  { code: 'bajaj_allianz', label: 'Bajaj Allianz General Insurance', kind: 'direct' },
+  { code: 'niva_bupa', label: 'Niva Bupa Health Insurance', kind: 'direct' },
+  { code: 'manipal_cigna', label: 'ManipalCigna Health Insurance', kind: 'direct' },
+  { code: 'galaxy', label: 'Galaxy Health Insurance', kind: 'direct' },
+  { code: 'new_india', label: 'New India Assurance', kind: 'tpa', tpaName: 'Health India TPA' },
+  { code: 'united_india', label: 'United India Insurance', kind: 'tpa', tpaName: 'Health India TPA' },
+  { code: 'oriental', label: 'Oriental Insurance', kind: 'tpa', tpaName: 'East West Assist TPA' },
+  { code: 'hdfc_ergo', label: 'HDFC ERGO General Insurance', kind: 'tpa', tpaName: 'Paramount TPA' },
+  { code: 'tata_aig', label: 'Tata AIG General Insurance', kind: 'tpa', tpaName: 'TTK Healthcare Services' },
+  { code: 'sbi_general', label: 'SBI General Insurance', kind: 'tpa', tpaName: 'Medi Assist India TPA' },
+  { code: 'national', label: 'National Insurance', kind: 'tpa', tpaName: 'Safeway Insurance TPA' },
+  { code: 'aditya_birla', label: 'Aditya Birla Health Insurance', kind: 'tpa', tpaName: 'TTK Healthcare Services' },
+  { code: 'future_generali', label: 'Future Generali India Insurance', kind: 'tpa', tpaName: 'Vidal Health TPA' },
+  { code: 'reliance', label: 'Reliance General Insurance', kind: 'tpa', tpaName: 'Paramount TPA' },
+  { code: 'go_digit', label: 'Go Digit General Insurance', kind: 'tpa', tpaName: 'MD India TPA' },
+  { code: 'cghs', label: 'CGHS (Government)', kind: 'government' },
+  { code: 'esic', label: 'ESIC (Government)', kind: 'government' },
+  { code: 'iffco_tokio', label: 'IFFCO Tokio General Insurance', kind: 'tpa', tpaName: 'Vidal Health TPA' },
+  { code: 'royal_sundaram', label: 'Royal Sundaram General Insurance', kind: 'tpa', tpaName: 'Paramount TPA' },
+  { code: 'liberty', label: 'Liberty General Insurance', kind: 'tpa', tpaName: 'Family Health Plan (FHPL)' },
+  { code: 'cholamandalam', label: 'Cholamandalam MS General Insurance', kind: 'tpa', tpaName: 'Family Health Plan (FHPL)' },
 ];
 
 const emptyNewPreAuth = {
-  patientId: '', policyNumber: '', insurerCode: '', sumInsured: '',
+  patientId: '', policyNumber: '', insurerCode: '', sumInsured: '', beneficiaryId: '',
   admissionType: 'planned', admissionDate: '', doctorName: '', ward: '',
   roomRatePerDay: '', estimatedDuration: '', icuDays: '', icuRate: '',
   diagnosis: '', icdCode: '', procedure: '', procedureCode: '',
@@ -200,6 +207,22 @@ const InsuranceDeskPreAuth = () => {
   const [newPreAuth, setNewPreAuth] = useState(emptyNewPreAuth);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [payerAdvisory, setPayerAdvisory] = useState<string | null>(null);
+
+  const selectedInsurer = INSURERS.find((i) => i.code === newPreAuth.insurerCode) || null;
+
+  // Real payer-specific business rule, reused from claims-rules-engine.service.js
+  // (previously only applied at claim submission — surfaced here, before the
+  // hospital commits to a room category and prints the form, is when it
+  // actually matters).
+  useEffect(() => {
+    if (!newPreAuth.insurerCode) { setPayerAdvisory(null); return; }
+    let cancelled = false;
+    api.get(`/hospital/insurance/pre-auth/payer-advisory/${newPreAuth.insurerCode}`)
+      .then(({ data }) => { if (!cancelled) setPayerAdvisory(data.advisory || null); })
+      .catch(() => { if (!cancelled) setPayerAdvisory(null); });
+    return () => { cancelled = true; };
+  }, [newPreAuth.insurerCode]);
 
   const roomCost = num(newPreAuth.roomRatePerDay) * num(newPreAuth.estimatedDuration);
   const icuCost = num(newPreAuth.icuRate) * num(newPreAuth.icuDays);
@@ -250,6 +273,10 @@ const InsuranceDeskPreAuth = () => {
       setCreateError('Patient ID, policy number, insurer, and diagnosis are required.');
       return;
     }
+    if (selectedInsurer?.kind === 'government' && !newPreAuth.beneficiaryId.trim()) {
+      setCreateError('Beneficiary ID / scheme card number is required for government scheme requests.');
+      return;
+    }
     if (!(totalEstimate > 0)) {
       setCreateError('Enter at least one cost estimate line item (room rate, procedure charges, etc.).');
       return;
@@ -257,7 +284,7 @@ const InsuranceDeskPreAuth = () => {
     setCreating(true);
     setCreateError(null);
     try {
-      const insurer = INSURERS.find((i) => i.code === newPreAuth.insurerCode);
+      const insurer = selectedInsurer;
       await api.post('/hospital/insurance/pre-auth/new', {
         patientId,
         policyNumber: newPreAuth.policyNumber.trim(),
@@ -274,7 +301,14 @@ const InsuranceDeskPreAuth = () => {
         admissionDetails: {
           insurerCode: newPreAuth.insurerCode,
           insurerName: insurer?.label,
-          sumInsured: newPreAuth.sumInsured ? Number(newPreAuth.sumInsured) : undefined,
+          tpaName: insurer?.kind === 'tpa' ? insurer.tpaName : undefined,
+          // Government schemes identify the patient by beneficiary ID and price
+          // by fixed package rate, not a sum-insured-based retail policy — the
+          // two fields are mutually exclusive by payer kind, not both-optional.
+          sumInsured: insurer?.kind !== 'government' && newPreAuth.sumInsured ? Number(newPreAuth.sumInsured) : undefined,
+          extraFields: insurer?.kind === 'government' && newPreAuth.beneficiaryId.trim()
+            ? { cghsId: newPreAuth.beneficiaryId.trim() }
+            : undefined,
           admissionType: newPreAuth.admissionType,
           admissionDate: newPreAuth.admissionDate || undefined,
           doctorName: newPreAuth.doctorName.trim() || undefined,
@@ -546,18 +580,35 @@ const InsuranceDeskPreAuth = () => {
                 </div>
                 <div>
                   <Label>Insurer *</Label>
-                  <Select value={newPreAuth.insurerCode} onValueChange={(v) => setNewPreAuth((p) => ({ ...p, insurerCode: v }))}>
+                  <Select value={newPreAuth.insurerCode} onValueChange={(v) => setNewPreAuth((p) => ({ ...p, insurerCode: v, sumInsured: '', beneficiaryId: '' }))}>
                     <SelectTrigger><SelectValue placeholder="Select insurer" /></SelectTrigger>
                     <SelectContent className="max-h-72">
                       {INSURERS.map((i) => <SelectItem key={i.code} value={i.code}>{i.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
-                <div>
-                  <Label>Sum Insured (₹)</Label>
-                  <Input type="number" value={newPreAuth.sumInsured} onChange={(e) => setNewPreAuth((p) => ({ ...p, sumInsured: e.target.value }))} placeholder="e.g. 500000" />
-                </div>
+                {selectedInsurer?.kind === 'government' ? (
+                  <div>
+                    <Label>Beneficiary ID / Scheme Card No. *</Label>
+                    <Input value={newPreAuth.beneficiaryId} onChange={(e) => setNewPreAuth((p) => ({ ...p, beneficiaryId: e.target.value }))} placeholder="e.g. CGHS card number" />
+                  </div>
+                ) : (
+                  <div>
+                    <Label>Sum Insured (₹)</Label>
+                    <Input type="number" value={newPreAuth.sumInsured} onChange={(e) => setNewPreAuth((p) => ({ ...p, sumInsured: e.target.value }))} placeholder="e.g. 500000" />
+                  </div>
+                )}
               </div>
+              {selectedInsurer?.kind === 'tpa' && (
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 shrink-0" /> Processed via {selectedInsurer.tpaName} — their reference/authorization number is assigned on approval, not needed at request time.
+                </p>
+              )}
+              {selectedInsurer?.kind === 'government' && (
+                <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1.5">
+                  <Building2 className="h-3.5 w-3.5 shrink-0" /> {selectedInsurer.label} settles by fixed package rate, not a sum-insured-based policy — the cost breakup below is an internal planning estimate.
+                </p>
+              )}
             </div>
 
             <div>
@@ -593,6 +644,12 @@ const InsuranceDeskPreAuth = () => {
                   <Label>Room Tariff / Day (₹)</Label>
                   <Input type="number" value={newPreAuth.roomRatePerDay} onChange={(e) => setNewPreAuth((p) => ({ ...p, roomRatePerDay: e.target.value }))} />
                 </div>
+                {payerAdvisory && (newPreAuth.ward.trim() || newPreAuth.roomRatePerDay) && (
+                  <div className="col-span-2 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>{payerAdvisory}</span>
+                  </div>
+                )}
                 <div>
                   <Label>Expected ICU Days</Label>
                   <Input type="number" value={newPreAuth.icuDays} onChange={(e) => setNewPreAuth((p) => ({ ...p, icuDays: e.target.value }))} />

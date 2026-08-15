@@ -102,6 +102,7 @@ tmp_*
 ql*
 cron-registry.json
 server/public/downloads/*.apk
+server/public/pdfs/
 
 
 # Runtime uploads and generated local artifacts

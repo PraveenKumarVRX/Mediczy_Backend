@@ -18,7 +18,7 @@ import { Op } from 'sequelize';
 import pdfGenerator from '../services/pdf-generator.service.js';
 import insuranceProvider from '../services/insurance-provider.service.js';
 import tpaAggregator from '../services/tpa-aggregator.service.js';
-import { validateClaimForSubmission } from '../services/claims-rules-engine.service.js';
+import { validateClaimForSubmission, getRoomRentAdvisory } from '../services/claims-rules-engine.service.js';
 import { extractClaimFields } from '../services/insurance-document-ai.service.js';
 import { runPreDischargeAudit } from '../services/insurance-pre-discharge-audit.service.js';
 import { draftAppealLetter, checkDocumentationGaps } from '../services/insurance-ai-copilot.service.js';
@@ -1712,6 +1712,19 @@ router.get('/pre-auth/:id/pdf', authUser, requireRole(['hospital', 'admin']), [
  * POST /hospital/insurance/pre-auth/new
  * Request pre-approval for inpatient admission
  */
+/**
+ * Payer-specific advisory for the pre-auth request form — reuses the same
+ * room-rent business rule the claims-rules-engine already applies at claim
+ * submission (previously never surfaced during pre-auth, when it actually
+ * matters: before the hospital commits to a room category and prints the
+ * form). Read-only, no auth-role restriction beyond being a logged-in
+ * hospital user — this is public payer-policy information, not patient data.
+ */
+router.get('/pre-auth/payer-advisory/:insurerCode', authUser, requireRole(['hospital', 'admin']), (req, res) => {
+  const advisory = getRoomRentAdvisory(req.params.insurerCode);
+  res.json({ success: true, advisory });
+});
+
 router.post('/pre-auth/new', authUser, requireRole(['hospital', 'admin']), [
   body('patientId').isInt(),
   body('policyNumber').notEmpty(),

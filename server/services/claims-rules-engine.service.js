@@ -34,6 +34,34 @@ const ROOM_RENT_ADVISORY = {
   'hdfc ergo': 'HDFC Ergo policies may apply room-rent sub-limits on older/entry plans — verify room category.',
 };
 
+// insurerCode-keyed variant (matches the values the pre-auth request form and
+// pdf-generator.service.js's TPA_CONFIG use) — same underlying business rule
+// as ROOM_RENT_ADVISORY above, extended to the full payer list the pre-auth
+// form offers, plus a distinct note for government schemes (package-rate
+// tariffs, not %-of-sum-insured capping — a different mechanism entirely).
+export const ROOM_RENT_ADVISORY_BY_CODE = {
+  star_health: 'Retail policies commonly cap room rent at 1% of sum insured — verify before confirming Deluxe/Suite category.',
+  niva_bupa: 'May apply proportionate deduction on room rent above the policy sub-limit — verify against the patient\'s plan.',
+  care_health: 'Often no room-rent capping, but verify the specific plan variant before confirming a premium category.',
+  icici_lombard: 'May cap room rent by plan tier — verify before confirming Deluxe/Suite category.',
+  hdfc_ergo: 'May apply room-rent sub-limits on older/entry plans — verify room category before confirming.',
+  bajaj_allianz: 'Room-rent eligibility is plan-tier dependent — verify before confirming a premium category.',
+  manipal_cigna: 'Some plans apply room-rent sub-limits — verify against the patient\'s plan tier.',
+  tata_aig: 'TPA-routed (TTK) — room-rent capping is plan-tier dependent; confirm with TTK before a premium category.',
+  reliance: 'TPA-routed (Paramount) — verify room-rent sub-limit with Paramount before confirming a premium category.',
+  go_digit: 'TPA-routed (MD India) — verify room-rent sub-limit before confirming a premium category.',
+  national: 'TPA-routed (Safeway) — public-sector plans commonly apply room-rent sub-limits; verify before confirming.',
+  united_india: 'TPA-routed (Health India) — public-sector plans commonly apply room-rent sub-limits; verify before confirming.',
+  new_india: 'TPA-routed (Health India) — public-sector plans commonly apply room-rent sub-limits; verify before confirming.',
+  oriental: 'TPA-routed (East West) — public-sector plans commonly apply room-rent sub-limits; verify before confirming.',
+  cghs: 'CGHS pays fixed package rates per treatment category, not itemized room/ICU tariffs — the cost breakup below is an internal estimate only; confirm the applicable CGHS package rate before admission.',
+  esic: 'ESIC pays fixed package rates per treatment category, not itemized room/ICU tariffs — the cost breakup below is an internal estimate only; confirm the applicable ESIC schedule rate before admission.',
+};
+
+export function getRoomRentAdvisory(insurerCode) {
+  return ROOM_RENT_ADVISORY_BY_CODE[String(insurerCode || '').trim().toLowerCase()] || null;
+}
+
 const HIGH_VALUE_CLAIM_THRESHOLD = 500000; // ₹5,00,000 — typical additional-authorization trigger
 
 function pushError(errors, field, code, message) {
@@ -128,4 +156,4 @@ export function validateClaimForSubmission(claim, context = {}) {
   return { canSubmit: errors.length === 0, errors, warnings };
 }
 
-export default { validateClaimForSubmission };
+export default { validateClaimForSubmission, getRoomRentAdvisory };
