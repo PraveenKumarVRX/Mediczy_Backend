@@ -304,7 +304,11 @@ const InsuranceDeskTPA = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {contacts.map((c) => (
+                    {contacts.length === 0 ? (
+                      <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-6">
+                        No payer contacts added yet — use "Add Contact" above to record your hospital's real TPA/insurer contacts.
+                      </TableCell></TableRow>
+                    ) : contacts.map((c) => (
                       <TableRow key={c.id}>
                         <TableCell className="font-medium">{c.name}</TableCell>
                         <TableCell><Badge variant="secondary">{c.tpa || 'Direct'}</Badge></TableCell>
@@ -333,7 +337,11 @@ const InsuranceDeskTPA = () => {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {payerEmails.map((p) => (
+                    {payerEmails.length === 0 ? (
+                      <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-6">
+                        No submission emails on file yet for this hospital's payers.
+                      </TableCell></TableRow>
+                    ) : payerEmails.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell className="font-medium">{p.insurer}</TableCell>
                         <TableCell><Badge variant="outline">{p.type.replace('_', ' ')}</Badge></TableCell>

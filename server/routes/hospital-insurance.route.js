@@ -126,27 +126,16 @@ async function withClaimsRls(req, work) {
   }
 }
 
+// Was fabricated placeholder data (fake payer contacts/emails, and an
+// announcement falsely attributed to IRDAI) that got persisted into every
+// hospital's real workspace row on first load and displayed as if genuine —
+// see server/migrations/20260815-strip-fabricated-payer-seed-data.migration.js
+// for the backfill that removed it from existing rows. Honest empty state
+// until a hospital (or a real data source) actually populates this.
 const buildDefaultPayerManagement = () => ({
-  payerEmails: [
-    { id: 'payer-1', insurer: 'Star Health', primaryEmail: 'claims@starhealth.in', ccEmails: 'escalation@starhealth.in', type: 'claims', region: 'South' },
-    { id: 'payer-2', insurer: 'Star Health', primaryEmail: 'preauth@starhealth.in', ccEmails: '', type: 'pre_auth', region: 'South' },
-    { id: 'payer-3', insurer: 'ICICI Lombard', primaryEmail: 'health.claims@icicilombard.com', ccEmails: 'senior.claims@icicilombard.com', type: 'claims', region: 'West' },
-    { id: 'payer-4', insurer: 'HDFC Ergo', primaryEmail: 'tpa.claims@hdfcergo.com', ccEmails: '', type: 'claims', region: 'All India' },
-    { id: 'payer-5', insurer: 'Bajaj Allianz', primaryEmail: 'hospital.claims@bajajallianz.co.in', ccEmails: '', type: 'claims', region: 'North' },
-  ],
-  announcements: [
-    { id: 'announcement-1', insurer: 'Star Health', title: 'New claim submission portal', date: '2025-06-15', content: 'All hospitals must switch to new e-claims portal by July 1, 2025. Training sessions available.' },
-    { id: 'announcement-2', insurer: 'ICICI Lombard', title: 'Updated tariff rates effective July 2025', date: '2025-06-10', content: 'Revised tariff rates for room rent and procedures. Check the updated schedule.' },
-    { id: 'announcement-3', insurer: 'IRDAI', title: 'Mandatory NHCX integration by Q3 2025', date: '2025-06-01', content: 'All network hospitals must onboard NHCX by September 2025.' },
-  ],
-  contacts: [
-    { id: 'contact-1', name: 'Star Health', phone: '044-28288800', email: 'customercare@starhealth.in', tpa: 'Direct' },
-    { id: 'contact-2', name: 'ICICI Lombard', phone: '1800-266-9725', email: 'customersupport@icicilombard.com', tpa: 'Direct' },
-    { id: 'contact-3', name: 'HDFC Ergo', phone: '1800-266-0700', email: 'healthclaims@hdfcergo.com', tpa: 'Medi Assist' },
-    { id: 'contact-4', name: 'Bajaj Allianz', phone: '1800-209-5858', email: 'baglobal@bajajallianz.co.in', tpa: 'Direct' },
-    { id: 'contact-5', name: 'New India Assurance', phone: '1800-209-1415', email: 'cmd@newindia.co.in', tpa: 'Paramount/Vidal' },
-    { id: 'contact-6', name: 'Max Bupa (Niva)', phone: '1800-200-5577', email: 'care@nivabupa.com', tpa: 'Direct' },
-  ],
+  payerEmails: [],
+  announcements: [],
+  contacts: [],
 });
 
 const buildDefaultHospitalProfile = () => ({
