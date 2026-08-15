@@ -262,32 +262,25 @@ const InsuranceDeskAdmissions = () => {
               </Button>
 
               {eligibilityResult && (
-                <div className={`rounded-lg border p-4 space-y-3 ${eligibilityResult.status === 'eligible' ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-900' : 'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-900'}`}>
+                <div className={`rounded-lg border p-4 space-y-3 ${eligibilityResult.eligible ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-900' : 'bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-900'}`}>
                   <div className="flex items-center gap-2">
-                    {eligibilityResult.status === 'eligible'
+                    {eligibilityResult.eligible
                       ? <CheckCircle2 className="h-5 w-5 text-green-500" />
                       : <XCircle className="h-5 w-5 text-red-500" />}
-                    <span className="font-semibold">{eligibilityResult.status === 'eligible' ? 'Eligible for Cashless' : 'Not Eligible'}</span>
-                    {eligibilityResult.networkHospital && <Badge className="bg-green-100 text-green-700 ml-auto">Network Hospital ✓</Badge>}
+                    <span className="font-semibold">{eligibilityResult.message || (eligibilityResult.eligible ? 'Eligible for Cashless' : 'Not Eligible')}</span>
+                    {eligibilityResult.dataSource === 'mock' && <Badge variant="outline" className="ml-auto text-[10px]">Unconfigured — mock response</Badge>}
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-                    <div><p className="text-muted-foreground">Member</p><p className="font-semibold">{eligibilityResult.memberName || '—'}</p></div>
+                    <div><p className="text-muted-foreground">Policy Status</p><p className="font-semibold">{eligibilityResult.policyStatus || '—'}</p></div>
                     <div><p className="text-muted-foreground">Sum Insured</p><p className="font-semibold">₹{Number(eligibilityResult.sumInsured || 0).toLocaleString('en-IN')}</p></div>
-                    <div><p className="text-muted-foreground">Balance Available</p><p className="font-semibold text-green-600">₹{Number(eligibilityResult.balance || 0).toLocaleString('en-IN')}</p></div>
-                    <div><p className="text-muted-foreground">Co-pay</p><p className="font-semibold">{eligibilityResult.copay || '—'}</p></div>
+                    <div><p className="text-muted-foreground">Balance Available</p><p className="font-semibold text-green-600">₹{Number(eligibilityResult.availableBalance || 0).toLocaleString('en-IN')}</p></div>
+                    <div><p className="text-muted-foreground">Co-pay</p><p className="font-semibold">{eligibilityResult.coverageDetails?.copayment != null ? `${eligibilityResult.coverageDetails.copayment}%` : '—'}</p></div>
                   </div>
-                  {eligibilityResult.preAuthApproved && (
-                    <div className="text-sm bg-background/60 rounded p-2">
-                      <span className="text-muted-foreground">Pre-Auth Approved Amount: </span>
-                      <span className="font-bold text-indigo-600">₹{Number(eligibilityResult.preAuthApproved).toLocaleString('en-IN')}</span>
-                    </div>
-                  )}
-                  {eligibilityResult.exclusions?.length > 0 && (
-                    <div className="text-sm">
-                      <p className="text-muted-foreground flex items-center gap-1"><AlertCircle className="h-3 w-3" />Policy Exclusions:</p>
-                      <ul className="list-disc ml-4 mt-1">
-                        {eligibilityResult.exclusions.map((e: string) => <li key={e}>{e}</li>)}
-                      </ul>
+                  {eligibilityResult.coverageDetails && (
+                    <div className="text-sm bg-background/60 rounded p-2 text-muted-foreground">
+                      {eligibilityResult.coverageDetails.roomRent && <>Room entitlement: <b className="text-foreground">{eligibilityResult.coverageDetails.roomRent}</b>. </>}
+                      {eligibilityResult.coverageDetails.icuCoverage != null && <>ICU covered: <b className="text-foreground">{eligibilityResult.coverageDetails.icuCoverage ? 'Yes' : 'No'}</b>. </>}
+                      {eligibilityResult.coverageDetails.preHospitalization != null && <>Pre/post-hosp: <b className="text-foreground">{eligibilityResult.coverageDetails.preHospitalization}d / {eligibilityResult.coverageDetails.postHospitalization}d</b>.</>}
                     </div>
                   )}
                 </div>

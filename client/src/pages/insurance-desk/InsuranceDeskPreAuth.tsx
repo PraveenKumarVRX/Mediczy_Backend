@@ -218,7 +218,13 @@ const InsuranceDeskPreAuth = () => {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [payerAdvisory, setPayerAdvisory] = useState<string | null>(null);
-  const [eligibility, setEligibility] = useState<{ status?: string; sumInsured?: number; balance?: number; copay?: string; networkHospital?: boolean; exclusions?: string[] } | null>(null);
+  // Matches the real shape insurance-provider.service.js returns (both its
+  // mock and real-API-normalized paths) — getMockEligibility()/
+  // formatEligibilityResponse(), not an invented shape.
+  const [eligibility, setEligibility] = useState<{
+    eligible?: boolean; sumInsured?: number; availableBalance?: number; policyStatus?: string; policyExpiry?: string; message?: string; dataSource?: string;
+    coverageDetails?: { roomRent?: string; icuCoverage?: boolean; preHospitalization?: number; postHospitalization?: number; copayment?: number } | null;
+  } | null>(null);
   const [eligibilityChecked, setEligibilityChecked] = useState(false);
   const [checkingEligibility, setCheckingEligibility] = useState(false);
   const [eligibilityError, setEligibilityError] = useState<string | null>(null);
@@ -696,19 +702,23 @@ const InsuranceDeskPreAuth = () => {
                 </Button>
                 {eligibilityError && <p className="text-xs text-red-600 mt-2">{eligibilityError}</p>}
                 {eligibilityChecked && eligibility && (
-                  <div className={`mt-2 rounded-lg border p-3 text-xs ${eligibility.status === 'eligible' ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30' : 'border-amber-300 bg-amber-50 dark:bg-amber-950/30'}`}>
+                  <div className={`mt-2 rounded-lg border p-3 text-xs ${eligibility.eligible ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-950/30' : 'border-amber-300 bg-amber-50 dark:bg-amber-950/30'}`}>
                     <div className="flex items-center gap-2 font-medium">
-                      {eligibility.status === 'eligible' ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <XCircle className="h-3.5 w-3.5 text-amber-600" />}
-                      {eligibility.status === 'eligible' ? 'Verified eligible for cashless treatment' : 'Verification returned: not confirmed eligible'}
-                      {eligibility.networkHospital && <Badge className="bg-emerald-100 text-emerald-700 ml-auto">Network Hospital</Badge>}
+                      {eligibility.eligible ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <XCircle className="h-3.5 w-3.5 text-amber-600" />}
+                      {eligibility.message || (eligibility.eligible ? 'Verified eligible for cashless treatment' : 'Not confirmed eligible')}
+                      {eligibility.dataSource === 'mock' && <Badge variant="outline" className="ml-auto text-[10px]">Unconfigured — mock response</Badge>}
                     </div>
                     <div className="grid grid-cols-3 gap-2 mt-2 text-muted-foreground">
                       {eligibility.sumInsured != null && <span>Sum Insured: <b className="text-foreground">₹{Number(eligibility.sumInsured).toLocaleString('en-IN')}</b></span>}
-                      {eligibility.balance != null && <span>Balance: <b className="text-foreground">₹{Number(eligibility.balance).toLocaleString('en-IN')}</b></span>}
-                      {eligibility.copay && <span>Co-pay: <b className="text-foreground">{eligibility.copay}</b></span>}
+                      {eligibility.availableBalance != null && <span>Balance: <b className="text-foreground">₹{Number(eligibility.availableBalance).toLocaleString('en-IN')}</b></span>}
+                      {eligibility.coverageDetails?.copayment != null && <span>Co-pay: <b className="text-foreground">{eligibility.coverageDetails.copayment}%</b></span>}
                     </div>
-                    {eligibility.exclusions && eligibility.exclusions.length > 0 && (
-                      <p className="mt-1.5 text-muted-foreground">Exclusions: {eligibility.exclusions.join(', ')}</p>
+                    {eligibility.coverageDetails && (
+                      <p className="mt-1.5 text-muted-foreground">
+                        {eligibility.coverageDetails.roomRent && `Room entitlement: ${eligibility.coverageDetails.roomRent}. `}
+                        {eligibility.coverageDetails.icuCoverage != null && `ICU covered: ${eligibility.coverageDetails.icuCoverage ? 'Yes' : 'No'}. `}
+                        {eligibility.coverageDetails.preHospitalization != null && `Pre-hosp: ${eligibility.coverageDetails.preHospitalization}d, Post-hosp: ${eligibility.coverageDetails.postHospitalization}d.`}
+                      </p>
                     )}
                   </div>
                 )}
