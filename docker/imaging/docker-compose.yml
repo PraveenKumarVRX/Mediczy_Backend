@@ -82,6 +82,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./orthanc-bridge/poll-sync.sh:/poll-sync.sh:ro
+      - orthanc-bridge-state:/state
     entrypoint: ["/bin/sh", "/poll-sync.sh"]
 
   ohif:
@@ -98,3 +99,4 @@ services:
 
 volumes:
   orthanc-data:
+  orthanc-bridge-state:
