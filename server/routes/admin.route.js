@@ -3819,20 +3819,12 @@ router.post('/corporate-employee-welcome-emails/resend', authUser, requireRole([
         throw sendErr;
       }
     } else {
-      const previewMessage = await welcomeEmailService.buildCorporateEmployeeWelcomeEmail(
-        welcomeEmailData,
-        temporaryPassword,
-        { teamUserId }
-      );
-      await assertNoPriorWelcomeDelivery({
-        corporateId,
-        userId: employee.id,
-        employeeId: resolvedEmployeeId,
-        recipientEmail: welcomeEmailData.email,
-        subject: previewMessage.subject,
-        actorUserId: teamUserId,
-      });
-
+      // Draft mode never sends anything or persists a password — it's a pure
+      // preview, so it must not be blocked by assertNoPriorWelcomeDelivery.
+      // That guard exists to stop duplicate REAL sends (see the 'send' branch
+      // above); applying it here too meant any employee with even one past
+      // real send (e.g. via the qc_sweep reminder cron) could never get a
+      // "Prepare" preview again — the template area just came back empty.
       const preparedDraft = await createPreparedWelcomeDraft({
         corporateId,
         corporate,
@@ -4117,24 +4109,15 @@ router.post('/corporate-employee-welcome-emails/prepare-bulk', authUser, require
 
         const temporaryPassword = welcomeEmailService.generateSecurePassword();
         const resolvedEmployeeId = employee.corporate_employee_id || employee.employee_id || assocMeta.employeeId || '';
+        // Draft generation is a pure preview — it never sends anything or
+        // persists a password — so a prior real delivery must not block it.
+        // The duplicate-send guard still applies at actual send time; here we
+        // just surface the prior delivery as metadata for the admin's awareness.
         const activeRecipientDelivery = await findActiveWelcomeDeliveryForRecipient({
           corporateId,
           userId: employee.id,
           recipientEmail: employee.email,
         });
-
-        if (activeRecipientDelivery) {
-          skipped.push({
-            userId: employee.id,
-            email: employee.email,
-            employeeId: resolvedEmployeeId,
-            reason: 'Welcome email already queued or sent for this recipient',
-            duplicate: true,
-            deliveryId: activeRecipientDelivery.id,
-            existingStatus: activeRecipientDelivery.status,
-          });
-          continue;
-        }
 
         const preparedDraft = await createPreparedWelcomeDraft({
           corporateId,
@@ -4154,6 +4137,8 @@ router.post('/corporate-employee-welcome-emails/prepare-bulk', authUser, require
           deliveryId: preparedDraft.deliveryId,
           subject: preparedDraft.draft.subject,
           html: preparedDraft.draft.html,
+          alreadySent: Boolean(activeRecipientDelivery),
+          existingDeliveryStatus: activeRecipientDelivery?.status || null,
         });
       } catch (err) {
         failed.push({ userId: employee.id, email: employee.email, reason: err.message });
