@@ -16,8 +16,12 @@ if [ -z "${ORTHANC_PASSWORD:-}" ]; then
 fi
 
 AUTH="-u ${ORTHANC_USER}:${ORTHANC_PASSWORD}"
-SECRET_HDR=""
-[ -n "$ORTHANC_WEBHOOK_SECRET" ] && SECRET_HDR="-H x-orthanc-secret: $ORTHANC_WEBHOOK_SECRET"
+# Kept as a single header VALUE (not a "-H value" pair) and always quoted at
+# the call site below — the previous "-H x-orthanc-secret: $SECRET" form,
+# used unquoted in the curl call, got word-split on the space inside the
+# header value, so curl sent "x-orthanc-secret:" with an empty value no
+# matter what the real secret was. Every webhook call 401'd silently.
+SECRET_HDR_VALUE="x-orthanc-secret: ${ORTHANC_WEBHOOK_SECRET:-}"
 
 echo "[orthanc-bridge] polling $ORTHANC_URL → $MEDICZY_API_URL every ${POLL_INTERVAL_SEC}s (user=$ORTHANC_USER)"
 
@@ -39,7 +43,7 @@ while true; do
     ')
 
     for ID in $IDS; do
-      curl -sf -X POST $SECRET_HDR \
+      curl -sf -X POST -H "$SECRET_HDR_VALUE" \
         -H "Content-Type: application/json" \
         -d "{\"Event\":\"NewInstance\",\"ID\":\"$ID\"}" \
         "$MEDICZY_API_URL/api/orthanc/webhook" >/dev/null \

@@ -724,11 +724,13 @@ const globalLimiter = rateLimit({
   // Loopback-only exemption: internal service-to-service calls (e.g. the Orthanc->HyperGrid
   // bridge forwarding one HTTP request per DICOM instance, easily hundreds per study) can't
   // originate from outside this box, so they can't be the abuse this limiter guards against.
-  // Docker containers reach the host via host.docker.internal, which resolves to the bridge
-  // network's gateway IP (172.17.0.1 by default) — not 127.0.0.1 — so that needs its own
-  // exemption too, or containerized callers (like the Orthanc bridge) get rate-limited exactly
-  // like external traffic despite being no more able to originate off-box than localhost is.
-  skip: (req) => process.env.DISABLE_RATE_LIMIT === 'true' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '172.17.0.1',
+  // Docker containers reach the host via host.docker.internal, which resolves to whichever
+  // bridge network's gateway IP the container's compose project was assigned — NOT always
+  // 172.17.0.1 (Docker's default bridge). A hardcoded single IP here silently stopped
+  // exempting the Orthanc bridge the moment its compose project landed on a different
+  // bridge subnet (observed 172.18.0.4 in production, not 172.17.0.1) — match the whole
+  // RFC1918 172.16.0.0/12 block Docker draws bridge subnets from instead of one address.
+  skip: (req) => process.env.DISABLE_RATE_LIMIT === 'true' || req.ip === '127.0.0.1' || req.ip === '::1' || /^172\.(1[6-9]|2\d|3[01])\./.test(req.ip || ''),
 });
 
 const authLimiter = rateLimit({
