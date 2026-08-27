@@ -153,9 +153,9 @@ export const createClinicWithAdmin = async (req, res) => {
       phoneNumber: clinic_phone,
       dateOfBirth: new Date(), // Default - can be updated later
       gender: 'Other', // Default - can be updated later
-      role: 'clinic_admin',
+      role: clinic_type === 'corporate' ? 'corporate_admin' : 'clinic_admin',
       organization_id: clinic.id,
-      organization_type: 'clinic',
+      organization_type: clinic_type === 'corporate' ? 'corporate' : 'clinic',
       tenant_id: clinic.id,
       status: 'active',
       is_verified: true,
@@ -177,6 +177,28 @@ export const createClinicWithAdmin = async (req, res) => {
     });
 
     console.log('✅ Clinic admin user created:', { user_id: adminUser.id, email: adminUser.email });
+
+    // Corporate tenants also get a Corporate profile row (company details, HR package info)
+    // — this is what /api/corporate/login's org lookups and hrms.route.js expect.
+    if (clinic_type === 'corporate') {
+      const { default: Corporate } = await import('../models/postgres/corporate.model.postgres.js');
+      await Corporate.create({
+        companyName: clinic_name,
+        contactPerson: `${admin_first_name} ${admin_last_name}`,
+        email: admin_email,
+        password: admin_password, // Hashed by model hook — this is what /api/corporate/login actually checks
+        phoneNumber: clinic_phone,
+        status: 'Active',
+        tenantId: clinic.id,
+        address: {
+          street: clinic_address || '',
+          city: clinic_city || '',
+          state: clinic_state || '',
+          zipCode: clinic_pincode || '',
+        },
+      });
+      console.log('✅ Corporate profile created for tenant:', clinic.id);
+    }
 
     // Create organization admin mapping
     const orgAdmin = await OrganizationAdmin.create({

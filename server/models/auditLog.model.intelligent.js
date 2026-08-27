@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { maskPhi } from '../utils/phi-masker.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { getClientIp } from '../utils/clientIp.js';
 
 let intelligentDB = null;
 let auditLogsTableEnsured = false;
@@ -103,7 +104,7 @@ const buildLogPayload = (params) => {
     dataFields: maskPhi(dataFields || {}),
     changesBefore: maskPhi(changesBefore || {}),
     changesAfter: maskPhi(changesAfter || {}),
-    ipAddress: req?.ip || req?.connection?.remoteAddress,
+    ipAddress: req ? getClientIp(req) : null,
     userAgent: req?.headers?.['user-agent'],
     method: req?.method,
     endpoint: req?.originalUrl || req?.url,

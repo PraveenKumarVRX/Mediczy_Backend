@@ -5,10 +5,50 @@
 
 import express from 'express';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
-import { requireTenant } from '../middleware/tenant.middleware.js';
+import { requireTenant, extractSubdomain } from '../middleware/tenant.middleware.js';
 import { authUser } from '../middleware/auth.middleware.js';
+import Lab from '../models/postgres/lab.model.postgres.js';
 
 const router = express.Router();
+
+/**
+ * GET /api/tenants/resolve-portal
+ * Public, unauthenticated. Given the current Host header, tells the client
+ * which portal type owns this subdomain — 'lab' (labs.slug), a tenants.type
+ * value (clinic/hospital/corporate/...), or null if unrecognized.
+ *
+ * The tenants table and the labs table are two separate, unlinked systems
+ * (see 2026-08-19 architecture notes) — this is the one place that checks
+ * both, so the login page can route to the right login form instead of
+ * defaulting every unrecognized subdomain to the clinic login.
+ */
+router.get('/resolve-portal', async (req, res) => {
+  try {
+    const host = req.get('host') || '';
+    const subdomain = extractSubdomain(host);
+    if (!subdomain) {
+      return res.json({ success: true, type: null, slug: null });
+    }
+
+    const lab = await Lab.findOne({ where: { slug: subdomain, status: 'active' }, attributes: ['id', 'name', 'slug'] });
+    if (lab) {
+      return res.json({ success: true, type: 'lab', slug: lab.slug, name: lab.name });
+    }
+
+    const tenant = await Tenant.findOne({
+      where: { subdomain, status: 'active' },
+      attributes: ['id', 'name', 'slug', 'subdomain', 'type'],
+    });
+    if (tenant) {
+      return res.json({ success: true, type: tenant.type, slug: tenant.slug, name: tenant.name });
+    }
+
+    return res.json({ success: true, type: null, slug: subdomain });
+  } catch (error) {
+    console.error('[resolve-portal] error:', error.message);
+    res.json({ success: true, type: null, slug: null });
+  }
+});
 
 /**
  * POST /api/tenants/register

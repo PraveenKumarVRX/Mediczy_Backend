@@ -26,8 +26,25 @@ const hrDocumentUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 1 },
 });
 
-const HR_ALLOWED_ROLES = new Set(['hr_staff', 'hospital_admin', 'admin', 'system_admin', 'super_admin']);
-const HR_USER_ROLES = ['hr_staff', 'hospital_admin'];
+const HR_ALLOWED_ROLES = new Set(['hr_staff', 'hospital_admin', 'corporate_admin', 'admin', 'system_admin', 'super_admin']);
+const HR_USER_ROLES = ['hr_staff', 'hospital_admin', 'corporate_admin'];
+// Super-users see every location for their tenant; everyone else is scoped to their own assigned locations.
+const HR_SUPER_USER_ROLES = new Set(['hospital_admin', 'corporate_admin', 'admin', 'system_admin', 'super_admin']);
+
+/**
+ * Resolve the requesting HR user's location scope. Super-users (tenant admins) see
+ * everything; sub-users (hr_staff) are restricted to the facilities/branches/locations
+ * assigned to their account (scope.locationIds, set at creation via POST /users).
+ */
+async function getRequesterLocationScope(req) {
+  const role = req.hrUser?.role || req.hrUser?.userRole;
+  if (HR_SUPER_USER_ROLES.has(role)) {
+    return { isSuperUser: true, locationIds: null };
+  }
+  const requester = await User.findByPk(req.hrUser?.id).catch(() => null);
+  const locationIds = normalizeArray(requester?.scope?.locationIds || requester?.metadata?.locationIds || []).map(String);
+  return { isSuperUser: false, locationIds };
+}
 const HR_FEATURE_CATALOG = [
   { key: 'employee_database', label: 'Employee database' },
   { key: 'leave_management', label: 'Leave management' },
@@ -586,7 +603,7 @@ const tableReady = ensureHrmsTables().catch((error) => {
   console.error('[HRMS] table initialization failed:', error);
 });
 
-function requireHr(req, res, next) {
+async function requireHr(req, res, next) {
   const header = req.headers.authorization || '';
   if (!header.startsWith('Bearer ')) {
     return res.status(401).json({ success: false, message: 'Authentication required' });
@@ -594,8 +611,33 @@ function requireHr(req, res, next) {
 
   try {
     const decoded = jwt.verify(header.slice('Bearer '.length), JWT_CONFIG.SECRET);
-    const role = decoded.role || decoded.userRole;
-    const tenantId = decoded.organization_id || decoded.hospital_id || decoded.hospitalId || decoded.tenant_id || decoded.org_id || req.headers['x-tenant-id'] || req.query.tenantId;
+    let role = decoded.role || decoded.userRole;
+    let tenantId = decoded.organization_id || decoded.hospital_id || decoded.hospitalId || decoded.tenant_id || decoded.org_id || req.headers['x-tenant-id'] || req.query.tenantId;
+    let hrUser = decoded;
+
+    // /api/corporate/login issues a different token shape entirely: role:'corporate',
+    // id = the Corporate table's own id, no organization_id/tenant_id at all. Bridge it
+    // to the same organization_id/tenant_id/organization_type shape every other HR
+    // login already carries, so the rest of this module doesn't need to special-case it.
+    if (role === 'corporate' && !tenantId) {
+      const { default: Corporate } = await import('../models/postgres/corporate.model.postgres.js');
+      const corp = await Corporate.findByPk(decoded.id || decoded.corporateId).catch(() => null);
+      if (corp?.tenantId) {
+        tenantId = corp.tenantId;
+        role = 'corporate_admin';
+        const adminUser = await User.findOne({
+          where: { organization_id: corp.tenantId, organization_type: 'corporate', role: 'corporate_admin' },
+        }).catch(() => null);
+        hrUser = {
+          ...decoded,
+          role: 'corporate_admin',
+          organization_id: corp.tenantId,
+          organization_type: 'corporate',
+          tenant_id: corp.tenantId,
+          id: adminUser?.id || decoded.id,
+        };
+      }
+    }
 
     if (!HR_ALLOWED_ROLES.has(role)) {
       return res.status(403).json({ success: false, message: 'HR privileges required' });
@@ -605,11 +647,21 @@ function requireHr(req, res, next) {
       return res.status(403).json({ success: false, message: 'Hospital context missing from token' });
     }
 
-    req.hrUser = decoded;
+    req.hrUser = hrUser;
     req.tenantId = Number(tenantId);
     if (!Number.isInteger(req.tenantId) || req.tenantId <= 0) {
       return res.status(403).json({ success: false, message: 'Valid hospital context is required' });
     }
+
+    // Real subdomain isolation: extractTenant (global middleware) already resolved
+    // req.tenant from the Host header for any tenants-table entity. When a request
+    // arrives on a specific subdomain, the session's own tenant must match it —
+    // stops a token issued for one tenant being used on another tenant's subdomain.
+    // Generic hosts (app.mediqzy.com, no subdomain match) skip this — unchanged.
+    if (req.tenant && req.tenant.id !== req.tenantId) {
+      return res.status(403).json({ success: false, message: 'This account is not registered to this domain' });
+    }
+
     next();
   } catch {
     return res.status(401).json({ success: false, message: 'Invalid or expired token' });
@@ -693,10 +745,10 @@ function normalizeHrUser(user, locationMap = new Map()) {
   };
 }
 
-async function listStaff(tenantId, filters = {}) {
+async function listStaff(tenantId, filters = {}, organizationType = 'hospital') {
   const where = {
     organization_id: tenantId,
-    organization_type: 'hospital',
+    organization_type: organizationType,
     role: { [Op.in]: STAFF_ROLES },
   };
 
@@ -723,6 +775,8 @@ async function listStaff(tenantId, filters = {}) {
   return users.map(user => normalizeStaff(user, locationMap)).filter((member) => {
     if (filters.department && filters.department !== 'all' && member.department !== filters.department) return false;
     if (filters.locationId && filters.locationId !== 'all' && String(member.locationId || '') !== String(filters.locationId)) return false;
+    // Sub-user location scoping: restrict to the requester's assigned facilities/branches.
+    if (Array.isArray(filters.allowedLocationIds) && !filters.allowedLocationIds.includes(String(member.locationId || ''))) return false;
     return true;
   });
 }
@@ -815,7 +869,7 @@ router.patch('/locations/:id', async (req, res) => {
 router.get('/users', async (req, res) => {
   const [users, locations] = await Promise.all([
     User.findAll({
-      where: { organization_id: req.tenantId, organization_type: 'hospital', role: { [Op.in]: HR_USER_ROLES } },
+      where: { organization_id: req.tenantId, organization_type: req.hrUser?.organization_type || 'hospital', role: { [Op.in]: HR_USER_ROLES } },
       order: [['firstName', 'ASC'], ['lastName', 'ASC']],
       limit: 200,
     }),
@@ -844,7 +898,7 @@ router.post('/users', async (req, res) => {
     gender: 'Other',
     phoneNumber: safeText(phone, 30),
     organization_id: req.tenantId,
-    organization_type: 'hospital',
+    organization_type: req.hrUser?.organization_type || 'hospital',
     tenant_id: req.tenantId,
     role: safeRole,
     department_name: 'HR',
@@ -866,7 +920,7 @@ router.post('/users', async (req, res) => {
 });
 
 router.patch('/users/:id/scope', async (req, res) => {
-  const user = await User.findOne({ where: { id: req.params.id, organization_id: req.tenantId, organization_type: 'hospital', role: { [Op.in]: HR_USER_ROLES } } });
+  const user = await User.findOne({ where: { id: req.params.id, organization_id: req.tenantId, organization_type: req.hrUser?.organization_type || 'hospital', role: { [Op.in]: HR_USER_ROLES } } });
   if (!user) return res.status(404).json({ success: false, message: 'HR user not found' });
   const assignedLocationIds = normalizeArray(req.body?.locationIds ?? user.scope?.locationIds ?? []).map(String);
   const featurePermissions = Array.isArray(req.body?.permissions) ? req.body.permissions : (user.permissions || HR_FEATURE_CATALOG.map(feature => feature.key));
@@ -931,7 +985,9 @@ router.get('/summary', async (req, res) => {
 });
 
 router.get('/staff', async (req, res) => {
-  const staff = await listStaff(req.tenantId, req.query);
+  const scope = await getRequesterLocationScope(req);
+  const filters = scope.isSuperUser ? req.query : { ...req.query, allowedLocationIds: scope.locationIds };
+  const staff = await listStaff(req.tenantId, filters, req.hrUser?.organization_type || 'hospital');
   res.json({ success: true, data: staff });
 });
 
@@ -981,7 +1037,7 @@ router.post('/staff', async (req, res) => {
     gender,
     phoneNumber: safeText(phone, 20),
     organization_id: req.tenantId,
-    organization_type: 'hospital',
+    organization_type: req.hrUser?.organization_type || 'hospital',
     role: safeRole,
     status: 'active',
     metadata: {
@@ -1011,7 +1067,7 @@ router.patch('/staff/:id', async (req, res) => {
     where: {
       id: req.params.id,
       organization_id: req.tenantId,
-      organization_type: 'hospital',
+      organization_type: req.hrUser?.organization_type || 'hospital',
       role: { [Op.in]: STAFF_ROLES },
     },
   });
@@ -1041,7 +1097,7 @@ router.delete('/staff/:id', async (req, res) => {
     where: {
       id: req.params.id,
       organization_id: req.tenantId,
-      organization_type: 'hospital',
+      organization_type: req.hrUser?.organization_type || 'hospital',
       role: { [Op.in]: STAFF_ROLES },
     },
   });
@@ -1326,6 +1382,7 @@ router.patch('/documents/:id/verify', async (req, res) => {
 });
 
 router.get('/leaves', async (req, res) => {
+  const scope = await getRequesterLocationScope(req);
   const params = [req.tenantId];
   const conditions = ['l.tenant_id = $1'];
   if (req.query.status && req.query.status !== 'all') { params.push(req.query.status); conditions.push(`l.status = $${params.length}`); }
@@ -1338,7 +1395,11 @@ router.get('/leaves', async (req, res) => {
      ORDER BY l.start_date DESC, l.created_at DESC LIMIT 200`,
     params
   );
-  res.json({ success: true, data: rows });
+  // Sub-user location scoping: restrict to the requester's assigned facilities/branches.
+  const filtered = scope.isSuperUser
+    ? rows
+    : rows.filter((r) => scope.locationIds.includes(String(r.staffMetadata?.locationId || '')));
+  res.json({ success: true, data: filtered });
 });
 
 router.get('/leaves/summary', async (req, res) => {
@@ -1757,7 +1818,7 @@ router.post('/performance/reviews', async (req, res) => {
     where: {
       id: staffId,
       organization_id: req.tenantId,
-      organization_type: 'hospital',
+      organization_type: req.hrUser?.organization_type || 'hospital',
       role: { [Op.in]: STAFF_ROLES },
     },
   });
@@ -2566,7 +2627,7 @@ router.post('/recruitment/candidates/:id/hire', async (req, res) => {
       gender,
       phoneNumber: phone || candidate.phone || '0000000000',
       organization_id: req.tenantId,
-      organization_type: 'hospital',
+      organization_type: req.hrUser?.organization_type || 'hospital',
       role: safeRole,
       status: 'active',
       metadata: {

@@ -53,6 +53,7 @@ function rowToModality(row) {
     location: row.location,
     status: row.status,
     orthanc_synced: row.orthanc_synced,
+    branch_id: row.branch_id || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -96,12 +97,17 @@ router.use(authLab);
 router.get('/modalities', async (req, res) => {
   try {
     const tid = tenantId(req);
-    const r = await pool.query(
-      `SELECT * FROM dicom_modalities
-       WHERE tenant_id = $1
-       ORDER BY name ASC`,
-      [tid],
-    );
+    // Optional branch-scoped view — shared login, filter by which branch you're looking at.
+    const branchId = req.query.branch_id;
+    const r = branchId
+      ? await pool.query(
+          `SELECT * FROM dicom_modalities WHERE tenant_id = $1 AND branch_id = $2 ORDER BY name ASC`,
+          [tid, branchId],
+        )
+      : await pool.query(
+          `SELECT * FROM dicom_modalities WHERE tenant_id = $1 ORDER BY name ASC`,
+          [tid],
+        );
     const orthancPeers = await listOrthancModalities().catch(() => []);
     res.json({
       success: true,
@@ -139,6 +145,7 @@ router.post('/modalities', async (req, res) => {
       manufacturer,
       model,
       location,
+      branch_id: branchId,
     } = req.body || {};
 
     if (!name || !aeTitle || !host || port == null || !modalityType) {
@@ -152,10 +159,10 @@ router.post('/modalities', async (req, res) => {
 
     const r = await pool.query(
       `INSERT INTO dicom_modalities
-         (tenant_id, name, ae_title, host, port, modality_type, manufacturer, model, location, status, orthanc_synced)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', false)
+         (tenant_id, name, ae_title, host, port, modality_type, manufacturer, model, location, status, orthanc_synced, branch_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', false, $10)
        RETURNING *`,
-      [tid, name, aeTitle, host, portNum, modalityType, manufacturer || null, model || null, location || null],
+      [tid, name, aeTitle, host, portNum, modalityType, manufacturer || null, model || null, location || null, branchId || null],
     );
 
     let modality = r.rows[0];
@@ -203,14 +210,15 @@ router.put('/modalities/:name', async (req, res) => {
     const manufacturer = req.body.manufacturer ?? row.manufacturer;
     const model = req.body.model ?? row.model;
     const location = req.body.location ?? row.location;
+    const branchId = req.body.branch_id ?? row.branch_id;
 
     const r = await pool.query(
       `UPDATE dicom_modalities
        SET ae_title = $3, host = $4, port = $5, modality_type = $6,
-           manufacturer = $7, model = $8, location = $9, updated_at = NOW(), orthanc_synced = false
+           manufacturer = $7, model = $8, location = $9, branch_id = $10, updated_at = NOW(), orthanc_synced = false
        WHERE tenant_id = $1 AND name = $2
        RETURNING *`,
-      [tid, req.params.name, aeTitle, host, portNum, modalityType, manufacturer, model, location],
+      [tid, req.params.name, aeTitle, host, portNum, modalityType, manufacturer, model, location, branchId],
     );
 
     let modality = r.rows[0];

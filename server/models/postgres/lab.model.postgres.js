@@ -146,6 +146,9 @@ const Lab = postgresSequelize.define('Lab', {
   // === FIELDS ADDED VIA SQL MIGRATIONS ===
   aggregatorId: { type: DataTypes.INTEGER, allowNull: true, field: 'aggregator_id' },
   aggregatorType: { type: DataTypes.STRING, allowNull: true, field: 'aggregator_type' },
+  // Opt-in subdomain identity (see migrations/20260819000002-lab-slug.migration.js) —
+  // nullable, only labs given a dedicated subdomain (e.g. radolabs, ichegmore) have one.
+  slug: { type: DataTypes.STRING(80), allowNull: true, field: 'slug' },
 
   createdAt: {
     type: DataTypes.DATE,

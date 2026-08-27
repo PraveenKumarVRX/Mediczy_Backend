@@ -378,7 +378,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/video',  // Enable video calls for corporate users
       '/api/doctors',  // Allow browsing doctors
       '/api/appointments',  // Allow user appointment management
-      '/api/chat'  // Allow chat functionality
+      '/api/chat',  // Allow chat functionality
+      '/api/hr'  // HR super-user / sub-user portal (facility/branch/location-scoped)
     ],
     tokenField: 'corporateId'
   },
@@ -590,6 +591,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/auth/login', // Generic auth login endpoint
   '/api/auth/register', // Generic auth registration endpoint
   '/api/auth/send-otp', // OTP login (legacy alias)
+  '/api/tenants/resolve-portal', // Pre-login: which portal (lab/clinic/hospital) owns this subdomain
   '/api/auth/verify-otp', // OTP login (legacy alias)
   '/api/auth/google', // Google OAuth2 initiation (patient)
   '/api/auth/google/callback', // Google OAuth2 callback (patient)

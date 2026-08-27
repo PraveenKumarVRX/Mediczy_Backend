@@ -44,7 +44,7 @@ router.post(
     body('clinic_name').trim().notEmpty().withMessage('Clinic name is required'),
     body('clinic_email').isEmail().withMessage('Invalid clinic email'),
     body('clinic_phone').trim().notEmpty().withMessage('Clinic phone is required'),
-    body('clinic_type').isIn(['clinic', 'hospital', 'lab']).withMessage('Invalid clinic type'),
+    body('clinic_type').isIn(['clinic', 'hospital', 'lab', 'corporate']).withMessage('Invalid clinic type'),
     body('clinic_slug').optional().trim(),
     body('clinic_address').optional().trim(),
     body('clinic_city').optional().trim(),

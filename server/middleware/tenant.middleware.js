@@ -198,7 +198,7 @@ export function tenantScope(model) {
  *   www.mayden.in -> www
  *   mayden.in -> null
  */
-function extractSubdomain(host) {
+export function extractSubdomain(host) {
   const parts = host.split('.');
   
   // Remove port if present

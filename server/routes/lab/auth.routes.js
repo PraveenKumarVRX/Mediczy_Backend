@@ -6,6 +6,7 @@ import postgresSequelize from '../../db/postgres-sequelize.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 import { authLab } from '../../middleware/authLab.middleware.js';
+import { extractSubdomain } from '../../middleware/tenant.middleware.js';
 import pool from '../../db/pgPool.js';
 import {
   createUploadMiddleware, registerLimiter,
@@ -64,6 +65,23 @@ router.post('/login', authLimiter, async (req, res) => {
         success: false,
         message: 'Invalid email or password'
       });
+    }
+
+    // Real subdomain isolation: only labs that opted into a dedicated subdomain
+    // (labs.slug set) get scoped — every other lab keeps working from the
+    // generic host exactly as before. When the request DOES arrive on a
+    // registered lab subdomain, only that lab's own account may log in there.
+    const host = req.get('host') || '';
+    const subdomain = extractSubdomain(host);
+    if (subdomain) {
+      const subdomainLab = await Lab.findOne({ where: { slug: subdomain } });
+      if (subdomainLab && subdomainLab.id !== lab.id) {
+        await auditLoginAttempt(req, lab.id, normalizedEmail, false, 'Wrong lab subdomain');
+        return res.status(401).json({
+          success: false,
+          message: 'This account is not registered to this domain'
+        });
+      }
     }
 
     const isPasswordValid = await lab.comparePassword(password);

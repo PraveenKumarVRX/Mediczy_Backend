@@ -1546,7 +1546,7 @@ app.use('/api/doctor-copilot', doctorCopilotRouter); // Unified doctor AI gatewa
 app.use('/api/doctor/chat', doctorChatRouter); // Doctor ↔ Patient / Doctor ↔ Nurse messaging
 app.use('/api/doctors/imaging', doctorImagingRouter); // Medical imaging (CT, MRI, USG, Echo, Cathlab, X-Ray)
 import doctorRisReferredRouter from './routes/doctor-ris-referred.route.js';
-app.use('/api/doctors/ris-referred', doctorRisReferredRouter); // Lab-referred RIS studies (read-only for doctor)
+app.use('/api/doctors/ris-referred', doctorRisReferredRouter); // Lab-referred RIS studies — read + Draft-only report review for the referring doctor
 app.use('/api/ai-nodes', localAiNodeRouter); // Cloud Mother - Local AI Node management for hospital multi-tenancy
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital', executiveDashboardRouter); // CEO/CFO/COO/MS executive dashboards
@@ -1705,12 +1705,14 @@ app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (l
 import labAuthRouter from './routes/lab/auth.routes.js';
 import labOrdersRouter from './routes/lab/orders.route.js';
 import labRisImagingRouter from './routes/lab/ris-imaging.route.js';
+import labBranchesRouter from './routes/lab/branches.route.js';
 import dicomModalityRouter from './routes/dicom-modality.route.js';
 
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
 app.use('/api/lab/orders', labOrdersRouter); // Lab incoming EMR orders
 app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
 app.use('/api/clinic/ris', labRisImagingRouter); // Clinic RIS — dental OPG / C-arm / angio (same router)
+app.use('/api/lab/branches', labBranchesRouter); // Lab branch registry — shared login, branch-scoped views
 app.use('/api/dicom', dicomModalityRouter); // DICOM modality peer registry (Orthanc sync)
 
 // Pharmacy Service Routes

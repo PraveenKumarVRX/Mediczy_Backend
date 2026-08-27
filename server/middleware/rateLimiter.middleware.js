@@ -5,6 +5,8 @@
  */
 
 import rateLimit from 'express-rate-limit';
+import { execFile } from 'child_process';
+import { getClientIp } from '../utils/clientIp.js';
 let RedisStore, Redis;
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -90,12 +92,9 @@ const keyGenerator = (req) => {
     return `api:${req.headers['x-api-key']}`;
   }
   
-  // Fallback to IP - handle IPv6 properly
-  let ip = req.ip || 
-    req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-    req.connection?.remoteAddress ||
-    '127.0.0.1';
-  
+  // Fallback to IP - real client IP behind Cloudflare, not the edge/proxy hop
+  let ip = getClientIp(req);
+
   // Normalize IPv6 localhost to IPv4
   if (ip === '::1' || ip === '::ffff:127.0.0.1') {
     ip = '127.0.0.1';
@@ -120,16 +119,23 @@ const authKeyGenerator = (req) => {
     return `auth:${normalizedRoute}:email:${email}`;
   }
 
-  let ip = req.ip ||
-    req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-    req.connection?.remoteAddress ||
-    '127.0.0.1';
-
-  if (ip === '::1' || ip === '::ffff:127.0.0.1') {
-    ip = '127.0.0.1';
-  }
-
+  const ip = getClientIp(req);
   return `auth:${normalizedRoute}:ip:${ip}`;
+};
+
+/**
+ * Second, IP-only key for the auth limiter's companion pass. The email-keyed
+ * limiter above gives each *email* its own 5-attempt budget — legitimate for
+ * shared-office IPs, but it means an attacker rotating through a list of
+ * candidate emails from one IP never trips a limit at all (real incident:
+ * 2026-08-11, credential-stuffing burst against /api/admin/login). This key
+ * ignores email entirely, so one real IP gets one shared ceiling regardless
+ * of how many different emails it tries.
+ */
+const authIpKeyGenerator = (req) => {
+  const routeKey = `${req.baseUrl || ''}${req.path || ''}`;
+  const normalizedRoute = routeKey.replace(/\//g, ':') || 'unknown-route';
+  return `auth-ip:${normalizedRoute}:${getClientIp(req)}`;
 };
 
 /**
@@ -237,7 +243,40 @@ export const createRateLimiter = (type = 'api', customConfig = {}) => {
 /**
  * Pre-configured rate limiters for common use cases
  */
-export const authLimiter = createRateLimiter('auth', { keyGenerator: authKeyGenerator });
+/**
+ * Alert handler for the IP-only auth limiter — this one tripping means a
+ * single real IP has burned through a generous shared ceiling across every
+ * email it tried on this route. Logs to syslog (same channel the resource
+ * watchdog uses) so it's visible outside app logs, not just a console line.
+ */
+const authIpAlertHandler = (req, res) => {
+  const ip = getClientIp(req);
+  const route = `${req.baseUrl || ''}${req.path || ''}`;
+  const msg = `SECURITY ALERT: auth rate-limit burst from ip=${ip} route=${route} — possible credential-stuffing`;
+  console.warn(msg);
+  execFile('logger', ['-t', 'mediczy-security', msg], () => {
+    /* logger not available (e.g. non-Linux dev env) — console.warn above already fired */
+  });
+  res.status(429).json({
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many login attempts from this network. Please try again later.',
+      retryAfter: res.getHeader('Retry-After'),
+    },
+  });
+};
+
+const authLimiterByEmail = createRateLimiter('auth', { keyGenerator: authKeyGenerator });
+// Higher ceiling than the per-email limiter (legitimate shared-office IPs need
+// headroom), but shared across every email tried from that IP on this route —
+// closes the email-rotation bypass the per-email limiter alone allows.
+const authLimiterByIp = createRateLimiter('auth', {
+  keyGenerator: authIpKeyGenerator,
+  max: 20,
+  handler: authIpAlertHandler,
+});
+export const authLimiter = [authLimiterByEmail, authLimiterByIp];
 export const otpLimiter = createRateLimiter('otp');
 export const apiLimiter = createRateLimiter('api');
 export const mobileLimiter = createRateLimiter('mobile');
@@ -326,8 +365,8 @@ export const ipBlocker = () => {
   const BLOCK_DURATION = 24 * 60 * 60 * 1000; // 24 hours
   
   return (req, res, next) => {
-    const ip = req.ip || req.headers['x-forwarded-for']?.split(',')[0];
-    
+    const ip = getClientIp(req);
+
     // Check if IP is blocked
     const blockedUntil = blockedIPs.get(ip);
     if (blockedUntil && blockedUntil > Date.now()) {
@@ -340,17 +379,19 @@ export const ipBlocker = () => {
         }
       });
     }
-    
+
     // Track violations on rate limit
     res.on('finish', () => {
       if (res.statusCode === 429) {
         const count = (violations.get(ip) || 0) + 1;
         violations.set(ip, count);
-        
+
         if (count >= BLOCK_THRESHOLD) {
           blockedIPs.set(ip, Date.now() + BLOCK_DURATION);
           violations.delete(ip);
-          console.warn(`IP ${ip} blocked for repeated rate limit violations`);
+          const msg = `SECURITY ALERT: IP ${ip} blocked 24h for repeated rate-limit violations (route=${req.originalUrl || req.path})`;
+          console.warn(msg);
+          execFile('logger', ['-t', 'mediczy-security', msg], () => {});
         }
       }
     });

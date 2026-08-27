@@ -69,7 +69,59 @@ export const corporateLogin = async (req, res) => {
       }
     });
 
+    // Real subdomain isolation: when arriving on a specific tenant's subdomain
+    // (req.tenant set by the global extractTenant middleware), only that tenant's
+    // own account may log in here — stops dairyday.mediqzy.com accepting some
+    // other corporate's credentials. Generic hosts (app.mediqzy.com) skip this.
+    if (corporateRecord && req.tenant && corporateRecord.tenantId !== req.tenant.id) {
+      await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, false, 'Wrong tenant subdomain');
+      return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
+    }
+
     if (!corporateRecord) {
+      // HR sub-users (created via POST /api/hr/users, e.g. role:'hr_staff' with a
+      // facility/branch/location scope) live in the users table, not corporates —
+      // they have no Corporate row of their own. Fall back to that path before
+      // rejecting, so a sub-user's own login actually works.
+      const { default: User } = await import('../models/postgres/user.model.postgres.js');
+      const { Op } = await import('sequelize');
+      const hrUser = await User.findOne({
+        where: {
+          email: normalizedEmail,
+          organization_type: 'corporate',
+          role: { [Op.in]: ['corporate_admin', 'hr_staff'] },
+          status: 'active',
+        },
+      });
+      if (hrUser && req.tenant && hrUser.organization_id !== req.tenant.id) {
+        await auditLoginAttempt(req, hrUser.id, normalizedEmail, false, 'Wrong tenant subdomain');
+        return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
+      }
+      if (hrUser && await hrUser.comparePassword(password)) {
+        // Built inline rather than via User.prototype.generateAuthToken() — that method
+        // currently throws (JWT_CONFIG import-cycle issue), unrelated to this fallback.
+        const jwtLib = (await import('jsonwebtoken')).default;
+        const token = jwtLib.sign(
+          {
+            id: hrUser.id,
+            email: hrUser.email,
+            role: hrUser.role,
+            userType: 'corporate', // ring-fencing key — both corporate_admin and hr_staff sub-users are corporate-portal users
+            organization_id: hrUser.organization_id,
+            organization_type: hrUser.organization_type,
+            tenant_id: hrUser.tenant_id,
+          },
+          JWT_CONFIG.SECRET,
+          { expiresIn: process.env.JWT_ACCESS_TTL || '15m' },
+        );
+        await hrUser.update({ lastLoginAt: new Date() }).catch(() => {});
+        await auditLoginAttempt(req, hrUser.id, normalizedEmail, true);
+        return res.status(200).json({
+          success: true,
+          token,
+          user: { id: hrUser.id, email: hrUser.email, firstName: hrUser.firstName, lastName: hrUser.lastName, role: hrUser.role },
+        });
+      }
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Corporate not found');
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
