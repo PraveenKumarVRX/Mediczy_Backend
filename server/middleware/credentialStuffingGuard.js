@@ -226,6 +226,68 @@ export const unblockIP = async (ip) => {
   }
 };
 
+// ── General rate-limit-abuse tracking (shared blocklist, separate counter) ──
+//
+// Distinct from the login-failure thresholds above: this fires from
+// rateLimiter.middleware.js's ipBlocker whenever ANY rate limiter anywhere
+// in the app returns 429 for an IP, not just a failed login. It shares this
+// file's Redis client and the same csguard:blocked:* keyspace deliberately —
+// one admin list, one set of block/unblock endpoints (already live at
+// /api/admin/security/*) covers both credential-stuffing and general abuse
+// blocks, and either can be cleared without restarting the app.
+const ABUSE_THRESHOLD = { window: 60 * 60, max: 10, blockDuration: 24 * 60 * 60 };
+
+/**
+ * Check whether an IP is currently blocked (any reason). Fails open — if
+ * Redis is unreachable, returns not-blocked rather than locking everyone
+ * out because the store is down.
+ */
+export const isIPBlocked = async (ip) => {
+  const r = getRedis();
+  try {
+    const data = await r.get(`csguard:blocked:${ip}`);
+    if (!data) return { blocked: false, ttl: 0 };
+    const ttl = await r.ttl(`csguard:blocked:${ip}`);
+    return { blocked: true, ttl: Math.max(ttl, 0) };
+  } catch {
+    return { blocked: false, ttl: 0 };
+  }
+};
+
+/**
+ * Record one rate-limit violation (a 429 from any limiter) for an IP.
+ * 10 violations inside a rolling hour -> 24h block, same store as above.
+ */
+export const recordRateLimitAbuse = async (ip, endpoint) => {
+  const r = getRedis();
+  const key = `csguard:fails:abuse:${ip}`;
+  let count;
+  try {
+    count = await r.incr(key);
+    if (count === 1) await r.expire(key, ABUSE_THRESHOLD.window);
+  } catch {
+    return; // Redis down — skip rather than track incorrectly
+  }
+
+  if (count >= ABUSE_THRESHOLD.max) {
+    const blockKey = `csguard:blocked:${ip}`;
+    const already = await r.exists(blockKey).catch(() => 0);
+    if (!already) {
+      const payload = JSON.stringify({
+        ip,
+        blockedAt: new Date().toISOString(),
+        level: 'abuse',
+        failCount: count,
+        endpoint,
+        autoBlock: true,
+        reason: 'repeated rate-limit violations across the app',
+      });
+      await r.set(blockKey, payload, 'EX', ABUSE_THRESHOLD.blockDuration).catch(() => {});
+      console.warn(`[CSGuard] ⛔ IP ${ip} auto-blocked (abuse) — ${count} rate-limit violations, last on ${endpoint}`);
+    }
+  }
+};
+
 /**
  * Get failure stats for a specific IP.
  */

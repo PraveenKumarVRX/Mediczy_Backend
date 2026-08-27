@@ -7,6 +7,7 @@
 import rateLimit from 'express-rate-limit';
 import { execFile } from 'child_process';
 import { getClientIp } from '../utils/clientIp.js';
+import { isIPBlocked, recordRateLimitAbuse } from './credentialStuffingGuard.js';
 let RedisStore, Redis;
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -358,44 +359,61 @@ export const slidingWindowLimiter = async (req, res, next) => {
 /**
  * IP-based blocking for repeated violations
  */
-export const ipBlocker = () => {
-  const blockedIPs = new Map();
-  const violations = new Map();
-  const BLOCK_THRESHOLD = 10; // Block after 10 violations
-  const BLOCK_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-  
-  return (req, res, next) => {
-    const ip = getClientIp(req);
+// Loopback + Docker-bridge exemption, matching globalLimiter's own skip
+// logic in app.js exactly (see that file's comment on why it's the whole
+// 172.16.0.0/12 block, not a single hardcoded bridge IP) — internal
+// service-to-service calls can't be the abuse this guard exists to catch.
+const INTERNAL_IP_RE = /^172\.(1[6-9]|2\d|3[01])\./;
+function isInternalOrLoopback(ip) {
+  return ip === '127.0.0.1' || ip === '::1' || INTERNAL_IP_RE.test(ip || '');
+}
 
-    // Check if IP is blocked
-    const blockedUntil = blockedIPs.get(ip);
-    if (blockedUntil && blockedUntil > Date.now()) {
-      return res.status(403).json({
+/**
+ * Global rate-limit-abuse guard.
+ *
+ * Rewritten after a safety review found the original version unsafe to
+ * deploy as a global, first-in-chain middleware: it tracked blocks in a
+ * plain in-memory Map, which is broken under PM2 cluster mode (each worker
+ * has its own Map, so violations/blocks aren't shared across workers) and
+ * wiped on every restart; it had no allowlist, so it could block internal
+ * traffic and even /health itself; and there was no way to clear a
+ * false-positive block short of restarting the whole app.
+ *
+ * This version reuses credentialStuffingGuard.js's Redis-backed blocklist
+ * (isIPBlocked/recordRateLimitAbuse) instead of inventing a second store —
+ * same csguard:blocked:* keys the credential-stuffing guard already writes,
+ * so a block from either cause shows up in the same admin list
+ * (GET /api/admin/security/blocked-ips) and can be cleared with the same
+ * unblock endpoint, cluster-safe, and survives a restart. Internal/
+ * loopback traffic and the health endpoints are always exempt.
+ */
+export const ipBlocker = () => {
+  return async (req, res, next) => {
+    if (process.env.DISABLE_RATE_LIMIT === 'true' || req.path === '/health' || req.path === '/api/health') {
+      return next();
+    }
+
+    const ip = getClientIp(req);
+    if (isInternalOrLoopback(ip)) return next();
+
+    const { blocked, ttl } = await isIPBlocked(ip);
+    if (blocked) {
+      return res.status(429).json({
         success: false,
         error: {
           code: 'IP_BLOCKED',
-          message: 'Your IP has been blocked due to repeated violations.',
-          blockedUntil: new Date(blockedUntil).toISOString()
-        }
+          message: 'Too many violations from this IP. Temporarily blocked — try again later.',
+          retryAfter: ttl,
+        },
       });
     }
 
-    // Track violations on rate limit
     res.on('finish', () => {
       if (res.statusCode === 429) {
-        const count = (violations.get(ip) || 0) + 1;
-        violations.set(ip, count);
-
-        if (count >= BLOCK_THRESHOLD) {
-          blockedIPs.set(ip, Date.now() + BLOCK_DURATION);
-          violations.delete(ip);
-          const msg = `SECURITY ALERT: IP ${ip} blocked 24h for repeated rate-limit violations (route=${req.originalUrl || req.path})`;
-          console.warn(msg);
-          execFile('logger', ['-t', 'mediczy-security', msg], () => {});
-        }
+        recordRateLimitAbuse(ip, req.originalUrl || req.path).catch(() => {});
       }
     });
-    
+
     next();
   };
 };

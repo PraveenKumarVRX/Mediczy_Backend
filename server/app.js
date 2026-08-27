@@ -517,6 +517,14 @@ uploadDirs.forEach(dir => {
 // This allows Express to trust X-Forwarded-* headers from Nginx/Cloudflare
 app.set('trust proxy', 1); // Trust first proxy only
 
+// Global rate-limit-abuse guard — Redis-backed (shares credentialStuffingGuard's
+// blocklist, cluster-safe, survives restarts), exempts internal/loopback traffic
+// and /health, and can be cleared via the existing GET/POST /api/admin/security/
+// blocked-ips endpoints without restarting the app. See rateLimiter.middleware.js's
+// ipBlocker() docstring for what the original in-memory version got wrong.
+import { ipBlocker as _ipBlocker } from './middleware/rateLimiter.middleware.js';
+app.use(_ipBlocker());
+
 // SSL/HTTPS compatibility middleware
 // With trust proxy enabled, Express automatically reads X-Forwarded-Proto
 // No need to manually set req.secure or req.protocol (they're read-only)
