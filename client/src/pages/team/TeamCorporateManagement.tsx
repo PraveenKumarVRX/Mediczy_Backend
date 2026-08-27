@@ -3343,9 +3343,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       
+      const created = response.data;
       toast({
-        title: 'HR Admin Created',
-        description: `Login credentials sent to ${newHRAdmin.email}`
+        title: created?.emailStatus === 'sent' ? 'HR Admin Created' : 'HR Admin Created (email not sent)',
+        description: created?.emailStatus === 'sent'
+          ? `Login credentials sent to ${newHRAdmin.email}`
+          : `Login created for ${newHRAdmin.email}, but the credential email could not be sent (${created?.emailStatus || 'unknown'}). Please share the credentials manually.`,
+        variant: created?.emailStatus === 'sent' ? 'default' : 'destructive',
       });
       
       setShowAddHRDialog(false);

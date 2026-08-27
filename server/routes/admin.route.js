@@ -15,6 +15,7 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import { normalizeFlexibleDate } from '../utils/flexibleDate.js';
 import {
   CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
   CORPORATE_EMPLOYEE_ROSTER_SQL,
@@ -2037,11 +2038,40 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
       replacements: { password: hashedPassword, corporateId }
     });
     
-    console.log(`[Corporate Users] Created HR admin ${normalizedEmail} for corporate ${corporate[0]?.companyName || corporateId}`);
-    
+    // ── Send HR admin credential email (non-fatal: creation must not fail if email fails) ──
+    const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediczy.com';
+    const hrDisplayName = `${newUser.firstName || 'HR'} ${newUser.lastName || 'Admin'}`.trim();
+    let emailStatus = 'skipped';
+    try {
+      await welcomeEmailService.sendTransactionalEmail({
+        to: normalizedEmail,
+        subject: 'Your SmartHealth Corporate HR Login Credentials',
+        html: `
+          <div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
+            <h2 style="color:#0f766e;margin:0 0 12px;">Welcome, ${hrDisplayName}!</h2>
+            <p>An HR admin login has been created for you on the SmartHealth corporate platform.</p>
+            <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:16px;margin:16px 0;">
+              <p style="margin:4px 0;"><strong>Login URL:</strong> <a href="${frontendUrl}/corporate/login">${frontendUrl}/corporate/login</a></p>
+              <p style="margin:4px 0;"><strong>Email:</strong> ${normalizedEmail}</p>
+              <p style="margin:4px 0;"><strong>Password:</strong> (the password set by your administrator)</p>
+            </div>
+            <p style="color:#64748b;font-size:13px;">For security reasons, please change your password after your first login. If you did not expect this email, please contact support@mediqzy.com.</p>
+          </div>`,
+        text: `Welcome, ${hrDisplayName}!\n\nAn HR admin login has been created for you.\nLogin URL: ${frontendUrl}/corporate/login\nEmail: ${normalizedEmail}\n\nFor security reasons, please change your password after your first login.`,
+        fromName: 'SmartHealth Team',
+      });
+      emailStatus = 'sent';
+    } catch (emailErr) {
+      emailStatus = 'failed';
+      console.error(`[Corporate Users] Credential email failed for ${normalizedEmail}:`, emailErr?.message || emailErr);
+    }
+
+    console.log(`[Corporate Users] Created HR admin ${normalizedEmail} for corporate ${corporates[0]?.companyName || corporateId} (email: ${emailStatus})`);
+
     return res.status(201).json({
       success: true,
       message: 'Corporate HR admin created successfully',
+      emailStatus,
       user: {
         id: newUser.id,
         email: newUser.email,
@@ -3202,8 +3232,38 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
       if (emp.email && !EMAIL_RE.test(emp.email)) rowIssues.push(`Invalid email format: ${emp.email}`);
       if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, ''))) rowIssues.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
       if (emp.gender && !VALID_GENDERS.has(String(emp.gender).toLowerCase())) rowIssues.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
-      if (emp.dateOfBirth && !DOB_RE.test(emp.dateOfBirth)) rowIssues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
-      if (emp.joiningDate && !DATE_RE.test(emp.joiningDate)) rowIssues.push(`Joining Date must be YYYY-MM-DD: ${emp.joiningDate}`);
+      // Excel round-trip fix: a CSV template's date columns get reformatted
+      // by Excel into a locale short-date (D/M/YYYY, M/D/YYYY, 2-digit
+      // year) the instant a user opens and re-saves it — there's no date
+      // serial preserved in CSV to recover the real value from, only that
+      // display text. A bare YYYY-MM-DD regex rejects every such row
+      // outright even though the date is real and valid. normalizeFlexibleDate
+      // resolves it when only one of day-first/month-first is a valid
+      // calendar date, and mutates emp.* in place so the resolved ISO value
+      // is what actually gets stored below — but never silently guesses a
+      // genuinely ambiguous date (e.g. "5/6/1998"): that still fails QC,
+      // with a message explaining the ambiguity instead of just restating
+      // the expected format.
+      if (emp.dateOfBirth && !DOB_RE.test(emp.dateOfBirth)) {
+        const resolved = normalizeFlexibleDate(emp.dateOfBirth);
+        if (resolved && !resolved.ambiguous) {
+          emp.dateOfBirth = resolved.iso;
+        } else if (resolved?.ambiguous) {
+          rowIssues.push(`Date of Birth "${emp.dateOfBirth}" is ambiguous (could be ${resolved.iso} or a day/month-swapped date) — please enter as YYYY-MM-DD`);
+        } else {
+          rowIssues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+        }
+      }
+      if (emp.joiningDate && !DATE_RE.test(emp.joiningDate)) {
+        const resolved = normalizeFlexibleDate(emp.joiningDate);
+        if (resolved && !resolved.ambiguous) {
+          emp.joiningDate = resolved.iso;
+        } else if (resolved?.ambiguous) {
+          rowIssues.push(`Joining Date "${emp.joiningDate}" is ambiguous (could be ${resolved.iso} or a day/month-swapped date) — please enter as YYYY-MM-DD`);
+        } else {
+          rowIssues.push(`Joining Date must be YYYY-MM-DD: ${emp.joiningDate}`);
+        }
+      }
       if (emp.pinCode && !PIN_RE.test(String(emp.pinCode))) rowIssues.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
 
       const lowerEmail = (emp.email || '').toLowerCase();
