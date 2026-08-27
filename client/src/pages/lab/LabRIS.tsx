@@ -461,21 +461,49 @@ const ReportPanel: React.FC<{
         );
       }
 
-      const res = await axios.put(`${API_BASE}/${study.id}/report`,
-        {
-          reportText: text,
-          reportStatus: status,
-          reportedBy: displayLabName,
-          criticalValue: criticalEnabled
-            ? {
-              enabled: true,
-              reason: criticalReason || 'Critical value in report',
-              dueMinutes: Number(criticalDueMinutes || '30'),
-            }
-            : { enabled: false },
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const payload: Record<string, unknown> = {
+        reportText: text,
+        reportStatus: status,
+        reportedBy: displayLabName,
+        criticalValue: criticalEnabled
+          ? {
+            enabled: true,
+            reason: criticalReason || 'Critical value in report',
+            dueMinutes: Number(criticalDueMinutes || '30'),
+          }
+          : { enabled: false },
+      };
+
+      let res;
+      try {
+        res = await axios.put(`${API_BASE}/${study.id}/report`, payload, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (err: unknown) {
+        const data = (err as { response?: { data?: {
+          requiresOverride?: boolean;
+          blockers?: Array<{ message: string }>;
+          message?: string;
+        } } })?.response?.data;
+        if (data?.requiresOverride && data.blockers?.length) {
+          const blockerText = data.blockers.map((b) => `• ${b.message}`).join('\n');
+          const reason = window.prompt(
+            `This report failed safety verification:\n\n${blockerText}\n\nYou can still sign it, but you must document why (this is recorded in the audit trail). Enter your reason to proceed, or Cancel to go back and fix the report:`,
+          );
+          if (!reason || !reason.trim()) {
+            setSaveError('Report not saved — safety verification failed and no override reason was given.');
+            setSaving(false);
+            return;
+          }
+          res = await axios.put(`${API_BASE}/${study.id}/report`,
+            { ...payload, overrideBlockers: true, overrideReason: reason.trim() },
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+        } else {
+          throw err;
+        }
+      }
+
       if (res.data.success) {
         onSaved(res.data.study);
         setSaved(true);

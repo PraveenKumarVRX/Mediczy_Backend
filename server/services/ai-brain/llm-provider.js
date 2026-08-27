@@ -374,7 +374,13 @@ async function callLocalSLM(provider, params) {
   }
 }
 
-// In-memory circuit breaker for SIB (Qwen CPU inference is 60-120s, always times out)
+// In-memory circuit breaker for SIB. Root cause of slow/timing-out calls is NOT
+// local Qwen/CPU inference (traced 2026-08-23: SIB's /chat does pgvector KB-RAG
+// retrieval against ai_document_chunks, then proxies to the same remote iSHA GPU
+// nodes (ai.isha.buzz / isha-inc.com) this app's own 'isha' provider calls
+// directly — the extra RAG + proxy hop is what pushes it past this timeout, not
+// a slow local model. Qwen's only role in the SIB codebase (a 2.5-3B planner)
+// was already replaced by a regex classifier (see ai-engine/doctor_bot ITEM-24).
 let _sibFailures = 0;
 let _sibOpenUntil = 0;
 

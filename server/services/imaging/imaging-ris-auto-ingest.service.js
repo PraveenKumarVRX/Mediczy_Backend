@@ -9,6 +9,7 @@ import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
 import { formatDicomStudyDate } from '../orthanc-pacs.service.js';
 import { onDicomStudyIngested } from './imaging-ingest.service.js';
+import { requestTriage } from './imaging-triage.service.js';
 
 function numOrNull(v) {
   const n = parseInt(String(v ?? ''), 10);
@@ -150,7 +151,16 @@ export async function ensureRisStudyFromOrthancIngest({
     tags.patientName || tags.PatientName || 'Unknown Patient',
   ).replace(/\^/g, ' ').replace(/\s+/g, ' ').trim() || 'Unknown Patient';
 
-  const modality = String(tags.modality || tags.Modality || 'OT').toUpperCase().trim() || 'OT';
+  // A multi-series study (MRI in particular) arrives as many separate
+  // instance-level ingest calls. If any single instance's tags don't carry
+  // a Modality (a scout/localizer, a non-image object, a parsing miss),
+  // that must never be treated as authoritative — otherwise it silently
+  // overwrites an already-known-correct modality on later upserts, and can
+  // trigger AI triage under the wrong modality on first ingest. Keep the
+  // raw parsed value (possibly empty) separate from the display/insert
+  // default so callers below can tell "unresolved" apart from "really OT".
+  const rawModality = String(tags.modality || tags.Modality || '').toUpperCase().trim();
+  const modality = rawModality || 'OT';
   const accession = String(tags.accessionNumber || tags.AccessionNumber || '').trim()
     || `ACC-AUTO-${Date.now()}`;
   const studyDate = formatDicomStudyDate(tags.studyDate || tags.StudyDate)
@@ -174,7 +184,7 @@ export async function ensureRisStudyFromOrthancIngest({
   const originalName = fileMeta.originalName || fileName;
 
   const existing = await pool.query(
-    `SELECT id, referring_doctor_id, status, image_count
+    `SELECT id, referring_doctor_id, status, image_count, modality
        FROM ris_studies
       WHERE lab_id = $1
         AND study_instance_uid = $2
@@ -217,7 +227,10 @@ export async function ensureRisStudyFromOrthancIngest({
         patientName,
         patientSex,
         patientDob,
-        modality,
+        // Raw parsed value, NOT the 'OT' placeholder default — an instance
+        // whose tags don't carry Modality must never clobber an already-set
+        // real modality (see rawModality comment above).
+        rawModality,
         studyDescription,
         accession,
         seriesUid,
@@ -234,6 +247,22 @@ export async function ensureRisStudyFromOrthancIngest({
         mimeType,
       ],
     );
+
+    // The study's modality was unresolved ('OT' placeholder) until this
+    // instance — likely the first ingest event ran before any instance
+    // carried a Modality tag, so triage (if it ran at all) ran under the
+    // wrong modality. Re-trigger it now that the real modality is known,
+    // rather than leaving a mislabeled result cached indefinitely.
+    if (row.modality === 'OT' && rawModality && rawModality !== 'OT') {
+      requestTriage({
+        studyId: row.id,
+        studyInstanceUID: studyUid,
+        tenantId: resolvedLabId,
+        modality: rawModality,
+        orthancStudyId,
+      }).catch((err) => logger.warn('[RIS-AutoIngest] modality-resolved re-triage failed', { error: err.message }));
+    }
+
     return {
       success: true,
       created: false,
@@ -301,6 +330,11 @@ export async function ensureRisStudyFromOrthancIngest({
         method: 'orthanc-auto-ingest',
       },
       s3Key: filePath,
+      // This is the first instance ever seen for this study — if its tags
+      // didn't carry a Modality, `modality` is only the 'OT' placeholder,
+      // not a real value. Skip auto-triage until a later instance resolves
+      // it (see the re-triage call above on the update path).
+      skipTriage: !rawModality,
     });
   } catch (err) {
     logger.warn('[RIS-AutoIngest] post-ingest hooks', { error: err.message });

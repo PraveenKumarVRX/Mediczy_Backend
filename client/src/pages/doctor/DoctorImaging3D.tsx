@@ -223,6 +223,15 @@ export default function DoctorImaging3D() {
   const [error, setError] = useState("");
   const [drafting, setDrafting] = useState(false);
   const [draftText, setDraftText] = useState("");
+  const [lastDraftId, setLastDraftId] = useState<number | null>(null);
+  const [approved, setApproved] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+  const [finalizing, setFinalizing] = useState(false);
+  const [certify, setCertify] = useState(false);
+  const [signerName, setSignerName] = useState("");
+  const [registrationNumber, setRegistrationNumber] = useState("");
   const [triage, setTriage] = useState<AiTriage | null>(null);
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [runningTriage, setRunningTriage] = useState(false);
@@ -272,9 +281,29 @@ export default function DoctorImaging3D() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    api.get("/doctors/profile")
+      .then(({ data }) => {
+        const doctor = data?.doctor || {};
+        setSignerName([doctor.firstName, doctor.lastName].filter(Boolean).join(" ") || doctor.name || "");
+        setRegistrationNumber(doctor.registrationNumber || "");
+      })
+      .catch(() => { /* profile fetch failure just disables finalize; draft/review still works */ });
+  }, []);
+
   const generateDraft = async () => {
     if (!study?.id || !readiness) return;
+    // Generating replaces whatever's in the draft box — confirm before
+    // clobbering text the radiologist may have already edited.
+    if (draftText.trim().length > 0) {
+      const proceed = window.confirm(
+        "This will replace the current draft text with a newly generated AI draft. Continue?"
+      );
+      if (!proceed) return;
+    }
     setDrafting(true);
+    setApproved(false);
+    setSaveMsg("");
     try {
       const bestSeries = [...readiness.series].sort((a, b) => b.imageInstances - a.imageInstances)[0];
       const { data } = await api.post("/imaging/platform/reports/draft", {
@@ -294,11 +323,87 @@ export default function DoctorImaging3D() {
         includePriorComparison: true,
       });
       const text = data?.draft?.draft_text || data?.draft?.report_text || data?.report || "";
-      setDraftText(String(text || "Draft generated. Open the AI Report editor from Medical Imaging to review and finalize."));
+      setDraftText(String(text || ""));
+      setLastDraftId(data?.draft?.id ?? null);
     } catch (err: any) {
       setDraftText(err.response?.data?.message || err.message || "Draft generation failed.");
     } finally {
       setDrafting(false);
+    }
+  };
+
+  const approveDraftAsReviewed = async () => {
+    if (!lastDraftId) return;
+    setApproving(true);
+    try {
+      await api.post(`/imaging/platform/reports/draft/${lastDraftId}/approve`, { editedText: draftText });
+      setApproved(true);
+    } catch (err: any) {
+      setSaveMsg(err.response?.data?.message || err.message || "Could not record approval.");
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const saveDraftReport = async () => {
+    if (!study?.id || !draftText.trim()) return;
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      await api.put(`/doctors/ris-referred/${study.id}/report`, {
+        reportText: draftText,
+        reportStatus: "Draft",
+      });
+      setSaveMsg("Draft saved.");
+    } catch (err: any) {
+      setSaveMsg(err.response?.data?.message || err.message || "Could not save report.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const finalizeReport = async () => {
+    if (!study?.id || !draftText.trim() || !certify || !registrationNumber) return;
+    setFinalizing(true);
+    setSaveMsg("");
+    try {
+      let data;
+      try {
+        ({ data } = await api.put(`/doctors/ris-referred/${study.id}/report`, {
+          reportText: draftText,
+          reportStatus: "Final",
+          certify: true,
+        }));
+      } catch (err: any) {
+        const resp = err.response?.data;
+        if (resp?.requiresOverride && resp.blockers?.length) {
+          const blockerText = resp.blockers.map((b: { message: string }) => `• ${b.message}`).join("\n");
+          const reason = window.prompt(
+            `This report failed safety verification:\n\n${blockerText}\n\nYou can still sign it, but you must document why (this is recorded in the audit trail). Enter your reason to proceed, or Cancel to fix the report instead:`,
+          );
+          if (!reason || !reason.trim()) {
+            setSaveMsg("Not finalized — safety verification failed and no override reason was given.");
+            setFinalizing(false);
+            return;
+          }
+          ({ data } = await api.put(`/doctors/ris-referred/${study.id}/report`, {
+            reportText: draftText,
+            reportStatus: "Final",
+            certify: true,
+            overrideBlockers: true,
+            overrideReason: reason.trim(),
+          }));
+        } else {
+          throw err;
+        }
+      }
+      setSaveMsg(`Report signed and finalized by Dr. ${signerName || "you"} (Reg. No. ${registrationNumber}).`);
+      if (data?.study) setStudy(data.study);
+      setCertify(false);
+    } catch (err: any) {
+      setSaveMsg(err.response?.data?.message || err.message || "Could not finalize report.");
+    } finally {
+      setFinalizing(false);
     }
   };
 
@@ -538,9 +643,78 @@ export default function DoctorImaging3D() {
                       </Button>
                     </div>
                     {draftText ? (
-                      <p className="max-h-40 overflow-auto whitespace-pre-wrap rounded-md bg-slate-900 p-2 text-xs text-slate-300">
-                        {draftText}
-                      </p>
+                      <>
+                        <textarea
+                          value={draftText}
+                          onChange={(e) => { setDraftText(e.target.value); setApproved(false); }}
+                          rows={8}
+                          className="max-h-48 w-full resize-none rounded-md bg-slate-900 p-2 text-xs text-slate-300 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        />
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 border-emerald-700 bg-emerald-900/30 text-[11px] text-emerald-200 hover:bg-emerald-900/50"
+                            disabled={!lastDraftId || approving || approved}
+                            onClick={approveDraftAsReviewed}
+                          >
+                            {approving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                            {approved ? "Approved by you" : approving ? "Recording…" : "Approve Draft As Reviewed"}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-7 border-slate-700 bg-slate-900 text-[11px] text-slate-300 hover:bg-slate-800"
+                            disabled={saving || !draftText.trim()}
+                            onClick={saveDraftReport}
+                          >
+                            {saving ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : null}
+                            Save as Draft
+                          </Button>
+                        </div>
+
+                        <div className="mt-3 rounded-md border border-teal-900/40 bg-teal-950/20 p-2.5">
+                          <div className="flex items-center gap-2 text-[11px] font-semibold text-teal-200">
+                            <ShieldCheck className="h-3.5 w-3.5" /> Sign &amp; Finalize
+                          </div>
+                          {registrationNumber ? (
+                            <p className="mt-1 text-[10px] text-slate-500">
+                              Signing as Dr. {signerName || "you"} · Reg. No. {registrationNumber}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-[10px] text-amber-400">
+                              Add your medical registration number in your profile to enable finalizing reports.
+                            </p>
+                          )}
+                          <label className="mt-2 flex items-start gap-2 text-[10px] text-slate-400">
+                            <input
+                              type="checkbox"
+                              checked={certify}
+                              disabled={!registrationNumber}
+                              onChange={(e) => setCertify(e.target.checked)}
+                              className="mt-0.5"
+                            />
+                            I certify this report as accurate and complete, and sign it under my registration.
+                          </label>
+                          <Button
+                            type="button"
+                            size="sm"
+                            className="mt-2 h-7 w-full bg-teal-600 text-[11px] text-white hover:bg-teal-700"
+                            disabled={finalizing || !draftText.trim() || !certify || !registrationNumber}
+                            onClick={finalizeReport}
+                          >
+                            {finalizing ? <Loader2 className="mr-1 h-3 w-3 animate-spin" /> : <ShieldCheck className="mr-1 h-3.5 w-3.5" />}
+                            Sign &amp; Finalize Report
+                          </Button>
+                        </div>
+
+                        {saveMsg ? <p className="mt-2 text-[11px] text-slate-400">{saveMsg}</p> : null}
+                        <p className="mt-2 text-[10px] text-slate-600">
+                          AI drafts are advisory — approving here records your review of the AI draft; finalizing signs the report onto the study under your registration and cannot be undone from here.
+                        </p>
+                      </>
                     ) : (
                       <p className="text-[11px] text-slate-500">Generate a structured draft after reviewing the volume and clinical context.</p>
                     )}

@@ -214,7 +214,9 @@ def infer_segmentation(
             "location": "abdomen",
         })
         measurements.append({
-            "lesion": "segmented_spleen_region",
+            # kind="structure" — organ segmentation, not a pathology finding.
+            "structure": "segmented_spleen_region",
+            "kind": "structure",
             "location": "abdomen",
             "volume_mm3": round(voxel_count * voxel_volume_mm3, 1),
         })

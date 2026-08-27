@@ -143,7 +143,10 @@ def infer_segmentation(
             "location": organ_name,
         })
         measurements.append({
-            "lesion": organ_name,
+            # kind="structure" — whole-body organ segmentation, not a
+            # pathology finding.
+            "structure": organ_name,
+            "kind": "structure",
             "location": organ_name,
             "volume_mm3": round(organ_voxels * voxel_volume_mm3, 1),
         })

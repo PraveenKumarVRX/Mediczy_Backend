@@ -55,12 +55,35 @@ def check_weights() -> dict:
     except ImportError:
         pass
 
+    mri_unest_downloaded = False
+    mri_unest_clinically_approved = False
+    try:
+        from inference import mri_unest_adapter
+
+        mri_unest_downloaded = mri_unest_adapter.is_downloaded("MR")
+        mri_unest_clinically_approved = mri_unest_adapter.available("MR")
+    except ImportError:
+        pass
+
+    mri_brats_downloaded = False
+    mri_brats_clinically_approved = False
+    try:
+        from inference import mri_brats_adapter
+
+        mri_brats_downloaded = mri_brats_adapter.is_downloaded("MR")
+        mri_brats_clinically_approved = mri_brats_adapter.available("MR")
+    except ImportError:
+        pass
+
     status = {
         "models_dir": str(MODELS_DIR),
         "registry": REGISTRY.is_file(),
         "monai_ct_bundle_downloaded": monai_ct_downloaded,
         "monai_ct_clinically_approved_for_use": monai_ct_clinically_approved,
-        "monai_mri": False,  # not wired — see models/README.md
+        "mri_unest_brain_downloaded": mri_unest_downloaded,
+        "mri_unest_brain_clinically_approved_for_use": mri_unest_clinically_approved,
+        "mri_brats_tumor_downloaded": mri_brats_downloaded,
+        "mri_brats_tumor_clinically_approved_for_use": mri_brats_clinically_approved,
         "totalsegmentator_ct_downloaded": totalseg_downloaded,
         "totalsegmentator_ct_clinically_approved_for_use": totalseg_clinically_approved,
         "lung_nodule_detection_ct_downloaded": nodule_downloaded,
@@ -153,6 +176,45 @@ def download_monai_lung_nodule_bundle() -> None:
     )
 
 
+def download_monai_mri_unest_bundle() -> None:
+    """Downloads the real MONAI Model Zoo 'wholeBrainSeg_Large_UNEST_segmentation'
+    bundle (whole-brain T1 MRI segmentation). Weights only — does not enable
+    clinical use. See MRI_UNEST_BRAIN_CLINICAL_APPROVED in
+    inference/mri_unest_adapter.py."""
+    from monai.bundle import download
+
+    bundle_name = os.getenv("MRI_UNEST_BUNDLE_NAME", "wholeBrainSeg_Large_UNEST_segmentation")
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Downloading MONAI Model Zoo bundle '{bundle_name}' to {MODELS_DIR} ...")
+    download(name=bundle_name, bundle_dir=str(MODELS_DIR))
+    print(
+        "Downloaded. NOT yet enabled for clinical use — set "
+        "MRI_UNEST_BRAIN_CLINICAL_APPROVED=true only after medical director "
+        "approval of the pending governance change."
+    )
+
+
+def download_monai_brats_tumor_bundle() -> None:
+    """Downloads the real MONAI Model Zoo 'brats_mri_segmentation' bundle
+    (multimodal brain tumor subregion segmentation). Weights only — does not
+    enable clinical use. See MRI_BRATS_TUMOR_CLINICAL_APPROVED in
+    inference/mri_brats_adapter.py — read that module's docstring before
+    approving; this backend runs on a stack of real but imperfect
+    approximations (missing T1c, classical skull-stripping, rigid-only
+    registration), not just a governance-pending real model."""
+    from monai.bundle import download
+
+    bundle_name = os.getenv("MRI_BRATS_BUNDLE_NAME", "brats_mri_segmentation")
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    print(f"Downloading MONAI Model Zoo bundle '{bundle_name}' to {MODELS_DIR} ...")
+    download(name=bundle_name, bundle_dir=str(MODELS_DIR))
+    print(
+        "Downloaded. NOT yet enabled for clinical use — set "
+        "MRI_BRATS_TUMOR_CLINICAL_APPROVED=true only after medical director "
+        "approval of the pending governance change."
+    )
+
+
 def download_monai_breast_density_bundle() -> None:
     """Downloads the real MONAI Model Zoo 'breast_density_classification'
     bundle. Weights only — does not enable clinical use. See
@@ -195,6 +257,16 @@ def main() -> int:
         action="store_true",
         help="Download the real MONAI Model Zoo breast density classification bundle (weights only — does not enable clinical use)",
     )
+    parser.add_argument(
+        "--download-monai-mri-unest-bundle",
+        action="store_true",
+        help="Download the real MONAI Model Zoo whole-brain MRI segmentation bundle (weights only — does not enable clinical use)",
+    )
+    parser.add_argument(
+        "--download-monai-brats-tumor-bundle",
+        action="store_true",
+        help="Download the real MONAI Model Zoo BraTS brain tumor segmentation bundle (weights only — does not enable clinical use)",
+    )
     args = parser.parse_args()
 
     sys.path.insert(0, str(ROOT))
@@ -205,6 +277,8 @@ def main() -> int:
         args.warmup_totalsegmentator,
         args.download_monai_lung_nodule_bundle,
         args.download_monai_breast_density_bundle,
+        args.download_monai_mri_unest_bundle,
+        args.download_monai_brats_tumor_bundle,
     ])
     if args.check or not any_action:
         status = check_weights()
@@ -224,6 +298,12 @@ def main() -> int:
 
     if args.download_monai_breast_density_bundle:
         download_monai_breast_density_bundle()
+
+    if args.download_monai_mri_unest_bundle:
+        download_monai_mri_unest_bundle()
+
+    if args.download_monai_brats_tumor_bundle:
+        download_monai_brats_tumor_bundle()
 
     return 0
 

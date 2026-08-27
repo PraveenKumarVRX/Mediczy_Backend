@@ -24,11 +24,39 @@ engine behaves exactly as if the weights were never downloaded.
 
 This is organ segmentation (spleen), not lung nodule detection — the
 original `ct_lung_nodule_unet.pt` placeholder implied a different task.
-Real lung nodule *detection* is now implemented separately, see below. MRI
-is not wired for the same reason stated in `registry.json` — no
-standardized single-sequence public bundle. Only used as a fallback in
-`engine.py` when neither TotalSegmentator nor lung nodule detection is
-approved.
+Real lung nodule *detection* is now implemented separately, see below. Only
+used as a fallback in `engine.py` when neither TotalSegmentator nor lung
+nodule detection is approved.
+
+## MONAI bundle — MRI whole-brain segmentation (wholeBrainSeg_Large_UNEST_segmentation)
+
+```bash
+python scripts/download_weights.py --download-monai-mri-unest-bundle
+```
+
+Downloads the real MONAI Model Zoo bundle `wholeBrainSeg_Large_UNEST_segmentation`
+(Vanderbilt University + MONAI team) into
+`$MODEL_WEIGHTS_DIR/wholeBrainSeg_Large_UNEST_segmentation/` — a transformer
+(UNesT) that segments 133 named brain structures from a single T1-weighted
+MRI series. **Downloading the bundle alone does not enable it** —
+`inference/mri_unest_adapter.py::available()` also requires
+`MRI_UNEST_BRAIN_CLINICAL_APPROVED=true`, which must only be set after a
+medical director approves the pending governance change for component
+`imaging-triage-mri-unest-brain` (`ai_model_change_log`). Until approved,
+MRI studies stay on the metadata-only heuristic exactly as if this bundle
+were never downloaded.
+
+Verified end-to-end against 2 real patient studies (see `registry.json` for
+runtimes/results). Its own bundle metadata says outright "not to be used for
+diagnostic purposes" — this integration reports segmented-structure counts
+and named-structure (lateral ventricle) voxel counts as a technical/
+anatomical review, never a specific pathology claim. Input is downsampled
+before inference (native resolution OOM-killed this box's 15GB RAM). T1
+series selection is a SeriesDescription heuristic, not a validated sequence
+classifier. Multi-sequence MRI models (e.g. BraTS-trained tumor
+segmentation, needing T1c/T2/FLAIR identification and alignment) remain
+unimplemented — a materially larger, riskier integration than this
+single-T1 whole-brain segmentation.
 
 ## TotalSegmentator — whole-body CT organ segmentation (117 classes)
 

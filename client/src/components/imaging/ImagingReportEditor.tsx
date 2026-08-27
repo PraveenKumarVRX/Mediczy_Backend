@@ -144,6 +144,7 @@ export default function ImagingReportEditor({
         studyInstanceUID={studyInstanceUID}
         patientName={patientName}
         token={token}
+        currentText={value}
         onDraftGenerated={onChange}
       />
 

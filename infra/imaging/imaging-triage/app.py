@@ -40,10 +40,34 @@ class Finding(BaseModel):
 
 
 class Measurement(BaseModel):
-    lesion: str
+    # "structure" is the generic identifier — a segmented anatomical region
+    # is NOT a lesion, and calling it one is misleading in a report compiler
+    # downstream. `kind` says which this actually is: "structure" (pure
+    # anatomy, e.g. a segmented ventricle) or "lesion" (an actual pathology
+    # detector's output, e.g. a candidate lung nodule). `lesion` is kept as
+    # a deprecated alias populated from `structure` for any caller still
+    # reading the old field name — new code should read `structure`/`kind`.
+    structure: str
+    kind: str = "structure"
+    lesion: str | None = None
     location: str | None = None
     size_mm: float | None = None
     volume_mm3: float | None = None
+    # Abstention state machine (inference.abstention) — POSITIVE / NEGATIVE /
+    # UNCERTAIN / ABSTAIN, derived from this specific observation's own real
+    # confidence, not a fabricated number. None only for measurements from
+    # adapters not yet wired into the abstention module (legacy/CT paths).
+    confidence: float | None = None
+    state: str | None = None
+    state_reason: str | None = None
+    # Item 9/QA-3 spatial evidence — real (z,y,x) voxel-space location on the
+    # inference grid, not a validated attention/heatmap ground-truth. Only
+    # one of these two is ever populated: centroid for a single-point
+    # structure (mri_unest_adapter.py), bounding box for a segmented region
+    # (mri_brats_adapter.py). None for measurements from adapters not yet
+    # wired to emit spatial data.
+    centroid_voxel: list[float] | None = None
+    bounding_box_voxel: dict[str, int] | None = None
 
 
 class TriageResponse(BaseModel):
@@ -69,6 +93,13 @@ class AnalyzeResponse(BaseModel):
     orthanc_meta: dict[str, Any] | None = None
     preprocessing: dict[str, Any] | None = None
     dicom_loaded: bool = False
+    # Real reason MR inference did or didn't run a real backend — governance
+    # lock, applicability abstain, or genuine fetch gap — see
+    # inference/engine.py's mr_backend_status(). Was previously computed
+    # and immediately discarded: engine.py set result["applicability"] but
+    # nothing here ever read it, so "why heuristic" never left the Python
+    # process. None for non-MR modalities.
+    applicability: dict[str, Any] | None = None
     disclaimer: str = "Structured screening output — not a diagnosis."
 
 
@@ -90,10 +121,17 @@ def _dicts_to_findings(raw: list[dict[str, Any]]) -> list[Finding]:
 def _dicts_to_measurements(raw: list[dict[str, Any]]) -> list[Measurement]:
     return [
         Measurement(
-            lesion=str(m.get("lesion", "lesion")),
+            structure=str(m.get("structure") or m.get("lesion") or "structure"),
+            kind=str(m.get("kind", "lesion" if "lesion" in m and "structure" not in m else "structure")),
+            lesion=str(m.get("structure") or m.get("lesion") or "structure"),  # deprecated alias, see Measurement
             location=m.get("location"),
             size_mm=m.get("size_mm"),
             volume_mm3=m.get("volume_mm3"),
+            confidence=m.get("confidence"),
+            state=m.get("state"),
+            state_reason=m.get("state_reason"),
+            centroid_voxel=m.get("centroid_voxel"),
+            bounding_box_voxel=m.get("bounding_box_voxel"),
         )
         for m in raw
     ]
@@ -175,10 +213,40 @@ def _metadata_only_mri(study_uid: str, modality: str, orthanc_study_id: str | No
     if mod not in ("MR", "MRI"):
         return None
 
+    from inference import mri_brats_adapter, mri_unest_adapter
+    from inference.engine import mr_backend_status
     from inference.heuristic import infer_heuristic
     from orthanc_client import fetch_study_meta
 
+    # Fetched here (not after the applicability check below) because body
+    # region is now itself part of that check — a brain-only backend must
+    # never be reported (or treated) as merely "governance-locked" for a
+    # neck study; it plainly doesn't apply, locked or not.
     meta = fetch_study_meta(study_uid, orthanc_study_id)
+    body_region = (meta or {}).get("study_description")
+
+    # This IS the actual code path taken for essentially every real MR study
+    # today (both backends RESEARCH_ONLY-locked) — it short-circuits before
+    # engine.py's run_study_inference/_run_mr_inference (and its own
+    # applicability reasoning) ever runs. Found this by tracing a real
+    # "why heuristic" case end-to-end rather than assuming the reasoning
+    # added to _run_mr_inference would be reached — it wasn't.
+    backend_status = [
+        mr_backend_status(mri_brats_adapter, "brats_tumor", body_region=body_region),
+        mr_backend_status(mri_unest_adapter, "unest_whole_brain", body_region=body_region),
+    ]
+
+    # Two real, clinical-director-gated MRI backends now exist — whole-brain
+    # structural segmentation (mri_unest_adapter) and BraTS tumor
+    # segmentation (mri_brats_adapter). Only take the honest metadata-only
+    # shortcut when NEITHER is both approved AND anatomically applicable;
+    # otherwise let the study fall through to run_study_inference's real
+    # volumetric MR path below. (available() alone is anatomy-blind — a
+    # brain-only backend that happened to be unlocked must still never run
+    # on a neck study.)
+    if any(b["available"] and b["anatomy_applicable"] for b in backend_status):
+        return None
+
     result = infer_heuristic(mod, meta)
     result["orthanc_meta"] = meta
     result["dicom_loaded"] = False
@@ -186,6 +254,7 @@ def _metadata_only_mri(study_uid: str, modality: str, orthanc_study_id: str | No
         "source": "metadata_only",
         "quality_flags": ["mri_model_not_enabled", "pixel_data_not_loaded"],
     }
+    result["applicability"] = {"age_years": None, "adapters": [], "backend_status": backend_status}
     return result
 
 
@@ -255,4 +324,5 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
         orthanc_meta=result.get("orthanc_meta"),
         preprocessing=result.get("preprocessing"),
         dicom_loaded=bool(result.get("dicom_loaded")),
+        applicability=result.get("applicability"),
     )

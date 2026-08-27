@@ -1,0 +1,93 @@
+/**
+ * Versioned guideline objects (P8 of CLINICAL_AI_PLATFORM_V1_IMPLEMENTATION_ROADMAP.md).
+ *
+ * Before this, "guidelines" in the Evidence Bundle (P2) was just the string
+ * "See knowledge base PATH-..." pulled off a matched clinical rule — a
+ * pointer, not a real, versioned, sourced guideline object with its own
+ * organization/publication date/review status. This is that real object,
+ * for the one pathway a genuinely matching, citable guideline exists for.
+ *
+ * Deliberately one real entry, not padded coverage: WebSearch (2026-08-23)
+ * found a precise match for the BraTS tumor_flag pathway (ACR
+ * Appropriateness Criteria Brain Tumors, 2025) but no equally precise ACR
+ * guideline for incidental ventricular-asymmetry follow-up specifically —
+ * only tangential ones about hydrocephalus/dementia workup that don't
+ * actually address this pipeline's use case (an incidental volumetric
+ * asymmetry finding, not a hydrocephalus/dementia work-up). Forcing a loose
+ * citation to look complete would be exactly the kind of fabricated
+ * coverage this whole codebase's KB content has avoided — the
+ * ventricular_asymmetry pathway keeps only its existing informal KB
+ * reference until a real, precisely-applicable guideline is found.
+ */
+import pool from '../../db/pgPool.js';
+
+const ensureTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS imaging_guidelines (
+      id                BIGSERIAL PRIMARY KEY,
+      guideline_id      VARCHAR(100) NOT NULL UNIQUE,
+      pathway           VARCHAR(100) NOT NULL,
+      title             TEXT NOT NULL,
+      organization      VARCHAR(150) NOT NULL,
+      publication_date  DATE,
+      version           VARCHAR(40),
+      jurisdiction      VARCHAR(40) NOT NULL DEFAULT 'US',
+      population        VARCHAR(100),
+      review_status     VARCHAR(30) NOT NULL DEFAULT 'current',
+      source_url        TEXT NOT NULL,
+      summary           TEXT NOT NULL,
+      retrieved_at      TIMESTAMPTZ NOT NULL,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_imaging_guidelines_pathway ON imaging_guidelines (pathway);
+  `);
+};
+ensureTable().catch((e) => console.error('[ImagingGuidelines] Table init error:', e.message));
+
+const SEED_GUIDELINES = [
+  {
+    guidelineId: 'ACR-AC-BRAIN-TUMORS-2025',
+    pathway: 'tumor_flag',
+    title: 'ACR Appropriateness Criteria® Brain Tumors',
+    organization: 'American College of Radiology',
+    publicationDate: '2025-01-01',
+    version: '2025',
+    jurisdiction: 'US',
+    population: 'Adult and pediatric patients with known or suspected brain tumor',
+    reviewStatus: 'current',
+    sourceUrl: 'https://www.jacr.org/article/S1546-1440(25)00142-5/fulltext',
+    summary:
+      'Conventional MRI is the reference standard for brain tumor surveillance imaging. For posttreatment ' +
+      'surveillance (Variant 5), MRI head with and without IV contrast (and MRI head perfusion with IV contrast) ' +
+      'are rated Usually Appropriate. WHO grade 1 tumors are typically followed with contrast-enhanced MRI every ' +
+      '6-12 months, with frequency optimized by histologic/molecular profiling. Six variants cover genetic-risk ' +
+      'screening, metastasis screening, pretreatment evaluation, and posttreatment surveillance separately — this ' +
+      'summary reflects only the posttreatment-surveillance variant, the one this pipeline\'s tumor_flag pathway is relevant to.',
+    retrievedAt: '2026-08-23',
+  },
+];
+
+export async function seedGuidelines() {
+  for (const g of SEED_GUIDELINES) {
+    await pool.query(
+      `INSERT INTO imaging_guidelines
+         (guideline_id, pathway, title, organization, publication_date, version, jurisdiction, population, review_status, source_url, summary, retrieved_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+       ON CONFLICT (guideline_id) DO UPDATE SET
+         title = EXCLUDED.title, organization = EXCLUDED.organization, publication_date = EXCLUDED.publication_date,
+         version = EXCLUDED.version, jurisdiction = EXCLUDED.jurisdiction, population = EXCLUDED.population,
+         review_status = EXCLUDED.review_status, source_url = EXCLUDED.source_url, summary = EXCLUDED.summary,
+         retrieved_at = EXCLUDED.retrieved_at`,
+      [g.guidelineId, g.pathway, g.title, g.organization, g.publicationDate, g.version, g.jurisdiction, g.population, g.reviewStatus, g.sourceUrl, g.summary, g.retrievedAt],
+    );
+  }
+  return SEED_GUIDELINES.length;
+}
+
+export async function getGuidelinesForPathway(pathway) {
+  const { rows } = await pool.query(
+    `SELECT * FROM imaging_guidelines WHERE pathway = $1 AND review_status = 'current'`,
+    [pathway],
+  );
+  return rows;
+}

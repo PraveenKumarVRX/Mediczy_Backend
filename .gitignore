@@ -28,6 +28,12 @@ build/
 client/dist/
 client/build/
 server/dist/
+
+# MRI model weights — 300MB+ MONAI bundles, downloaded via
+# infra/imaging/imaging-triage/scripts/download_weights.py, never committed
+infra/imaging/imaging-triage/models/*/
+!infra/imaging/imaging-triage/models/README.md
+!infra/imaging/imaging-triage/models/registry.json
 *.tgz
 
 # Logs

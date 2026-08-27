@@ -38,6 +38,11 @@ export async function extractStructuredFindings({
       inference_backend: modelFindings.inference_backend || 'heuristic',
       feature_attributions: modelFindings.feature_attributions || [],
       dicom_loaded: modelFindings.dicom_loaded === true,
+      // Real reason MR fell back to heuristic (governance lock, applicability
+      // abstain, or a genuine fetch gap) — computed in Python's
+      // inference/engine.py::mr_backend_status(), previously dropped here
+      // silently even though the Python side already carried it correctly.
+      applicability: modelFindings.applicability || null,
     };
   }
 

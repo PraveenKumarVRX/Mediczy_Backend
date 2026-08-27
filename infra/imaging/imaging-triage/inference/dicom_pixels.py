@@ -1,6 +1,7 @@
 """DICOM pixel extraction for inference pipelines."""
 from __future__ import annotations
 
+import io
 from collections import Counter
 from typing import Any
 
@@ -17,7 +18,15 @@ def dicom_bytes_to_hu_array(dicom_bytes: bytes) -> dict[str, Any] | None:
     if pydicom is None:
         return None
     try:
-        ds = pydicom.dcmread(dicom_bytes)
+        # pydicom.dcmread() does not accept a raw bytes object directly — it
+        # requires a path, file-like object, or readable buffer. Passing
+        # bytes raises TypeError, which the broad except below silently
+        # swallowed, making this function return None for every real DICOM
+        # instance regardless of validity. That silently neutered every
+        # single-instance CV backend (TorchXRayVision, CT-slice proxy,
+        # breast density) — confirmed by testing against real patient data,
+        # not found by inspection.
+        ds = pydicom.dcmread(io.BytesIO(dicom_bytes))
         if not hasattr(ds, "pixel_array"):
             return None
         arr = ds.pixel_array.astype(np.float32)
@@ -136,7 +145,10 @@ def dicom_series_to_hu_volume(dicom_bytes_list: list[bytes]) -> dict[str, Any] |
     localizer_count = 0
     for raw in dicom_bytes_list:
         try:
-            ds = pydicom.dcmread(raw)
+            # See dicom_bytes_to_hu_array's comment — dcmread needs a
+            # readable buffer, not raw bytes, or every instance silently
+            # fails and this function always returns None.
+            ds = pydicom.dcmread(io.BytesIO(raw))
             if not hasattr(ds, "pixel_array"):
                 continue
             pixel_candidate_count += 1

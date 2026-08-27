@@ -75,7 +75,10 @@ def infer_volume(hu_volume: np.ndarray, modality: str) -> dict[str, Any] | None:
                     "present": True,
                     "location": "lung",
                 })
-                measurements.append({"lesion": "nnunet_seg", "volume_mm3": float(positive)})
+                # kind="structure" — lung segmentation, not an established
+                # pathology finding (this checkpoint segments the organ, it
+                # does not detect/classify a lesion within it).
+                measurements.append({"structure": "nnunet_seg", "kind": "structure", "volume_mm3": float(positive)})
             return {
                 "findings": findings,
                 "measurements": measurements,

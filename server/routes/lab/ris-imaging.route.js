@@ -34,11 +34,13 @@ import { publishEvent, KAFKA_TOPICS } from '../../config/kafka.js';
 import {
   onReportDraftSaved, onReportFinalized,
 } from '../../services/imaging/imaging-workflow-hooks.service.js';
+import { getLatestDraft } from '../../services/imaging/imaging-report-drafter.service.js';
+import qualityGates from '../../services/ai-quality-gates.service.js';
 
 const router = express.Router();
 
 const VALID_STUDY_STATUSES = ['Ordered', 'Scheduled', 'InProgress', 'Completed', 'Reported', 'Cancelled'];
-const VALID_REPORT_STATUSES = ['Pending', 'Draft', 'Final', 'Addendum'];
+export const VALID_REPORT_STATUSES = ['Pending', 'Draft', 'Final', 'Addendum'];
 const CRITICAL_VALUE_ALERT_STATUSES = ['Open', 'Acknowledged', 'Escalated'];
 const QC_TEMPLATE_MODALITIES = ['CT', 'MRI', 'XR', 'USG', 'ECHO', 'MAMMO', 'FLUORO', 'NM', 'PET', 'OT'];
 const ALLOWED_STATUS_TRANSITIONS = {
@@ -55,7 +57,7 @@ const getActor = (req) => ({
   actorName: req.lab?.labName || req.lab?.name || req.lab?.email || 'lab-user',
 });
 
-const writeAuditEvent = async (db, {
+export const writeAuditEvent = async (db, {
   studyId,
   labId,
   eventType,
@@ -71,7 +73,7 @@ const writeAuditEvent = async (db, {
   );
 };
 
-const writeCustodyEvent = async (db, {
+export const writeCustodyEvent = async (db, {
   studyId,
   labId,
   fromStatus,
@@ -89,7 +91,7 @@ const writeCustodyEvent = async (db, {
   );
 };
 
-const getLatestQcReview = async (db, studyId, labId) => {
+export const getLatestQcReview = async (db, studyId, labId) => {
   const row = await db.query(
     `SELECT id, qc_status, reviewed_by, reviewed_at, review_notes
      FROM ris_qc_reviews
@@ -101,7 +103,7 @@ const getLatestQcReview = async (db, studyId, labId) => {
   return row.rows[0] || null;
 };
 
-const getResultContext = async (db, studyId, labId) => {
+export const getResultContext = async (db, studyId, labId) => {
   const row = await db.query(
     `SELECT id, reagent_lot_number, calibration_reference, context_notes, updated_at
      FROM ris_result_context
@@ -300,6 +302,14 @@ const ensureTable = async () => {
     ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS orthanc_instance_id VARCHAR(64);
     ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS pacs_source VARCHAR(20) DEFAULT 's3';
     CREATE INDEX IF NOT EXISTS idx_ris_study_date ON ris_studies(study_date DESC);
+    -- Structured e-signature on the finalized report — separate from the
+    -- free-text reported_by column so the sealing doctor's identity and
+    -- credentials survive independently of display formatting.
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_by_id INTEGER;
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_by_name VARCHAR(255);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_by_registration VARCHAR(100);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signature_hash VARCHAR(128);
+    ALTER TABLE ris_studies ADD COLUMN IF NOT EXISTS report_signed_at TIMESTAMPTZ;
 
     CREATE TABLE IF NOT EXISTS ris_study_audit_events (
       id BIGSERIAL PRIMARY KEY,
@@ -1674,7 +1684,10 @@ router.put('/:id/status', authLab, async (req, res) => {
 router.put('/:id/report', authLab, async (req, res) => {
   const client = await pool.connect();
   try {
-    const { reportText, reportStatus = 'Final', reportedBy, criticalValue } = req.body;
+    const {
+      reportText, reportStatus = 'Final', reportedBy, criticalValue,
+      overrideBlockers, overrideReason,
+    } = req.body;
     if (!VALID_REPORT_STATUSES.includes(reportStatus)) {
       return res.status(400).json({ success: false, message: 'Invalid report status' });
     }
@@ -1685,7 +1698,7 @@ router.put('/:id/report', authLab, async (req, res) => {
     await client.query('BEGIN');
 
     const currentRes = await client.query(
-      `SELECT id, status, report_status
+      `SELECT id, status, report_status, modality
        FROM ris_studies
        WHERE id = $1 AND lab_id = $2
        FOR UPDATE`,
@@ -1725,6 +1738,38 @@ router.put('/:id/report', authLab, async (req, res) => {
       }
     }
 
+    // Evidence-grounding gate — only bites when this study actually has an
+    // AI draft to check against (imaging studies with a generated draft);
+    // a lab report with no AI involvement at all has nothing to compare
+    // against and is left untouched. See ai-quality-gates.service.js.
+    let gateResult = null;
+    if (reportStatus === 'Final' || reportStatus === 'Addendum') {
+      const latestDraft = await getLatestDraft(req.params.id, req.lab.id).catch(() => null);
+      if (latestDraft) {
+        gateResult = await qualityGates.checkImagingReport({
+          studyId: req.params.id,
+          modality: current.modality,
+          draftText: reportText,
+          structuredFindings: latestDraft.structured_findings || null,
+          confidence: latestDraft.confidence_score != null ? Number(latestDraft.confidence_score) : null,
+          triageStatus: null,
+        });
+        qualityGates.logGateResult(gateResult, {
+          source: 'imaging_report_finalize_lab', studyId: req.params.id, tenantId: req.lab.id,
+        }).catch(() => {});
+
+        if (gateResult.hasBlockers && (!overrideBlockers || !String(overrideReason || '').trim())) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            success: false,
+            message: 'Report failed safety verification and cannot be signed as-is',
+            blockers: gateResult.blockers,
+            requiresOverride: true,
+          });
+        }
+      }
+    }
+
     const nextStudyStatus = (reportStatus === 'Final' || reportStatus === 'Addendum')
       ? 'Reported'
       : current.status;
@@ -1752,6 +1797,11 @@ router.put('/:id/report', authLab, async (req, res) => {
       details: {
         fromReportStatus: current.report_status,
         toReportStatus: reportStatus,
+        ...(gateResult?.hasBlockers ? {
+          safetyGateBlockers: gateResult.blockers,
+          safetyGateOverridden: true,
+          overrideReason,
+        } : {}),
       },
     });
 

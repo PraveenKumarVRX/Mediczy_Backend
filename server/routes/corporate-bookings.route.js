@@ -16,6 +16,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from '../services/emailService.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import { ensureCorporateHealthReportsBucket } from '../services/corporate-storage.service.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 
 // ──────────────────────────────────────────────
@@ -751,6 +752,14 @@ router.post(
       });
       const reportLabel = REPORT_TYPE_LABELS[reportType] || reportType;
 
+      // ── 1b. Dedicated MinIO bucket for this corporate ──────
+      // Isolates each corporate's employee health documents into their own
+      // bucket rather than a shared bucket with only a key-prefix boundary
+      // — same pattern already running in production for imaging tenants.
+      // Idempotent (HeadBucket-then-create), so this is safe to run on
+      // every upload rather than only on corporate creation.
+      const { bucket: corpBucket } = await ensureCorporateHealthReportsBucket(corporateId);
+
       // ── 2. Upload each file to MinIO and insert DB row ─────
       const uploadedReports = [];
       for (let i = 0; i < files.length; i++) {
@@ -766,6 +775,7 @@ router.post(
           originalName: file.originalname,
           mimeType: file.mimetype,
           keyPrefix: `health-reports/corp-${corporateId}/emp-${employeeId}`,
+          bucket: corpBucket,
         });
 
         const [dbRow] = await postgresSequelize.query(

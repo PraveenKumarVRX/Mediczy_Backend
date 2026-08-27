@@ -62,6 +62,30 @@
       "weights": "none",
       "model_version": "heuristic-screening-v1",
       "clinical_validation_required": false
+    },
+    "mri-unest-brain": {
+      "modality": ["MR", "MRI"],
+      "task": "whole-brain structural segmentation, 133 FreeSurfer-derived structures, single T1-weighted series",
+      "source": "MONAI Model Zoo bundle 'wholeBrainSeg_Large_UNEST_segmentation' (Vanderbilt University + MONAI team)",
+      "weights": {
+        "MR": "wholeBrainSeg_Large_UNEST_segmentation/ (full bundle dir: configs/ + models/model.pt, fetched via monai.bundle.download)"
+      },
+      "model_version": "monai-bundle-wholeBrainSeg_Large_UNEST_segmentation-v0.2.7",
+      "clinical_validation_required": true,
+      "clinical_use_gate_env": "MRI_UNEST_BRAIN_CLINICAL_APPROVED",
+      "notes": "Weights present on disk does NOT enable this backend — see clinical_use_gate_env. The bundle's own metadata.json says outright: 'This is an example, not to be used for diagnostic purposes.' Reports segmented-structure counts and named-structure voxel counts (currently: left/right lateral ventricle) as a technical/anatomical review — NOT framed as detecting any specific pathology (no tumor/hemorrhage/hydrocephalus claim). Input is downsampled to 64x160x160 before inference (native 512x512x~25-200 caused repeated OOM kills on this box's 15GB RAM at the bundle's native resolution across its 133-channel output) — a CPU-tractability approximation needing its own validation before being treated as spatially precise. Single T1-weighted series only: the incoming study's T1 series is picked by a SeriesDescription substring heuristic (fetch_t1_series_instances_dicom in orthanc_client.py), not a validated sequence classifier — an unfamiliar naming convention silently falls back to the largest series in the study, which may not be T1. Verified against 2 real patient studies (ICH Egmore pediatric brain MRI) end-to-end: both completed in under 2 minutes on CPU, correctly identified the T1 series among 8 and 40 total series respectively, segmented 130/133 and 132/133 structures with genuine softmax-derived confidence (0.61, 0.56)."
+    },
+    "mri-brats-tumor": {
+      "modality": ["MR", "MRI"],
+      "task": "multimodal brain tumor subregion segmentation (tumor core / whole tumor / enhancing tumor) from T1+T1c+T2+FLAIR",
+      "source": "MONAI Model Zoo bundle 'brats_mri_segmentation' (SegResNet, trained on the BraTS challenge dataset)",
+      "weights": {
+        "MR": "brats_mri_segmentation/ (full bundle dir: configs/ + models/model.pt, fetched via monai.bundle.download)"
+      },
+      "model_version": "monai-bundle-brats_mri_segmentation-v0.5.4",
+      "clinical_validation_required": true,
+      "clinical_use_gate_env": "MRI_BRATS_TUMOR_CLINICAL_APPROVED",
+      "notes": "Weights present on disk does NOT enable this backend. The bundle's own reported validation performance (Dice ~0.85 WT / 0.86 TC / 0.79 ET) is on properly BraTS-preprocessed data and is NOT a claim about accuracy here — this integration stacks four real but imperfect approximations on top of raw clinical DICOM: (1) MISSING T1c on every real patient tested (no contrast series was acquired) — plain T1 is duplicated in its place, which specifically compromises the enhancing-tumor channel since enhancement is a contrast-uptake signal a non-contrast image cannot show; (2) classical-CV skull-stripping (Otsu threshold + largest connected component + hole-fill), not a validated brain extractor; (3) T2/FLAIR rigidly registered onto the T1 grid via SimpleITK Mattes mutual information — real registration, but rigid-only (no deformable step) and never checked against ground truth for these studies; (4) input downsampled from the bundle's native 240x240x160x4 to 64x128x128x4 for CPU tractability on this box's 15GB RAM. Registration sampling seed fixed to 42 after finding the SAME real patient's SAME data produced different tumor voxel counts (55 vs 0) on two runs purely from unseeded random sampling — now reproducible run-to-run, which is not the same as accurate. Verified end-to-end against 2 real patient studies: one returned a small, low-confidence whole-tumor flag (70 voxels at the downsampled resolution, confidence 0.55, barely above the 0.5 threshold — read as a marginal/borderline signal, not a confident finding), the other returned a clean negative (0 voxels, all three channels). Ground truth is not available for either case, so neither result has been confirmed correct or incorrect."
     }
   }
 }

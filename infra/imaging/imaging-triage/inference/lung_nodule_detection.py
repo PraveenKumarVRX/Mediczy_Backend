@@ -169,7 +169,9 @@ def infer_detection(
             "location": "lung",
         })
         measurements.append({
-            "lesion": "candidate_nodule",
+            # kind="lesion" — a real pathology detector's output (discrete
+            # candidate nodule), unlike organ/structure segmentation.
+            "structure": "candidate_nodule", "kind": "lesion",
             "location": "lung",
             "volume_mm3": round(size_mm[0] * size_mm[1] * size_mm[2], 1),
         })

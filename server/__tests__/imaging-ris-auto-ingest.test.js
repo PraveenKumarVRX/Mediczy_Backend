@@ -69,6 +69,14 @@ describe('imaging RIS auto-ingest', () => {
     process.env.ORTHANC_DEFAULT_REFERRING_DOCTOR_ID = '70';
 
     mockQuery
+      // resolveReferringDoctor's env-default path looks up the doctor's
+      // real display name via getDoctorDisplayName() — a real query that
+      // runs before the "existing row" lookup below. Omitting this mock
+      // was the actual bug: it shifted every later response by one slot,
+      // so "existing lookup" landed on this query instead (making
+      // existing.rows[0] truthy) and the real "existing lookup" response
+      // landed on the UPDATE query with nothing left to mock the INSERT.
+      .mockResolvedValueOnce({ rows: [{ name: 'Dr Mediczy' }] }) // doctor display-name lookup
       .mockResolvedValueOnce({ rows: [] }) // existing lookup
       .mockResolvedValueOnce({
         rows: [{
@@ -96,8 +104,8 @@ describe('imaging RIS auto-ingest', () => {
     expect(out.success).toBe(true);
     expect(out.created).toBe(true);
     expect(out.study.id).toBe(11);
-    expect(mockQuery).toHaveBeenCalledTimes(2);
-    const insertSql = mockQuery.mock.calls[1][0];
+    expect(mockQuery).toHaveBeenCalledTimes(3);
+    const insertSql = mockQuery.mock.calls[2][0];
     expect(insertSql).toMatch(/INSERT INTO ris_studies/i);
   });
 

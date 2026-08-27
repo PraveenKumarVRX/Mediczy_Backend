@@ -32,6 +32,15 @@ export async function onReportFinalized({ study, tenantId, actorId, actorName })
   const actor = { id: actorId, name: actorName };
   let wf = await getWorkflowForStudy(study.id);
 
+  // A report can reach Final directly (skipping an intermediate Draft save),
+  // in which case onReportDraftSaved (the only other caller of approveDraft)
+  // never runs — leaving imaging_ai_report_drafts.status stuck at 'draft'
+  // even though the report is genuinely signed off. Close that gap here too.
+  const draft = await getLatestDraft(study.id, tenantId);
+  if (draft?.id && draft.status === 'draft') {
+    await approveDraft(draft.id, actorId, study.report_text).catch(() => {});
+  }
+
   if (wf) {
     if (wf.state === 'assigned') {
       await transitionWorkflow(wf.id, 'drafting', actor).catch(() => {});

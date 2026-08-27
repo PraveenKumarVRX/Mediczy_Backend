@@ -64,7 +64,10 @@ export async function upsertOrthancModality({
     AET: aeTitle,
     Host: host,
     Port: Number(port),
-    Manufacturer: manufacturer || 'Generic',
+    // Orthanc's Manufacturer field is a fixed internal enum for vendor-specific DICOM
+    // quirks — it is NOT free text. Passing our display manufacturer (e.g. "GE Healthcare")
+    // straight through causes a 400 "Unknown modality manufacturer" from Orthanc.
+    Manufacturer: 'Generic',
     AllowEcho: allowEcho,
     AllowFind: allowFind,
     AllowFindWorklist: allowFindWorklist,

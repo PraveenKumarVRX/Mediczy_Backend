@@ -12,6 +12,7 @@ export async function onDicomStudyIngested({
   tenantId,
   orthancResult,
   s3Key,
+  skipTriage = false,
 }) {
   if (!study?.study_instance_uid || !study?.is_dicom) return null;
 
@@ -48,6 +49,7 @@ export async function onDicomStudyIngested({
     patientName: study.patient_name,
     studyDate: study.study_date,
     reportText: study.report_text,
+    skipTriage,
   });
 
   return instance;
@@ -57,13 +59,20 @@ function runAsyncTriagePipeline(ctx) {
   setImmediate(async () => {
     try {
       await transitionWorkflow(ctx.instanceId, 'ai_analysis', { id: null, name: 'system' });
-      await requestTriage({
-        studyId: ctx.studyId,
-        studyInstanceUID: ctx.studyInstanceUID,
-        tenantId: ctx.tenantId,
-        modality: ctx.modality,
-        orthancStudyId: ctx.orthancStudyId,
-      });
+      // Skipped when the caller couldn't yet confirm the study's real
+      // modality (e.g. the first DICOM instance ingested had no Modality
+      // tag) — running triage under an unconfirmed/placeholder modality
+      // produces a mislabeled result that gets cached and silently reused
+      // by every later AI report draft for this study.
+      if (!ctx.skipTriage) {
+        await requestTriage({
+          studyId: ctx.studyId,
+          studyInstanceUID: ctx.studyInstanceUID,
+          tenantId: ctx.tenantId,
+          modality: ctx.modality,
+          orthancStudyId: ctx.orthancStudyId,
+        });
+      }
       await transitionWorkflow(ctx.instanceId, 'assigned', { id: null, name: 'system' });
       await indexStudyDocument({
         tenantId: ctx.tenantId,
