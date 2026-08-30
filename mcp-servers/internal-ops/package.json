@@ -1,0 +1,19 @@
+{
+  "name": "mediczy-internal-ops-mcp",
+  "version": "0.1.0",
+  "description": "Internal-ops MCP server for Mediczy — read-only PM2/health/DB/storage diagnostics for on-call and engineering use.",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "bin": {
+    "mediczy-internal-ops-mcp": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^16.4.5",
+    "zod": "^3.24.1"
+  }
+}
