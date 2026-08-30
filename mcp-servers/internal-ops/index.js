@@ -29,10 +29,14 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Load the same .env files the main app loads (repo root and server/),
-// so MINIO_PUBLIC_URL etc. are available without duplicating config.
+// server/.env only, deliberately — real finding while building the sibling
+// clinical-data server: the repo's root .env and server/.env carry
+// DIFFERENT values for at least one real secret (JWT_SECRET), and the
+// actual live mediczy-server process (checked via its real pm2 env) uses
+// server/.env's. dotenv never overrides an already-set var, so loading
+// root .env first would silently let a stale/different root .env value
+// win over the one the live app actually trusts.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: join(__dirname, '..', '..', '.env') });
 dotenv.config({ path: join(__dirname, '..', '..', 'server', '.env') });
 
 import { getPm2Status, getPm2Logs } from './lib/pm2.js';

@@ -1,0 +1,17 @@
+{
+  "name": "mediczy-clinical-data-mcp",
+  "version": "0.1.0",
+  "description": "Clinical-data MCP server for Mediczy — imaging report/evidence tools, gated by the same JWT auth and SaMD-governed compiler/fact-checker the live app uses. No raw table access, no bypass of the governance layer.",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^16.4.5",
+    "jsonwebtoken": "^9.0.2",
+    "zod": "^3.24.1"
+  }
+}
