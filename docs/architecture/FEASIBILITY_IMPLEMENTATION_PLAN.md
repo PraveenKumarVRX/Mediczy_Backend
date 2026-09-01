@@ -17,6 +17,8 @@ This document converts the business plan *"Hospital-Linked Healthtech Solutions 
 
 The conclusion: the codebase is **ready to host Models 1, 2, 4 and 6** with modest integration, **Models 3 and 5 are feasible but require new self-contained modules**, and the **Uttarakhand MMU/drone logistics** and **locum specialist marketplace** are the only pure greenfield territory.
 
+**Scope note:** this document also includes the **Hospital OS delivery track for Mahalakshmi Hospital** (§8) — a RAG (Requirements · Availability · Gaps)-based gap-closure and deployment implementation plan derived from the approved client proposal, which runs in parallel with the model roadmap above.
+
 ---
 
 ## 1. Executive Summary (TL;DR)
@@ -337,7 +339,59 @@ This matches the business plan's own advice ("fastest time to revenue" = marketp
 
 ---
 
-## 8. References & Evidence Index
+## 8. Hospital OS Implementation Plan — Mahalakshmi (RAG-Based Gap Closure & Deployment)
+
+This section incorporates the client-delivery implementation plan derived from the approved **MediQzy Hospital OS proposal for Mahalakshmi Hospital**. It uses the RAG format (Requirements · Availability · Gaps) and runs **in parallel** with the M1–M7 model roadmap in §5.
+
+> Full module-level analysis: `docs/architecture/HOSPITAL_OS_MODULE_RAG_ANALYSIS.md`
+> Deployment-side analysis (on-prem server, remote control plane): `docs/architecture/HOSPITAL_OS_ONPREM_RAG_IMPLEMENTATION_PLAN.md`
+
+### 8.1 Requirement availability summary
+
+Of the **41 modules** the proposal commits across categories A–H, **37 (90%) are fully implemented** in this codebase; **3 are partial**; none are wholly missing at category level. Compliance requirements (ABDM/ABHA, HL7/FHIR, DPDP 2023, RBAC/audit) are all satisfied in code.
+
+| Category | Modules | Available | Partial |
+|---|---|---|---|
+| A — Patient Access & Front Office | 5 | 5 ✅ | — |
+| B — Clinical & Nursing | 7 | 7 ✅ | — |
+| C — Diagnostics & OT | 4 | 4 ✅ | — |
+| D — Pharmacy & Materials | 5 | 4 ✅ | CSSD 🟡 |
+| E — Billing, Insurance & Finance | 5 | 5 ✅ | — |
+| F — HR & Administration | 4 | 4 ✅ | — |
+| G — Support Services | 4 | 2 ✅ | Housekeeping 🟡, DMS 🟡 |
+| H — Quality, Communication & Analytics | 7 | 7 ✅ | — |
+
+### 8.2 Gap register
+
+| ID | Module | What exists | What is missing | Severity | Effort |
+|---|---|---|---|---|---|
+| G-1 | **CSSD Management** | Dept login shell only | Instrument registry; tray/set assembly; sterilization cycle logging (washer/autoclave); expiry & recall; dispatch-to-OT traceability; per-set billing hooks | **High** — NABH-relevant, patient-safety adjacent | 2–3 weeks |
+| G-2 | **Housekeeping & Facility** | Bed-status triggers, dashboard mentions | Task assignment board (zone/shift), cleaning checklists, turnaround SLA timers, inspection sign-off, discharge-workflow integration (dirty bed → clean) | Medium — bed-turnaround KPI impact | 1–2 weeks |
+| G-3 | **Document Management (DMS)** | Templates, HelpCenter | Policy/SOP repository with versioning, review/approval cycle, dept-wise access, read-acknowledgement tracking, expiry reminders | Medium — NABH documentation requirement | 1–2 weeks |
+
+### 8.3 Implementation plan — two parallel tracks
+
+**Track 1 — product gap closure**
+
+| Sprint | Work | Deliverable | Exit criteria |
+|---|---|---|---|
+| S1 (wk 1–2) | **G-2 Housekeeping**: zone/shift task board, checklists, SLA timers; hook bed-status events from ADT/discharge | Housekeeping module v1 | Supervisor assigns & closes tasks; dirty→clean bed transition visible on BedMap |
+| S2 (wk 2–4) | **G-1 CSSD phase 1**: instrument master, tray/set assembly, sterilization cycle log, expiry | CSSD module v1 | Tray lifecycle (assemble → sterilize → dispatch → return) fully logged; recall list queryable |
+| S3 (wk 4–6) | **G-1 CSSD phase 2** (dispatch-to-OT traceability, per-set billing hooks) + **G-3 DMS**: SOP repository, versioning, acknowledgement | CSSD v2 + DMS v1 | OT staff trace any instrument set to its sterilization cycle; NABH SOP pack publishable with acknowledgements |
+
+**Track 2 — deployment** (per proposal §7): discovery → server provisioning → data migration → training → go-live → hypercare. The remote-control (Tenant Server Agent) build runs concurrently — see `HOSPITAL_OS_ONPREM_RAG_IMPLEMENTATION_PLAN.md` §5.
+
+**Sequencing rationale:** Housekeeping first (smallest effort, visible KPI win during hypercare); CSSD spans two sprints because instrument master data must come from the hospital (gathered during Track 2 discovery); DMS last because SOP content must come from the hospital's quality team.
+
+### 8.4 Synergy with the model roadmap (§5)
+
+- **G-1 CSSD is the seed of Phase 5 (M5 Central Sterile Processing)** — the instrument registry, tray lifecycle and sterilization-cycle logging built here become the foundation for the multi-hospital sterile-processing model.
+- Housekeeping (G-2) and DMS (G-3) strengthen the NABH/quality story that supports Models 1, 2 and 6 sales.
+- The Mahalakshmi on-prem deployment track productionizes the tenant control plane that Models 1/2/6 rely on for remote operations.
+
+---
+
+## 9. References & Evidence Index
 
 - `client/src/pages/doctor/RemoteHealthMonitoring.tsx` — ICU command centre.
 - `client/src/pages/display/ICUBoardDisplay.tsx` — NEWS2 ICU board.
@@ -352,6 +406,9 @@ This matches the business plan's own advice ("fastest time to revenue" = marketp
 - `server/routes/ot-scheduling.route.js`, `ot-rooms-admin.route.js`, `scm-...cron.service.js`, `dept/procurement.route.js` — OT/supply adjacency.
 - `server/migrations/cloud-mother-local-ai-nodes.sql` — offline AI nodes.
 - `server/routes/ambulance/auth.routes.js`, `abdm.route.js`, `ayushman.route.js` — Uttarakhand adjacency.
+- `docs/architecture/HOSPITAL_OS_MODULE_RAG_ANALYSIS.md` — module-level RAG for the Mahalakshmi Hospital OS proposal (§3 availability evidence, §4 gap register).
+- `docs/architecture/HOSPITAL_OS_ONPREM_RAG_IMPLEMENTATION_PLAN.md` — deployment-side RAG (on-prem control plane, Tenant Server Agent).
+- `MediQzy_HospitalOS_Proposal_Mahalakshmi_Hospital.pdf` — client proposal (§4 modules, §6 compliance, §7 implementation).
 
 ---
 

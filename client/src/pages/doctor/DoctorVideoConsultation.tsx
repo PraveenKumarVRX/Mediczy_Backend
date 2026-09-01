@@ -55,6 +55,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useQuery } from '@tanstack/react-query';
 import api from '@/utils/api';
 import { Skeleton } from "@/components/ui/skeleton";
+import { RoomEvent, Track, type RemoteParticipant, type Room } from 'livekit-client';
 
 // Lazy load LiveKit components
 const LiveKitRoom = lazy(() => import('@/components/video/LiveKitRoom'));
@@ -134,6 +135,8 @@ const DoctorVideoConsultation = () => {
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
   const [showPatientPane, setShowPatientPane] = useState(false);
   const [inCallPanelTab, setInCallPanelTab] = useState<'emr' | 'history' | 'scribe' | 'vision'>('emr');
+  const [activeLiveKitRoom, setActiveLiveKitRoom] = useState<Room | null>(null);
+  const [recordingPhase, setRecordingPhase] = useState('idle');
   
   // Refs
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -141,6 +144,7 @@ const DoctorVideoConsultation = () => {
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const autoJoinAttemptRef = useRef<string | null>(null);
+  const stopRecordingBeforeDisconnectRef = useRef<(() => Promise<void>) | null>(null);
 
   const normalizeMeetUrl = (url?: string) => {
     if (!url) return 'https://video.mediqzy.com';
@@ -617,6 +621,17 @@ const DoctorVideoConsultation = () => {
     });
   }, [toast]);
 
+  const handleSafeLiveKitDisconnect = useCallback(() => {
+    const stopRecording = stopRecordingBeforeDisconnectRef.current;
+    if (!stopRecording) {
+      handleLiveKitDisconnect();
+      return;
+    }
+
+    toast({ title: "Saving recording", description: "Stopping and securely uploading the consultation before leaving." });
+    stopRecording().finally(handleLiveKitDisconnect);
+  }, [handleLiveKitDisconnect, toast]);
+
   const handleLiveKitError = useCallback((error: Error) => {
     console.error('LiveKit error:', error);
     const isSignalError = error.message?.includes('Abort handler') ||
@@ -662,11 +677,18 @@ const DoctorVideoConsultation = () => {
               token={liveKitConnection.token}
               roomName={liveKitConnection.roomName}
               participantName={currentDoctor?.firstName || 'Doctor'}
-              onDisconnect={handleLiveKitDisconnect}
+              onDisconnect={handleSafeLiveKitDisconnect}
               onError={handleLiveKitError}
               iceServers={liveKitConnection.iceServers}
-              onMinimize={() => setIsCallMinimized(true)}
+              onMinimize={() => {
+                if (!['idle', 'done', 'error'].includes(recordingPhase)) {
+                  toast({ title: "Recording in progress", description: "Stop and save the recording before minimizing the call." });
+                  return;
+                }
+                setIsCallMinimized(true);
+              }}
               inline={true}
+              onRoomReady={setActiveLiveKitRoom}
             />
           </Suspense>
         </div>
@@ -678,6 +700,15 @@ const DoctorVideoConsultation = () => {
             appointmentId={currentConsultation?.id}
             roomId={liveKitConnection.roomName}
             patientId={currentConsultation?.patientId}
+            room={activeLiveKitRoom}
+            onRecordingComplete={(id) => {
+              setSelectedRecording({ id });
+              setInCallPanelTab('scribe');
+            }}
+            onPhaseChange={setRecordingPhase}
+            registerStopHandler={(handler) => {
+              stopRecordingBeforeDisconnectRef.current = handler;
+            }}
           />
           {/* Tab bar */}
           <div className="flex items-center gap-0.5 px-2 py-2 bg-slate-800/80 border-b border-slate-700 flex-shrink-0">
@@ -735,11 +766,22 @@ const DoctorVideoConsultation = () => {
                       <p className="text-[11px] text-slate-400">Live transcription &amp; auto-prescription</p>
                     </div>
                   </div>
-                  <Tabs defaultValue="online">
+                  <Tabs key={selectedRecording?.id || 'live-scribe'} defaultValue={selectedRecording ? "conversation" : "online"}>
                     <TabsList className="w-full mb-3 bg-slate-800">
+                      {selectedRecording && (
+                        <TabsTrigger value="conversation" className="flex-1 text-xs">📝 Conversation</TabsTrigger>
+                      )}
                       <TabsTrigger value="online" className="flex-1 text-xs">🎤 Online</TabsTrigger>
                       <TabsTrigger value="offline" className="flex-1 text-xs">📴 Offline</TabsTrigger>
                     </TabsList>
+                    {selectedRecording && (
+                      <TabsContent value="conversation">
+                        <TranscriptionViewer
+                          recordingId={selectedRecording.id}
+                          onImportPrescription={handleImportPrescription}
+                        />
+                      </TabsContent>
+                    )}
                     <TabsContent value="online">
                       <AIScribeConsultation
                         appointmentId={currentConsultation?.id}
@@ -776,52 +818,6 @@ const DoctorVideoConsultation = () => {
             {inCallPanelTab === 'vision' && (
               <AIVisionInCallPanel consultationId={currentConsultation?.id} />
             )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Legacy URL fallback is intentionally disabled. All in-app calls must use
-  // tokenized LiveKit SDK credentials; otherwise users see a false connection
-  // failure even when TURN/LiveKit are healthy.
-  if (false && isInCall && currentMeetingUrl) {
-    return (
-      <div 
-        ref={containerRef}
-        className="min-h-screen bg-slate-900 flex flex-col items-center justify-center"
-      >
-        <div className="text-center max-w-md mx-auto p-8">
-          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
-          <h2 className="text-white text-xl font-semibold mb-2">Video Connection Issue</h2>
-          <p className="text-slate-400 mb-6">
-            Unable to establish a direct video connection. This may be due to a temporary network issue.
-          </p>
-          <div className="flex gap-3 justify-center">
-            <Button
-              onClick={() => {
-                setIsInCall(false);
-                setCurrentMeetingUrl("");
-                setConnectionStatus('disconnected');
-                // Re-initiate with SDK
-                if (appointmentIdFromUrl || currentConsultation?.id) {
-                  const aptId = appointmentIdFromUrl || currentConsultation?.id || '';
-                  initiateVideoCall({ id: aptId, patient: '', time: '', duration: '', type: 'video', status: 'in-progress' } as Consultation);
-                }
-              }}
-              className="bg-teal-600 hover:bg-teal-700 text-white px-6"
-            >
-              <RefreshCw className="w-4 h-4 mr-2" />
-              Retry Connection
-            </Button>
-            <Button
-              onClick={endVideoCall}
-              variant="destructive"
-              className="px-6"
-            >
-              <PhoneOff className="w-4 h-4 mr-2" />
-              End Call
-            </Button>
           </div>
         </div>
       </div>
@@ -1451,23 +1447,46 @@ const DoctorVideoConsultation = () => {
 
 // ── In-call recording bar ─────────────────────────────────────────────────────
 
+const RECORDING_SIGNAL_TOPIC = 'mediczy.consultation.recording';
+
+const encodeRecordingSignal = (message: Record<string, unknown>) =>
+  new TextEncoder().encode(JSON.stringify(message));
+
+const decodeRecordingSignal = (payload: Uint8Array) => {
+  try {
+    return JSON.parse(new TextDecoder().decode(payload));
+  } catch {
+    return null;
+  }
+};
+
 function InCallRecordingBar({
   appointmentId,
   roomId,
   patientId,
+  room,
+  onRecordingComplete,
+  onPhaseChange,
+  registerStopHandler,
 }: {
   appointmentId?: string;
   roomId?: string;
   patientId?: string;
+  room: Room | null;
+  onRecordingComplete?: (recordingId: number) => void;
+  onPhaseChange?: (phase: string) => void;
+  registerStopHandler?: (handler: (() => Promise<void>) | null) => void;
 }) {
   const { toast } = useToast();
-  type Phase = 'idle' | 'recording' | 'uploading' | 'processing' | 'done' | 'error';
+  type Phase = 'idle' | 'consenting' | 'recording' | 'uploading' | 'processing' | 'done' | 'error';
   const [phase, setPhase] = useState<Phase>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [recordingId, setRecordingId] = useState<number | null>(null);
+  const [remoteParticipantCount, setRemoteParticipantCount] = useState(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
   useEffect(() => {
@@ -1479,43 +1498,142 @@ function InCallRecordingBar({
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [phase]);
 
+  useEffect(() => {
+    onPhaseChange?.(phase);
+  }, [onPhaseChange, phase]);
+
+  useEffect(() => () => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!room) {
+      setRemoteParticipantCount(0);
+      return;
+    }
+
+    const updateCount = () => setRemoteParticipantCount(room.remoteParticipants.size);
+    updateCount();
+    room.on(RoomEvent.ParticipantConnected, updateCount);
+    room.on(RoomEvent.ParticipantDisconnected, updateCount);
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, updateCount);
+      room.off(RoomEvent.ParticipantDisconnected, updateCount);
+    };
+  }, [room]);
+
   const fmtTime = (s: number) =>
     `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
+  const publishSignal = async (message: Record<string, unknown>) => {
+    if (!room) throw new Error('Video room is not connected');
+    await room.localParticipant.publishData(encodeRecordingSignal(message), {
+      reliable: true,
+      topic: RECORDING_SIGNAL_TOPIC,
+    });
+  };
+
+  const requestPatientConsent = async () => {
+    if (!room || room.remoteParticipants.size === 0) {
+      throw new Error('Patient must be connected before recording can start');
+    }
+
+    const requestId = typeof crypto?.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+    return new Promise<{ granted: boolean; requestId: string; grantedAt: string; token?: string; participantIdentity?: string }>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        room.off(RoomEvent.DataReceived, handleResponse);
+        reject(new Error('Patient did not respond to the recording request'));
+      }, 30_000);
+
+      const handleResponse = (
+        payload: Uint8Array,
+        participant?: RemoteParticipant,
+        _kind?: any,
+        topic?: string,
+      ) => {
+        if (topic !== RECORDING_SIGNAL_TOPIC) return;
+        const message = decodeRecordingSignal(payload);
+        if (message?.type !== 'recording.consent.response' || message.requestId !== requestId) return;
+
+        window.clearTimeout(timeout);
+        room.off(RoomEvent.DataReceived, handleResponse);
+        resolve({
+          granted: message.granted === true,
+          requestId,
+          grantedAt: message.respondedAt || new Date().toISOString(),
+          token: message.consentToken,
+          participantIdentity: participant?.identity,
+        });
+      };
+
+      room.on(RoomEvent.DataReceived, handleResponse);
+      publishSignal({
+        type: 'recording.consent.request',
+        requestId,
+        requestedAt: new Date().toISOString(),
+        purpose: 'Record this consultation and create an AI transcript and clinical note for doctor review.',
+      }).catch((error) => {
+        window.clearTimeout(timeout);
+        room.off(RoomEvent.DataReceived, handleResponse);
+        reject(error);
+      });
+    });
+  };
+
   const startRecording = async () => {
-    if (!appointmentId || !roomId || !patientId) {
+    if (!appointmentId || !roomId || !patientId || !room) {
       toast({ title: "Cannot record", description: "Link a consultation appointment to enable recording", variant: "destructive" });
       return;
     }
+    let createdRecordingId: number | null = null;
+    let pendingRecorder: MediaRecorder | null = null;
     try {
-      // 1. Create DB record
-      const res = await api.post('/consultation-recordings/start', {
-        appointmentId: parseInt(appointmentId),
-        roomId,
-        patientId: parseInt(patientId),
-      });
-      setRecordingId(res.data.recording.id);
+      setPhase('consenting');
+      toast({ title: "Consent requested", description: "Waiting for the patient to allow recording and AI note-taking." });
+      const consent = await requestPatientConsent();
+      if (!consent.granted) {
+        setPhase('idle');
+        toast({ title: "Recording declined", description: "The patient did not consent to recording.", variant: "destructive" });
+        return;
+      }
+      if (!consent.token) {
+        throw new Error('Patient consent could not be verified by the server');
+      }
 
-      // 2. Mix local mic + any remote audio playing through LiveKit <audio> elements
+      // 1. Mix the LiveKit microphone track and remote audio rendered by the room.
       const ctx = new AudioContext();
       audioCtxRef.current = ctx;
+      await ctx.resume();
       const dest = ctx.createMediaStreamDestination();
+      let connectedAudioSources = 0;
 
-      try {
-        const localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-        ctx.createMediaStreamSource(localStream).connect(dest);
-      } catch { /* mic denied — record remote-only */ }
+      const localMicTrack = room.localParticipant
+        .getTrackPublication(Track.Source.Microphone)
+        ?.track?.mediaStreamTrack;
+      if (localMicTrack) {
+        ctx.createMediaStreamSource(new MediaStream([localMicTrack])).connect(dest);
+        connectedAudioSources += 1;
+      }
 
       document.querySelectorAll('audio').forEach((el) => {
         const audio = el as HTMLAudioElement;
         try {
           if (audio.srcObject instanceof MediaStream) {
-            ctx.createMediaStreamSource(audio.srcObject as MediaStream).connect(dest);
+            ctx.createMediaStreamSource(audio.srcObject).connect(dest);
+            connectedAudioSources += 1;
           }
-        } catch {}
+        } catch (error) {
+          console.warn('Unable to add a LiveKit audio track to the recording mix', error);
+        }
       });
 
-      // 3. Start MediaRecorder on the mixed stream
+      if (connectedAudioSources === 0) {
+        throw new Error('No consultation audio tracks are available to record');
+      }
+
       const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
         : MediaRecorder.isTypeSupported('audio/webm')
@@ -1523,14 +1641,49 @@ function InCallRecordingBar({
           : '';
       chunksRef.current = [];
       const recorder = new MediaRecorder(dest.stream, mimeType ? { mimeType } : {});
+      pendingRecorder = recorder;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+
+      // 2. Create the doctor-owned server record with the patient's consent evidence.
+      const res = await api.post('/consultation-recordings/start', {
+        appointmentId: parseInt(appointmentId),
+        roomId,
+        patientId: parseInt(patientId),
+        consent,
+      });
+      createdRecordingId = res.data.recording.id;
+      setRecordingId(res.data.recording.id);
+
+      // 3. Capture only after both parties have consented and the audit row exists.
       recorder.start(1000);
       mediaRecorderRef.current = recorder;
+      await publishSignal({
+        type: 'recording.started',
+        requestId: consent.requestId,
+        recordingId: res.data.recording.id,
+        startedAt: new Date().toISOString(),
+        aiScribeEnabled: true,
+      });
 
       setElapsed(0);
       setPhase('recording');
-      toast({ title: "🔴 Recording started", description: "Mixed audio (doctor + patient) being captured" });
+      toast({ title: "🔴 Recording started", description: "Doctor and patient audio will be transcribed into AI-drafted notes." });
     } catch (err: any) {
+      if (pendingRecorder && pendingRecorder.state !== 'inactive') {
+        pendingRecorder.stop();
+      }
+      await audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      mediaRecorderRef.current = null;
+      if (createdRecordingId) {
+        await api.delete(`/consultation-recordings/${createdRecordingId}`).catch(() => {});
+        await publishSignal({
+          type: 'recording.stopped',
+          recordingId: createdRecordingId,
+          stoppedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+      setPhase('idle');
       toast({ title: "Failed to start recording", description: err.message, variant: "destructive" });
     }
   };
@@ -1547,6 +1700,13 @@ function InCallRecordingBar({
       recorder.stop();
     });
     audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+    mediaRecorderRef.current = null;
+    publishSignal({
+      type: 'recording.stopped',
+      recordingId,
+      stoppedAt: new Date().toISOString(),
+    }).catch((error) => console.warn('Could not send recording stopped notice', error));
 
     const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
     chunksRef.current = [];
@@ -1574,25 +1734,37 @@ function InCallRecordingBar({
     }
   };
 
+  useEffect(() => {
+    registerStopHandler?.(phase === 'recording' ? stopAndUpload : null);
+    return () => registerStopHandler?.(null);
+  }, [phase, registerStopHandler]);
+
   const pollStatus = (id: number) => {
-    const iv = setInterval(async () => {
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    pollTimerRef.current = setInterval(async () => {
       try {
         const res = await api.get(`/consultation-recordings/${id}`);
         const status = res.data.recording?.status;
         if (status === 'completed') {
           setPhase('done');
-          clearInterval(iv);
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+          onRecordingComplete?.(id);
           toast({ title: "🎉 Recording ready!", description: "Transcription & AI summary are available" });
         } else if (status === 'failed') {
           setPhase('error');
-          clearInterval(iv);
+          if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
           toast({ title: "Transcription failed", description: "Recording saved to MinIO but AI processing failed", variant: "destructive" });
         }
-      } catch { clearInterval(iv); }
+      } catch {
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     }, 5000);
   };
 
-  const canRecord = !!(appointmentId && roomId && patientId);
+  const canRecord = !!(appointmentId && roomId && patientId && room && remoteParticipantCount > 0);
 
   return (
     <div className={`flex items-center gap-2 px-3 py-1.5 border-b border-slate-700 flex-shrink-0 text-xs ${
@@ -1603,7 +1775,7 @@ function InCallRecordingBar({
           <button
             onClick={startRecording}
             disabled={!canRecord}
-            title={canRecord ? 'Start recording this consultation' : 'No appointment linked — cannot record'}
+            title={canRecord ? 'Request patient consent and start recording' : 'A linked appointment and connected patient are required'}
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded font-medium transition-colors ${
               canRecord
                 ? 'bg-red-600 hover:bg-red-700 text-white'
@@ -1615,6 +1787,13 @@ function InCallRecordingBar({
           </button>
           <span className="text-slate-500 text-[10px]">Audio saved to MinIO</span>
         </>
+      )}
+
+      {phase === 'consenting' && (
+        <div className="flex items-center gap-1.5 text-amber-400">
+          <Loader2 className="w-3 h-3 animate-spin" />
+          Waiting for patient consent…
+        </div>
       )}
 
       {phase === 'recording' && (
@@ -1794,7 +1973,13 @@ function PatientHistoryDiaryTab({ patientId, patientName }: { patientId?: string
 
 function AIVisionInCallPanel({ consultationId }: { consultationId?: string }) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<{
+    findings?: string;
+    assessment?: string;
+    recommendations?: string[];
+    icd10Codes?: Array<{ code: string; description: string }>;
+    analyzedAt?: string;
+  } | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -1803,11 +1988,12 @@ function AIVisionInCallPanel({ consultationId }: { consultationId?: string }) {
     setCaptureError(null);
     setResult(null);
     try {
-      // Prefer the hidden remote-capture video, fall back to any visible video
-      const videoEl =
-        (document.getElementById('__remote-capture-video') as HTMLVideoElement | null) ??
-        (document.querySelector('video:not([muted])') as HTMLVideoElement | null) ??
-        (document.querySelector('video') as HTMLVideoElement | null);
+      // LiveKit mutes the local preview element, so prefer a playable unmuted
+      // element to capture the patient's remote camera rather than the doctor.
+      const videos = Array.from(document.querySelectorAll('video')) as HTMLVideoElement[];
+      const videoEl = videos.find(video => !video.muted && video.readyState >= 2)
+        ?? videos.find(video => video.readyState >= 2)
+        ?? null;
 
       if (!videoEl || !canvasRef.current) throw new Error('No video feed available to capture');
 
@@ -1817,14 +2003,23 @@ function AIVisionInCallPanel({ consultationId }: { consultationId?: string }) {
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas not supported');
       ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-      const imageData = canvas.toDataURL('image/jpeg', 0.8);
-
-      const res = await api.post('/ai/vision/analyze-frame', {
-        image: imageData,
-        context: 'video_consultation',
-        consultation_id: consultationId,
+      const imageBlob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          blob => blob ? resolve(blob) : reject(new Error('Could not capture the video frame')),
+          'image/jpeg',
+          0.85,
+        );
       });
-      setResult(res.data.analysis || res.data.result || 'Analysis complete.');
+
+      const form = new FormData();
+      form.append('image', imageBlob, `consultation-frame-${Date.now()}.jpg`);
+      form.append('sourceType', 'video_screenshot');
+      if (consultationId) form.append('appointmentId', consultationId);
+
+      const res = await api.post('/ai/vision/analyze', form, {
+        timeout: 120_000,
+      });
+      setResult(res.data.analysis);
     } catch (err: any) {
       setCaptureError(err.response?.data?.message || err.message || 'Failed to analyze frame');
     } finally {
@@ -1881,7 +2076,31 @@ function AIVisionInCallPanel({ consultationId }: { consultationId?: string }) {
         {result && (
           <div className="bg-slate-800 rounded-lg p-3">
             <p className="text-xs font-semibold text-teal-400 mb-2">AI Analysis Result</p>
-            <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{result}</p>
+            <div className="space-y-3 text-xs text-slate-300">
+              <div>
+                <p className="font-semibold text-slate-200 mb-1">Visible findings</p>
+                <p className="leading-relaxed whitespace-pre-wrap">{result.findings || 'No visible findings returned.'}</p>
+              </div>
+              {result.assessment && (
+                <div>
+                  <p className="font-semibold text-slate-200 mb-1">Clinical assessment</p>
+                  <p className="leading-relaxed whitespace-pre-wrap">{result.assessment}</p>
+                </div>
+              )}
+              {!!result.recommendations?.length && (
+                <div>
+                  <p className="font-semibold text-slate-200 mb-1">Recommendations</p>
+                  <ul className="space-y-1">
+                    {result.recommendations.map((recommendation, index) => (
+                      <li key={`${recommendation}-${index}`}>• {recommendation}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-[10px] text-amber-300">
+                AI decision support only — verify findings clinically before using them in the record.
+              </p>
+            </div>
           </div>
         )}
       </div>

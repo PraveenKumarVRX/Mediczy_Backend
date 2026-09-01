@@ -11,7 +11,7 @@ import {
   GridLayout,
   type ControlBarControls,
 } from '@livekit/components-react';
-import { Track, RoomEvent, ConnectionState } from 'livekit-client';
+import { Track, RoomEvent, ConnectionState, type Room } from 'livekit-client';
 // Import LiveKit component styles - order matters!
 import '@livekit/components-styles';
 import { Button } from '@/components/ui/button';
@@ -35,6 +35,19 @@ interface LiveKitRoomProps {
   onRestore?: () => void;
   /** Fill the parent container instead of taking the full viewport (fixed inset-0) */
   inline?: boolean;
+  /** Exposes the room to doctor-only clinical controls such as consented recording. */
+  onRoomReady?: (room: Room | null) => void;
+}
+
+function RoomAccessBridge({ onRoomReady }: { onRoomReady?: (room: Room | null) => void }) {
+  const room = useRoomContext();
+
+  useEffect(() => {
+    onRoomReady?.(room);
+    return () => onRoomReady?.(null);
+  }, [onRoomReady, room]);
+
+  return null;
 }
 
 /**
@@ -179,6 +192,7 @@ export default function LiveKitRoom({
   onMinimize,
   onRestore,
   inline = false,
+  onRoomReady,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
   // Incremented on disconnect to force fresh GridLayout mount, preventing stale
@@ -186,26 +200,6 @@ export default function LiveKitRoom({
   const [layoutKey, setLayoutKey] = useState(0);
   // Switch to relay-only ICE on pc-connection failure (restrictive corporate networks)
   const [useRelayOnly, setUseRelayOnly] = useState(false);
-
-  // Guard: never attempt LiveKit connection without credentials
-  if (!serverUrl || !token) {
-    return (
-      <div className="flex items-center justify-center h-full bg-slate-900 text-white">
-        <div className="text-center space-y-3">
-          <p className="text-red-400 font-medium">⚠️ Video credentials missing</p>
-          <p className="text-slate-400 text-sm">Cannot connect without a valid token.</p>
-          {onDisconnect && (
-            <button
-              className="mt-2 px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm text-white"
-              onClick={onDisconnect}
-            >
-              Return
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   const handleDisconnect = useCallback(() => {
     onDisconnect?.();
@@ -246,6 +240,27 @@ export default function LiveKitRoom({
     console.log('✅ Connected to LiveKit room:', roomName);
     setError(null);
   }, [roomName]);
+
+  // Keep hooks unconditional, then guard against attempting a connection
+  // without credentials.
+  if (!serverUrl || !token) {
+    return (
+      <div className="flex items-center justify-center h-full bg-slate-900 text-white">
+        <div className="text-center space-y-3">
+          <p className="text-red-400 font-medium">⚠️ Video credentials missing</p>
+          <p className="text-slate-400 text-sm">Cannot connect without a valid token.</p>
+          {onDisconnect && (
+            <button
+              className="mt-2 px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-sm text-white"
+              onClick={onDisconnect}
+            >
+              Return
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
@@ -311,6 +326,7 @@ export default function LiveKitRoom({
         style={roomStyle}
       >
         <LayoutContextProvider>
+          <RoomAccessBridge onRoomReady={onRoomReady} />
           {/* Custom header overlay */}
           <div className={`absolute top-0 left-0 right-0 z-50 flex items-center justify-between bg-gradient-to-b from-slate-900/80 to-transparent ${isMinimized ? 'p-2' : 'p-4'}`}>
             <div className="flex min-w-0 items-center gap-2">

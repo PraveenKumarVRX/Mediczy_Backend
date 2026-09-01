@@ -17,10 +17,36 @@ NOW="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 # Thresholds can be overridden via env
 DISK_WARN_PCT="${DISK_WARN_PCT:-85}"
+DISK_PRUNE_PCT="${DISK_PRUNE_PCT:-90}"
 MEM_AVAIL_WARN_MB="${MEM_AVAIL_WARN_MB:-2048}"
 SWAP_USED_WARN_PCT="${SWAP_USED_WARN_PCT:-70}"
 LOAD_WARN="${LOAD_WARN:-8.0}"
 ALERT_WEBHOOK_URL="${ALERT_WEBHOOK_URL:-}"
+
+# Dev-tool caches that are always safe to clear — never model weights, DB volumes,
+# or anything the running app reads. Same list used for the 2026-08-19/21 disk-full
+# incidents; re-populates harmlessly from normal package-manager/build activity.
+prune_dev_caches() {
+  local before after freed_pct
+  before="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
+
+  npm cache clean --force >/dev/null 2>&1 || true
+  pip cache purge >/dev/null 2>&1 || true
+  rm -rf /home/ubuntu/.cache/ms-playwright/* /home/ubuntu/.cache/puppeteer/* \
+         /home/ubuntu/.cache/typescript/* /home/ubuntu/.cache/copilot/* \
+         /home/ubuntu/.cache/cloud-code/* /home/ubuntu/.cache/n8n/* \
+         /home/ubuntu/.cache/prisma/* /home/ubuntu/.cache/pip/* 2>/dev/null || true
+  rm -rf /home/ubuntu/.gradle/caches/* /home/ubuntu/.gradle/wrapper/* \
+         /home/ubuntu/.gradle/daemon/* 2>/dev/null || true
+  rm -rf /home/ubuntu/.codeium/* /home/ubuntu/.gemini/* /home/ubuntu/.codex/* \
+         /home/ubuntu/.antigravity-server/* 2>/dev/null || true
+  find "$ROOT_DIR/logs" -name '*__2026-*' -mtime +0 -delete 2>/dev/null || true
+
+  after="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
+  freed_pct=$(( before - after ))
+  echo "${NOW} PRUNE host=${HOSTNAME_VAL} disk_before=${before}% disk_after=${after}% freed=${freed_pct}pp" >> "$LOG_FILE"
+  logger -t mediczy-resource-watchdog "Auto-pruned dev caches: ${before}% -> ${after}% disk usage"
+}
 
 disk_pct="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
 mem_avail_mb="$(free -m | awk '/Mem:/ {print $7}')"
@@ -40,6 +66,11 @@ alerts=()
 if [[ "$disk_pct" -ge "$DISK_WARN_PCT" ]]; then
   status="ALERT"
   alerts+=("disk ${disk_pct}% >= ${DISK_WARN_PCT}%")
+fi
+
+if [[ "$disk_pct" -ge "$DISK_PRUNE_PCT" ]]; then
+  prune_dev_caches
+  disk_pct="$(df -P / | awk 'NR==2 {gsub(/%/,"",$5); print $5}')"
 fi
 
 if [[ "$mem_avail_mb" -le "$MEM_AVAIL_WARN_MB" ]]; then

@@ -1,5 +1,5 @@
 import express from 'express';
-import { body, param, query } from 'express-validator';
+import { body, param, query, validationResult } from 'express-validator';
 import { authDoctor, authUser } from '../middleware/auth.middleware.js';
 import ConsultationRecording from '../models/consultationRecording.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
@@ -11,6 +11,8 @@ import FormData from 'form-data';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import multer from 'multer';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -29,6 +31,61 @@ const LIVEKIT_RECORDINGS_DIR = process.env.LIVEKIT_RECORDINGS_DIR || '/mnt/recor
 const RECORDINGS_BASE_URL = process.env.RECORDINGS_BASE_URL || '/api/recordings';
 
 /**
+ * @route   POST /api/consultation-recordings/consent
+ * @desc    Create a short-lived, server-signed patient consent receipt
+ * @access  Private (Patient)
+ */
+router.post('/consent', authUser, [
+  body('appointmentId').isInt().withMessage('Valid appointment ID required'),
+  body('roomId').isString().trim().notEmpty().withMessage('Room ID required'),
+  body('requestId').isString().trim().notEmpty().withMessage('Consent request ID required'),
+  body('granted').isBoolean().withMessage('Consent choice required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: 'Invalid consent request', errors: errors.array() });
+    }
+
+    if (req.userRole === 'doctor' || req.user?.role === 'doctor') {
+      return res.status(403).json({ success: false, message: 'Only the patient can answer a recording request' });
+    }
+
+    const { appointmentId, roomId, requestId, granted } = req.body;
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+    if (Number(appointment.userId) !== Number(req.user?.id)) {
+      return res.status(403).json({ success: false, message: 'This appointment does not belong to you' });
+    }
+
+    if (!granted) {
+      return res.json({ success: true, granted: false });
+    }
+    if (!JWT_CONFIG.SECRET) {
+      return res.status(500).json({ success: false, message: 'Server consent signing is unavailable' });
+    }
+
+    const grantedAt = new Date().toISOString();
+    const consentToken = jwt.sign({
+      purpose: 'consultation_recording_consent',
+      patientId: Number(req.user.id),
+      appointmentId: Number(appointmentId),
+      roomId,
+      requestId,
+      granted: true,
+      grantedAt
+    }, JWT_CONFIG.SECRET, { expiresIn: '5m' });
+
+    return res.json({ success: true, granted: true, grantedAt, consentToken });
+  } catch (error) {
+    console.error('Recording consent error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to record patient consent' });
+  }
+});
+
+/**
  * @route   POST /api/consultation-recordings/start
  * @desc    Start recording a consultation session
  * @access  Private (Doctor)
@@ -36,11 +93,51 @@ const RECORDINGS_BASE_URL = process.env.RECORDINGS_BASE_URL || '/api/recordings'
 router.post('/start', authDoctor, [
   body('appointmentId').isInt().withMessage('Valid appointment ID required'),
   body('roomId').notEmpty().withMessage('Room ID required'),
-  body('patientId').isInt().withMessage('Valid patient ID required')
+  body('patientId').isInt().withMessage('Valid patient ID required'),
+  body('consent.granted').custom(value => value === true).withMessage('Patient consent is required'),
+  body('consent.requestId').isString().trim().notEmpty().withMessage('Consent request ID required'),
+  body('consent.grantedAt').isISO8601().withMessage('Consent timestamp required'),
+  body('consent.token').isString().notEmpty().withMessage('Signed patient consent receipt required')
 ], async (req, res) => {
   try {
-    const { appointmentId, roomId, patientId } = req.body;
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid patient consent and consultation details are required',
+        errors: errors.array()
+      });
+    }
+
+    const { appointmentId, roomId, patientId, consent } = req.body;
     const doctorId = req.doctor.id;
+
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+    if (Number(appointment.doctorId) !== Number(doctorId)) {
+      return res.status(403).json({ success: false, message: 'This appointment is not assigned to you' });
+    }
+    if (Number(appointment.userId) !== Number(patientId)) {
+      return res.status(400).json({ success: false, message: 'Patient does not match this appointment' });
+    }
+
+    let consentReceipt;
+    try {
+      consentReceipt = jwt.verify(consent.token, JWT_CONFIG.SECRET);
+    } catch {
+      return res.status(403).json({ success: false, message: 'Patient consent receipt is invalid or expired' });
+    }
+    const consentMatches = consentReceipt.purpose === 'consultation_recording_consent'
+      && consentReceipt.granted === true
+      && Number(consentReceipt.patientId) === Number(patientId)
+      && Number(consentReceipt.appointmentId) === Number(appointmentId)
+      && consentReceipt.roomId === roomId
+      && consentReceipt.requestId === consent.requestId;
+    if (!consentMatches) {
+      return res.status(403).json({ success: false, message: 'Patient consent receipt does not match this consultation' });
+    }
 
     // Check if recording already exists
     const existing = await ConsultationRecording.findOne({
@@ -61,7 +158,16 @@ router.post('/start', authDoctor, [
       patientId,
       roomId,
       status: 'recording',
-      startedAt: new Date()
+      startedAt: new Date(),
+      metadata: {
+        patientConsent: {
+          granted: true,
+          requestId: consent.requestId,
+          grantedAt: consentReceipt.grantedAt,
+          participantIdentity: consent.participantIdentity || null,
+          method: 'livekit_data_channel'
+        }
+      }
     });
 
     res.json({
@@ -230,22 +336,25 @@ async function processUploadedRecording(recording, localFilePath) {
     console.log(`🎙️ Transcribing browser recording: ${recording.id}`);
     const transcriptionResult = await transcribeRecording(localFilePath);
 
-    if (transcriptionResult.success) {
-      recording.transcription = transcriptionResult.text;
-
-      console.log(`🤖 Generating AI summary for recording: ${recording.id}`);
-      const analysisResult = await analyzeConsultationTranscript(transcriptionResult.text);
-      if (analysisResult.success) {
-        recording.aiSummary = analysisResult.summary;
-        recording.aiPrescription = analysisResult.prescription;
-        recording.metadata = {
-          ...(recording.metadata || {}),
-          transcriptionProvider: transcriptionResult.provider,
-          analysisModel: analysisResult.model,
-          processingTime: Date.now() - new Date(recording.endedAt || Date.now()).getTime(),
-        };
-      }
+    if (!transcriptionResult.success || !transcriptionResult.text?.trim()) {
+      throw new Error(transcriptionResult.error || 'Transcription returned no text');
     }
+
+    recording.transcription = transcriptionResult.text;
+
+    console.log(`🤖 Generating AI summary for recording: ${recording.id}`);
+    const analysisResult = await analyzeConsultationTranscript(transcriptionResult.text);
+    if (analysisResult.success) {
+      recording.aiSummary = analysisResult.summary;
+      recording.aiPrescription = analysisResult.prescription;
+    }
+    recording.metadata = {
+      ...(recording.metadata || {}),
+      transcriptionProvider: transcriptionResult.provider,
+      analysisModel: analysisResult.model || null,
+      analysisError: analysisResult.success ? null : analysisResult.error,
+      processingTime: Date.now() - new Date(recording.endedAt || Date.now()).getTime(),
+    };
 
     recording.status = 'completed';
     await recording.save();
@@ -355,7 +464,7 @@ async function transcribeRecording(filePath) {
     }
 
     const fileStream = fs.createReadStream(filePath);
-    const result = await llmProvider.transcribe(fileStream, { language: 'en', responseFormat: 'verbose_json' });
+    const result = await llmProvider.transcribe(fileStream, { language: null, responseFormat: 'verbose_json' });
     return result;
   } catch (error) {
     console.error('Transcription error:', error);
@@ -433,9 +542,16 @@ router.get('/appointment/:appointmentId', authDoctor, [
 ], async (req, res) => {
   try {
     const { appointmentId } = req.params;
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+    if (Number(appointment.doctorId) !== Number(req.doctor.id)) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
     
     const recordings = await ConsultationRecording.findAll({
-      where: { appointmentId },
+      where: { appointmentId, doctorId: req.doctor.id },
       order: [['createdAt', 'DESC']]
     });
 

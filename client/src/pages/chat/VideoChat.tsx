@@ -8,12 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Phone, Video, VideoOff, Send, UserCheck, User2, Loader2, Mic, MicOff, PhoneOff } from "lucide-react";
+import { Phone, Video, Send, UserCheck, User2, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,7 +19,7 @@ import api from "@/utils/api";
 import { doctorProfileProps, UserProps } from "@/lib/user.type";
 import { randomID } from "@/lib/utils";
 import { useSocket } from "@/context/SocketContext";
-import useLiveKit from "@/hooks/useLiveKit";
+import LiveKitRoom from "@/components/video/LiveKitRoom";
 
 // Define types
 interface User {
@@ -106,24 +104,16 @@ const Chat = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isVideoCall, setIsVideoCall] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const [isCallLoading, setIsCallLoading] = useState(false);
+  const [liveKitConn, setLiveKitConn] = useState<{
+    serverUrl: string;
+    token: string;
+    roomName: string;
+    iceServers?: RTCIceServer[];
+  } | null>(null);
   const { toast } = useToast();
   const messageEndRef = useRef<HTMLDivElement>(null);
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  
-  // LiveKit hook for video calls
-  const { 
-    localStream, 
-    remoteStreams, 
-    isJoined, 
-    isLoading, 
-    joinChannel, 
-    leaveChannel, 
-    toggleVideo, 
-    toggleAudio 
-  } = useLiveKit();
 
   // Get recipient and instant flag from URL
   const searchParams = new URLSearchParams(window.location.search);
@@ -181,20 +171,6 @@ const Chat = () => {
       }
     }
   }, [recipientIdFromUrl, availableUsers, isInstantConsultation, userType, currentId, messages.length]);
-
-  // Attach local stream to video element
-  useEffect(() => {
-    if (localStream && localVideoRef.current) {
-      localVideoRef.current.srcObject = localStream;
-    }
-  }, [localStream]);
-
-  // Attach remote stream to video element
-  useEffect(() => {
-    if (remoteStreams.length > 0 && remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStreams[0].stream;
-    }
-  }, [remoteStreams]);
 
   // Initialize socket listeners
   useEffect(() => {
@@ -332,14 +308,29 @@ const Chat = () => {
     setNewMessage("");
   };
 
-  // Start video call using LiveKit
-  const startVideoCall = async () => {
+  // Get a real LiveKit token/serverUrl for a room and start the embedded call.
+  // Uses the same POST /video/livekit/token contract as the working
+  // appointment-consultation flow (VideoConsultation.tsx) instead of the old
+  // window.open()-based approach, whose in-page mute/video buttons never
+  // touched the actual call (they were no-ops over a separate popped-up tab).
+  const startCall = async (roomID: string, videoEnabled: boolean) => {
     if (!selectedRecipient || !currentId) return;
 
-    const roomID = `mediczy_${currentId}_${selectedRecipient._id}_${randomID(5)}`;
-
+    setIsCallLoading(true);
     try {
-      await joinChannel(roomID, currentId);
+      const response = await api.post("/video/livekit/token", { roomName: roomID });
+      const data = response.data;
+      if (!data?.success || !data?.token || !data?.serverUrl) {
+        throw new Error("Video credentials missing from server response");
+      }
+
+      setLiveKitConn({
+        serverUrl: data.serverUrl,
+        token: data.token,
+        roomName: data.roomName || roomID,
+        iceServers: data.iceServers,
+      });
+      setIsVideoEnabled(videoEnabled);
       setIsVideoCall(true);
 
       // Notify the recipient about the incoming call via socket
@@ -355,60 +346,34 @@ const Chat = () => {
       }
 
       toast({
-        title: "Starting video call",
+        title: videoEnabled ? "Starting video call" : "Starting audio call",
         description: `Connecting to ${getRecipientName(selectedRecipient)}...`,
       });
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to start video call. Please check camera/microphone permissions.",
+        description: "Failed to start call. Please check camera/microphone permissions.",
         variant: "destructive",
       });
+    } finally {
+      setIsCallLoading(false);
     }
   };
 
-  // Handle toggle mute
-  const handleToggleMute = () => {
-    toggleAudio();
-    setIsMuted(!isMuted);
-  };
-
-  // Handle toggle video
-  const handleToggleVideo = () => {
-    toggleVideo();
-    setIsVideoEnabled(!isVideoEnabled);
-  };
-
-  // Start audio call (placeholder - uses same LiveKit with video off)
-  const startAudioCall = async () => {
+  const startVideoCall = () => {
     if (!selectedRecipient || !currentId) return;
-    
-    const roomID = `mediczy_audio_${currentId}_${selectedRecipient._id}_${randomID(5)}`;
-    
-    try {
-      await joinChannel(roomID, currentId);
-      setIsVideoCall(true);
-      setIsVideoEnabled(false);
-      toggleVideo(); // Turn off video for audio-only call
-      
-      toast({
-        title: "Starting audio call",
-        description: `Connecting to ${getRecipientName(selectedRecipient)}...`,
-      });
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start audio call. Please check microphone permissions.",
-        variant: "destructive",
-      });
-    }
+    startCall(`mediczy_${currentId}_${selectedRecipient._id}_${randomID(5)}`, true);
+  };
+
+  const startAudioCall = () => {
+    if (!selectedRecipient || !currentId) return;
+    startCall(`mediczy_audio_${currentId}_${selectedRecipient._id}_${randomID(5)}`, false);
   };
 
   // End video call
   const endVideoCall = () => {
-    leaveChannel();
+    setLiveKitConn(null);
     setIsVideoCall(false);
-    setIsMuted(false);
     setIsVideoEnabled(true);
     toast({
       title: "Call ended",
@@ -730,90 +695,39 @@ const Chat = () => {
           </Card>
         </div>
 
-        {/* Video Call Dialog */}
+        {/* Video Call Dialog — renders the real embedded LiveKit room (same
+            component the working scheduled-consultation flow uses), so the
+            mic/camera controls actually control the published tracks
+            instead of the old no-op window.open() overlay. */}
         <Dialog
           open={isVideoCall}
           onOpenChange={(open) => !open && endVideoCall()}
         >
           <DialogContent className="h-[80vh] max-w-4xl p-0 overflow-hidden">
-            <DialogHeader className="p-4 border-b">
-              <DialogTitle className="flex items-center justify-between">
-                <span>
-                  {isVideoEnabled ? "Video" : "Audio"} Call with{" "}
-                  {selectedRecipient ? getRecipientName(selectedRecipient) : ""}
-                </span>
-              </DialogTitle>
-            </DialogHeader>
-            <div className="h-full w-full bg-black relative flex flex-col">
-              {/* Video Container */}
-              <div className="flex-1 relative">
-                {/* Remote Video (large) */}
-                <video
-                  ref={remoteVideoRef}
-                  autoPlay
-                  playsInline
-                  className="w-full h-full object-cover"
+            <div className="h-full w-full bg-slate-900 relative flex flex-col">
+              {liveKitConn ? (
+                <LiveKitRoom
+                  serverUrl={liveKitConn.serverUrl}
+                  token={liveKitConn.token}
+                  roomName={liveKitConn.roomName}
+                  participantName={
+                    currentDoctor
+                      ? `${currentDoctor.firstName} ${currentDoctor.lastName}`
+                      : `${currentUser?.firstName} ${currentUser?.lastName}`
+                  }
+                  audioOnly={!isVideoEnabled}
+                  inline
+                  iceServers={liveKitConn.iceServers}
+                  onDisconnect={endVideoCall}
                 />
-                
-                {/* Local Video (small overlay) */}
-                <div className="absolute bottom-4 right-4 w-32 h-24 bg-gray-800 rounded-lg overflow-hidden shadow-lg">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className="w-full h-full object-cover"
-                  />
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center text-white">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                    <p>{isCallLoading ? "Connecting..." : "Call ended"}</p>
+                  </div>
                 </div>
-                
-                {/* Loading indicator */}
-                {isLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50">
-                    <div className="text-center text-white">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-                      <p>Connecting...</p>
-                    </div>
-                  </div>
-                )}
-                
-                {/* No remote stream indicator */}
-                {!isLoading && remoteStreams.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center text-white">
-                      <User2 className="h-16 w-16 mx-auto mb-4 opacity-50" />
-                      <p>Waiting for {selectedRecipient ? getRecipientName(selectedRecipient) : "participant"} to join...</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              {/* Call Controls */}
-              <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 flex items-center gap-4">
-                <Button
-                  variant={isMuted ? "destructive" : "secondary"}
-                  size="icon"
-                  onClick={handleToggleMute}
-                  className="rounded-full h-12 w-12"
-                >
-                  {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                </Button>
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  onClick={endVideoCall}
-                  className="rounded-full h-14 w-14"
-                >
-                  <PhoneOff className="h-6 w-6" />
-                </Button>
-                <Button
-                  variant={isVideoEnabled ? "secondary" : "destructive"}
-                  size="icon"
-                  onClick={handleToggleVideo}
-                  className="rounded-full h-12 w-12"
-                >
-                  {isVideoEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-                </Button>
-              </div>
+              )}
             </div>
           </DialogContent>
         </Dialog>
