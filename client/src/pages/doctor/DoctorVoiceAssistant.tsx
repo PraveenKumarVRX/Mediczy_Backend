@@ -538,12 +538,29 @@ export default function DoctorVoiceAssistant() {
       setVadError(null);
     }).catch(err => {
       console.warn('VAD init failed, voice commands require mic permission:', err);
-      setVadReady(false);
       // Distinguish permission denial from asset/model load failure for a clear CTA
       const name = (err as Error)?.name || '';
-      const msg = /NotAllowed|Permission/i.test(name + String(err))
+      const permissionDenied = /NotAllowed|Permission/i.test(name + String(err));
+      const msg = permissionDenied
         ? 'Microphone access was blocked. Allow mic permission to use voice commands.'
         : 'Voice model failed to load. You can still type commands, or retry.';
+
+      if (!permissionDenied && browserSttSupported) {
+        sttModeRef.current = 'browser';
+        setSttMode('browser');
+        const ok = startBrowserSttRef.current?.() ?? false;
+        if (ok) {
+          setVadReady(true);
+          setVadError(null);
+          toast({
+            title: 'Using on-device voice',
+            description: 'VAD model did not start, so iSHA switched to browser speech recognition.',
+          });
+          return;
+        }
+      }
+
+      setVadReady(false);
       setVadError(msg);
     });
 

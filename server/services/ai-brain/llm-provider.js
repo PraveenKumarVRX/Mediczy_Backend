@@ -73,6 +73,17 @@ function getProviderEnv(key) {
   return _providerEnvCache[key];
 }
 
+function getProviderIntEnv(keys, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const candidates = Array.isArray(keys) ? keys : [keys];
+  for (const key of candidates) {
+    const value = Number(getProviderEnv(key));
+    if (Number.isFinite(value) && value > 0) {
+      return Math.min(Math.max(value, min), max);
+    }
+  }
+  return fallback;
+}
+
 /**
  * Direct fetch for iSHA — uses JWT auto-login (same pattern as SIB retrieval_llm.py).
  * Credentials: ISHA_AUTH_USERNAME / ISHA_AUTH_PASSWORD.
@@ -165,8 +176,12 @@ async function callIsha(params) {
   const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_AI_URL'), 'https://ai.isha.buzz');
   if (!baseURL) throw new Error('ISHA_AI_URL not configured');
   const url = `${baseURL}/v1/chat/completions`;
+  const ishaTimeoutMs = getProviderIntEnv(['ISHA_LLM_TIMEOUT', 'ISHA_TIMEOUT_MS'], 30_000, {
+    min: 5_000,
+    max: 120_000,
+  });
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30_000);
+  const timeoutId = setTimeout(() => controller.abort(), ishaTimeoutMs);
 
   const token = await getIshaToken();
   const headers = {
@@ -221,7 +236,7 @@ async function callIsha(params) {
   } catch (err) {
     clearTimeout(timeoutId);
     cbFail(() => _ishaFailures, v => { _ishaFailures = v; }, () => _ishaOpenUntil, v => { _ishaOpenUntil = v; }, 'isha');
-    if (err.name === 'AbortError') throw new Error('iSHA request timed out (30s)');
+    if (err.name === 'AbortError') throw new Error(`iSHA request timed out (${Math.round(ishaTimeoutMs / 1000)}s)`);
     throw err;
   }
 }
@@ -486,7 +501,7 @@ async function callSib(params) {
       _sibFailures = 0;
       console.warn('[LLM] SIB circuit opened — skipping for 5 min');
     }
-    if (err.name === 'AbortError') throw new Error('sib request timed out (8s)');
+    if (err.name === 'AbortError') throw new Error(`sib request timed out (${Math.round(sibTimeoutMs / 1000)}s)`);
     throw err;
   }
 }
@@ -510,6 +525,7 @@ const ISHA_DIRECT_ENABLED = isIshaConfigured();
 const MEDIQZY_AI_PRIMARY_PROVIDER = String(getProviderEnv('MEDIQZY_AI_PRIMARY_PROVIDER') || 'isha').toLowerCase();
 const ISHA_LLM_AGENT_TYPE = getProviderEnv('ISHA_LLM_AGENT_TYPE') || getProviderEnv('ISHA_AGENT_TYPE') || 'Claims';
 const ISHA_PRIMARY_ENABLED = MEDIQZY_AI_PRIMARY_PROVIDER === 'isha' && ISHA_DIRECT_ENABLED;
+const GROQ_CHAT_MODEL = getProviderEnv('GROQ_MODEL') || getProviderEnv('GROQ_CHAT_MODEL') || 'openai/gpt-oss-20b';
 
 const PROVIDERS = [
   {
@@ -522,8 +538,8 @@ const PROVIDERS = [
   },
   {
     name: 'groq',
-    label: 'Groq (Llama 3.3 70B fallback)',
-    model: 'llama-3.3-70b-versatile',
+    label: 'Groq chat fallback',
+    model: GROQ_CHAT_MODEL,
     getClient: getGroqClient,
     priority: ISHA_PRIMARY_ENABLED ? 20 : 1,
   },
@@ -913,6 +929,20 @@ async function chat({
 
       // Detect stub responses from any provider (e.g. iSHA returning 200 when model not loaded)
       const rawContent = response.choices[0]?.message?.content || '';
+      const rawToolCalls = response.choices[0]?.message?.tool_calls || [];
+      if (!rawContent.trim() && rawToolCalls.length === 0) {
+        console.warn(`[LLM] ${provider.label} returned empty content, cascading...`);
+        cascade.push({ provider: provider.name, status: 'error', error: 'Empty content response' });
+        errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Empty content response`;
+        import('../llm-metrics.service.js').then(({ logProviderCall }) => {
+          logProviderCall(provider.name, cognitiveTier, Date.now() - providerStart,
+            response?.usage?.prompt_tokens || 0, response?.usage?.completion_tokens || 0,
+            params.model, false, 'empty-content', null);
+        }).catch(() => {});
+        response = null;
+        continue;
+      }
+
       if (STUB_RESPONSE_MARKERS.some(marker => rawContent.includes(marker))) {
         const matchedMarker = STUB_RESPONSE_MARKERS.find(marker => rawContent.includes(marker));
         console.warn(`[LLM] ${provider.label} returned stub placeholder, cascading... MARKER="${matchedMarker}" CONTENT="${rawContent.substring(0,200)}"`);
