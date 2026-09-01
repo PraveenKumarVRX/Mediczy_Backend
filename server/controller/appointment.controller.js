@@ -20,6 +20,10 @@ import {
   findSlotConflict,
   normalizeTimeHHMM,
 } from '../utils/appointmentSlotTime.js';
+import {
+  buildActiveDoctorCallPayload,
+  isRecoverableDoctorCall,
+} from '../utils/activeCallPayload.js';
 import { notifyCareTeamOfBooking } from '../services/care-team-notification.service.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
@@ -922,11 +926,17 @@ export const getUserAppointments = async (req, res) => {
       throw err;
     }
 
+    const activeCallAppointment = appointments.find((appointment) => isRecoverableDoctorCall(appointment));
+    const activeCall = activeCallAppointment
+      ? buildActiveDoctorCallPayload(activeCallAppointment)
+      : null;
+
     return res.status(200).json({
       success: true,
       count: appointments.length,
       data: appointments,
-      appointments // Keep for backward compatibility
+      appointments, // Keep for backward compatibility
+      activeCall
     });
   } catch (error) {
     console.error('Get appointments error:', error);

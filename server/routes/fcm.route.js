@@ -2,6 +2,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import {
   sendVideoCallNotification,
+  sendDoctorCallingNotification,
   sendMessageNotification,
   sendAppointmentNotification,
   sendSystemNotification,
@@ -10,8 +11,43 @@ import {
   isFirebaseInitialized
 } from '../utils/firebase-admin.js';
 import { FCMToken } from '../services/notification.service.js';
+import Appointment from '../models/appointment.model.intelligent.js';
+import Doctor from '../models/doctor.model.intelligent.js';
+import { Op } from 'sequelize';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import {
+  ACTIVE_CALL_RECOVERY_WINDOW_MS,
+  buildActiveDoctorCallPayload,
+} from '../utils/activeCallPayload.js';
 
 const router = express.Router();
+
+async function findActiveCallForPatient(req, userId) {
+  const transaction = await postgresSequelize.transaction();
+  try {
+    await req.setSequelizeRlsContext?.(transaction);
+    const appointment = await Appointment.findOne({
+      where: {
+        userId,
+        status: 'in-progress',
+        callInitiatedBy: 'doctor',
+        callInitiatedAt: {
+          [Op.gte]: new Date(Date.now() - ACTIVE_CALL_RECOVERY_WINDOW_MS),
+        },
+      },
+      include: [
+        { model: Doctor, as: 'doctor', attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization'] },
+      ],
+      order: [['callInitiatedAt', 'DESC']],
+      transaction,
+    });
+    await transaction.commit();
+    return appointment ? buildActiveDoctorCallPayload(appointment) : null;
+  } catch (error) {
+    await transaction.rollback().catch(() => {});
+    throw error;
+  }
+}
 
 /**
  * Register FCM token for a user
@@ -69,9 +105,27 @@ router.post('/register-token', authUser, async (req, res) => {
 
     console.log(`✅ FCM token registered for ${userType} ${userId} (${deviceType})`);
 
+    let activeCall = null;
+    let activeCallRecovery = null;
+    if (userType === 'patient') {
+      try {
+        activeCall = await findActiveCallForPatient(req, userId);
+        if (activeCall) {
+          await sendDoctorCallingNotification(fcmToken, activeCall);
+          activeCallRecovery = { fcmSent: true };
+          console.log(`✅ Re-sent active call notification for patient ${userId} appointment ${activeCall.appointmentId}`);
+        }
+      } catch (activeCallError) {
+        activeCallRecovery = { fcmSent: false, error: activeCallError.message };
+        console.error('Active call recovery after FCM registration failed:', activeCallError);
+      }
+    }
+
     res.json({
       success: true,
-      message: 'FCM token registered successfully'
+      message: 'FCM token registered successfully',
+      activeCall,
+      activeCallRecovery
     });
   } catch (error) {
     console.error('Error registering FCM token:', error);
