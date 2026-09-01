@@ -439,9 +439,31 @@ class VideoController {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { roomName, roomId } = req.body;
+      const { roomName, roomId, appointmentId, identity } = req.body;
       const userId = req.user.id;
       const userRole = req.user.role || 'user';
+
+      // Mobile clients use POST as a compatibility fallback after GET. Keep
+      // appointment ownership/status/room resolution identical to the GET
+      // path; otherwise a failed appointment lookup silently creates a new
+      // random room and doctor/patient can never see each other.
+      if (appointmentId) {
+        req.query = {
+          ...req.query,
+          appointmentId: String(appointmentId),
+          ...(roomName || roomId ? { roomId: roomName || roomId } : {}),
+          ...(identity ? { identity } : {}),
+        };
+        return VideoController.generateLiveKitTokenFromQuery(req, res);
+      }
+
+      if (!roomName && !roomId && ['user', 'patient', 'doctor'].includes(String(userRole).toLowerCase())) {
+        return res.status(400).json({
+          success: false,
+          message: 'appointmentId, roomName, or roomId is required'
+        });
+      }
+
       const displayName =
         [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') ||
         req.user.name ||

@@ -77,7 +77,10 @@ router.post(
   '/livekit/token',
   authUser,
   [
-    body('roomName').optional().isString().withMessage('Room name must be a string')
+    body('roomName').optional().isString().withMessage('Room name must be a string'),
+    body('roomId').optional().isString().withMessage('Room ID must be a string'),
+    body('appointmentId').optional().isInt().withMessage('Valid appointment ID is required'),
+    body('identity').optional().isString().withMessage('Identity must be a string')
   ],
   VideoController.generateLiveKitToken
 );

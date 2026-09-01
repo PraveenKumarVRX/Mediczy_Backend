@@ -1069,7 +1069,9 @@ router.get('/my-appointments', authUser, [
 router.get('/doctor-appointments', authUser, [
   query('date').optional().isDate(),
   query('status').optional().isIn(['scheduled', 'confirmed', 'completed', 'cancelled', 'in-progress']),
-  query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit'])
+  query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
+  query('limit').optional().isInt({ min: 1, max: 300 }),
+  query('offset').optional().isInt({ min: 0 })
 ], async (req, res) => {
   let rlsTransaction = null;
   try {
@@ -1081,6 +1083,8 @@ router.get('/doctor-appointments', authUser, [
     }
 
     const { date, status, consultationType } = req.query;
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 300);
+    const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
     const resolvedDoctorId = await resolveDoctorIdFromRequest(req);
     if (!resolvedDoctorId) {
       return res.status(400).json({
@@ -1106,9 +1110,15 @@ router.get('/doctor-appointments', authUser, [
     const doctorAppointments = await Appointment.findAll({
       where,
       order: [
-        ['appointmentDate', 'ASC'],
-        ['appointmentTime', 'ASC']
+        // Mobile clients request a bounded feed and retain the selected row by
+        // position. Returning the doctor's entire history oldest-first caused
+        // an active consultation to be replaced by appointment #1.
+        ['appointmentDate', 'DESC'],
+        ['appointmentTime', 'DESC'],
+        ['id', 'DESC']
       ],
+      limit,
+      offset,
       transaction: rlsTransaction,
     });
     await rlsTransaction.commit();
@@ -1195,6 +1205,12 @@ router.get('/doctor-appointments', authUser, [
         inProgress: doctorAppointments.filter(apt => apt.status === 'in-progress').length,
         completed: doctorAppointments.filter(apt => apt.status === 'completed').length,
         cancelled: doctorAppointments.filter(apt => apt.status === 'cancelled').length
+      },
+      pagination: {
+        limit,
+        offset,
+        returned: enhancedAppointments.length,
+        hasMore: enhancedAppointments.length === limit
       }
     });
   } catch (error) {

@@ -328,6 +328,13 @@ export const createDoctorTriageRouter = ({
   router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req, res) => {
     let rlsTransaction = null;
     const doctorId = req.doctor.id;
+    const abortCall = async (statusCode, payload) => {
+      if (rlsTransaction && !rlsTransaction.finished) {
+        await rlsTransaction.rollback().catch(() => {});
+      }
+      rlsTransaction = null;
+      return res.status(statusCode).json(payload);
+    };
     try {
       const { appointmentId } = req.params;
       const doctorIdCandidates = await resolveDoctorIdCandidates({
@@ -359,13 +366,12 @@ export const createDoctorTriageRouter = ({
       });
 
       if (!appointment) {
-        await rlsTransaction.rollback();
-        return res.status(404).json({ success: false, message: 'Appointment not found or you are not authorized' });
+        return abortCall(404, { success: false, message: 'Appointment not found or you are not authorized' });
       }
 
       const normalizedAppointmentStatus = String(appointment.status || '').toLowerCase().replace(/_/g, '-');
       if (!['confirmed', 'scheduled', 'accepted', 'in-progress'].includes(normalizedAppointmentStatus)) {
-        return res.status(400).json({
+        return abortCall(400, {
           success: false,
           message: `Cannot initiate call. Appointment status is ${appointment.status}. Only confirmed/scheduled/in-progress appointments can be started.`,
           currentStatus: appointment.status,
@@ -401,7 +407,7 @@ export const createDoctorTriageRouter = ({
         });
 
         if (!activePlan) {
-          return res.status(402).json({
+          return abortCall(402, {
             success: false,
             message: 'Payment required before starting video consultation. Please pay now or use a membership plan.',
             paymentStatus: appointment.paymentStatus,
@@ -422,7 +428,7 @@ export const createDoctorTriageRouter = ({
       const isValidTime = Number.isFinite(hour) && Number.isFinite(minute) && Number.isFinite(second) && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59 && second >= 0 && second <= 59;
 
       if (!isValidDate || !isValidTime) {
-        return res.status(400).json({
+        return abortCall(400, {
           success: false,
           message: 'Invalid appointment date/time. Unable to initiate call.',
           appointmentDate: appointmentDateStr,
@@ -436,12 +442,35 @@ export const createDoctorTriageRouter = ({
       const minutesUntilStart = (appointmentStartUTC.getTime() - nowUTC.getTime()) / (1000 * 60);
 
       if (minutesUntilStart > 15) {
-        return res.status(400).json({
+        return abortCall(400, {
           success: false,
           message: 'Call can be initiated only 15 minutes before appointment time.',
           appointmentDate: appointmentDateStr,
           appointmentTime: appointmentTimeStr,
           minutesUntilStart: Math.ceil(minutesUntilStart),
+        });
+      }
+
+      // Never turn an old appointment into an active call. A malformed mobile
+      // selection previously sent appointment #1 (from 2024); because only the
+      // upper time bound was checked, the request succeeded and notified the
+      // wrong patient. Permit only a recently initiated in-progress call to
+      // reconnect after the normal one-hour join window.
+      const callInitiatedAt = appointment.callInitiatedAt ? new Date(appointment.callInitiatedAt) : null;
+      const isRecentReconnect =
+        normalizedAppointmentStatus === 'in-progress' &&
+        minutesUntilStart >= -24 * 60 &&
+        callInitiatedAt &&
+        !Number.isNaN(callInitiatedAt.getTime()) &&
+        nowUTC.getTime() - callInitiatedAt.getTime() <= 2 * 60 * 60 * 1000;
+
+      if (minutesUntilStart < -60 && !isRecentReconnect) {
+        return abortCall(400, {
+          success: false,
+          message: 'Cannot initiate call for a stale appointment. Refresh appointments and select the current consultation.',
+          currentStatus: appointment.status,
+          appointmentDate: appointmentDateStr,
+          appointmentTime: appointmentTimeStr,
         });
       }
 

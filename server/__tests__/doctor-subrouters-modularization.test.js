@@ -289,5 +289,58 @@ describe('Doctor Subrouter Modularization Regression', () => {
       expect(res.status).toBe(404);
       expect(res.body).toMatchObject({ success: false, message: 'Triage case not found' });
     });
+
+    it('rejects a stale appointment before creating a video room', async () => {
+      const transaction = {
+        finished: false,
+        rollback: jest.fn().mockImplementation(async () => {
+          transaction.finished = 'rollback';
+        }),
+        commit: jest.fn(),
+      };
+      const staleAppointment = {
+        id: 1,
+        userId: 2,
+        doctorId: 11,
+        status: 'confirmed',
+        paymentStatus: 'pending',
+        paymentAmount: 1,
+        consultationType: 'online',
+        appointmentDate: '2024-03-16',
+        appointmentTime: '13:00:00',
+        patient: { email: 'patient@example.com' },
+        update: jest.fn(),
+      };
+      const Appointment = {
+        sequelize: { transaction: jest.fn().mockResolvedValue(transaction) },
+        findOne: jest.fn().mockResolvedValue(staleAppointment),
+      };
+      const ensureMeetingInfo = jest.fn();
+
+      const app = mountDoctorRouter(
+        createDoctorTriageRouter({
+          authDoctor,
+          Appointment,
+          User: { findOne: jest.fn(), findByPk: jest.fn() },
+          Doctor: {},
+          UserPlan: { findOne: jest.fn() },
+          Op,
+          isMembershipRenewalExemptEmail: jest.fn().mockReturnValue(false),
+          ensureMeetingInfo,
+          getProviderLabel: jest.fn(),
+          buildLiveKitJoinData: jest.fn(),
+        })
+      );
+
+      const res = await request(app)
+        .post('/api/doctors/appointments/1/initiate-call')
+        .send({});
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toMatch(/stale appointment/i);
+      expect(transaction.rollback).toHaveBeenCalledTimes(1);
+      expect(ensureMeetingInfo).not.toHaveBeenCalled();
+      expect(staleAppointment.update).not.toHaveBeenCalled();
+    });
   });
 });
