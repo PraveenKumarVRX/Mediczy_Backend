@@ -12,6 +12,12 @@ import { cache, connectRedis } from '../db/redis.js';
  */
 
 class OTP {
+  /** Normalize email identifiers so request, resend, and verify share one Redis key. */
+  static _normalizeEmail(email) {
+    if (!email) return null;
+    return String(email).trim().toLowerCase();
+  }
+
   /**
    * Normalize phone to last 10 digits for consistent Redis key lookup.
    * e.g., "+919615933444" or "919615933444" → "9615933444"
@@ -28,6 +34,7 @@ class OTP {
    */
   static async _findRedisKeys(purpose, { email, phone }) {
     const redis = await connectRedis();
+    email = OTP._normalizeEmail(email) || email;
     let allKeys = [];
     if (email) allKeys = allKeys.concat(await redis.keys(`otp:${purpose}:${email}:*`));
     if (phone) allKeys = allKeys.concat(await redis.keys(`otp:${purpose}:${phone}:*`));
@@ -45,6 +52,7 @@ class OTP {
 
   static async generate({ phone, email, purpose = 'login', expiryMinutes = 10, userId = null }) {
     try {
+      email = OTP._normalizeEmail(email) || email;
       const normalizedPhone = OTP._normalizePhone(phone);
       phone = normalizedPhone || phone;
 
@@ -84,6 +92,7 @@ class OTP {
 
   static async verify({ phone, email, code, purpose = 'login' }) {
     try {
+      email = OTP._normalizeEmail(email) || email;
       if (phone) phone = OTP._normalizePhone(phone) || phone;
 
       const entries = await OTP._findRedisKeys(purpose, { email, phone });
@@ -136,6 +145,7 @@ class OTP {
 
   static async resend({ phone, email, purpose = 'login' }) {
     try {
+      email = OTP._normalizeEmail(email) || email;
       if (phone) phone = OTP._normalizePhone(phone) || phone;
 
       // Delete all existing unverified OTPs for this identifier + purpose
