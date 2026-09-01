@@ -92,10 +92,44 @@ export async function handleOrthancNewInstance(payload) {
   let meta = {};
   let buffer = null;
   let resolvedInstanceId = instanceId;
+  // The Orthanc *study* resource ID (not the DICOM StudyInstanceUID) —
+  // needed both for the study-tag lookup below and for fetching real
+  // instance/series counts afterward. Resolving this once here, correctly,
+  // replaces the old `meta?.ParentStudy` reference used further down (an
+  // instance response never has that field — see the comment below), which
+  // silently left orthanc_study_id null on every NewInstance-triggered row.
+  let resolvedStudyId = studyId || null;
 
   if (instanceId) {
     meta = await fetchOrthancInstanceMetadata(instanceId);
     buffer = await fetchOrthancInstance(instanceId);
+    // Orthanc's bare /instances/{id} response never includes StudyInstanceUID
+    // in MainDicomTags — that's a study-level tag, only exposed via
+    // /studies/{id}. Without this, every NewInstance-triggered ingest (the
+    // only event type the polling bridge sends) silently produced an empty
+    // studyInstanceUID, causing ensureRisStudyFromOrthancIngest() to skip
+    // with reason "no_study_uid" — real studies received and stored, but
+    // never becoming a visible ris_studies row. Mirrors the fetch the
+    // StableStudy branch below already does for the same reason.
+    //
+    // An instance's direct Orthanc parent is its SERIES (ParentSeries), not
+    // its study — ParentStudy is not a field on the instance resource at
+    // all. Study id has to come from the series resource one hop up.
+    const parentSeriesId = meta?.ParentSeries;
+    if (parentSeriesId) {
+      try {
+        const { fetchOrthancStudy } = await import('./orthanc-pacs.service.js');
+        const seriesMeta = await fetchOrthancSeriesMetadata(parentSeriesId);
+        const parentStudyId = seriesMeta?.ParentStudy;
+        if (parentStudyId) {
+          resolvedStudyId = parentStudyId;
+          const studyMeta = await fetchOrthancStudy(parentStudyId);
+          if (studyMeta?.MainDicomTags) {
+            meta.StudyMainDicomTags = studyMeta.MainDicomTags;
+          }
+        }
+      } catch (_) { /* optional */ }
+    }
   } else if (studyId) {
     // StableStudy — pick first instance for tags + optional STOW
     const { listOrthancStudyInstances, fetchOrthancStudy } = await import('./orthanc-pacs.service.js');
@@ -110,6 +144,23 @@ export async function handleOrthancNewInstance(payload) {
         meta.StudyMainDicomTags = studyMeta.MainDicomTags;
       }
     } catch (_) { /* optional */ }
+  }
+
+  // Authoritative instance/series counts, straight from Orthanc — replaces
+  // the old approach of trying to accumulate counts across separate
+  // per-instance webhook calls (hardcoded to 1 on insert, never updated
+  // after), which undercounted every multi-instance study. A single extra
+  // call per ingest; failure here must never block the actual ingest.
+  let orthancStats = null;
+  if (resolvedStudyId) {
+    try {
+      const { fetchOrthancStudyStatistics } = await import('./orthanc-pacs.service.js');
+      const stats = await fetchOrthancStudyStatistics(resolvedStudyId);
+      orthancStats = {
+        instanceCount: stats?.CountInstances ?? null,
+        seriesCount: stats?.CountSeries ?? null,
+      };
+    } catch (_) { /* optional — falls back to per-call defaults downstream */ }
   }
 
   const mainTags = meta?.MainDicomTags || {};
@@ -127,6 +178,13 @@ export async function handleOrthancNewInstance(payload) {
     patientSex: mainTags.PatientSex || studyTags.PatientSex,
     patientBirthDate: mainTags.PatientBirthDate || studyTags.PatientBirthDate,
     referringPhysician: mainTags.ReferringPhysicianName || studyTags.ReferringPhysicianName,
+    // InstitutionName is embedded by the scanner itself at acquisition
+    // time — present on every real study regardless of how it later
+    // reaches Orthanc, unlike RemoteAET (which can end up generic, e.g.
+    // "ORTHANC", for studies relayed through an intermediary rather than
+    // received via direct DICOM C-STORE). Used as a fallback lab-routing
+    // signal in resolveLabIdForOrthancIngest.
+    institutionName: mainTags.InstitutionName || studyTags.InstitutionName || null,
   };
 
   let result = {};
@@ -145,10 +203,20 @@ export async function handleOrthancNewInstance(payload) {
     const { ensureRisStudyFromOrthancIngest } = await import('./imaging/imaging-ris-auto-ingest.service.js');
     const remoteAet = payload?.RemoteAET || payload?.remoteAet || meta?.RemoteAET || null;
     ris = await ensureRisStudyFromOrthancIngest({
-      labId: payload?.tenantId || payload?.labId || process.env.ORTHANC_DEFAULT_LAB_ID || null,
+      // Deliberately NOT falling back to process.env.ORTHANC_DEFAULT_LAB_ID
+      // here — that decision belongs entirely inside
+      // resolveLabIdForOrthancIngest, which already tries real per-modality
+      // (AE-title) and per-institution routing first and only uses the env
+      // default as a genuine last resort. Resolving it here instead passed
+      // it through as `explicitLabId`, which resolveLabIdForOrthancIngest
+      // treats as an authoritative override and returns immediately —
+      // silently defeating both of those real-routing lookups for every
+      // single call, regardless of what they would have found.
+      labId: payload?.tenantId || payload?.labId || null,
       remoteAet,
-      orthancStudyId: meta?.ParentStudy || studyId || result.orthancStudyId || null,
+      orthancStudyId: resolvedStudyId || result.orthancStudyId || null,
       orthancInstanceId: resolvedInstanceId,
+      orthancStats,
       tags: parsedMeta,
       referringDoctorId: payload?.referringDoctorId || process.env.ORTHANC_DEFAULT_REFERRING_DOCTOR_ID || null,
       fileMeta: {

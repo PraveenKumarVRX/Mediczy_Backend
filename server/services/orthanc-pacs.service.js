@@ -246,6 +246,20 @@ export async function fetchOrthancStudy(studyId) {
   return res.json();
 }
 
+/** Authoritative instance/series counts for a study, straight from Orthanc
+ * — used instead of trying to accumulate counts across separate
+ * per-instance webhook calls, which is what silently undercounted every
+ * multi-instance study before this existed (see imaging-ris-auto-ingest
+ * .service.js's use of this). */
+export async function fetchOrthancStudyStatistics(studyId) {
+  const res = await fetch(`${ORTHANC_URL}/studies/${studyId}/statistics`, {
+    headers: basicAuthHeader(),
+    timeout: 30000,
+  });
+  if (!res.ok) throw new Error(`Orthanc study statistics failed: ${res.status}`);
+  return res.json();
+}
+
 export async function listOrthancStudyInstances(studyId) {
   const res = await fetch(`${ORTHANC_URL}/studies/${studyId}/instances`, {
     headers: basicAuthHeader(),

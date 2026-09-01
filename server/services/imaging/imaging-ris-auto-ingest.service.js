@@ -35,18 +35,27 @@ async function getDoctorDisplayName(doctorId, fallbackName = null) {
 
 /**
  * Resolve which lab/clinic owns an Orthanc ingest.
- * Priority: explicit → ORTHANC_DEFAULT_LAB_ID → dicom_modalities.ae_title match.
+ * Priority: explicit → dicom_modalities.ae_title match → dicom_institution_patterns
+ * InstitutionName match → ORTHANC_DEFAULT_LAB_ID (last-resort single-tenant
+ * fallback). Real routing signals must always be tried before the env
+ * default — see the comments inline below for why.
  */
 export async function resolveLabIdForOrthancIngest({
   explicitLabId = null,
   remoteAet = null,
+  institutionName = null,
 } = {}) {
   const explicit = numOrNull(explicitLabId);
   if (explicit) return explicit;
 
-  const envLab = numOrNull(process.env.ORTHANC_DEFAULT_LAB_ID);
-  if (envLab) return envLab;
-
+  // Real per-modality routing must win over the single-tenant fallback
+  // below whenever it's actually available — dicom_modalities already has
+  // real AE-title-to-lab mappings (multiple labs, not just one). Checking
+  // ORTHANC_DEFAULT_LAB_ID first (as this used to) meant that env var
+  // silently overrode every study's real owning lab, all the time, for
+  // every lab, the moment it was set — not just as the documented
+  // "single-tenant default until per-modality tenant resolution exists"
+  // it was meant to be.
   const aet = String(remoteAet || '').trim();
   if (aet) {
     try {
@@ -64,6 +73,35 @@ export async function resolveLabIdForOrthancIngest({
       logger.warn('[RIS-AutoIngest] modality AE lookup failed', { error: err.message });
     }
   }
+
+  // Fallback signal for studies whose RemoteAET is generic/lost (e.g.
+  // relayed through an intermediary rather than received via direct DICOM
+  // C-STORE, where Orthanc records RemoteAET as its own AE title rather
+  // than the originating modality's). InstitutionName is embedded by the
+  // scanner at acquisition time and survives that relay. Exact-substring
+  // match only, against an explicitly curated table — never a fuzzy/
+  // heuristic guess, since a wrong match here means a patient's study
+  // silently attributed to the wrong lab.
+  const institution = String(institutionName || '').trim();
+  if (institution) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT tenant_id
+           FROM dicom_institution_patterns
+          WHERE status = 'active'
+            AND $1 ILIKE '%' || pattern || '%'
+          ORDER BY id DESC
+          LIMIT 1`,
+        [institution],
+      );
+      if (rows[0]?.tenant_id) return Number(rows[0].tenant_id);
+    } catch (err) {
+      logger.warn('[RIS-AutoIngest] institution-name lookup failed', { error: err.message });
+    }
+  }
+
+  const envLab = numOrNull(process.env.ORTHANC_DEFAULT_LAB_ID);
+  if (envLab) return envLab;
 
   return null;
 }
@@ -128,10 +166,20 @@ export async function ensureRisStudyFromOrthancIngest({
   fileMeta = {},
   referringDoctorId = null,
   remoteAet = null,
+  // Authoritative { instanceCount, seriesCount } straight from Orthanc's
+  // own /studies/{id}/statistics — set image_count/series_count from this
+  // when available instead of the old hardcoded-1 / never-updated-again
+  // behavior, which undercounted every multi-instance study (a single
+  // brain MRI arriving as 1660 separate NewInstance webhook calls only
+  // ever recorded image_count=1). Optional and best-effort: a caller that
+  // can't reach Orthanc's stats endpoint just falls back to the previous
+  // per-call default rather than failing the ingest.
+  orthancStats = null,
 } = {}) {
   const resolvedLabId = await resolveLabIdForOrthancIngest({
     explicitLabId: labId,
     remoteAet,
+    institutionName: tags.institutionName || tags.InstitutionName || null,
   });
   if (!resolvedLabId) {
     return {
@@ -182,6 +230,8 @@ export async function ensureRisStudyFromOrthancIngest({
   const fileSize = Number(fileMeta.fileSize) || 0;
   const mimeType = fileMeta.mimeType || 'application/dicom';
   const originalName = fileMeta.originalName || fileName;
+  const statsInstanceCount = Number.isFinite(orthancStats?.instanceCount) ? orthancStats.instanceCount : null;
+  const statsSeriesCount = Number.isFinite(orthancStats?.seriesCount) ? orthancStats.seriesCount : null;
 
   const existing = await pool.query(
     `SELECT id, referring_doctor_id, status, image_count, modality
@@ -197,33 +247,47 @@ export async function ensureRisStudyFromOrthancIngest({
     const row = existing.rows[0];
     const { rows } = await pool.query(
       `UPDATE ris_studies SET
-         patient_name = COALESCE(NULLIF($3, ''), patient_name),
-         patient_sex = COALESCE($4, patient_sex),
-         patient_dob = COALESCE($5::date, patient_dob),
-         modality = COALESCE(NULLIF($6, ''), modality),
-         study_description = COALESCE($7, study_description),
-         accession_number = COALESCE(NULLIF($8, ''), accession_number),
-         series_instance_uid = COALESCE($9, series_instance_uid),
-         sop_instance_uid = COALESCE($10, sop_instance_uid),
-         orthanc_study_id = COALESCE($11, orthanc_study_id),
-         orthanc_instance_id = COALESCE($12, orthanc_instance_id),
+         patient_name = COALESCE(NULLIF($2, ''), patient_name),
+         patient_sex = COALESCE($3, patient_sex),
+         patient_dob = COALESCE($4::date, patient_dob),
+         modality = COALESCE(NULLIF($5, ''), modality),
+         study_description = COALESCE($6, study_description),
+         accession_number = COALESCE(NULLIF($7, ''), accession_number),
+         series_instance_uid = COALESCE($8, series_instance_uid),
+         sop_instance_uid = COALESCE($9, sop_instance_uid),
+         orthanc_study_id = COALESCE($10, orthanc_study_id),
+         orthanc_instance_id = COALESCE($11, orthanc_instance_id),
          pacs_source = 'orthanc',
          is_dicom = true,
-         referring_physician = COALESCE($13, referring_physician),
-         referring_doctor_id = COALESCE($14, referring_doctor_id),
-         referring_doctor_name = COALESCE($15, referring_doctor_name),
-         study_date = COALESCE($16::date, study_date),
+         referring_physician = COALESCE($12, referring_physician),
+         referring_doctor_id = COALESCE($13, referring_doctor_id),
+         referring_doctor_name = COALESCE($14, referring_doctor_name),
+         study_date = COALESCE($15::date, study_date),
          status = CASE WHEN status IN ('Ordered','Scheduled') THEN 'Completed' ELSE status END,
-         image_count = GREATEST(COALESCE(image_count, 1), COALESCE($17, 1)),
-         file_name = COALESCE(NULLIF($18, ''), file_name),
-         file_path = COALESCE(NULLIF($19, ''), file_path),
-         mime_type = COALESCE(NULLIF($20, ''), mime_type),
+         -- Authoritative count from Orthanc's own /statistics when available
+         -- (see orthancStats param) — replaces the old GREATEST(...,1)
+         -- logic, which could only ever reach 1 per call and never actually
+         -- reflected a multi-instance study's true image count.
+         image_count = COALESCE($16, image_count, 1),
+         series_count = COALESCE($20, series_count, 1),
+         file_name = COALESCE(NULLIF($17, ''), file_name),
+         file_path = COALESCE(NULLIF($18, ''), file_path),
+         mime_type = COALESCE(NULLIF($19, ''), mime_type),
          updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
       [
+        // NOTE: lab_id is deliberately not updated here — a study's owning
+        // lab never changes on a re-sync. An earlier version of this array
+        // included resolvedLabId as a second bound parameter with no
+        // matching $2 placeholder anywhere in the SQL text above, which is
+        // exactly the shape of bug Postgres reports as "could not determine
+        // data type of parameter $2" — every real re-sync of an
+        // already-ingested study (i.e. every instance after a study's
+        // first) hit this and failed silently from the caller's
+        // perspective. Fixed by removing the unused parameter and
+        // renumbering the placeholders to match the array positionally.
         row.id,
-        resolvedLabId,
         patientName,
         patientSex,
         patientDob,
@@ -241,10 +305,11 @@ export async function ensureRisStudyFromOrthancIngest({
         doctor.id,
         doctor.name,
         studyDate,
-        1,
+        statsInstanceCount,
         fileName,
         filePath,
         mimeType,
+        statsSeriesCount,
       ],
     );
 
