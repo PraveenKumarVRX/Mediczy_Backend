@@ -11,6 +11,7 @@ import {
   Calendar,
   DollarSign,
   Languages,
+  MessageCircle,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -755,6 +756,29 @@ const Consultation = () => {
     });
   };
 
+  const handleInstantChat = (doctor: Doctor) => {
+    if (!doctor.isLive) {
+      toast({
+        title: "Chat unavailable for demo doctor",
+        description: "Please choose a doctor loaded from the live directory.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const doctorId = doctor?._id ?? (doctor as any)?.id;
+    if (!doctorId || doctorId === "undefined" || doctorId === "null") {
+      toast({
+        title: "Unable to start chat",
+        description: "Doctor profile is missing an ID. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    navigate(`/chat?doctorId=${encodeURIComponent(String(doctorId))}&instant=true`);
+  };
+
   const handleDoctorClick = (doctorId: string) => {
     setSelectedDoctor(selectedDoctor === doctorId ? null : doctorId);
   };
@@ -1026,6 +1050,13 @@ const Consultation = () => {
                               </div>
                             </div>
                           </div>
+                          <Button
+                            className="mt-4 w-full bg-teal-600 text-white hover:bg-teal-700"
+                            onClick={() => handleInstantChat(doctor)}
+                          >
+                            <MessageCircle className="mr-2 h-4 w-4" />
+                            Chat Now
+                          </Button>
                         </div>
                       </Card>
                     </div>
@@ -1083,7 +1114,7 @@ const Consultation = () => {
                       </div>
 
                       {/* Bottom Section */}
-                      <div className="flex flex-col gap-4 border-t border-slate-200 dark:border-slate-700 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-col gap-4 border-t border-slate-200 dark:border-slate-700 pt-4 sm:flex-row sm:items-end sm:justify-between">
                         <div className="text-sm w-full sm:w-auto">
                           <span className="text-slate-600 dark:text-slate-400">Next Available:</span>
                           <p className="font-medium text-slate-800 dark:text-white">{doctor.availability.nextAvailableSlot}</p>
@@ -1092,6 +1123,16 @@ const Consultation = () => {
                           <span className="text-sm text-slate-600 dark:text-slate-400">Starts from</span>
                           <p className="font-semibold text-teal-600 dark:text-teal-400">₹{doctor.serviceTiers[0].price}</p>
                         </div>
+                        <Button
+                          className="w-full bg-teal-600 text-white hover:bg-teal-700 sm:w-auto"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleInstantChat(doctor);
+                          }}
+                        >
+                          <MessageCircle className="mr-2 h-4 w-4" />
+                          Chat Now
+                        </Button>
                       </div>
                     </div>
                   </Card>

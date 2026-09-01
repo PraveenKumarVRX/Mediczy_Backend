@@ -10,6 +10,17 @@ import { SMSService, SMSTemplateManager } from './sms.service.js';
 import emailService from './emailService.js';
 import notificationService from './notification.service.js';
 import twilio from 'twilio';
+import { col, fn, where as sequelizeWhere } from 'sequelize';
+
+const normalizeEmail = (email) =>
+  email ? String(email).trim().toLowerCase() : null;
+
+const findAccountByIdentifier = (Model, { email, phone, phoneField }) =>
+  Model.findOne({
+    where: email
+      ? sequelizeWhere(fn('lower', col('email')), normalizeEmail(email))
+      : { [phoneField]: phone }
+  });
 
 /**
  * Password Reset Service
@@ -73,6 +84,8 @@ class PasswordResetService {
    */
   async requestPasswordReset({ email, phone, userType = 'user' }) {
     try {
+      email = normalizeEmail(email);
+
       // Find account by email or phone based on userType
       let account;
       let accountType = userType;
@@ -81,40 +94,26 @@ class PasswordResetService {
       const findAccount = async () => {
         switch (userType) {
           case 'doctor':
-            return email
-              ? await doctorModel.findOne({ where: { email } })
-              : await doctorModel.findOne({ where: { phone } });
+            return findAccountByIdentifier(doctorModel, { email, phone, phoneField: 'phone' });
 
           case 'team':
-            return email
-              ? await userModel.findOne({ where: { email } })
-              : await userModel.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(userModel, { email, phone, phoneField: 'phoneNumber' });
           
           case 'hospital':
-            return email
-              ? await Hospital.findOne({ where: { email } })
-              : await Hospital.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Hospital, { email, phone, phoneField: 'phoneNumber' });
           
           case 'nurse':
-            return email
-              ? await Nurse.findOne({ where: { email } })
-              : await Nurse.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Nurse, { email, phone, phoneField: 'phoneNumber' });
           
           case 'pharmacy':
-            return email
-              ? await Pharmacy.findOne({ where: { email } })
-              : await Pharmacy.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Pharmacy, { email, phone, phoneField: 'phoneNumber' });
           
           case 'corporate':
-            return email
-              ? await Corporate.findOne({ where: { email } })
-              : await Corporate.findOne({ where: { phone } });
+            return findAccountByIdentifier(Corporate, { email, phone, phoneField: 'phoneNumber' });
           
           case 'user':
           default:
-            return email
-              ? await userModel.findOne({ where: { email } })
-              : await userModel.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(userModel, { email, phone, phoneField: 'phoneNumber' });
         }
       };
 
@@ -383,6 +382,8 @@ class PasswordResetService {
    */
   async verifyOTPAndGenerateToken({ email, phone, code, userType = 'user' }) {
     try {
+      email = normalizeEmail(email);
+
       // Verify OTP
       const otpResult = await OTP.verify({
         phone,
@@ -403,40 +404,26 @@ class PasswordResetService {
       const findAccountByType = async () => {
         switch (userType) {
           case 'doctor':
-            return email
-              ? await doctorModel.findOne({ where: { email } })
-              : await doctorModel.findOne({ where: { phone } });
+            return findAccountByIdentifier(doctorModel, { email, phone, phoneField: 'phone' });
 
           case 'team':
-            return email
-              ? await userModel.findOne({ where: { email } })
-              : await userModel.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(userModel, { email, phone, phoneField: 'phoneNumber' });
           
           case 'hospital':
-            return email
-              ? await Hospital.findOne({ where: { email } })
-              : await Hospital.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Hospital, { email, phone, phoneField: 'phoneNumber' });
           
           case 'nurse':
-            return email
-              ? await Nurse.findOne({ where: { email } })
-              : await Nurse.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Nurse, { email, phone, phoneField: 'phoneNumber' });
           
           case 'pharmacy':
-            return email
-              ? await Pharmacy.findOne({ where: { email } })
-              : await Pharmacy.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Pharmacy, { email, phone, phoneField: 'phoneNumber' });
           
           case 'corporate':
-            return email
-              ? await Corporate.findOne({ where: { email } })
-              : await Corporate.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(Corporate, { email, phone, phoneField: 'phoneNumber' });
           
           case 'user':
           default:
-            return email
-              ? await userModel.findOne({ where: { email } })
-              : await userModel.findOne({ where: { phoneNumber: phone } });
+            return findAccountByIdentifier(userModel, { email, phone, phoneField: 'phoneNumber' });
         }
       };
 
@@ -626,7 +613,7 @@ class PasswordResetService {
         <table width="600" cellpadding="0" cellspacing="0" style="background-color: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
           <!-- Header -->
           <tr>
-            <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; text-align: center;">
+            <td bgcolor="#667eea" style="background-color: #667eea; background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px; text-align: center;">
               <h1 style="color: white; margin: 0; font-size: 28px;">🔐 Password Reset</h1>
               <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0; font-size: 16px;">Mediczy Healthcare Platform</p>
             </td>
@@ -644,7 +631,7 @@ class PasswordResetService {
               </p>
               
               <!-- OTP Box -->
-              <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 30px; text-align: center; margin: 30px 0;">
+              <div style="background-color: #667eea; background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 30px; text-align: center; margin: 30px 0;">
                 <p style="color: rgba(255,255,255,0.9); font-size: 14px; margin: 0 0 10px 0; text-transform: uppercase; letter-spacing: 1px;">Your OTP Code</p>
                 <p style="color: white; font-size: 36px; font-weight: bold; letter-spacing: 8px; margin: 0; font-family: 'Courier New', monospace;">
                   ${otpCode}

@@ -42,20 +42,39 @@ function getRedis() {
 export function issueAccessToken(user) {
   if (!JWT_SECRET) throw new Error('JWT_SECRET not configured');
 
+  const value = (key) => user?.[key] ?? user?.dataValues?.[key];
+  const userId = value('id');
+  if (!userId) throw new Error('Cannot issue access token without a user id');
+
+  const role = value('role') || (value('isAdmin') ? 'admin' : (value('isTeam') ? 'team' : 'user'));
+  const organizationId = value('organization_id') || value('organizationId') || null;
+  const tenantId = value('tenant_id') || value('tenantId') || organizationId;
+
   // tokenVersion from metadata — used by auth.middleware to invalidate old tokens on password change
   let tokenVersion = 0;
   try {
-    const meta = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {});
+    const metadata = value('metadata');
+    const meta = typeof metadata === 'string' ? JSON.parse(metadata) : (metadata || {});
     tokenVersion = meta.tokenVersion || 0;
   } catch { /* ignore parse errors */ }
 
   const payload = {
-    sub:              user.id,
-    email:            user.email,
-    role:             user.role || 'user',
-    org_id:           user.organization_id || user.tenant_id || null,
-    org_type:         user.organization_type || null,
-    is_admin:         !!user.isAdmin,
+    sub:              userId,
+    id:               userId,
+    userId,
+    email:            value('email'),
+    role,
+    userType:         role,
+    isAdmin:          !!value('isAdmin'),
+    isTeam:           !!value('isTeam'),
+    organization_id:  organizationId,
+    organization_type: value('organization_type') || value('organizationType') || null,
+    tenant_id:        tenantId,
+    tenantId,
+    // Retain the compact aliases for consumers that already use them.
+    org_id:           organizationId || tenantId,
+    org_type:         value('organization_type') || value('organizationType') || null,
+    is_admin:         !!value('isAdmin'),
     token_type:       'access',
     tokenVersion,
   };
