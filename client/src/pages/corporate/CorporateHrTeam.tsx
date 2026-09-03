@@ -8,9 +8,10 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   UserPlus, Users, Mail, Phone, ShieldCheck, ShieldEllipsis, Crown, Trash2,
-  ArrowLeftRight, RefreshCw, Copy, Check, Lock,
+  ArrowLeftRight, RefreshCw, Copy, Check, Lock, Stethoscope,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
@@ -24,11 +25,17 @@ interface HrTeamMember {
   firstName: string | null;
   lastName: string | null;
   email: string;
-  role: 'corporate_admin' | 'hr_staff';
+  role: 'corporate_admin' | 'hr_staff' | 'corporate_cmo';
   invited_by: number | null;
   lastLoginAt: string | null;
   createdAt: string;
 }
+
+const ROLE_LABEL: Record<HrTeamMember['role'], string> = {
+  corporate_admin: 'Super HR',
+  hr_staff: 'HR Staff',
+  corporate_cmo: 'Chief Medical Officer',
+};
 
 function fullName(m: Pick<HrTeamMember, 'firstName' | 'lastName' | 'email'>) {
   const name = `${m.firstName || ''} ${m.lastName || ''}`.trim();
@@ -54,7 +61,9 @@ const CorporateHrTeam = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState({ firstName: '', lastName: '', email: '', phoneNumber: '' });
+  const [inviteForm, setInviteForm] = useState<{ firstName: string; lastName: string; email: string; phoneNumber: string; role: 'hr_staff' | 'corporate_cmo' }>({
+    firstName: '', lastName: '', email: '', phoneNumber: '', role: 'hr_staff',
+  });
   const [tempCredential, setTempCredential] = useState<{ email: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -88,7 +97,7 @@ const CorporateHrTeam = () => {
     return admin ? fullName(admin) : null;
   }, [team]);
 
-  const resetInviteForm = () => setInviteForm({ firstName: '', lastName: '', email: '', phoneNumber: '' });
+  const resetInviteForm = () => setInviteForm({ firstName: '', lastName: '', email: '', phoneNumber: '', role: 'hr_staff' });
 
   const submitInvite = async () => {
     if (!inviteForm.email.trim()) {
@@ -100,7 +109,7 @@ const CorporateHrTeam = () => {
       const resp = await api.post('/corporate/hr/team', inviteForm);
       const data = resp.data?.data;
       toast({
-        title: `${fullName({ firstName: inviteForm.firstName, lastName: inviteForm.lastName, email: inviteForm.email })} added as HR staff`,
+        title: `${fullName({ firstName: inviteForm.firstName, lastName: inviteForm.lastName, email: inviteForm.email })} added as ${ROLE_LABEL[inviteForm.role]}`,
         description: data?.emailStatus === 'sent'
           ? `Login instructions were emailed to ${inviteForm.email}.`
           : 'The welcome email could not be sent — share the temporary password shown next.',
@@ -113,7 +122,7 @@ const CorporateHrTeam = () => {
       fetchTeam();
     } catch (err: any) {
       toast({
-        title: 'Could not add HR staff',
+        title: 'Could not add team member',
         description: err?.response?.data?.message || 'Please try again.',
         variant: 'destructive',
       });
@@ -197,7 +206,7 @@ const CorporateHrTeam = () => {
                   disabled={seatsUsed >= MAX_HR_STAFF}
                   onClick={() => setInviteOpen(true)}
                 >
-                  <UserPlus className="w-4 h-4" /> Invite HR Staff
+                  <UserPlus className="w-4 h-4" /> Add Team Member
                 </Button>
               )}
             </div>
@@ -248,11 +257,17 @@ const CorporateHrTeam = () => {
                     {team.map((member) => {
                       const isSelf = Number(member.id) === ownId;
                       const isAdminRow = member.role === 'corporate_admin';
+                      const isCmoRow = member.role === 'corporate_cmo';
+                      const avatarGradient = isAdminRow
+                        ? 'from-amber-500 to-amber-600'
+                        : isCmoRow
+                        ? 'from-indigo-500 to-indigo-600'
+                        : 'from-teal-500 to-teal-600';
                       return (
                         <tr key={member.id} className="hover:bg-slate-800/30 transition-colors border-b border-white/[0.04]">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 ${isAdminRow ? 'bg-gradient-to-br from-amber-500 to-amber-600' : 'bg-gradient-to-br from-teal-500 to-teal-600'}`}>
+                              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 bg-gradient-to-br ${avatarGradient}`}>
                                 {fullName(member).charAt(0).toUpperCase()}
                               </div>
                               <div>
@@ -267,6 +282,10 @@ const CorporateHrTeam = () => {
                             {isAdminRow ? (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-amber-500/15 text-amber-400 border-amber-500/30">
                                 <Crown className="w-3 h-3" /> Super HR
+                              </span>
+                            ) : isCmoRow ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-indigo-500/15 text-indigo-400 border-indigo-500/30">
+                                <Stethoscope className="w-3 h-3" /> Chief Medical Officer
                               </span>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-teal-500/15 text-teal-400 border-teal-500/30">
@@ -285,14 +304,16 @@ const CorporateHrTeam = () => {
                           <td className="px-4 py-3">
                             {isSuperAdmin && !isSelf && !isAdminRow ? (
                               <div className="flex items-center justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="gap-1.5"
-                                  onClick={() => setPromoteTarget(member)}
-                                >
-                                  <ArrowLeftRight className="w-3.5 h-3.5" /> Make Super HR
-                                </Button>
+                                {!isCmoRow && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-1.5"
+                                    onClick={() => setPromoteTarget(member)}
+                                  >
+                                    <ArrowLeftRight className="w-3.5 h-3.5" /> Make Super HR
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="outline"
@@ -321,12 +342,26 @@ const CorporateHrTeam = () => {
       <Dialog open={inviteOpen} onOpenChange={(open) => { setInviteOpen(open); if (!open) resetInviteForm(); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Invite HR Staff</DialogTitle>
+            <DialogTitle>Add Team Member</DialogTitle>
             <DialogDescription>
-              They'll get portal access as HR Staff — able to manage employees and reports, but not the HR team itself.
+              {inviteForm.role === 'corporate_cmo'
+                ? "They'll get portal access as Chief Medical Officer — able to scrutinize and approve/reject insurance claims on the corporate's behalf, but not manage the HR team."
+                : "They'll get portal access as HR Staff — able to manage employees and reports, but not the HR team itself."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2 space-y-1.5">
+              <Label htmlFor="hr-role">Role</Label>
+              <Select value={inviteForm.role} onValueChange={(v: 'hr_staff' | 'corporate_cmo') => setInviteForm((f) => ({ ...f, role: v }))}>
+                <SelectTrigger id="hr-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hr_staff">HR Staff</SelectItem>
+                  <SelectItem value="corporate_cmo">Chief Medical Officer (claims scrutiny)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="hr-first-name">First name</Label>
               <Input id="hr-first-name" value={inviteForm.firstName} onChange={(e) => setInviteForm((f) => ({ ...f, firstName: e.target.value }))} />
@@ -347,7 +382,7 @@ const CorporateHrTeam = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>
             <Button onClick={submitInvite} disabled={actionLoading} className="bg-teal-600 hover:bg-teal-700 text-white gap-2">
-              <UserPlus className="w-4 h-4" /> {actionLoading ? 'Adding...' : 'Add HR Staff'}
+              <UserPlus className="w-4 h-4" /> {actionLoading ? 'Adding...' : `Add ${ROLE_LABEL[inviteForm.role]}`}
             </Button>
           </DialogFooter>
         </DialogContent>

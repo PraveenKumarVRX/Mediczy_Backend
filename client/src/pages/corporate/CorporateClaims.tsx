@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileText, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Search, Filter, Upload, Download, Eye, Receipt } from 'lucide-react';
+import { FileText, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Search, Filter, Upload, Download, Eye, Receipt, Stethoscope, Lock } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,26 @@ interface Claim {
   serviceDate: string;
   description: string;
   documents: number;
+  adjudicationRoute?: 'tpa' | 'corporate_cmo' | null;
+  approvedAmount?: string | null;
+  rejectionReason?: string | null;
+  cmoReviewStatus?: 'approved' | 'rejected' | 'partially_approved' | null;
+  cmoNotes?: string | null;
+  cmoReviewedAt?: string | null;
+  cmoReviewerName?: string | null;
+}
+
+const ADJUDICATOR_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo'];
+
+function decodeOwnRole(): string | null {
+  try {
+    const token = localStorage.getItem('corporateToken');
+    if (!token) return null;
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload?.role || null;
+  } catch {
+    return null;
+  }
 }
 
 const CorporateClaims: React.FC = () => {
@@ -39,6 +59,15 @@ const CorporateClaims: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState<Claim | null>(null);
+
+  const ownRole = useMemo(decodeOwnRole, []);
+  const canAdjudicate = ownRole ? ADJUDICATOR_ROLES.includes(ownRole) : false;
+
+  const [scrutinizeClaim, setScrutinizeClaim] = useState<Claim | null>(null);
+  const [scrutinizeForm, setScrutinizeForm] = useState<{ decision: 'approved' | 'rejected' | 'partially_approved'; approvedAmount: string; notes: string }>({
+    decision: 'approved', approvedAmount: '', notes: '',
+  });
+  const [scrutinizeLoading, setScrutinizeLoading] = useState(false);
 
   const loadClaims = async () => {
     try {
@@ -154,18 +183,39 @@ const CorporateClaims: React.FC = () => {
     }
   };
 
-  const updateClaimStatus = async (claim: Claim, status: Claim['status']) => {
+  const openScrutinize = (claim: Claim, decision: 'approved' | 'rejected') => {
+    setScrutinizeClaim(claim);
+    setScrutinizeForm({
+      decision,
+      approvedAmount: decision === 'approved' ? String(parseAmount(claim.amount)) : '',
+      notes: '',
+    });
+  };
+
+  const submitScrutinize = async () => {
+    if (!scrutinizeClaim) return;
+    setScrutinizeLoading(true);
     try {
-      const { data } = await api.put(`/corporate/claims/management/${encodeURIComponent(claim.id)}`, { status });
+      const { data } = await api.post(`/corporate/claims/management/${encodeURIComponent(scrutinizeClaim.id)}/scrutinize`, {
+        decision: scrutinizeForm.decision,
+        approvedAmount: scrutinizeForm.decision === 'rejected' ? undefined : Number(scrutinizeForm.approvedAmount),
+        notes: scrutinizeForm.notes || undefined,
+      });
       const updated = (data as any)?.data?.claim as Claim | undefined;
-      setClaims((prev) => prev.map((c) => (c.id === claim.id ? (updated || { ...c, status }) : c)));
-      toast({ title: 'Status updated', description: `Claim marked as ${status}.` });
+      setClaims((prev) => prev.map((c) => (c.id === scrutinizeClaim.id ? (updated || c) : c)));
+      toast({
+        title: scrutinizeForm.decision === 'rejected' ? 'Claim rejected' : 'Claim approved',
+        description: `Recorded as scrutinized by you. ${scrutinizeForm.decision !== 'rejected' ? `Approved amount: ₹${Number(scrutinizeForm.approvedAmount).toLocaleString()}.` : ''} Payment/disbursement still happens outside this system.`,
+      });
+      setScrutinizeClaim(null);
     } catch (error: any) {
       toast({
-        title: 'Update failed',
+        title: 'Could not record decision',
         description: error?.response?.data?.message || 'Please try again.',
         variant: 'destructive',
       });
+    } finally {
+      setScrutinizeLoading(false);
     }
   };
 
@@ -175,7 +225,7 @@ const CorporateClaims: React.FC = () => {
         <CorporatePageHeader
           icon={Receipt}
           title="Claims Management"
-          description="Review employee insurance and wellness reimbursement claims. Employees file claims from their own app; HR reviews and approves here."
+          description="Review employee insurance and wellness reimbursement claims. Employees file claims from their own app; the corporate's Chief Medical Officer (or Super HR) scrutinizes and decides them here."
           gradient="from-cyan-500 to-cyan-700"
           badge={`${claims.length} Claims`}
           showSearch={true}
@@ -235,6 +285,17 @@ const CorporateClaims: React.FC = () => {
                 <div className="text-slate-400">Description</div>
                 <div className="font-medium">{selectedClaim.description}</div>
               </div>
+              {selectedClaim.cmoReviewedAt && (
+                <div className="rounded-md border border-indigo-500/20 bg-indigo-500/[0.06] px-3 py-2 space-y-1">
+                  <div className="flex items-center gap-1.5 text-indigo-300 font-medium">
+                    <Stethoscope className="h-4 w-4" /> Chief Medical Officer scrutiny
+                  </div>
+                  <div className="text-xs text-slate-400">
+                    {selectedClaim.cmoReviewerName || 'CMO'} · {selectedClaim.cmoReviewStatus === 'rejected' ? 'Rejected' : `Approved ₹${Number(selectedClaim.approvedAmount || 0).toLocaleString()}`} · {new Date(selectedClaim.cmoReviewedAt).toLocaleString()}
+                  </div>
+                  {selectedClaim.cmoNotes && <div className="text-xs text-slate-300">{selectedClaim.cmoNotes}</div>}
+                </div>
+              )}
               <div className="flex gap-2">
                 <Button onClick={() => handleDownload(selectedClaim)}>
                   <Download className="h-4 w-4 mr-1" />
@@ -246,6 +307,75 @@ const CorporateClaims: React.FC = () => {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Scrutinize dialog — CMO/Super HR claim decision */}
+      <Dialog open={!!scrutinizeClaim} onOpenChange={(open) => !open && setScrutinizeClaim(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Stethoscope className="h-5 w-5 text-indigo-400" />
+              {scrutinizeForm.decision === 'rejected' ? 'Reject Claim' : 'Approve Claim'}
+            </DialogTitle>
+            <DialogDescription>
+              {scrutinizeClaim?.employeeName} · {scrutinizeClaim?.id} · Claimed {scrutinizeClaim?.amount}.
+              This records your decision as Chief Medical Officer scrutiny — actual payment/disbursement happens outside this system.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="scrutinize-decision">Decision</Label>
+              <Select
+                value={scrutinizeForm.decision}
+                onValueChange={(v: 'approved' | 'rejected' | 'partially_approved') => setScrutinizeForm((f) => ({
+                  ...f,
+                  decision: v,
+                  approvedAmount: v === 'rejected' ? '' : (f.approvedAmount || String(parseAmount(scrutinizeClaim?.amount || '0'))),
+                }))}
+              >
+                <SelectTrigger id="scrutinize-decision">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="approved">Approve in full</SelectItem>
+                  <SelectItem value="partially_approved">Partially approve</SelectItem>
+                  <SelectItem value="rejected">Reject</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {scrutinizeForm.decision !== 'rejected' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="scrutinize-amount">Approved amount (₹)</Label>
+                <Input
+                  id="scrutinize-amount"
+                  type="number"
+                  min="0"
+                  value={scrutinizeForm.approvedAmount}
+                  onChange={(e) => setScrutinizeForm((f) => ({ ...f, approvedAmount: e.target.value }))}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="scrutinize-notes">Notes {scrutinizeForm.decision === 'rejected' ? '(reason for rejection)' : '(optional)'}</Label>
+              <Textarea
+                id="scrutinize-notes"
+                value={scrutinizeForm.notes}
+                onChange={(e) => setScrutinizeForm((f) => ({ ...f, notes: e.target.value }))}
+                placeholder={scrutinizeForm.decision === 'rejected' ? 'Why this claim is being rejected...' : 'Any scrutiny notes for the record...'}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setScrutinizeClaim(null)}>Cancel</Button>
+            <Button
+              onClick={submitScrutinize}
+              disabled={scrutinizeLoading || (scrutinizeForm.decision !== 'rejected' && !(Number(scrutinizeForm.approvedAmount) > 0))}
+              variant={scrutinizeForm.decision === 'rejected' ? 'destructive' : 'default'}
+            >
+              {scrutinizeLoading ? 'Recording...' : scrutinizeForm.decision === 'rejected' ? 'Reject Claim' : 'Approve Claim'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -419,22 +549,42 @@ const CorporateClaims: React.FC = () => {
                         <FileText className="h-4 w-4" />
                         <span>{claim.documents} document(s) attached</span>
                       </div>
+
+                      {claim.cmoReviewedAt && (
+                        <div className="flex items-start gap-2 text-sm rounded-md border border-indigo-500/20 bg-indigo-500/[0.06] px-3 py-2">
+                          <Stethoscope className="h-4 w-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="text-indigo-300">
+                              Scrutinized by {claim.cmoReviewerName || 'Chief Medical Officer'} — {claim.cmoReviewStatus === 'rejected' ? 'rejected' : `approved ₹${Number(claim.approvedAmount || 0).toLocaleString()}`}
+                            </p>
+                            {claim.cmoNotes && <p className="text-slate-400 text-xs mt-0.5">{claim.cmoNotes}</p>}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex gap-2 ml-4">
-                      <Button variant="outline" size="sm" onClick={() => handleView(claim)}>
-                        <Eye className="h-4 w-4 mr-1" />
-                        View
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={() => handleDownload(claim)}>
-                        <Download className="h-4 w-4 mr-1" />
-                        Download
-                      </Button>
+                    <div className="flex flex-col items-end gap-2 ml-4">
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => handleView(claim)}>
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => handleDownload(claim)}>
+                          <Download className="h-4 w-4 mr-1" />
+                          Download
+                        </Button>
+                      </div>
                       {claim.status === 'pending' && (
-                        <>
-                          <Button size="sm" variant="default" onClick={() => updateClaimStatus(claim, 'approved')}>Approve</Button>
-                          <Button size="sm" variant="destructive" onClick={() => updateClaimStatus(claim, 'rejected')}>Reject</Button>
-                        </>
+                        canAdjudicate ? (
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="default" onClick={() => openScrutinize(claim, 'approved')}>Approve</Button>
+                            <Button size="sm" variant="destructive" onClick={() => openScrutinize(claim, 'rejected')}>Reject</Button>
+                          </div>
+                        ) : (
+                          <p className="flex items-center gap-1 text-xs text-slate-500">
+                            <Lock className="h-3 w-3" /> CMO or Super HR only
+                          </p>
+                        )
                       )}
                     </div>
                   </div>
