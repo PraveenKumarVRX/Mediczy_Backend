@@ -192,6 +192,10 @@ class InitializationController {
       await runDicomInstitutionPatternsMigration().catch(e =>
         console.warn('⚠️  dicom_institution_patterns migration skipped:', e.message)
       );
+      const { runQuarantineUnattributedImagingMigration } = await import('../migrations/quarantine-unattributed-imaging.migration.js');
+      await runQuarantineUnattributedImagingMigration().catch(e =>
+        console.warn('⚠️  quarantine-unattributed-imaging migration skipped:', e.message)
+      );
       const { runMrdModuleMigration } = await import('../migrations/mrd-module.migration.js');
       await runMrdModuleMigration().catch(e =>
         console.warn('⚠️  mrd-module migration skipped:', e.message)
