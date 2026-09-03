@@ -11,11 +11,19 @@ import {
 
 const router = express.Router();
 
+// Upgrade Plan Phase B2 — role-scoped views. Org-wide roles see the full
+// command center by default and may pass ?department= to drill down;
+// everyone else is auto-scoped to their own department_name and cannot
+// override it via the query string.
+const ORG_WIDE_ROLES = new Set(['admin', 'hospital', 'hospital_admin', 'system_admin']);
+
 // GET /api/v1/analytics/command-center
 router.get('/command-center', authUser, async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
-    const data = await getCommandCenter(organizationId);
+    const isOrgWide = ORG_WIDE_ROLES.has(req.user.role) || ORG_WIDE_ROLES.has(req.user.userType);
+    const department = isOrgWide ? (req.query.department || null) : (req.user.department_name || null);
+    const data = await getCommandCenter(organizationId, { department });
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

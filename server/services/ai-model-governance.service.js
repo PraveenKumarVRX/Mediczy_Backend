@@ -320,6 +320,141 @@ export const MODEL_CARDS = {
     lastAudited:       '2026-06-14',
     lastValidatedAt:   '2026-06-14',
     regulatoryNotes:   'NOT SaMD by default (ops and analytics only). If admin uses copilot to surface or interpret clinical AI outputs (risk scores, triage), those outputs inherit their source component\'s SaMD classification and must be treated accordingly.'
+  },
+
+  // ── Upgrade Plan Track B additions (2026-09-03) — registered after the
+  // fact, on discovering none of these five shipped with a model card
+  // despite CLAUDE.md requiring one before ship. See each component's file
+  // for the actual implementation.
+
+  'discharge-summary-synthesis-llm': {
+    componentName:      'Discharge Summary AI Synthesis',
+    version:             'v1-llm-assisted',
+    regulatoryClass:      'Class IIb SaMD (moderate risk) — draft-order suggestion informs a clinical decision; the narrative itself is documentation with mandatory physician review',
+    intendedUse:         'Draft a structured discharge summary (diagnosis/procedure/medication/follow-up/diet/activity sections) from the admission record (clinical notes, medications, labs, procedure, vitals). Physician must review, edit, and sign via signDischargePacket() before the summary reaches a patient.',
+    notIntendedFor:      'Autonomous discharge without physician sign-off; final medication reconciliation without pharmacist/physician verification.',
+    inputFeatures: [
+      'Admission record (patient name, admission number, admission date)',
+      'Recent clinical notes (chief complaint, diagnosis, plan, assessment)',
+      'Medication orders (active + discontinued)', 'Recent lab results',
+      'Procedure/OT booking record', 'Recent vitals'
+    ],
+    outputDescription:   'Structured sections (diagnosisSummary, procedureSummary, medicationSummary, followUpSummary, dietInstructions, activityNotes, fullNarrative), confidence score, missingDataFlags. Falls back to a fixed template on any synthesis failure — never fails silently to no draft.',
+    modelType:           'Structured admission context -> LLM prose (iSHA/Groq/OpenAI cascade via llm-provider.js)',
+    knownLimitations: [
+      'May omit clinically relevant context not present in the queried tables (e.g. verbal handoffs not charted)',
+      'Template fallback on failure is materially thinner than the AI path — the two are not equivalent in depth',
+      'Not validated per specialty/admission-type for completeness',
+      'Confidence score is model-self-reported, not independently calibrated'
+    ],
+    safetyControls: [
+      'Quality gate checkScribeOutput() on every AI-generated draft — dosage hallucination, allergy omission, forbidden-combination checks',
+      'Non-negotiable physician-review required action; draft only, never auto-signed',
+      'Every gate result logged to ai_quality_gate_log',
+      'Falls back to template (not silence) on any LLM failure'
+    ],
+    changeControlPlan:   'Prompt changes require governanceService.proposeChange() and medical director approval.',
+    lastValidatedAt:     null,
+    regulatoryNotes:     'Physician remains the clinical actor — signDischargePacket() is a separate, explicit human action. If a future change allows sending a discharge summary to a patient without that sign-off, this reclassifies upward.'
+  },
+
+  'ambient-note-synthesis-llm': {
+    componentName:      'Ambient Documentation AI Synthesis',
+    version:             'v1-llm-assisted',
+    regulatoryClass:      'Class IIb SaMD (moderate risk) — draft orders inform a clinical decision',
+    intendedUse:         'Convert a raw dictated/ambient transcript into a structured SOAP note plus draft order suggestions (labs, medications, imaging, referrals) for physician review before routing to the approval inbox.',
+    notIntendedFor:      'Autonomous order placement; committing a note to the record without physician review.',
+    inputFeatures:       ['Raw transcript text', 'Patient allergies (when patientId provided)', 'Optional specialty template'],
+    outputDescription:   'SOAP sections, fullNote, draftOrders (type/description/rationale), confidence score, quality gate result.',
+    modelType:           'Transcript -> LLM structured extraction (iSHA/Groq/OpenAI cascade via llm-provider.js)',
+    knownLimitations: [
+      'Depends entirely on transcript quality/completeness — no independent verification against the chart',
+      'Draft orders are suggestions only; nothing beyond checkScribeOutput screens them against the patient record',
+      'Not validated per specialty',
+      'Never auto-routes to the approval inbox — a separate client call to routeAmbientDocument() is required'
+    ],
+    safetyControls: [
+      'Quality gate checkScribeOutput() — dosage hallucination, allergy omission, forbidden combinations, missing-vitals/diagnosis flags',
+      'Every gate result logged to ai_quality_gate_log',
+      'Two-step design: synthesis and approval-inbox routing are separate, explicit calls — a bad draft never reaches the inbox by default'
+    ],
+    changeControlPlan:   'Prompt changes require governanceService.proposeChange() and medical director approval.',
+    lastValidatedAt:     null,
+    regulatoryNotes:     'Two-step design is deliberate — a synthesis failure or a bad draft never auto-reaches the clinician approval inbox.'
+  },
+
+  'clinical-coding-suggestion-llm': {
+    componentName:      'Clinical Coding Suggestion (LLM)',
+    version:             'v1-llm-assisted',
+    regulatoryClass:      'NOT SaMD (administrative/billing — informs coding, not a clinical decision)',
+    intendedUse:         'Suggest ICD-10/CPT codes from clinical note text (chief complaint, subjective, objective, assessment, plan) with confidence and supporting evidence, for coding staff review before a billing charge is created.',
+    notIntendedFor:      'Autonomous charge creation without human review; clinical diagnosis or treatment decisions.',
+    inputFeatures:       ['Clinical note text (chief complaint, subjective, objective, assessment, plan)'],
+    outputDescription:   'Suggested codes with description, codeSystem, confidence (0-1), evidence (supporting text span).',
+    modelType:           'Note text -> LLM code suggestion (iSHA/Groq/OpenAI cascade via llm-provider.js); falls back to a 5-entry regex/keyword table (source: heuristic, fixed confidence 0.72) if the LLM call fails',
+    knownLimitations: [
+      'Fallback heuristic table covers only 5 hardcoded conditions — far narrower than the LLM path',
+      'Confidence is model-self-reported',
+      'Not validated against a real coding-accuracy benchmark',
+      'No specialty-specific code-set tuning'
+    ],
+    safetyControls: [
+      'checkClaimScrub() quality gate runs before any suggestion reaches bridgeCodingToBilling() — average confidence and evidence-completeness checked, whole batch withheld if the gate fails',
+      'Every billing charge created from a suggestion carries reviewRequired: true in its metadata',
+      'Every gate result logged to ai_quality_gate_log'
+    ],
+    changeControlPlan:   'Prompt changes require governanceService.proposeChange() and medical director approval.',
+    lastValidatedAt:     null,
+    regulatoryNotes:     'Billing/coding decision support, not a clinical decision. Reclassify if code suggestions are ever used to justify clinical-necessity documentation.'
+  },
+
+  'ai-rcm-claim-scrub-shadow': {
+    componentName:      'AI Claim Scrub (Shadow Mode)',
+    version:             'v1-shadow',
+    regulatoryClass:      'NOT SaMD (administrative/billing)',
+    intendedUse:         'Compare a submitted pre-authorization diagnosis code against the admission\'s actual clinical notes and flag coding-documentation mismatches, missing modifiers, or medical-necessity concerns, with evidence. SHADOW MODE ONLY — computes and logs; not yet surfaced to coding staff.',
+    notIntendedFor:      'Any use outside shadow-mode evaluation until accuracy has been reviewed against a window of real adjudicated claims (Upgrade Plan Phase B4 exit criteria); autonomous claim modification.',
+    inputFeatures:       ['Coded diagnosis', 'Requested amount', 'Insurer name', 'Admission clinical notes'],
+    outputDescription:   'Defects (type, description, evidence), confidence (0-1). Every run logged; nothing written to a claim.',
+    modelType:           'Structured claim + notes -> LLM defect detection (iSHA/Groq/OpenAI cascade via llm-provider.js)',
+    knownLimitations: [
+      'Not yet evaluated for accuracy against real human-coded/adjudicated outcomes — the explicit precondition for exiting shadow mode',
+      'Skipped entirely (not scored) when no clinical notes exist for the admission',
+      'Conceptually replaces getDenialRiskScoring()\'s SQL heuristic but does not yet replace it in the live denial-risk route'
+    ],
+    safetyControls: [
+      'checkClaimScrub() quality gate — blocks (not warns) when no source documentation was available to check against; flags any defect claim missing an evidence span',
+      'Every run logged to ai_quality_gate_log regardless of outcome',
+      'No route in this codebase surfaces its output to coding staff — admin-only diagnostic endpoint only'
+    ],
+    changeControlPlan:   'Exiting shadow mode requires medical-director/compliance review of accuracy evidence, not just a prompt-change approval.',
+    lastValidatedAt:     null,
+    regulatoryNotes:     'Explicitly not production-facing. Do not wire into a coding-staff-visible route without completing the shadow-mode accuracy review.'
+  },
+
+  'patient-copilot-rag': {
+    componentName:      'Patient Record Copilot',
+    version:             'v1-rag',
+    regulatoryClass:      'NOT SaMD (informational Q&A over the patient\'s own record — no diagnostic or treatment claim)',
+    intendedUse:         'Answer a patient\'s natural-language question about their own longitudinal record (labs, medications, visit history) with citations, and suggest — never execute — an appointment-scheduling action.',
+    notIntendedFor:      'Diagnostic advice, treatment recommendations, or any answer not directly grounded in the patient\'s own retrieved record content; answering about any other patient.',
+    inputFeatures:       ['Patient question (free text)', "Patient's own record content only, retrieved via patientId-scoped vector search"],
+    outputDescription:   'Answer text, citations (source + excerpt), confidence (0-1), optional suggestedAction (schedule_appointment only — client must confirm and call the real booking API itself).',
+    modelType:           'patientId-scoped RAG (rag-pipeline.js agenticRetrieve) -> LLM answer generation (iSHA/Groq/OpenAI cascade via llm-provider.js)',
+    knownLimitations: [
+      'Answer quality bounded by what has actually been embedded into sib_embeddings for that patient — a gap in embedding coverage reads as "nothing found," not flagged separately',
+      'General/conversational questions skip retrieval entirely by design (latency) and get no record context',
+      'Confidence is model-self-reported'
+    ],
+    safetyControls: [
+      'patientId is hard-locked to req.user.id in the route — never accepted from the request body/query',
+      'rag-pipeline.js\'s search() previously had NO patient filter on sib_embeddings at all (any caller\'s query could return any patient\'s embedded record) — fixed as part of shipping this component; patientId now filters that query when passed',
+      'System prompt explicitly instructs the model to never state or imply information about another patient and to say it doesn\'t know rather than guess',
+      'suggestedAction never executes anything — it names an existing endpoint the client must call itself with the patient\'s own confirmation'
+    ],
+    changeControlPlan:   'Prompt changes require governanceService.proposeChange() and medical director approval.',
+    lastValidatedAt:     null,
+    regulatoryNotes:     'The rag-pipeline.js patient-scoping fix this component depends on is a security fix with implications beyond this one feature — any other caller of search()/agenticRetrieve() that handles patient-specific data should confirm it passes patientId where appropriate.'
   }
 };
 

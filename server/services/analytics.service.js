@@ -21,7 +21,14 @@ async function qOne(sql, replacements = {}) {
 
 // ── Live Command Center Snapshot ──────────────────────────────────────────────
 
-export async function getCommandCenter(organizationId) {
+// Upgrade Plan Phase B2 — role-scoped views. Org-wide metrics (beds, ICU,
+// OT, alerts, discharge readiness, pre-auths) are NOT meaningfully
+// department-scoped in the current schema, so a `department` filter here
+// only narrows the ED/queue numbers — the one metric that genuinely has a
+// department column. scope/scopeNote in the response say so explicitly
+// rather than silently returning org-wide numbers under a department label.
+export async function getCommandCenter(organizationId, { department = null } = {}) {
+  const queueDeptFilter = department ? ' AND department = :department' : '';
   const [beds, admissions, otToday, critAlerts, pendingDischarges, preauths, icuCensus, queueToday] =
     await Promise.all([
       // Bed census
@@ -86,7 +93,8 @@ export async function getCommandCenter(organizationId) {
               COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY actual_wait_minutes)
                 FILTER (WHERE status = 'completed'), 0) AS p50_wait_minutes
             FROM hospital_queue_entries
-            WHERE organization_id = :orgId AND check_in_at::date = CURRENT_DATE`, { orgId: organizationId }),
+            WHERE organization_id = :orgId AND check_in_at::date = CURRENT_DATE${queueDeptFilter}`,
+        { orgId: organizationId, department }),
     ]);
 
   const occupancyPct = beds?.total > 0
@@ -117,6 +125,11 @@ export async function getCommandCenter(organizationId) {
       activeToday:      Number(queueToday?.active         || 0),
       p50WaitMinutes:   Number(queueToday?.p50_wait_minutes || 0),
     },
+    scope: department ? 'department' : 'organization',
+    department: department || null,
+    scopeNote: department
+      ? 'edQueue is filtered to this department. beds/ICU/OT/alerts/discharge/pre-auths remain organization-wide — those tables have no department column in the current schema.'
+      : null,
     // Ambulance status is deliberately not included here: the Ambulance
     // model has no organization_id/hospital scoping column (ambulances are
     // their own service-provider entity, linked via aggregatorId, not a

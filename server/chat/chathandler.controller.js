@@ -97,6 +97,28 @@ export function setupSocketIO(server) {
       }
     });
 
+    // Upgrade Plan Phase B2 — Hospital Command Center real-time updates.
+    // Joining this room only opts the socket into push updates for that
+    // org's command-center data; it grants no new read access beyond what
+    // the authenticated REST endpoint (GET /api/v1/analytics/command-center,
+    // authUser-gated) already exposes to this user. Department scoping for
+    // non-org-wide roles is enforced there, not here — this room carries
+    // the whole org's broadcast, and the client filters to its own
+    // department the same way the REST call does server-side. Room
+    // membership check in command-center-realtime.service.js skips
+    // broadcasting entirely when a room has zero members, so an org with
+    // no dashboard open costs nothing extra.
+    socket.on("subscribe-command-center", ({ organizationId }) => {
+      if (!organizationId) return;
+      socket.join(`command-center-${organizationId}`);
+      console.log(`📊 Socket ${socket.id} subscribed to command-center-${organizationId}`);
+    });
+
+    socket.on("unsubscribe-command-center", ({ organizationId }) => {
+      if (!organizationId) return;
+      socket.leave(`command-center-${organizationId}`);
+    });
+
     // Handle disconnection
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);

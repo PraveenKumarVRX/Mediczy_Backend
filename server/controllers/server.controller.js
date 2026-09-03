@@ -5,6 +5,7 @@ import AppointmentNotificationService from "../services/appointment-notification
 import socketService from "../services/socket.service.js";
 import cacheService from "../services/cache.service.js";
 import { attachScribeWebSocket } from "../services/scribe-stream.service.js";
+import { startCommandCenterBroadcastLoop } from "../services/command-center-realtime.service.js";
 
 /**
  * Server Controller
@@ -43,7 +44,12 @@ class ServerController {
     this.notificationService.initialize();
 
     attachScribeWebSocket(this.server);
-    
+
+    // Upgrade Plan Phase B2 — real-time Command Center push. Requires
+    // this.io (set above); instance-0-only gate lives inside the loop
+    // itself so this call is safe on every cluster worker.
+    startCommandCenterBroadcastLoop();
+
     return this.server;
   }
 
