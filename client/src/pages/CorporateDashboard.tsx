@@ -1088,7 +1088,7 @@ const CorporateDashboard = () => {
                       )}
                     </div>
 
-                    <Link to={`/corporate/employee/${employee.id}/health`}>
+                    <Link to="/corporate/employees">
                       <Button variant="outline" size="sm" className="border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600">
                         <Eye className="w-4 h-4 mr-2" />
                         View Details
