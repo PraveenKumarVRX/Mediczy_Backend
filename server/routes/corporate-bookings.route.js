@@ -18,6 +18,7 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { ensureCorporateHealthReportsBucket } from '../services/corporate-storage.service.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
+import { computeReportSla } from '../services/corporate-wellness-mis.service.js';
 
 // ──────────────────────────────────────────────
 // Reports are stored in MinIO via uploadToMinio service
@@ -751,6 +752,9 @@ router.post(
         day: 'numeric', month: 'long', year: 'numeric'
       });
       const reportLabel = REPORT_TYPE_LABELS[reportType] || reportType;
+      const checkupCompletedAt = new Date(`${reportDate}T00:00:00.000Z`);
+      const deliveredAt = new Date();
+      const sla = computeReportSla(checkupCompletedAt, deliveredAt);
 
       // ── 1b. Dedicated MinIO bucket for this corporate ──────
       // Isolates each corporate's employee health documents into their own
@@ -781,11 +785,15 @@ router.post(
         const [dbRow] = await postgresSequelize.query(
           `INSERT INTO corporate_health_reports
              (corporate_id, employee_id, lab_order_id, report_name, report_type, report_date,
-              s3_key, report_url, file_size_bytes, mime_type, notes, uploaded_by, created_at, updated_at)
+              s3_key, report_url, file_size_bytes, mime_type, notes, uploaded_by,
+              checkup_type, checkup_completed_at, report_due_at, report_delivered_at, sla_status,
+              created_at, updated_at)
            VALUES
              (:corporateId, :employeeId, :labOrderId, :reportName, :reportType, :reportDate,
-              :s3Key, :reportUrl, :fileSize, :mimeType, :notes, :uploadedBy, NOW(), NOW())
-           RETURNING id`,
+              :s3Key, :reportUrl, :fileSize, :mimeType, :notes, :uploadedBy,
+              :checkupType, :checkupCompletedAt, :reportDueAt, :reportDeliveredAt, :slaStatus,
+              NOW(), NOW())
+           RETURNING id, report_due_at, sla_status`,
           {
             replacements: {
               corporateId: parseInt(corporateId),
@@ -799,13 +807,25 @@ router.post(
               fileSize: file.size,
               mimeType: file.mimetype,
               notes,
-              uploadedBy: req.user.id
+              uploadedBy: req.user.id,
+              checkupType: reportType,
+              checkupCompletedAt,
+              reportDueAt: sla.dueAt,
+              reportDeliveredAt: deliveredAt,
+              slaStatus: sla.status
             },
             type: postgresSequelize.QueryTypes.INSERT
           }
         );
         const reportId = dbRow?.[0]?.id || dbRow?.id;
-        uploadedReports.push({ id: reportId, reportName: perFileReportName, reportUrl, mimeType: file.mimetype });
+        uploadedReports.push({
+          id: reportId,
+          reportName: perFileReportName,
+          reportUrl,
+          mimeType: file.mimetype,
+          reportDueAt: (dbRow?.[0]?.report_due_at || sla.dueAt)?.toISOString?.() || dbRow?.[0]?.report_due_at || sla.dueAt,
+          slaStatus: dbRow?.[0]?.sla_status || sla.status
+        });
       }
 
       // ── 3. Send one consolidated Email ────────────────────
@@ -889,7 +909,7 @@ router.post(
         message: `${uploadedReports.length} report(s) uploaded and employee notified`,
         reports: uploadedReports,
         // keep backward-compat single-report field
-        report: { ...uploadedReports[0], reportType, reportDate },
+        report: { ...uploadedReports[0], reportType, reportDate, reportDueAt: sla.dueAt, slaStatus: sla.status },
         employee: { id: employee.id, name: employeeFullName, email: employee.email },
         notifications: { email: emailStatus, whatsapp: waStatus }
       });
@@ -931,6 +951,11 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         chr.notified_email,
         chr.notified_whatsapp,
         chr.notified_at,
+        chr.checkup_type,
+        chr.checkup_completed_at,
+        chr.report_due_at,
+        chr.report_delivered_at,
+        chr.sla_status,
         chr.created_at,
         chr.lab_order_id,
         'manual' AS source,
@@ -963,6 +988,11 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         FALSE AS notified_email,
         TRUE AS notified_whatsapp,
         r."createdAt" AS notified_at,
+        'annual_health_checkup'::varchar AS checkup_type,
+        r."reportDate"::timestamptz AS checkup_completed_at,
+        NULL::timestamptz AS report_due_at,
+        r."createdAt" AS report_delivered_at,
+        'on_time'::varchar AS sla_status,
         r."createdAt" AS created_at,
         NULL::int AS lab_order_id,
         'email' AS source,
@@ -1126,6 +1156,7 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
 // Report type display labels
 // ──────────────────────────────────────────────
 const REPORT_TYPE_LABELS = {
+  pre_employment: 'Pre-Employment Health Checkup',
   annual_health_checkup: 'Annual Health Checkup',
   lab_result: 'Lab Result',
   blood_test: 'Blood Test',

@@ -1803,6 +1803,9 @@ import otRoomsAdminRouter from './routes/ot-rooms-admin.route.js';
 import chargeMasterRouter from './routes/charge-master.route.js';
 import pharmacyDispenseRouter from './routes/pharmacy-dispense.route.js';
 import hospitalOsControlRouter from './routes/hospital-os-control.route.js';
+import revenueShareRouter from './routes/revenue-share.route.js';
+import marketplaceRouter from './routes/specialist-marketplace.route.js';
+import teleIcuRouter from './routes/tele-icu-command.route.js';
 import ssoRouter from './routes/sso.route.js';
 import enterpriseAuthRouter from './routes/enterprise-auth.route.js';
 import auditModuleRouter from './routes/audit.route.js';
@@ -1847,6 +1850,9 @@ app.use('/api/v1/ot-rooms', otRoomsAdminRouter);
 app.use('/api/v1/charge-master', chargeMasterRouter);
 app.use('/api/v1/pharmacy-dispense', pharmacyDispenseRouter);
 app.use('/api/v1/hospital-os', hospitalOsControlRouter);
+app.use('/api/v1/revenue-share', revenueShareRouter);
+app.use('/api/v1/marketplace', marketplaceRouter);
+app.use('/api/v1/tele-icu', teleIcuRouter);
 app.use('/api/sso', ssoRouter);
 app.use('/api/enterprise/auth', enterpriseAuthRouter);
 app.use('/api/audit', auditModuleRouter); // Upgrade Plan A1 — read/export access to audit_logs
@@ -1900,6 +1906,7 @@ import governanceServiceForCron from './services/ai-model-governance.service.js'
 import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
+import { runWeeklyMisForAllCorporates } from './services/corporate-wellness-mis.service.js';
 
 async function sendDriftAlert(drifted) {
   if (!process.env.MEDICAL_DIRECTOR_EMAIL || !process.env.SMTP_HOST) return;
@@ -1940,6 +1947,21 @@ cron.schedule('0 1 * * 1', async () => {
     cronTick('ai_demographic_parity', { groups: result.groups?.length || 0, flagged: result.disparityFlagged || 0 });
   } catch (err) {
     cronTickError('ai_demographic_parity', err.message);
+  }
+});
+
+// ============== Corporate Wellness Weekly MIS (Mon 08:00 IST) ==============
+cron.schedule('30 2 * * 1', async () => {
+  cronTickStart('corporate_weekly_mis');
+  try {
+    const result = await runWeeklyMisForAllCorporates({ sendEmail: true });
+    cronTick('corporate_weekly_mis', {
+      corporates: result.length,
+      ready: result.filter((row) => row.status === 'ready').length,
+      failed: result.filter((row) => row.status === 'failed').length,
+    });
+  } catch (err) {
+    cronTickError('corporate_weekly_mis', err.message);
   }
 });
 

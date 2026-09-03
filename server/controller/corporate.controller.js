@@ -98,12 +98,34 @@ export const corporateLogin = async (req, res) => {
         return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
       }
       if (hrUser && await hrUser.comparePassword(password)) {
+        const corporateScopeConditions = [
+          { id: hrUser.organization_id },
+          { tenantId: hrUser.organization_id },
+          { tenantId: hrUser.tenant_id },
+        ].filter((condition) => Object.values(condition)[0]);
+        if (corporateScopeConditions.length === 0) {
+          await auditLoginAttempt(req, hrUser.id, normalizedEmail, false, 'Corporate scope missing');
+          return res.status(403).json({ success: false, message: 'Corporate scope missing for this HR user' });
+        }
+
+        const scopedCorporate = await Corporate.findOne({
+          where: {
+            [Op.or]: corporateScopeConditions,
+          },
+        });
+        if (!scopedCorporate) {
+          await auditLoginAttempt(req, hrUser.id, normalizedEmail, false, 'Corporate scope not found');
+          return res.status(403).json({ success: false, message: 'Corporate scope not found for this HR user' });
+        }
+
         // Built inline rather than via User.prototype.generateAuthToken() — that method
         // currently throws (JWT_CONFIG import-cycle issue), unrelated to this fallback.
         const jwtLib = (await import('jsonwebtoken')).default;
         const token = jwtLib.sign(
           {
             id: hrUser.id,
+            userId: hrUser.id,
+            corporateId: scopedCorporate.id,
             email: hrUser.email,
             role: hrUser.role,
             userType: 'corporate', // ring-fencing key — both corporate_admin and hr_staff sub-users are corporate-portal users
@@ -119,7 +141,15 @@ export const corporateLogin = async (req, res) => {
         return res.status(200).json({
           success: true,
           token,
-          user: { id: hrUser.id, email: hrUser.email, firstName: hrUser.firstName, lastName: hrUser.lastName, role: hrUser.role },
+          user: {
+            id: hrUser.id,
+            email: hrUser.email,
+            firstName: hrUser.firstName,
+            lastName: hrUser.lastName,
+            role: hrUser.role,
+            corporateId: scopedCorporate.id,
+          },
+          corporate: scopedCorporate,
         });
       }
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Corporate not found');
@@ -229,6 +259,18 @@ export const getCorporateSummary = async (req, res) => {
       notes: `${a.status === 'completed' ? 'Completed' : 'Scheduled'} at ${a.appointmentTime || ''}`,
     }));
 
+    const [slaRow] = await postgresSequelize.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE sla_status = 'on_time') AS on_time,
+         COUNT(*) FILTER (WHERE sla_status = 'breached') AS breached,
+         COUNT(*) FILTER (WHERE sla_status = 'pending_overdue') AS overdue
+       FROM corporate_health_reports
+       WHERE corporate_id = :corporateId
+         AND report_date >= (CURRENT_DATE - INTERVAL '90 days')`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    ).catch(() => [{ on_time: 0, breached: 0, overdue: 0 }]);
+    const measuredReports = Number(slaRow?.on_time || 0) + Number(slaRow?.breached || 0);
+
     return res.json({
       success: true,
       data: {
@@ -237,6 +279,8 @@ export const getCorporateSummary = async (req, res) => {
           totalConsultationsThisMonth: consultationsThisMonth,
           averageSatisfactionScore: null,
           emergencyCasesHandled: null,
+          reportSlaCompliance: measuredReports ? Math.round((Number(slaRow.on_time || 0) / measuredReports) * 100) : null,
+          overdueReports: Number(slaRow?.overdue || 0),
         },
         recentActivities,
         corporateProfile: {

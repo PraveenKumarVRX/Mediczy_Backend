@@ -117,6 +117,7 @@ interface HealthReport {
 }
 
 const REPORT_TYPES = [
+  { value: 'pre_employment', label: 'Pre-Employment Health Checkup' },
   { value: 'annual_health_checkup', label: '🔬 Annual Health Checkup' },
   { value: 'lab_result', label: '🧪 Lab Result' },
   { value: 'blood_test', label: '🩸 Blood Test' },

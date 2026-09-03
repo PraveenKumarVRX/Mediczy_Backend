@@ -26,6 +26,41 @@ interface Employee {
   healthStatus: 'excellent' | 'good' | 'moderate' | 'poor';
   lastCheckup: string;
   insurancePlan: string;
+  preEmploymentReports?: number;
+  annualReports?: number;
+  reportCount?: number;
+  overdueReports?: number;
+}
+
+interface HealthRecord {
+  id: string;
+  reportName: string;
+  reportType: string;
+  checkupType: 'pre_employment' | 'annual_health_checkup' | string;
+  reportDate: string;
+  reportDueAt?: string | null;
+  reportDeliveredAt?: string | null;
+  slaStatus: string;
+  source: string;
+  reportUrl?: string;
+  notes?: string;
+}
+
+interface EmployeeHealthSheet {
+  summary: {
+    totalRecords: number;
+    preEmploymentCount: number;
+    annualCount: number;
+    pendingReports: number;
+    overdueReports: number;
+    slaCompliancePercent: number | null;
+    lastCheckup: string | null;
+  };
+  records: {
+    preEmployment: HealthRecord[];
+    annualHealthCheckups: HealthRecord[];
+    other: HealthRecord[];
+  };
 }
 
 type EmployeeFormState = {
@@ -64,6 +99,8 @@ const CorporateEmployees: React.FC = () => {
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [selectedHealthSheet, setSelectedHealthSheet] = useState<EmployeeHealthSheet | null>(null);
+  const [isHealthSheetLoading, setIsHealthSheetLoading] = useState(false);
   const [form, setForm] = useState<EmployeeFormState>(() => emptyEmployeeForm());
 
   // Bulk upload state
@@ -142,9 +179,46 @@ const CorporateEmployees: React.FC = () => {
     setIsUpsertDialogOpen(true);
   };
 
-  const openView = (emp: Employee) => {
+  const openView = async (emp: Employee) => {
     setSelectedEmployee(emp);
     setIsViewDialogOpen(true);
+    setSelectedHealthSheet(null);
+    setIsHealthSheetLoading(true);
+    try {
+      const { data } = await api.get(`/corporate/employees/${encodeURIComponent(emp.employeeId || emp.id)}/health-records`);
+      setSelectedHealthSheet((data as any)?.data || null);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to load health records',
+        description: error?.response?.data?.message || 'Employee profile loaded without the health dossier.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsHealthSheetLoading(false);
+    }
+  };
+
+  const downloadHealthRecords = async (emp: Employee) => {
+    try {
+      const response = await api.get(`/corporate/employees/${encodeURIComponent(emp.employeeId || emp.id)}/health-records/export`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${emp.employeeId || emp.id}-health-records.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast({ title: 'Health records exported', description: 'Employee-wise check-up sheet downloaded.' });
+    } catch (error: any) {
+      toast({
+        title: 'Export failed',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const downloadTemplate = async () => {
@@ -296,6 +370,49 @@ const CorporateEmployees: React.FC = () => {
     }
   };
 
+  const getSlaColor = (status: string) => {
+    const colors: Record<string, string> = {
+      on_time: 'bg-emerald-500/15 text-emerald-400',
+      breached: 'bg-red-500/15 text-red-400',
+      pending_due: 'bg-blue-500/15 text-blue-400',
+      pending_overdue: 'bg-amber-500/15 text-amber-400',
+    };
+    return colors[status] || 'bg-slate-700/50 text-slate-300';
+  };
+
+  const renderHealthRecords = (records: HealthRecord[]) => {
+    if (isHealthSheetLoading) {
+      return <div className="text-sm text-slate-400 py-3">Loading health records...</div>;
+    }
+    if (!records.length) {
+      return <div className="text-sm text-slate-500 py-3">No records found.</div>;
+    }
+    return (
+      <div className="space-y-2">
+        {records.map((record) => (
+          <div key={`${record.source}-${record.id}`} className="rounded-md border border-white/10 bg-slate-950/40 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="font-medium text-slate-100">{record.reportName}</div>
+                <div className="text-xs text-slate-500">{record.reportDate || 'No report date'} · {record.source}</div>
+              </div>
+              <Badge className={getSlaColor(record.slaStatus)}>{record.slaStatus.replace(/_/g, ' ')}</Badge>
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-slate-400">
+              <div>Due: {record.reportDueAt ? new Date(record.reportDueAt).toLocaleDateString() : 'N/A'}</div>
+              <div>Delivered: {record.reportDeliveredAt ? new Date(record.reportDeliveredAt).toLocaleDateString() : 'N/A'}</div>
+            </div>
+            {record.reportUrl && (
+              <a href={record.reportUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-blue-400 hover:text-blue-300">
+                Open report
+              </a>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <CorporateLayout title="Employee Management">
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
@@ -428,19 +545,25 @@ const CorporateEmployees: React.FC = () => {
 
       {/* View Dialog */}
       <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent className="sm:max-w-[520px] bg-white dark:bg-slate-900 dark:border-slate-700">
+        <DialogContent className="sm:max-w-[820px] bg-white dark:bg-slate-900 dark:border-slate-700 max-h-[88vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Employee Profile</DialogTitle>
-            <DialogDescription>Basic employee and plan information.</DialogDescription>
+            <DialogTitle>Employee Health Dossier</DialogTitle>
+            <DialogDescription>Pre-employment and annual health check-up records in one employee sheet.</DialogDescription>
           </DialogHeader>
           {selectedEmployee && (
-            <div className="space-y-3 text-sm">
+            <div className="space-y-5 text-sm">
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-semibold">{selectedEmployee.name}</div>
                   <div className="text-slate-400">{selectedEmployee.designation}</div>
                 </div>
-                <Badge className={getHealthStatusColor(selectedEmployee.healthStatus)}>{selectedEmployee.healthStatus}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge className={getHealthStatusColor(selectedEmployee.healthStatus)}>{selectedEmployee.healthStatus}</Badge>
+                  <Button variant="outline" size="sm" onClick={() => downloadHealthRecords(selectedEmployee)}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export Sheet
+                  </Button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -480,6 +603,48 @@ const CorporateEmployees: React.FC = () => {
                 <div className="text-slate-400">Wellness Plan</div>
                 <div className="font-medium">{selectedEmployee.insurancePlan}</div>
               </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="rounded-md border border-white/10 bg-slate-950/40 p-3">
+                  <div className="text-slate-400 text-xs">Total Records</div>
+                  <div className="text-lg font-semibold">{selectedHealthSheet?.summary.totalRecords ?? '—'}</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-slate-950/40 p-3">
+                  <div className="text-slate-400 text-xs">Pre-Employment</div>
+                  <div className="text-lg font-semibold">{selectedHealthSheet?.summary.preEmploymentCount ?? '—'}</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-slate-950/40 p-3">
+                  <div className="text-slate-400 text-xs">Annual</div>
+                  <div className="text-lg font-semibold">{selectedHealthSheet?.summary.annualCount ?? '—'}</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-slate-950/40 p-3">
+                  <div className="text-slate-400 text-xs">Overdue</div>
+                  <div className="text-lg font-semibold">{selectedHealthSheet?.summary.overdueReports ?? '—'}</div>
+                </div>
+                <div className="rounded-md border border-white/10 bg-slate-950/40 p-3">
+                  <div className="text-slate-400 text-xs">SLA</div>
+                  <div className="text-lg font-semibold">
+                    {selectedHealthSheet?.summary.slaCompliancePercent === null || selectedHealthSheet?.summary.slaCompliancePercent === undefined
+                      ? 'N/A'
+                      : `${selectedHealthSheet.summary.slaCompliancePercent}%`}
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <h4 className="font-semibold text-slate-100 mb-2">Pre-Employment</h4>
+                  {renderHealthRecords(selectedHealthSheet?.records.preEmployment || [])}
+                </div>
+                <div>
+                  <h4 className="font-semibold text-slate-100 mb-2">Annual Health Check-Ups</h4>
+                  {renderHealthRecords(selectedHealthSheet?.records.annualHealthCheckups || [])}
+                </div>
+              </div>
+              {!!selectedHealthSheet?.records.other.length && (
+                <div>
+                  <h4 className="font-semibold text-slate-100 mb-2">Other Health Reports</h4>
+                  {renderHealthRecords(selectedHealthSheet.records.other)}
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -508,7 +673,9 @@ const CorporateEmployees: React.FC = () => {
             <CardTitle className="text-sm text-slate-400">Pending Checkups</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-3xl font-bold text-amber-400">5</p>
+            <p className="text-3xl font-bold text-amber-400">
+              {employees.filter(e => !e.lastCheckup || (e.overdueReports || 0) > 0).length}
+            </p>
           </CardContent>
         </Card>
         <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">

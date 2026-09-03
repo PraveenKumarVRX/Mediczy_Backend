@@ -5,7 +5,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import CorporatePageHeader from "@/components/corporate/CorporatePageHeader";
 import { 
   Building2,
@@ -39,7 +49,8 @@ import {
   Video,
   Percent,
   Dumbbell,
-  Users
+  Users,
+  XCircle
 } from "lucide-react";
 import api from "@/utils/api";
 import { useAuth } from "@/auth/AuthProvider";
@@ -163,6 +174,127 @@ interface MyAppointment {
   claimAmount: number;
 }
 
+interface BenefitWallet {
+  id: number;
+  programId: number;
+  programName: string;
+  description?: string | null;
+  category: string;
+  allocatedLimit: number;
+  utilizedAmount: number;
+  reservedAmount: number;
+  remainingAmount: number;
+  coveragePeriodStart?: string | null;
+  coveragePeriodEnd?: string | null;
+  status: string;
+}
+
+interface EmployeeBenefitWalletPayload {
+  isCorporateEmployee: boolean;
+  corporate?: {
+    id: number;
+    name?: string;
+    employeeId?: string;
+  } | null;
+  wallets: BenefitWallet[];
+}
+
+interface HrBenefitWalletSummary {
+  programCount: number;
+  activePrograms: number;
+  totalBudget: number;
+  activeWallets: number;
+  allocatedAmount: number;
+  utilizedAmount: number;
+  reservedAmount: number;
+  remainingAmount: number;
+  openAuthorizations: number;
+  categoryBreakdown: Array<{
+    category: string;
+    allocated: number;
+    utilized: number;
+    reserved: number;
+    remaining: number;
+    walletCount: number;
+  }>;
+}
+
+interface BenefitProgram {
+  id: number;
+  name: string;
+  description?: string | null;
+  category: string;
+  fundingType: string;
+  annualBudget: number;
+  perEmployeeLimit: number;
+  familyCoverage: boolean;
+  maxDependents: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  status: string;
+  walletCount: number;
+  allocated: number;
+  utilized: number;
+  reserved: number;
+  remaining: number;
+}
+
+interface BenefitAuthorization {
+  id: number;
+  authorizationCode: string;
+  category: string;
+  requestedAmount: number;
+  approvedAmount?: number | null;
+  settlementAmount?: number | null;
+  providerType?: string | null;
+  providerName?: string | null;
+  serviceType?: string | null;
+  status: 'submitted' | 'approved' | 'declined' | 'cancelled' | 'settled' | 'expired';
+  validFrom?: string | null;
+  validTo?: string | null;
+  settledAt?: string | null;
+  cancelledAt?: string | null;
+  createdAt?: string | null;
+  employeeId?: string | null;
+  employeeName?: string | null;
+  walletAllocated: number;
+  walletUtilized: number;
+  walletReserved: number;
+  walletRemaining: number;
+}
+
+const BENEFIT_CATEGORY_OPTIONS = [
+  { value: 'opd', label: 'OPD' },
+  { value: 'diagnostics', label: 'Diagnostics' },
+  { value: 'pharmacy', label: 'Pharmacy' },
+  { value: 'dental', label: 'Dental' },
+  { value: 'vision', label: 'Vision' },
+  { value: 'health_checkup', label: 'Health Checkup' },
+  { value: 'mental_wellness', label: 'Mental Wellness' },
+  { value: 'fitness', label: 'Fitness' },
+  { value: 'vaccination', label: 'Vaccination' },
+  { value: 'other', label: 'Other' },
+];
+
+const AUTH_STATUS_OPTIONS = [
+  { value: 'all', label: 'All statuses' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'settled', label: 'Settled' },
+  { value: 'cancelled', label: 'Cancelled' },
+  { value: 'declined', label: 'Declined' },
+  { value: 'expired', label: 'Expired' },
+];
+
+const AUTH_STATUS_BADGE_CLASSES: Record<string, string> = {
+  submitted: 'bg-amber-500/15 text-amber-300 border border-amber-500/25',
+  approved: 'bg-blue-500/15 text-blue-300 border border-blue-500/25',
+  settled: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/25',
+  cancelled: 'bg-slate-500/15 text-slate-400 border border-slate-600',
+  declined: 'bg-red-500/15 text-red-300 border border-red-500/25',
+  expired: 'bg-orange-500/15 text-orange-300 border border-orange-500/25',
+};
+
 const CorporateBenefits = () => {
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -174,6 +306,40 @@ const CorporateBenefits = () => {
   const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([]);
   const [myAppointments, setMyAppointments] = useState<MyAppointment[]>([]);
   const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null);
+  const [employeeWallet, setEmployeeWallet] = useState<EmployeeBenefitWalletPayload | null>(null);
+  const [hrWalletSummary, setHrWalletSummary] = useState<HrBenefitWalletSummary | null>(null);
+  const [benefitPrograms, setBenefitPrograms] = useState<BenefitProgram[]>([]);
+  const [createProgramDialog, setCreateProgramDialog] = useState(false);
+  const [enrollDialog, setEnrollDialog] = useState(false);
+  const [selectedProgram, setSelectedProgram] = useState<BenefitProgram | null>(null);
+  const [walletActionLoading, setWalletActionLoading] = useState(false);
+  const [programForm, setProgramForm] = useState({
+    name: '',
+    category: 'opd',
+    fundingType: 'employer_funded',
+    annualBudget: '',
+    perEmployeeLimit: '',
+    startDate: new Date().toISOString().slice(0, 10),
+    endDate: '',
+    familyCoverage: 'false',
+    maxDependents: '0',
+    description: '',
+  });
+  const [enrollForm, setEnrollForm] = useState({
+    employeeIdsText: '',
+    allocatedLimit: '',
+  });
+  const [authorizations, setAuthorizations] = useState<BenefitAuthorization[]>([]);
+  const [authStatusFilter, setAuthStatusFilter] = useState('all');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [authActionLoading, setAuthActionLoading] = useState(false);
+  const [settleDialog, setSettleDialog] = useState(false);
+  const [selectedAuthorization, setSelectedAuthorization] = useState<BenefitAuthorization | null>(null);
+  const [settleForm, setSettleForm] = useState({
+    settlementAmount: '',
+    invoiceNumber: '',
+    notes: '',
+  });
   const [selectedCheckup, setSelectedCheckup] = useState<HealthCheckup | null>(null);
   const [bookingDialog, setBookingDialog] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<BookingDetails>({
@@ -191,16 +357,66 @@ const CorporateBenefits = () => {
     fetchData();
   }, []);
 
+  const formatINR = (amount?: number | null) => {
+    const value = Number(amount || 0);
+    return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  };
+
+  const labelForCategory = (category: string) =>
+    String(category || 'other')
+      .split('_')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const fetchAuthorizations = async (statusFilter = authStatusFilter) => {
+    try {
+      setAuthLoading(true);
+      const query = statusFilter && statusFilter !== 'all'
+        ? `?status=${encodeURIComponent(statusFilter)}&limit=50`
+        : '?limit=50';
+      // HR-only endpoint; 403s harmlessly for employee-only sessions.
+      const res = await api.get(`/corporate/benefit-wallet/authorizations${query}`).catch(() => ({ data: null }));
+      const payload = res?.data?.data?.authorizations;
+      return Array.isArray(payload) ? (payload as BenefitAuthorization[]) : [];
+    } catch (err) {
+      console.error('Failed to load benefit authorizations', err);
+      return [] as BenefitAuthorization[];
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
       
-      const [planRes, checkupsRes, appointmentsRes, packagesRes] = await Promise.all([
+      const [planRes, checkupsRes, appointmentsRes, packagesRes, employeeWalletRes, hrWalletRes, programsRes, authorizationsPayload] = await Promise.all([
         api.get('/corporate/my-benefits').catch(() => ({ data: null })),
         api.get('/corporate/health-checkups').catch(() => ({ data: null })),
         api.get('/corporate/my-appointments').catch(() => ({ data: null })),
         // HR-only (authCorporate) -- 403s harmlessly for an employee session.
-        api.get('/corporate/health-packages').catch(() => ({ data: null }))
+        api.get('/corporate/health-packages').catch(() => ({ data: null })),
+        // Employee-only wallet; safe to ignore for pure HR/corporate sessions.
+        api.get('/corporate/my-benefit-wallet').catch(() => ({ data: null })),
+        // HR-only wallet summary; safe to ignore for employee sessions.
+        api.get('/corporate/benefit-wallet/summary').catch(() => ({ data: null })),
+        // HR-only program controls; safe to ignore for employee sessions.
+        api.get('/corporate/benefit-wallet/programs').catch(() => ({ data: null })),
+        // HR-only cashless authorizations; respects the active status filter.
+        fetchAuthorizations()
       ]);
 
       const planPayload = planRes?.data?.plan || planRes?.data?.data?.plan || null;
@@ -217,14 +433,161 @@ const CorporateBenefits = () => {
 
       const packagesPayload = packagesRes?.data?.data?.packages;
       setHealthPackages(Array.isArray(packagesPayload) ? packagesPayload : []);
+
+      const employeeWalletPayload = employeeWalletRes?.data?.data || null;
+      setEmployeeWallet(employeeWalletPayload?.isCorporateEmployee ? employeeWalletPayload : null);
+
+      const hrSummaryPayload = hrWalletRes?.data?.data || null;
+      setHrWalletSummary(hrSummaryPayload?.programCount !== undefined ? hrSummaryPayload : null);
+
+      const programsPayload = programsRes?.data?.data?.programs;
+      setBenefitPrograms(Array.isArray(programsPayload) ? programsPayload : []);
+
+      setAuthorizations(Array.isArray(authorizationsPayload) ? authorizationsPayload : []);
     } catch (err) {
       console.error('Failed to load data', err);
       setCorporatePlan(null);
       setHealthCheckups([]);
       setMyAppointments([]);
       setHealthPackages([]);
+      setEmployeeWallet(null);
+      setHrWalletSummary(null);
+      setBenefitPrograms([]);
+      setAuthorizations([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Re-run only on filter changes; initial load is covered by fetchData().
+    if (loading) return;
+    fetchAuthorizations(authStatusFilter).then(setAuthorizations);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authStatusFilter]);
+
+  const resetProgramForm = () => {
+    setProgramForm({
+      name: '',
+      category: 'opd',
+      fundingType: 'employer_funded',
+      annualBudget: '',
+      perEmployeeLimit: '',
+      startDate: new Date().toISOString().slice(0, 10),
+      endDate: '',
+      familyCoverage: 'false',
+      maxDependents: '0',
+      description: '',
+    });
+  };
+
+  const handleCreateBenefitProgram = async () => {
+    try {
+      setWalletActionLoading(true);
+      await api.post('/corporate/benefit-wallet/programs', {
+        name: programForm.name,
+        category: programForm.category,
+        fundingType: programForm.fundingType,
+        annualBudget: Number(programForm.annualBudget || 0),
+        perEmployeeLimit: Number(programForm.perEmployeeLimit || 0),
+        startDate: programForm.startDate || undefined,
+        endDate: programForm.endDate || undefined,
+        familyCoverage: programForm.familyCoverage === 'true',
+        maxDependents: Number(programForm.maxDependents || 0),
+        description: programForm.description,
+      });
+      alert('Benefit program created successfully.');
+      setCreateProgramDialog(false);
+      resetProgramForm();
+      await fetchData();
+    } catch (err: any) {
+      console.error('Create benefit program failed', err);
+      alert(err?.response?.data?.message || 'Failed to create benefit program.');
+    } finally {
+      setWalletActionLoading(false);
+    }
+  };
+
+  const openEnrollDialog = (program: BenefitProgram) => {
+    setSelectedProgram(program);
+    setEnrollForm({
+      employeeIdsText: '',
+      allocatedLimit: String(program.perEmployeeLimit || ''),
+    });
+    setEnrollDialog(true);
+  };
+
+  const handleEnrollEmployees = async () => {
+    if (!selectedProgram) return;
+    try {
+      setWalletActionLoading(true);
+      const employeeIds = enrollForm.employeeIdsText
+        .split(/[,\n]/)
+        .map((id) => id.trim())
+        .filter(Boolean);
+
+      await api.post(`/corporate/benefit-wallet/programs/${selectedProgram.id}/enroll`, {
+        ...(employeeIds.length ? { employeeIds } : {}),
+        allocatedLimit: Number(enrollForm.allocatedLimit || selectedProgram.perEmployeeLimit || 0),
+      });
+      alert(employeeIds.length ? 'Selected employees enrolled successfully.' : 'All active employees enrolled successfully.');
+      setEnrollDialog(false);
+      setSelectedProgram(null);
+      await fetchData();
+    } catch (err: any) {
+      console.error('Enroll employees failed', err);
+      alert(err?.response?.data?.message || 'Failed to enroll employees.');
+    } finally {
+      setWalletActionLoading(false);
+    }
+  };
+
+  const openSettleDialog = (authorization: BenefitAuthorization) => {
+    setSelectedAuthorization(authorization);
+    setSettleForm({
+      settlementAmount: String(authorization.approvedAmount ?? authorization.requestedAmount ?? ''),
+      invoiceNumber: '',
+      notes: '',
+    });
+    setSettleDialog(true);
+  };
+
+  const handleSettleAuthorization = async () => {
+    if (!selectedAuthorization) return;
+    try {
+      setAuthActionLoading(true);
+      await api.post(`/corporate/benefit-wallet/authorizations/${selectedAuthorization.id}/settle`, {
+        settlementAmount: Number(settleForm.settlementAmount || 0),
+        invoiceNumber: settleForm.invoiceNumber || undefined,
+        notes: settleForm.notes || undefined,
+      });
+      alert('Authorization settled. Reserved balance has been converted into utilized spend.');
+      setSettleDialog(false);
+      setSelectedAuthorization(null);
+      await fetchData();
+    } catch (err: any) {
+      console.error('Settle authorization failed', err);
+      alert(err?.response?.data?.message || 'Failed to settle authorization.');
+    } finally {
+      setAuthActionLoading(false);
+    }
+  };
+
+  const handleCancelAuthorization = async (authorization: BenefitAuthorization) => {
+    const confirmed = window.confirm(
+      `Cancel authorization ${authorization.authorizationCode}? The reserved amount will be released back to the employee wallet.`
+    );
+    if (!confirmed) return;
+    try {
+      setAuthActionLoading(true);
+      await api.post(`/corporate/benefit-wallet/authorizations/${authorization.id}/cancel`, {});
+      alert('Authorization cancelled and reserved amount released.');
+      await fetchData();
+    } catch (err: any) {
+      console.error('Cancel authorization failed', err);
+      alert(err?.response?.data?.message || 'Failed to cancel authorization.');
+    } finally {
+      setAuthActionLoading(false);
     }
   };
 
@@ -362,6 +725,109 @@ const CorporateBenefits = () => {
             ] : []}
           />
 
+          {(employeeWallet?.wallets?.length || hrWalletSummary) && (
+            <div className="max-w-7xl mx-auto">
+              {employeeWallet?.wallets?.length ? (
+                <Card className="bg-gradient-to-br from-emerald-950/50 via-slate-900 to-slate-950 border-emerald-500/25 shadow-xl shadow-slate-950/30">
+                  <CardHeader>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <CardTitle className="text-slate-100 flex items-center gap-2">
+                          <IndianRupee className="w-5 h-5 text-emerald-400" />
+                          Employer-Funded Health Wallet
+                        </CardTitle>
+                        <p className="text-sm text-slate-400 mt-1">
+                          Cashless-ready corporate benefits sponsored by {employeeWallet.corporate?.name || corporatePlan?.corporateName || 'your employer'}.
+                        </p>
+                      </div>
+                      <Badge className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        {employeeWallet.wallets.length} active wallet{employeeWallet.wallets.length === 1 ? '' : 's'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      {employeeWallet.wallets.slice(0, 6).map((wallet) => {
+                        const usedPercent = wallet.allocatedLimit > 0
+                          ? Math.min(100, Math.round(((wallet.utilizedAmount + wallet.reservedAmount) / wallet.allocatedLimit) * 100))
+                          : 0;
+                        return (
+                          <div key={wallet.id} className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs uppercase tracking-wide text-emerald-300">{labelForCategory(wallet.category)}</p>
+                                <h3 className="font-semibold text-slate-100 mt-1">{wallet.programName}</h3>
+                              </div>
+                              <Badge variant="outline" className="border-slate-600 text-slate-300">{wallet.status}</Badge>
+                            </div>
+                            <div className="mt-4">
+                              <div className="flex items-baseline justify-between">
+                                <span className="text-sm text-slate-400">Available</span>
+                                <span className="text-xl font-bold text-emerald-400">{formatINR(wallet.remainingAmount)}</span>
+                              </div>
+                              <div className="mt-3 h-2 rounded-full bg-slate-800 overflow-hidden">
+                                <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400" style={{ width: `${usedPercent}%` }} />
+                              </div>
+                              <div className="mt-2 flex justify-between text-xs text-slate-500">
+                                <span>Used {formatINR(wallet.utilizedAmount)}</span>
+                                <span>Reserved {formatINR(wallet.reservedAmount)}</span>
+                                <span>Total {formatINR(wallet.allocatedLimit)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : hrWalletSummary ? (
+                <Card className="bg-gradient-to-br from-cyan-950/40 via-slate-900 to-slate-950 border-cyan-500/25 shadow-xl shadow-slate-950/30">
+                  <CardHeader>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <CardTitle className="text-slate-100 flex items-center gap-2">
+                          <IndianRupee className="w-5 h-5 text-cyan-400" />
+                          Corporate Benefits Wallet Command View
+                        </CardTitle>
+                        <p className="text-sm text-slate-400 mt-1">
+                          HR-safe view of employer-funded budgets, allocation, utilization, and open authorizations.
+                        </p>
+                      </div>
+                      <Badge className="bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                        {hrWalletSummary.activePrograms} active program{hrWalletSummary.activePrograms === 1 ? '' : 's'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                      {[
+                        ['Total Budget', hrWalletSummary.totalBudget],
+                        ['Allocated', hrWalletSummary.allocatedAmount],
+                        ['Utilized', hrWalletSummary.utilizedAmount],
+                        ['Reserved', hrWalletSummary.reservedAmount],
+                        ['Remaining', hrWalletSummary.remainingAmount],
+                      ].map(([label, value]) => (
+                        <div key={String(label)} className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-4">
+                          <p className="text-xs text-slate-400 uppercase tracking-wide">{label}</p>
+                          <p className="text-xl font-bold text-slate-100 mt-1">{formatINR(Number(value))}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-400">
+                      <Badge variant="outline" className="border-slate-600 text-slate-300">{hrWalletSummary.activeWallets} employee wallets</Badge>
+                      <Badge variant="outline" className="border-slate-600 text-slate-300">{hrWalletSummary.openAuthorizations} open authorizations</Badge>
+                      {hrWalletSummary.categoryBreakdown?.slice(0, 4).map((item) => (
+                        <Badge key={item.category} variant="outline" className="border-slate-600 text-slate-300">
+                          {labelForCategory(item.category)}: {formatINR(item.remaining)} left
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null}
+            </div>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 max-w-7xl mx-auto">
             <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid bg-slate-800/60 border border-slate-700/60">
               <TabsTrigger value="benefits">
@@ -380,6 +846,485 @@ const CorporateBenefits = () => {
 
             {/* Benefits Tab */}
             <TabsContent value="benefits" className="space-y-6">
+              {hrWalletSummary && (
+                <Card className="bg-slate-900/50 border-cyan-500/25">
+                  <CardHeader>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <CardTitle className="text-slate-100 flex items-center gap-2">
+                          <IndianRupee className="w-5 h-5 text-cyan-400" />
+                          HR Benefit Wallet Programs
+                        </CardTitle>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Create employer-funded wallets and enroll employees. Clinical data remains separate from benefit utilization.
+                        </p>
+                      </div>
+
+                      <Dialog open={createProgramDialog} onOpenChange={setCreateProgramDialog}>
+                        <DialogTrigger asChild>
+                          <Button className="bg-cyan-600 hover:bg-cyan-700">
+                            <Plus className="w-4 h-4 mr-2" />
+                            Create Program
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-w-2xl bg-slate-950 border-slate-700 text-slate-100">
+                          <DialogHeader>
+                            <DialogTitle>Create Benefit Program</DialogTitle>
+                            <DialogDescription className="text-slate-400">
+                              Configure a corporate-funded wallet category such as OPD, diagnostics, pharmacy, or mental wellness.
+                            </DialogDescription>
+                          </DialogHeader>
+
+                          <div className="grid gap-4 py-2">
+                            <div className="grid gap-2">
+                              <Label htmlFor="programName" className="text-slate-300">Program name</Label>
+                              <Input
+                                id="programName"
+                                value={programForm.name}
+                                onChange={(e) => setProgramForm({ ...programForm, name: e.target.value })}
+                                placeholder="Annual OPD Wallet"
+                                className="bg-slate-900 border-slate-700 text-slate-100"
+                              />
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="grid gap-2">
+                                <Label className="text-slate-300">Category</Label>
+                                <Select value={programForm.category} onValueChange={(value) => setProgramForm({ ...programForm, category: value })}>
+                                  <SelectTrigger className="bg-slate-900 border-slate-700 text-slate-100">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {BENEFIT_CATEGORY_OPTIONS.map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="grid gap-2">
+                                <Label className="text-slate-300">Funding type</Label>
+                                <Select value={programForm.fundingType} onValueChange={(value) => setProgramForm({ ...programForm, fundingType: value })}>
+                                  <SelectTrigger className="bg-slate-900 border-slate-700 text-slate-100">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="employer_funded">Employer funded</SelectItem>
+                                    <SelectItem value="cashless">Cashless</SelectItem>
+                                    <SelectItem value="reimbursement">Reimbursement</SelectItem>
+                                    <SelectItem value="co_pay">Co-pay</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="grid gap-2">
+                                <Label htmlFor="annualBudget" className="text-slate-300">Annual budget</Label>
+                                <Input
+                                  id="annualBudget"
+                                  type="number"
+                                  min="0"
+                                  value={programForm.annualBudget}
+                                  onChange={(e) => setProgramForm({ ...programForm, annualBudget: e.target.value })}
+                                  placeholder="2500000"
+                                  className="bg-slate-900 border-slate-700 text-slate-100"
+                                />
+                              </div>
+                              <div className="grid gap-2">
+                                <Label htmlFor="perEmployeeLimit" className="text-slate-300">Per-employee limit</Label>
+                                <Input
+                                  id="perEmployeeLimit"
+                                  type="number"
+                                  min="0"
+                                  value={programForm.perEmployeeLimit}
+                                  onChange={(e) => setProgramForm({ ...programForm, perEmployeeLimit: e.target.value })}
+                                  placeholder="5000"
+                                  className="bg-slate-900 border-slate-700 text-slate-100"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="grid gap-2">
+                                <Label htmlFor="startDate" className="text-slate-300">Start date</Label>
+                                <Input
+                                  id="startDate"
+                                  type="date"
+                                  value={programForm.startDate}
+                                  onChange={(e) => setProgramForm({ ...programForm, startDate: e.target.value })}
+                                  className="bg-slate-900 border-slate-700 text-slate-100"
+                                />
+                              </div>
+                              <div className="grid gap-2">
+                                <Label htmlFor="endDate" className="text-slate-300">End date</Label>
+                                <Input
+                                  id="endDate"
+                                  type="date"
+                                  value={programForm.endDate}
+                                  onChange={(e) => setProgramForm({ ...programForm, endDate: e.target.value })}
+                                  className="bg-slate-900 border-slate-700 text-slate-100"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="grid gap-2">
+                                <Label className="text-slate-300">Family coverage</Label>
+                                <Select value={programForm.familyCoverage} onValueChange={(value) => setProgramForm({ ...programForm, familyCoverage: value })}>
+                                  <SelectTrigger className="bg-slate-900 border-slate-700 text-slate-100">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="false">Employee only</SelectItem>
+                                    <SelectItem value="true">Employee + family</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <div className="grid gap-2">
+                                <Label htmlFor="maxDependents" className="text-slate-300">Max dependents</Label>
+                                <Input
+                                  id="maxDependents"
+                                  type="number"
+                                  min="0"
+                                  value={programForm.maxDependents}
+                                  onChange={(e) => setProgramForm({ ...programForm, maxDependents: e.target.value })}
+                                  className="bg-slate-900 border-slate-700 text-slate-100"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="grid gap-2">
+                              <Label htmlFor="programDescription" className="text-slate-300">Description</Label>
+                              <Textarea
+                                id="programDescription"
+                                value={programForm.description}
+                                onChange={(e) => setProgramForm({ ...programForm, description: e.target.value })}
+                                placeholder="Short HR-facing description of what this wallet covers."
+                                className="bg-slate-900 border-slate-700 text-slate-100"
+                              />
+                            </div>
+                          </div>
+
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setCreateProgramDialog(false)} disabled={walletActionLoading}>
+                              Cancel
+                            </Button>
+                            <Button onClick={handleCreateBenefitProgram} disabled={walletActionLoading || !programForm.name || !programForm.perEmployeeLimit}>
+                              {walletActionLoading ? 'Creating...' : 'Create Program'}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent>
+                    {benefitPrograms.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-center">
+                        <IndianRupee className="w-10 h-10 text-cyan-400 mx-auto mb-3" />
+                        <h3 className="text-slate-100 font-semibold">No wallet programs yet</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Create OPD, diagnostics, pharmacy, health-checkup, or mental wellness wallets to start enrolling employees.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        {benefitPrograms.map((program) => {
+                          const consumed = program.utilized + program.reserved;
+                          const usedPercent = program.allocated > 0 ? Math.min(100, Math.round((consumed / program.allocated) * 100)) : 0;
+                          return (
+                            <div key={program.id} className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-4">
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className="font-semibold text-slate-100">{program.name}</h3>
+                                    <Badge className="bg-cyan-500/15 text-cyan-300 border border-cyan-500/25">
+                                      {labelForCategory(program.category)}
+                                    </Badge>
+                                    <Badge variant="outline" className="border-slate-600 text-slate-300">
+                                      {program.status}
+                                    </Badge>
+                                  </div>
+                                  {program.description && (
+                                    <p className="text-sm text-slate-500 mt-1 line-clamp-2">{program.description}</p>
+                                  )}
+                                  <p className="text-xs text-slate-500 mt-2">
+                                    {program.startDate || '—'} — {program.endDate || 'Open ended'} · {program.familyCoverage ? `Family covered up to ${program.maxDependents} dependents` : 'Employee only'}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  <Button variant="outline" size="sm" className="border-slate-700 text-slate-200" onClick={() => openEnrollDialog(program)}>
+                                    <Users className="w-4 h-4 mr-2" />
+                                    Enroll Employees
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                                {[
+                                  ['Per Employee', program.perEmployeeLimit],
+                                  ['Allocated', program.allocated],
+                                  ['Utilized', program.utilized],
+                                  ['Reserved', program.reserved],
+                                  ['Remaining', program.remaining],
+                                ].map(([label, value]) => (
+                                  <div key={String(label)} className="rounded-lg bg-slate-900/80 border border-slate-800 p-3">
+                                    <p className="text-xs text-slate-500">{label}</p>
+                                    <p className="text-sm font-semibold text-slate-100 mt-1">{formatINR(Number(value))}</p>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="mt-3 h-2 rounded-full bg-slate-800 overflow-hidden">
+                                <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-400" style={{ width: `${usedPercent}%` }} />
+                              </div>
+                              <p className="text-xs text-slate-500 mt-2">{program.walletCount} employee wallet{program.walletCount === 1 ? '' : 's'} enrolled</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {hrWalletSummary && (
+                <Card className="bg-slate-900/50 border-blue-500/25">
+                  <CardHeader>
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <CardTitle className="text-slate-100 flex items-center gap-2">
+                          <FileText className="w-5 h-5 text-blue-400" />
+                          Cashless Authorizations & Settlements
+                        </CardTitle>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Settle approved authorizations to convert reserved balance into utilized spend, or cancel to release the reserve.
+                        </p>
+                      </div>
+                      <div className="w-full lg:w-56">
+                        <Select value={authStatusFilter} onValueChange={setAuthStatusFilter}>
+                          <SelectTrigger className="bg-slate-900 border-slate-700 text-slate-100">
+                            <SelectValue placeholder="Filter by status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {AUTH_STATUS_OPTIONS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent>
+                    {authLoading && authorizations.length === 0 ? (
+                      <p className="text-sm text-slate-500 text-center py-6">Loading authorizations…</p>
+                    ) : authorizations.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/40 p-6 text-center">
+                        <FileText className="w-10 h-10 text-blue-400 mx-auto mb-3" />
+                        <h3 className="text-slate-100 font-semibold">No authorizations found</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Employee cashless requests will appear here once submitted against an enrolled benefit wallet.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="grid gap-4">
+                        {authorizations.map((authorization) => {
+                          const approvedValue = authorization.approvedAmount ?? authorization.requestedAmount;
+                          const canSettle = authorization.status === 'approved';
+                          const canCancel = ['submitted', 'approved'].includes(authorization.status);
+                          return (
+                            <div key={authorization.id} className="rounded-xl border border-slate-700/60 bg-slate-950/50 p-4">
+                              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className="font-semibold text-slate-100">
+                                      {authorization.employeeName || authorization.employeeId || 'Employee'}
+                                    </h3>
+                                    <Badge className="bg-blue-500/15 text-blue-300 border border-blue-500/25">
+                                      {labelForCategory(authorization.category)}
+                                    </Badge>
+                                    <Badge className={AUTH_STATUS_BADGE_CLASSES[authorization.status] || AUTH_STATUS_BADGE_CLASSES.submitted}>
+                                      {authorization.status}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-2">
+                                    Code: <span className="text-slate-300 font-mono">{authorization.authorizationCode}</span>
+                                    {authorization.employeeId ? ` · Emp ID: ${authorization.employeeId}` : ''}
+                                    {authorization.providerName ? ` · ${authorization.providerName}` : ''}
+                                    {authorization.serviceType ? ` · ${authorization.serviceType}` : ''}
+                                  </p>
+                                  <p className="text-xs text-slate-500 mt-1">
+                                    Requested {formatDateTime(authorization.createdAt)} · Valid till {formatDateTime(authorization.validTo)}
+                                    {authorization.status === 'settled' && ` · Settled ${formatDateTime(authorization.settledAt)}`}
+                                    {authorization.status === 'cancelled' && ` · Cancelled ${formatDateTime(authorization.cancelledAt)}`}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-wrap gap-2">
+                                  {canSettle && (
+                                    <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => openSettleDialog(authorization)} disabled={authActionLoading}>
+                                      <CheckCircle className="w-4 h-4 mr-2" />
+                                      Settle
+                                    </Button>
+                                  )}
+                                  {canCancel && (
+                                    <Button variant="outline" size="sm" className="border-slate-700 text-slate-300 hover:text-red-300" onClick={() => handleCancelAuthorization(authorization)} disabled={authActionLoading}>
+                                      <XCircle className="w-4 h-4 mr-2" />
+                                      Cancel
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                                {[
+                                  ['Requested', authorization.requestedAmount],
+                                  ['Approved', approvedValue],
+                                  ['Settled', authorization.settlementAmount ?? 0],
+                                  ['Wallet Reserved', authorization.walletReserved],
+                                  ['Wallet Remaining', authorization.walletRemaining],
+                                ].map(([label, value]) => (
+                                  <div key={String(label)} className="rounded-lg bg-slate-900/80 border border-slate-800 p-3">
+                                    <p className="text-xs text-slate-500">{String(label)}</p>
+                                    <p className="text-sm font-semibold text-slate-100 mt-1">{formatINR(Number(value))}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              <Dialog open={enrollDialog} onOpenChange={setEnrollDialog}>
+                <DialogContent className="max-w-xl bg-slate-950 border-slate-700 text-slate-100">
+                  <DialogHeader>
+                    <DialogTitle>Enroll Employees</DialogTitle>
+                    <DialogDescription className="text-slate-400">
+                      {selectedProgram ? `Allocate ${selectedProgram.name} wallets. Leave employee IDs blank to enroll all active employees.` : 'Allocate wallets to employees.'}
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="grid gap-4 py-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="allocatedLimit" className="text-slate-300">Allocated limit per employee</Label>
+                      <Input
+                        id="allocatedLimit"
+                        type="number"
+                        min="0"
+                        value={enrollForm.allocatedLimit}
+                        onChange={(e) => setEnrollForm({ ...enrollForm, allocatedLimit: e.target.value })}
+                        className="bg-slate-900 border-slate-700 text-slate-100"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="employeeIds" className="text-slate-300">Employee IDs</Label>
+                      <Textarea
+                        id="employeeIds"
+                        value={enrollForm.employeeIdsText}
+                        onChange={(e) => setEnrollForm({ ...enrollForm, employeeIdsText: e.target.value })}
+                        placeholder="Optional: EMP001, EMP002, EMP003. Leave blank to enroll all active employees."
+                        className="bg-slate-900 border-slate-700 text-slate-100 min-h-[120px]"
+                      />
+                      <p className="text-xs text-slate-500">Comma-separated or one employee ID per line.</p>
+                    </div>
+                  </div>
+
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setEnrollDialog(false)} disabled={walletActionLoading}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleEnrollEmployees} disabled={walletActionLoading || !enrollForm.allocatedLimit}>
+                      {walletActionLoading ? 'Enrolling...' : 'Enroll'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={settleDialog} onOpenChange={setSettleDialog}>
+                <DialogContent className="max-w-xl bg-slate-950 border-slate-700 text-slate-100">
+                  <DialogHeader>
+                    <DialogTitle>Settle Cashless Authorization</DialogTitle>
+                    <DialogDescription className="text-slate-400">
+                      {selectedAuthorization
+                        ? `Convert the reserved amount for ${selectedAuthorization.authorizationCode} into utilized spend.`
+                        : 'Convert the reserved amount into utilized spend.'}
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  {selectedAuthorization && (
+                    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-sm text-slate-300">
+                      <p>
+                        {selectedAuthorization.employeeName || selectedAuthorization.employeeId || 'Employee'}
+                        {' · '}
+                        {labelForCategory(selectedAuthorization.category)}
+                        {selectedAuthorization.providerName ? ` · ${selectedAuthorization.providerName}` : ''}
+                      </p>
+                      <p className="text-slate-500 mt-1">
+                        Approved {formatINR(selectedAuthorization.approvedAmount ?? selectedAuthorization.requestedAmount)}
+                        {' · '}Wallet remaining {formatINR(selectedAuthorization.walletRemaining)}. Any unused reserve is released on settlement.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid gap-4 py-2">
+                    <div className="grid gap-2">
+                      <Label htmlFor="settlementAmount" className="text-slate-300">Settlement amount</Label>
+                      <Input
+                        id="settlementAmount"
+                        type="number"
+                        min="0"
+                        value={settleForm.settlementAmount}
+                        onChange={(e) => setSettleForm({ ...settleForm, settlementAmount: e.target.value })}
+                        className="bg-slate-900 border-slate-700 text-slate-100"
+                      />
+                      <p className="text-xs text-slate-500">Cannot exceed the approved amount.</p>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="invoiceNumber" className="text-slate-300">Invoice number (optional)</Label>
+                      <Input
+                        id="invoiceNumber"
+                        value={settleForm.invoiceNumber}
+                        onChange={(e) => setSettleForm({ ...settleForm, invoiceNumber: e.target.value })}
+                        placeholder="INV-2026-0001"
+                        className="bg-slate-900 border-slate-700 text-slate-100"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="settlementNotes" className="text-slate-300">Notes (optional)</Label>
+                      <Textarea
+                        id="settlementNotes"
+                        value={settleForm.notes}
+                        onChange={(e) => setSettleForm({ ...settleForm, notes: e.target.value })}
+                        placeholder="Service details, claim reference, etc."
+                        className="bg-slate-900 border-slate-700 text-slate-100 min-h-[90px]"
+                      />
+                    </div>
+                  </div>
+
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setSettleDialog(false)} disabled={authActionLoading}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleSettleAuthorization}
+                      disabled={
+                        authActionLoading ||
+                        !settleForm.settlementAmount ||
+                        Number(settleForm.settlementAmount) <= 0 ||
+                        Number(settleForm.settlementAmount) > (selectedAuthorization?.approvedAmount ?? selectedAuthorization?.requestedAmount ?? 0)
+                      }
+                    >
+                      {authActionLoading ? 'Settling...' : 'Settle'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
               {corporatePlan && (
                 <>
                   {/* Plan identity strip — no insurance-style claims here, just what plan this is */}

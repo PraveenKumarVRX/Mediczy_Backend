@@ -21,6 +21,19 @@ interface Report {
   format: 'PDF' | 'Excel' | 'CSV';
   size: string;
   status: 'ready' | 'generating' | 'scheduled';
+  reportKey?: string | null;
+  scheduledFrequency?: string | null;
+  deliveryStatus?: 'not_sent' | 'pending' | 'sent' | 'failed' | string;
+  deliveredAt?: string | null;
+  metrics?: {
+    enrolledEmployees?: number;
+    bookedCheckups?: number;
+    reportsUploaded?: number;
+    preEmploymentReports?: number;
+    annualReports?: number;
+    slaCompliancePercent?: number | null;
+    slaOverdue?: number;
+  };
 }
 
 const CorporateReports: React.FC = () => {
@@ -67,6 +80,7 @@ const CorporateReports: React.FC = () => {
   }, []);
 
   const reportCategories = [
+    'MIS',
     'Health Metrics',
     'Claims',
     'Departmental',
@@ -79,12 +93,20 @@ const CorporateReports: React.FC = () => {
 
   const stats = {
     totalReports: reports.filter(r => r.status === 'ready').length,
-    thisMonth: reports.filter(r => 
-      r.status === 'ready' && r.period.includes('January 2024')
-    ).length,
+    thisMonth: reports.filter(r => {
+      if (r.status !== 'ready' || !r.generatedDate) return false;
+      const generated = new Date(r.generatedDate);
+      const now = new Date();
+      return generated.getMonth() === now.getMonth() && generated.getFullYear() === now.getFullYear();
+    }).length,
     scheduled: reports.filter(r => r.status === 'scheduled').length,
     generating: reports.filter(r => r.status === 'generating').length
   };
+
+  const latestWeeklyMis = useMemo(
+    () => reports.find((report) => report.category === 'MIS' || report.scheduledFrequency === 'weekly' || report.reportKey?.startsWith('weekly-mis-')),
+    [reports]
+  );
 
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
@@ -138,6 +160,27 @@ const CorporateReports: React.FC = () => {
     } catch (error: any) {
       toast({
         title: 'Failed to generate report',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleGenerateWeeklyMis = async () => {
+    try {
+      setIsGenerating(true);
+      const { data } = await api.post('/corporate/reports/weekly-mis/generate', {
+        period: selectedPeriod === 'week' ? 'current_week' : 'previous_week',
+      });
+      const report = (data as any)?.data?.report as Report | undefined;
+      if (report) setReports((prev) => [report, ...prev.filter((item) => item.id !== report.id)]);
+      else await loadReports();
+      toast({ title: 'Weekly MIS generated', description: 'HR MIS is ready to download.' });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to generate MIS',
         description: error?.response?.data?.message || 'Please try again.',
         variant: 'destructive',
       });
@@ -301,6 +344,45 @@ const CorporateReports: React.FC = () => {
       {/* Quick Actions */}
       <Card>
         <CardHeader>
+          <CardTitle>Weekly MIS</CardTitle>
+          <CardDescription>Automated every Monday with check-up, report, and 2-working-day SLA metrics</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <p className="text-sm text-slate-400">Latest Period</p>
+              <p className="font-semibold">{latestWeeklyMis?.period || 'No MIS generated yet'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-400">Reports Uploaded</p>
+              <p className="font-semibold">{latestWeeklyMis?.metrics?.reportsUploaded ?? '—'}</p>
+            </div>
+            <div>
+              <p className="text-sm text-slate-400">SLA Compliance</p>
+              <p className="font-semibold">
+                {latestWeeklyMis?.metrics?.slaCompliancePercent === null || latestWeeklyMis?.metrics?.slaCompliancePercent === undefined
+                  ? 'N/A'
+                  : `${latestWeeklyMis.metrics.slaCompliancePercent}%`}
+              </p>
+            </div>
+            <div className="flex items-end gap-2">
+              <Button onClick={handleGenerateWeeklyMis} disabled={isGenerating}>
+                <FileBarChart className="h-4 w-4 mr-2" />
+                Generate Weekly MIS
+              </Button>
+              {latestWeeklyMis && (
+                <Button variant="outline" onClick={() => handleDownload(latestWeeklyMis)}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Quick Report Generation</CardTitle>
           <CardDescription>Generate standard reports with custom time periods</CardDescription>
         </CardHeader>
@@ -402,6 +484,10 @@ const CorporateReports: React.FC = () => {
                         <Badge variant="outline">{report.id}</Badge>
                         <Badge variant="secondary">{report.category}</Badge>
                         <Badge className={getFormatColor(report.format)}>{report.format}</Badge>
+                        {report.scheduledFrequency === 'weekly' && <Badge variant="outline">Weekly</Badge>}
+                        {report.deliveryStatus && report.deliveryStatus !== 'not_sent' && (
+                          <Badge variant="outline">Delivery: {report.deliveryStatus}</Badge>
+                        )}
                         <Badge className={getStatusColor(report.status)}>
                           {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
                         </Badge>

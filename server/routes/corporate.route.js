@@ -13,6 +13,23 @@ import {
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import {
+  generateCorporateMisReport,
+  getCorporateMisCsv,
+  resolveCorporateIdFromUser,
+} from '../services/corporate-wellness-mis.service.js';
+import {
+  createCorporateBenefitProgram,
+  cancelBenefitAuthorization,
+  enrollEmployeesInBenefitProgram,
+  getCorporateBenefitWalletSummary,
+  getEmployeeBenefitWallet,
+  getEmployeeBenefitWalletByCorporateEmployeeId,
+  listCorporateBenefitAuthorizations,
+  listCorporateBenefitPrograms,
+  requestBenefitAuthorization,
+  settleBenefitAuthorization,
+} from '../services/corporate-benefit-wallet.service.js';
 
 const router = express.Router();
 
@@ -592,6 +609,186 @@ router.get('/my-benefits', authUser, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Corporate Benefits Wallet
+// ---------------------------------------------------------------------------
+// Employer-funded wallet layer: HR configures category programs, employees get
+// auditable rupee wallets, and employee cashless/pre-auth requests reserve
+// balances. This intentionally stays separate from Health Coins rewards.
+
+router.get('/benefit-wallet/summary', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const summary = await getCorporateBenefitWalletSummary(corporateId);
+    return res.json({ success: true, data: summary });
+  } catch (error) {
+    console.error('[corporate] GET /benefit-wallet/summary error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load benefit wallet summary', error: error.message });
+  }
+});
+
+router.get('/benefit-wallet/programs', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const programs = await listCorporateBenefitPrograms(corporateId);
+    return res.json({ success: true, data: { programs } });
+  } catch (error) {
+    console.error('[corporate] GET /benefit-wallet/programs error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load benefit programs', error: error.message });
+  }
+});
+
+router.post('/benefit-wallet/programs', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const program = await createCorporateBenefitProgram(
+      corporateId,
+      req.body || {},
+      req.user?.userId || req.user?.id || null
+    );
+    return res.status(201).json({ success: true, message: 'Benefit program created', data: { program } });
+  } catch (error) {
+    console.error('[corporate] POST /benefit-wallet/programs error:', error.message);
+    const status = /required|must be|invalid/i.test(error.message) ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message || 'Failed to create benefit program' });
+  }
+});
+
+router.post('/benefit-wallet/programs/:programId/enroll', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const programId = parseInt(req.params.programId, 10);
+    if (!Number.isInteger(programId) || programId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid program ID is required' });
+    }
+
+    const result = await enrollEmployeesInBenefitProgram(
+      corporateId,
+      programId,
+      req.body || {},
+      req.user?.userId || req.user?.id || null
+    );
+    return res.json({ success: true, message: 'Employees enrolled into benefit wallet', data: result });
+  } catch (error) {
+    console.error('[corporate] POST /benefit-wallet/programs/:programId/enroll error:', error.message);
+    const status = /not found|required|must be|No active employees/i.test(error.message) ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message || 'Failed to enroll employees' });
+  }
+});
+
+router.get('/benefit-wallet/employees/:employeeId', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const employeeId = String(req.params.employeeId || '').trim();
+    if (!employeeId) return res.status(400).json({ success: false, message: 'Employee ID is required' });
+
+    const wallets = await getEmployeeBenefitWalletByCorporateEmployeeId(corporateId, employeeId);
+    return res.json({ success: true, data: { employeeId, wallets } });
+  } catch (error) {
+    console.error('[corporate] GET /benefit-wallet/employees/:employeeId error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load employee benefit wallet', error: error.message });
+  }
+});
+
+router.get('/benefit-wallet/authorizations', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const authorizations = await listCorporateBenefitAuthorizations(corporateId, {
+      status: req.query.status,
+      limit: req.query.limit,
+    });
+    return res.json({ success: true, data: { authorizations } });
+  } catch (error) {
+    console.error('[corporate] GET /benefit-wallet/authorizations error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load benefit authorizations', error: error.message });
+  }
+});
+
+router.post('/benefit-wallet/authorizations/:authorizationId/settle', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const authorizationId = parseInt(req.params.authorizationId, 10);
+    if (!Number.isInteger(authorizationId) || authorizationId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid authorization ID is required' });
+    }
+
+    const settlement = await settleBenefitAuthorization(
+      corporateId,
+      authorizationId,
+      req.body || {},
+      req.user?.userId || req.user?.id || null
+    );
+    return res.json({ success: true, message: 'Benefit authorization settled', data: { settlement } });
+  } catch (error) {
+    console.error('[corporate] POST /benefit-wallet/authorizations/:authorizationId/settle error:', error.message);
+    const status = /not found|Only approved|must be|cannot exceed/i.test(error.message) ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message || 'Failed to settle authorization' });
+  }
+});
+
+router.post('/benefit-wallet/authorizations/:authorizationId/cancel', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const authorizationId = parseInt(req.params.authorizationId, 10);
+    if (!Number.isInteger(authorizationId) || authorizationId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid authorization ID is required' });
+    }
+
+    const cancellation = await cancelBenefitAuthorization(
+      corporateId,
+      authorizationId,
+      req.body || {},
+      req.user?.userId || req.user?.id || null
+    );
+    return res.json({ success: true, message: 'Benefit authorization cancelled and reserved amount released', data: { cancellation } });
+  } catch (error) {
+    console.error('[corporate] POST /benefit-wallet/authorizations/:authorizationId/cancel error:', error.message);
+    const status = /not found|Only submitted|required|must be/i.test(error.message) ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message || 'Failed to cancel authorization' });
+  }
+});
+
+router.get('/my-benefit-wallet', authUser, async (req, res) => {
+  try {
+    const wallet = await getEmployeeBenefitWallet(req.user.id);
+    return res.json({ success: true, data: wallet });
+  } catch (error) {
+    console.error('[corporate] GET /my-benefit-wallet error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load your corporate benefit wallet', error: error.message });
+  }
+});
+
+router.post('/benefit-wallet/authorizations', authUser, async (req, res) => {
+  try {
+    const authorization = await requestBenefitAuthorization(req.user.id, req.body || {});
+    return res.status(201).json({
+      success: true,
+      message: 'Benefit authorization approved and amount reserved',
+      data: { authorization },
+    });
+  } catch (error) {
+    console.error('[corporate] POST /benefit-wallet/authorizations error:', error.message);
+    const status = /only for corporate employees|No active|Insufficient|must be/i.test(error.message) ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message || 'Failed to request benefit authorization' });
+  }
+});
+
 // Real checkup availability comes from the corporate's actual subscription
 // plan (a "Wellness"/health-checkup benefit line item, e.g. "Annual Health
 // Checkup, Once per year"), not a fabricated multi-tier package catalog --
@@ -1036,9 +1233,25 @@ router.get('/employees', authCorporate, async (req, res) => {
            u."firstName",
            u."lastName",
            u.email AS user_email,
-           u."phoneNumber"
+           u."phoneNumber",
+           hr.last_checkup,
+           hr.report_count,
+           hr.pre_employment_count,
+           hr.annual_count,
+           hr.overdue_count
          FROM corporate_employees ce
          LEFT JOIN users u ON u.id = ce."userId"
+         LEFT JOIN LATERAL (
+           SELECT
+             MAX(chr.report_date) AS last_checkup,
+             COUNT(*) AS report_count,
+             COUNT(*) FILTER (WHERE chr.checkup_type = 'pre_employment') AS pre_employment_count,
+             COUNT(*) FILTER (WHERE chr.checkup_type = 'annual_health_checkup') AS annual_count,
+             COUNT(*) FILTER (WHERE chr.sla_status IN ('breached', 'pending_overdue')) AS overdue_count
+           FROM corporate_health_reports chr
+           WHERE chr.corporate_id = ce.corporate_id
+             AND chr.employee_id = ce."userId"
+         ) hr ON TRUE
          WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
          ORDER BY ce."createdAt" DESC`,
         { replacements: { corporateId } }
@@ -1064,10 +1277,14 @@ router.get('/employees', authCorporate, async (req, res) => {
           department: r.department || 'General',
           designation: r.designation || '',
           joiningDate: r.joiningDate ? r.joiningDate.toString().slice(0, 10) : '',
-          healthStatus: 'good',
-          lastCheckup: '',
+          healthStatus: Number(r.overdue_count || 0) > 0 ? 'moderate' : 'good',
+          lastCheckup: r.last_checkup ? r.last_checkup.toString().slice(0, 10) : '',
           insurancePlan: 'Standard Plan',
           appStatus,
+          preEmploymentReports: Number(r.pre_employment_count || 0),
+          annualReports: Number(r.annual_count || 0),
+          reportCount: Number(r.report_count || 0),
+          overdueReports: Number(r.overdue_count || 0),
         };
       });
     } catch (dbErr) {
@@ -1652,17 +1869,25 @@ function reportRowShape(r) {
     category: r.category,
     generatedDate: r.created_at ? new Date(r.created_at).toISOString().slice(0, 10) : '',
     period: r.period,
+    periodStart: r.period_start || null,
+    periodEnd: r.period_end || null,
     format: r.format,
     size: '—',
     status: r.status,
+    reportKey: r.report_key || null,
+    scheduledFrequency: r.scheduled_frequency || null,
+    deliveryStatus: r.delivery_status || 'not_sent',
+    deliveredAt: r.delivered_at || null,
+    metrics: r.metrics || {},
   };
 }
 
 router.get('/reports', authCorporate, async (req, res) => {
-  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const corporateId = resolveCorporateIdFromUser(req.user);
   if (!corporateId) return res.json({ success: true, data: { reports: [] } });
   const [rows] = await postgresSequelize.query(
-    `SELECT id, title, category, period, format, status, created_at
+    `SELECT id, title, category, period, period_start, period_end, format, status, created_at,
+            report_key, scheduled_frequency, delivery_status, delivered_at, metrics
        FROM corporate_generated_reports WHERE corporate_id = :corporateId
       ORDER BY created_at DESC`,
     { replacements: { corporateId } }
@@ -1671,9 +1896,17 @@ router.get('/reports', authCorporate, async (req, res) => {
 });
 
 router.post('/reports/generate', authCorporate, async (req, res) => {
-  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const corporateId = resolveCorporateIdFromUser(req.user);
   if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
   const { type, period, format } = req.body || {};
+  if (String(type || '').toLowerCase().includes('mis')) {
+    const report = await generateCorporateMisReport(corporateId, {
+      period: period || 'previous_week',
+      generatedBy: req.user?.userId || req.user?.id || null,
+    });
+    return res.status(201).json({ success: true, data: { report: reportRowShape(report) } });
+  }
+
   const [rows] = await postgresSequelize.query(
     `INSERT INTO corporate_generated_reports (corporate_id, title, category, period, format, status, generated_by)
      VALUES (:corporateId, :title, :category, :period, :format, 'ready', :generatedBy)
@@ -1692,11 +1925,29 @@ router.post('/reports/generate', authCorporate, async (req, res) => {
   return res.status(201).json({ success: true, data: { report: reportRowShape(rows[0]) } });
 });
 
+router.post('/reports/weekly-mis/generate', authCorporate, async (req, res) => {
+  try {
+    const corporateId = resolveCorporateIdFromUser(req.user);
+    if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+    const report = await generateCorporateMisReport(corporateId, {
+      period: req.body?.period || 'previous_week',
+      periodStart: req.body?.periodStart,
+      periodEnd: req.body?.periodEnd,
+      generatedBy: req.user?.userId || req.user?.id || null,
+    });
+    return res.status(201).json({ success: true, data: { report: reportRowShape(report) } });
+  } catch (error) {
+    console.error('[corporate] weekly MIS generation error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to generate weekly MIS report' });
+  }
+});
+
 router.get('/reports/:id/preview', authCorporate, async (req, res) => {
-  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const corporateId = resolveCorporateIdFromUser(req.user);
   const { id } = req.params;
   const [rows] = await postgresSequelize.query(
-    `SELECT id, title, category, period, format, status, created_at
+    `SELECT id, title, category, period, period_start, period_end, format, status, created_at,
+            report_key, scheduled_frequency, delivery_status, delivered_at, metrics
        FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
     { replacements: { id, corporateId } }
   );
@@ -1705,10 +1956,11 @@ router.get('/reports/:id/preview', authCorporate, async (req, res) => {
 });
 
 router.get('/reports/:id/download', authCorporate, async (req, res) => {
-  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const corporateId = resolveCorporateIdFromUser(req.user);
   const { id } = req.params;
   const [rows] = await postgresSequelize.query(
-    `SELECT id, title, category, period, format, status, created_at
+    `SELECT id, title, category, period, period_start, period_end, format, status, created_at,
+            report_key, scheduled_frequency, delivery_status, delivered_at, metrics
        FROM corporate_generated_reports WHERE id = :id AND corporate_id = :corporateId`,
     { replacements: { id, corporateId } }
   );
@@ -1718,7 +1970,9 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
   // Pull real underlying data for the report's category rather than just echoing metadata.
   let csv;
   const category = String(report.category || '').toLowerCase();
-  if (category.includes('claim')) {
+  if (category === 'mis' || String(report.report_key || '').startsWith('weekly-mis-')) {
+    csv = await getCorporateMisCsv(corporateId, report);
+  } else if (category.includes('claim')) {
     const [claimRows] = await postgresSequelize.query(
       `SELECT ic.claim_number, ic.claim_type, ic.claim_amount, ic.status, ic.submitted_date
          FROM insurance_claims ic
@@ -3134,14 +3388,275 @@ router.get('/gamification/employee/challenges/:id/leaderboard', authUser, async 
 // ---------------------------------------------------------------------------
 // Employee Details Route
 // ---------------------------------------------------------------------------
+async function resolveCorporateEmployee(corporateId, employeeKey) {
+  const [corporateEmployee] = await postgresSequelize.query(
+    `SELECT
+       ce.id AS corporate_employee_row_id,
+       ce."employeeId",
+       ce.business_unit,
+       ce.department,
+       ce.designation,
+       ce."joiningDate",
+       ce.email AS on_file_email,
+       ce.metadata,
+       ce."userId",
+       u."firstName",
+       u."lastName",
+       u.email AS user_email,
+       u."phoneNumber"
+     FROM corporate_employees ce
+     LEFT JOIN users u ON u.id = ce."userId"
+     WHERE ce.corporate_id = :corporateId
+       AND ce."isActive" = true
+       AND (
+         ce."employeeId" = :employeeKey
+         OR ce.id::text = :employeeKey
+         OR ce."userId"::text = :employeeKey
+       )
+     LIMIT 1`,
+    { replacements: { corporateId, employeeKey }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+
+  if (corporateEmployee) {
+    const meta = corporateEmployee.metadata || {};
+    const name = [corporateEmployee.firstName, corporateEmployee.lastName].filter(Boolean).join(' ')
+      || [meta.firstName, meta.lastName].filter(Boolean).join(' ')
+      || corporateEmployee.user_email
+      || corporateEmployee.on_file_email
+      || corporateEmployee.employeeId;
+    return {
+      userId: corporateEmployee.userId || null,
+      employeeId: corporateEmployee.employeeId,
+      name,
+      email: corporateEmployee.user_email || corporateEmployee.on_file_email || '',
+      phone: corporateEmployee.phoneNumber || '',
+      businessUnit: corporateEmployee.business_unit || '',
+      department: corporateEmployee.department || 'General',
+      designation: corporateEmployee.designation || '',
+      joiningDate: corporateEmployee.joiningDate ? corporateEmployee.joiningDate.toString().slice(0, 10) : '',
+    };
+  }
+
+  const [associatedEmployee] = await postgresSequelize.query(
+    `SELECT
+       u.id AS "userId",
+       COALESCE(ua.metadata->>'employeeId', u.employee_id, u.unique_id, u.id::text) AS "employeeId",
+       u."firstName",
+       u."lastName",
+       u.email,
+       u."phoneNumber",
+       u.department_name,
+       ua.metadata,
+       ua."startDate"
+     FROM user_associations ua
+     JOIN users u ON u.id = ua."userId"
+     WHERE ua."entityId" = :corporateId
+       AND ua."entityType" = 'corporate'
+       AND ua.role = 'employee'
+       AND ua.status = 'active'
+       AND (
+         u.id::text = :employeeKey
+         OR u.employee_id = :employeeKey
+         OR u.unique_id = :employeeKey
+         OR ua.metadata->>'employeeId' = :employeeKey
+       )
+     LIMIT 1`,
+    { replacements: { corporateId, employeeKey }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+
+  if (!associatedEmployee) return null;
+  const meta = associatedEmployee.metadata || {};
+  return {
+    userId: associatedEmployee.userId,
+    employeeId: associatedEmployee.employeeId,
+    name: [associatedEmployee.firstName, associatedEmployee.lastName].filter(Boolean).join(' ') || associatedEmployee.email,
+    email: associatedEmployee.email || '',
+    phone: associatedEmployee.phoneNumber || '',
+    businessUnit: meta.businessUnit || '',
+    department: meta.department || associatedEmployee.department_name || 'Not Assigned',
+    designation: meta.designation || 'Not Assigned',
+    joiningDate: associatedEmployee.startDate ? associatedEmployee.startDate.toString().slice(0, 10) : '',
+  };
+}
+
+function normalizeHealthRecord(row) {
+  const rawType = String(row.checkup_type || row.report_type || '').toLowerCase();
+  const checkupType = rawType.includes('pre') ? 'pre_employment'
+    : rawType.includes('annual') ? 'annual_health_checkup'
+      : rawType || 'other';
+  return {
+    id: String(row.id),
+    reportName: row.report_name,
+    reportType: row.report_type,
+    checkupType,
+    reportDate: row.report_date ? new Date(row.report_date).toISOString().slice(0, 10) : '',
+    checkupCompletedAt: row.checkup_completed_at || null,
+    reportDueAt: row.report_due_at || null,
+    reportDeliveredAt: row.report_delivered_at || row.created_at || null,
+    slaStatus: row.sla_status || 'not_tracked',
+    source: row.source,
+    reportUrl: row.report_url || '',
+    notes: row.notes || '',
+    orderNumber: row.order_number || '',
+  };
+}
+
+async function buildEmployeeHealthRecordSheet(corporateId, employeeKey) {
+  const employee = await resolveCorporateEmployee(corporateId, employeeKey);
+  if (!employee) return null;
+
+  const records = employee.userId ? await postgresSequelize.query(
+    `SELECT
+       chr.id,
+       chr.report_name,
+       chr.report_type,
+       chr.checkup_type,
+       chr.report_date,
+       chr.checkup_completed_at,
+       chr.report_due_at,
+       chr.report_delivered_at,
+       chr.sla_status,
+       chr.report_url,
+       chr.notes,
+       chr.created_at,
+       lo.order_number,
+       'manual' AS source
+     FROM corporate_health_reports chr
+     LEFT JOIN lab_orders lo ON lo.id = chr.lab_order_id
+     WHERE chr.corporate_id = :corporateId
+       AND chr.employee_id = :userId
+
+     UNION ALL
+
+     SELECT
+       r.id,
+       r."fileName" AS report_name,
+       r."reportType"::text AS report_type,
+       'annual_health_checkup'::varchar AS checkup_type,
+       r."reportDate" AS report_date,
+       r."reportDate"::timestamptz AS checkup_completed_at,
+       NULL::timestamptz AS report_due_at,
+       r."createdAt" AS report_delivered_at,
+       'on_time'::varchar AS sla_status,
+       r."fileUrl" AS report_url,
+       r.description AS notes,
+       r."createdAt" AS created_at,
+       NULL::varchar AS order_number,
+       'email' AS source
+     FROM reports r
+     JOIN user_associations ua ON ua."userId" = r."userId"
+       AND ua."entityType" = 'corporate'
+       AND ua."entityId" = :corporateId
+     WHERE r."userId" = :userId
+       AND r."reportType" = 'lab'
+
+     ORDER BY report_date DESC, created_at DESC`,
+    { replacements: { corporateId, userId: employee.userId }, type: postgresSequelize.QueryTypes.SELECT }
+  ) : [];
+
+  const allRecords = records.map(normalizeHealthRecord);
+  const preEmployment = allRecords.filter((record) => record.checkupType === 'pre_employment');
+  const annualHealthCheckups = allRecords.filter((record) => record.checkupType === 'annual_health_checkup');
+  const other = allRecords.filter((record) => !['pre_employment', 'annual_health_checkup'].includes(record.checkupType));
+  const measured = allRecords.filter((record) => ['on_time', 'breached'].includes(record.slaStatus));
+  const onTime = measured.filter((record) => record.slaStatus === 'on_time').length;
+
+  return {
+    employee,
+    summary: {
+      totalRecords: allRecords.length,
+      preEmploymentCount: preEmployment.length,
+      annualCount: annualHealthCheckups.length,
+      pendingReports: allRecords.filter((record) => ['pending_due', 'pending_overdue'].includes(record.slaStatus)).length,
+      overdueReports: allRecords.filter((record) => record.slaStatus === 'pending_overdue' || record.slaStatus === 'breached').length,
+      slaCompliancePercent: measured.length ? Math.round((onTime / measured.length) * 100) : null,
+      lastCheckup: allRecords[0]?.reportDate || null,
+    },
+    records: {
+      preEmployment,
+      annualHealthCheckups,
+      other,
+    },
+    allRecords,
+  };
+}
+
+router.get('/employees/:id/health-records', authCorporate, async (req, res) => {
+  try {
+    const corporateId = resolveCorporateIdFromUser(req.user);
+    if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+    const sheet = await buildEmployeeHealthRecordSheet(corporateId, req.params.id);
+    if (!sheet) return res.status(404).json({ success: false, message: 'Employee not found' });
+    return res.json({ success: true, data: sheet });
+  } catch (error) {
+    console.error('[corporate] GET employee health records error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch employee health records' });
+  }
+});
+
+router.get('/employees/:id/health-records/export', authCorporate, async (req, res) => {
+  try {
+    const corporateId = resolveCorporateIdFromUser(req.user);
+    if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+    const sheet = await buildEmployeeHealthRecordSheet(corporateId, req.params.id);
+    if (!sheet) return res.status(404).json({ success: false, message: 'Employee not found' });
+
+    const rows = sheet.allRecords.map((record) => ({
+      employee_id: sheet.employee.employeeId,
+      employee_name: sheet.employee.name,
+      record_bucket: record.checkupType === 'pre_employment' ? 'Pre-Employment' : record.checkupType === 'annual_health_checkup' ? 'Annual Health Check-Up' : 'Other',
+      report_name: record.reportName,
+      report_type: record.reportType,
+      report_date: record.reportDate,
+      checkup_completed_at: record.checkupCompletedAt,
+      report_due_at: record.reportDueAt,
+      report_delivered_at: record.reportDeliveredAt,
+      sla_status: record.slaStatus,
+      source: record.source,
+      order_number: record.orderNumber,
+      report_url: record.reportUrl,
+      notes: record.notes,
+    }));
+
+    const csv = toCsv(rows, [
+      'employee_id',
+      'employee_name',
+      'record_bucket',
+      'report_name',
+      'report_type',
+      'report_date',
+      'checkup_completed_at',
+      'report_due_at',
+      'report_delivered_at',
+      'sla_status',
+      'source',
+      'order_number',
+      'report_url',
+      'notes',
+    ]);
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=${sheet.employee.employeeId || req.params.id}-health-records.csv`);
+    return res.status(200).send(csv);
+  } catch (error) {
+    console.error('[corporate] export employee health records error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to export employee health records' });
+  }
+});
+
 router.get('/employees/:id', authCorporate, async (req, res) => {
   try {
+    const corporateId = resolveCorporateIdFromUser(req.user);
+    const employee = corporateId ? await resolveCorporateEmployee(corporateId, req.params.id) : null;
+    if (employee) {
+      return res.json({ success: true, data: { employee } });
+    }
     const { id } = req.params;
-    const employee = corporateEmployees.find(e => e.id === id || e.employeeId === id);
-    if (!employee) {
+    const demoEmployee = corporateEmployees.find(e => e.id === id || e.employeeId === id);
+    if (!demoEmployee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
-    res.json({ success: true, data: { employee } });
+    res.json({ success: true, data: { employee: demoEmployee } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch employee', error: error.message });
   }

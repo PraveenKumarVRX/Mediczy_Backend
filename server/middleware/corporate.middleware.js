@@ -8,6 +8,7 @@
  *   4. Sets req.corporateUser for consistent downstream access.
  */
 import jwt from 'jsonwebtoken';
+import { Op } from 'sequelize';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { Corporate } from '../models/index.js';
 import { isTokenRevoked } from '../services/token-revocation.service.js';
@@ -42,15 +43,37 @@ export const authCorporate = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Token has been revoked' });
     }
 
-    const corporateId = decoded.id || decoded.corporateId || decoded.userId;
+    const isScopedHrUser = ['corporate_admin', 'hr_staff'].includes(decoded.role) && decoded.userType === 'corporate';
+    const corporateId = decoded.corporateId
+      || decoded.corporate_id
+      || (isScopedHrUser ? (decoded.organization_id || decoded.organizationId || decoded.tenant_id || decoded.tenantId) : decoded.id)
+      || decoded.userId;
     if (!corporateId) {
       return res.status(401).json({ success: false, message: 'Corporate ID missing from token' });
     }
 
     // DB re-validation
-    const corporate = await Corporate.findByPk(corporateId, {
+    let corporate = await Corporate.findByPk(corporateId, {
       attributes: ['id', 'email', 'companyName', 'contactPerson', 'status'],
     });
+
+    if (!corporate && (decoded.organization_id || decoded.organizationId || decoded.tenant_id || decoded.tenantId)) {
+      const scopeCandidates = [decoded.organization_id, decoded.organizationId, decoded.tenant_id, decoded.tenantId]
+        .filter(Boolean)
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0);
+      if (scopeCandidates.length > 0) {
+        corporate = await Corporate.findOne({
+          where: {
+            [Op.or]: [
+              { id: { [Op.in]: scopeCandidates } },
+              { tenantId: { [Op.in]: scopeCandidates } },
+            ],
+          },
+          attributes: ['id', 'email', 'companyName', 'contactPerson', 'status'],
+        });
+      }
+    }
 
     if (!corporate) {
       return res.status(401).json({ success: false, message: 'Corporate account not found' });
@@ -76,8 +99,9 @@ export const authCorporate = async (req, res, next) => {
     req.user = {
       id: corporate.id,
       corporateId: corporate.id,
+      userId: decoded.userId || decoded.id || corporate.id,
       email: corporate.email,
-      role: 'corporate',
+      role: decoded.role || 'corporate',
       userType: 'corporate',
       organization_id: decoded.organization_id || decoded.organizationId || null,
       tenant_id: decoded.tenant_id || decoded.tenantId || null,
