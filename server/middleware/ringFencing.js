@@ -380,7 +380,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/appointments',  // Allow user appointment management
       '/api/chat',  // Allow chat functionality
       '/api/hr',  // HR super-user / sub-user portal (facility/branch/location-scoped)
-      '/api/v1/occupational-health'  // Corporate OHC/CMO — fitness certs, return-to-work, referrals, eligibility
+      '/api/v1/occupational-health',  // Corporate OHC/CMO — fitness certs, return-to-work
+      '/api/v1/corporate'  // Same corporate-hmis router — referrals, eligibility checks
     ],
     tokenField: 'corporateId'
   },

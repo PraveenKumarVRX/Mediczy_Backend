@@ -47,17 +47,17 @@ router.post('/referral', authCorporate, async (req, res) => {
 // PATCH /api/v1/corporate/referral/:referralId/status
 router.patch('/referral/:referralId/status', authCorporate, async (req, res) => {
   try {
-    const result = await updateReferralStatus(parseInt(req.params.referralId), req.body);
+    const result = await updateReferralStatus(parseInt(req.params.referralId), corporateIdOf(req), req.body);
     res.json(result);
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(err.statusCode || 400).json({ success: false, message: err.message });
   }
 });
 
 // GET /api/v1/corporate/referral/patient/:patientId
 router.get('/referral/patient/:patientId', authCorporate, async (req, res) => {
   try {
-    const data = await getReferralsByPatient(parseInt(req.params.patientId));
+    const data = await getReferralsByPatient(parseInt(req.params.patientId), corporateIdOf(req));
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -94,7 +94,7 @@ router.post('/fitness-certificate', authCorporate, async (req, res) => {
 // GET /api/v1/occupational-health/fitness-certificate/patient/:patientId
 router.get('/fitness-certificate/patient/:patientId', authCorporate, async (req, res) => {
   try {
-    const data = await getFitnessCertificatesByPatient(parseInt(req.params.patientId));
+    const data = await getFitnessCertificatesByPatient(parseInt(req.params.patientId), corporateIdOf(req));
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -138,30 +138,37 @@ export async function createReferral(data) {
   return result[0];
 }
 
-export async function updateReferralStatus(referralId, { status, denialReason, preAuthNumber, preAuthAmount }) {
-  await sequelize.query(
+export async function updateReferralStatus(referralId, organizationId, { status, denialReason, preAuthNumber, preAuthAmount }) {
+  // Sequelize's UPDATE query type returns [results, affectedRowCount] for
+  // Postgres (verified: a bare number, not a { rowCount } object).
+  const [, affectedRowCount] = await sequelize.query(
     `UPDATE corporate_referrals
      SET referral_status = :status,
          denial_reason   = COALESCE(:denial, denial_reason),
          pre_auth_number = COALESCE(:auth, pre_auth_number),
          pre_auth_amount = COALESCE(:amount, pre_auth_amount),
          updated_at = NOW()
-     WHERE id = :id`,
+     WHERE id = :id AND organization_id = :organizationId`,
     {
       replacements: {
-        id: referralId, status,
+        id: referralId, organizationId, status,
         denial: denialReason || null, auth: preAuthNumber || null, amount: preAuthAmount || null
       },
       type: QueryTypes.UPDATE
     }
   );
+  if (!affectedRowCount) {
+    const err = new Error('Referral not found for this corporate');
+    err.statusCode = 404;
+    throw err;
+  }
   return { success: true };
 }
 
-export async function getReferralsByPatient(patientId) {
+export async function getReferralsByPatient(patientId, organizationId) {
   return sequelize.query(
-    `SELECT * FROM corporate_referrals WHERE patient_id = :patientId ORDER BY created_at DESC`,
-    { replacements: { patientId }, type: QueryTypes.SELECT }
+    `SELECT * FROM corporate_referrals WHERE patient_id = :patientId AND organization_id = :organizationId ORDER BY created_at DESC`,
+    { replacements: { patientId, organizationId }, type: QueryTypes.SELECT }
   );
 }
 
@@ -238,10 +245,10 @@ export async function issueFitnessCertificate(data) {
   return result[0];
 }
 
-export async function getFitnessCertificatesByPatient(patientId) {
+export async function getFitnessCertificatesByPatient(patientId, organizationId) {
   return sequelize.query(
-    `SELECT * FROM fitness_certificates WHERE patient_id = :patientId ORDER BY created_at DESC`,
-    { replacements: { patientId }, type: QueryTypes.SELECT }
+    `SELECT * FROM fitness_certificates WHERE patient_id = :patientId AND organization_id = :organizationId ORDER BY created_at DESC`,
+    { replacements: { patientId, organizationId }, type: QueryTypes.SELECT }
   );
 }
 
