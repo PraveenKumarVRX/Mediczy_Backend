@@ -717,6 +717,7 @@ router.get('/benefit-wallet/authorizations', authCorporate, async (req, res) => 
 });
 
 router.post('/benefit-wallet/authorizations/:authorizationId/settle', authCorporate, async (req, res) => {
+  if (!requireClaimsAdjudicator(req, res)) return;
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
     if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
@@ -741,6 +742,7 @@ router.post('/benefit-wallet/authorizations/:authorizationId/settle', authCorpor
 });
 
 router.post('/benefit-wallet/authorizations/:authorizationId/cancel', authCorporate, async (req, res) => {
+  if (!requireClaimsAdjudicator(req, res)) return;
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
     if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
@@ -2226,20 +2228,26 @@ router.get('/claims/management', authCorporate, async (req, res) => {
   }
 });
 
-// Claims adjudication is deliberately restricted: an external TPA (via
-// insurance_claims.tpa_id / the tpa.route.js integrations, once a real
-// provider is configured) can adjudicate, or the corporate's own
-// Chief Medical Officer (role: corporate_cmo) can scrutinize claims
-// directly on the corporate's behalf. Plain hr_staff — and any other
-// authCorporate session — can view claims but not decide them; the
-// super-HR (corporate_admin) and the root corporate login retain
-// override access since they're accountable for the whole account.
-const CLAIMS_ADJUDICATOR_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo'];
+// Claims/health-benefit adjudication is deliberately restricted: an external
+// TPA (via insurance_claims.tpa_id / the tpa.route.js integrations, once a
+// real provider is configured) can adjudicate, or the corporate's own
+// clinical staff can decide directly on the corporate's behalf — either the
+// Chief Medical Officer (role: corporate_cmo) or, for a corporate that runs
+// its own on-site day-care clinic instead of/alongside a CMO, OHC staff
+// (role: corporate_ohc, see corporate-hr-hierarchy.migration.js). Plain
+// hr_staff — and any other authCorporate session — can view claims/
+// authorizations but not decide them; the super-HR (corporate_admin) and
+// the root corporate login retain override access since they're
+// accountable for the whole account. Used for both insurance_claims
+// scrutiny (below) and benefit-wallet authorization settle/cancel (OHC is
+// typically the one actually treating the employee and closing out the
+// wallet-funded visit).
+const CLAIMS_ADJUDICATOR_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo', 'corporate_ohc'];
 function requireClaimsAdjudicator(req, res) {
   if (!CLAIMS_ADJUDICATOR_ROLES.includes(req.user?.role)) {
     res.status(403).json({
       success: false,
-      message: 'Only the Chief Medical Officer or the corporate account owner can decide claims',
+      message: 'Only the Chief Medical Officer, OHC staff, or the corporate account owner can decide claims',
     });
     return false;
   }

@@ -1,5 +1,5 @@
 import express from 'express';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authCorporate } from '../middleware/corporate.middleware.js';
 import {
   createReferral, updateReferralStatus, getReferralsByPatient,
   recordEligibilityCheck,
@@ -9,13 +9,35 @@ import {
 
 const router = express.Router();
 
+// Fitness certificates and return-to-work clearances are clinical
+// documents — issuing them should come from the corporate's own clinical
+// staff: OHC (a day-care clinic owned/run by the corporate, role:
+// corporate_ohc) or CMO (role: corporate_cmo). Plain hr_staff, and any
+// other authCorporate session, can view but not issue one on their own
+// say-so; the super-HR (corporate_admin) and root corporate login retain
+// override access since they're accountable for the whole account.
+const CLINICAL_ISSUER_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo', 'corporate_ohc'];
+function requireClinicalIssuer(req, res) {
+  if (!CLINICAL_ISSUER_ROLES.includes(req.user?.role)) {
+    res.status(403).json({
+      success: false,
+      message: 'Only the corporate\'s OHC/CMO staff or the account owner can issue this',
+    });
+    return false;
+  }
+  return true;
+}
+
+const corporateIdOf = (req) => req.user?.corporateId || req.user?.organization_id;
+const issuerIdOf = (req) => req.user?.userId || req.user?.id;
+
 // ── Corporate referrals ───────────────────────────────────────────────────────
 
 // POST /api/v1/corporate/referral
-router.post('/referral', authUser, async (req, res) => {
+router.post('/referral', authCorporate, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
-    const result = await createReferral({ ...req.body, organizationId, contactedBy: req.user.id });
+    const organizationId = corporateIdOf(req);
+    const result = await createReferral({ ...req.body, organizationId, contactedBy: issuerIdOf(req) });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -23,7 +45,7 @@ router.post('/referral', authUser, async (req, res) => {
 });
 
 // PATCH /api/v1/corporate/referral/:referralId/status
-router.patch('/referral/:referralId/status', authUser, async (req, res) => {
+router.patch('/referral/:referralId/status', authCorporate, async (req, res) => {
   try {
     const result = await updateReferralStatus(parseInt(req.params.referralId), req.body);
     res.json(result);
@@ -33,7 +55,7 @@ router.patch('/referral/:referralId/status', authUser, async (req, res) => {
 });
 
 // GET /api/v1/corporate/referral/patient/:patientId
-router.get('/referral/patient/:patientId', authUser, async (req, res) => {
+router.get('/referral/patient/:patientId', authCorporate, async (req, res) => {
   try {
     const data = await getReferralsByPatient(parseInt(req.params.patientId));
     res.json({ success: true, data });
@@ -45,10 +67,10 @@ router.get('/referral/patient/:patientId', authUser, async (req, res) => {
 // ── Eligibility ───────────────────────────────────────────────────────────────
 
 // POST /api/v1/corporate/eligibility
-router.post('/eligibility', authUser, async (req, res) => {
+router.post('/eligibility', authCorporate, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
-    const result = await recordEligibilityCheck({ ...req.body, organizationId, checkedBy: req.user.id });
+    const organizationId = corporateIdOf(req);
+    const result = await recordEligibilityCheck({ ...req.body, organizationId, checkedBy: issuerIdOf(req) });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -58,10 +80,11 @@ router.post('/eligibility', authUser, async (req, res) => {
 // ── Fitness certificates ──────────────────────────────────────────────────────
 
 // POST /api/v1/occupational-health/fitness-certificate
-router.post('/fitness-certificate', authUser, async (req, res) => {
+router.post('/fitness-certificate', authCorporate, async (req, res) => {
+  if (!requireClinicalIssuer(req, res)) return;
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
-    const result = await issueFitnessCertificate({ ...req.body, organizationId, issuedBy: req.body.issuedBy || req.user.id });
+    const organizationId = corporateIdOf(req);
+    const result = await issueFitnessCertificate({ ...req.body, organizationId, issuedBy: issuerIdOf(req) });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -69,7 +92,7 @@ router.post('/fitness-certificate', authUser, async (req, res) => {
 });
 
 // GET /api/v1/occupational-health/fitness-certificate/patient/:patientId
-router.get('/fitness-certificate/patient/:patientId', authUser, async (req, res) => {
+router.get('/fitness-certificate/patient/:patientId', authCorporate, async (req, res) => {
   try {
     const data = await getFitnessCertificatesByPatient(parseInt(req.params.patientId));
     res.json({ success: true, data });
@@ -79,10 +102,11 @@ router.get('/fitness-certificate/patient/:patientId', authUser, async (req, res)
 });
 
 // POST /api/v1/occupational-health/return-to-work
-router.post('/return-to-work', authUser, async (req, res) => {
+router.post('/return-to-work', authCorporate, async (req, res) => {
+  if (!requireClinicalIssuer(req, res)) return;
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
-    const result = await issueReturnToWorkClearance({ ...req.body, organizationId, issuedBy: req.body.issuedBy || req.user.id });
+    const organizationId = corporateIdOf(req);
+    const result = await issueReturnToWorkClearance({ ...req.body, organizationId, issuedBy: issuerIdOf(req) });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });

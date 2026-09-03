@@ -43,7 +43,7 @@ export const authCorporate = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Token has been revoked' });
     }
 
-    const isScopedHrUser = ['corporate_admin', 'hr_staff', 'corporate_cmo'].includes(decoded.role) && decoded.userType === 'corporate';
+    const isScopedHrUser = ['corporate_admin', 'hr_staff', 'corporate_cmo', 'corporate_ohc'].includes(decoded.role) && decoded.userType === 'corporate';
     const corporateId = decoded.corporateId
       || decoded.corporate_id
       || (isScopedHrUser ? (decoded.organization_id || decoded.organizationId || decoded.tenant_id || decoded.tenantId) : decoded.id)

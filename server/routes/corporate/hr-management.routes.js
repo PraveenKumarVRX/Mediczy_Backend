@@ -1,13 +1,14 @@
 /**
  * Corporate HR team self-service — one super-HR (corporate_admin) per
- * corporate, who can invite/remove/hand off their own team of hr_staff and
- * corporate_cmo (Chief Medical Officer, claims-scrutiny role) members.
+ * corporate, who can invite/remove/hand off their own team of hr_staff,
+ * corporate_cmo (Chief Medical Officer), and corporate_ohc (OHC — a
+ * day-care clinic owned and run by the corporate) members.
  * All routes require an authenticated corporate session; invite/remove/
  * transfer additionally require the caller to BE the active
  * corporate_admin (enforced in the service layer, not just here).
  *
  *   GET    /api/corporate/hr/team              — list active HR team members
- *   POST   /api/corporate/hr/team               — invite a new hr_staff/corporate_cmo member (super-HR only)
+ *   POST   /api/corporate/hr/team               — invite a new hr_staff/corporate_cmo/corporate_ohc member (super-HR only)
  *   DELETE /api/corporate/hr/team/:userId       — remove a team member (super-HR only)
  *   POST   /api/corporate/hr/team/:userId/promote — hand off super-HR ownership (super-HR only, hr_staff successor only)
  */

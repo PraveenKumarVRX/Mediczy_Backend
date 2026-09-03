@@ -1,13 +1,18 @@
 /**
- * Smoke test for the Chief Medical Officer claims-scrutiny endpoint
- * (POST /api/corporate/claims/management/:id/scrutinize) against the LIVE
- * running server (http://localhost:8888).
+ * Smoke test for corporate clinical-staff adjudication — the CMO and OHC
+ * (a day-care clinic owned/run by the corporate) roles' access to:
+ *   - POST /api/corporate/claims/management/:id/scrutinize
+ *   - POST /api/corporate/benefit-wallet/authorizations/:id/settle
+ *   - POST /api/v1/occupational-health/fitness-certificate (role gate only)
+ * against the LIVE running server (http://localhost:8888).
  *
- * READ-ONLY / NO-SIDE-EFFECTS by design — insurance_claims has zero real
- * rows in production as of this writing, so every authenticated check below
- * deliberately targets a non-existent claim id (expect 404, nothing to
- * mutate) or an invalid body (expect 400). This validates the auth/role
- * gate and the SQL path without ever touching a real claim.
+ * READ-ONLY / NO-SIDE-EFFECTS by design — insurance_claims and
+ * corporate_benefit_authorizations have zero/near-zero real rows in
+ * production as of this writing, so every authenticated check below
+ * deliberately targets a non-existent id (expect 404/400 "not found",
+ * nothing to mutate) or an invalid/empty body (expect 400/403). This
+ * validates the auth/role gate and the SQL path without ever touching real
+ * data or creating a real fitness certificate.
  *
  * Tokens are signed locally with the server JWT_SECRET (HS256, 10m).
  * Usage: node server/scripts/smoke-claims-cmo-adjudication.mjs
@@ -129,6 +134,43 @@ try {
   });
   record('rejection without amount reaches claim lookup (404, not 400)',
     rejectionNoAmountRequired.status === 404, `status=${rejectionNoAmountRequired.status} msg=${rejectionNoAmountRequired.json?.message}`);
+
+  // ── 7. corporate_ohc (OHC — corporate-owned day-care clinic) is also an
+  // adjudicator, added alongside corporate_cmo ─────────────────────────────
+  const ohcToken = sign({
+    id: 999904, userType: 'corporate', role: 'corporate_ohc',
+    organization_id: CORPORATE_ID, email: 'smoke-ohc@test.local',
+  });
+  const ohcOnMissingClaim = await call('POST', `/corporate/claims/management/${NONEXISTENT_CLAIM}/scrutinize`, {
+    token: ohcToken,
+    body: { decision: 'approved', approvedAmount: 100 },
+  });
+  record('corporate_ohc token on missing claim → 404 (role gate passed)',
+    ohcOnMissingClaim.status === 404, `status=${ohcOnMissingClaim.status} msg=${ohcOnMissingClaim.json?.message}`);
+
+  // ── 8. Benefit-wallet settle/cancel: now also role-gated the same way ────
+  const NONEXISTENT_AUTH = 999999;
+  const hrStaffSettle = await call('POST', `/corporate/benefit-wallet/authorizations/${NONEXISTENT_AUTH}/settle`, {
+    token: hrStaffToken,
+    body: { settlementAmount: 100 },
+  });
+  record('hr_staff on benefit-wallet settle → 403 (new gate)', hrStaffSettle.status === 403, `status=${hrStaffSettle.status} msg=${hrStaffSettle.json?.message}`);
+
+  const ohcSettle = await call('POST', `/corporate/benefit-wallet/authorizations/${NONEXISTENT_AUTH}/settle`, {
+    token: ohcToken,
+    body: { settlementAmount: 100 },
+  });
+  record('corporate_ohc on benefit-wallet settle → reaches lookup (400 "not found", not 403)',
+    ohcSettle.status === 400 && /not found/i.test(ohcSettle.json?.message || ''), `status=${ohcSettle.status} msg=${ohcSettle.json?.message}`);
+
+  // ── 9. Occupational-health fitness-certificate: hr_staff blocked, no data
+  // created for anyone in this smoke run (POST only exercised for the 403 case) ─
+  const hrStaffFitness = await call('POST', '/v1/occupational-health/fitness-certificate', {
+    token: hrStaffToken,
+    body: {},
+  });
+  record('hr_staff on fitness-certificate → 403 (clinical issuer gate)',
+    hrStaffFitness.status === 403, `status=${hrStaffFitness.status} msg=${hrStaffFitness.json?.message}`);
 
 } catch (err) {
   failures += 1;

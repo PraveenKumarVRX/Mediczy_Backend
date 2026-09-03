@@ -1,7 +1,8 @@
 /**
  * Corporate HR hierarchy — one super-HR (corporate_admin) per corporate,
- * who can invite/remove their own team of hr_staff and corporate_cmo
- * (Chief Medical Officer) accounts self-service.
+ * who can invite/remove their own team of hr_staff, corporate_cmo (Chief
+ * Medical Officer), and corporate_ohc (OHC — a day-care clinic owned and
+ * run by the corporate itself) accounts self-service.
  *
  * The DB-level invariant (at most one active corporate_admin per
  * organization_id) lives in migrations/corporate-hr-hierarchy.migration.js
@@ -10,20 +11,21 @@
  * members can never remove/promote anyone, and ownership transfer is an
  * explicit, atomic swap rather than "create a second admin and hope."
  *
- * corporate_cmo is a distinct role from hr_staff: it exists to scrutinize
- * (approve/reject/partially-approve) insurance claims on the corporate's
- * behalf as an alternative to routing them through an external TPA — see
- * POST /api/corporate/claims/management/:id/scrutinize in corporate.route.js.
- * A CMO cannot become super-HR via transferSuperHr (that stays hr_staff ->
- * corporate_admin only) since claims scrutiny and HR-team administration
- * are deliberately kept separate.
+ * corporate_cmo and corporate_ohc are distinct from hr_staff: both exist to
+ * scrutinize/decide insurance claims and benefit-wallet authorizations on
+ * the corporate's behalf, as an alternative to routing them through an
+ * external TPA — see requireClaimsAdjudicator in corporate.route.js and
+ * requireClinicalIssuer in corporate-hmis.route.js. Neither can become
+ * super-HR via transferSuperHr (that stays hr_staff -> corporate_admin
+ * only) since clinical/claims scrutiny and HR-team administration are
+ * deliberately kept separate.
  */
 import User from '../models/postgres/user.model.postgres.js';
 import Corporate from '../models/postgres/corporate.model.postgres.js';
 import welcomeEmailService from './welcome-email.service.js';
 
 const MAX_HR_STAFF_PER_CORPORATE = 15;
-const INVITABLE_ROLES = ['hr_staff', 'corporate_cmo'];
+const INVITABLE_ROLES = ['hr_staff', 'corporate_cmo', 'corporate_ohc'];
 
 function genTempPassword() {
   const raw = [...Array(12)].map(() => Math.random().toString(36)[2] || '0').join('');
@@ -84,15 +86,21 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
   const corporate = await Corporate.findByPk(corporateId);
   if (!corporate) throw new Error('Corporate not found');
 
-  const roleLabel = role === 'corporate_cmo' ? 'Chief Medical Officer' : 'HR staff';
+  const ROLE_LABELS = { corporate_cmo: 'Chief Medical Officer', corporate_ohc: 'OHC Staff', hr_staff: 'HR staff' };
+  const ROLE_DEFAULT_NAMES = {
+    corporate_cmo: ['Chief Medical', 'Officer'],
+    corporate_ohc: ['OHC', 'Staff'],
+    hr_staff: ['HR', 'Staff'],
+  };
+  const roleLabel = ROLE_LABELS[role];
 
   const tempPassword = genTempPassword();
   const created = await User.create({
-    firstName: firstName || (role === 'corporate_cmo' ? 'Chief Medical' : 'HR'),
-    lastName: lastName || (role === 'corporate_cmo' ? 'Officer' : 'Staff'),
+    firstName: firstName || ROLE_DEFAULT_NAMES[role][0],
+    lastName: lastName || ROLE_DEFAULT_NAMES[role][1],
     email: normalizedEmail,
     password: tempPassword, // hashed by the model's beforeCreate hook
-    dateOfBirth: '1990-01-01', // placeholder — not meaningful for an HR/CMO account
+    dateOfBirth: '1990-01-01', // placeholder — not meaningful for an HR/CMO/OHC account
     gender: 'Other',
     phoneNumber: phoneNumber || '0000000000',
     role,
@@ -154,7 +162,7 @@ export async function removeHrStaff({ corporateId, requestedByUserId, targetUser
     Number(target.organization_id) !== Number(corporateId) ||
     !INVITABLE_ROLES.includes(target.role)
   ) {
-    throw new Error('Target is not an HR staff or CMO member of this corporate');
+    throw new Error('Target is not an HR staff, CMO, or OHC member of this corporate');
   }
 
   await target.update({ status: 'inactive' });

@@ -89,7 +89,7 @@ export const corporateLogin = async (req, res) => {
         where: {
           email: normalizedEmail,
           organization_type: 'corporate',
-          role: { [Op.in]: ['corporate_admin', 'hr_staff', 'corporate_cmo'] },
+          role: { [Op.in]: ['corporate_admin', 'hr_staff', 'corporate_cmo', 'corporate_ohc'] },
           status: 'active',
         },
       });
