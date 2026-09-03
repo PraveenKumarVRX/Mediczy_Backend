@@ -14,8 +14,11 @@ import {
   AlertCircle, CheckCircle2, Clock, Activity, AlertTriangle,
   ChevronDown, X, ScanLine, Info, Edit3,
   Download, Printer, Eye, Trash2, HardDrive,
+  Box, BrainCircuit, Crosshair, Layers3, Maximize2,
+  RotateCcw, Sparkles,
 } from 'lucide-react';
 import DicomViewer from '../../components/lab/DicomViewer';
+import Cornerstone3DViewer from '../../components/lab/Cornerstone3DViewer';
 import { openOhifViewer, buildOhifViewerUrl, listenOhifMeasurements } from '@/utils/imagingViewer';
 import ImagingReportEditor from '../../components/imaging/ImagingReportEditor';
 import ImagingCollabPanel from '../../components/imaging/ImagingCollabPanel';
@@ -94,6 +97,8 @@ interface CronHealthTask {
 
 interface DicomWebInstance {
   sop_instance_uid: string;
+  series_instance_uid?: string | null;
+  instance_number?: number | string | null;
   content_type?: string | null;
   file_size?: number | null;
   created_at?: string | null;
@@ -193,6 +198,323 @@ const fmtSize = (bytes: number) => {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes/1024).toFixed(1)} KB`;
   return `${(bytes/1024/1024).toFixed(2)} MB`;
+};
+
+const getViewerReadiness = (study: Study) => {
+  const modality = String(study.modality || '').toUpperCase();
+  const volumetricModality = ['CT', 'MR', 'MRI', 'PT', 'PET'].includes(modality);
+  const hasStack = Number(study.image_count || 0) > 1 || Number(study.series_count || 0) > 1;
+  const score = study.is_dicom
+    ? Math.min(100, 42 + (volumetricModality ? 28 : 0) + (hasStack ? 20 : 0) + (study.study_instance_uid ? 10 : 0))
+    : 18;
+  return {
+    score,
+    volumetricModality,
+    hasStack,
+    label: score >= 85 ? '3D / MPR ready' : score >= 65 ? 'Stack review ready' : study.is_dicom ? 'DICOM preview ready' : 'File preview',
+    tone: score >= 85 ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/25'
+      : score >= 65 ? 'text-cyan-300 bg-cyan-500/10 border-cyan-500/25'
+      : 'text-amber-300 bg-amber-500/10 border-amber-500/25',
+  };
+};
+
+const VIEWPORT_PRESETS = [
+  { key: 'mpr', label: 'MPR', detail: 'Axial · coronal · sagittal', icon: Crosshair },
+  { key: 'vr', label: '3D VR', detail: 'Volume rendering handoff', icon: Box },
+  { key: 'slab', label: 'Slab MIP', detail: 'Vascular / contrast review', icon: Layers3 },
+  { key: 'ai', label: 'AI Overlay', detail: 'Findings + measurements', icon: BrainCircuit },
+];
+
+const AdvancedStudyViewer: React.FC<{
+  study: Study;
+  token: string;
+  dicomWebFileUrl: string | null;
+  dicomWebInstances: DicomWebInstance[];
+  selectedSopUID: string | null;
+  onSelectDicomInstance: (sopUID: string) => void;
+  onOpenOhif: () => void;
+  onCopyDicomwebUrl: () => void;
+  onVerifyDicomwebApi: () => void;
+  verifyingDicomweb: boolean;
+  dicomwebVerification: DicomwebVerification | null;
+}> = ({
+  study,
+  token,
+  dicomWebFileUrl,
+  dicomWebInstances,
+  selectedSopUID,
+  onSelectDicomInstance,
+  onOpenOhif,
+  onCopyDicomwebUrl,
+  onVerifyDicomwebApi,
+  verifyingDicomweb,
+  dicomwebVerification,
+}) => {
+  const readiness = getViewerReadiness(study);
+  const studyDescriptor = [study.modality, study.body_part || study.study_description].filter(Boolean).join(' · ');
+
+  return (
+    <div className="h-full min-h-0 overflow-hidden bg-[radial-gradient(circle_at_top_left,#1e1b4b_0%,#020617_35%,#030712_100%)]">
+      <div className="grid h-full min-h-0 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="relative min-h-0 overflow-hidden border-r border-slate-800/80">
+          <div className="absolute inset-0 opacity-30 pointer-events-none"
+            style={{
+              backgroundImage: 'linear-gradient(rgba(148,163,184,.08) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.08) 1px, transparent 1px)',
+              backgroundSize: '38px 38px',
+            }}
+          />
+          <div className="absolute inset-x-8 top-8 h-28 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
+
+          <div className="relative z-10 flex h-full min-h-0 flex-col p-4 lg:p-6">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${readiness.tone}`}>
+                    {readiness.label}
+                  </span>
+                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2.5 py-1 text-xs text-slate-300">
+                    {study.series_count || 0} series
+                  </span>
+                  <span className="rounded-full border border-slate-700 bg-slate-950/70 px-2.5 py-1 text-xs text-slate-300">
+                    {study.image_count || 0} images
+                  </span>
+                </div>
+                <h2 className="mt-3 text-xl font-semibold text-white">{study.patient_name}</h2>
+                <p className="mt-1 text-sm text-slate-400">{studyDescriptor || 'Imaging study'} · {fmt(study.study_date)}</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {study.is_dicom && study.study_instance_uid && (
+                  <button
+                    type="button"
+                    onClick={onOpenOhif}
+                    className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-indigo-950/40 hover:bg-indigo-500"
+                  >
+                    <Maximize2 size={15} /> Launch OHIF
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onVerifyDicomwebApi}
+                  disabled={verifyingDicomweb || !study.study_instance_uid}
+                  className="inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-950/70 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-900 disabled:opacity-40"
+                >
+                  <RefreshCw size={14} className={verifyingDicomweb ? 'animate-spin' : ''} />
+                  Verify DICOMweb
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-4">
+              {VIEWPORT_PRESETS.map((preset) => {
+                const Icon = preset.icon;
+                return (
+                  <div key={preset.key} className="rounded-2xl border border-slate-800 bg-slate-950/55 p-3 shadow-xl shadow-black/20">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-xl bg-cyan-500/10 p-2 text-cyan-300">
+                        <Icon size={16} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-100">{preset.label}</p>
+                        <p className="text-[11px] text-slate-500">{preset.detail}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 grid flex-1 min-h-0 gap-5 lg:grid-cols-[minmax(320px,0.68fr)_minmax(280px,0.32fr)]">
+              <div className="relative min-h-[560px] overflow-hidden rounded-3xl border border-slate-800 bg-black/75 shadow-2xl shadow-black/50">
+                {study.is_dicom && study.study_instance_uid ? (
+                  <Cornerstone3DViewer
+                    studyInstanceUID={study.study_instance_uid}
+                    token={token}
+                    instances={dicomWebInstances}
+                    modality={study.modality}
+                    bodyPart={study.body_part || study.study_description}
+                    onOpenOhif={onOpenOhif}
+                  />
+                ) : (
+                  <DicomViewer
+                    studyId={study.id}
+                    fileName={study.file_name}
+                    mimeType={study.mime_type}
+                    isDicom={false}
+                    patientName={study.patient_name}
+                    modality={study.modality}
+                    studyDate={fmt(study.study_date)}
+                    fileUrlOverride={undefined}
+                  />
+                )}
+              </div>
+
+              <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <Sparkles size={15} className="text-cyan-300" />
+                    AI Viewing Assistant
+                  </h3>
+                  <div className="mt-3 space-y-2 text-xs text-slate-400">
+                    <div className="flex items-center justify-between rounded-lg bg-slate-900/70 px-3 py-2">
+                      <span>Auto triage overlays</span>
+                      <span className={study.is_dicom ? 'text-emerald-300' : 'text-amber-300'}>{study.is_dicom ? 'Ready' : 'Needs DICOM'}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-900/70 px-3 py-2">
+                      <span>MPR/3D reconstruction</span>
+                      <span className={readiness.volumetricModality ? 'text-emerald-300' : 'text-amber-300'}>{readiness.volumetricModality ? 'Eligible' : 'Limited'}</span>
+                    </div>
+                    <div className="flex items-center justify-between rounded-lg bg-slate-900/70 px-3 py-2">
+                      <span>Report status</span>
+                      <span className="text-slate-200">{study.report_status}</span>
+                    </div>
+                  </div>
+                  {token && study.study_instance_uid && (
+                    <div className="mt-4">
+                      <ImagingCollabPanel
+                        studyInstanceUID={study.study_instance_uid}
+                        token={token}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                      <Layers3 size={15} className="text-indigo-300" />
+                      Series / Instance Navigator
+                    </h3>
+                    <span className="text-xs text-slate-500">{dicomWebInstances.length || study.image_count || 0} items</span>
+                  </div>
+                  {study.is_dicom && dicomWebInstances.length > 0 ? (
+                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto">
+                      {dicomWebInstances.slice(0, 80).map((inst, idx) => (
+                        <button
+                          key={inst.sop_instance_uid}
+                          type="button"
+                          onClick={() => onSelectDicomInstance(inst.sop_instance_uid)}
+                          className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                            selectedSopUID === inst.sop_instance_uid
+                              ? 'border-cyan-400 bg-cyan-500/10 text-cyan-100'
+                              : 'border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold">Slice #{idx + 1}</span>
+                            <span className="text-[10px] text-slate-500">{fmtSize(Number(inst.file_size || 0))}</span>
+                          </div>
+                          <p className="mt-1 truncate font-mono text-[10px] text-slate-500">{inst.sop_instance_uid}</p>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-500">
+                      DICOMweb instances are not resolved yet. Launch OHIF for complete study navigation.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                    <HardDrive size={15} className="text-emerald-300" />
+                    PACS / DICOMweb Health
+                  </h3>
+                  <div className="mt-3 space-y-2 text-xs">
+                    <div className="rounded-lg bg-slate-900/70 p-2">
+                      <p className="text-slate-500">Study UID</p>
+                      <p className="mt-1 break-all font-mono text-slate-300">{study.study_instance_uid || '—'}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-900/70 p-2">
+                      <p className="text-slate-500">Selected SOP</p>
+                      <p className="mt-1 break-all font-mono text-slate-300">{selectedSopUID || '—'}</p>
+                    </div>
+                    {dicomwebVerification && (
+                      <div className={`rounded-lg border p-2 ${dicomwebVerification.ok ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : 'border-red-500/25 bg-red-500/10 text-red-200'}`}>
+                        {dicomwebVerification.ok ? 'DICOMweb verified' : 'DICOMweb check failed'} · {dicomwebVerification.latencyMs} ms
+                        <p className="mt-1 text-[11px] opacity-80">{dicomwebVerification.message}</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={onCopyDicomwebUrl}
+                      disabled={!dicomWebFileUrl}
+                      className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40"
+                    >
+                      Copy endpoint
+                    </button>
+                    {study.is_dicom && (
+                      <button
+                        type="button"
+                        onClick={onOpenOhif}
+                        className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500"
+                      >
+                        Open full viewer
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-800 bg-slate-950/65 px-4 py-3 text-xs text-slate-400">
+              <span className="inline-flex items-center gap-2">
+                <RotateCcw size={13} className="text-slate-500" />
+                Cornerstone3D renders MPR and 3D volume review inline; OHIF remains available for full external PACS workflow.
+              </span>
+              <span>{buildOhifViewerUrl(study.study_instance_uid)}</span>
+            </div>
+          </div>
+        </div>
+
+        <aside className="min-h-0 overflow-y-auto bg-slate-950/95 p-4">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <h3 className="text-sm font-semibold text-white">Study Snapshot</h3>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              {[
+                ['Modality', study.modality],
+                ['Body Part', study.body_part || '—'],
+                ['Status', study.status],
+                ['Report', study.report_status],
+                ['Series', String(study.series_count || 0)],
+                ['Images', String(study.image_count || 0)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-slate-800 bg-slate-950/70 p-2">
+                  <p className="text-slate-500">{label}</p>
+                  <p className="mt-1 truncate font-semibold text-slate-100">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+            <h3 className="text-sm font-semibold text-white">Quick Preview</h3>
+            <div className="mt-3 overflow-hidden rounded-xl border border-slate-800 bg-black">
+              {study.is_dicom && dicomWebFileUrl ? (
+                <DicomViewer
+                  studyId={study.id}
+                  fileName={study.file_name}
+                  mimeType={study.mime_type || 'application/dicom'}
+                  isDicom
+                  patientName={study.patient_name}
+                  modality={study.modality}
+                  studyDate={fmt(study.study_date)}
+                  fileUrlOverride={dicomWebFileUrl}
+                />
+              ) : (
+                <div className="flex h-52 flex-col items-center justify-center p-4 text-center text-slate-500">
+                  <ScanLine size={28} className="mb-2 text-slate-700" />
+                  <p className="text-xs">Select a DICOMweb instance or open OHIF for live pixels.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
 };
 
 // ─── Upload Modal ─────────────────────────────────────────────────────────────
@@ -1112,7 +1434,14 @@ const LabRIS: React.FC = () => {
           {studies.map(study => (
             <div
               key={study.id}
-              onClick={() => { setSelectedStudy(study); setActiveTab('viewer'); }}
+              onClick={(e) => {
+              // Defensive: stop propagation so any parent click handler
+              // (search box, analytics panel, OHIF embed, etc.) can't
+              // swallow the event and leave selectedStudy stuck on null.
+              e.stopPropagation();
+              setSelectedStudy(study);
+              setActiveTab('viewer');
+            }}
               className={`px-4 py-3 cursor-pointer hover:bg-gray-900 transition-colors ${
                 selectedStudy?.id === study.id ? 'bg-gray-900 border-l-2 border-indigo-500' : ''
               }`}
@@ -1261,78 +1590,19 @@ const LabRIS: React.FC = () => {
             {/* Tab content */}
             <div className="flex-1 overflow-hidden">
               {activeTab === 'viewer' && (
-                <div className="h-full flex flex-col">
-                  <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-3 flex-wrap bg-gray-950/70">
-                    {selectedStudy.is_dicom && selectedStudy.study_instance_uid && (
-                      <button
-                        type="button"
-                        onClick={() => openOhifViewer(selectedStudy.study_instance_uid)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                      >
-                        <Eye size={13} /> Open in OHIF Viewer
-                      </button>
-                    )}
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${selectedStudy.pacs_source === 'orthanc' || selectedStudy.is_dicom ? 'bg-emerald-900 text-emerald-300' : 'bg-slate-800 text-slate-300'}`}>
-                      PACS: {selectedStudy.is_dicom ? 'Orthanc' : 'Legacy file'}
-                    </span>
-                    {selectedStudy.is_dicom && dicomWebInstances.length > 0 && (
-                      <>
-                        <span className="text-xs text-gray-400">Instance</span>
-                        <select
-                          value={selectedSopUID || ''}
-                          onChange={(e) => onSelectDicomInstance(e.target.value)}
-                          className="px-2 py-1 bg-gray-800 border border-gray-700 rounded text-xs text-white"
-                        >
-                          {dicomWebInstances.map((inst, idx) => (
-                            <option key={inst.sop_instance_uid} value={inst.sop_instance_uid}>
-                              {`#${idx + 1} · ${inst.sop_instance_uid.slice(-10)} · ${fmtSize(Number(inst.file_size || 0))}`}
-                            </option>
-                          ))}
-                        </select>
-                      </>
-                    )}
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    {selectedStudy.is_dicom ? (
-                      <div className="h-full flex flex-col items-center justify-center gap-4 p-8 text-center bg-gray-950">
-                        <ScanLine className="w-12 h-12 text-indigo-400" />
-                        <div>
-                          <p className="text-white font-semibold">DICOM series stored in Orthanc PACS</p>
-                          <p className="text-sm text-gray-400 mt-1 max-w-md">
-                            Use OHIF for multi-slice CT/MRI viewing. Cornerstone preview below is for quick single-instance check only.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => openOhifViewer(selectedStudy.study_instance_uid)}
-                          className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold"
-                        >
-                          Open in OHIF Viewer
-                        </button>
-                        <p className="text-[10px] text-gray-600 font-mono break-all">{buildOhifViewerUrl(selectedStudy.study_instance_uid)}</p>
-                        {token && (
-                          <div className="w-full max-w-md mt-2">
-                            <ImagingCollabPanel
-                              studyInstanceUID={selectedStudy.study_instance_uid}
-                              token={token}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <DicomViewer
-                        studyId={selectedStudy.id}
-                        fileName={selectedStudy.file_name}
-                        mimeType={selectedStudy.mime_type}
-                        isDicom={false}
-                        patientName={selectedStudy.patient_name}
-                        modality={selectedStudy.modality}
-                        studyDate={fmt(selectedStudy.study_date)}
-                        fileUrlOverride={undefined}
-                      />
-                    )}
-                  </div>
-                </div>
+                <AdvancedStudyViewer
+                  study={selectedStudy}
+                  token={token || ''}
+                  dicomWebFileUrl={dicomWebFileUrl}
+                  dicomWebInstances={dicomWebInstances}
+                  selectedSopUID={selectedSopUID}
+                  onSelectDicomInstance={onSelectDicomInstance}
+                  onOpenOhif={() => openOhifViewer(selectedStudy.study_instance_uid)}
+                  onCopyDicomwebUrl={copyDicomwebUrl}
+                  onVerifyDicomwebApi={verifyDicomwebApi}
+                  verifyingDicomweb={verifyingDicomweb}
+                  dicomwebVerification={dicomwebVerification}
+                />
               )}
 
               {activeTab === 'info' && (

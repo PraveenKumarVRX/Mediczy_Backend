@@ -109,6 +109,9 @@ export default defineConfig(({ mode }) => ({
         // Split heavy rarely-used libraries out of the main bundle.
         // DICOM/Cornerstone alone is ~1.4 MB — only needed when viewing imaging.
         manualChunks(id) {
+          if (id.includes('@cornerstonejs/') || id.includes('@kitware/vtk.js')) {
+            return 'vendor-cornerstone3d';
+          }
           if (id.includes('cornerstoneWADOImageLoader') || id.includes('cornerstoneTools') || id.includes('cornerstone-core')) {
             return 'vendor-dicom';
           }
@@ -131,5 +134,8 @@ export default defineConfig(({ mode }) => ({
   // Performance optimizations
   esbuild: {
     logOverride: { 'this-is-undefined-in-esm': 'silent' },
+  },
+  worker: {
+    format: 'es',
   },
 }));

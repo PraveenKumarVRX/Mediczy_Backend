@@ -21,6 +21,10 @@
   },
   "dependencies": {
     "@babel/runtime": "^7.26.9",
+    "@cornerstonejs/core": "^5.8.2",
+    "@cornerstonejs/dicom-image-loader": "^5.8.2",
+    "@cornerstonejs/metadata": "^5.8.2",
+    "@cornerstonejs/tools": "^5.8.2",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
     "@google/generative-ai": "^0.24.0",
