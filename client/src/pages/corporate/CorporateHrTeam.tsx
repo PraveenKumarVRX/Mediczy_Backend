@@ -11,7 +11,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   UserPlus, Users, Mail, Phone, ShieldCheck, ShieldEllipsis, Crown, Trash2,
-  ArrowLeftRight, RefreshCw, Copy, Check, Lock, Stethoscope,
+  ArrowLeftRight, RefreshCw, Copy, Check, Lock, Stethoscope, Hospital,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
@@ -25,7 +25,7 @@ interface HrTeamMember {
   firstName: string | null;
   lastName: string | null;
   email: string;
-  role: 'corporate_admin' | 'hr_staff' | 'corporate_cmo';
+  role: 'corporate_admin' | 'hr_staff' | 'corporate_cmo' | 'corporate_ohc';
   invited_by: number | null;
   lastLoginAt: string | null;
   createdAt: string;
@@ -35,6 +35,7 @@ const ROLE_LABEL: Record<HrTeamMember['role'], string> = {
   corporate_admin: 'Super HR',
   hr_staff: 'HR Staff',
   corporate_cmo: 'Chief Medical Officer',
+  corporate_ohc: 'OHC Staff',
 };
 
 function fullName(m: Pick<HrTeamMember, 'firstName' | 'lastName' | 'email'>) {
@@ -61,7 +62,7 @@ const CorporateHrTeam = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState<{ firstName: string; lastName: string; email: string; phoneNumber: string; role: 'hr_staff' | 'corporate_cmo' }>({
+  const [inviteForm, setInviteForm] = useState<{ firstName: string; lastName: string; email: string; phoneNumber: string; role: 'hr_staff' | 'corporate_cmo' | 'corporate_ohc' }>({
     firstName: '', lastName: '', email: '', phoneNumber: '', role: 'hr_staff',
   });
   const [tempCredential, setTempCredential] = useState<{ email: string; password: string } | null>(null);
@@ -258,10 +259,13 @@ const CorporateHrTeam = () => {
                       const isSelf = Number(member.id) === ownId;
                       const isAdminRow = member.role === 'corporate_admin';
                       const isCmoRow = member.role === 'corporate_cmo';
+                      const isOhcRow = member.role === 'corporate_ohc';
                       const avatarGradient = isAdminRow
                         ? 'from-amber-500 to-amber-600'
                         : isCmoRow
                         ? 'from-indigo-500 to-indigo-600'
+                        : isOhcRow
+                        ? 'from-sky-500 to-sky-600'
                         : 'from-teal-500 to-teal-600';
                       return (
                         <tr key={member.id} className="hover:bg-slate-800/30 transition-colors border-b border-white/[0.04]">
@@ -287,6 +291,10 @@ const CorporateHrTeam = () => {
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-indigo-500/15 text-indigo-400 border-indigo-500/30">
                                 <Stethoscope className="w-3 h-3" /> Chief Medical Officer
                               </span>
+                            ) : isOhcRow ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-sky-500/15 text-sky-400 border-sky-500/30">
+                                <Hospital className="w-3 h-3" /> OHC Staff
+                              </span>
                             ) : (
                               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border bg-teal-500/15 text-teal-400 border-teal-500/30">
                                 <ShieldCheck className="w-3 h-3" /> HR Staff
@@ -304,7 +312,7 @@ const CorporateHrTeam = () => {
                           <td className="px-4 py-3">
                             {isSuperAdmin && !isSelf && !isAdminRow ? (
                               <div className="flex items-center justify-end gap-2">
-                                {!isCmoRow && (
+                                {!isCmoRow && !isOhcRow && (
                                   <Button
                                     size="sm"
                                     variant="outline"
@@ -345,20 +353,23 @@ const CorporateHrTeam = () => {
             <DialogTitle>Add Team Member</DialogTitle>
             <DialogDescription>
               {inviteForm.role === 'corporate_cmo'
-                ? "They'll get portal access as Chief Medical Officer — able to scrutinize and approve/reject insurance claims on the corporate's behalf, but not manage the HR team."
+                ? "They'll get portal access as Chief Medical Officer — able to scrutinize and approve/reject insurance claims and wallet authorizations on the corporate's behalf, but not manage the HR team."
+                : inviteForm.role === 'corporate_ohc'
+                ? "They'll get portal access as OHC Staff — able to issue fitness certificates and return-to-work clearances, manage employee health records, and process health claims/wallet authorizations, but not manage the HR team."
                 : "They'll get portal access as HR Staff — able to manage employees and reports, but not the HR team itself."}
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3 py-2">
             <div className="col-span-2 space-y-1.5">
               <Label htmlFor="hr-role">Role</Label>
-              <Select value={inviteForm.role} onValueChange={(v: 'hr_staff' | 'corporate_cmo') => setInviteForm((f) => ({ ...f, role: v }))}>
+              <Select value={inviteForm.role} onValueChange={(v: 'hr_staff' | 'corporate_cmo' | 'corporate_ohc') => setInviteForm((f) => ({ ...f, role: v }))}>
                 <SelectTrigger id="hr-role">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="hr_staff">HR Staff</SelectItem>
                   <SelectItem value="corporate_cmo">Chief Medical Officer (claims scrutiny)</SelectItem>
+                  <SelectItem value="corporate_ohc">OHC Staff (on-site clinic)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

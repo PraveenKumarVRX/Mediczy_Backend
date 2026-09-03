@@ -36,7 +36,7 @@ interface Claim {
   cmoReviewerName?: string | null;
 }
 
-const ADJUDICATOR_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo'];
+const ADJUDICATOR_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo', 'corporate_ohc'];
 
 function decodeOwnRole(): string | null {
   try {
@@ -225,7 +225,7 @@ const CorporateClaims: React.FC = () => {
         <CorporatePageHeader
           icon={Receipt}
           title="Claims Management"
-          description="Review employee insurance and wellness reimbursement claims. Employees file claims from their own app; the corporate's Chief Medical Officer (or Super HR) scrutinizes and decides them here."
+          description="Review employee insurance and wellness reimbursement claims. Employees file claims from their own app; the corporate's OHC/CMO staff (or Super HR) scrutinizes and decides them here."
           gradient="from-cyan-500 to-cyan-700"
           badge={`${claims.length} Claims`}
           showSearch={true}
@@ -288,10 +288,10 @@ const CorporateClaims: React.FC = () => {
               {selectedClaim.cmoReviewedAt && (
                 <div className="rounded-md border border-indigo-500/20 bg-indigo-500/[0.06] px-3 py-2 space-y-1">
                   <div className="flex items-center gap-1.5 text-indigo-300 font-medium">
-                    <Stethoscope className="h-4 w-4" /> Chief Medical Officer scrutiny
+                    <Stethoscope className="h-4 w-4" /> Clinical scrutiny
                   </div>
                   <div className="text-xs text-slate-400">
-                    {selectedClaim.cmoReviewerName || 'CMO'} · {selectedClaim.cmoReviewStatus === 'rejected' ? 'Rejected' : `Approved ₹${Number(selectedClaim.approvedAmount || 0).toLocaleString()}`} · {new Date(selectedClaim.cmoReviewedAt).toLocaleString()}
+                    {selectedClaim.cmoReviewerName || 'Reviewer'} · {selectedClaim.cmoReviewStatus === 'rejected' ? 'Rejected' : `Approved ₹${Number(selectedClaim.approvedAmount || 0).toLocaleString()}`} · {new Date(selectedClaim.cmoReviewedAt).toLocaleString()}
                   </div>
                   {selectedClaim.cmoNotes && <div className="text-xs text-slate-300">{selectedClaim.cmoNotes}</div>}
                 </div>
@@ -320,7 +320,7 @@ const CorporateClaims: React.FC = () => {
             </DialogTitle>
             <DialogDescription>
               {scrutinizeClaim?.employeeName} · {scrutinizeClaim?.id} · Claimed {scrutinizeClaim?.amount}.
-              This records your decision as Chief Medical Officer scrutiny — actual payment/disbursement happens outside this system.
+              This records your decision as clinical scrutiny — actual payment/disbursement happens outside this system.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -555,7 +555,7 @@ const CorporateClaims: React.FC = () => {
                           <Stethoscope className="h-4 w-4 text-indigo-400 flex-shrink-0 mt-0.5" />
                           <div>
                             <p className="text-indigo-300">
-                              Scrutinized by {claim.cmoReviewerName || 'Chief Medical Officer'} — {claim.cmoReviewStatus === 'rejected' ? 'rejected' : `approved ₹${Number(claim.approvedAmount || 0).toLocaleString()}`}
+                              Scrutinized by {claim.cmoReviewerName || 'OHC/CMO'} — {claim.cmoReviewStatus === 'rejected' ? 'rejected' : `approved ₹${Number(claim.approvedAmount || 0).toLocaleString()}`}
                             </p>
                             {claim.cmoNotes && <p className="text-slate-400 text-xs mt-0.5">{claim.cmoNotes}</p>}
                           </div>
@@ -582,7 +582,7 @@ const CorporateClaims: React.FC = () => {
                           </div>
                         ) : (
                           <p className="flex items-center gap-1 text-xs text-slate-500">
-                            <Lock className="h-3 w-3" /> CMO or Super HR only
+                            <Lock className="h-3 w-3" /> OHC/CMO or Super HR only
                           </p>
                         )
                       )}
