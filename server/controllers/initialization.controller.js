@@ -204,6 +204,10 @@ class InitializationController {
       await runSpecialtyPrescriptionsExpansionMigration().catch(e =>
         console.warn('⚠️  specialty-prescriptions-expansion migration skipped:', e.message)
       );
+      const { registerTrackBPromptGovernance } = await import('../migrations/register-track-b-prompt-governance.js');
+      await registerTrackBPromptGovernance().catch(e =>
+        console.warn('⚠️  Track B prompt governance registration skipped:', e.message)
+      );
       const { runAiPromptVersionsMigration } = await import('../migrations/ai-prompt-versions.migration.js');
       await runAiPromptVersionsMigration().catch(e =>
         console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)
