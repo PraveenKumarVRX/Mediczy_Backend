@@ -20,7 +20,15 @@
  */
 import governanceService from '../services/ai-model-governance.service.js';
 
-const CHANGE_TYPE = 'prompt_baseline_registration';
+// ai_model_change_log.change_type is a CHECK-constrained enum (see
+// samd-interpretability-governance.migration.js): 'prompt_update',
+// 'weight_adjustment', 'threshold_change', 'tool_selection',
+// 'routing_update', 'model_swap', 'feature_addition'. These are new
+// components with no prior governed version, so 'feature_addition' is the
+// accurate value — 'prompt_baseline_registration' (the original choice
+// here) isn't in the enum and was rejected by the constraint on first
+// deploy; caught via PM2 logs, fixed here.
+const CHANGE_TYPE = 'feature_addition';
 
 const proposals = [
   {
