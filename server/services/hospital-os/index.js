@@ -7,13 +7,13 @@ import { syncHospitalTwin, runHospitalSimulation, listScenarios } from './hospit
 import { simulateClinicalScenario } from './what-if-simulator.service.js';
 import { generateShiftHandover } from './nurse-handover.service.js';
 import { getAIRecommendations } from './command-center-ai.service.js';
-import { translateClinical, listLanguages } from './translator.service.js';
+import { translateClinical, translateDocument, listLanguages } from './translator.service.js';
 import { draftLabOrderFromVoice, draftImagingOrderFromVoice, draftTeamNotification } from './voice-commands.service.js';
 import { forecastED } from './ed-forecast.service.js';
 import { optimizeJourney } from './journey-optimizer.service.js';
 import { analyzeWorkforce } from './workforce-ai.service.js';
 import { matchClinicalTrials, detectEmergingPatterns } from './research-hub.service.js';
-import { routeAmbientDocument, getAmbientPipelineStatus } from './ambient-documentation.service.js';
+import { routeAmbientDocument, synthesizeAmbientNote, getAmbientPipelineStatus } from './ambient-documentation.service.js';
 
 export {
   hospitalCopilotChat,
@@ -35,6 +35,7 @@ export {
   generateShiftHandover,
   getAIRecommendations,
   translateClinical,
+  translateDocument,
   listLanguages,
   draftLabOrderFromVoice,
   draftImagingOrderFromVoice,
@@ -45,6 +46,7 @@ export {
   matchClinicalTrials,
   detectEmergingPatterns,
   routeAmbientDocument,
+  synthesizeAmbientNote,
   getAmbientPipelineStatus,
 };
 
@@ -68,6 +70,7 @@ export default {
   generateShiftHandover,
   getAIRecommendations,
   translateClinical,
+  translateDocument,
   listLanguages,
   draftLabOrderFromVoice,
   draftImagingOrderFromVoice,
@@ -78,5 +81,6 @@ export default {
   matchClinicalTrials,
   detectEmergingPatterns,
   routeAmbientDocument,
+  synthesizeAmbientNote,
   getAmbientPipelineStatus,
 };

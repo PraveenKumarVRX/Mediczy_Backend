@@ -22,6 +22,7 @@ import { notifyCareTeamOfBooking } from '../services/care-team-notification.serv
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
+import { notifyPatientDoctorIsCalling } from '../services/doctor-calling-notification.service.js';
 
 const router = express.Router();
 
@@ -1680,6 +1681,39 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       if (!videoPayload.meetingLink) {
         videoPayload.meetingLink = livekitData.meetUrl;
       }
+    }
+
+    // Real-time "doctor is calling" signal to the patient — socket push for
+    // an actively-connected screen, FCM push for when the app is backgrounded,
+    // plus a persistent Notification record. This is distinct from
+    // notifyConsultationStarting above (a generic, template-based
+    // notification that only fires once per appointment on whichever side
+    // joins first, and never does real-time socket delivery) — previously
+    // nothing in this endpoint told an already-waiting patient that the
+    // doctor had actually joined and started the call.
+    //
+    // Guarded by callInitiatedAt (a real column this route already reads
+    // for isDoctorInitiated, but never wrote to) so a doctor's browser
+    // refresh or reconnect mid-call doesn't re-ring the patient every time
+    // they hit this same join endpoint — only a genuinely fresh call start
+    // (no prior call, or the last one was over 5 minutes ago) notifies.
+    const lastCallInitiatedAt = appointment.callInitiatedAt ? new Date(appointment.callInitiatedAt).getTime() : 0;
+    const isFreshCallStart = Date.now() - lastCallInitiatedAt > 5 * 60 * 1000;
+
+    if (isDoctor && isFreshCallStart) {
+      await withAppointmentsRls(req, (transaction) => appointment.update(
+        { callInitiatedBy: 'doctor', callInitiatedAt: new Date() },
+        { transaction },
+      )).catch((err) => console.error('[VideoJoin] failed to record callInitiatedAt:', err.message));
+
+      notifyPatientDoctorIsCalling({
+        appointment,
+        doctorName: appointment.doctorName,
+        meetingId,
+        meetingLink: videoPayload.meetingLink,
+        joinUrl: videoPayload.joinUrl,
+        serverUrl: videoPayload.livekit?.serverUrl || '',
+      }).catch((err) => console.error('[VideoJoin] doctor-calling notification failed:', err.message));
     }
 
     res.json({

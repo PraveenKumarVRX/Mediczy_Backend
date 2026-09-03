@@ -7,12 +7,13 @@
  */
 
 import express from 'express';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import {
   getBillingGapAnalysis,
   getRevenueLeakageScore,
   getSmartOrderSets,
   getDenialRiskScoring,
+  runClaimScrubShadow,
 } from '../services/ai-revenue-intelligence.service.js';
 
 const router = express.Router();
@@ -57,6 +58,19 @@ router.post('/smart-orders', authUser, async (req, res) => {
 router.get('/denial-risk', authUser, async (req, res) => {
   try {
     const data = await getDenialRiskScoring(orgId(req));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/v1/ai-revenue/claim-scrub-shadow/:authId — Upgrade Plan Phase B4
+// Shadow mode only: computes and logs an AI coding-vs-documentation scrub,
+// admin-only diagnostic. Not exposed to coding staff until its accuracy has
+// been reviewed against real adjudicated outcomes (see plan exit criteria).
+router.post('/claim-scrub-shadow/:authId', authUser, requireRole(['admin', 'system_admin']), async (req, res) => {
+  try {
+    const data = await runClaimScrubShadow(req.params.authId);
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -1,12 +1,21 @@
 /**
  * AI Revenue Intelligence Service
  * ─────────────────────────────────
- * Billing gap analysis, revenue leakage scoring, smart order sets,
- * and claim denial risk prediction — all SQL-based, no external runtime.
+ * Billing gap analysis, revenue leakage scoring, smart order sets, and
+ * claim denial risk prediction (SQL-heuristic — see getDenialRiskScoring).
+ *
+ * runClaimScrubShadow() below is the Upgrade Plan Phase B4 addition: a real
+ * LLM-based coding-vs-documentation scrub, run in SHADOW MODE ONLY. It
+ * computes and logs a result but nothing in this codebase surfaces its
+ * output to coding staff yet — per the plan's own feasibility gate, that
+ * happens only after its accuracy has been reviewed against a window of
+ * real human-coded outcomes (see Upgrade Plan Phase B4 exit criteria).
  */
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import llmProvider from './ai-brain/llm-provider.js';
+import qualityGates from './ai-quality-gates.service.js';
 
 // ─── Billing Gap Analysis ─────────────────────────────────────────────────────
 
@@ -347,5 +356,93 @@ export async function getDenialRiskScoring(organizationId) {
       low_risk: scored.filter(s => s.denial_risk_level === 'low').length,
     },
     claims: scored.sort((a, b) => b.denial_risk_score - a.denial_risk_score),
+  };
+}
+
+// ─── AI Claim Scrub — shadow mode (Upgrade Plan Phase B4) ─────────────────────
+
+/**
+ * Run a real LLM-based coding-vs-documentation scrub for one pending
+ * pre-authorization, comparing the coded diagnosis against the admission's
+ * actual clinical notes. Shadow mode: computes and logs to
+ * ai_quality_gate_log via qualityGates.checkClaimScrub(); does not write
+ * anywhere coding staff would see it, and does not alter the claim.
+ *
+ * Call this from a scheduled/batch job over a window of already-adjudicated
+ * claims to build the accuracy evidence the B4 exit criteria require before
+ * this is ever wired into a UI.
+ */
+export async function runClaimScrubShadow(authId) {
+  const [auth] = await sequelize.query(`
+    SELECT pa.id, pa.admission_id, pa.diagnosis_code, pa.requested_amount, pa.insurer_name
+    FROM pre_auth_requests pa
+    WHERE pa.id = :authId
+  `, { replacements: { authId }, type: QueryTypes.SELECT }).catch(() => [null]);
+
+  if (!auth) return { authId, skipped: true, reason: 'pre_auth_request not found' };
+
+  const notes = await sequelize.query(`
+    SELECT note_type, chief_complaint, diagnosis, plan, assessment
+    FROM clinical_notes WHERE admission_id = :admId ORDER BY created_at DESC LIMIT 10
+  `, { replacements: { admId: auth.admission_id }, type: QueryTypes.SELECT }).catch(() => []);
+
+  const sourceTextAvailable = notes.length > 0;
+  if (!sourceTextAvailable) {
+    const gateResult = await qualityGates.checkClaimScrub({ claimId: authId, defects: [], confidence: 0, sourceTextAvailable: false });
+    await qualityGates.logGateResult(gateResult, { authId, admissionId: auth.admission_id, source: 'ai-revenue-intelligence.runClaimScrubShadow' });
+    return { authId, skipped: true, reason: 'no clinical documentation to scrub against' };
+  }
+
+  const systemPrompt = `You are a medical coding auditor comparing a submitted diagnosis code against the actual clinical documentation.
+Identify specific defects only if genuinely supported by the documentation provided — do not guess.
+Output JSON: {
+  "defects": [{ "type": "coding_documentation_mismatch|missing_modifier|medical_necessity_concern", "description", "evidence" }],
+  "confidence": 0-1
+}`;
+
+  const llm = await llmProvider.chat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          codedDiagnosis: auth.diagnosis_code,
+          requestedAmount: auth.requested_amount,
+          insurer: auth.insurer_name,
+          clinicalNotes: notes,
+        }),
+      },
+    ],
+    temperature: 0.1,
+    maxTokens: 900,
+    responseFormat: { type: 'json_object' },
+    skipCache: true,
+  });
+
+  let parsed;
+  try {
+    parsed = JSON.parse(llm.content || '{}');
+  } catch {
+    parsed = { defects: [], confidence: 0 };
+  }
+
+  const gateResult = await qualityGates.checkClaimScrub({
+    claimId: authId,
+    defects: parsed.defects || [],
+    confidence: parsed.confidence,
+    sourceTextAvailable: true,
+  });
+  await qualityGates.logGateResult(gateResult, {
+    authId, admissionId: auth.admission_id, source: 'ai-revenue-intelligence.runClaimScrubShadow',
+    defects: parsed.defects || [], confidence: parsed.confidence, provider: llm.provider,
+  });
+
+  return {
+    authId,
+    skipped: false,
+    defects: parsed.defects || [],
+    confidence: parsed.confidence ?? null,
+    gatePassed: gateResult.passed,
+    shadowMode: true,
   };
 }

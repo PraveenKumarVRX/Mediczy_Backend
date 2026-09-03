@@ -22,7 +22,7 @@ async function qOne(sql, replacements = {}) {
 // ── Live Command Center Snapshot ──────────────────────────────────────────────
 
 export async function getCommandCenter(organizationId) {
-  const [beds, admissions, otToday, critAlerts, pendingDischarges, preauths, icuCensus] =
+  const [beds, admissions, otToday, critAlerts, pendingDischarges, preauths, icuCensus, queueToday] =
     await Promise.all([
       // Bed census
       qOne(`SELECT
@@ -76,6 +76,17 @@ export async function getCommandCenter(organizationId) {
       qOne(`SELECT COUNT(*) FILTER (WHERE status = 'active') AS active
             FROM icu_admissions
             WHERE organization_id = :orgId`, { orgId: organizationId }),
+
+      // ED/OPD queue — active waits today + median wait so far
+      // (Upgrade Plan Phase B2 — the one genuinely missing piece of this
+      // command center; beds/OT/ICU/alerts/discharge/preauth above were
+      // already built before this phase).
+      qOne(`SELECT
+              COUNT(*) FILTER (WHERE status IN ('waiting','called','serving'))::int AS active,
+              COALESCE(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY actual_wait_minutes)
+                FILTER (WHERE status = 'completed'), 0) AS p50_wait_minutes
+            FROM hospital_queue_entries
+            WHERE organization_id = :orgId AND check_in_at::date = CURRENT_DATE`, { orgId: organizationId }),
     ]);
 
   const occupancyPct = beds?.total > 0
@@ -102,6 +113,16 @@ export async function getCommandCenter(organizationId) {
     criticalAlerts:      Number(critAlerts?.count      || 0),
     pendingDischarges:   Number(pendingDischarges?.count || 0),
     preauthsPending:     Number(preauths?.count        || 0),
+    edQueue: {
+      activeToday:      Number(queueToday?.active         || 0),
+      p50WaitMinutes:   Number(queueToday?.p50_wait_minutes || 0),
+    },
+    // Ambulance status is deliberately not included here: the Ambulance
+    // model has no organization_id/hospital scoping column (ambulances are
+    // their own service-provider entity, linked via aggregatorId, not a
+    // per-hospital fleet) — surfacing "ambulance status" on this command
+    // center would need that hospital-to-fleet relationship resolved
+    // correctly first, not a guessed join. See Upgrade Plan Phase B2.
   };
 }
 

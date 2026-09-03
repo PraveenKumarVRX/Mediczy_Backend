@@ -192,6 +192,18 @@ class InitializationController {
       await runDicomInstitutionPatternsMigration().catch(e =>
         console.warn('⚠️  dicom_institution_patterns migration skipped:', e.message)
       );
+      const { runMrdModuleMigration } = await import('../migrations/mrd-module.migration.js');
+      await runMrdModuleMigration().catch(e =>
+        console.warn('⚠️  mrd-module migration skipped:', e.message)
+      );
+      const { runSpecialtyModuleMigration } = await import('../migrations/specialty-module.migration.js');
+      await runSpecialtyModuleMigration().catch(e =>
+        console.warn('⚠️  specialty-module migration skipped:', e.message)
+      );
+      const { runSpecialtyPrescriptionsExpansionMigration } = await import('../migrations/specialty-prescriptions-expansion.migration.js');
+      await runSpecialtyPrescriptionsExpansionMigration().catch(e =>
+        console.warn('⚠️  specialty-prescriptions-expansion migration skipped:', e.message)
+      );
       const { runAiPromptVersionsMigration } = await import('../migrations/ai-prompt-versions.migration.js');
       await runAiPromptVersionsMigration().catch(e =>
         console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)

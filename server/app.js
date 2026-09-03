@@ -1803,6 +1803,12 @@ import pharmacyDispenseRouter from './routes/pharmacy-dispense.route.js';
 import hospitalOsControlRouter from './routes/hospital-os-control.route.js';
 import ssoRouter from './routes/sso.route.js';
 import enterpriseAuthRouter from './routes/enterprise-auth.route.js';
+import auditModuleRouter from './routes/audit.route.js';
+import mrdModuleRouter from './routes/mrd.route.js';
+import iamModuleRouter from './routes/iam.route.js';
+import indiaHealthIntelligenceRouter from './routes/india-health-intelligence.route.js';
+import patientCopilotRouter from './routes/patient-copilot.route.js';
+import specialtyModuleRouter from './routes/specialty-module.route.js';
 
 app.use('/api/v1/adt', adtRouter);
 app.use('/api/v1/beds', bedsManagementRouter);
@@ -1841,6 +1847,12 @@ app.use('/api/v1/pharmacy-dispense', pharmacyDispenseRouter);
 app.use('/api/v1/hospital-os', hospitalOsControlRouter);
 app.use('/api/sso', ssoRouter);
 app.use('/api/enterprise/auth', enterpriseAuthRouter);
+app.use('/api/audit', auditModuleRouter); // Upgrade Plan A1 — read/export access to audit_logs
+app.use('/api/mrd', mrdModuleRouter); // Upgrade Plan A2 — Medical Records Department workflow
+app.use('/api/iam', iamModuleRouter); // Upgrade Plan A3 — consolidated core identity surface (additive, fronts existing routers)
+app.use('/api/india-health', indiaHealthIntelligenceRouter); // Upgrade Plan A4 — India Health Intelligence layer (additive, fronts existing ABDM/CDA/CDS-Hooks routers)
+app.use('/api/patient-copilot', patientCopilotRouter); // Upgrade Plan B6 — patient-facing record Q&A, hard-locked to req.user.id
+app.use('/api/specialty-module', specialtyModuleRouter); // Upgrade Plan B5 — specialty order-set/CDS engine; content stays draft-only until a named specialist approves it
 
 // ============== ENTERPRISE API v2 (New Architecture) ==============
 // API v2 - Enterprise-grade endpoints with proper MVC pattern

@@ -8,6 +8,8 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import llmProvider from './ai-brain/llm-provider.js';
+import qualityGates from './ai-quality-gates.service.js';
 
 async function ensureTables() {
   await sequelize.query(`
@@ -49,7 +51,7 @@ ensureTables().catch(e => console.warn('[discharge-workflow] table init:', e.mes
 
 async function buildDraftContext(admissionId) {
   const [admission] = await sequelize.query(
-    `SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.date_of_birth, p.gender
+    `SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.date_of_birth, p.gender, p.allergies
      FROM ip_admissions a
      LEFT JOIN patients p ON p.id = a.patient_id
      WHERE a.id = :admId LIMIT 1`,
@@ -119,26 +121,119 @@ function buildDraftText(ctx) {
   ].filter(Boolean).join('\n');
 }
 
+// ── AI synthesis (Upgrade Plan Track B, Phase B3) ───────────────────────────
+//
+// buildDraftText() above is a fixed-shape template — real reasoning over
+// the admission (diagnoses, procedures, meds, labs, pending items) never
+// happened despite ai_model being recorded as 'internal-template'. This
+// reviews the same context through the LLM and produces the sections the
+// table already has columns for. Falls back to the template on any
+// failure — a discharge draft must never simply not appear.
+async function buildAiDraftText(ctx) {
+  const { admission, notes, meds, labs, otBooking, vitals } = ctx;
+  if (!admission) return null;
+
+  const systemPrompt = `You are drafting a discharge summary for physician review — a DRAFT ONLY, never sent to a patient without physician sign-off.
+Review the admission, diagnoses, procedures, medications, labs, and vitals provided and produce a discharge summary.
+Do not invent findings, medications, or instructions not supported by the provided data.
+Output JSON: {
+  "diagnosisSummary", "procedureSummary", "medicationSummary", "followUpSummary",
+  "dietInstructions", "activityNotes", "fullNarrative",
+  "confidence": 0-1, "missingDataFlags": ["..."]
+}`;
+
+  const llm = await llmProvider.chat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          admission: { patientName: admission.patient_name, admissionNumber: admission.admission_number, admittedAt: admission.admission_datetime },
+          recentClinicalNotes: notes,
+          medications: meds,
+          recentLabs: labs,
+          procedure: otBooking,
+          recentVitals: vitals,
+        }),
+      },
+    ],
+    temperature: 0.1,
+    maxTokens: 1800,
+    responseFormat: { type: 'json_object' },
+    skipCache: true,
+  });
+
+  let parsed;
+  try {
+    parsed = JSON.parse(llm.content || '{}');
+  } catch {
+    return null;
+  }
+  if (!parsed.fullNarrative) return null;
+
+  return { ...parsed, provider: llm.provider };
+}
+
 // ── Draft creation ────────────────────────────────────────────────────────────
 
 export async function createDischargeDraft({ organizationId, admissionId, patientId, preparedBy, aiAssisted = true }) {
   const ctx = await buildDraftContext(admissionId);
-  const draftContent = buildDraftText(ctx);
+
+  let aiDraft = null;
+  if (aiAssisted) {
+    aiDraft = await buildAiDraftText(ctx).catch((err) => {
+      console.error('[DischargeWorkflow] AI synthesis failed, falling back to template:', err.message);
+      return null;
+    });
+  }
+
+  const draftContent = aiDraft?.fullNarrative || buildDraftText(ctx);
+  const usedAi = Boolean(aiDraft);
+
+  // Quality-gate check (CLAUDE.md §2: every AI output influencing a clinical
+  // decision must pass a quality gate and be logged) — reuses the scribe
+  // gate since a discharge draft is the same class of risk as an AI clinical
+  // note: dosage hallucination, allergy omission, missing physician review.
+  let gateResult = null;
+  if (usedAi) {
+    const activeMedNames = (ctx.meds || []).filter((m) => m.order_status === 'active').map((m) => m.drug_name);
+    gateResult = await qualityGates.checkScribeOutput({
+      noteText: draftContent,
+      patientAllergies: ctx.admission?.allergies || [],
+      patientMedications: activeMedNames,
+    });
+    await qualityGates.logGateResult(gateResult, { admissionId, patientId, source: 'discharge-workflow' });
+  }
 
   const [result] = await sequelize.query(
     `INSERT INTO discharge_packets (
        organization_id, admission_id, patient_id, draft_content,
-       ai_generated, ai_model, status
+       diagnosis_summary, procedure_summary, medication_summary,
+       follow_up_summary, diet_instructions, activity_notes,
+       ai_generated, ai_model, status, packet_data
      ) VALUES (
        :orgId, :admId, :patientId, :draft,
-       :ai, :model, 'draft'
+       :dx, :proc, :meds, :fu, :diet, :activity,
+       :ai, :model, 'draft', :packetData
      )
      ON CONFLICT DO NOTHING
      RETURNING *`,
     {
       replacements: {
         orgId: organizationId || null, admId: admissionId, patientId: patientId || null,
-        draft: draftContent, ai: aiAssisted, model: aiAssisted ? 'internal-template' : null
+        draft: draftContent,
+        dx: aiDraft?.diagnosisSummary || null,
+        proc: aiDraft?.procedureSummary || null,
+        meds: aiDraft?.medicationSummary || null,
+        fu: aiDraft?.followUpSummary || null,
+        diet: aiDraft?.dietInstructions || null,
+        activity: aiDraft?.activityNotes || null,
+        ai: usedAi, model: usedAi ? aiDraft.provider || 'llm' : (aiAssisted ? 'internal-template' : null),
+        packetData: JSON.stringify({
+          qualityGate: gateResult ? { passed: gateResult.passed, severity: gateResult.severity, blockerCount: gateResult.blockers?.length || 0, warningCount: gateResult.warnings?.length || 0 } : null,
+          aiConfidence: aiDraft?.confidence ?? null,
+          missingDataFlags: aiDraft?.missingDataFlags || [],
+        }),
       },
       type: QueryTypes.INSERT
     }

@@ -14,6 +14,8 @@ import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { publishEvent } from './hypergrid-event-bus.service.js';
 import pool from '../db/pgPool.js';
+import llmProvider from './ai-brain/llm-provider.js';
+import qualityGates from './ai-quality-gates.service.js';
 import {
   computeNEWS2,
   getActiveAlerts,
@@ -188,6 +190,48 @@ const CODE_HINTS = [
   { regex: /\bfever\b/i, code: 'R50.9', description: 'Fever, unspecified' },
 ];
 
+// Upgrade Plan Phase B4 — createCodingSuggestions previously matched against
+// five hardcoded regex patterns and returned a fixed confidence of 0.72 for
+// every match regardless of actual certainty (a keyword hit and a strong
+// diagnostic statement scored identically). Real ICD-10/CPT suggestion with
+// per-suggestion confidence and supporting evidence now goes through the
+// LLM; the regex table survives as an offline fallback only, still labeled
+// 'heuristic' so it's never confused with a reviewed AI suggestion.
+async function llmCodingSuggestions(corpus) {
+  const systemPrompt = `You are a clinical coding assistant suggesting ICD-10 and CPT codes from a clinical note.
+Only suggest codes genuinely supported by the note text — do not guess or pad the list.
+Output JSON: { "suggestions": [{ "code", "description", "codeSystem": "icd10|cpt", "confidence": 0-1, "evidence" }] }`;
+
+  const llm = await llmProvider.chat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: corpus },
+    ],
+    temperature: 0.1,
+    maxTokens: 700,
+    responseFormat: { type: 'json_object' },
+    skipCache: true,
+  });
+
+  let parsed;
+  try {
+    parsed = JSON.parse(llm.content || '{}');
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed.suggestions)) return null;
+
+  return parsed.suggestions
+    .filter((s) => s.code)
+    .map((s) => ({
+      code: s.code,
+      description: s.description || '',
+      source: 'llm',
+      confidence: typeof s.confidence === 'number' ? s.confidence : 0.5,
+      evidence: s.evidence || null,
+    }));
+}
+
 export const createCodingSuggestions = async (note) => {
   await ensureClinicalIntelligenceTables();
   const corpus = [
@@ -198,9 +242,37 @@ export const createCodingSuggestions = async (note) => {
     note.plan,
   ].filter(Boolean).join('\n');
 
-  const suggestions = CODE_HINTS
-    .filter((hint) => hint.regex.test(corpus))
-    .map(({ code, description }) => ({ code, description, source: 'heuristic', confidence: 0.72 }));
+  if (!corpus.trim()) return [];
+
+  let suggestions = await llmCodingSuggestions(corpus).catch((err) => {
+    console.error('[ClinicalIntelligence] LLM coding suggestion failed, falling back to heuristic:', err.message);
+    return null;
+  });
+
+  if (!suggestions) {
+    suggestions = CODE_HINTS
+      .filter((hint) => hint.regex.test(corpus))
+      .map(({ code, description }) => ({ code, description, source: 'heuristic', confidence: 0.72, evidence: null }));
+  }
+
+  // Quality gate (CLAUDE.md §2): every AI coding suggestion is checked and
+  // logged before it can reach bridgeCodingToBilling's charge creation.
+  // Heuristic-sourced suggestions skip the gate — they're a fixed lookup
+  // table, not an AI output with a hallucination/evidence risk to check.
+  if (suggestions.length && suggestions.some((s) => s.source === 'llm')) {
+    const avgConfidence = suggestions.reduce((sum, s) => sum + (s.confidence || 0), 0) / suggestions.length;
+    const gateResult = await qualityGates.checkClaimScrub({
+      claimId: note.id,
+      defects: suggestions.filter((s) => !s.evidence).map((s) => ({ type: 'coding_documentation_mismatch', description: `Suggested ${s.code} without evidence span`, evidence: null })),
+      confidence: avgConfidence,
+      sourceTextAvailable: true,
+    });
+    await qualityGates.logGateResult(gateResult, { noteId: note.id, patientId: note.patientId, source: 'clinical-intelligence.createCodingSuggestions' });
+    if (!gateResult.passed) {
+      console.warn('[ClinicalIntelligence] coding suggestions failed quality gate — withheld from billing bridge', { noteId: note.id, blockers: gateResult.blockers });
+      return [];
+    }
+  }
 
   if (!suggestions.length) return [];
 

@@ -138,6 +138,13 @@ router.post('/translator', ...clinical, async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// Upgrade Plan A4 — document-level generation (discharge instructions,
+// patient communication), distinct from single-block text translation above.
+router.post('/translator/document', ...clinical, async (req, res) => {
+  const result = await hospitalOs.translateDocument(req.body);
+  res.json({ success: true, data: result });
+});
+
 // ── Voice drafts ─────────────────────────────────────────────────────────────
 router.post('/voice/draft-lab-order', ...doctorOnly, async (req, res) => {
   const result = await hospitalOs.draftLabOrderFromVoice({
@@ -211,6 +218,19 @@ router.post('/ambient/route', ...clinical, async (req, res) => {
   const result = await hospitalOs.routeAmbientDocument({
     ...req.body,
     requestedBy: req.user.id,
+  });
+  res.json({ success: true, data: result });
+});
+
+// Upgrade Plan B3 — transcript -> structured SOAP note + draft orders.
+// Returns the draft for the clinician to review/edit; does not itself
+// route to the approval inbox (call /ambient/route with the reviewed
+// content once the clinician has confirmed it).
+router.post('/ambient/synthesize', ...clinical, async (req, res) => {
+  const result = await hospitalOs.synthesizeAmbientNote({
+    transcript: req.body.transcript,
+    patientId: req.body.patientId,
+    specialtyTemplate: req.body.specialtyTemplate,
   });
   res.json({ success: true, data: result });
 });

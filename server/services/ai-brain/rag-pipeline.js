@@ -147,7 +147,17 @@ async function search(query, options = {}) {
     topK = MAX_CHUNKS_PER_QUERY,
     minScore = MIN_RELEVANCE_SCORE,
     userId = null,
-    conversationId = null
+    conversationId = null,
+    // Upgrade Plan Phase B6 fix: sib_embeddings (EHR chunks) previously had
+    // NO patient filter at all — any caller's vector search could surface
+    // any patient's embedded record. Callers that must be patient-scoped
+    // (a patient asking about their own record) MUST pass patientId; it is
+    // never inferred from the query text. Existing unscoped callers
+    // (doctor-copilot, general clinical search) are unaffected — omitting
+    // it keeps the prior behavior exactly, which is a deliberate,
+    // deployed-and-relied-on tradeoff for staff, not something to silently
+    // change here.
+    patientId = null,
   } = options;
 
   const start = Date.now();
@@ -187,12 +197,19 @@ async function search(query, options = {}) {
   `;
 
   // Search sib_embeddings (existing EHR embeddings)
+  const sibParams = [vecStr, Math.ceil(topK / 2)];
+  let sibFilter = '';
+  if (patientId) {
+    sibParams.push(patientId);
+    sibFilter = ` AND patient_id = $${sibParams.length}`;
+  }
   const sibQuery = `
     SELECT id, content, metadata,
            1 - (embedding <=> $1::vector) AS score,
            source_type AS document_title, source_type AS category, 'ehr' AS scope,
            'sib_embeddings' AS source
     FROM sib_embeddings
+    WHERE TRUE ${sibFilter}
     ORDER BY embedding <=> $1::vector
     LIMIT $2
   `;
@@ -203,7 +220,7 @@ async function search(query, options = {}) {
       console.error('[RAG] doc chunks search error:', err.message);
       return { rows: [] };
     }),
-    db.query(sibQuery, [vecStr, Math.ceil(topK / 2)]).catch(err => {
+    db.query(sibQuery, sibParams).catch(err => {
       console.error('[RAG] sib search error:', err.message);
       return { rows: [] };
     })

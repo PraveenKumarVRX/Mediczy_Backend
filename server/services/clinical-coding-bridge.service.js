@@ -47,6 +47,9 @@ export async function bridgeCodingToBilling(note, hospitalId) {
           code,
           noteId: note.id,
           confidence: s.confidence,
+          source: s.source || 'unknown',
+          evidence: s.evidence || null,
+          reviewRequired: true, // never auto-billed without a human review step downstream
           versionId: feeRow?.version_id || null,
           feeScheduleMatched: Boolean(feeRow),
         }),

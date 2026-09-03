@@ -121,17 +121,85 @@ const buildLogPayload = (params) => {
   };
 };
 
+// audit_logs has no tenant_id/organization_id column (it logs system and
+// cross-tenant events too, e.g. health checks, unauthenticated requests) —
+// so unlike PHI tables there is no per-tenant RLS boundary to run reads
+// under. Reads use the same trusted-system platform-admin context that
+// `create` already uses below; the actual access boundary for this data is
+// enforced at the route layer (requireRole, see routes/audit.route.js), not
+// by RLS. Do not expose these read methods without that route-level gate.
+async function withAuditReadContext(callback) {
+  const db = await getDB();
+  await ensureAuditLogsTable(db);
+  const transaction = await db.transaction();
+  try {
+    await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+    const result = await callback(db, transaction);
+    await transaction.commit();
+    return result;
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
+}
+
+const FILTERABLE_COLUMNS = {
+  userId: 'user_id',
+  userType: 'user_type',
+  userEmail: 'user_email',
+  action: 'action',
+  resourceType: 'resource_type',
+  resourceId: 'resource_id',
+  status: 'status',
+  isPHI: 'is_phi',
+  isPII: 'is_pii',
+  sessionId: 'session_id',
+};
+
+function buildWhereClause(where = {}) {
+  const clauses = [];
+  const values = [];
+
+  for (const [key, column] of Object.entries(FILTERABLE_COLUMNS)) {
+    if (where[key] === undefined || where[key] === null || where[key] === '') continue;
+    values.push(where[key]);
+    clauses.push(`${column} = $${values.length}`);
+  }
+
+  if (where.dateFrom) {
+    values.push(where.dateFrom);
+    clauses.push(`timestamp >= $${values.length}`);
+  }
+  if (where.dateTo) {
+    values.push(where.dateTo);
+    clauses.push(`timestamp <= $${values.length}`);
+  }
+  if (where.search) {
+    values.push(`%${where.search}%`);
+    clauses.push(`(action ILIKE $${values.length} OR resource_type ILIKE $${values.length} OR endpoint ILIKE $${values.length})`);
+  }
+
+  return {
+    sql: clauses.length ? `WHERE ${clauses.join(' AND ')}` : '',
+    values,
+  };
+}
+
 const AuditLog = {
   findOne: async (options) => {
-    // TODO: Implement with proper PostgreSQL model
-    console.warn('AuditLog.findOne not implemented for PostgreSQL');
-    return null;
+    const rows = await AuditLog.findAll({ ...options, limit: 1 });
+    return rows[0] || null;
   },
 
   findByPk: async (id, options = {}) => {
-    // TODO: Implement with proper PostgreSQL model
-    console.warn('AuditLog.findByPk not implemented for PostgreSQL');
-    return null;
+    return withAuditReadContext(async (db, transaction) => {
+      const rows = await db.query('SELECT * FROM audit_logs WHERE id = $1', {
+        bind: [id],
+        type: db.QueryTypes.SELECT,
+        transaction,
+      });
+      return rows[0] || null;
+    });
   },
 
   create: async (logData) => {
@@ -209,27 +277,51 @@ const AuditLog = {
   },
 
   findAll: async (options = {}) => {
-    // TODO: Implement with proper PostgreSQL model
-    console.warn('AuditLog.findAll not implemented for PostgreSQL');
-    return [];
+    const { where = {}, limit = 50, offset = 0, order = 'DESC' } = options;
+    const safeLimit = Math.min(parseInt(limit, 10) || 50, 500);
+    const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+    const safeOrder = order === 'ASC' ? 'ASC' : 'DESC';
+
+    return withAuditReadContext(async (db, transaction) => {
+      const { sql: whereSql, values } = buildWhereClause(where);
+      const limitParamIndex = values.length + 1;
+      const offsetParamIndex = values.length + 2;
+
+      return db.query(
+        `SELECT * FROM audit_logs ${whereSql}
+         ORDER BY timestamp ${safeOrder}
+         LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}`,
+        {
+          bind: [...values, safeLimit, safeOffset],
+          type: db.QueryTypes.SELECT,
+          transaction,
+        }
+      );
+    });
   },
 
-  update: async (values, options) => {
-    // TODO: Implement with proper PostgreSQL model
-    console.warn('AuditLog.update not implemented for PostgreSQL');
-    return [0];
+  // Audit logs are append-only by design — mutating or deleting a compliance
+  // record defeats its purpose. Nothing in this codebase should call these;
+  // they exist so a stray call fails loudly instead of silently no-op'ing.
+  update: async () => {
+    throw new Error('AuditLog records are immutable — update is not supported');
   },
 
-  destroy: async (options) => {
-    // TODO: Implement with proper PostgreSQL model
-    console.warn('AuditLog.destroy not implemented for PostgreSQL');
-    return 0;
+  destroy: async () => {
+    throw new Error('AuditLog records are immutable — destroy is not supported');
   },
 
   count: async (options = {}) => {
-    // TODO: Implement with proper PostgreSQL model
-    console.warn('AuditLog.count not implemented for PostgreSQL');
-    return 0;
+    const { where = {} } = options;
+    return withAuditReadContext(async (db, transaction) => {
+      const { sql: whereSql, values } = buildWhereClause(where);
+      const rows = await db.query(`SELECT COUNT(*)::int AS count FROM audit_logs ${whereSql}`, {
+        bind: values,
+        type: db.QueryTypes.SELECT,
+        transaction,
+      });
+      return rows[0]?.count || 0;
+    });
   },
 
   logEvent: async (params) => {

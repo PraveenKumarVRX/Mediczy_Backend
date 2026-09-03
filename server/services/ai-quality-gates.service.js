@@ -319,6 +319,67 @@ class AIQualityGatesService {
   }
 
   /**
+   * Run quality gates on an AI claim-scrub result (Upgrade Plan Phase B4).
+   * This replaces the SQL-heuristic denial-risk score with real coding-vs-
+   * documentation review — deployed in shadow mode first (computed and
+   * logged, never shown to coding staff) until its accuracy against real
+   * human-coded outcomes has been reviewed. See ai-revenue-intelligence
+   * .service.js's runClaimScrubShadow().
+   */
+  async checkClaimScrub({ claimId, defects, confidence, sourceTextAvailable }) {
+    const result = this._newResult('claim_scrub', null);
+
+    // Gate 1: no source documentation — a scrub without documentation to
+    // check against is not a scrub, it's a guess. Block, don't warn.
+    if (!sourceTextAvailable) {
+      result.blockers.push({
+        code:    'NO_SOURCE_DOCUMENTATION',
+        message: 'No clinical documentation was available to check coding against',
+        action:  'Do not present a scrub result — there is nothing to have compared the code to.'
+      });
+    }
+
+    // Gate 2: confidence sanity
+    if (typeof confidence === 'number' && (confidence < 0 || confidence > 1)) {
+      result.blockers.push({
+        code:    'INVALID_CONFIDENCE_RANGE',
+        message: `Confidence ${confidence} is outside [0, 1]`,
+        action:  'Recompute — do not persist or display'
+      });
+    } else if (typeof confidence === 'number' && confidence < 0.5) {
+      result.warnings.push({
+        code:    'LOW_CONFIDENCE_SCRUB',
+        message: `Scrub confidence is ${Math.round(confidence * 100)}% — high uncertainty`,
+        action:  'Do not surface to coding staff below the shadow-mode review threshold'
+      });
+    }
+
+    // Gate 3: a defect claim with no supporting evidence text is not
+    // actionable and risks becoming a false accusation against a real coder
+    for (const defect of defects || []) {
+      if (!defect.evidence) {
+        result.warnings.push({
+          code:    'DEFECT_WITHOUT_EVIDENCE',
+          message: `Flagged defect "${defect.type || 'unknown'}" has no supporting evidence text`,
+          action:  'Do not surface this defect without the specific documentation span it is based on'
+        });
+      }
+    }
+
+    // Gate 4: always require human review — non-negotiable for claim
+    // scrubbing, same as scribe output (this affects real money and a
+    // real coder's work, not just a draft note)
+    result.requiredActions.push({
+      code:    'CODING_STAFF_REVIEW_REQUIRED',
+      message: 'AI-generated claim scrub — human review mandatory before any code or claim edit',
+      action:  'Never auto-apply a scrub suggestion to billing/charge-master.',
+      blocking: false
+    });
+
+    return this._finalize(result);
+  }
+
+  /**
    * Run quality gates on a medical scribe output (clinical note).
    * This is the final safety check before presenting to the physician.
    */
