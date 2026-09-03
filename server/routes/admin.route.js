@@ -1986,7 +1986,22 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
     
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
+    // FIX (2026-09-03): one super-HR (corporate_admin) per corporate is
+    // now a real, DB-enforced invariant (migrations/corporate-hr
+    // -hierarchy.migration.js). If this corporate already has an active
+    // corporate_admin, this endpoint creates hr_staff instead — matching
+    // what the corporate's own self-service invite flow
+    // (services/corporate-hr-management.service.js) does — rather than
+    // attempting a second admin the database would reject anyway.
+    const existingAdmin = await postgresSequelize.query(`
+      SELECT id FROM users
+      WHERE organization_type = 'corporate' AND organization_id = :corporateId
+        AND role = 'corporate_admin' AND status = 'active'
+      LIMIT 1
+    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
+    const roleToAssign = existingAdmin.length > 0 ? 'hr_staff' : 'corporate_admin';
+
     // Create user
     //
     // FIX (2026-09-03): this INSERT previously omitted organization_type
@@ -2006,7 +2021,7 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
         "createdAt", "updatedAt"
       )
       VALUES (
-        :email, :password, :firstName, :lastName, 'corporate_admin',
+        :email, :password, :firstName, :lastName, :roleToAssign,
         true, false, false,
         '1990-01-01', :phoneNumber, 'Male',
         'corporate', :corporateId, 'active',
@@ -2020,7 +2035,8 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
         firstName: firstName || 'HR',
         lastName: lastName || 'Admin',
         phoneNumber: phoneNumber || '',
-        corporateId
+        corporateId,
+        roleToAssign
       },
       type: postgresSequelize.QueryTypes.INSERT
     });
@@ -2034,22 +2050,37 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
       });
     }
     
-    // Create user association to corporate
+    // Create user association to corporate — 'admin'/isPrimary for the
+    // actual super-HR, 'staff' otherwise. Previously hardcoded 'admin'
+    // + isPrimary:true for every single user this endpoint created,
+    // which meant nothing here ever actually distinguished the owner
+    // from staff even though user_associations.role already supports it.
     await postgresSequelize.query(`
       INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
-      VALUES (:userId, 'corporate', :corporateId, 'admin', true, 'active', NOW(), NOW(), NOW())
+      VALUES (:userId, 'corporate', :corporateId, :assocRole, :isPrimary, 'active', NOW(), NOW(), NOW())
       ON CONFLICT DO NOTHING
     `, {
-      replacements: { userId: newUser.id, corporateId }
+      replacements: {
+        userId: newUser.id,
+        corporateId,
+        assocRole: roleToAssign === 'corporate_admin' ? 'admin' : 'staff',
+        isPrimary: roleToAssign === 'corporate_admin',
+      }
     });
-    
-    // Set password on corporate record too
-    await postgresSequelize.query(`
-      UPDATE corporates SET password = :password WHERE id = :corporateId
-    `, {
-      replacements: { password: hashedPassword, corporateId }
-    });
-    
+
+    // FIX (2026-09-03): this UPDATE previously ran unconditionally —
+    // every hr_staff created here silently overwrote the Corporate
+    // record's OWN root login password with the new hire's password,
+    // breaking the corporate's direct-login path each time HR staff was
+    // added. Only meaningful for the actual first/primary admin.
+    if (roleToAssign === 'corporate_admin') {
+      await postgresSequelize.query(`
+        UPDATE corporates SET password = :password WHERE id = :corporateId
+      `, {
+        replacements: { password: hashedPassword, corporateId }
+      });
+    }
+
     // ── Send HR admin credential email (non-fatal: creation must not fail if email fails) ──
     const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediczy.com';
     const hrDisplayName = `${newUser.firstName || 'HR'} ${newUser.lastName || 'Admin'}`.trim();
@@ -2089,7 +2120,7 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
         email: newUser.email,
         firstName: newUser.firstName,
         lastName: newUser.lastName,
-        role: 'corporate_admin',
+        role: roleToAssign,
         corporateId
       }
     });

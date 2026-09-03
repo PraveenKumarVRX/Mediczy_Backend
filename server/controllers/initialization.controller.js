@@ -208,6 +208,10 @@ class InitializationController {
       await registerTrackBPromptGovernance().catch(e =>
         console.warn('⚠️  Track B prompt governance registration skipped:', e.message)
       );
+      const { runCorporateHrHierarchyMigration } = await import('../migrations/corporate-hr-hierarchy.migration.js');
+      await runCorporateHrHierarchyMigration().catch(e =>
+        console.warn('⚠️  corporate-hr-hierarchy migration skipped:', e.message)
+      );
       const { runAiPromptVersionsMigration } = await import('../migrations/ai-prompt-versions.migration.js');
       await runAiPromptVersionsMigration().catch(e =>
         console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)
