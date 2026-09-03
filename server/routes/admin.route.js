@@ -1988,17 +1988,28 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
     const hashedPassword = await bcrypt.hash(password, 10);
     
     // Create user
+    //
+    // FIX (2026-09-03): this INSERT previously omitted organization_type
+    // and organization_id entirely. corporateLogin's HR-user lookup
+    // (controller/corporate.controller.js) requires
+    // organization_type='corporate' AND organization_id matching a real
+    // Corporate row — without them, every account created here existed
+    // in the database but could never actually log in via the real
+    // corporate login form. Confirmed against two real accounts
+    // (Ninjacart HR admins) that were silently broken by this exact gap.
     const [userResult] = await postgresSequelize.query(`
       INSERT INTO users (
-        email, password, "firstName", "lastName", role, 
-        "isCorporate", "isAdmin", "isTeam", 
+        email, password, "firstName", "lastName", role,
+        "isCorporate", "isAdmin", "isTeam",
         "dateOfBirth", "phoneNumber", gender,
+        organization_type, organization_id, status,
         "createdAt", "updatedAt"
       )
       VALUES (
-        :email, :password, :firstName, :lastName, 'corporate_admin', 
+        :email, :password, :firstName, :lastName, 'corporate_admin',
         true, false, false,
         '1990-01-01', :phoneNumber, 'Male',
+        'corporate', :corporateId, 'active',
         NOW(), NOW()
       )
       RETURNING id, email, "firstName", "lastName", role
@@ -2008,7 +2019,8 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
         password: hashedPassword,
         firstName: firstName || 'HR',
         lastName: lastName || 'Admin',
-        phoneNumber: phoneNumber || ''
+        phoneNumber: phoneNumber || '',
+        corporateId
       },
       type: postgresSequelize.QueryTypes.INSERT
     });
