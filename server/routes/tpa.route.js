@@ -5,6 +5,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authTPA } from '../middleware/tpa.middleware.js';
 import jwt from 'jsonwebtoken';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { Op } from 'sequelize';
 import heritageTPA from '../services/heritage-tpa.service.js';
 import mdIndiaTPA from '../services/mdindia-tpa.service.js';
 import healthIndiaTPA from '../services/healthindia-tpa.service.js';
@@ -558,8 +559,19 @@ router.get('/corporates', authTPA, async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
 
+    // The 'Corporate' model name is registered on this same Sequelize
+    // instance by two other model files (crm.model.intelligent.js,
+    // insurance-company.model.intelligent.js — a pre-existing collision,
+    // not something to unwind here). In the full app, Corporate.count()
+    // (called internally by findAndCountAll) has been observed resolving
+    // onboardedBy against the wrong registry entry and failing with
+    // "column Corporate.onboardedBy does not exist" even though this
+    // Corporate model's own attribute mapping is correct. Referencing the
+    // real column via sequelize.where/col sidesteps attribute-name
+    // resolution entirely so this is immune to that collision regardless
+    // of which model definition Sequelize's internals pick.
     const whereClause = {
-      onboardedBy: 'tpa',
+      [Op.and]: [sequelize.where(sequelize.col('Corporate.onboarded_by'), 'tpa')],
       onboardedById: req.user.id
     };
     if (status) whereClause.status = status;
