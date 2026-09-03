@@ -188,27 +188,33 @@ export async function runSpecialtyModuleMigration() {
     // Idempotent: skipped per-row if a row with that specialty+name already
     // exists, so re-running this migration never duplicates or overwrites
     // something the hospital's own reviewers have since edited.
+    // NOTE: every $1/$2 below is cast explicitly (::varchar) in the SELECT
+    // list. Without the cast, Postgres has to infer a type for the same
+    // parameter from two places at once — its bare position in a FROM-less
+    // SELECT, and its comparison against a typed column in the WHERE NOT
+    // EXISTS subquery — and fails with "inconsistent types deduced for
+    // parameter $1". Caught live on first deploy; fixed here.
     const seedOrderSet = async (specialty, { name, items, evidenceReference }) => {
       await client.query(
         `INSERT INTO specialty_order_sets (specialty, name, items, evidence_reference, status)
-         SELECT $1, $2, $3::jsonb, $4, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_order_sets WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::jsonb, $4::text, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_order_sets WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, JSON.stringify(items), evidenceReference]
       );
     };
     const seedCdsRule = async (specialty, { name, triggerCondition, recommendation, evidenceReference, severity }) => {
       await client.query(
         `INSERT INTO specialty_cds_rules (specialty, name, trigger_condition, recommendation, evidence_reference, severity, status)
-         SELECT $1, $2, $3::jsonb, $4, $5, $6, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_cds_rules WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::jsonb, $4::text, $5::text, $6::varchar, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_cds_rules WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, JSON.stringify(triggerCondition), recommendation, evidenceReference, severity]
       );
     };
     const seedDocTemplate = async (specialty, { name, sections }) => {
       await client.query(
         `INSERT INTO specialty_documentation_templates (specialty, name, sections, status)
-         SELECT $1, $2, $3::jsonb, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_documentation_templates WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::jsonb, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_documentation_templates WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, JSON.stringify(sections)]
       );
     };

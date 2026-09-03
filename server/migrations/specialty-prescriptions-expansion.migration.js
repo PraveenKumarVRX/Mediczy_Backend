@@ -868,35 +868,38 @@ export async function runSpecialtyPrescriptionsExpansionMigration() {
     `);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_specialty_prescription_templates_lookup ON specialty_prescription_templates (specialty, status)`);
 
+    // See specialty-module.migration.js for why every $1/$2 needs an
+    // explicit ::varchar cast here — same "inconsistent types deduced for
+    // parameter $1" bug, caught live on first deploy.
     const seedOrderSet = async (specialty, { name, items, evidenceReference }) => {
       await client.query(
         `INSERT INTO specialty_order_sets (specialty, name, items, evidence_reference, status)
-         SELECT $1, $2, $3::jsonb, $4, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_order_sets WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::jsonb, $4::text, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_order_sets WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, JSON.stringify(items), evidenceReference]
       );
     };
     const seedCdsRule = async (specialty, { name, triggerCondition, recommendation, evidenceReference, severity }) => {
       await client.query(
         `INSERT INTO specialty_cds_rules (specialty, name, trigger_condition, recommendation, evidence_reference, severity, status)
-         SELECT $1, $2, $3::jsonb, $4, $5, $6, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_cds_rules WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::jsonb, $4::text, $5::text, $6::varchar, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_cds_rules WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, JSON.stringify(triggerCondition), recommendation, evidenceReference, severity]
       );
     };
     const seedDocTemplate = async (specialty, { name, sections }) => {
       await client.query(
         `INSERT INTO specialty_documentation_templates (specialty, name, sections, status)
-         SELECT $1, $2, $3::jsonb, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_documentation_templates WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::jsonb, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_documentation_templates WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, JSON.stringify(sections)]
       );
     };
     const seedPrescriptionTemplate = async (specialty, { name, patientEducationText, diagramRefs, standardPrecautions }) => {
       await client.query(
         `INSERT INTO specialty_prescription_templates (specialty, name, patient_education_text, diagram_refs, standard_precautions, status)
-         SELECT $1, $2, $3, $4::jsonb, $5::jsonb, 'draft'
-         WHERE NOT EXISTS (SELECT 1 FROM specialty_prescription_templates WHERE specialty = $1 AND name = $2)`,
+         SELECT $1::varchar, $2::varchar, $3::text, $4::jsonb, $5::jsonb, 'draft'
+         WHERE NOT EXISTS (SELECT 1 FROM specialty_prescription_templates WHERE specialty = $1::varchar AND name = $2::varchar)`,
         [specialty, name, patientEducationText, JSON.stringify(diagramRefs), JSON.stringify(standardPrecautions)]
       );
     };
