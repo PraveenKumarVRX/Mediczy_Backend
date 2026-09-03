@@ -1,6 +1,14 @@
 /**
  * Database Migration - Health Coins Wallet System
  * Creates wallet, transactions, and activity tracking tables
+ *
+ * DANGER — DB-RDS-PLAN-2026-09-01 Workstream A-07: this script calls
+ * .sync({ alter: true }) on three models, mutating production schema on
+ * every run. Confirmed (2026-09-03) NOT wired into any automatic
+ * startup/cron path — it only runs if manually executed. Keep it that
+ * way: do not import this file's logic into app.js/initialization
+ * .controller.js or any route without replacing sync({alter:true}) with
+ * a real migration first.
  */
 
 import { postgresSequelize as sequelize } from './db/postgres-sequelize.js';

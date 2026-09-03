@@ -1,3 +1,14 @@
+/**
+ * DANGER — DB-RDS-PLAN-2026-09-01 Workstream A-07: this script calls
+ * .sync({ force: true }) on three models — force:true DROPS and
+ * recreates the table, destroying any existing data in it. This is the
+ * most dangerous sync() call found in this codebase during the A-07
+ * review. Confirmed (2026-09-03) NOT wired into any automatic
+ * startup/cron path — it only runs if manually executed. Keep it that
+ * way: do not import this file's logic into app.js/initialization
+ * .controller.js or any route without replacing sync({force:true}) with
+ * a real, non-destructive migration first.
+ */
 import { postgresSequelize as sequelize } from './db/postgres-sequelize.js';
 import MembershipPlan from './models/postgres/membership-plan.model.postgres.js';
 import UserSubscription from './models/postgres/user-subscription.model.postgres.js';

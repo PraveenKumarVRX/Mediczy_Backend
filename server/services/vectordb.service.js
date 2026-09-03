@@ -2,6 +2,16 @@
  * VectorDB Service for Intelligent Notification Routing
  * Uses PostgreSQL pgvector extension for vector similarity search
  * Enables AI-powered notification targeting and personalization
+ *
+ * DANGER — DB-RDS-PLAN-2026-09-01 Workstream A-07: initialize() calls
+ * .sync({ alter: true }) on three models, mutating production schema
+ * every time it runs. Confirmed (2026-09-03) this service's only
+ * importer (notification-orchestrator.service.js) is itself not
+ * referenced anywhere in app.js/index.js/initialization.controller.js —
+ * the whole chain is currently dead code, not part of the live startup
+ * path. Keep it that way: do not wire notification-orchestrator (or
+ * call initialize() directly) into a live route/cron without replacing
+ * sync({alter:true}) with a real migration first.
  */
 
 const { sequelize, DataTypes, Sequelize } = require('../config/database');

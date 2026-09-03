@@ -10,6 +10,14 @@
  * 5. PostgreSQL stores notification record
  * 6. DuckDB logs analytics
  * 7. VectorDB enables intelligent routing
+ *
+ * DANGER — DB-RDS-PLAN-2026-09-01 Workstream A-07: this file calls
+ * .sync({ alter: true }) on two models, mutating production schema
+ * every time it runs. Confirmed (2026-09-03) this file has zero
+ * importers anywhere in the codebase — dead code, not part of the live
+ * startup path. Keep it that way: do not wire this into a live
+ * route/cron without replacing sync({alter:true}) with a real
+ * migration first.
  */
 
 import { publishEvent, KAFKA_TOPICS, kafkaConsumer } from '../config/kafka.js';
