@@ -21,6 +21,7 @@ import {
   CalendarDays,
   Gauge,
   UserCog,
+  UserPlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -57,6 +58,7 @@ const managementItems: SidebarItem[] = [
 ];
 
 const systemItems: SidebarItem[] = [
+  { icon: UserPlus, label: "HR Team", href: "/corporate/hr-team" },
   { icon: Settings, label: "Settings", href: "/corporate/settings" },
   { icon: HelpCircle, label: "Help & Support", href: "/corporate/help" },
 ];

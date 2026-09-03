@@ -520,6 +520,7 @@ const CorporateSupport              = lazy(() => import("@/pages/corporate/Corpo
 const CorporateCommandCenter        = lazy(() => import("@/pages/corporate/CorporateCommandCenter"));
 const CorporateUserManagement       = lazy(() => import("@/pages/corporate/CorporateUserManagement"));
 const CorporateOrgStructure         = lazy(() => import("@/pages/corporate/CorporateOrgStructure"));
+const CorporateHrTeam                = lazy(() => import("@/pages/corporate/CorporateHrTeam"));
 
 // ─── TPA ─────────────────────────────────────────────────────────────────────
 const TpaLogin               = lazy(() => import("@/pages/tpa/TpaLogin"));
@@ -1481,6 +1482,7 @@ const AppRoutes = () => {
         <Route path="/corporate/command-center"            element={<CorporateCommandCenter />} />
         <Route path="/corporate/user-management"            element={<CorporateUserManagement />} />
         <Route path="/corporate/org-structure"               element={<CorporateOrgStructure />} />
+        <Route path="/corporate/hr-team"                     element={<CorporateHrTeam />} />
 
         {/* ── TPA ─────────────────────────────────────────────────────── */}
         <Route path="/tpa/login"          element={<TpaLogin />} />
