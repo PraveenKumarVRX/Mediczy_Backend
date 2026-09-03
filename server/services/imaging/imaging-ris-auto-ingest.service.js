@@ -36,9 +36,26 @@ async function getDoctorDisplayName(doctorId, fallbackName = null) {
 /**
  * Resolve which lab/clinic owns an Orthanc ingest.
  * Priority: explicit → dicom_modalities.ae_title match → dicom_institution_patterns
- * InstitutionName match → ORTHANC_DEFAULT_LAB_ID (last-resort single-tenant
- * fallback). Real routing signals must always be tried before the env
- * default — see the comments inline below for why.
+ * InstitutionName match → unattributed (null).
+ *
+ * FIX (2026-09-03): this used to fall back to ORTHANC_DEFAULT_LAB_ID
+ * whenever neither real signal resolved, documented as a "last-resort
+ * single-tenant fallback." This Orthanc instance serves multiple real
+ * tenants (confirmed: Rado Labs, ICH, at least one more), so that
+ * fallback was silently guessing a real customer for every unidentified
+ * study — confirmed against live data: 228 real patient studies (mostly
+ * pediatric brain MRI) attributed this way with zero real routing
+ * signal, spread across three different lab_ids depending on whatever
+ * the env var happened to be at ingestion time, still happening in the
+ * minutes before this fix (not just historical).
+ *
+ * Returning null now instead — the only caller (ensureRisStudyFromOrthancIngest)
+ * already treats a null lab_id as "skip this ingest, do not insert a row"
+ * (reason: 'no_lab_id'), which is a safe fail-closed outcome: an
+ * unattributable study is simply not stored rather than guessed into the
+ * wrong tenant's view. It will need to be re-ingested (or handled via
+ * PACS Settings AE/InstitutionName registration) once its real owning lab
+ * is known.
  */
 export async function resolveLabIdForOrthancIngest({
   explicitLabId = null,
@@ -100,9 +117,14 @@ export async function resolveLabIdForOrthancIngest({
     }
   }
 
-  const envLab = numOrNull(process.env.ORTHANC_DEFAULT_LAB_ID);
-  if (envLab) return envLab;
-
+  // ORTHANC_DEFAULT_LAB_ID is no longer used as an automatic fallback —
+  // see the doc comment above. Left unread here deliberately; a
+  // genuinely single-tenant deployment should pass explicitLabId
+  // instead of relying on env-based guessing.
+  logger.warn('[RIS-AutoIngest] study has no matching AE-title or InstitutionName — quarantined, not attributed to any lab', {
+    remoteAet: aet || null,
+    institutionName: institution || null,
+  });
   return null;
 }
 
@@ -186,7 +208,7 @@ export async function ensureRisStudyFromOrthancIngest({
       success: false,
       skipped: true,
       reason: 'no_lab_id',
-      message: 'Set ORTHANC_DEFAULT_LAB_ID or register modality AE in PACS Settings',
+      message: 'Register this modality AE title or InstitutionName under PACS Settings so studies from it route to the correct lab',
     };
   }
 
@@ -522,7 +544,7 @@ export async function syncRisStudiesFromOrthanc({
   if (!resolvedLabId) {
     return {
       success: false,
-      message: 'Set ORTHANC_DEFAULT_LAB_ID or pass labId',
+      message: 'labId is required',
       results: [],
     };
   }
