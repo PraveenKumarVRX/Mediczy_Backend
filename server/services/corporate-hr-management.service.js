@@ -1,19 +1,29 @@
 /**
  * Corporate HR hierarchy — one super-HR (corporate_admin) per corporate,
- * who can invite/remove their own hr_staff team self-service.
+ * who can invite/remove their own team of hr_staff and corporate_cmo
+ * (Chief Medical Officer) accounts self-service.
  *
  * The DB-level invariant (at most one active corporate_admin per
  * organization_id) lives in migrations/corporate-hr-hierarchy.migration.js
  * — this file is the application-level enforcement on top of it: only the
- * active corporate_admin may invite or remove hr_staff, hr_staff can
- * never remove/promote anyone, and ownership transfer is an explicit,
- * atomic swap rather than "create a second admin and hope."
+ * active corporate_admin may invite or remove team members, non-admin
+ * members can never remove/promote anyone, and ownership transfer is an
+ * explicit, atomic swap rather than "create a second admin and hope."
+ *
+ * corporate_cmo is a distinct role from hr_staff: it exists to scrutinize
+ * (approve/reject/partially-approve) insurance claims on the corporate's
+ * behalf as an alternative to routing them through an external TPA — see
+ * POST /api/corporate/claims/management/:id/scrutinize in corporate.route.js.
+ * A CMO cannot become super-HR via transferSuperHr (that stays hr_staff ->
+ * corporate_admin only) since claims scrutiny and HR-team administration
+ * are deliberately kept separate.
  */
 import User from '../models/postgres/user.model.postgres.js';
 import Corporate from '../models/postgres/corporate.model.postgres.js';
 import welcomeEmailService from './welcome-email.service.js';
 
 const MAX_HR_STAFF_PER_CORPORATE = 15;
+const INVITABLE_ROLES = ['hr_staff', 'corporate_cmo'];
 
 function genTempPassword() {
   const raw = [...Array(12)].map(() => Math.random().toString(36)[2] || '0').join('');
@@ -45,8 +55,12 @@ export async function listHrTeam(corporateId) {
   return rows;
 }
 
-export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, lastName, email, phoneNumber }) {
+export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, lastName, email, phoneNumber, role = 'hr_staff' }) {
   await requireActiveSuperAdmin(corporateId, invitedByUserId);
+
+  if (!INVITABLE_ROLES.includes(role)) {
+    throw new Error(`role must be one of: ${INVITABLE_ROLES.join(', ')}`);
+  }
 
   const normalizedEmail = String(email || '').toLowerCase().trim();
   if (!normalizedEmail) throw new Error('email is required');
@@ -70,16 +84,18 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
   const corporate = await Corporate.findByPk(corporateId);
   if (!corporate) throw new Error('Corporate not found');
 
+  const roleLabel = role === 'corporate_cmo' ? 'Chief Medical Officer' : 'HR staff';
+
   const tempPassword = genTempPassword();
   const created = await User.create({
-    firstName: firstName || 'HR',
-    lastName: lastName || 'Staff',
+    firstName: firstName || (role === 'corporate_cmo' ? 'Chief Medical' : 'HR'),
+    lastName: lastName || (role === 'corporate_cmo' ? 'Officer' : 'Staff'),
     email: normalizedEmail,
     password: tempPassword, // hashed by the model's beforeCreate hook
-    dateOfBirth: '1990-01-01', // placeholder — not meaningful for an HR account
+    dateOfBirth: '1990-01-01', // placeholder — not meaningful for an HR/CMO account
     gender: 'Other',
     phoneNumber: phoneNumber || '0000000000',
-    role: 'hr_staff',
+    role,
     organization_type: 'corporate',
     organization_id: corporateId,
     status: 'active',
@@ -91,10 +107,10 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
     const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediqzy.com';
     await welcomeEmailService.sendTransactionalEmail({
       to: normalizedEmail,
-      subject: `You've been added as HR staff for ${corporate.companyName}`,
+      subject: `You've been added as ${roleLabel} for ${corporate.companyName}`,
       html: `<div style="font-family:Segoe UI,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
         <h2 style="color:#0f766e;margin:0 0 12px;">Welcome, ${firstName || 'there'}!</h2>
-        <p>You've been added as HR staff for <b>${corporate.companyName}</b> on the Mediqzy corporate wellness portal.</p>
+        <p>You've been added as ${roleLabel} for <b>${corporate.companyName}</b> on the Mediqzy corporate wellness portal.</p>
         <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:16px;margin:16px 0;">
           <p style="margin:4px 0;"><strong>Login URL:</strong> <a href="${frontendUrl}/corporate/login">${frontendUrl}/corporate/login</a></p>
           <p style="margin:4px 0;"><strong>Email:</strong> ${normalizedEmail}</p>
@@ -102,7 +118,7 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
         </div>
         <p style="color:#64748b;font-size:13px;">Please change your password after your first login.</p>
       </div>`,
-      text: `Welcome! You've been added as HR staff for ${corporate.companyName}. Login: ${frontendUrl}/corporate/login  Email: ${normalizedEmail}  Temporary password: ${tempPassword}`,
+      text: `Welcome! You've been added as ${roleLabel} for ${corporate.companyName}. Login: ${frontendUrl}/corporate/login  Email: ${normalizedEmail}  Temporary password: ${tempPassword}`,
       fromName: 'Mediqzy Corporate Wellness',
     });
     emailStatus = 'sent';
@@ -136,9 +152,9 @@ export async function removeHrStaff({ corporateId, requestedByUserId, targetUser
     !target ||
     target.organization_type !== 'corporate' ||
     Number(target.organization_id) !== Number(corporateId) ||
-    target.role !== 'hr_staff'
+    !INVITABLE_ROLES.includes(target.role)
   ) {
-    throw new Error('Target is not an hr_staff member of this corporate');
+    throw new Error('Target is not an HR staff or CMO member of this corporate');
   }
 
   await target.update({ status: 'inactive' });

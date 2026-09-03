@@ -216,6 +216,10 @@ class InitializationController {
       await runCorporateHrHierarchyMigration().catch(e =>
         console.warn('⚠️  corporate-hr-hierarchy migration skipped:', e.message)
       );
+      const { runCorporateClaimsCmoAdjudicationMigration } = await import('../migrations/corporate-claims-cmo-adjudication.migration.js');
+      await runCorporateClaimsCmoAdjudicationMigration().catch(e =>
+        console.warn('⚠️  corporate-claims-cmo-adjudication migration skipped:', e.message)
+      );
       const { runAiPromptVersionsMigration } = await import('../migrations/ai-prompt-versions.migration.js');
       await runAiPromptVersionsMigration().catch(e =>
         console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)

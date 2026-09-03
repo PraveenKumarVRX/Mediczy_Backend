@@ -2176,11 +2176,19 @@ const CLAIMS_SELECT = `
          COALESCE(ic.insurance_provider, 'Not specified') AS provider,
          to_char(COALESCE((ic.hospitalization_details->>'serviceDate')::date, ic.submitted_date), 'YYYY-MM-DD') AS "serviceDate",
          COALESCE(ic.notes, '') AS description,
-         COALESCE(jsonb_array_length(ic.documents), 0) AS documents
+         COALESCE(jsonb_array_length(ic.documents), 0) AS documents,
+         ic.adjudication_route AS "adjudicationRoute",
+         ic.approved_amount AS "approvedAmount",
+         ic.rejection_reason AS "rejectionReason",
+         ic.cmo_review_status AS "cmoReviewStatus",
+         ic.cmo_notes AS "cmoNotes",
+         to_char(ic.cmo_reviewed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "cmoReviewedAt",
+         COALESCE(NULLIF(TRIM(CONCAT(cmo."firstName", ' ', cmo."lastName")), ''), cmo.email) AS "cmoReviewerName"
     FROM insurance_claims ic
     JOIN user_associations ua ON ua."userId" = ic.patient_id AND ua."entityType" = 'corporate'
     LEFT JOIN users u ON u.id = ic.patient_id
     LEFT JOIN corporate_employees ce ON ce."userId" = ic.patient_id AND ce.corporate_id = ua."entityId"
+    LEFT JOIN users cmo ON cmo.id = ic.cmo_reviewed_by
    WHERE ua."entityId" = :corporateId`;
 
 // insurance_claims has row-level security (organization_id = current_org_id()
@@ -2218,7 +2226,28 @@ router.get('/claims/management', authCorporate, async (req, res) => {
   }
 });
 
+// Claims adjudication is deliberately restricted: an external TPA (via
+// insurance_claims.tpa_id / the tpa.route.js integrations, once a real
+// provider is configured) can adjudicate, or the corporate's own
+// Chief Medical Officer (role: corporate_cmo) can scrutinize claims
+// directly on the corporate's behalf. Plain hr_staff — and any other
+// authCorporate session — can view claims but not decide them; the
+// super-HR (corporate_admin) and the root corporate login retain
+// override access since they're accountable for the whole account.
+const CLAIMS_ADJUDICATOR_ROLES = ['corporate', 'corporate_admin', 'corporate_cmo'];
+function requireClaimsAdjudicator(req, res) {
+  if (!CLAIMS_ADJUDICATOR_ROLES.includes(req.user?.role)) {
+    res.status(403).json({
+      success: false,
+      message: 'Only the Chief Medical Officer or the corporate account owner can decide claims',
+    });
+    return false;
+  }
+  return true;
+}
+
 router.put('/claims/management/:id', authCorporate, async (req, res) => {
+  if (!requireClaimsAdjudicator(req, res)) return;
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
   const { status } = req.body || {};
@@ -2247,6 +2276,79 @@ router.put('/claims/management/:id', authCorporate, async (req, res) => {
               updated_at = NOW()
         WHERE id = :claimId`,
       { replacements: { status, claimId: owned[0].id }, transaction: tx }
+    );
+
+    const [rows] = await postgresSequelize.query(`${CLAIMS_SELECT} AND ic.claim_number = :id`, { replacements: { corporateId, id }, transaction: tx });
+    await tx.commit();
+    return res.json({ success: true, data: { claim: rows[0] } });
+  } catch (err) {
+    await tx.rollback().catch(() => {});
+    throw err;
+  }
+});
+
+// Chief Medical Officer claim scrutiny — the corporate-internal alternative
+// to routing a claim through an external TPA. Records a decision with an
+// approved amount and notes; deliberately does not trigger any wallet
+// settlement or payment (that stays a manual, out-of-band step — see the
+// 2026-09-03 corporate wellness plan doc, Section 9 on privacy/compliance,
+// for why HR-side automation stays conservative around clinical/financial
+// decisions until there's a real consent/audit layer in front of it).
+router.post('/claims/management/:id/scrutinize', authCorporate, async (req, res) => {
+  if (!requireClaimsAdjudicator(req, res)) return;
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const reviewerId = req.user?.userId || req.user?.id;
+  const { id } = req.params;
+  const { decision, approvedAmount, notes } = req.body || {};
+
+  const DECISIONS = ['approved', 'rejected', 'partially_approved'];
+  if (!DECISIONS.includes(decision)) {
+    return res.status(400).json({ success: false, message: `decision must be one of: ${DECISIONS.join(', ')}` });
+  }
+  if ((decision === 'approved' || decision === 'partially_approved') && !(Number(approvedAmount) > 0)) {
+    return res.status(400).json({ success: false, message: 'approvedAmount is required and must be greater than zero for an approval' });
+  }
+
+  const tx = await postgresSequelize.transaction();
+  try {
+    await setRlsContext(tx, { orgId: corporateId, userId: 0 });
+
+    const [owned] = await postgresSequelize.query(
+      `SELECT ic.id, ic.claim_amount FROM insurance_claims ic
+         JOIN user_associations ua ON ua."userId" = ic.patient_id AND ua."entityType" = 'corporate'
+        WHERE ic.claim_number = :id AND ua."entityId" = :corporateId`,
+      { replacements: { id, corporateId }, transaction: tx }
+    );
+    if (!owned[0]) {
+      await tx.rollback();
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const isApproval = decision === 'approved' || decision === 'partially_approved';
+    const mappedStatus = isApproval ? 'approved' : 'rejected';
+    const clampedAmount = isApproval ? Math.min(Number(approvedAmount), Number(owned[0].claim_amount)) : null;
+
+    await postgresSequelize.query(
+      `UPDATE insurance_claims SET
+              status = :mappedStatus::varchar,
+              approved_amount = CASE WHEN :isApproval::boolean THEN :clampedAmount::numeric ELSE approved_amount END,
+              approved_at = CASE WHEN :isApproval::boolean THEN NOW() ELSE approved_at END,
+              rejected_at = CASE WHEN :isApproval::boolean THEN rejected_at ELSE NOW() END,
+              rejection_reason = CASE WHEN :isApproval::boolean THEN rejection_reason ELSE :notes::text END,
+              adjudication_route = 'corporate_cmo',
+              cmo_reviewed_by = :reviewerId::integer,
+              cmo_review_status = :decision::varchar,
+              cmo_notes = :notes::text,
+              cmo_reviewed_at = NOW(),
+              updated_at = NOW()
+        WHERE id = :claimId::integer`,
+      {
+        replacements: {
+          mappedStatus, isApproval, clampedAmount, notes: notes || null,
+          reviewerId, decision, claimId: owned[0].id,
+        },
+        transaction: tx,
+      }
     );
 
     const [rows] = await postgresSequelize.query(`${CLAIMS_SELECT} AND ic.claim_number = :id`, { replacements: { corporateId, id }, transaction: tx });

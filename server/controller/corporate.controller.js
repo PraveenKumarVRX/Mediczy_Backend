@@ -89,7 +89,7 @@ export const corporateLogin = async (req, res) => {
         where: {
           email: normalizedEmail,
           organization_type: 'corporate',
-          role: { [Op.in]: ['corporate_admin', 'hr_staff'] },
+          role: { [Op.in]: ['corporate_admin', 'hr_staff', 'corporate_cmo'] },
           status: 'active',
         },
       });
@@ -128,7 +128,7 @@ export const corporateLogin = async (req, res) => {
             corporateId: scopedCorporate.id,
             email: hrUser.email,
             role: hrUser.role,
-            userType: 'corporate', // ring-fencing key — both corporate_admin and hr_staff sub-users are corporate-portal users
+            userType: 'corporate', // ring-fencing key — corporate_admin, hr_staff, and corporate_cmo sub-users are all corporate-portal users
             organization_id: hrUser.organization_id,
             organization_type: hrUser.organization_type,
             tenant_id: hrUser.tenant_id,
