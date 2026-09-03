@@ -163,14 +163,32 @@ try {
   record('corporate_ohc on benefit-wallet settle → reaches lookup (400 "not found", not 403)',
     ohcSettle.status === 400 && /not found/i.test(ohcSettle.json?.message || ''), `status=${ohcSettle.status} msg=${ohcSettle.json?.message}`);
 
-  // ── 9. Occupational-health fitness-certificate: hr_staff blocked, no data
-  // created for anyone in this smoke run (POST only exercised for the 403 case) ─
+  // ── 9. Occupational-health fitness-certificate. Route mounts at
+  // /api/v1/occupational-health, a different top-level prefix from
+  // /api/corporate — ringFencingMiddleware's "corporate" portal allowlist
+  // must explicitly include it or EVERY corporate-portal token (OHC/CMO
+  // included) gets a generic 403 from ring-fencing itself before ever
+  // reaching requireClinicalIssuer. Both checks below distinguish the two:
+  // hr_staff must get requireClinicalIssuer's own message (proves it got
+  // past ring-fencing and was rejected by the role check specifically),
+  // and corporate_ohc must get PAST both to the real service function —
+  // asserted via the DB-level error a genuinely empty body produces
+  // (patientId is NOT NULL / has no replacement entry), never a 403 or 500
+  // from ring-fencing. Neither call creates a real fitness certificate.
   const hrStaffFitness = await call('POST', '/v1/occupational-health/fitness-certificate', {
     token: hrStaffToken,
     body: {},
   });
-  record('hr_staff on fitness-certificate → 403 (clinical issuer gate)',
-    hrStaffFitness.status === 403, `status=${hrStaffFitness.status} msg=${hrStaffFitness.json?.message}`);
+  record('hr_staff on fitness-certificate → 403 from requireClinicalIssuer (not ring-fencing)',
+    hrStaffFitness.status === 403 && /OHC\/CMO/i.test(hrStaffFitness.json?.message || ''),
+    `status=${hrStaffFitness.status} msg=${hrStaffFitness.json?.message}`);
+
+  const ohcFitness = await call('POST', '/v1/occupational-health/fitness-certificate', {
+    token: ohcToken,
+    body: {},
+  });
+  record('corporate_ohc on fitness-certificate → past ring-fencing AND role gate (400 from empty body, not 403)',
+    ohcFitness.status === 400, `status=${ohcFitness.status} msg=${ohcFitness.json?.message}`);
 
 } catch (err) {
   failures += 1;

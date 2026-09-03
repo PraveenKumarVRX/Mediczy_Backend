@@ -379,7 +379,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/doctors',  // Allow browsing doctors
       '/api/appointments',  // Allow user appointment management
       '/api/chat',  // Allow chat functionality
-      '/api/hr'  // HR super-user / sub-user portal (facility/branch/location-scoped)
+      '/api/hr',  // HR super-user / sub-user portal (facility/branch/location-scoped)
+      '/api/v1/occupational-health'  // Corporate OHC/CMO — fitness certs, return-to-work, referrals, eligibility
     ],
     tokenField: 'corporateId'
   },
