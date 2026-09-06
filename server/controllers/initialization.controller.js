@@ -220,6 +220,18 @@ class InitializationController {
       await runCorporateClaimsCmoAdjudicationMigration().catch(e =>
         console.warn('⚠️  corporate-claims-cmo-adjudication migration skipped:', e.message)
       );
+      const { runCorporateBenefitTiersMigration } = await import('../migrations/corporate-benefit-tiers.migration.js');
+      await runCorporateBenefitTiersMigration().catch(e =>
+        console.warn('⚠️  corporate-benefit-tiers migration skipped:', e.message)
+      );
+      const { runCorporateBenefitNetworkProvidersMigration } = await import('../migrations/corporate-benefit-network-providers.migration.js');
+      await runCorporateBenefitNetworkProvidersMigration().catch(e =>
+        console.warn('⚠️  corporate-benefit-network-providers migration skipped:', e.message)
+      );
+      const { runCorporateQuotesMigration } = await import('../migrations/corporate-quotes.migration.js');
+      await runCorporateQuotesMigration().catch(e =>
+        console.warn('⚠️  corporate-quotes migration skipped:', e.message)
+      );
       const { runAiPromptVersionsMigration } = await import('../migrations/ai-prompt-versions.migration.js');
       await runAiPromptVersionsMigration().catch(e =>
         console.warn('⚠️  ai-prompt-versions migration skipped:', e.message)

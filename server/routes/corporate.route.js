@@ -29,6 +29,9 @@ import {
   listCorporateBenefitPrograms,
   requestBenefitAuthorization,
   settleBenefitAuthorization,
+  selectBenefitWalletTier,
+  listBenefitNetworkProviders,
+  resolveEmployeeCorporate,
 } from '../services/corporate-benefit-wallet.service.js';
 
 const router = express.Router();
@@ -642,6 +645,33 @@ router.get('/benefit-wallet/programs', authCorporate, async (req, res) => {
   }
 });
 
+// HR-facing cashless network directory (dental/vision/vaccination/etc providers).
+router.get('/benefit-wallet/network-providers', authCorporate, async (req, res) => {
+  try {
+    const corporateId = req.user?.corporateId || req.user?.organization_id;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
+
+    const providers = await listBenefitNetworkProviders(corporateId, req.query.category || null);
+    return res.json({ success: true, data: { providers } });
+  } catch (error) {
+    console.error('[corporate] GET /benefit-wallet/network-providers error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load network providers', error: error.message });
+  }
+});
+
+// Employee-facing version — same directory, no corporate-admin gate.
+router.get('/my-benefit-wallet/network-providers', authUser, async (req, res) => {
+  try {
+    const corp = await resolveEmployeeCorporate(req.user.id);
+    if (!corp) return res.json({ success: true, data: { providers: [] } });
+    const providers = await listBenefitNetworkProviders(corp.corporateId, req.query.category || null);
+    return res.json({ success: true, data: { providers } });
+  } catch (error) {
+    console.error('[corporate] GET /my-benefit-wallet/network-providers error:', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to load network providers', error: error.message });
+  }
+});
+
 router.post('/benefit-wallet/programs', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
@@ -655,7 +685,7 @@ router.post('/benefit-wallet/programs', authCorporate, async (req, res) => {
     return res.status(201).json({ success: true, message: 'Benefit program created', data: { program } });
   } catch (error) {
     console.error('[corporate] POST /benefit-wallet/programs error:', error.message);
-    const status = /required|must be|invalid/i.test(error.message) ? 400 : 500;
+    const status = /required|must be|invalid|must match|greater than zero|duplicate/i.test(error.message) ? 400 : 500;
     return res.status(status).json({ success: false, message: error.message || 'Failed to create benefit program' });
   }
 });
@@ -788,6 +818,25 @@ router.post('/benefit-wallet/authorizations', authUser, async (req, res) => {
     console.error('[corporate] POST /benefit-wallet/authorizations error:', error.message);
     const status = /only for corporate employees|No active|Insufficient|must be/i.test(error.message) ? 400 : 500;
     return res.status(status).json({ success: false, message: error.message || 'Failed to request benefit authorization' });
+  }
+});
+
+// Employee self-service tier upgrade/downgrade — for programs that offer
+// selectable tiers (a base allocation plus one or more optional, higher
+// tiers; whatever amounts the program was actually configured with).
+router.post('/my-benefit-wallet/:walletId/select-tier', authUser, async (req, res) => {
+  try {
+    const walletId = parseInt(req.params.walletId, 10);
+    if (!Number.isInteger(walletId) || walletId <= 0) {
+      return res.status(400).json({ success: false, message: 'Valid wallet ID is required' });
+    }
+    const { tierKey } = req.body || {};
+    const result = await selectBenefitWalletTier(req.user.id, walletId, tierKey);
+    return res.json({ success: true, message: result.unchanged ? 'Already on this tier' : 'Tier updated', data: { wallet: result } });
+  } catch (error) {
+    console.error('[corporate] POST /my-benefit-wallet/:walletId/select-tier error:', error.message);
+    const status = /not found|does not offer|Unknown tier|is required|already used or reserved/i.test(error.message) ? 400 : 500;
+    return res.status(status).json({ success: false, message: error.message || 'Failed to update tier' });
   }
 });
 

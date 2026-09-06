@@ -1590,6 +1590,7 @@ app.use('/api/masterdata', masterdataRouter); // Master data providers (hospital
 // Admin Management Routes
 import adminHospitalsRouter from './routes/admin/hospitals.routes.js';
 import adminLabsRouter from './routes/admin/labs.routes.js';
+import adminCorporateQuotesRouter from './routes/admin/corporate-quotes.routes.js';
 import adminClinicsRouter from './routes/admin/clinics.routes.js';
 import adminPharmaciesRouter from './routes/admin/pharmacies.routes.js';
 import adminDoctorsRouter from './routes/admin/doctors.routes.js';
@@ -1598,6 +1599,7 @@ import drugPriceSyncRouter from './routes/admin/drug-price-sync.route.js';
 
 app.use('/api/admin/hospitals', adminHospitalsRouter); // Admin hospital CRUD operations
 app.use('/api/admin/labs', adminLabsRouter); // Admin lab CRUD operations
+app.use('/api/admin/corporate-quotes', adminCorporateQuotesRouter); // Corporate OPD/wellness wallet quoting tool
 app.use('/api/admin/clinics', adminClinicsRouter); // Admin clinic CRUD operations
 app.use('/api/admin/pharmacies', adminPharmaciesRouter); // Admin pharmacy CRUD operations
 app.use('/api/admin/doctors', adminDoctorsRouter); // Admin doctor CRUD operations

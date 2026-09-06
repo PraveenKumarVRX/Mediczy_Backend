@@ -200,6 +200,7 @@ export async function listCorporateBenefitPrograms(corporateId) {
             p.eligibility,
             p.coverage_rules AS "coverageRules",
             p.network_rules AS "networkRules",
+            p.tier_options AS "tierOptions",
             p.start_date AS "startDate",
             p.end_date AS "endDate",
             p.status,
@@ -231,9 +232,45 @@ export async function listCorporateBenefitPrograms(corporateId) {
     eligibility: safeJson(row.eligibility),
     coverageRules: safeJson(row.coverageRules),
     networkRules: safeJson(row.networkRules),
+    tierOptions: safeJson(row.tierOptions) || [],
     startDate: toDateOnly(row.startDate),
     endDate: toDateOnly(row.endDate),
   }));
+}
+
+/**
+ * Validate and normalize an employee-selectable tier menu.
+ * Returns [] when tierOptionsInput is empty/omitted — a program with no
+ * tiers behaves exactly as before (one flat per_employee_limit for
+ * everyone, set by HR at enrollment time).
+ */
+export function normalizeTierOptions(tierOptionsInput, fallbackAllocatedLimit) {
+  if (!Array.isArray(tierOptionsInput) || tierOptionsInput.length === 0) return [];
+
+  const seenKeys = new Set();
+  const tiers = tierOptionsInput.map((tier, index) => {
+    const key = String(tier.key || tier.tierKey || `tier${index + 1}`).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    if (!key) throw new Error(`Tier ${index + 1} is missing a valid key`);
+    if (seenKeys.has(key)) throw new Error(`Duplicate tier key: ${key}`);
+    seenKeys.add(key);
+
+    const label = String(tier.label || key).trim().slice(0, 80);
+    const allocatedLimit = money(tier.allocatedLimit ?? tier.allocated_limit);
+    if (allocatedLimit <= 0) throw new Error(`Tier "${label}" must have an allocatedLimit greater than zero`);
+
+    return { key, label, allocatedLimit, isDefault: Boolean(tier.isDefault) };
+  });
+
+  tiers.sort((a, b) => a.allocatedLimit - b.allocatedLimit);
+  if (!tiers.some((t) => t.isDefault)) tiers[0].isDefault = true;
+
+  const defaultCount = tiers.filter((t) => t.isDefault).length;
+  if (defaultCount > 1) throw new Error('Only one tier can be marked as default');
+  if (fallbackAllocatedLimit != null && tiers.find((t) => t.isDefault).allocatedLimit !== money(fallbackAllocatedLimit)) {
+    throw new Error('The default tier\'s allocatedLimit must match the program\'s per-employee limit');
+  }
+
+  return tiers;
 }
 
 export async function createCorporateBenefitProgram(corporateId, payload = {}, createdBy = null) {
@@ -242,6 +279,8 @@ export async function createCorporateBenefitProgram(corporateId, payload = {}, c
 
   const perEmployeeLimit = money(payload.perEmployeeLimit ?? payload.per_employee_limit);
   if (perEmployeeLimit <= 0) throw new Error('Per-employee limit must be greater than zero');
+
+  const tierOptions = normalizeTierOptions(payload.tierOptions ?? payload.tier_options, perEmployeeLimit);
 
   const category = normalizeBenefitCategory(payload.category);
   const startDate = toDateOnly(payload.startDate || payload.start_date) || toDateOnly(new Date());
@@ -264,6 +303,7 @@ export async function createCorporateBenefitProgram(corporateId, payload = {}, c
         eligibility,
         coverage_rules,
         network_rules,
+        tier_options,
         start_date,
         end_date,
         status,
@@ -283,6 +323,7 @@ export async function createCorporateBenefitProgram(corporateId, payload = {}, c
         CAST(:eligibility AS jsonb),
         CAST(:coverageRules AS jsonb),
         CAST(:networkRules AS jsonb),
+        CAST(:tierOptions AS jsonb),
         :startDate,
         :endDate,
         CAST(:status AS corporate_benefit_program_status),
@@ -305,6 +346,7 @@ export async function createCorporateBenefitProgram(corporateId, payload = {}, c
         eligibility: JSON.stringify(payload.eligibility || {}),
         coverageRules: JSON.stringify(payload.coverageRules || payload.coverage_rules || {}),
         networkRules: JSON.stringify(payload.networkRules || payload.network_rules || {}),
+        tierOptions: JSON.stringify(tierOptions),
         startDate,
         endDate,
         status: ['draft', 'active', 'paused'].includes(payload.status) ? payload.status : 'active',
@@ -493,13 +535,15 @@ export async function getEmployeeBenefitWalletByCorporateEmployeeId(corporateId,
             w.reserved_amount AS "reservedAmount",
             (w.allocated_limit - w.utilized_amount - w.reserved_amount) AS "remainingAmount",
             w.status,
+            w.tier_key AS "tierKey",
             p.id AS "programId",
             p.name AS "programName",
             p.category::text AS category,
             p.funding_type AS "fundingType",
             p.family_coverage AS "familyCoverage",
             p.coverage_rules AS "coverageRules",
-            p.network_rules AS "networkRules"
+            p.network_rules AS "networkRules",
+            p.tier_options AS "tierOptions"
        FROM employee_benefit_wallets w
        JOIN corporate_benefit_programs p ON p.id = w.program_id
       WHERE w.corporate_id = :corporateId
@@ -528,6 +572,7 @@ export async function getEmployeeBenefitWallet(userId) {
             w.reserved_amount AS "reservedAmount",
             (w.allocated_limit - w.utilized_amount - w.reserved_amount) AS "remainingAmount",
             w.status,
+            w.tier_key AS "tierKey",
             p.id AS "programId",
             p.name AS "programName",
             p.description,
@@ -537,6 +582,7 @@ export async function getEmployeeBenefitWallet(userId) {
             p.max_dependents AS "maxDependents",
             p.coverage_rules AS "coverageRules",
             p.network_rules AS "networkRules",
+            p.tier_options AS "tierOptions",
             p.start_date AS "programStartDate",
             p.end_date AS "programEndDate"
        FROM employee_benefit_wallets w
@@ -560,6 +606,114 @@ export async function getEmployeeBenefitWallet(userId) {
     },
     wallets: rows.map(normalizeWalletRow),
   };
+}
+
+/**
+ * Employee self-service tier upgrade/downgrade for a wallet whose program
+ * offers tier_options (a base allocation plus one or more optional,
+ * higher, employee-selectable tiers — the exact amounts are whatever the
+ * program was configured with, not fixed here). A downgrade below what's
+ * already utilized+reserved is rejected by the wallet's own DB-level
+ * CHECK constraint, not re-validated here.
+ */
+export async function selectBenefitWalletTier(userId, walletId, tierKey) {
+  const normalizedTierKey = String(tierKey || '').trim().toLowerCase();
+  if (!normalizedTierKey) throw new Error('tierKey is required');
+
+  const tx = await postgresSequelize.transaction();
+  try {
+    const rows = await postgresSequelize.query(
+      `SELECT w.id, w.allocated_limit AS "allocatedLimit", w.tier_key AS "tierKey",
+              w.utilized_amount AS "utilizedAmount", w.reserved_amount AS "reservedAmount",
+              p.tier_options AS "tierOptions"
+         FROM employee_benefit_wallets w
+         JOIN corporate_benefit_programs p ON p.id = w.program_id
+        WHERE w.id = :walletId AND w.user_id = :userId
+        FOR UPDATE OF w`,
+      { replacements: { walletId, userId }, type: QueryTypes.SELECT, transaction: tx }
+    );
+    const wallet = firstRow(rows);
+    if (!wallet) throw new Error('Wallet not found');
+
+    const tierOptions = safeJson(wallet.tierOptions) || [];
+    if (tierOptions.length === 0) throw new Error('This benefit program does not offer selectable tiers');
+
+    const tier = tierOptions.find((t) => t.key === normalizedTierKey);
+    if (!tier) throw new Error(`Unknown tier "${normalizedTierKey}". Available: ${tierOptions.map((t) => t.key).join(', ')}`);
+
+    const previousLimit = money(wallet.allocatedLimit);
+    const newLimit = money(tier.allocatedLimit);
+    const inUse = money(wallet.utilizedAmount) + money(wallet.reservedAmount);
+    if (newLimit < inUse) {
+      throw new Error(`Cannot switch to tier "${tier.label}" (₹${newLimit}) — ₹${inUse} is already used or reserved on this wallet`);
+    }
+    if (newLimit === previousLimit && wallet.tierKey === normalizedTierKey) {
+      await tx.rollback();
+      return { walletId: Number(walletId), tierKey: normalizedTierKey, allocatedLimit: newLimit, unchanged: true };
+    }
+
+    await postgresSequelize.query(
+      `UPDATE employee_benefit_wallets
+          SET allocated_limit = :newLimit, tier_key = :tierKey, updated_at = NOW()
+        WHERE id = :walletId`,
+      { replacements: { newLimit, tierKey: normalizedTierKey, walletId }, transaction: tx }
+    );
+
+    await postgresSequelize.query(
+      `INSERT INTO corporate_benefit_wallet_transactions (
+          wallet_id, transaction_type, amount, previous_balance, new_balance,
+          reference_type, reference_id, notes, metadata, created_by, created_at
+       ) VALUES (
+          :walletId, 'adjustment', :amount, :previousBalance, :newBalance,
+          'tier_selection', :tierKey, :notes, CAST(:metadata AS jsonb), :userId, NOW()
+       )`,
+      {
+        replacements: {
+          walletId,
+          amount: Math.abs(newLimit - previousLimit),
+          previousBalance: previousLimit,
+          newBalance: newLimit,
+          tierKey: normalizedTierKey,
+          notes: `Employee ${newLimit >= previousLimit ? 'upgraded' : 'downgraded'} to tier "${tier.label}"`,
+          metadata: JSON.stringify({ fromTier: wallet.tierKey, toTier: normalizedTierKey, previousLimit, newLimit }),
+          userId,
+        },
+        transaction: tx,
+      }
+    );
+
+    await tx.commit();
+    return { walletId: Number(walletId), tierKey: normalizedTierKey, allocatedLimit: newLimit, previousLimit };
+  } catch (error) {
+    await tx.rollback().catch(() => {});
+    throw error;
+  }
+}
+
+/**
+ * Cashless network provider directory for a benefit category — the
+ * shared/global network (corporate_id IS NULL) plus any provider this
+ * specific corporate has negotiated on its own. Reimbursement-style
+ * requests (employee types a provider name that isn't in the directory)
+ * keep working unchanged; this just gives HR/employees a real list to
+ * pick from when one exists.
+ */
+export async function listBenefitNetworkProviders(corporateId, category = null) {
+  const normalizedCategory = category ? normalizeBenefitCategory(category) : null;
+  const rows = await postgresSequelize.query(
+    `SELECT id, category::text AS category, name, provider_type AS "providerType",
+            address, city, phone, email, is_cashless AS "isCashless", rate_card AS "rateCard"
+       FROM corporate_benefit_network_providers
+      WHERE status = 'active'
+        AND (corporate_id IS NULL OR corporate_id = :corporateId)
+        ${normalizedCategory ? 'AND category = CAST(:category AS corporate_benefit_category)' : ''}
+      ORDER BY corporate_id NULLS LAST, name`,
+    {
+      replacements: { corporateId, ...(normalizedCategory ? { category: normalizedCategory } : {}) },
+      type: QueryTypes.SELECT,
+    }
+  );
+  return rows.map((row) => ({ ...row, rateCard: safeJson(row.rateCard) || {} }));
 }
 
 export async function listCorporateBenefitAuthorizations(corporateId, filters = {}) {
@@ -641,6 +795,8 @@ function normalizeWalletRow(row) {
     status: row.status,
     coverageRules: safeJson(row.coverageRules),
     networkRules: safeJson(row.networkRules),
+    tierKey: row.tierKey || null,
+    tierOptions: safeJson(row.tierOptions) || [],
   };
 }
 
@@ -1015,6 +1171,7 @@ export async function requestBenefitAuthorization(userId, payload = {}) {
     const authorizationCode = `CBW-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
     const providerType = payload.providerType ? String(payload.providerType).slice(0, 40) : null;
     const providerId = Number.isFinite(Number(payload.providerId)) ? Number(payload.providerId) : null;
+    const networkProviderId = Number.isFinite(Number(payload.networkProviderId)) ? Number(payload.networkProviderId) : null;
     const providerName = payload.providerName ? String(payload.providerName).slice(0, 255) : null;
     const serviceType = payload.serviceType ? String(payload.serviceType).slice(0, 160) : null;
     const validTo = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -1030,6 +1187,7 @@ export async function requestBenefitAuthorization(userId, payload = {}) {
           approved_amount,
           provider_type,
           provider_id,
+          network_provider_id,
           provider_name,
           service_type,
           status,
@@ -1049,6 +1207,7 @@ export async function requestBenefitAuthorization(userId, payload = {}) {
           :requestedAmount,
           :providerType,
           :providerId,
+          :networkProviderId,
           :providerName,
           :serviceType,
           'approved',
@@ -1070,6 +1229,7 @@ export async function requestBenefitAuthorization(userId, payload = {}) {
           requestedAmount,
           providerType,
           providerId,
+          networkProviderId,
           providerName,
           serviceType,
           authorizationCode,
