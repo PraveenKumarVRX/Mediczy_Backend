@@ -369,6 +369,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: Package, label: 'Plans', path: '/admin/corporate-plans', color: 'text-purple-500', bg: 'bg-purple-500/10' },
         { icon: HeartPulse, label: 'Health Packages', path: '/admin/corporate-health-packages', color: 'text-red-500', bg: 'bg-red-500/10' },
         { icon: Users, label: 'Employees', path: '/admin/corporate-employees', color: 'text-blue-600', bg: 'bg-blue-600/10' },
+        { icon: Calculator, label: 'Quote Calculator', path: '/admin/corporate-quote-calculator', color: 'text-violet-500', bg: 'bg-violet-500/10' },
       ]
     },
     {

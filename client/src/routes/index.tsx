@@ -172,6 +172,7 @@ const CorporatesManagement     = lazy(() => import("@/pages/admin/CorporatesMana
 const CorporateHealthPackages  = lazy(() => import("@/pages/admin/CorporateHealthPackages"));
 const CorporateEmployeesManagement = lazy(() => import("@/pages/admin/CorporateEmployeesManagement"));
 const CorporatePlansManagement = lazy(() => import("@/pages/admin/CorporatePlansManagement"));
+const CorporateQuoteCalculator = lazy(() => import("@/pages/admin/CorporateQuoteCalculator"));
 const AdminPlans               = lazy(() => import("@/pages/admin/AdminPlans"));
 const AdminInsurance           = lazy(() => import("@/pages/admin/AdminInsurance"));
 const AdminWorkflowAutomation  = lazy(() => import("@/pages/admin/AdminWorkflowAutomation"));
@@ -1413,6 +1414,7 @@ const AppRoutes = () => {
         <Route path="/admin/corporate-health-packages" element={<AdminRoute><CorporateHealthPackages /></AdminRoute>} />
         <Route path="/admin/corporate-employees" element={<AdminRoute><CorporateEmployeesManagement /></AdminRoute>} />
         <Route path="/admin/corporate-plans"     element={<AdminRoute><CorporatePlansManagement /></AdminRoute>} />
+        <Route path="/admin/corporate-quote-calculator" element={<AdminRoute><CorporateQuoteCalculator /></AdminRoute>} />
         <Route path="/admin/pharmacies"          element={<AdminRoute><PharmaciesManagement /></AdminRoute>} />
         <Route path="/admin/homecare"            element={<AdminRoute><HomecareManagement /></AdminRoute>} />
         <Route path="/admin/ambulance"           element={<AdminRoute><AmbulanceManagement /></AdminRoute>} />
