@@ -8,6 +8,39 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, FileCheck } from 'lucide-react';
 import api from '@/utils/api';
 
+const stringifyLoginError = (value: unknown): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (value instanceof Error) return value.message;
+  if (typeof value === 'object') {
+    const maybeMessage = (value as { message?: unknown; error?: unknown }).message
+      || (value as { message?: unknown; error?: unknown }).error;
+    if (typeof maybeMessage === 'string') return maybeMessage;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+};
+
+const retryAfterText = (retryAfter: unknown): string => {
+  const seconds = Number(retryAfter);
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds < 60) return ` Please retry after ${seconds} seconds.`;
+  return ` Please retry after ${Math.ceil(seconds / 60)} minutes.`;
+};
+
+const tpaFunctionHighlights = [
+  'Claim submission & tracking',
+  'Cashless pre-auth decisions',
+  'E-card and eligibility checks',
+  'Network hospital search',
+  'Document AI and fraud guard',
+  'Weekly MIS and grievances',
+];
+
 const TpaLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -62,16 +95,18 @@ const TpaLogin = () => {
     setError(null);
     setLoading(true);
 
-    console.log('TPA login attempt:', { email, password: '***' });
+    const normalizedEmail = email.trim().toLowerCase();
+    console.log('TPA login attempt:', { email: normalizedEmail, password: '***' });
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
     try {
       // Add timeout to prevent long waits
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
       const { data } = await api.post(
         '/tpa/login',
-        { email, password },
+        { email: normalizedEmail, password },
         { signal: controller.signal, skipAuth: true }
       );
 
@@ -134,19 +169,29 @@ const TpaLogin = () => {
       }
 
       const status = err?.response?.status;
-      const serverMessage = err?.response?.data?.message || err?.response?.data?.error;
-      const message = serverMessage || err?.message || 'Login failed. Please try again.';
+      const responseData = err?.response?.data;
+      const rawServerMessage = responseData?.message || responseData?.error;
+      const message = stringifyLoginError(rawServerMessage || err?.message || 'Login failed. Please try again.');
+      const lowerMessage = message.toLowerCase();
 
-      if (status === 401 || message.includes('401') || message.includes('Unauthorized')) {
+      if (status === 429) {
+        const retryAfter = err?.response?.headers?.['retry-after'] || responseData?.retryAfter || responseData?.error?.retryAfter;
+        setError(`Too many login attempts.${retryAfterText(retryAfter)} If this was caused by repeated failed tries, wait briefly and try again.`);
+      } else if (status === 401 || lowerMessage.includes('401') || lowerMessage.includes('unauthorized')) {
         setError('Invalid email or password');
-      } else if (status === 500 || message.includes('500') || message.includes('Server')) {
+      } else if (status === 403) {
+        setError(message || 'TPA account is not active. Please contact administrator.');
+      } else if (status === 400) {
+        setError(message || 'Email and password are required.');
+      } else if (status === 500 || lowerMessage.includes('500') || lowerMessage.includes('server')) {
         setError('Server error. Please try again later.');
-      } else if (message.includes('Network') || message.includes('ERR_NETWORK')) {
+      } else if (lowerMessage.includes('network') || lowerMessage.includes('err_network')) {
         setError('Unable to connect to server. Please check your connection.');
       } else {
         setError(message);
       }
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -165,7 +210,7 @@ const TpaLogin = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50 relative overflow-hidden font-sans">
+    <div className="min-h-screen flex items-center justify-center !bg-slate-50 !text-slate-900 relative overflow-hidden font-sans [color-scheme:light]">
       {/* Background Elements */}
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute -top-[30%] -left-[10%] w-[70%] h-[70%] rounded-full bg-purple-100/40 blur-3xl"></div>
@@ -187,19 +232,19 @@ const TpaLogin = () => {
           >
             <FileCheck className="h-8 w-8 text-white" />
           </motion.div>
-          <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
+          <h2 className="text-3xl font-bold !text-slate-900 tracking-tight">
             TPA Portal
           </h2>
-          <p className="mt-2 text-slate-500">
+          <p className="mt-2 !text-slate-500">
             Third Party Administrator Dashboard
           </p>
         </div>
 
-        <Card className="border-0 shadow-2xl shadow-slate-200/50 bg-white/80 backdrop-blur-xl overflow-hidden">
+        <Card className="border-0 shadow-2xl shadow-slate-200/50 !bg-white/90 !text-slate-900 backdrop-blur-xl overflow-hidden">
           <CardHeader className="pb-0">
-            <div className="flex items-center justify-center gap-2 py-2 px-4 bg-purple-50/50 rounded-full w-fit mx-auto mb-2">
+            <div className="flex items-center justify-center gap-2 py-2 px-4 !bg-purple-50 rounded-full w-fit mx-auto mb-2">
               <Shield className="h-4 w-4 text-purple-600" />
-              <span className="text-xs font-semibold text-purple-700 uppercase tracking-wider">Secure TPA Access</span>
+              <span className="text-xs font-semibold !text-purple-700 uppercase tracking-wider">Secure TPA Access</span>
             </div>
           </CardHeader>
           <CardContent className="pt-6">
@@ -209,7 +254,7 @@ const TpaLogin = () => {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                 >
-                  <Alert className="border-red-100 bg-red-50/50 text-red-800">
+                  <Alert className="!border-red-100 !bg-red-50 !text-red-800">
                     <AlertDescription className="flex items-center gap-2 text-sm font-medium">
                       <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                       {error}
@@ -220,7 +265,7 @@ const TpaLogin = () => {
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
-                  <label htmlFor="email" className="text-sm font-medium text-slate-700 ml-1">
+                  <label htmlFor="email" className="text-sm font-medium !text-slate-700 ml-1">
                     Email Address
                   </label>
                   <div className="relative group">
@@ -233,13 +278,13 @@ const TpaLogin = () => {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="tpa@mediczy.com"
-                      className="h-11 bg-slate-50 border-slate-200 focus:bg-white focus:border-purple-500 focus:ring-purple-500/20 transition-all pl-4 text-slate-900 placeholder:text-slate-400 dark:text-white"
+                      className="h-11 !bg-white !border-slate-300 focus:!bg-white focus:!border-purple-500 focus:!ring-purple-500/20 transition-all pl-4 !text-slate-950 !caret-purple-700 !placeholder-slate-400 dark:!text-slate-950"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-1.5">
-                  <label htmlFor="password" className="text-sm font-medium text-slate-700 ml-1">
+                  <label htmlFor="password" className="text-sm font-medium !text-slate-700 ml-1">
                     Password
                   </label>
                   <div className="relative group">
@@ -252,12 +297,12 @@ const TpaLogin = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="h-11 bg-slate-50 border-slate-200 focus:bg-white focus:border-purple-500 focus:ring-purple-500/20 transition-all pr-12 pl-4 text-slate-900 placeholder:text-slate-400 dark:text-white"
+                      className="h-11 !bg-white !border-slate-300 focus:!bg-white focus:!border-purple-500 focus:!ring-purple-500/20 transition-all pr-12 pl-4 !text-slate-950 !caret-purple-700 !placeholder-slate-400 dark:!text-slate-950"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100"
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 !text-slate-500 hover:!text-slate-700 transition-colors p-1 rounded-md hover:!bg-slate-100"
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
@@ -286,12 +331,21 @@ const TpaLogin = () => {
           </CardContent>
         </Card>
 
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {tpaFunctionHighlights.map((item) => (
+            <div key={item} className="flex items-center gap-2 rounded-xl !bg-white/80 border !border-slate-200 px-3 py-2 shadow-sm">
+              <CheckCircle2 className="h-4 w-4 text-purple-600 flex-shrink-0" />
+              <span className="text-xs font-medium !text-slate-700">{item}</span>
+            </div>
+          ))}
+        </div>
+
         <div className="mt-8 text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/50 backdrop-blur-sm border border-slate-200/50 shadow-sm">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full !bg-white/80 backdrop-blur-sm border !border-slate-200 shadow-sm">
             <CheckCircle2 className="w-3 h-3 text-purple-500" />
-            <span className="text-xs font-medium text-slate-600">End-to-End Encrypted Connection</span>
+            <span className="text-xs font-medium !text-slate-600">End-to-End Encrypted Connection</span>
           </div>
-          <p className="mt-4 text-xs text-slate-400">
+          <p className="mt-4 text-xs !text-slate-500">
             © {new Date().getFullYear()} Mediczy Healthcare Platform. All rights reserved.
           </p>
         </div>

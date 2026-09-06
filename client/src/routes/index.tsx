@@ -527,7 +527,11 @@ const CorporateHrTeam                = lazy(() => import("@/pages/corporate/Corp
 // ─── TPA ─────────────────────────────────────────────────────────────────────
 const TpaLogin               = lazy(() => import("@/pages/tpa/TpaLogin"));
 const TPADashboard           = lazy(() => import("@/pages/tpa/TPADashboard"));
+const TPAFunctions           = lazy(() => import("@/pages/tpa/TPAFunctions"));
+const TPABenefitEstimator    = lazy(() => import("@/pages/tpa/TPABenefitEstimator"));
+const TPAOperationsWorkbench = lazy(() => import("@/pages/tpa/TPAOperationsWorkbench"));
 const TPAClaims              = lazy(() => import("@/pages/tpa/TPAClaims"));
+const TPAClaimDetail         = lazy(() => import("@/pages/tpa/TPAClaimDetail"));
 const TPAMembers             = lazy(() => import("@/pages/tpa/TPAMembers"));
 const TPACommunicationHub    = lazy(() => import("@/pages/tpa/TPACommunicationHub"));
 const TPAHeritageIntegration = lazy(() => import("@/pages/tpa/TPAHeritageIntegration"));
@@ -536,11 +540,16 @@ const TPAProvidersPage       = lazy(() => import("@/pages/tpa/TPAProvidersPage")
 const TPAClaimSubmissionPage = lazy(() => import("@/pages/tpa/TPAClaimSubmissionPage"));
 const TPAECardPage           = lazy(() => import("@/pages/tpa/TPAECardPage"));
 const TPAHospitalsPage       = lazy(() => import("@/pages/tpa/TPAHospitalsPage"));
-const TPAOperationsWorkbench = lazy(() => import("@/pages/tpa/TPAOperationsWorkbench"));
 
 const _TPAPlaceholders = () => import("@/pages/tpa/TPAPlaceholders");
 const TPAPolicies   = lazyNamed(_TPAPlaceholders, "TPAPolicies");
 const TPAPreAuth    = lazyNamed(_TPAPlaceholders, "TPAPreAuth");
+const TPAApprovals  = lazyNamed(_TPAPlaceholders, "TPAApprovals");
+const TPAHospitalizationIntimations = lazyNamed(_TPAPlaceholders, "TPAHospitalizationIntimations");
+const TPADocumentIntelligence = lazyNamed(_TPAPlaceholders, "TPADocumentIntelligence");
+const TPAFraudGuard = lazyNamed(_TPAPlaceholders, "TPAFraudGuard");
+const TPAWeeklyMIS = lazyNamed(_TPAPlaceholders, "TPAWeeklyMIS");
+const TPAGrievances = lazyNamed(_TPAPlaceholders, "TPAGrievances");
 const TPAAnalytics  = lazyNamed(_TPAPlaceholders, "TPAAnalytics");
 const TPAReports    = lazyNamed(_TPAPlaceholders, "TPAReports");
 const TPASettings   = lazyNamed(_TPAPlaceholders, "TPASettings");
@@ -1492,11 +1501,21 @@ const AppRoutes = () => {
         {/* ── TPA ─────────────────────────────────────────────────────── */}
         <Route path="/tpa/login"          element={<TpaLogin />} />
         <Route path="/tpa/dashboard"      element={<TPADashboard />} />
+        <Route path="/tpa/functions"      element={<TPAFunctions />} />
+        <Route path="/tpa/benefit-estimator" element={<TPABenefitEstimator />} />
+        <Route path="/tpa/operations-workbench" element={<TPAOperationsWorkbench />} />
         <Route path="/tpa/claims"         element={<TPAClaims />} />
+        <Route path="/tpa/claims/:claimNumber" element={<TPAClaimDetail />} />
         <Route path="/tpa/corporates"     element={<TPACorporates />} />
         <Route path="/tpa/members"        element={<TPAMembers />} />
         <Route path="/tpa/policies"       element={<TPAPolicies />} />
         <Route path="/tpa/pre-auth"       element={<TPAPreAuth />} />
+        <Route path="/tpa/approvals"      element={<TPAApprovals />} />
+        <Route path="/tpa/hospitalization-intimations" element={<TPAHospitalizationIntimations />} />
+        <Route path="/tpa/document-intelligence" element={<TPADocumentIntelligence />} />
+        <Route path="/tpa/fraud-guard"    element={<TPAFraudGuard />} />
+        <Route path="/tpa/weekly-mis"     element={<TPAWeeklyMIS />} />
+        <Route path="/tpa/grievances"     element={<TPAGrievances />} />
         <Route path="/tpa/analytics"      element={<TPAAnalytics />} />
         <Route path="/tpa/reports"        element={<TPAReports />} />
         <Route path="/tpa/communication"  element={<TPACommunicationHub />} />
@@ -1506,10 +1525,9 @@ const AppRoutes = () => {
         <Route path="/tpa/profile"        element={<TPAProfile />} />
         <Route path="/tpa/integration"    element={<MainLayout><TPAIntegrationPage /></MainLayout>} />
         <Route path="/tpa/providers"      element={<MainLayout><TPAProvidersPage /></MainLayout>} />
-        <Route path="/tpa/claim-submission" element={<MainLayout><TPAClaimSubmissionPage /></MainLayout>} />
-        <Route path="/tpa/ecard"          element={<MainLayout><TPAECardPage /></MainLayout>} />
-        <Route path="/tpa/hospitals"      element={<MainLayout><TPAHospitalsPage /></MainLayout>} />
-        <Route path="/tpa/operations-workbench" element={<MainLayout><TPAOperationsWorkbench /></MainLayout>} />
+        <Route path="/tpa/claim-submission" element={<TPAClaimSubmissionPage />} />
+        <Route path="/tpa/ecard"          element={<TPAECardPage />} />
+        <Route path="/tpa/hospitals"      element={<TPAHospitalsPage />} />
 
         {/* ── Aggregator ──────────────────────────────────────────────── */}
         <Route path="/aggregator/login"         element={<AggregatorLogin />} />

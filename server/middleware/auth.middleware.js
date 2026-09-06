@@ -5,6 +5,7 @@ import nurseModel from "../models/nurse.model.intelligent.js";
 import assistantModel from "../models/assistant.model.intelligent.js";
 import InsuranceBroker from "../models/insurance-broker.model.intelligent.js";
 import { InsuranceCompany } from "../models/insurance-company.model.intelligent.js";
+import { TPA } from "../models/tpa.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import { JWT_CONFIG } from "../config/auth.config.js";
 import UserPostgres from "../models/postgres/user.model.postgres.js";
@@ -381,6 +382,37 @@ export const authUser = async (req, res, next) => {
 
       req.user = { ...insuranceCompany, role: "insurance_company" };
       req.userRole = "insurance_company";
+      return next();
+    }
+
+    if (decoded.role === "tpa" || decoded.role === "tpa_admin") {
+      const tpa = await safeFindByPk(
+        TPA,
+        null,
+        decoded.id,
+        { attributes: ["id", "email", "tpaName", "contactPersonName", "status", "isActive", "phoneNumber"] }
+      );
+
+      if (!tpa) {
+        return res.status(401).json({ message: "TPA account not found" });
+      }
+      if (tpa.status && tpa.status !== "active") {
+        return res.status(403).json({ message: "TPA account is inactive" });
+      }
+      if (tpa.isActive === false) {
+        return res.status(403).json({ message: "TPA account has been disabled" });
+      }
+
+      req.user = {
+        id: tpa.id || decoded.id,
+        email: tpa.email || decoded.email,
+        role: "tpa",
+        userType: "tpa",
+        tpaName: tpa.tpaName,
+        contactPersonName: tpa.contactPersonName,
+        phoneNumber: tpa.phoneNumber,
+      };
+      req.userRole = "tpa";
       return next();
     }
 

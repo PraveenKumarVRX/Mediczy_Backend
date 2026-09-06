@@ -1,10 +1,14 @@
 import ClaimSubmissionUI from "@/components/tpa/ClaimSubmissionUI";
+import TPASidebar from "@/components/tpa/TPASidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, CheckCircle2 } from "lucide-react";
 
 export default function TPAClaimSubmissionPage() {
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="flex h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
+      <TPASidebar />
+      <div className="flex-1 md:ml-64 overflow-auto">
+        <div className="px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       {/* Header */}
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Submit Insurance Claim</h1>
@@ -83,6 +87,8 @@ export default function TPAClaimSubmissionPage() {
           </p>
         </CardContent>
       </Card>
+        </div>
+      </div>
     </div>
   );
 }

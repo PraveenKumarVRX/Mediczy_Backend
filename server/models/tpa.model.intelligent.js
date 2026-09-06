@@ -96,6 +96,11 @@ const TPA = sequelize.define('TPA', {
     type: DataTypes.STRING(20),
     defaultValue: 'active'
   },
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+    field: 'is_active'
+  },
   isVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,

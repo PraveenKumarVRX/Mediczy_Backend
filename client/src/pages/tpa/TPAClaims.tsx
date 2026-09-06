@@ -2,10 +2,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { FileText, Search, Filter, Download, Eye, Clock, CheckCircle, XCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
 import TPASidebar from '@/components/tpa/TPASidebar';
 
 const TPAClaims = () => {
+  const navigate = useNavigate();
   const [claims, setClaims] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -132,7 +134,7 @@ const TPAClaims = () => {
                           </div>
                         </div>
                         <div className="flex gap-2">
-                          <Button size="sm" variant="outline">
+                          <Button size="sm" variant="outline" onClick={() => navigate(`/tpa/claims/${encodeURIComponent(claim.claimNumber || claim.id)}`)}>
                             <Eye className="h-4 w-4 mr-1" />
                             View
                           </Button>

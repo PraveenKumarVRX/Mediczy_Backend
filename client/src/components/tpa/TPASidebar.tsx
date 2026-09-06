@@ -23,7 +23,8 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Link as LinkIcon
+  Link as LinkIcon,
+  BriefcaseBusiness
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -50,8 +51,10 @@ const TPASidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
     main: true,
+    functions: true,
     operations: true,
     management: true,
+    analytics: true,
     system: true
   });
 
@@ -68,6 +71,25 @@ const TPASidebar = () => {
       label: 'Main Menu',
       items: [
         { icon: LayoutDashboard, label: 'Dashboard', path: '/tpa/dashboard', color: 'text-blue-600', bg: 'bg-blue-500/10' },
+      ]
+    },
+    {
+      id: 'functions',
+      label: 'TPA Functions',
+      icon: Shield,
+      color: 'text-violet-600',
+      items: [
+        { icon: Shield, label: 'Function Hub', path: '/tpa/functions', color: 'text-violet-600', bg: 'bg-violet-500/10' },
+        { icon: BriefcaseBusiness, label: 'Ops Workbench', path: '/tpa/operations-workbench', color: 'text-fuchsia-600', bg: 'bg-fuchsia-500/10' },
+        { icon: FileText, label: 'Submit Claim', path: '/tpa/claim-submission', color: 'text-purple-600', bg: 'bg-purple-500/10' },
+        { icon: Shield, label: 'E-Card', path: '/tpa/ecard', color: 'text-blue-600', bg: 'bg-blue-500/10' },
+        { icon: Building2, label: 'Network Hospitals', path: '/tpa/hospitals', color: 'text-emerald-600', bg: 'bg-emerald-500/10' },
+        { icon: DollarSign, label: 'OOPE Estimator', path: '/tpa/benefit-estimator', color: 'text-amber-600', bg: 'bg-amber-500/10' },
+        { icon: Activity, label: 'Hospital Intimation', path: '/tpa/hospitalization-intimations', color: 'text-orange-600', bg: 'bg-orange-500/10' },
+        { icon: ClipboardList, label: 'Document AI', path: '/tpa/document-intelligence', color: 'text-cyan-600', bg: 'bg-cyan-500/10' },
+        { icon: XCircle, label: 'Fraud Guard', path: '/tpa/fraud-guard', color: 'text-red-600', bg: 'bg-red-500/10' },
+        { icon: BarChart3, label: 'Weekly MIS', path: '/tpa/weekly-mis', color: 'text-indigo-600', bg: 'bg-indigo-500/10' },
+        { icon: HelpCircle, label: 'Grievances', path: '/tpa/grievances', color: 'text-slate-600', bg: 'bg-slate-500/10' },
       ]
     },
     {

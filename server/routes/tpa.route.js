@@ -1,6 +1,10 @@
 import express from 'express';
+import multer from 'multer';
+import crypto from 'crypto';
+import fs from 'fs/promises';
+import path from 'path';
 import { TPA } from '../models/tpa.model.intelligent.js';
-import { Corporate } from '../models/insurance-company.model.intelligent.js';
+import Corporate from '../models/postgres/corporate.model.postgres.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authTPA } from '../middleware/tpa.middleware.js';
 import jwt from 'jsonwebtoken';
@@ -10,11 +14,15 @@ import heritageTPA from '../services/heritage-tpa.service.js';
 import mdIndiaTPA from '../services/mdindia-tpa.service.js';
 import healthIndiaTPA from '../services/healthindia-tpa.service.js';
 import tpaAggregator from '../services/tpa-aggregator.service.js';
+import tpaClaimsLifecycleService from '../services/tpa-claims-lifecycle.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
+const tpaClaimUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+const tpaUploadRoot = path.resolve(process.cwd(), 'uploads', 'tpa-claims');
+
 
 // Test route
 router.get('/test', (req, res) => {
@@ -41,6 +49,45 @@ router.get('/providers', authUser, async (req, res) => {
       message: 'Failed to get TPA providers',
       error: error.message
     });
+  }
+});
+
+/**
+ * GET /api/tpa/ecard/verify/:verificationCode
+ * Authenticated QR verification endpoint for native Mediqzy e-cards
+ */
+router.get('/ecard/verify/:verificationCode', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.verifyECard(req.params.verificationCode);
+    if (!result) {
+      return res.status(404).json({ success: false, verified: false, message: 'E-card verification failed' });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Verify native TPA e-card error:', error);
+    res.status(500).json({ success: false, verified: false, message: 'Failed to verify e-card', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/network-hospitals
+ * Native Mediqzy network hospital intelligence with cashless/package hints
+ */
+router.get('/network-hospitals', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listNetworkHospitals({
+      tpaId: req.user.id,
+      search: req.query.search,
+      city: req.query.city,
+      specialty: req.query.specialty,
+      cashless: req.query.cashless,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('Native TPA network hospital search error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch network hospitals', error: error.message });
   }
 });
 
@@ -358,7 +405,7 @@ router.post('/login', authLimiter, async (req, res) => {
     console.log('Email:', req.body.email);
 
     const { email, password } = req.body;
-    const normalizedEmail = String(email || '').toLowerCase();
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
     if (!email || !password) {
       console.log('Missing email or password');
@@ -411,20 +458,26 @@ router.post('/login', authLimiter, async (req, res) => {
 
     await auditLoginAttempt(req, tpa.id, normalizedEmail, true);
 
+    const tpaUser = {
+      id: tpa.id,
+      tpa_name: tpa.tpaName,
+      tpaName: tpa.tpaName,
+      contact_person_name: tpa.contactPersonName,
+      contactPersonName: tpa.contactPersonName,
+      email: tpa.email,
+      phone_number: tpa.phoneNumber,
+      phoneNumber: tpa.phoneNumber,
+      status: tpa.status,
+      claimsProcessed: tpa.claimsProcessed,
+      role: 'tpa'
+    };
+
     res.json({
       success: true,
       message: 'Login successful',
       token,
-      user: {
-        id: tpa.id,
-        tpa_name: tpa.tpaName,
-        contact_person_name: tpa.contactPersonName,
-        email: tpa.email,
-        phone_number: tpa.phoneNumber,
-        status: tpa.status,
-        claimsProcessed: tpa.claimsProcessed,
-        role: 'tpa'
-      }
+      user: tpaUser,
+      tpa: tpaUser
     });
   } catch (error) {
     console.error('TPA login error:', error);
@@ -498,7 +551,7 @@ router.post('/corporates', authTPA, async (req, res) => {
 
     // Check if corporate already exists
     const existing = await Corporate.findOne({
-      where: { hrContactEmail }
+      where: { email: hrContactEmail }
     });
 
     if (existing) {
@@ -510,20 +563,28 @@ router.post('/corporates', authTPA, async (req, res) => {
 
     const corporate = await Corporate.create({
       companyName,
-      cin,
-      gstin,
-      pan,
+      contactPerson: hrContactName || 'HR Admin',
+      email: hrContactEmail,
+      phoneNumber: hrContactPhone || 'Not provided',
+      gstNumber: gstin,
+      panNumber: pan,
       industry,
       employeeCount: employeeCount || 0,
-      hrContactName,
-      hrContactEmail,
-      hrContactPhone,
-      officeAddress,
-      city,
-      state,
-      pincode,
-      status: 'active',
-      isVerified: false,
+      address: {
+        street: officeAddress || '',
+        city: city || '',
+        state: state || '',
+        pincode: pincode || '',
+        country: 'India'
+      },
+      status: 'Active',
+      metadata: {
+        cin,
+        hrContactName,
+        hrContactEmail,
+        hrContactPhone,
+        isVerified: false
+      },
       onboardedBy: 'tpa',
       onboardedById: req.user.id
     });
@@ -534,10 +595,10 @@ router.post('/corporates', authTPA, async (req, res) => {
       corporate: {
         id: corporate.id,
         companyName: corporate.companyName,
-        cin: corporate.cin,
+        cin: corporate.metadata?.cin || cin,
         industry: corporate.industry,
         employeeCount: corporate.employeeCount,
-        hrContactEmail: corporate.hrContactEmail,
+        hrContactEmail: corporate.email,
         status: corporate.status
       }
     });
@@ -632,71 +693,111 @@ router.get('/dashboard', authTPA, async (req, res) => {
 });
 
 /**
- * GET /api/tpa/claims
- * Get claims list
+ * GET /api/tpa/functions
+ * TPA function catalog shown after login
  */
-router.get('/claims', authTPA, async (req, res) => {
+router.get('/functions', authUser, requireRole('tpa'), async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
-
-    // Mock claims data
-    const allClaims = [
+    const functions = [
       {
-        id: 'CLM-2025-001',
-        employeeName: 'Rajesh Kumar',
-        employeeId: 'EMP-001',
-        corporate: 'Tech Solutions Pvt Ltd',
-        claimType: 'Hospitalization',
-        claimAmount: 125000,
-        claimedDate: '2025-01-15',
-        status: 'pending',
-        policyNumber: 'POL-2025-001',
-        hospitalName: 'Apollo Hospital',
-        treatmentDate: '2025-01-10'
+        id: 'claim_submission',
+        title: 'Submit Claim',
+        description: 'Reimbursement claim intake with member, policy, hospital, amount, and document checklist.',
+        path: '/tpa/claim-submission',
+        status: 'enabled'
       },
       {
-        id: 'CLM-2025-002',
-        employeeName: 'Priya Sharma',
-        employeeId: 'EMP-002',
-        corporate: 'Digital Marketing Inc',
-        claimType: 'OPD',
-        claimAmount: 5000,
-        claimedDate: '2025-01-18',
-        status: 'approved',
-        policyNumber: 'POL-2025-002',
-        hospitalName: 'Max Healthcare',
-        treatmentDate: '2025-01-15'
+        id: 'ecard',
+        title: 'E-Card',
+        description: 'Generate member IDs and issue/download QR-ready e-cards for hospital verification.',
+        path: '/tpa/ecard',
+        status: 'enabled'
       },
       {
-        id: 'CLM-2025-003',
-        employeeName: 'Amit Patel',
-        employeeId: 'EMP-003',
-        corporate: 'Manufacturing Corp',
-        claimType: 'Diagnostic Tests',
-        claimAmount: 8500,
-        claimedDate: '2025-01-20',
-        status: 'approved',
-        policyNumber: 'POL-2025-003',
-        hospitalName: 'Fortis Hospital',
-        treatmentDate: '2025-01-18'
+        id: 'network_hospitals',
+        title: 'Network Hospitals',
+        description: 'Search network hospitals by TPA provider, city, specialty, and cashless availability.',
+        path: '/tpa/hospitals',
+        status: 'enabled'
+      },
+      {
+        id: 'benefit_estimator',
+        title: 'OOPE Estimator',
+        description: 'Estimate payable, co-pay, sub-limit impact, and member out-of-pocket before approval.',
+        path: '/tpa/benefit-estimator',
+        status: 'enabled'
+      },
+      {
+        id: 'hospitalization_intimation',
+        title: 'Hospital Intimation',
+        description: 'Track planned and emergency hospitalisation intimations with SLA status.',
+        path: '/tpa/hospitalization-intimations',
+        status: 'enabled'
+      },
+      {
+        id: 'document_intelligence',
+        title: 'Document AI',
+        description: 'OCR, classify, and validate claim documents before processing.',
+        path: '/tpa/document-intelligence',
+        status: 'enabled'
+      },
+      {
+        id: 'fraud_guard',
+        title: 'Fraud Guard',
+        description: 'Fraud, waste, and abuse alert queue with explainable rule triggers.',
+        path: '/tpa/fraud-guard',
+        status: 'enabled'
+      },
+      {
+        id: 'weekly_mis',
+        title: 'Weekly MIS',
+        description: 'Corporate weekly claims, SLA, settlement, and utilisation reports.',
+        path: '/tpa/weekly-mis',
+        status: 'enabled'
+      },
+      {
+        id: 'grievances',
+        title: 'Grievances',
+        description: 'SLA-backed grievance redressal and escalation management.',
+        path: '/tpa/grievances',
+        status: 'enabled'
       }
     ];
 
-    let filteredClaims = status && status !== 'all'
-      ? allClaims.filter(c => c.status === status)
-      : allClaims;
-
-    const total = filteredClaims.length;
-    const offset = (page - 1) * limit;
-    const paginatedClaims = filteredClaims.slice(offset, offset + parseInt(limit));
-
     res.json({
       success: true,
-      claims: paginatedClaims,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit)
+      functions,
+      stats: {
+        enabledFunctions: functions.length,
+        pendingPreAuth: 1,
+        documentAIQueue: 2,
+        grievanceSLA: '96%'
+      }
     });
+  } catch (error) {
+    console.error('Get TPA functions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch TPA functions',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/claims
+ * Get DB-backed TPA claims list
+ */
+router.get('/claims', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listClaims({
+      tpaId: req.user.id,
+      status: req.query.status,
+      search: req.query.search,
+      page: req.query.page,
+      limit: req.query.limit
+    });
+    res.json(result);
   } catch (error) {
     console.error('Get claims error:', error);
     res.status(500).json({
@@ -708,71 +809,313 @@ router.get('/claims', authTPA, async (req, res) => {
 });
 
 /**
+ * POST /api/tpa/claims
+ * Create a new TPA claim
+ */
+router.post('/claims', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    if (!req.body.policyNumber || !(req.body.employeeName || req.body.patientName)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Policy number and employee/member name are required'
+      });
+    }
+
+    const result = await tpaClaimsLifecycleService.createClaim(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Create TPA claim error:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : 'Failed to create claim',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/claims/:claimNumber
+ * Get claim detail, timeline, documents, shortfalls, and FWA score
+ */
+router.get('/claims/:claimNumber', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.getClaim(req.user.id, req.params.claimNumber);
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Claim not found'
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Get TPA claim detail error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch claim detail',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/documents
+ * Add document metadata and AI/OCR status to a claim
+ */
+router.post('/claims/:claimNumber/documents', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.addDocument(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Claim not found'
+      });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Add TPA claim document error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add claim document',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/files
+ * Upload a claim file into the TPA document vault and link it to document intelligence.
+ */
+router.post('/claims/:claimNumber/files', authUser, requireRole('tpa'), tpaClaimUpload.single('file'), async (req, res) => {
+  try {
+    const safeClaimNumber = String(req.params.claimNumber || '').replace(/[^a-zA-Z0-9-_]/g, '_');
+    let payload = { ...req.body };
+
+    if (req.file) {
+      const checksum = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+      const extension = path.extname(req.file.originalname || '') || '.bin';
+      const storageDir = path.join(tpaUploadRoot, safeClaimNumber);
+      await fs.mkdir(storageDir, { recursive: true });
+      const storageFileName = `${Date.now()}-${checksum.slice(0, 12)}${extension}`;
+      const storagePath = path.join(storageDir, storageFileName);
+      await fs.writeFile(storagePath, req.file.buffer);
+      payload = {
+        ...payload,
+        storageProvider: 'local',
+        storageKey: path.relative(process.cwd(), storagePath),
+        originalFileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileSize: req.file.size,
+        checksumSha256: checksum,
+      };
+    }
+
+    if (!payload.storageKey) {
+      return res.status(400).json({ success: false, message: 'File upload or storageKey is required' });
+    }
+
+    const fileResult = await tpaClaimsLifecycleService.attachClaimFile(req.user.id, req.params.claimNumber, payload, req.user.id);
+    if (!fileResult) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    let documentResult = null;
+    if (payload.classifyAsDocument !== 'false') {
+      documentResult = await tpaClaimsLifecycleService.addDocument(req.user.id, req.params.claimNumber, {
+        documentType: payload.documentType || 'claim_file',
+        fileName: payload.originalFileName || payload.fileName || 'claim-file',
+        fileUrl: fileResult.file.storage_key,
+        ocrStatus: payload.ocrStatus || 'queued',
+        completenessScore: payload.completenessScore || 70,
+        extractedFields: { storageKey: fileResult.file.storage_key, checksumSha256: fileResult.file.checksum_sha256 },
+        missingFields: payload.missingFields || ['ocr_pending'],
+        riskSignal: payload.riskSignal || 'low',
+      }, req.user.id);
+    }
+
+    res.status(201).json({ success: true, file: fileResult.file, document: documentResult?.document || null });
+  } catch (error) {
+    console.error('Upload TPA claim file error:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload claim file', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/document-intelligence
+ * Run claim document checklist/OCR readiness workflow.
+ */
+router.post('/claims/:claimNumber/document-intelligence', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.runDocumentIntelligence(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA document intelligence error:', error);
+    res.status(500).json({ success: false, message: 'Failed to run document intelligence', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/payable-estimate
+ * Apply policy rules to calculate payable/non-payable estimate.
+ */
+router.post('/claims/:claimNumber/payable-estimate', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.calculateClaimPayable(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA payable estimate error:', error);
+    res.status(500).json({ success: false, message: 'Failed to calculate payable estimate', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/approval-requests
+ * Queue maker-checker approval for high-risk/high-value actions.
+ */
+router.post('/claims/:claimNumber/approval-requests', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createApprovalRequest(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA maker-checker request error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create approval request', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/approval-requests/:approvalNumber/decision
+ * Checker approves/rejects a pending maker-checker request.
+ */
+router.post('/approval-requests/:approvalNumber/decision', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.decideApprovalRequest(req.user.id, req.params.approvalNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Approval request not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA maker-checker decision error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to decide approval request', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/notifications
+ * Queue claim-triggered Email/SMS/WhatsApp notification with delivery receipt.
+ */
+router.post('/claims/:claimNumber/notifications', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.queueClaimNotification(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA claim notification error:', error);
+    res.status(500).json({ success: false, message: 'Failed to queue claim notification', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/claims/:claimNumber/enterprise-controls
+ * Get file vault, approvals, notifications, provider handoffs, and interop events.
+ */
+router.get('/claims/:claimNumber/enterprise-controls', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.getEnterpriseControls(req.user.id, req.params.claimNumber);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA enterprise controls error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch enterprise controls', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/shortfalls
+ * Raise claim shortfall/query
+ */
+router.post('/claims/:claimNumber/shortfalls', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.raiseShortfall(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Claim not found'
+      });
+    }
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('Raise TPA claim shortfall error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to raise claim shortfall',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/decision
+ * Approve, reject, settle, or pay a claim
+ */
+router.post('/claims/:claimNumber/decision', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.decideClaim(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Claim not found'
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('TPA claim decision error:', error);
+    res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.statusCode ? error.message : 'Failed to update claim decision',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/fwa-score
+ * Generate Fraud/Waste/Abuse score for a claim
+ */
+router.post('/claims/:claimNumber/fwa-score', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.scoreClaimFraud(req.user.id, req.params.claimNumber);
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Claim not found'
+      });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('TPA claim FWA score error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to score claim fraud risk',
+      error: error.message
+    });
+  }
+});
+
+/**
  * GET /api/tpa/members
- * Get members list
+ * Get native TPA members and dependent coverage snapshots
  */
 router.get('/members', authUser, requireRole('tpa'), async (req, res) => {
   try {
-    const { page = 1, limit = 20, corporateId, search } = req.query;
-
-    // Mock members data
-    const allMembers = [
-      {
-        id: 'MEM-001',
-        employeeId: 'EMP-001',
-        name: 'Rajesh Kumar',
-        email: 'rajesh.k@techsolutions.com',
-        phone: '+91-9876543210',
-        corporate: 'Tech Solutions Pvt Ltd',
-        designation: 'Senior Developer',
-        policyNumber: 'POL-2025-001',
-        policyStartDate: '2025-01-01',
-        policyEndDate: '2025-12-31',
-        coverageAmount: 500000,
-        dependents: 2,
-        status: 'active'
-      },
-      {
-        id: 'MEM-002',
-        employeeId: 'EMP-002',
-        name: 'Priya Sharma',
-        email: 'priya.s@digitalmarketing.com',
-        phone: '+91-9876543211',
-        corporate: 'Digital Marketing Inc',
-        designation: 'Marketing Manager',
-        policyNumber: 'POL-2025-002',
-        policyStartDate: '2025-01-01',
-        policyEndDate: '2025-12-31',
-        coverageAmount: 300000,
-        dependents: 3,
-        status: 'active'
-      }
-    ];
-
-    let filteredMembers = allMembers;
-    if (corporateId) {
-      filteredMembers = filteredMembers.filter(m => m.corporate === corporateId);
-    }
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredMembers = filteredMembers.filter(m =>
-        m.name.toLowerCase().includes(searchLower) ||
-        m.email.toLowerCase().includes(searchLower) ||
-        m.employeeId.toLowerCase().includes(searchLower)
-      );
-    }
-
-    const total = filteredMembers.length;
-    const offset = (page - 1) * limit;
-    const paginatedMembers = filteredMembers.slice(offset, offset + parseInt(limit));
-
-    res.json({
-      success: true,
-      members: paginatedMembers,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit)
+    const result = await tpaClaimsLifecycleService.listMembers({
+      tpaId: req.user.id,
+      page: req.query.page,
+      limit: req.query.limit,
+      corporate: req.query.corporateId || req.query.corporate,
+      search: req.query.search,
+      status: req.query.status,
     });
+    res.json(result);
   } catch (error) {
     console.error('Get members error:', error);
     res.status(500).json({
@@ -780,6 +1123,57 @@ router.get('/members', authUser, requireRole('tpa'), async (req, res) => {
       message: 'Failed to fetch members',
       error: error.message
     });
+  }
+});
+
+/**
+ * GET /api/tpa/members/:memberId/eligibility
+ * Native eligibility and benefit balance check
+ */
+router.get('/members/:memberId/eligibility', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.getMemberEligibility(req.user.id, req.params.memberId);
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Member not found' });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Get member eligibility error:', error);
+    res.status(500).json({ success: false, message: 'Failed to check member eligibility', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/members/:memberId/ecard/generate
+ * Explicitly generate/persist a native Mediqzy e-card payload with QR verification data
+ */
+router.post('/members/:memberId/ecard/generate', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.generateECard(req.user.id, req.params.memberId);
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Member not found for e-card generation' });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Generate native TPA e-card error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate e-card', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/members/:memberId/ecard
+ * Read/generate-compatible endpoint kept for existing clients
+ */
+router.get('/members/:memberId/ecard', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.generateECard(req.user.id, req.params.memberId);
+    if (!result) {
+      return res.status(404).json({ success: false, message: 'Member not found' });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Get native TPA e-card error:', error);
+    res.status(500).json({ success: false, message: 'Failed to get e-card', error: error.message });
   }
 });
 
@@ -846,60 +1240,17 @@ router.get('/policies', authUser, requireRole('tpa'), async (req, res) => {
 
 /**
  * GET /api/tpa/pre-auth
- * Get pre-authorization requests
+ * Get DB-backed pre-authorization requests
  */
 router.get('/pre-auth', authUser, requireRole('tpa'), async (req, res) => {
   try {
-    const { status, page = 1, limit = 20 } = req.query;
-
-    // Mock pre-auth data
-    const allPreAuths = [
-      {
-        id: 'PA-2025-001',
-        employeeName: 'Rajesh Kumar',
-        employeeId: 'EMP-001',
-        corporate: 'Tech Solutions Pvt Ltd',
-        treatmentType: 'Cardiac Surgery',
-        hospitalName: 'Apollo Hospital',
-        doctorName: 'Dr. Sharma',
-        estimatedAmount: 350000,
-        requestedDate: '2025-01-20',
-        plannedAdmissionDate: '2025-02-01',
-        status: 'pending',
-        documents: ['prescription.pdf', 'medical-reports.pdf']
-      },
-      {
-        id: 'PA-2025-002',
-        employeeName: 'Priya Sharma',
-        employeeId: 'EMP-002',
-        corporate: 'Digital Marketing Inc',
-        treatmentType: 'Orthopedic Surgery',
-        hospitalName: 'Max Healthcare',
-        doctorName: 'Dr. Patel',
-        estimatedAmount: 180000,
-        requestedDate: '2025-01-18',
-        plannedAdmissionDate: '2025-01-25',
-        status: 'approved',
-        approvedAmount: 180000,
-        documents: ['prescription.pdf']
-      }
-    ];
-
-    let filteredPreAuths = status && status !== 'all'
-      ? allPreAuths.filter(p => p.status === status)
-      : allPreAuths;
-
-    const total = filteredPreAuths.length;
-    const offset = (page - 1) * limit;
-    const paginatedPreAuths = filteredPreAuths.slice(offset, offset + parseInt(limit));
-
-    res.json({
-      success: true,
-      preAuths: paginatedPreAuths,
-      total,
-      page: parseInt(page),
-      totalPages: Math.ceil(total / limit)
+    const result = await tpaClaimsLifecycleService.listPreAuths({
+      tpaId: req.user.id,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit
     });
+    res.json(result);
   } catch (error) {
     console.error('Get pre-auth error:', error);
     res.status(500).json({
@@ -907,6 +1258,405 @@ router.get('/pre-auth', authUser, requireRole('tpa'), async (req, res) => {
       message: 'Failed to fetch pre-authorizations',
       error: error.message
     });
+  }
+});
+
+/**
+ * GET /api/tpa/underwriting/cases
+ */
+router.get('/underwriting/cases', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listUnderwritingCases({ tpaId: req.user.id, status: req.query.status, page: req.query.page, limit: req.query.limit });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA underwriting list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch underwriting cases', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/underwriting/cases
+ */
+router.post('/underwriting/cases', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createUnderwritingCase(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA underwriting create error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create underwriting case', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/underwriting/cases/:caseNumber/decision
+ */
+router.post('/underwriting/cases/:caseNumber/decision', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.decideUnderwritingCase(req.user.id, req.params.caseNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Underwriting case not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA underwriting decision error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to decide underwriting case', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/member-enrollments
+ */
+router.get('/member-enrollments', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listMemberEnrollments({ tpaId: req.user.id, status: req.query.status, page: req.query.page, limit: req.query.limit });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA enrollment list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch member enrollments', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/member-enrollments
+ */
+router.post('/member-enrollments', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    if (!req.body.policyNumber || !(req.body.employeeName || req.body.memberName)) {
+      return res.status(400).json({ success: false, message: 'Policy number and member name are required' });
+    }
+    const result = await tpaClaimsLifecycleService.createMemberEnrollment(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA enrollment create error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create member enrollment', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/member-enrollments/:enrollmentNumber/decision
+ */
+router.post('/member-enrollments/:enrollmentNumber/decision', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.decideMemberEnrollment(req.user.id, req.params.enrollmentNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Member enrollment not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA enrollment decision error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to decide member enrollment', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/provider-contracts
+ */
+router.get('/provider-contracts', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listProviderContracts({ tpaId: req.user.id, status: req.query.status, page: req.query.page, limit: req.query.limit });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA provider contract list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch provider contracts', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/provider-contracts
+ */
+router.post('/provider-contracts', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.upsertProviderContract(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA provider contract upsert error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to save provider contract', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/provider-contracts/:providerCode/soc
+ */
+router.post('/provider-contracts/:providerCode/soc', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.addProviderSOC(req.user.id, req.params.providerCode, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA provider SOC error:', error);
+    res.status(500).json({ success: false, message: 'Failed to add provider SOC', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/provider-contracts/:providerCode/blacklist
+ */
+router.post('/provider-contracts/:providerCode/blacklist', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.blacklistProvider(req.user.id, req.params.providerCode, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA provider blacklist error:', error);
+    res.status(500).json({ success: false, message: 'Failed to blacklist provider', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/cashless/forms
+ */
+router.get('/cashless/forms', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listCashlessForms({ tpaId: req.user.id, status: req.query.status, page: req.query.page, limit: req.query.limit });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA cashless form list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch cashless forms', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/cashless/forms
+ */
+router.post('/cashless/forms', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createCashlessForm(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA cashless form create error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create cashless form', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/cashless/requests
+ */
+router.get('/cashless/requests', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listCashlessRequests({ tpaId: req.user.id, status: req.query.status, page: req.query.page, limit: req.query.limit });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA cashless request list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch cashless requests', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/cashless/requests
+ */
+router.post('/cashless/requests', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    if (!req.body.policyNumber || !(req.body.patientName || req.body.employeeName)) {
+      return res.status(400).json({ success: false, message: 'Policy number and patient/member name are required' });
+    }
+    const result = await tpaClaimsLifecycleService.createCashlessRequest(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA cashless request create error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create cashless request', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/cashless/requests/:requestNumber/decision
+ */
+router.post('/cashless/requests/:requestNumber/decision', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.decideCashlessRequest(req.user.id, req.params.requestNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Cashless request not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA cashless request decision error:', error);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Failed to decide cashless request', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/provider-claims
+ */
+router.post('/provider-claims', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    if (!req.body.policyNumber || !(req.body.patientName || req.body.employeeName)) {
+      return res.status(400).json({ success: false, message: 'Policy number and patient/member name are required' });
+    }
+    const result = await tpaClaimsLifecycleService.submitProviderClaim(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA provider claim submission error:', error);
+    res.status(500).json({ success: false, message: 'Failed to submit provider claim', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/inward
+ */
+router.post('/claims/:claimNumber/inward', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.registerClaimInward(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA claim inward error:', error);
+    res.status(500).json({ success: false, message: 'Failed to register claim inward', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/scan
+ */
+router.post('/claims/:claimNumber/scan', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.scanClaim(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA claim scan error:', error);
+    res.status(500).json({ success: false, message: 'Failed to scan claim', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/bill-entry
+ */
+router.post('/claims/:claimNumber/bill-entry', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createBillEntry(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA bill entry error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create bill entry', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/adjudication
+ */
+router.post('/claims/:claimNumber/adjudication', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.adjudicateClaim(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA adjudication error:', error);
+    res.status(500).json({ success: false, message: 'Failed to adjudicate claim', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/charge-entry
+ */
+router.post('/claims/:claimNumber/charge-entry', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createChargeEntry(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA charge entry error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create charge entry', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/claims/:claimNumber/payment-advice
+ */
+router.post('/claims/:claimNumber/payment-advice', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createPaymentAdvice(req.user.id, req.params.claimNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA payment advice error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create payment advice', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/claims/:claimNumber/operations
+ */
+router.get('/claims/:claimNumber/operations', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.getClaimOperations(req.user.id, req.params.claimNumber);
+    if (!result) return res.status(404).json({ success: false, message: 'Claim not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA claim operations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch claim operations', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/provider-cases
+ * List hospital/provider handoff cases.
+ */
+router.get('/provider-cases', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listProviderCases({
+      tpaId: req.user.id,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA provider cases list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch provider cases', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/provider-cases
+ * Create provider admission/pre-auth/discharge handoff case.
+ */
+router.post('/provider-cases', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.createProviderCase(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA provider case create error:', error);
+    res.status(500).json({ success: false, message: 'Failed to create provider case', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/provider-cases/:caseNumber/status
+ * Update provider handoff status and final-bill metadata.
+ */
+router.post('/provider-cases/:caseNumber/status', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.updateProviderCaseStatus(req.user.id, req.params.caseNumber, req.body, req.user.id);
+    if (!result) return res.status(404).json({ success: false, message: 'Provider case not found' });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA provider case update error:', error);
+    res.status(500).json({ success: false, message: 'Failed to update provider case', error: error.message });
+  }
+});
+
+/**
+ * GET /api/tpa/interop/events
+ * List NHCX/API/webhook interoperability queue events.
+ */
+router.get('/interop/events', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.listInteropEvents({
+      tpaId: req.user.id,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit,
+    });
+    res.json(result);
+  } catch (error) {
+    console.error('TPA interop event list error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch interoperability events', error: error.message });
+  }
+});
+
+/**
+ * POST /api/tpa/interop/events
+ * Queue NHCX/API/webhook event with idempotency key.
+ */
+router.post('/interop/events', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const result = await tpaClaimsLifecycleService.enqueueInteropEvent(req.user.id, req.body, req.user.id);
+    res.status(201).json(result);
+  } catch (error) {
+    console.error('TPA interop event queue error:', error);
+    res.status(500).json({ success: false, message: 'Failed to queue interoperability event', error: error.message });
   }
 });
 
@@ -992,6 +1742,396 @@ router.get('/reports', authUser, requireRole('tpa'), async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch reports',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/reports/download/:reportId
+ * Download a lightweight CSV report
+ */
+router.get('/reports/download/:reportId', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const { reportId } = req.params;
+    const generatedAt = new Date().toISOString();
+    const csv = [
+      ['Report ID', 'Generated At', 'Metric', 'Value'],
+      [reportId, generatedAt, 'Total Claims', '1247'],
+      [reportId, generatedAt, 'Pending Claims', '89'],
+      [reportId, generatedAt, 'Approved Claims', '1089'],
+      [reportId, generatedAt, 'Rejected Claims', '69'],
+    ]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${reportId}.csv"`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Download TPA report error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to download report',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/approvals
+ * Get consolidated approval queue
+ */
+router.get('/approvals', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const approvals = [
+      {
+        id: 'APR-2025-001',
+        type: 'Claim',
+        referenceId: 'CLM-2025-002',
+        employeeName: 'Priya Sharma',
+        corporate: 'Digital Marketing Inc',
+        approvedAmount: 5000,
+        approvedDate: '2025-01-19',
+        approvedBy: 'TPA Medical Reviewer',
+        status: 'approved',
+        turnaroundTime: '1 day'
+      },
+      {
+        id: 'APR-2025-002',
+        type: 'Pre-Authorization',
+        referenceId: 'PA-2025-002',
+        employeeName: 'Priya Sharma',
+        corporate: 'Digital Marketing Inc',
+        approvedAmount: 180000,
+        approvedDate: '2025-01-20',
+        approvedBy: 'TPA Operations Lead',
+        status: 'approved',
+        turnaroundTime: '2 days'
+      },
+      {
+        id: 'APR-2025-003',
+        type: 'Claim',
+        referenceId: 'CLM-2025-003',
+        employeeName: 'Amit Patel',
+        corporate: 'Manufacturing Corp',
+        approvedAmount: 8500,
+        approvedDate: '2025-01-21',
+        approvedBy: 'Auto-Adjudication Rule',
+        status: 'approved',
+        turnaroundTime: '6 hours'
+      }
+    ];
+
+    res.json({
+      success: true,
+      approvals,
+      total: approvals.length
+    });
+  } catch (error) {
+    console.error('Get approvals error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch approvals',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/hospitalization-intimations
+ * Get planned/emergency hospitalization intimation queue
+ */
+router.get('/hospitalization-intimations', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const intimations = [
+      {
+        id: 'INT-2025-001',
+        employeeName: 'Rajesh Kumar',
+        corporate: 'Tech Solutions Pvt Ltd',
+        policyNumber: 'POL-2025-001',
+        hospitalName: 'Apollo Hospital',
+        admissionType: 'Planned',
+        plannedAdmissionDate: '2025-02-01',
+        ailment: 'Cardiac Surgery',
+        estimatedAmount: 350000,
+        slaStatus: 'Within SLA',
+        status: 'pending'
+      },
+      {
+        id: 'INT-2025-002',
+        employeeName: 'Priya Sharma',
+        corporate: 'Digital Marketing Inc',
+        policyNumber: 'POL-2025-002',
+        hospitalName: 'Max Healthcare',
+        admissionType: 'Emergency',
+        plannedAdmissionDate: '2025-01-25',
+        ailment: 'Orthopedic Trauma',
+        estimatedAmount: 180000,
+        slaStatus: 'Priority Review',
+        status: 'approved'
+      }
+    ];
+
+    res.json({
+      success: true,
+      intimations,
+      total: intimations.length
+    });
+  } catch (error) {
+    console.error('Get hospitalization intimations error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch hospitalization intimations',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/tpa/benefits/estimate
+ * Estimate payable and out-of-pocket exposure
+ */
+router.post('/benefits/estimate', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const {
+      memberId,
+      policyNumber,
+      hospitalName,
+      treatmentType = 'Hospitalization',
+      estimatedAmount = 0,
+      roomCategory = 'single'
+    } = req.body;
+
+    if (!memberId || !policyNumber || !hospitalName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Member ID, policy number, and hospital name are required'
+      });
+    }
+
+    const amount = Math.max(0, Number(estimatedAmount) || 0);
+    const coPayRate = amount > 200000 ? 0.1 : 0.05;
+    const roomRentDeduction = String(roomCategory).toLowerCase().includes('suite') ? Math.round(amount * 0.08) : 0;
+    const nonPayable = Math.round(amount * 0.03);
+    const coPay = Math.round(amount * coPayRate);
+    const payableAmount = Math.max(0, amount - coPay - roomRentDeduction - nonPayable);
+
+    res.json({
+      success: true,
+      estimate: {
+        memberId,
+        policyNumber,
+        hospitalName,
+        treatmentType,
+        roomCategory,
+        estimatedAmount: amount,
+        payableAmount,
+        outOfPocket: amount - payableAmount,
+        coPay,
+        roomRentDeduction,
+        nonPayable,
+        decision: payableAmount > 0 ? 'Likely Payable' : 'Manual Review Required',
+        recommendation: amount > 300000
+          ? 'Route for medical reviewer approval due to high estimate.'
+          : 'Eligible for standard TPA processing if documents are complete.',
+        rulesApplied: [
+          `${Math.round(coPayRate * 100)}% co-pay simulation`,
+          '3% non-payable consumables provision',
+          roomRentDeduction ? 'Room category sub-limit adjustment' : 'No room-rent deduction applied',
+          'Final payable subject to policy terms and document verification'
+        ]
+      }
+    });
+  } catch (error) {
+    console.error('Benefit estimate error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to estimate benefits',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/documents/intelligence
+ * Get document AI worklist
+ */
+router.get('/documents/intelligence', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const documents = [
+      {
+        id: 'DOC-AI-001',
+        claimId: 'CLM-2025-001',
+        documentType: 'Discharge Summary',
+        employeeName: 'Rajesh Kumar',
+        ocrStatus: 'completed',
+        completenessScore: 92,
+        missingFields: 'None',
+        riskSignal: 'Low',
+        status: 'approved'
+      },
+      {
+        id: 'DOC-AI-002',
+        claimId: 'CLM-2025-004',
+        documentType: 'Hospital Bill',
+        employeeName: 'Neha Gupta',
+        ocrStatus: 'completed',
+        completenessScore: 71,
+        missingFields: 'GSTIN, consultant signature',
+        riskSignal: 'Medium',
+        status: 'pending'
+      }
+    ];
+
+    res.json({
+      success: true,
+      documents,
+      total: documents.length
+    });
+  } catch (error) {
+    console.error('Get document intelligence error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch document intelligence queue',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/fraud-guard
+ * Get fraud, waste, and abuse alerts
+ */
+router.get('/fraud-guard', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const alerts = [
+      {
+        id: 'FWA-2025-001',
+        claimId: 'CLM-2025-004',
+        employeeName: 'Neha Gupta',
+        provider: 'Metro Care Hospital',
+        riskScore: 78,
+        trigger: 'Duplicate bill pattern and inflated consumables',
+        recommendedAction: 'Manual audit before settlement',
+        status: 'pending'
+      },
+      {
+        id: 'FWA-2025-002',
+        claimId: 'CLM-2025-003',
+        employeeName: 'Amit Patel',
+        provider: 'Fortis Hospital',
+        riskScore: 22,
+        trigger: 'No anomaly detected',
+        recommendedAction: 'Standard processing',
+        status: 'approved'
+      }
+    ];
+
+    res.json({
+      success: true,
+      alerts,
+      total: alerts.length
+    });
+  } catch (error) {
+    console.error('Get fraud guard error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch fraud guard alerts',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/mis/weekly
+ * Get weekly MIS report packs
+ */
+router.get('/mis/weekly', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const reports = [
+      {
+        id: 'MIS-WK-2025-004',
+        title: 'Weekly Corporate Claims MIS',
+        corporate: 'Tech Solutions Pvt Ltd',
+        week: '2025-W04',
+        claimsReceived: 34,
+        claimsApproved: 29,
+        pendingShortfall: 3,
+        slaCompliance: '94%',
+        status: 'available',
+        fileUrl: '/api/tpa/reports/download/MIS-WK-2025-004'
+      },
+      {
+        id: 'MIS-WK-2025-005',
+        title: 'Weekly Pre-Auth & Cashless MIS',
+        corporate: 'Digital Marketing Inc',
+        week: '2025-W04',
+        claimsReceived: 18,
+        claimsApproved: 16,
+        pendingShortfall: 1,
+        slaCompliance: '97%',
+        status: 'available',
+        fileUrl: '/api/tpa/reports/download/MIS-WK-2025-005'
+      }
+    ];
+
+    res.json({
+      success: true,
+      reports,
+      total: reports.length
+    });
+  } catch (error) {
+    console.error('Get weekly MIS error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch weekly MIS',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/tpa/grievances
+ * Get grievance and escalation queue
+ */
+router.get('/grievances', authUser, requireRole('tpa'), async (req, res) => {
+  try {
+    const grievances = [
+      {
+        id: 'GRV-2025-001',
+        subject: 'Claim settlement delay',
+        corporate: 'Tech Solutions Pvt Ltd',
+        memberName: 'Rajesh Kumar',
+        priority: 'high',
+        slaDueAt: '2025-01-24T18:00:00.000Z',
+        escalationLevel: 'Level 2',
+        owner: 'TPA Support Lead',
+        status: 'open'
+      },
+      {
+        id: 'GRV-2025-002',
+        subject: 'Network hospital cashless denial',
+        corporate: 'Manufacturing Corp',
+        memberName: 'Amit Patel',
+        priority: 'medium',
+        slaDueAt: '2025-01-25T18:00:00.000Z',
+        escalationLevel: 'Level 1',
+        owner: 'Provider Relations',
+        status: 'pending'
+      }
+    ];
+
+    res.json({
+      success: true,
+      grievances,
+      total: grievances.length
+    });
+  } catch (error) {
+    console.error('Get grievances error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch grievances',
       error: error.message
     });
   }
