@@ -716,6 +716,116 @@ export async function listBenefitNetworkProviders(corporateId, category = null) 
   return rows.map((row) => ({ ...row, rateCard: safeJson(row.rateCard) || {} }));
 }
 
+/** Admin view: every provider (global + every corporate's own), for management. */
+export async function listAllNetworkProvidersForAdmin() {
+  const rows = await postgresSequelize.query(
+    `SELECT p.id, p.corporate_id AS "corporateId", c."companyName" AS "corporateName",
+            p.category::text AS category, p.name, p.provider_type AS "providerType",
+            p.address, p.city, p.phone, p.email, p.is_cashless AS "isCashless",
+            p.rate_card AS "rateCard", p.status, p.notes, p.created_at AS "createdAt"
+       FROM corporate_benefit_network_providers p
+       LEFT JOIN corporates c ON c.id = p.corporate_id
+      ORDER BY p.corporate_id NULLS FIRST, p.category, p.name`,
+    { type: QueryTypes.SELECT }
+  );
+  return rows.map((row) => ({ ...row, rateCard: safeJson(row.rateCard) || {} }));
+}
+
+export async function createNetworkProvider(payload = {}, createdBy = null) {
+  const name = String(payload.name || '').trim();
+  if (!name) throw new Error('Provider name is required');
+  const category = normalizeBenefitCategory(payload.category);
+  const corporateId = payload.corporateId ? Number(payload.corporateId) : null;
+
+  const rows = await postgresSequelize.query(
+    `INSERT INTO corporate_benefit_network_providers (
+        corporate_id, category, name, provider_type, address, city, phone, email,
+        is_cashless, rate_card, status, notes, created_by, created_at, updated_at
+     ) VALUES (
+        :corporateId, CAST(:category AS corporate_benefit_category), :name, :providerType,
+        :address, :city, :phone, :email, :isCashless, CAST(:rateCard AS jsonb), 'active', :notes, :createdBy, NOW(), NOW()
+     ) RETURNING id`,
+    {
+      replacements: {
+        corporateId,
+        category,
+        name,
+        providerType: payload.providerType ? String(payload.providerType).slice(0, 60) : null,
+        address: payload.address ? String(payload.address).slice(0, 2000) : null,
+        city: payload.city ? String(payload.city).slice(0, 120) : null,
+        phone: payload.phone ? String(payload.phone).slice(0, 30) : null,
+        email: payload.email ? String(payload.email).slice(0, 255) : null,
+        isCashless: Boolean(payload.isCashless),
+        rateCard: JSON.stringify(payload.rateCard || {}),
+        notes: payload.notes ? String(payload.notes).slice(0, 2000) : null,
+        createdBy,
+      },
+      type: QueryTypes.SELECT,
+    }
+  );
+  return getNetworkProviderById(firstRow(rows).id);
+}
+
+async function getNetworkProviderById(id) {
+  const all = await listAllNetworkProvidersForAdmin();
+  return all.find((p) => Number(p.id) === Number(id)) || null;
+}
+
+export async function updateNetworkProvider(id, payload = {}) {
+  const existing = await getNetworkProviderById(id);
+  if (!existing) throw new Error('Provider not found');
+
+  const merged = { ...existing, ...payload };
+  const category = normalizeBenefitCategory(merged.category);
+
+  await postgresSequelize.query(
+    `UPDATE corporate_benefit_network_providers SET
+        corporate_id = :corporateId,
+        category = CAST(:category AS corporate_benefit_category),
+        name = :name,
+        provider_type = :providerType,
+        address = :address,
+        city = :city,
+        phone = :phone,
+        email = :email,
+        is_cashless = :isCashless,
+        rate_card = CAST(:rateCard AS jsonb),
+        status = :status,
+        notes = :notes,
+        updated_at = NOW()
+      WHERE id = :id`,
+    {
+      replacements: {
+        id,
+        corporateId: merged.corporateId ? Number(merged.corporateId) : null,
+        category,
+        name: String(merged.name || '').trim().slice(0, 255),
+        providerType: merged.providerType ? String(merged.providerType).slice(0, 60) : null,
+        address: merged.address ? String(merged.address).slice(0, 2000) : null,
+        city: merged.city ? String(merged.city).slice(0, 120) : null,
+        phone: merged.phone ? String(merged.phone).slice(0, 30) : null,
+        email: merged.email ? String(merged.email).slice(0, 255) : null,
+        isCashless: Boolean(merged.isCashless),
+        rateCard: JSON.stringify(merged.rateCard || {}),
+        status: ['active', 'inactive'].includes(merged.status) ? merged.status : 'active',
+        notes: merged.notes ? String(merged.notes).slice(0, 2000) : null,
+      },
+    }
+  );
+  return getNetworkProviderById(id);
+}
+
+export async function deleteNetworkProvider(id) {
+  const existing = await getNetworkProviderById(id);
+  if (!existing) throw new Error('Provider not found');
+  // Soft delete — authorizations may already reference this provider (network_provider_id).
+  await postgresSequelize.query(
+    `UPDATE corporate_benefit_network_providers SET status = 'inactive', updated_at = NOW() WHERE id = :id`,
+    { replacements: { id } }
+  );
+  return { id: Number(id), status: 'inactive' };
+}
+
 export async function listCorporateBenefitAuthorizations(corporateId, filters = {}) {
   const status = String(filters.status || '').trim().toLowerCase();
   const limit = Math.min(100, Math.max(1, parseInt(filters.limit || 25, 10) || 25));
