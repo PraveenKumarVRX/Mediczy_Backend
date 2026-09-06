@@ -173,6 +173,7 @@ const CorporateHealthPackages  = lazy(() => import("@/pages/admin/CorporateHealt
 const CorporateEmployeesManagement = lazy(() => import("@/pages/admin/CorporateEmployeesManagement"));
 const CorporatePlansManagement = lazy(() => import("@/pages/admin/CorporatePlansManagement"));
 const CorporateQuoteCalculator = lazy(() => import("@/pages/admin/CorporateQuoteCalculator"));
+const CorporateBenefitProviders = lazy(() => import("@/pages/admin/CorporateBenefitProviders"));
 const AdminPlans               = lazy(() => import("@/pages/admin/AdminPlans"));
 const AdminInsurance           = lazy(() => import("@/pages/admin/AdminInsurance"));
 const AdminWorkflowAutomation  = lazy(() => import("@/pages/admin/AdminWorkflowAutomation"));
@@ -535,6 +536,7 @@ const TPAProvidersPage       = lazy(() => import("@/pages/tpa/TPAProvidersPage")
 const TPAClaimSubmissionPage = lazy(() => import("@/pages/tpa/TPAClaimSubmissionPage"));
 const TPAECardPage           = lazy(() => import("@/pages/tpa/TPAECardPage"));
 const TPAHospitalsPage       = lazy(() => import("@/pages/tpa/TPAHospitalsPage"));
+const TPAOperationsWorkbench = lazy(() => import("@/pages/tpa/TPAOperationsWorkbench"));
 
 const _TPAPlaceholders = () => import("@/pages/tpa/TPAPlaceholders");
 const TPAPolicies   = lazyNamed(_TPAPlaceholders, "TPAPolicies");
@@ -1415,6 +1417,7 @@ const AppRoutes = () => {
         <Route path="/admin/corporate-employees" element={<AdminRoute><CorporateEmployeesManagement /></AdminRoute>} />
         <Route path="/admin/corporate-plans"     element={<AdminRoute><CorporatePlansManagement /></AdminRoute>} />
         <Route path="/admin/corporate-quote-calculator" element={<AdminRoute><CorporateQuoteCalculator /></AdminRoute>} />
+        <Route path="/admin/corporate-benefit-providers" element={<AdminRoute><CorporateBenefitProviders /></AdminRoute>} />
         <Route path="/admin/pharmacies"          element={<AdminRoute><PharmaciesManagement /></AdminRoute>} />
         <Route path="/admin/homecare"            element={<AdminRoute><HomecareManagement /></AdminRoute>} />
         <Route path="/admin/ambulance"           element={<AdminRoute><AmbulanceManagement /></AdminRoute>} />
@@ -1506,6 +1509,7 @@ const AppRoutes = () => {
         <Route path="/tpa/claim-submission" element={<MainLayout><TPAClaimSubmissionPage /></MainLayout>} />
         <Route path="/tpa/ecard"          element={<MainLayout><TPAECardPage /></MainLayout>} />
         <Route path="/tpa/hospitals"      element={<MainLayout><TPAHospitalsPage /></MainLayout>} />
+        <Route path="/tpa/operations-workbench" element={<MainLayout><TPAOperationsWorkbench /></MainLayout>} />
 
         {/* ── Aggregator ──────────────────────────────────────────────── */}
         <Route path="/aggregator/login"         element={<AggregatorLogin />} />

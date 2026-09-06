@@ -370,6 +370,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: HeartPulse, label: 'Health Packages', path: '/admin/corporate-health-packages', color: 'text-red-500', bg: 'bg-red-500/10' },
         { icon: Users, label: 'Employees', path: '/admin/corporate-employees', color: 'text-blue-600', bg: 'bg-blue-600/10' },
         { icon: Calculator, label: 'Quote Calculator', path: '/admin/corporate-quote-calculator', color: 'text-violet-500', bg: 'bg-violet-500/10' },
+        { icon: Stethoscope, label: 'Benefit Providers', path: '/admin/corporate-benefit-providers', color: 'text-sky-500', bg: 'bg-sky-500/10' },
       ]
     },
     {

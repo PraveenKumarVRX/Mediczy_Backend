@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -50,7 +51,9 @@ import {
   Percent,
   Dumbbell,
   Users,
-  XCircle
+  XCircle,
+  Trash2,
+  ArrowUpCircle
 } from "lucide-react";
 import api from "@/utils/api";
 import { useAuth } from "@/auth/AuthProvider";
@@ -174,6 +177,13 @@ interface MyAppointment {
   claimAmount: number;
 }
 
+interface WalletTierOption {
+  key: string;
+  label: string;
+  allocatedLimit: number;
+  isDefault?: boolean;
+}
+
 interface BenefitWallet {
   id: number;
   programId: number;
@@ -187,6 +197,8 @@ interface BenefitWallet {
   coveragePeriodStart?: string | null;
   coveragePeriodEnd?: string | null;
   status: string;
+  tierKey?: string | null;
+  tierOptions?: WalletTierOption[];
 }
 
 interface EmployeeBenefitWalletPayload {
@@ -237,6 +249,7 @@ interface BenefitProgram {
   utilized: number;
   reserved: number;
   remaining: number;
+  tierOptions?: WalletTierOption[];
 }
 
 interface BenefitAuthorization {
@@ -313,6 +326,7 @@ const CorporateBenefits = () => {
   const [enrollDialog, setEnrollDialog] = useState(false);
   const [selectedProgram, setSelectedProgram] = useState<BenefitProgram | null>(null);
   const [walletActionLoading, setWalletActionLoading] = useState(false);
+  const [tierSwitchingWalletId, setTierSwitchingWalletId] = useState<number | null>(null);
   const [programForm, setProgramForm] = useState({
     name: '',
     category: 'opd',
@@ -329,6 +343,10 @@ const CorporateBenefits = () => {
     employeeIdsText: '',
     allocatedLimit: '',
   });
+  const [offerTiers, setOfferTiers] = useState(false);
+  const [extraTiers, setExtraTiers] = useState<Array<{ key: string; label: string; allocatedLimit: string }>>([
+    { key: 'tier1', label: 'Tier 1', allocatedLimit: '' },
+  ]);
   const [authorizations, setAuthorizations] = useState<BenefitAuthorization[]>([]);
   const [authStatusFilter, setAuthStatusFilter] = useState('all');
   const [authLoading, setAuthLoading] = useState(false);
@@ -479,11 +497,28 @@ const CorporateBenefits = () => {
       maxDependents: '0',
       description: '',
     });
+    setOfferTiers(false);
+    setExtraTiers([{ key: 'tier1', label: 'Tier 1', allocatedLimit: '' }]);
   };
 
+  const addExtraTier = () => setExtraTiers((prev) => [...prev, { key: `tier${prev.length + 1}`, label: `Tier ${prev.length + 1}`, allocatedLimit: '' }]);
+  const removeExtraTier = (key: string) => setExtraTiers((prev) => prev.filter((t) => t.key !== key));
+  const updateExtraTier = (key: string, patch: Partial<{ label: string; allocatedLimit: string }>) =>
+    setExtraTiers((prev) => prev.map((t) => (t.key === key ? { ...t, ...patch } : t)));
+
   const handleCreateBenefitProgram = async () => {
+    if (offerTiers && extraTiers.some((t) => !t.allocatedLimit)) {
+      alert('Every optional tier needs an amount.');
+      return;
+    }
     try {
       setWalletActionLoading(true);
+      const tierOptions = offerTiers
+        ? [
+            { key: 'base', label: 'Base', allocatedLimit: Number(programForm.perEmployeeLimit || 0), isDefault: true },
+            ...extraTiers.map((t) => ({ key: t.key, label: t.label, allocatedLimit: Number(t.allocatedLimit) })),
+          ]
+        : undefined;
       await api.post('/corporate/benefit-wallet/programs', {
         name: programForm.name,
         category: programForm.category,
@@ -495,6 +530,7 @@ const CorporateBenefits = () => {
         familyCoverage: programForm.familyCoverage === 'true',
         maxDependents: Number(programForm.maxDependents || 0),
         description: programForm.description,
+        tierOptions,
       });
       alert('Benefit program created successfully.');
       setCreateProgramDialog(false);
@@ -539,6 +575,25 @@ const CorporateBenefits = () => {
       alert(err?.response?.data?.message || 'Failed to enroll employees.');
     } finally {
       setWalletActionLoading(false);
+    }
+  };
+
+  const handleSelectTier = async (walletId: number, tierKey: string) => {
+    try {
+      setTierSwitchingWalletId(walletId);
+      const { data } = await api.post(`/corporate/my-benefit-wallet/${walletId}/select-tier`, { tierKey });
+      const updated = (data as any)?.data?.wallet;
+      setEmployeeWallet((prev) => prev ? {
+        ...prev,
+        wallets: prev.wallets.map((w) => w.id === walletId
+          ? { ...w, tierKey: updated?.tierKey ?? tierKey, allocatedLimit: updated?.allocatedLimit ?? w.allocatedLimit }
+          : w),
+      } : prev);
+    } catch (err: any) {
+      console.error('Select tier failed', err);
+      alert(err?.response?.data?.message || 'Failed to switch tier.');
+    } finally {
+      setTierSwitchingWalletId(null);
     }
   };
 
@@ -774,6 +829,29 @@ const CorporateBenefits = () => {
                                 <span>Total {formatINR(wallet.allocatedLimit)}</span>
                               </div>
                             </div>
+                            {(wallet.tierOptions?.length || 0) > 1 && (
+                              <div className="mt-3 pt-3 border-t border-slate-800">
+                                <div className="flex items-center gap-1.5 text-xs text-cyan-300 mb-1.5">
+                                  <ArrowUpCircle className="w-3.5 h-3.5" /> Wallet tier
+                                </div>
+                                <Select
+                                  value={wallet.tierKey || wallet.tierOptions?.find((t) => t.isDefault)?.key || ''}
+                                  onValueChange={(key) => handleSelectTier(wallet.id, key)}
+                                  disabled={tierSwitchingWalletId === wallet.id}
+                                >
+                                  <SelectTrigger className="bg-slate-900 border-slate-700 text-slate-100 h-9 text-sm">
+                                    <SelectValue placeholder="Select tier" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {wallet.tierOptions?.map((tier) => (
+                                      <SelectItem key={tier.key} value={tier.key}>
+                                        {tier.label} — {formatINR(tier.allocatedLimit)}{tier.isDefault ? ' (Base)' : ''}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -942,6 +1020,49 @@ const CorporateBenefits = () => {
                                   className="bg-slate-900 border-slate-700 text-slate-100"
                                 />
                               </div>
+                            </div>
+
+                            <div className="grid gap-3 rounded-lg border border-slate-700 p-3">
+                              <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
+                                <Checkbox checked={offerTiers} onCheckedChange={(v) => setOfferTiers(Boolean(v))} />
+                                Offer optional higher tiers employees can self-upgrade to
+                              </label>
+                              {offerTiers && (
+                                <div className="space-y-2">
+                                  <p className="text-xs text-slate-500">
+                                    Per-employee limit above ({programForm.perEmployeeLimit || '0'}) is the Base tier, funded for everyone. Add any number of optional tiers below.
+                                  </p>
+                                  {extraTiers.map((tier) => (
+                                    <div key={tier.key} className="flex items-center gap-2">
+                                      <Input
+                                        value={tier.label}
+                                        onChange={(e) => updateExtraTier(tier.key, { label: e.target.value })}
+                                        placeholder="Label"
+                                        className="w-32 bg-slate-900 border-slate-700 text-slate-100"
+                                      />
+                                      <div className="relative flex-1">
+                                        <IndianRupee className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          value={tier.allocatedLimit}
+                                          onChange={(e) => updateExtraTier(tier.key, { allocatedLimit: e.target.value })}
+                                          placeholder="Amount / employee / year"
+                                          className="pl-7 bg-slate-900 border-slate-700 text-slate-100"
+                                        />
+                                      </div>
+                                      {extraTiers.length > 1 && (
+                                        <Button type="button" size="icon" variant="ghost" onClick={() => removeExtraTier(tier.key)}>
+                                          <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  ))}
+                                  <Button type="button" size="sm" variant="outline" onClick={addExtraTier} className="gap-1">
+                                    <Plus className="w-3.5 h-3.5" /> Add tier
+                                  </Button>
+                                </div>
+                              )}
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
