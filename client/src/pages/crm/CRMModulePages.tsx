@@ -9,7 +9,7 @@ import {
   Briefcase, ChevronRight, ChevronLeft, LayoutGrid,
   PieChart, Settings, Plus, Search, Trash2, Edit,
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
-  Building2, IndianRupee, Brain, Sparkles,
+  Building2, IndianRupee, Brain, Sparkles, MessageSquare, Star, ShieldCheck,
 } from 'lucide-react';
 import api from '@/utils/api';
 
@@ -18,6 +18,19 @@ import api from '@/utils/api';
 const sidebarNav = [
   { section: 'OVERVIEW', items: [
     { icon: LayoutGrid, label: 'Dashboard', path: '/crm/dashboard' },
+    { icon: Target, label: 'Hospital CRM', path: '/crm/hospital' },
+    { icon: BarChart3, label: 'Command Center', path: '/crm/hospital/command-center' },
+    { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub' },
+    { icon: Sparkles, label: 'Growth Automation', path: '/crm/hospital/growth' },
+    { icon: Target, label: 'Specialty Growth', path: '/crm/hospital/specialties' },
+    { icon: Building2, label: 'Diagnostic Growth', path: '/crm/hospital/diagnostics' },
+    { icon: BarChart3, label: 'Digital Growth Hub', path: '/crm/hospital/digital' },
+    { icon: Activity, label: 'Journey Operations', path: '/crm/hospital/operations' },
+    { icon: MessageSquare, label: 'Engagement Hub', path: '/crm/hospital/engagement' },
+    { icon: Target, label: 'Acquisition', path: '/crm/hospital/acquisition' },
+    { icon: Star, label: 'Patient Experience', path: '/crm/hospital/experience' },
+    { icon: Users, label: 'People Performance', path: '/crm/hospital/people' },
+    { icon: ShieldCheck, label: 'Governance', path: '/crm/hospital/governance' },
   ]},
   { section: 'SALES', items: [
     { icon: Target, label: 'Leads', path: '/crm/leads' },

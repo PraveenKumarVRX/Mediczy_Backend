@@ -16,6 +16,11 @@ const MANIFEST = [
   { id: 'hmis-chain', cmd: 'node', args: ['run-hmis-migrations.js', 'up'], cwd: SERVER },
   { id: 'hospital-queue-os', cmd: 'node', args: ['migrations/20260617-hospital-queue-os.migration.js'], cwd: SERVER, optional: true },
   { id: 'samd-governance', cmd: 'node', args: ['migrations/samd-interpretability-governance.migration.js'], cwd: SERVER, optional: true },
+  { id: 'hospital-crm-foundation', cmd: 'node', args: ['migrations/20260908000000-hospital-crm-foundation.migration.js'], cwd: SERVER },
+  { id: 'hospital-crm-worldclass-domains', cmd: 'node', args: ['migrations/20260908000001-hospital-crm-worldclass-domains.migration.js'], cwd: SERVER },
+  { id: 'hospital-crm-growth-automation', cmd: 'node', args: ['migrations/20260908000002-hospital-crm-growth-automation.migration.js'], cwd: SERVER },
+  { id: 'hospital-crm-specialty-diagnostic-digital', cmd: 'node', args: ['migrations/20260909000000-hospital-crm-specialty-diagnostic-digital.migration.js'], cwd: SERVER },
+  { id: 'hospital-crm-communication-hub', cmd: 'node', args: ['migrations/20260909000002-hospital-crm-communication-hub.migration.js'], cwd: SERVER },
 ];
 
 function runStep(step) {

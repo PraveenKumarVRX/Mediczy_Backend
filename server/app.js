@@ -88,6 +88,11 @@ import fcmRouter from './routes/fcm.route.js';
 import callNotificationRouter from './routes/call-notification.route.js';
 import firebaseStatusRouter from './routes/firebase-status.route.js';
 import crmRouter from './routes/crm.route.js';
+import hospitalCrmV2Router from './routes/hospital-crm-v2.route.js';
+import hospitalCrmWorldclassRouter from './routes/hospital-crm-worldclass.route.js';
+import hospitalCrmGrowthRouter from './routes/hospital-crm-growth.route.js';
+import hospitalCrmSpecialtyRouter from './routes/hospital-crm-specialty.route.js';
+import hospitalCrmCommunicationHubRouter from './routes/hospital-crm-communication-hub.route.js';
 import crmUnderwritingRouter from './routes/crm-underwriting.route.js';
 import asyncRouter from './routes/async.route.js';
 import appointmentRouter from './routes/appointment.route.js';
@@ -1488,6 +1493,11 @@ app.use('/api/assistant', assistantRouter);
 app.use('/api/patients', patientRouter); // Patient registration by multiple roles
 app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
+app.use('/api/crm/v2', hospitalCrmV2Router);
+app.use('/api/crm/worldclass', hospitalCrmWorldclassRouter);
+app.use('/api/crm/growth', hospitalCrmGrowthRouter); // Hospital CRM phases 2-8
+app.use('/api/crm/growth', hospitalCrmSpecialtyRouter); // Specialty, diagnostic, and digital growth domains
+app.use('/api/crm/communication-hub', hospitalCrmCommunicationHubRouter); // Brevo-style campaign and communications monitoring
 app.use('/api/crm/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline
 app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
 app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns

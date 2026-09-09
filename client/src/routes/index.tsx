@@ -234,6 +234,21 @@ const AdminSaMD                = lazy(() => import("@/pages/admin/AdminSaMD"));
 // ─── CRM ─────────────────────────────────────────────────────────────────────
 const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
 const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
+const HospitalCRMFoundationPage = lazy(() => import("@/pages/crm/HospitalCRMFoundationPage"));
+const HospitalCRMWorldclassPage = lazy(() => import("@/pages/crm/HospitalCRMWorldclassPage"));
+const HospitalCRMCommunicationHubPage = lazy(() => import("@/pages/crm/HospitalCRMCommunicationHubPage"));
+const HospitalCRMGrowthPage = lazy(() => import("@/pages/crm/HospitalCRMGrowthPage"));
+const _HospitalCRMGrowthDomainPages = () => import("@/pages/crm/HospitalCRMGrowthDomainPages");
+const HospitalCRMSpecialtyPage = lazyNamed(_HospitalCRMGrowthDomainPages, "HospitalCRMSpecialtyPage");
+const HospitalCRMDiagnosticPage = lazyNamed(_HospitalCRMGrowthDomainPages, "HospitalCRMDiagnosticPage");
+const HospitalCRMDigitalHubPage = lazyNamed(_HospitalCRMGrowthDomainPages, "HospitalCRMDigitalHubPage");
+const _HospitalCRMOperationsPages = () => import("@/pages/crm/HospitalCRMOperationsPages");
+const HospitalCRMOperationsPage = lazyNamed(_HospitalCRMOperationsPages, "HospitalCRMOperationsPage");
+const HospitalCRMEngagementPage = lazyNamed(_HospitalCRMOperationsPages, "HospitalCRMEngagementPage");
+const HospitalCRMAcquisitionPage = lazyNamed(_HospitalCRMOperationsPages, "HospitalCRMAcquisitionPage");
+const HospitalCRMExperiencePage = lazyNamed(_HospitalCRMOperationsPages, "HospitalCRMExperiencePage");
+const HospitalCRMPeoplePage = lazyNamed(_HospitalCRMOperationsPages, "HospitalCRMPeoplePage");
+const HospitalCRMGovernancePage = lazyNamed(_HospitalCRMOperationsPages, "HospitalCRMGovernancePage");
 const CRMEmailPage = lazy(() => import("@/pages/crm/CRMEmailPage"));
 const CRMCampaignAnalyticsPage = lazy(() => import("@/pages/crm/CRMCampaignAnalyticsPage"));
 const CRMAIInsightsPage        = lazy(() => import("@/pages/crm/CRMAIInsightsPage"));
@@ -1294,11 +1309,24 @@ const AppRoutes = () => {
 
         {/* ── CRM ─────────────────────────────────────────────────────── */}
         <Route path="/crm/login"         element={<CRMLogin />} />
+        <Route path="/crm/hospital/operations" element={<HospitalCRMOperationsPage />} />
+        <Route path="/crm/hospital/engagement" element={<HospitalCRMEngagementPage />} />
+        <Route path="/crm/hospital/acquisition" element={<HospitalCRMAcquisitionPage />} />
+        <Route path="/crm/hospital/experience" element={<HospitalCRMExperiencePage />} />
+        <Route path="/crm/hospital/people" element={<HospitalCRMPeoplePage />} />
+        <Route path="/crm/hospital/governance" element={<HospitalCRMGovernancePage />} />
         {/* Alias redirects — common alternative URLs for CRM login */}
         <Route path="/rfq/login"         element={<Navigate to="/crm/login" replace />} />
         <Route path="/rfq"               element={<Navigate to="/crm/login" replace />} />
         <Route path="/crm"               element={<Navigate to="/crm/login" replace />} />
         <Route path="/crm/dashboard"     element={<CRMDashboard />} />
+        <Route path="/crm/hospital"       element={<HospitalCRMFoundationPage />} />
+        <Route path="/crm/hospital/command-center" element={<HospitalCRMWorldclassPage />} />
+        <Route path="/crm/hospital/communication-hub" element={<HospitalCRMCommunicationHubPage />} />
+        <Route path="/crm/hospital/growth" element={<HospitalCRMGrowthPage />} />
+        <Route path="/crm/hospital/specialties" element={<HospitalCRMSpecialtyPage />} />
+        <Route path="/crm/hospital/diagnostics" element={<HospitalCRMDiagnosticPage />} />
+        <Route path="/crm/hospital/digital" element={<HospitalCRMDigitalHubPage />} />
         <Route path="/crm/leads"         element={<CRMLeadsPage />} />
         <Route path="/crm/deals"         element={<CRMDealsPage />} />
         <Route path="/crm/contacts"      element={<CRMContactsPage />} />
