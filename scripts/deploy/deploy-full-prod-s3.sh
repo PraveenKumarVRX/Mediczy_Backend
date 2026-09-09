@@ -70,6 +70,10 @@ deploy_body() {
   (cd server && npm ci --omit=dev --prefer-offline)
   echo -e "${GREEN}✓ Server dependencies installed${NC}"
 
+  echo -e "${BLUE}[2.5/7] Applying CRM database migrations...${NC}"
+  npm run migrate:crm --prefix server
+  echo -e "${GREEN}✓ CRM database migrations applied${NC}"
+
   echo -e "${BLUE}[3/7] Building client...${NC}"
   (
     cd client
@@ -148,6 +152,10 @@ git merge-base --is-ancestor c0bd4174 HEAD || { echo "❌ Welcome-campaign fix (
 echo "[2/7] Installing server dependencies..."
 (cd server && npm ci --omit=dev --prefer-offline)
 echo "✓ Server dependencies installed"
+
+echo "[2.5/7] Applying CRM database migrations..."
+npm run migrate:crm --prefix server
+echo "✓ CRM database migrations applied"
 
 echo "[3/7] Building client..."
 (
