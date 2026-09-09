@@ -10,9 +10,14 @@ ROUTES=(
 )
 
 for route in "${ROUTES[@]}"; do
-  status="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}${route}")"
+  status=""
+  for attempt in $(seq 1 15); do
+    status="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}${route}" || true)"
+    [[ "$status" == "401" ]] && break
+    [[ "$attempt" -lt 15 ]] && sleep 2
+  done
   if [[ "$status" != "401" ]]; then
-    echo "CRM API contract failed: ${route} returned HTTP ${status}; expected 401 for an unauthenticated request." >&2
+    echo "CRM API contract failed: ${route} returned HTTP ${status:-unavailable}; expected 401 for an unauthenticated request." >&2
     exit 1
   fi
   echo "✓ ${route} is mounted (401 unauthenticated)"

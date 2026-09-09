@@ -40,7 +40,7 @@ export const authCRM = async (req, res, next) => {
     // DB status re-check
     const user = await userModel.findOne({
       where: { id: decoded.id },
-      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'firstName', 'lastName', 'metadata', 'organization_id']
+      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'firstName', 'lastName', 'metadata', 'organization_id', 'tenant_id']
     });
 
     if (!user) {
@@ -84,7 +84,7 @@ export const authCRM = async (req, res, next) => {
       role: decoded.role || 'crm',
       isCRM: true,
       isAdmin: user.isAdmin || decoded.isAdmin || false,
-      tenantId: metadata.tenantId || user.organization_id || decoded.tenantId || null,
+      tenantId: metadata.tenantId || user.tenant_id || user.organization_id || decoded.tenantId || decoded.tenant_id || null,
       permissions: metadata.crmPermissions || decoded.crmPermissions || [],
     };
 
