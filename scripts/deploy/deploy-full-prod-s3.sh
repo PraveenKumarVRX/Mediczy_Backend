@@ -71,7 +71,8 @@ deploy_body() {
   echo -e "${GREEN}✓ Server dependencies installed${NC}"
 
   echo -e "${BLUE}[2.5/7] Applying CRM database migrations...${NC}"
-  npm run migrate:crm --prefix server
+  NODE_ENV=production AWS_REGION="${AWS_REGION:-ap-south-1}" SSM_PARAM_PATH="${SSM_PARAM_PATH:-/mediczy/prod}" \
+    node server/scripts/ssm-env-loader.mjs server/scripts/migrate-crm-all.mjs
   echo -e "${GREEN}✓ CRM database migrations applied${NC}"
 
   echo -e "${BLUE}[3/7] Building client...${NC}"
@@ -115,6 +116,9 @@ deploy_body() {
   pm2 save --force 2>/dev/null || true
   echo -e "${GREEN}✓ Backend restarted${NC}"
 
+  echo -e "${BLUE}[5.5/7] Verifying CRM API route contract...${NC}"
+  bash scripts/deploy/verify-crm-api-contract.sh
+
   echo -e "${BLUE}[6/7] Health check...${NC}"
   sleep 4
   curl -sf http://localhost:8888/api/health || curl -sf http://localhost:8000/api/health || true
@@ -154,7 +158,8 @@ echo "[2/7] Installing server dependencies..."
 echo "✓ Server dependencies installed"
 
 echo "[2.5/7] Applying CRM database migrations..."
-npm run migrate:crm --prefix server
+NODE_ENV=production AWS_REGION="${AWS_REGION:-ap-south-1}" SSM_PARAM_PATH="${SSM_PARAM_PATH:-/mediczy/prod}" \
+    node server/scripts/ssm-env-loader.mjs server/scripts/migrate-crm-all.mjs
 echo "✓ CRM database migrations applied"
 
 echo "[3/7] Building client..."
@@ -189,6 +194,9 @@ echo "[5/7] Restarting backend..."
 pm2 restart mediczy-server --update-env
 pm2 save --force 2>/dev/null || true
 echo "✓ Backend restarted"
+
+echo "[5.5/7] Verifying CRM API route contract..."
+bash scripts/deploy/verify-crm-api-contract.sh
 
 echo "[6/7] Health check..."
 sleep 4

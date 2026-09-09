@@ -48,6 +48,21 @@ jobs:
           echo "⚠️  Health check failed after 5 attempts"
           exit 1
 
+      - name: Verify CRM API route contract
+        run: |
+          for path in \
+            /api/crm/v2/funnel \
+            /api/crm/worldclass/dashboards/business-head \
+            /api/crm/growth/dashboard \
+            /api/crm/communication-hub/dashboard; do
+            status=$(curl -sS -o /dev/null -w "%{http_code}" "https://app.mediqzy.com${path}")
+            if [ "${status}" != "401" ]; then
+              echo "CRM API contract failed: ${path} returned HTTP ${status}; expected 401 without credentials."
+              exit 1
+            fi
+            echo "✓ ${path} is mounted"
+          done
+
       - name: Notify on success
         if: success()
         run: |

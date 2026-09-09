@@ -804,23 +804,21 @@ router.post('/logout', authCRM, async (req, res) => {
 });
 
 router.get('/profile', authCRM, async (req, res) => {
-  try {
-    const user = await userModel.findOne({
-      where: { id: req.crmUser.id },
-      attributes: ['id', 'email', 'firstName', 'lastName', 'role', 'status', 'metadata', 'designation', 'department']
-    });
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
-    return res.status(200).json({
-      success: true,
-      crmUser: {
-        id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName,
-        role: user.role, designation: user.designation || 'Sales Representative',
-        department: user.department || 'Sales',
-      }
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: 'Internal server error' });
-  }
+  const user = req.crmUser;
+  return res.status(200).json({
+    success: true,
+    crmUser: {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName || 'CRM',
+      lastName: user.lastName || 'User',
+      role: user.role || 'crm',
+      designation: user.designation || 'Sales Representative',
+      department: user.department || 'Sales',
+      permissions: user.permissions || [],
+      tenantId: user.tenantId || null,
+    },
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1190,7 +1188,7 @@ router.get('/reports/team-performance', authCRM, async (req, res) => {
         COUNT(DISTINCT d.id) FILTER (WHERE d.stage='won') AS won_deals,
         COALESCE(SUM(d.value) FILTER (WHERE d.stage='won'),0) AS revenue,
         COUNT(DISTINCT a.id) AS total_activities
-      FROM "Users" u
+      FROM users u
       LEFT JOIN crm_leads l ON l.assigned_to=u.id
       LEFT JOIN crm_deals d ON d.assigned_to=u.id
       LEFT JOIN crm_activities a ON a.created_by=u.id
