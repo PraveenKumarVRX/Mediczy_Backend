@@ -6,7 +6,7 @@ Scope: new hospital CRM domains plus existing CRM navigation
 
 ## Result
 
-**PASS with one configuration blocker.** The frontend bundle, route registration, database migrations, and legacy CRM regressions are healthy. Tenant-scoped hospital CRM data calls are correctly blocked because the CRM login account has no tenant assignment.
+**PASS.** The frontend bundle, route registration, database migrations, tenant isolation, and legacy CRM regressions are healthy. The CRM login account is now assigned to the Mediczy Test Hospital tenant.
 
 ## Frontend
 
@@ -22,7 +22,7 @@ Scope: new hospital CRM domains plus existing CRM navigation
 - `/api/crm/profile`: `200`.
 - `/api/crm/reports/team-performance`: `200`.
 - Required new route families are mounted; unauthenticated contract checks return `401` instead of `404`.
-- 18 tenant-scoped hospital CRM endpoints reached the tenant guard and returned `400 CRM tenant context is required`.
+- 18 tenant-scoped hospital CRM endpoints returned `200` after tenant assignment, with tenant 11 data scoped correctly.
 - Communication Hub methods verified: dashboard, campaigns, templates, integration health, and alert acknowledgement.
 
 ## Database
@@ -32,15 +32,15 @@ Scope: new hospital CRM domains plus existing CRM navigation
 - CRM migrations completed successfully through the communication hub migration.
 - PostgreSQL, Redis, and pgvector health checks: connected.
 
-## Blocker
+## Tenant Assignment
 
-The login account `crm@mediczy.com` has no `tenant_id` or `organization_id`. The verified active hospital tenant is:
+The login account `crm@mediczy.com` is assigned to the verified active hospital tenant:
 
 - Tenant ID: `11`
 - Name: `Mediczy Test Hospital`
 - Slug: `mediczy-test-hospital`
 
-Assigning the CRM account to tenant 11 requires explicit authorization because it changes persistent account access. Until then, the tenant-safe `400` responses are expected and prevent cross-hospital exposure.
+The post-assignment smoke test returned `200` across all tenant-scoped hospital CRM APIs.
 
 ## Residual Test Gap
 
