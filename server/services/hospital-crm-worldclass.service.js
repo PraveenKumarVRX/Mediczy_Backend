@@ -554,7 +554,7 @@ export async function getDataQualityIssues(tenantId, { status = "open", limit = 
   const result = await sharedPool.query(
     `SELECT * FROM crm_data_quality_issues
       WHERE tenant_id = $1 AND status = $2
-      ORDER BY created_at ASC LIMIT $3`,
+      ORDER BY detected_at ASC LIMIT $3`,
     [tenant, status, Math.min(Math.max(Number(limit) || 100, 1), 500)]
   );
   return result.rows;
