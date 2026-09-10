@@ -73,10 +73,19 @@ export const CRM_CAPABILITY_ROLES = Object.freeze({
   'team:manage': [],
 });
 
+// Capabilities business_head does NOT get for free, even as an executive
+// override — provisioning/removing other people's CRM logins is a distinct,
+// more sensitive action than operating the CRM itself.
+const BUSINESS_HEAD_EXCLUDED_CAPABILITIES = new Set(['team:manage']);
+
 /**
  * Does this CRM user have the given capability?
- * Either the platform `isAdmin` flag (the override pattern already used
- * throughout server/routes/crm.route.js) or `crmRole === 'admin'` always passes.
+ * `isAdmin` / `crmRole === 'admin'` always passes. `business_head` is an
+ * executive override — every capability except the excluded set above —
+ * rather than being read-only in every domain: a hospital's business head
+ * is accountable for the CRM's outcomes, not just its dashboards, and until
+ * dedicated marketing_head/sales_rep logins exist in production, business_head
+ * is also the only real account able to act on anything built here at all.
  */
 export function hasCRMCapability(crmUser, capability) {
   if (!crmUser) return false;
@@ -84,6 +93,7 @@ export function hasCRMCapability(crmUser, capability) {
   const allowedRoles = CRM_CAPABILITY_ROLES[capability];
   if (!allowedRoles) return false; // unknown capability — fail closed
   const role = crmUser.crmRole || DEFAULT_CRM_ROLE;
+  if (role === CRM_ROLES.BUSINESS_HEAD && !BUSINESS_HEAD_EXCLUDED_CAPABILITIES.has(capability)) return true;
   return allowedRoles.includes(role);
 }
 

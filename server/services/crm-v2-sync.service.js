@@ -153,7 +153,7 @@ export async function removeLegacyLeadFromV2(legacyLeadId, tenantId = CRM_V2_DEF
 export async function resolveV2LeadByLegacyId(legacyLeadId, tenantId = CRM_V2_DEFAULT_TENANT_ID) {
   if (!legacyLeadId) return null;
   const { rows } = await sharedPool.query(
-    `SELECT lv.id, lv.contact_id, lv.tenant_id, ct.name, ct.email, ct.phone_e164 AS phone
+    `SELECT lv.id, lv.contact_id, lv.person_id AS identity_id, lv.tenant_id, ct.name, ct.email, ct.phone_e164 AS phone
      FROM crm_leads_v2 lv
      JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id
      WHERE lv.tenant_id = $1 AND lv.legacy_lead_id = $2`,

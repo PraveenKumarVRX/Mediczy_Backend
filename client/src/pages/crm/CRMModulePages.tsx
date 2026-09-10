@@ -11,10 +11,11 @@ import {
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
   Brain, Sparkles, MessageSquare, Star, ShieldCheck,
   Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
-  UserCog, Contact, List, Bot, UserPlus, Crown, Filter,
+  UserCog, Contact, List, Bot, UserPlus, Filter,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
+import LeadDetailDrawer from './shared/LeadDetailDrawer';
 
 // ─── Shared sidebar nav config ─────────────────────────────────────────────────
 // Items with a `cap` are visible only to CRM roles that hold that capability
@@ -25,7 +26,6 @@ const sidebarNav = [
     { icon: LayoutGrid, label: 'Dashboard', path: '/crm/dashboard' },
     { icon: Route, label: 'Hospital CRM', path: '/crm/hospital', cap: 'foundation:read' },
     { icon: Gauge, label: 'Command Center · Business & Marketing Heads', path: '/crm/hospital/command-center', cap: 'dashboard:command-center' },
-    { icon: Crown, label: 'Business Head Dashboard', path: '/crm/hospital/business-head', cap: 'dashboard:business-head' },
     { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
     { icon: Filter, label: 'Segments', path: '/crm/hospital/segments', cap: 'segments:read' },
     { icon: Bot, label: 'Automations', path: '/crm/hospital/automations', cap: 'automations:read' },
@@ -282,6 +282,7 @@ export function CRMLeadsPage() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [editLead, setEditLead] = useState<any>(null);
+  const [detailLeadId, setDetailLeadId] = useState<number | null>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' });
   const navigate = useNavigate();
 
@@ -445,8 +446,10 @@ export function CRMLeadsPage() {
                   {leads.map(l => (
                     <tr key={l.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                       <td className={`${tdClass} pl-5`}>
-                        <p className="font-medium text-white">{l.name}</p>
-                        <p className="text-[11px] text-slate-600 mt-0.5">{l.email || l.phone || ''}</p>
+                        <button onClick={() => setDetailLeadId(l.id)} className="text-left hover:text-violet-300 transition-colors">
+                          <p className="font-medium text-white">{l.name}</p>
+                          <p className="text-[11px] text-slate-600 mt-0.5">{l.email || l.phone || ''}</p>
+                        </button>
                       </td>
                       <td className={`${tdClass} text-slate-400`}>{l.company || '—'}</td>
                       <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[l.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{l.status}</span></td>
@@ -468,6 +471,7 @@ export function CRMLeadsPage() {
         )}
         <Pagination page={page} totalPages={totalPages} setPage={setPage} />
       </div>
+      {detailLeadId != null && <LeadDetailDrawer leadId={detailLeadId} onClose={() => setDetailLeadId(null)} />}
     </CRMLayout>
   );
 }

@@ -538,10 +538,10 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
 }
 
 export async function listCrmCallActivity({ leadId, dealId, limit } = {}) {
-  const conditions = [`type = 'call'`];
+  const conditions = [`a.type = 'call'`];
   const params = [];
-  if (leadId) { params.push(positiveInt(leadId)); conditions.push(`lead_id = $${params.length}`); }
-  if (dealId) { params.push(positiveInt(dealId)); conditions.push(`deal_id = $${params.length}`); }
+  if (leadId) { params.push(positiveInt(leadId)); conditions.push(`a.lead_id = $${params.length}`); }
+  if (dealId) { params.push(positiveInt(dealId)); conditions.push(`a.deal_id = $${params.length}`); }
   params.push(Math.min(Math.max(positiveInt(limit) || 50, 1), 200));
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
@@ -582,11 +582,11 @@ export async function listCrmCommunicationLog({ leadId, dealId, channel, limit }
   }
 
   // Fallback — deal-sourced sends, or a lead whose v2 mirror hasn't caught up yet.
-  const conditions = [`type IN ('email', 'whatsapp', 'sms')`];
+  const conditions = [`a.type IN ('email', 'whatsapp', 'sms')`];
   const params = [];
-  if (leadId) { params.push(positiveInt(leadId)); conditions.push(`lead_id = $${params.length}`); }
-  if (dealId) { params.push(positiveInt(dealId)); conditions.push(`deal_id = $${params.length}`); }
-  if (channel && CHANNELS.has(channel)) { params.push(channel); conditions.push(`type = $${params.length}`); }
+  if (leadId) { params.push(positiveInt(leadId)); conditions.push(`a.lead_id = $${params.length}`); }
+  if (dealId) { params.push(positiveInt(dealId)); conditions.push(`a.deal_id = $${params.length}`); }
+  if (channel && CHANNELS.has(channel)) { params.push(channel); conditions.push(`a.type = $${params.length}`); }
   params.push(cappedLimit);
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title

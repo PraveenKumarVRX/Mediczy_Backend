@@ -1321,7 +1321,6 @@ const AppRoutes = () => {
         <Route path="/crm/hospital/acquisition" element={<HospitalCRMAcquisitionPage />} />
         <Route path="/crm/hospital/experience" element={<HospitalCRMExperiencePage />} />
         <Route path="/crm/hospital/people" element={<HospitalCRMPeoplePage />} />
-        <Route path="/crm/hospital/business-head" element={<HospitalCRMPeoplePage />} />
         <Route path="/crm/hospital/governance" element={<HospitalCRMGovernancePage />} />
         {/* Alias redirects — RFQ/insurance moved to Team login 2026-09-10 */}
         <Route path="/rfq/login"         element={<Navigate to="/team/login" replace />} />

@@ -13,7 +13,8 @@ import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { handleLeadStatusChange } from '../services/crm-lead-automation.service.js';
-import { syncLegacyLeadToV2, removeLegacyLeadFromV2 } from '../services/crm-v2-sync.service.js';
+import { syncLegacyLeadToV2, removeLegacyLeadFromV2, resolveV2LeadByLegacyId, CRM_V2_DEFAULT_TENANT_ID } from '../services/crm-v2-sync.service.js';
+import { listCrmCommunicationLog, listCrmCallActivity } from '../services/hospital-crm-communication-hub.service.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
 import nodemailer from 'nodemailer';
 import { DEFAULT_CRM_ROLE } from '../config/crm-roles.config.js';
@@ -931,6 +932,50 @@ router.get('/leads/:id', authCRM, async (req, res) => {
     const activities = await sharedPool.query(`SELECT * FROM crm_activities WHERE lead_id = $1 ORDER BY created_at DESC LIMIT 50`, [req.params.id]);
     return res.status(200).json({ success: true, data: { ...rows[0], activities: activities.rows } });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch lead' }); }
+});
+
+// The 360° view: everything this session's CRM Growth Engine work knows about
+// one lead, in one call — v2 identity, segment membership, automation
+// execution history, and communication log. Legacy lead id in, legacy lead
+// id space throughout (matches every other CRM endpoint's contract).
+router.get('/leads/:id/context', authCRM, async (req, res) => {
+  try {
+    const legacyLeadId = parseInt(req.params.id, 10);
+    const v2 = await resolveV2LeadByLegacyId(legacyLeadId);
+
+    let segments = [];
+    let automationExecutions = [];
+    let communications = [];
+    let calls = [];
+
+    if (v2) {
+      const [segRes, autoRes] = await Promise.all([
+        sharedPool.query(
+          `SELECT s.id, s.name FROM crm_segment_members sm JOIN crm_segments s ON s.id = sm.segment_id
+           WHERE sm.tenant_id = $1 AND sm.lead_id = $2 ORDER BY s.name`,
+          [v2.tenant_id, v2.id]
+        ),
+        sharedPool.query(
+          `SELECT e.id, e.status, e.scheduled_at, e.completed_at, e.error, a.id AS automation_id, a.name AS automation_name, a.action_type
+           FROM crm_automation_executions e JOIN crm_automations a ON a.id = e.automation_id
+           WHERE e.tenant_id = $1 AND e.lead_id = $2 ORDER BY e.created_at DESC LIMIT 20`,
+          [v2.tenant_id, v2.id]
+        ),
+      ]);
+      segments = segRes.rows;
+      automationExecutions = autoRes.rows;
+      communications = await listCrmCommunicationLog({ leadId: legacyLeadId, limit: 20 }).catch(() => []);
+    }
+    calls = await listCrmCallActivity({ leadId: legacyLeadId, limit: 20 }).catch(() => []);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        v2: v2 ? { leadId: v2.id, contactId: v2.contact_id, identityId: v2.identity_id, tenantId: v2.tenant_id, name: v2.name, email: v2.email, phone: v2.phone } : null,
+        segments, automationExecutions, communications, calls,
+      },
+    });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch lead context' }); }
 });
 
 router.put('/leads/:id', authCRM, async (req, res) => {
