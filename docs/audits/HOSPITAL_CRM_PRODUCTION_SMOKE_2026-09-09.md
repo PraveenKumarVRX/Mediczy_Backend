@@ -1,6 +1,6 @@
 # Hospital CRM Production Smoke Test
 
-Date: 2026-09-09  
+Date: 2026-09-10
 Environment: `https://app.mediqzy.com`  
 Scope: new hospital CRM domains plus existing CRM navigation
 
@@ -16,6 +16,8 @@ Scope: new hospital CRM domains plus existing CRM navigation
   - 7 existing CRM routes: dashboard, campaigns, lists, templates, emails, reports, settings.
 - Browser console errors: **0**.
 - Navigation failures: **0**.
+- Business Head login navigation verified: `Business Head Dashboard`, `Team Performance`, `Patient Experience`, and `Governance` are visible for the assigned role.
+- `/crm/hospital/business-head` rendered the live team command view with role-wise coverage, team leaderboard, period/role/search filters, and weekly trend empty-state handling.
 
 ## API
 
@@ -23,6 +25,7 @@ Scope: new hospital CRM domains plus existing CRM navigation
 - `/api/crm/reports/team-performance`: `200`.
 - Required new route families are mounted; unauthenticated contract checks return `401` instead of `404`.
 - 18 tenant-scoped hospital CRM endpoints returned `200` after tenant assignment, with tenant 11 data scoped correctly.
+- `/api/crm/worldclass/dashboards/business-head/team`: `200`, returning tenant-scoped summary, role breakdown, member metrics, and trend data.
 - Communication Hub methods verified: dashboard, campaigns, templates, integration health, and alert acknowledgement.
 
 ## Database
@@ -41,6 +44,8 @@ The login account `crm@mediczy.com` is assigned to the verified active hospital 
 - Slug: `mediczy-test-hospital`
 
 The post-assignment smoke test returned `200` across all tenant-scoped hospital CRM APIs.
+
+The account now resolves as CRM role `business_head`; a fresh login is required for an existing browser session to receive the updated role claims and navigation.
 
 ## Residual Test Gap
 
