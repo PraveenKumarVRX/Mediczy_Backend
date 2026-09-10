@@ -320,7 +320,24 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-deeptech',  // Deep Tech AI layer (HIS, NLP, Preauth, FL, Agent Context)
       '/api/ehr',  // Electronic Health Records
       '/api/emr',  // EMR folder — team can view all users
-      '/v1'  // API v1 multi-tenant mobile app endpoints
+      '/v1',  // API v1 multi-tenant mobile app endpoints
+      // Insurance RFQ / distribution — moved from CRM login to Team module
+      // 2026-09-10 (authCRM -> authTeam + requirePermission('Insurance RFQ
+      // Management') on these specific routes, see crm.route.js /
+      // crm-underwriting.route.js / crm-analysis.route.js). Backend API
+      // paths stayed under /api/crm/* (only the auth changed), so this
+      // portal type needs them explicitly — without this, a valid team
+      // token 403s here before ever reaching the route's own auth check.
+      '/api/crm/rfqs',
+      '/api/crm/rfqs-autocapture-inbox',
+      '/api/crm/rfqs-stats',
+      '/api/crm/agents',
+      '/api/crm/agencies',
+      '/api/crm/commissions',
+      '/api/crm/corporate-plans',
+      '/api/crm/tc-master',
+      '/api/crm/underwriting',
+      '/api/crm/analysis',
     ],
     tokenField: 'teamId'
   },
