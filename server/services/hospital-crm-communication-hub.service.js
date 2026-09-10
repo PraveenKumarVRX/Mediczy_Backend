@@ -75,8 +75,8 @@ export async function getCommunicationHubDashboard(tenant, query = {}) {
         COALESCE((SELECT COUNT(*) FROM crm_communication_events e WHERE e.tenant_id = c.tenant_id AND e.campaign_id = c.id AND e.direction = 'outbound' AND (e.status IN ('failed', 'bounced') OR e.failed_at IS NOT NULL) AND e.created_at >= $2::timestamptz AND e.created_at < $3::timestamptz), 0)::int AS failed,
         COALESCE((SELECT COUNT(*) FROM crm_communication_events e WHERE e.tenant_id = c.tenant_id AND e.campaign_id = c.id AND e.direction = 'outbound' AND (e.status = 'opened' OR e.read_at IS NOT NULL) AND e.created_at >= $2::timestamptz AND e.created_at < $3::timestamptz), 0)::int AS opened,
         COALESCE((SELECT COUNT(*) FROM crm_communication_events e WHERE e.tenant_id = c.tenant_id AND e.campaign_id = c.id AND e.direction = 'outbound' AND (e.status = 'clicked' OR e.clicked_at IS NOT NULL) AND e.created_at >= $2::timestamptz AND e.created_at < $3::timestamptz), 0)::int AS clicked,
-        COALESCE((SELECT SUM(r.net_amount) FROM crm_revenue_events r WHERE r.tenant_id = c.tenant_id AND r.metadata->>'campaign_id' = c.id::text AND r.revenue_date >= $2::date AND r.revenue_date < $3::date), 0)::numeric AS revenue,
-        COALESCE((SELECT SUM(cc.amount) FROM crm_campaign_costs cc WHERE cc.tenant_id = c.tenant_id AND cc.campaign_id = c.id AND cc.cost_date >= $2::date AND cc.cost_date < $3::date), 0)::numeric AS spend
+        COALESCE((SELECT SUM(r.net_amount) FROM crm_revenue_events r WHERE r.tenant_id = c.tenant_id AND r.metadata->>'campaign_id' = c.id::text AND r.revenue_date >= $2::date AND r.revenue_date <= $3::date), 0)::numeric AS revenue,
+        COALESCE((SELECT SUM(cc.amount) FROM crm_campaign_costs cc WHERE cc.tenant_id = c.tenant_id AND cc.campaign_id = c.id AND cc.cost_date >= $2::date AND cc.cost_date <= $3::date), 0)::numeric AS spend
       FROM crm_campaigns_unified c
       WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
       ORDER BY c.updated_at DESC LIMIT 100
@@ -319,22 +319,51 @@ async function _resolveCrmRecipient({ leadId, dealId, contactId }) {
   throw Object.assign(new Error('One of leadId, dealId, or contactId is required'), { statusCode: 400 });
 }
 
+/**
+ * Find-or-create the open thread for a lead+channel — Phase 4 (conversation
+ * inbox). Deliberately outbound-only for now: no inbound webhook is wired to
+ * this yet (a real inbound WhatsApp/email conversation platform already
+ * exists at server/routes/whatsapp-production.route.js, serving a different
+ * part of the app — bridging that into the CRM's v2 world is real, separate
+ * work, not attempted here). This just means every CRM send now creates or
+ * continues a visible thread instead of only ever appearing in the dashboard.
+ */
+export async function findOrCreateConversation({ tenantId, leadId, channel }) {
+  if (!leadId) return null;
+  const existing = await sharedPool.query(
+    `SELECT id FROM crm_conversations WHERE tenant_id = $1 AND lead_id = $2 AND channel = $3 AND status != 'closed' ORDER BY created_at DESC LIMIT 1`,
+    [tenantId, leadId, channel]
+  );
+  if (existing.rows[0]) {
+    await sharedPool.query(`UPDATE crm_conversations SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`, [existing.rows[0].id]);
+    return existing.rows[0].id;
+  }
+  const { rows: leadRows } = await sharedPool.query(`SELECT person_id FROM crm_leads_v2 WHERE id = $1`, [leadId]);
+  const created = await sharedPool.query(
+    `INSERT INTO crm_conversations (tenant_id, lead_id, identity_id, channel, status, last_message_at) VALUES ($1,$2,$3,$4,'open',NOW()) RETURNING id`,
+    [tenantId, leadId, leadRows[0]?.person_id || null, channel]
+  );
+  return created.rows[0].id;
+}
+
 async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, v2LeadId, v2ContactId, v2TenantId, userId }) {
   const failed = Boolean(errorMessage);
   const bodyPreview = message ? String(message).slice(0, 2000) : null;
 
   if (v2LeadId || v2ContactId) {
     // Tenant-scoped path — feeds getCommunicationHubDashboard() directly.
+    const tenantId = v2TenantId || CRM_V2_DEFAULT_TENANT_ID;
+    const conversationId = await findOrCreateConversation({ tenantId, leadId: v2LeadId, channel }).catch(() => null);
     await sharedPool.query(
       `INSERT INTO crm_communication_events
-         (tenant_id, lead_id, contact_id, channel, direction, message_type, subject, body_preview,
+         (tenant_id, lead_id, contact_id, conversation_id, channel, direction, message_type, subject, body_preview,
           provider, provider_message_id, status, sent_at, failed_at, failure_reason, owner_user_id, metadata)
-       VALUES ($1,$2,$3,$4,'outbound','message',$5,$6,$7,$8,$9::varchar,
-               CASE WHEN $9::varchar = 'sent' THEN NOW() ELSE NULL END,
-               CASE WHEN $9::varchar = 'failed' THEN NOW() ELSE NULL END,
-               $10,$11,$12)`,
+       VALUES ($1,$2,$3,$4,$5,'outbound','message',$6,$7,$8,$9,$10::varchar,
+               CASE WHEN $10::varchar = 'sent' THEN NOW() ELSE NULL END,
+               CASE WHEN $10::varchar = 'failed' THEN NOW() ELSE NULL END,
+               $11,$12,$13)`,
       [
-        v2TenantId || CRM_V2_DEFAULT_TENANT_ID, v2LeadId || null, v2ContactId || null, channel,
+        tenantId, v2LeadId || null, v2ContactId || null, conversationId, channel,
         subject || null, bodyPreview, provider || null, providerMessageId || null,
         failed ? 'failed' : (status || 'sent'), errorMessage || null, userId || null,
         JSON.stringify({ recipientLabel }),
@@ -582,6 +611,7 @@ export default {
   acknowledgeCommunicationHubAlert,
   sendCrmMessage,
   dispatchToChannel,
+  findOrCreateConversation,
   listCrmCallActivity,
   listCrmCommunicationLog,
 };

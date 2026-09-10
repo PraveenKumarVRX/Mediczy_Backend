@@ -14,7 +14,7 @@
 import sharedPool from '../db/pgPool.js';
 import { queues, addJob } from '../config/queues.js';
 import { listSegmentMembers, getSegment } from './crm-segments.service.js';
-import { dispatchToChannel } from './hospital-crm-communication-hub.service.js';
+import { dispatchToChannel, findOrCreateConversation } from './hospital-crm-communication-hub.service.js';
 
 function positiveInt(value) {
   const id = Number(value);
@@ -78,15 +78,16 @@ export async function processSegmentBlastJob({ tenantId, campaignId, leadId, nam
 }
 
 async function _logBlastEvent({ tenantId, campaignId, leadId, channel, subject, status, provider, providerMessageId, failureReason, bodyPreview }) {
+  const conversationId = leadId ? await findOrCreateConversation({ tenantId, leadId, channel }).catch(() => null) : null;
   await sharedPool.query(
     `INSERT INTO crm_communication_events
-       (tenant_id, lead_id, campaign_id, channel, direction, message_type, subject, body_preview,
+       (tenant_id, lead_id, campaign_id, conversation_id, channel, direction, message_type, subject, body_preview,
         provider, provider_message_id, status, sent_at, failed_at, failure_reason)
-     VALUES ($1,$2,$3,$4,'outbound','campaign',$5,$6,$7,$8,$9::varchar,
-             CASE WHEN $9::varchar='sent' THEN NOW() ELSE NULL END,
-             CASE WHEN $9::varchar='failed' THEN NOW() ELSE NULL END,
-             $10)`,
-    [tenantId, leadId || null, positiveInt(campaignId), channel, subject || null, bodyPreview ? String(bodyPreview).slice(0, 2000) : null, provider || null, providerMessageId || null, status, failureReason || null]
+     VALUES ($1,$2,$3,$4,$5,'outbound','campaign',$6,$7,$8,$9,$10::varchar,
+             CASE WHEN $10::varchar='sent' THEN NOW() ELSE NULL END,
+             CASE WHEN $10::varchar='failed' THEN NOW() ELSE NULL END,
+             $11)`,
+    [tenantId, leadId || null, positiveInt(campaignId), conversationId, channel, subject || null, bodyPreview ? String(bodyPreview).slice(0, 2000) : null, provider || null, providerMessageId || null, status, failureReason || null]
   );
 }
 

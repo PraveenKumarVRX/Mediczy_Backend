@@ -28,6 +28,7 @@ const sidebarNav = [
     { icon: Crown, label: 'Business Head Dashboard', path: '/crm/hospital/business-head', cap: 'dashboard:business-head' },
     { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
     { icon: Filter, label: 'Segments', path: '/crm/hospital/segments', cap: 'segments:read' },
+    { icon: Bot, label: 'Automations', path: '/crm/hospital/automations', cap: 'automations:read' },
     { icon: Sparkles, label: 'Growth Automation', path: '/crm/hospital/growth', cap: 'growth:read' },
     { icon: Stethoscope, label: 'Specialty Growth', path: '/crm/hospital/specialties', cap: 'specialty:read' },
     { icon: FlaskConical, label: 'Diagnostic Growth', path: '/crm/hospital/diagnostics', cap: 'specialty:read' },

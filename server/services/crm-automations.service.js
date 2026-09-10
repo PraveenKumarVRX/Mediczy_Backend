@@ -1,0 +1,229 @@
+/**
+ * CRM Growth Engine — Phase 3: automation engine v1.
+ *
+ * Deliberately a rule-based engine, not a visual canvas (per the plan's own
+ * descoping) — one trigger, an optional delay, one action per automation.
+ * Runs on a periodic sweep (crm-automation-cron.service.js) rather than
+ * wiring precise event hooks at every write site: each tick finds leads
+ * matching a published automation's trigger that don't already have an
+ * execution row (enforced by a UNIQUE(automation_id, lead_id) constraint —
+ * that's what makes this idempotent and safe to re-run on every tick; a
+ * lead can never be double-fired for the same automation), then runs the
+ * action for any execution whose scheduled_at has arrived.
+ */
+import sharedPool from '../db/pgPool.js';
+import { dispatchToChannel, findOrCreateConversation } from './hospital-crm-communication-hub.service.js';
+
+const TRIGGER_TYPES = new Set(['lead_created', 'segment_entered', 'lifecycle_stage_changed']);
+const ACTION_TYPES = new Set(['send_message', 'add_tag', 'assign_owner']);
+
+export async function ensureCrmAutomationsSchema() {
+  await sharedPool.query(`
+    CREATE TABLE IF NOT EXISTS crm_automations (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      name VARCHAR(200) NOT NULL,
+      description TEXT,
+      trigger_type VARCHAR(50) NOT NULL,
+      trigger_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      delay_minutes INTEGER NOT NULL DEFAULT 0 CHECK (delay_minutes >= 0),
+      action_type VARCHAR(50) NOT NULL,
+      action_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status VARCHAR(20) NOT NULL DEFAULT 'draft',
+      created_by BIGINT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (tenant_id, name)
+    );
+    CREATE TABLE IF NOT EXISTS crm_automation_executions (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_id BIGINT NOT NULL,
+      automation_id BIGINT NOT NULL REFERENCES crm_automations(id) ON DELETE CASCADE,
+      lead_id BIGINT NOT NULL REFERENCES crm_leads_v2(id) ON DELETE CASCADE,
+      status VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+      scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (automation_id, lead_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_crm_automation_exec_due ON crm_automation_executions(status, scheduled_at);
+  `);
+}
+ensureCrmAutomationsSchema().catch((err) => console.warn('[CRM Automations] schema guard:', err.message));
+
+function positiveInt(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+export async function createAutomation({ tenantId, name, description, triggerType, triggerConfig, delayMinutes, actionType, actionConfig, createdBy }) {
+  if (!TRIGGER_TYPES.has(triggerType)) throw Object.assign(new Error(`Invalid trigger type. Use one of: ${[...TRIGGER_TYPES].join(', ')}`), { statusCode: 400 });
+  if (!ACTION_TYPES.has(actionType)) throw Object.assign(new Error(`Invalid action type. Use one of: ${[...ACTION_TYPES].join(', ')}`), { statusCode: 400 });
+  const { rows } = await sharedPool.query(
+    `INSERT INTO crm_automations (tenant_id, name, description, trigger_type, trigger_config, delay_minutes, action_type, action_config, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+    [tenantId, name, description || null, triggerType, JSON.stringify(triggerConfig || {}), Math.max(0, Number(delayMinutes) || 0), actionType, JSON.stringify(actionConfig || {}), createdBy || null]
+  );
+  return rows[0];
+}
+
+export async function updateAutomationStatus(tenantId, automationId, status) {
+  if (!['draft', 'published', 'paused'].includes(status)) throw Object.assign(new Error('Invalid status'), { statusCode: 400 });
+  const { rows } = await sharedPool.query(
+    `UPDATE crm_automations SET status = $1, updated_at = NOW() WHERE tenant_id = $2 AND id = $3 RETURNING *`,
+    [status, tenantId, positiveInt(automationId)]
+  );
+  if (!rows[0]) throw Object.assign(new Error('Automation not found'), { statusCode: 404 });
+  return rows[0];
+}
+
+export async function listAutomations(tenantId) {
+  const { rows } = await sharedPool.query(`SELECT * FROM crm_automations WHERE tenant_id = $1 ORDER BY created_at DESC`, [tenantId]);
+  return rows;
+}
+
+export async function deleteAutomation(tenantId, automationId) {
+  const { rowCount } = await sharedPool.query(`DELETE FROM crm_automations WHERE tenant_id = $1 AND id = $2`, [tenantId, positiveInt(automationId)]);
+  if (!rowCount) throw Object.assign(new Error('Automation not found'), { statusCode: 404 });
+}
+
+export async function listExecutions(tenantId, automationId, { limit = 50 } = {}) {
+  const cappedLimit = Math.min(Math.max(positiveInt(limit) || 50, 1), 200);
+  const { rows } = await sharedPool.query(
+    `SELECT e.*, ct.name AS lead_name, ct.email AS lead_email
+     FROM crm_automation_executions e
+     JOIN crm_leads_v2 lv ON lv.id = e.lead_id
+     JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id
+     WHERE e.tenant_id = $1 AND e.automation_id = $2
+     ORDER BY e.created_at DESC LIMIT $3`,
+    [tenantId, positiveInt(automationId), cappedLimit]
+  );
+  return rows;
+}
+
+/** Find leads matching a trigger that don't have an execution row yet, and schedule them. */
+async function _scheduleNewMatches(automation) {
+  const { id: automationId, tenant_id: tenantId, trigger_type: triggerType, trigger_config: triggerConfig, delay_minutes: delayMinutes } = automation;
+  let matchQuery;
+  let params;
+
+  if (triggerType === 'lead_created') {
+    matchQuery = `SELECT lv.id FROM crm_leads_v2 lv WHERE lv.tenant_id = $1`;
+    params = [tenantId];
+  } else if (triggerType === 'segment_entered') {
+    const segmentId = positiveInt(triggerConfig?.segmentId);
+    if (!segmentId) return 0;
+    matchQuery = `SELECT lead_id AS id FROM crm_segment_members WHERE tenant_id = $1 AND segment_id = $2`;
+    params = [tenantId, segmentId];
+  } else if (triggerType === 'lifecycle_stage_changed') {
+    const toStage = String(triggerConfig?.toStage || '');
+    if (!toStage) return 0;
+    matchQuery = `SELECT lv.id FROM crm_leads_v2 lv WHERE lv.tenant_id = $1 AND lv.lifecycle_stage = $2`;
+    params = [tenantId, toStage];
+  } else {
+    return 0;
+  }
+
+  const { rows: candidates } = await sharedPool.query(matchQuery, params);
+  if (!candidates.length) return 0;
+
+  // delay_minutes comes only from this automation's own row (never user input at call time), safe to interpolate as a validated integer.
+  const safeDelayMinutes = Math.max(0, Math.trunc(Number(delayMinutes) || 0));
+  const scheduledAt = `NOW() + interval '${safeDelayMinutes} minutes'`;
+  const result = await sharedPool.query(
+    `INSERT INTO crm_automation_executions (tenant_id, automation_id, lead_id, scheduled_at)
+     VALUES ${candidates.map((_, i) => `($1, $2, $${i + 3}, ${scheduledAt})`).join(',')}
+     ON CONFLICT (automation_id, lead_id) DO NOTHING`,
+    [tenantId, automationId, ...candidates.map((c) => c.id)]
+  );
+  return result.rowCount;
+}
+
+async function _runAction(automation, execution) {
+  const { action_type: actionType, action_config: actionConfig, tenant_id: tenantId } = automation;
+  const { rows } = await sharedPool.query(
+    `SELECT lv.id AS lead_id, ct.id AS contact_id, ct.name, ct.email, ct.phone_e164 AS phone
+     FROM crm_leads_v2 lv JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id
+     WHERE lv.id = $1`,
+    [execution.lead_id]
+  );
+  const lead = rows[0];
+  if (!lead) throw new Error('Lead no longer exists');
+
+  if (actionType === 'send_message') {
+    const channel = actionConfig.channel;
+    const to = channel === 'email' ? lead.email : lead.phone;
+    if (!to) throw new Error(`Lead has no ${channel === 'email' ? 'email' : 'phone number'} on file`);
+    const result = await dispatchToChannel({ channel, to, subject: actionConfig.subject, message: actionConfig.message });
+    if (!result.success) throw new Error(result.error || 'Send failed');
+    const conversationId = await findOrCreateConversation({ tenantId, leadId: lead.lead_id, channel }).catch(() => null);
+    await sharedPool.query(
+      `INSERT INTO crm_communication_events (tenant_id, lead_id, contact_id, conversation_id, channel, direction, message_type, subject, body_preview, provider, provider_message_id, status, sent_at, metadata)
+       VALUES ($1,$2,$3,$4,$5,'outbound','automation',$6,$7,$8,$9,'sent',NOW(),$10)`,
+      [tenantId, lead.lead_id, lead.contact_id, conversationId, channel, actionConfig.subject || null, String(actionConfig.message || '').slice(0, 2000), result.provider, result.providerMessageId || null, JSON.stringify({ automation_id: automation.id })]
+    );
+    return;
+  }
+
+  if (actionType === 'add_tag') {
+    const tag = String(actionConfig.tag || '').trim();
+    if (!tag) throw new Error('No tag configured on this automation');
+    await sharedPool.query(
+      `UPDATE crm_contacts_v2 SET tags = (SELECT jsonb_agg(DISTINCT t) FROM jsonb_array_elements_text(tags || $1::jsonb) t) WHERE id = $2`,
+      [JSON.stringify([tag]), lead.contact_id]
+    );
+    return;
+  }
+
+  if (actionType === 'assign_owner') {
+    const ownerUserId = positiveInt(actionConfig.ownerUserId);
+    if (!ownerUserId) throw new Error('No owner configured on this automation');
+    await sharedPool.query(`UPDATE crm_leads_v2 SET owner_user_id = $1, assigned_at = NOW(), updated_at = NOW() WHERE id = $2`, [ownerUserId, lead.lead_id]);
+    return;
+  }
+
+  throw new Error(`Unknown action type: ${actionType}`);
+}
+
+/** One tick: schedule new matches for every published automation, then run any executions that are due. */
+export async function runAutomationTick() {
+  const { rows: automations } = await sharedPool.query(`SELECT * FROM crm_automations WHERE status = 'published'`);
+  let scheduled = 0;
+  for (const automation of automations) {
+    try {
+      scheduled += await _scheduleNewMatches(automation);
+    } catch (err) {
+      console.warn('[CRM Automations] scheduling failed for automation', automation.id, ':', err.message);
+    }
+  }
+
+  const { rows: due } = await sharedPool.query(
+    `SELECT e.*, a.action_type, a.action_config, a.tenant_id AS automation_tenant_id, a.id AS automation_id_full
+     FROM crm_automation_executions e
+     JOIN crm_automations a ON a.id = e.automation_id
+     WHERE e.status = 'scheduled' AND e.scheduled_at <= NOW() AND a.status = 'published'
+     ORDER BY e.scheduled_at ASC LIMIT 200`
+  );
+
+  let completed = 0;
+  let failed = 0;
+  for (const execution of due) {
+    const automation = { id: execution.automation_id, tenant_id: execution.automation_tenant_id, action_type: execution.action_type, action_config: execution.action_config };
+    try {
+      await _runAction(automation, execution);
+      await sharedPool.query(`UPDATE crm_automation_executions SET status = 'completed', completed_at = NOW() WHERE id = $1`, [execution.id]);
+      completed++;
+    } catch (err) {
+      await sharedPool.query(`UPDATE crm_automation_executions SET status = 'failed', completed_at = NOW(), error = $1 WHERE id = $2`, [String(err.message).slice(0, 500), execution.id]);
+      failed++;
+    }
+  }
+
+  return { automationsEvaluated: automations.length, scheduled, completed, failed };
+}
+
+export default {
+  ensureCrmAutomationsSchema, createAutomation, updateAutomationStatus, listAutomations,
+  deleteAutomation, listExecutions, runAutomationTick,
+};

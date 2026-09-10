@@ -94,6 +94,7 @@ import hospitalCrmGrowthRouter from './routes/hospital-crm-growth.route.js';
 import hospitalCrmSpecialtyRouter from './routes/hospital-crm-specialty.route.js';
 import hospitalCrmCommunicationHubRouter from './routes/hospital-crm-communication-hub.route.js';
 import crmSegmentsRouter from './routes/crm-segments.route.js';
+import crmAutomationsRouter from './routes/crm-automations.route.js';
 import crmUnderwritingRouter from './routes/crm-underwriting.route.js';
 import asyncRouter from './routes/async.route.js';
 import appointmentRouter from './routes/appointment.route.js';
@@ -1501,6 +1502,7 @@ app.use('/api/crm/growth', hospitalCrmGrowthRouter); // Hospital CRM phases 2-8
 app.use('/api/crm/growth', hospitalCrmSpecialtyRouter); // Specialty, diagnostic, and digital growth domains
 app.use('/api/crm/communication-hub', hospitalCrmCommunicationHubRouter); // Brevo-style campaign and communications monitoring
 app.use('/api/crm/segments', crmSegmentsRouter);
+app.use('/api/crm/automations', crmAutomationsRouter);
 app.use('/api/crm/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline
 app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
 app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns
@@ -1924,6 +1926,9 @@ startPacsMinioArchiveCron();
 
 import { startCrmSegmentRefreshCron } from './services/crm-segment-refresh-cron.service.js';
 startCrmSegmentRefreshCron();
+
+import { startCrmAutomationCron } from './services/crm-automation-cron.service.js';
+startCrmAutomationCron();
 
 // ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
 import governanceServiceForCron from './services/ai-model-governance.service.js';

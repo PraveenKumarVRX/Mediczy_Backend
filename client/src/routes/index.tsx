@@ -239,6 +239,7 @@ const HospitalCRMFoundationPage = lazy(() => import("@/pages/crm/HospitalCRMFoun
 const HospitalCRMWorldclassPage = lazy(() => import("@/pages/crm/HospitalCRMWorldclassPage"));
 const HospitalCRMCommunicationHubPage = lazy(() => import("@/pages/crm/HospitalCRMCommunicationHubPage"));
 const HospitalCRMSegmentsPage = lazy(() => import("@/pages/crm/HospitalCRMSegmentsPage"));
+const HospitalCRMAutomationsPage = lazy(() => import("@/pages/crm/HospitalCRMAutomationsPage"));
 const HospitalCRMGrowthPage = lazy(() => import("@/pages/crm/HospitalCRMGrowthPage"));
 const _HospitalCRMGrowthDomainPages = () => import("@/pages/crm/HospitalCRMGrowthDomainPages");
 const HospitalCRMSpecialtyPage = lazyNamed(_HospitalCRMGrowthDomainPages, "HospitalCRMSpecialtyPage");
@@ -1338,6 +1339,7 @@ const AppRoutes = () => {
         <Route path="/crm/hospital/command-center" element={<HospitalCRMWorldclassPage />} />
         <Route path="/crm/hospital/communication-hub" element={<HospitalCRMCommunicationHubPage />} />
         <Route path="/crm/hospital/segments" element={<HospitalCRMSegmentsPage />} />
+        <Route path="/crm/hospital/automations" element={<HospitalCRMAutomationsPage />} />
         <Route path="/crm/hospital/growth" element={<HospitalCRMGrowthPage />} />
         <Route path="/crm/hospital/specialties" element={<HospitalCRMSpecialtyPage />} />
         <Route path="/crm/hospital/diagnostics" element={<HospitalCRMDiagnosticPage />} />
