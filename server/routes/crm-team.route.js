@@ -10,7 +10,7 @@ const router = express.Router();
 router.use(authCRM, requireCRMCapability('team:manage'));
 
 function parseMetadata(user) {
-  try { return user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { return {}; }
+  try { return typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { return {}; }
 }
 
 function serializeTeamUser(user) {

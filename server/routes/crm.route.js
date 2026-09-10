@@ -658,7 +658,7 @@ router.post('/login', authLimiter, [
 
     // CRM access guard: admin, team, or explicit CRM flag in metadata
     let metadata = {};
-    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+    try { metadata = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { metadata = {}; }
 
     const hasCRMAccess = Boolean(
       user.isAdmin || user.isTeam ||
@@ -772,7 +772,7 @@ router.post('/auth/refresh', async (req, res) => {
     }
 
     let metadata = {};
-    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+    try { metadata = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { metadata = {}; }
 
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const payload = {

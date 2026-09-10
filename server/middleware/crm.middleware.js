@@ -75,7 +75,7 @@ export const authCRM = async (req, res, next) => {
     }
 
     let metadata = {};
-    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+    try { metadata = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { metadata = {}; }
 
     req.crmUser = {
       id: user.id,
