@@ -11,6 +11,7 @@ import logger from '../config/logger.js';
 import { detectServiceIntent, createAutoTicket } from '../services/autoTicketService.js';
 import axios from 'axios';
 import sharedPool from '../db/pgPool.js';
+import { bridgeInboundWhatsAppToCrm } from '../services/crm-inbound-bridge.service.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -1000,7 +1001,12 @@ router.post('/webhook', (req, res, next) => {
     // Extract phone number (remove whatsapp: prefix and trim)
     const phoneNumber = (From?.replace('whatsapp:', '') || '').trim();
     const customerName = ProfileName || phoneNumber;
-    
+
+    // CRM bridge: no-ops silently if this number isn't a known CRM lead.
+    // Never allowed to affect the response below — this handler serves live
+    // Twilio traffic and must always return its TwiML reply regardless.
+    bridgeInboundWhatsAppToCrm({ phone: phoneNumber, body: Body, providerMessageId: MessageSid }).catch(() => {});
+
     logger.info('📱 Incoming WhatsApp message', {
       from: From,
       body: Body,
