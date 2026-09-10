@@ -46,8 +46,9 @@ const CRMLogin = () => {
       localStorage.setItem('crmUserData', JSON.stringify({
         id: crmUser.id, email: crmUser.email,
         firstName: crmUser.firstName, lastName: crmUser.lastName,
-        role: crmUser.role, designation: crmUser.designation,
+        role: crmUser.role, crmRole: crmUser.crmRole, designation: crmUser.designation,
         department: crmUser.department, permissions: crmUser.permissions,
+        isAdmin: crmUser.isAdmin, tenantId: crmUser.tenantId,
       }));
     }
     window.dispatchEvent(new Event('authChange'));
@@ -137,8 +138,8 @@ const CRMLogin = () => {
 
         <div className="relative z-10 flex items-center gap-6 text-[11px] text-slate-600">
           <span className="flex items-center gap-1.5"><Lock className="h-3 w-3" /> 256-bit Encrypted</span>
-          <span className="flex items-center gap-1.5"><Shield className="h-3 w-3" /> HIPAA Ready</span>
-          <span className="flex items-center gap-1.5"><Zap className="h-3 w-3" /> 99.9% Uptime</span>
+          <span className="flex items-center gap-1.5"><Shield className="h-3 w-3" /> Role-Based Access</span>
+          <span className="flex items-center gap-1.5"><Zap className="h-3 w-3" /> Audit Logged</span>
         </div>
 
         {/* Decorative grid lines */}
@@ -189,7 +190,10 @@ const CRMLogin = () => {
             </div>
 
             <div className="space-y-1.5">
-              <label htmlFor="password" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Password</label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="password" className="text-xs font-medium text-slate-400 uppercase tracking-wider">Password</label>
+                <Link to="/crm/forgot-password" className="text-[11px] text-violet-400/80 hover:text-violet-300 transition-colors">Forgot password?</Link>
+              </div>
               <div className={`relative rounded-xl transition-all duration-300 ${focusedField === 'password' ? 'ring-2 ring-violet-500/40' : ''}`}>
                 <Input
                   id="password" name="password" type={showPassword ? 'text' : 'password'}

@@ -10,27 +10,33 @@ import {
   PieChart, Settings, Plus, Search, Trash2, Edit,
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
   Building2, IndianRupee, Brain, Sparkles, MessageSquare, Star, ShieldCheck,
+  Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
+  UserCog, Contact, List, ClipboardList, Handshake, Landmark, Bot, UserPlus, Crown,
 } from 'lucide-react';
 import api from '@/utils/api';
+import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
 
 // ─── Shared sidebar nav config ─────────────────────────────────────────────────
+// Items with a `cap` are visible only to CRM roles that hold that capability
+// (see shared/crmRoles.ts). Items with no `cap` are visible to every CRM login.
 
 const sidebarNav = [
   { section: 'OVERVIEW', items: [
     { icon: LayoutGrid, label: 'Dashboard', path: '/crm/dashboard' },
-    { icon: Target, label: 'Hospital CRM', path: '/crm/hospital' },
-    { icon: BarChart3, label: 'Command Center', path: '/crm/hospital/command-center' },
-    { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub' },
-    { icon: Sparkles, label: 'Growth Automation', path: '/crm/hospital/growth' },
-    { icon: Target, label: 'Specialty Growth', path: '/crm/hospital/specialties' },
-    { icon: Building2, label: 'Diagnostic Growth', path: '/crm/hospital/diagnostics' },
-    { icon: BarChart3, label: 'Digital Growth Hub', path: '/crm/hospital/digital' },
-    { icon: Activity, label: 'Journey Operations', path: '/crm/hospital/operations' },
-    { icon: MessageSquare, label: 'Engagement Hub', path: '/crm/hospital/engagement' },
-    { icon: Target, label: 'Acquisition', path: '/crm/hospital/acquisition' },
-    { icon: Star, label: 'Patient Experience', path: '/crm/hospital/experience' },
-    { icon: Users, label: 'People Performance', path: '/crm/hospital/people' },
-    { icon: ShieldCheck, label: 'Governance', path: '/crm/hospital/governance' },
+    { icon: Route, label: 'Hospital CRM', path: '/crm/hospital', cap: 'foundation:read' },
+    { icon: Gauge, label: 'Command Center · Business & Marketing Heads', path: '/crm/hospital/command-center', cap: 'dashboard:command-center' },
+    { icon: Crown, label: 'Business Head Dashboard', path: '/crm/hospital/business-head', cap: 'dashboard:business-head' },
+    { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
+    { icon: Sparkles, label: 'Growth Automation', path: '/crm/hospital/growth', cap: 'growth:read' },
+    { icon: Stethoscope, label: 'Specialty Growth', path: '/crm/hospital/specialties', cap: 'specialty:read' },
+    { icon: FlaskConical, label: 'Diagnostic Growth', path: '/crm/hospital/diagnostics', cap: 'specialty:read' },
+    { icon: Globe, label: 'Digital Growth Hub', path: '/crm/hospital/digital', cap: 'specialty:read' },
+    { icon: Milestone, label: 'Journey Operations', path: '/crm/hospital/operations', cap: 'worldclass:read' },
+    { icon: Radio, label: 'Engagement Hub', path: '/crm/hospital/engagement', cap: 'worldclass:read' },
+    { icon: Magnet, label: 'Acquisition', path: '/crm/hospital/acquisition', cap: 'dashboard:marketing-head' },
+    { icon: Star, label: 'Patient Experience', path: '/crm/hospital/experience', cap: 'dashboard:business-head' },
+    { icon: UserCog, label: 'Team Performance', path: '/crm/hospital/people', cap: 'dashboard:people-performance' },
+    { icon: ShieldCheck, label: 'Governance', path: '/crm/hospital/governance', cap: 'dashboard:business-head' },
   ]},
   { section: 'SALES', items: [
     { icon: Target, label: 'Leads', path: '/crm/leads' },
@@ -38,30 +44,33 @@ const sidebarNav = [
     { icon: BarChart3, label: 'Pipeline', path: '/crm/pipeline' },
   ]},
   { section: 'MANAGE', items: [
-    { icon: Users, label: 'Contacts', path: '/crm/contacts' },
+    { icon: Contact, label: 'Contacts', path: '/crm/contacts' },
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
   ]},
   { section: 'MARKETING', items: [
-    { icon: Sparkles, label: 'AI Copilot', path: '/crm/marketing-copilot' },
+    { icon: Bot, label: 'AI Copilot', path: '/crm/marketing-copilot' },
     { icon: Mail, label: 'Campaigns', path: '/crm/campaigns' },
-    { icon: Users, label: 'Lists', path: '/crm/lists' },
+    { icon: List, label: 'Lists', path: '/crm/lists' },
     { icon: FileText, label: 'Templates', path: '/crm/templates' },
     { icon: UserCheck, label: 'Senders', path: '/crm/senders' },
     { icon: X, label: 'Suppressions', path: '/crm/suppressions' },
   ]},
   { section: 'INSURANCE', items: [
-    { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },
+    { icon: ClipboardList, label: 'RFQs', path: '/crm/rfqs' },
   ]},
   { section: 'DISTRIBUTION', items: [
-    { icon: UserCheck, label: 'Agents', path: '/crm/agents' },
+    { icon: Handshake, label: 'Agents', path: '/crm/agents' },
     { icon: Building2, label: 'Agencies', path: '/crm/agencies' },
     { icon: IndianRupee, label: 'Commissions', path: '/crm/commissions' },
-    { icon: Briefcase, label: 'Corp Plans', path: '/crm/corporate-plans' },
+    { icon: Landmark, label: 'Corp Plans', path: '/crm/corporate-plans' },
   ]},
   { section: 'INSIGHTS', items: [
     { icon: Brain,    label: 'AI Insights', path: '/crm/ai-insights' },
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
     { icon: Settings, label: 'Settings', path: '/crm/settings' },
+  ]},
+  { section: 'ADMIN', items: [
+    { icon: UserPlus, label: 'Team', path: '/crm/team', cap: 'team:manage' },
   ]},
 ];
 
@@ -108,13 +117,16 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
         </div>
       </div>
       <nav className="flex-1 px-3 space-y-5 overflow-y-auto">
-        {sidebarNav.map(({ section, items }) => (
+        {sidebarNav.map(({ section, items }) => {
+          const visibleItems = items.filter((item) => !('cap' in item) || hasCRMCapability(crmUser, (item as any).cap));
+          if (!visibleItems.length) return null;
+          return (
           <div key={section}>
             {!sidebarCollapsed && (
               <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-[0.18em] px-3 mb-2">{section}</p>
             )}
             <div className="space-y-0.5">
-              {items.map(({ icon: Icon, label, path }) => {
+              {visibleItems.map(({ icon: Icon, label, path }) => {
                 const active = location.pathname === path;
                 return (
                   <Link key={path} to={path} onClick={() => setMobileSidebarOpen(false)}
@@ -131,7 +143,8 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </nav>
       {crmUser && (
         <div className="p-3 mt-auto">
@@ -1191,6 +1204,219 @@ export function CRMSettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+    </CRMLayout>
+  );
+}
+
+// ─── Team Management — create CRM logins and assign roles ─────────────────────
+
+interface CRMTeamMember {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  crmRole: string;
+  department: string | null;
+  designation: string | null;
+  status: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export function CRMTeamPage() {
+  const navigate = useNavigate();
+  const [crmUser, setCrmUser] = useState<any>(null);
+  const [members, setMembers] = useState<CRMTeamMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '' });
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('crmToken');
+    if (!token) { navigate('/crm/login'); return; }
+    let user: any = null;
+    try { const d = localStorage.getItem('crmUserData'); if (d) user = JSON.parse(d); } catch {}
+    setCrmUser(user);
+    if (!hasCRMCapability(user, 'team:manage')) { navigate('/crm/dashboard', { replace: true }); return; }
+    loadMembers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate]);
+
+  const loadMembers = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get('/crm/team/users', { headers: authHeaders() });
+      setMembers(data?.data || []);
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Unable to load CRM team members.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    setNotice('');
+    try {
+      const { data } = await api.post('/crm/team/users', form, { headers: authHeaders() });
+      setNotice(data.message || 'CRM login created.');
+      setForm({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '' });
+      setShowForm(false);
+      await loadMembers();
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Unable to create CRM login.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRoleChange = async (id: number, crmRole: string) => {
+    setError('');
+    try {
+      await api.patch(`/crm/team/users/${id}`, { crmRole }, { headers: authHeaders() });
+      await loadMembers();
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Unable to update role.');
+    }
+  };
+
+  const handleStatusToggle = async (member: CRMTeamMember) => {
+    const nextStatus = member.status === 'active' ? 'inactive' : 'active';
+    setError('');
+    try {
+      await api.patch(`/crm/team/users/${member.id}`, { status: nextStatus }, { headers: authHeaders() });
+      await loadMembers();
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Unable to update status.');
+    }
+  };
+
+  if (!crmUser) return null;
+
+  return (
+    <CRMLayout title="Team">
+      <div className="space-y-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">CRM administration</p>
+            <h2 className="mt-1 text-2xl font-bold text-white">Team &amp; Roles</h2>
+            <p className="mt-1 max-w-2xl text-sm text-slate-400">
+              Create CRM logins and assign each one a role — Business Head, Marketing Head, Marketing, Telecaller,
+              Conversion, or Sales Representative. Roles control which dashboards and sidebar links each login can see.
+            </p>
+          </div>
+          <Button onClick={() => setShowForm((v) => !v)} className="gap-2 bg-violet-600 hover:bg-violet-500">
+            <Plus className="h-4 w-4" /> Add team member
+          </Button>
+        </div>
+
+        {notice && <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">{notice}</div>}
+        {error && <div className="rounded-lg border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">{error}</div>}
+
+        {showForm && (
+          <form onSubmit={handleCreate} className="grid gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.03] p-5 sm:grid-cols-2">
+            <div>
+              <Label className="text-xs text-slate-400">First name</Label>
+              <Input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                className="mt-1 border-white/10 bg-black/20 text-white" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Last name</Label>
+              <Input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                className="mt-1 border-white/10 bg-black/20 text-white" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Email</Label>
+              <Input required type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                className="mt-1 border-white/10 bg-black/20 text-white" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Phone</Label>
+              <Input required type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+91XXXXXXXXXX" className="mt-1 border-white/10 bg-black/20 text-white placeholder:text-slate-600" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Role</Label>
+              <select value={form.crmRole} onChange={(e) => setForm({ ...form, crmRole: e.target.value })}
+                className="mt-1 h-10 w-full rounded-md border border-white/10 bg-[#111827] px-3 text-sm text-white">
+                {CRM_ROLE_LIST.map((role) => (
+                  <option key={role} value={role}>{CRM_ROLE_LABELS[role]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Department</Label>
+              <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}
+                placeholder="e.g. Marketing" className="mt-1 border-white/10 bg-black/20 text-white placeholder:text-slate-600" />
+            </div>
+            <div>
+              <Label className="text-xs text-slate-400">Designation</Label>
+              <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })}
+                placeholder="e.g. Telecaller — OPD" className="mt-1 border-white/10 bg-black/20 text-white placeholder:text-slate-600" />
+            </div>
+            <div className="sm:col-span-2 flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-500">
+              No password is set here — a password-setup email is sent to the new login automatically.
+            </div>
+            <div className="sm:col-span-2 flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)} className="border-white/10 text-slate-200">Cancel</Button>
+              <Button type="submit" disabled={submitting} className="bg-violet-600 hover:bg-violet-500">
+                {submitting ? 'Creating…' : 'Create login'}
+              </Button>
+            </div>
+          </form>
+        )}
+
+        <div className="overflow-x-auto rounded-2xl border border-white/[0.07] bg-white/[0.03]">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[11px] uppercase tracking-[0.12em] text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Name</th>
+                <th className="px-4 py-3">Email</th>
+                <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Department</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Last login</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.05] text-slate-300">
+              {members.map((m) => (
+                <tr key={m.id}>
+                  <td className="px-4 py-3 text-white">{m.firstName} {m.lastName}</td>
+                  <td className="px-4 py-3">{m.email}</td>
+                  <td className="px-4 py-3">
+                    <select value={m.crmRole} onChange={(e) => handleRoleChange(m.id, e.target.value)}
+                      className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
+                      {CRM_ROLE_LIST.map((role) => (
+                        <option key={role} value={role}>{CRM_ROLE_LABELS[role]}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">{m.department || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className={m.status === 'active' ? 'text-emerald-300' : 'text-slate-500'}>{m.status}</span>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{m.lastLoginAt ? new Date(m.lastLoginAt).toLocaleString() : 'Never'}</td>
+                  <td className="px-4 py-3 text-right">
+                    <button onClick={() => handleStatusToggle(m)} className="text-xs text-violet-300 hover:text-violet-200">
+                      {m.status === 'active' ? 'Deactivate' : 'Activate'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!loading && !members.length && (
+                <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">No CRM team members yet — add one above.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </CRMLayout>

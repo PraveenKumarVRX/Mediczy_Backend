@@ -14,6 +14,7 @@ import sharedPool from '../db/pgPool.js';
 import { handleLeadStatusChange } from '../services/crm-lead-automation.service.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
 import nodemailer from 'nodemailer';
+import { DEFAULT_CRM_ROLE } from '../config/crm-roles.config.js';
 
 // ─── CRM Email Helper ─────────────────────────────────────────────────────────
 // Loads SMTP config from email_configs table (default/active row) and sends.
@@ -681,6 +682,8 @@ router.post('/login', authLimiter, [
       return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
+    const crmRole = metadata.crmRole || DEFAULT_CRM_ROLE;
+
     const payload = {
       id: user.id,
       userId: user.id,
@@ -689,8 +692,9 @@ router.post('/login', authLimiter, [
       userType: 'crm',
       isCRM: true,
       isAdmin: user.isAdmin || false,
-      tenantId: metadata.tenantId || user.organizationId || null,
-      crmPermissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports']
+      tenantId: metadata.tenantId || user.tenant_id || user.organizationId || user.organization_id || null,
+      crmPermissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports'],
+      crmRole
     };
 
     const { accessToken, refreshToken } = await issueTokenPair(payload, ip);
@@ -705,6 +709,9 @@ router.post('/login', authLimiter, [
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role || 'crm',
+      crmRole,
+      isAdmin: user.isAdmin || false,
+      tenantId: metadata.tenantId || user.tenant_id || user.organizationId || user.organization_id || null,
       designation: user.designation || 'Sales Representative',
       department: user.department || 'Sales',
       permissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports']
@@ -777,7 +784,8 @@ router.post('/auth/refresh', async (req, res) => {
       isCRM: true,
       isAdmin: user.isAdmin || false,
       tenantId: metadata.tenantId || user.organizationId || null,
-      crmPermissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports']
+      crmPermissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports'],
+      crmRole: metadata.crmRole || DEFAULT_CRM_ROLE
     };
 
     const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(payload, ip);
@@ -813,6 +821,8 @@ router.get('/profile', authCRM, async (req, res) => {
       firstName: user.firstName || 'CRM',
       lastName: user.lastName || 'User',
       role: user.role || 'crm',
+      crmRole: user.crmRole,
+      isAdmin: user.isAdmin || false,
       designation: user.designation || 'Sales Representative',
       department: user.department || 'Sales',
       permissions: user.permissions || [],

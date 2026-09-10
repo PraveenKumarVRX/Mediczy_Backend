@@ -2,6 +2,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel from '../models/user.model.intelligent.js';
 import sharedPool from '../db/pgPool.js';
+import { DEFAULT_CRM_ROLE, hasCRMCapability } from '../config/crm-roles.config.js';
 
 /**
  * Verify CRM member authentication.
@@ -86,6 +87,7 @@ export const authCRM = async (req, res, next) => {
       isAdmin: user.isAdmin || decoded.isAdmin || false,
       tenantId: metadata.tenantId || user.tenant_id || user.organization_id || decoded.tenantId || decoded.tenant_id || null,
       permissions: metadata.crmPermissions || decoded.crmPermissions || [],
+      crmRole: metadata.crmRole || decoded.crmRole || DEFAULT_CRM_ROLE,
     };
 
     next();
@@ -94,3 +96,17 @@ export const authCRM = async (req, res, next) => {
     return res.status(500).json({ success: false, message: 'Authentication error' });
   }
 };
+
+/**
+ * Gate a route behind a CRM capability (see server/config/crm-roles.config.js).
+ * Must run after `authCRM`. `isAdmin` always passes.
+ */
+export function requireCRMCapability(capability) {
+  return (req, res, next) => {
+    if (hasCRMCapability(req.crmUser, capability)) return next();
+    return res.status(403).json({
+      success: false,
+      message: `This action is restricted to specific CRM roles (${capability}). Ask your CRM admin for access.`,
+    });
+  };
+}

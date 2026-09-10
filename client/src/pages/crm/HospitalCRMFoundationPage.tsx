@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { AlertTriangle, GitMerge, Plus, RefreshCw, Target, Users } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { AlertTriangle, GitMerge, IndianRupee, Plus, RefreshCw, Target, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CRMLayout } from './CRMModulePages';
+import { FunnelBar, NotConfiguredBanner } from './shared/CRMWidgets';
+import { hasCRMCapability } from './shared/crmRoles';
 import api from '@/utils/api';
 
 type FunnelRow = {
@@ -26,8 +28,24 @@ const authHeaders = () => ({
 
 const titleCase = (value: string) => value.replaceAll('_', ' ').replace(/\b\w/g, (match) => match.toUpperCase());
 
+function getCrmUser() {
+  try { return JSON.parse(localStorage.getItem('crmUserData') || 'null'); } catch { return null; }
+}
+
+// A row from either /crm/worldclass dashboard block may carry an explicit
+// count, or just be one row per event — sum whichever is present.
+function sumRows(rows: any[] | undefined) {
+  if (!Array.isArray(rows)) return 0;
+  return rows.reduce((total, row) => total + Number(row?.count ?? 1), 0);
+}
+
 export default function HospitalCRMFoundationPage() {
+  const crmUser = getCrmUser();
+  const canSeeRevenue = hasCRMCapability(crmUser, 'dashboard:business-head');
+
   const [funnel, setFunnel] = useState<FunnelRow[]>([]);
+  const [funnelAnalytics, setFunnelAnalytics] = useState<any>(null);
+  const [businessHead, setBusinessHead] = useState<any>(null);
   const [duplicates, setDuplicates] = useState<DuplicateGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -38,20 +56,55 @@ export default function HospitalCRMFoundationPage() {
     setLoading(true);
     setError('');
     try {
-      const [funnelResponse, duplicateResponse] = await Promise.all([
+      const [funnelResponse, duplicateResponse, analyticsResult, businessHeadResult] = await Promise.allSettled([
         api.get('/crm/v2/funnel', { headers: authHeaders() }),
         api.get('/crm/v2/duplicates', { headers: authHeaders(), params: { limit: 25 } }),
+        api.get('/crm/funnel-analytics', { headers: authHeaders() }),
+        canSeeRevenue ? api.get('/crm/worldclass/dashboards/business-head', { headers: authHeaders() }) : Promise.resolve(null),
       ]);
-      setFunnel(funnelResponse.data?.data || []);
-      setDuplicates(duplicateResponse.data?.data || []);
-    } catch (requestError: any) {
-      setError(requestError?.response?.data?.message || 'Hospital CRM foundation is not available yet. Run the CRM migration first.');
+      if (funnelResponse.status === 'fulfilled') setFunnel(funnelResponse.value.data?.data || []);
+      if (duplicateResponse.status === 'fulfilled') setDuplicates(duplicateResponse.value.data?.data || []);
+      if (analyticsResult.status === 'fulfilled') setFunnelAnalytics(analyticsResult.value?.data?.data || null);
+      if (businessHeadResult.status === 'fulfilled') setBusinessHead(businessHeadResult.value?.data?.data || null);
+      if (funnelResponse.status === 'rejected' && analyticsResult.status === 'rejected') {
+        setError('Hospital CRM foundation is not available yet. Run the CRM migration first.');
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canSeeRevenue]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Prefer the event-backed v2 funnel; fall back to funnel-analytics' lead
+  // status counts (which stay populated even before v2 funnel events exist),
+  // so this page never looks broken just because the newer table is empty.
+  const acquisitionStages = useMemo(() => {
+    if (funnel.length) {
+      return funnel.map((row) => ({ label: titleCase(row.lifecycle_stage), value: Number(row.lead_count || 0) }));
+    }
+    const leads = funnelAnalytics?.leads;
+    if (leads) {
+      return [
+        { label: 'New', value: Number(leads.new_leads || 0) },
+        { label: 'Contacted', value: Number(leads.contacted || 0) },
+        { label: 'Qualified', value: Number(leads.qualified || 0) },
+        { label: 'Converted', value: Number(leads.converted || 0) },
+      ];
+    }
+    return [];
+  }, [funnel, funnelAnalytics]);
+
+  const tailStages = useMemo(() => {
+    if (!businessHead) return [];
+    return [
+      { label: 'Appointment Booked', value: sumRows(businessHead.appointments) },
+      { label: 'Visited', value: sumRows(businessHead.visits) },
+    ];
+  }, [businessHead]);
+
+  const combinedStages = [...acquisitionStages, ...tailStages];
+  const revenue = Number(businessHead?.revenue?.net_revenue || 0);
 
   const submitLead = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -102,14 +155,42 @@ export default function HospitalCRMFoundationPage() {
           ))}
         </div>
 
+        <section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-white">Patient acquisition funnel</h3>
+              <p className="text-xs text-slate-500">Source → lead → appointment → visit, one connected view</p>
+            </div>
+            <Target className="h-5 w-5 text-violet-300" />
+          </div>
+          {!loading && !combinedStages.some((s) => s.value > 0) ? (
+            <NotConfiguredBanner
+              title="No funnel activity recorded yet"
+              hint="Leads will appear here as they come in. Appointment and visit stages need an admin to connect appointment data for this tenant."
+            />
+          ) : (
+            <>
+              <FunnelBar stages={combinedStages} />
+              {canSeeRevenue && (
+                <div className="mt-4 flex items-center gap-3 rounded-lg border border-emerald-400/15 bg-emerald-400/[0.05] px-4 py-3">
+                  <IndianRupee className="h-4 w-4 flex-shrink-0 text-emerald-300" />
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-100">₹{revenue.toLocaleString('en-IN')} revenue at the end of this funnel</p>
+                    <p className="text-[11px] text-emerald-200/60">Shown separately from the stage counts above — revenue and lead counts aren't on the same scale.</p>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </section>
+
         <div className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
           <section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h3 className="text-base font-semibold text-white">Hospital funnel</h3>
-                <p className="text-xs text-slate-500">Event-backed lifecycle stages</p>
+                <h3 className="text-base font-semibold text-white">Stage detail</h3>
+                <p className="text-xs text-slate-500">Assignment and response depth per lifecycle stage</p>
               </div>
-              <Target className="h-5 w-5 text-violet-300" />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
@@ -124,7 +205,7 @@ export default function HospitalCRMFoundationPage() {
                     <td className="py-3">{row.responded_count}</td>
                     <td className="py-3">{row.average_score ?? '0'}</td>
                   </tr>)}
-                  {!loading && funnel.length === 0 && <tr><td colSpan={5} className="py-10 text-center text-slate-500">No funnel events yet</td></tr>}
+                  {!loading && funnel.length === 0 && <tr><td colSpan={5} className="py-10 text-center text-slate-500">No lifecycle-event detail yet — see the funnel above for lead-status counts.</td></tr>}
                 </tbody>
               </table>
             </div>

@@ -1,5 +1,5 @@
 import express from 'express';
-import { authCRM } from '../middleware/crm.middleware.js';
+import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
 import {
   createLead,
   findDuplicateIdentities,
@@ -29,7 +29,7 @@ function handleError(res, error) {
   return res.status(status).json({ success: false, message });
 }
 
-router.get('/funnel', async (req, res) => {
+router.get('/funnel', requireCRMCapability('foundation:read'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   try {
@@ -37,7 +37,7 @@ router.get('/funnel', async (req, res) => {
   } catch (error) { return handleError(res, error); }
 });
 
-router.get('/duplicates', async (req, res) => {
+router.get('/duplicates', requireCRMCapability('foundation:read'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   try {
@@ -45,7 +45,7 @@ router.get('/duplicates', async (req, res) => {
   } catch (error) { return handleError(res, error); }
 });
 
-router.post('/leads', async (req, res) => {
+router.post('/leads', requireCRMCapability('foundation:write'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   const payload = req.body || {};
@@ -58,7 +58,7 @@ router.post('/leads', async (req, res) => {
   } catch (error) { return handleError(res, error); }
 });
 
-router.get('/leads/:id/timeline', async (req, res) => {
+router.get('/leads/:id/timeline', requireCRMCapability('foundation:read'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   try {
@@ -68,7 +68,7 @@ router.get('/leads/:id/timeline', async (req, res) => {
   } catch (error) { return handleError(res, error); }
 });
 
-router.post('/leads/:id/stage', async (req, res) => {
+router.post('/leads/:id/stage', requireCRMCapability('foundation:write'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   if (!req.body?.toStage) return res.status(400).json({ success: false, message: 'toStage is required' });
@@ -85,7 +85,7 @@ router.post('/leads/:id/stage', async (req, res) => {
   } catch (error) { return handleError(res, error); }
 });
 
-router.post('/leads/:id/merge', async (req, res) => {
+router.post('/leads/:id/merge', requireCRMCapability('foundation:write'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   if (!req.body?.targetLeadId) return res.status(400).json({ success: false, message: 'targetLeadId is required' });
@@ -101,7 +101,7 @@ router.post('/leads/:id/merge', async (req, res) => {
   } catch (error) { return handleError(res, error); }
 });
 
-router.get('/leads/:id', async (req, res) => {
+router.get('/leads/:id', requireCRMCapability('foundation:read'), async (req, res) => {
   const tenantId = tenantIdFromRequest(req, res);
   if (!tenantId) return;
   try {

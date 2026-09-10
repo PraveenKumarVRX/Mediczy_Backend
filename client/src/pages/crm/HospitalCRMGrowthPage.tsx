@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Activity, Bot, CheckCircle2, Clock3, DollarSign, Megaphone, Plus, RefreshCw, Send, Target, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CRMLayout } from './CRMModulePages';
+import { NotConfiguredBanner } from './shared/CRMWidgets';
 import api from '@/utils/api';
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('crmToken') || ''}` });
@@ -112,6 +113,15 @@ export default function HospitalCRMGrowthPage() {
         <Button variant="outline" size="sm" onClick={load} disabled={loading} className="gap-2 border-white/10 bg-white/[0.03] text-slate-200 hover:bg-white/[0.08]"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</Button>
       </div>
       {message && <Notice tone={messageTone}>{message}</Notice>}
+
+      {!loading && !message && Number(dashboard?.summary?.leads || 0) === 0 && Number(dashboard?.summary?.revenue || 0) === 0 && (
+        <NotConfiguredBanner
+          title="No growth-automation activity yet for this tenant"
+          hint="This workspace is live but empty — create a scoring rule or nurture journey below, or connect a channel on the Digital Growth Hub to start seeing numbers here."
+          ctaLabel="Go to Digital Growth Hub"
+          ctaTo="/crm/hospital/digital"
+        />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Metric icon={Users} title="Leads" value={Number(dashboard?.summary?.leads || 0).toLocaleString('en-IN')} hint={`${Number(dashboard?.summary?.qualified || 0).toLocaleString('en-IN')} qualified`} />

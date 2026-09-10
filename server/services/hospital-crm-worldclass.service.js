@@ -575,3 +575,136 @@ export async function getPeoplePerformance(tenantId, { from, to } = {}) {
   );
   return result.rows.map((row) => ({ ...row, ...(row.metrics || {}), ...(row.dimensions || {}) }));
 }
+
+function dashboardDate(value, fallback) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toISOString();
+}
+
+/** Live operating view for the Business Head, independent of mart refreshes. */
+export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, search } = {}) {
+  const tenant = requireTenant(tenantId);
+  const end = dashboardDate(to, new Date().toISOString());
+  const start = dashboardDate(from, new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+  const roleFilter = String(role || '').trim().toLowerCase();
+  const searchFilter = String(search || '').trim();
+
+  const membersQuery = `
+    WITH team_members AS (
+      SELECT u.id AS user_id,
+             u."firstName" AS first_name,
+             u."lastName" AS last_name,
+             u.email,
+             u.status,
+             u.department_name,
+             u.metadata,
+             COALESCE(NULLIF(u.metadata->>'crmRole', ''), CASE
+               WHEN u."isAdmin" OR u.role = 'admin' THEN 'admin'
+               ELSE 'team_member'
+             END) AS role_key
+        FROM users u
+       WHERE u.tenant_id = $1
+         AND COALESCE(u.status, 'active') <> 'deleted'
+         AND (u."isTeam" = TRUE OR u."isAdmin" = TRUE OR u.role IN ('team', 'admin') OR u.metadata->>'isCRM' = 'true' OR u.metadata->>'crmAccess' = 'true' OR u.metadata ? 'crmRole')
+    )
+    SELECT tm.user_id,
+           tm.first_name,
+           tm.last_name,
+           tm.email,
+           tm.status,
+           tm.department_name,
+           tm.role_key,
+           COALESCE(ep.designation, NULLIF(tm.metadata->>'designation', '')) AS designation,
+           COALESCE(ep.employee_code, NULLIF(tm.metadata->>'employeeCode', '')) AS employee_code,
+           COALESCE((SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::int AS leads,
+           COALESCE((SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND l.lifecycle_stage = 'qualified' AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::int AS qualified_leads,
+           COALESCE((SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND (l.converted_at IS NOT NULL OR l.lifecycle_stage IN ('won', 'billing_completed')) AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::int AS converted_leads,
+           COALESCE((SELECT SUM(l.actual_revenue) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::numeric AS revenue,
+           COALESCE((SELECT COUNT(*) FROM crm_tasks t WHERE t.tenant_id = $1 AND t.assigned_to_user_id = tm.user_id AND t.created_at >= $2::timestamptz AND t.created_at < $3::timestamptz), 0)::int AS tasks,
+           COALESCE((SELECT COUNT(*) FROM crm_tasks t WHERE t.tenant_id = $1 AND t.assigned_to_user_id = tm.user_id AND (t.status = 'completed' OR t.completed_at IS NOT NULL) AND t.created_at >= $2::timestamptz AND t.created_at < $3::timestamptz), 0)::int AS completed_tasks,
+           COALESCE((SELECT COUNT(*) FROM crm_tasks t WHERE t.tenant_id = $1 AND t.assigned_to_user_id = tm.user_id AND t.status NOT IN ('completed', 'cancelled') AND t.due_at < NOW()), 0)::int AS overdue_tasks,
+           COALESCE((SELECT COUNT(*) FROM crm_communication_events c WHERE c.tenant_id = $1 AND c.owner_user_id = tm.user_id AND c.created_at >= $2::timestamptz AND c.created_at < $3::timestamptz), 0)::int AS touchpoints
+      FROM team_members tm
+      LEFT JOIN crm_employee_profiles ep ON ep.tenant_id = $1 AND ep.user_id = tm.user_id
+     WHERE ($4 = '' OR tm.role_key = $4)
+       AND ($5 = '' OR CONCAT_WS(' ', tm.first_name, tm.last_name, tm.email, tm.department_name) ILIKE '%' || $5 || '%')
+     ORDER BY converted_leads DESC, revenue DESC, leads DESC, tm.first_name ASC NULLS LAST`;
+
+  const trendQuery = `
+    WITH team_members AS (
+      SELECT u.id AS user_id,
+             COALESCE(NULLIF(u.metadata->>'crmRole', ''), CASE WHEN u."isAdmin" OR u.role = 'admin' THEN 'admin' ELSE 'team_member' END) AS role_key
+        FROM users u
+       WHERE u.tenant_id = $1
+         AND COALESCE(u.status, 'active') <> 'deleted'
+         AND (u."isTeam" = TRUE OR u."isAdmin" = TRUE OR u.role IN ('team', 'admin') OR u.metadata->>'isCRM' = 'true' OR u.metadata->>'crmAccess' = 'true' OR u.metadata ? 'crmRole')
+    )
+    SELECT date_trunc('week', l.created_at)::date AS week_start,
+           COUNT(*)::int AS leads,
+           COUNT(*) FILTER (WHERE l.converted_at IS NOT NULL OR l.lifecycle_stage IN ('won', 'billing_completed'))::int AS converted_leads,
+           COALESCE(SUM(l.actual_revenue), 0)::numeric AS revenue
+      FROM crm_leads_v2 l
+      JOIN team_members tm ON tm.user_id = l.owner_user_id
+     WHERE l.tenant_id = $1 AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz
+       AND ($4 = '' OR tm.role_key = $4)
+     GROUP BY week_start
+     ORDER BY week_start ASC`;
+
+  const [membersResult, trendResult] = await Promise.all([
+    sharedPool.query(membersQuery, [tenant, start, end, roleFilter, searchFilter]),
+    sharedPool.query(trendQuery, [tenant, start, end, roleFilter]),
+  ]);
+
+  const members = membersResult.rows.map((row) => {
+    const leads = numberOrZero(row.leads);
+    const converted = numberOrZero(row.converted_leads);
+    const tasks = numberOrZero(row.tasks);
+    return {
+      ...row,
+      employee_name: [row.first_name, row.last_name].filter(Boolean).join(' ') || row.email || `User ${row.user_id}`,
+      role: row.role_key,
+      conversion_rate: leads ? (converted / leads) * 100 : null,
+      task_completion_rate: tasks ? (numberOrZero(row.completed_tasks) / tasks) * 100 : null,
+      revenue: numberOrZero(row.revenue),
+    };
+  });
+  const total = (key) => members.reduce((sum, row) => sum + numberOrZero(row[key]), 0);
+  const totalLeads = total('leads');
+  const totalConverted = total('converted_leads');
+  const totalTasks = total('tasks');
+  const roleBreakdown = Object.values(members.reduce((groups, row) => {
+    const current = groups[row.role] || { role: row.role, members: 0, leads: 0, converted_leads: 0, revenue: 0, tasks: 0, overdue_tasks: 0 };
+    current.members += 1;
+    current.leads += numberOrZero(row.leads);
+    current.converted_leads += numberOrZero(row.converted_leads);
+    current.revenue += numberOrZero(row.revenue);
+    current.tasks += numberOrZero(row.tasks);
+    current.overdue_tasks += numberOrZero(row.overdue_tasks);
+    groups[row.role] = current;
+    return groups;
+  }, {})).sort((a, b) => b.leads - a.leads);
+
+  return {
+    period: { from: start, to: end },
+    filters: { role: roleFilter || null, search: searchFilter || null },
+    summary: {
+      total_members: members.length,
+      active_members: members.filter((row) => row.status === 'active').length,
+      roles: roleBreakdown.length,
+      leads: totalLeads,
+      qualified_leads: total('qualified_leads'),
+      converted_leads: totalConverted,
+      conversion_rate: totalLeads ? (totalConverted / totalLeads) * 100 : null,
+      revenue: total('revenue'),
+      tasks: totalTasks,
+      completed_tasks: total('completed_tasks'),
+      overdue_tasks: total('overdue_tasks'),
+      touchpoints: total('touchpoints'),
+      task_completion_rate: totalTasks ? (total('completed_tasks') / totalTasks) * 100 : null,
+    },
+    role_breakdown: roleBreakdown,
+    members,
+    trend: trendResult.rows.map((row) => ({ ...row, revenue: numberOrZero(row.revenue) })),
+  };
+}

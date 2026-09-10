@@ -1,5 +1,6 @@
 import express from 'express';
 import { authCRM } from '../middleware/crm.middleware.js';
+import { CRM_CAPABILITY_ROLES, hasCRMCapability } from '../config/crm-roles.config.js';
 import {
   acknowledgeCommunicationHubAlert,
   createCommunicationHubCampaign,
@@ -30,19 +31,25 @@ function fail(res, error) {
   });
 }
 
-const action = (handler) => async (req, res) => {
+const action = (handler, capability = 'communication:read') => async (req, res) => {
   const tenantId = tenant(req, res);
   if (!tenantId) return;
+  if (!hasCRMCapability(req.crmUser, capability)) {
+    return res.status(403).json({
+      success: false,
+      message: `This action is restricted to: ${(CRM_CAPABILITY_ROLES[capability] || []).join(', ') || 'admin'}.`,
+    });
+  }
   try { return res.json({ success: true, data: await handler(req, tenantId) }); } catch (error) { return fail(res, error); }
 };
 
 router.get('/dashboard', action((req, tenantId) => getCommunicationHubDashboard(tenantId, req.query)));
 router.get('/campaigns', action((req, tenantId) => listCommunicationHubCampaigns(tenantId, req.query)));
-router.post('/campaigns', action((req, tenantId) => createCommunicationHubCampaign({ ...req.body, tenantId }, req.crmUser.id)));
-router.patch('/campaigns/:id/status', action((req, tenantId) => updateCommunicationHubCampaignStatus(tenantId, req.params.id, req.body.status, req.crmUser.id)));
+router.post('/campaigns', action((req, tenantId) => createCommunicationHubCampaign({ ...req.body, tenantId }, req.crmUser.id), 'communication:write'));
+router.patch('/campaigns/:id/status', action((req, tenantId) => updateCommunicationHubCampaignStatus(tenantId, req.params.id, req.body.status, req.crmUser.id), 'communication:write'));
 router.get('/templates', action((req, tenantId) => listCommunicationHubTemplates(tenantId, req.query)));
-router.post('/templates', action((req, tenantId) => createCommunicationHubTemplate({ ...req.body, tenantId }, req.crmUser.id)));
-router.patch('/integrations/:id/health', action((req, tenantId) => recordCommunicationIntegrationHealth({ ...req.body, tenantId, integrationId: req.params.id }, req.crmUser.id)));
-router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id)));
+router.post('/templates', action((req, tenantId) => createCommunicationHubTemplate({ ...req.body, tenantId }, req.crmUser.id), 'communication:write'));
+router.patch('/integrations/:id/health', action((req, tenantId) => recordCommunicationIntegrationHealth({ ...req.body, tenantId, integrationId: req.params.id }, req.crmUser.id), 'communication:write'));
+router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id), 'communication:write'));
 
 export default router;

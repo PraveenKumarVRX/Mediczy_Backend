@@ -233,6 +233,7 @@ const AdminSaMD                = lazy(() => import("@/pages/admin/AdminSaMD"));
 
 // ─── CRM ─────────────────────────────────────────────────────────────────────
 const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
+const CRMForgotPassword = lazy(() => import("@/pages/crm/CRMForgotPassword"));
 const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
 const HospitalCRMFoundationPage = lazy(() => import("@/pages/crm/HospitalCRMFoundationPage"));
 const HospitalCRMWorldclassPage = lazy(() => import("@/pages/crm/HospitalCRMWorldclassPage"));
@@ -270,6 +271,7 @@ const CRMActivitiesPage = lazyNamed(_CRMModulePages, "CRMActivitiesPage");
 const CRMPipelinePage   = lazyNamed(_CRMModulePages, "CRMPipelinePage");
 const CRMReportsPage    = lazyNamed(_CRMModulePages, "CRMReportsPage");
 const CRMSettingsPage   = lazyNamed(_CRMModulePages, "CRMSettingsPage");
+const CRMTeamPage       = lazyNamed(_CRMModulePages, "CRMTeamPage");
 
 const _CRMRFQPages = () => import("@/pages/crm/CRMRFQPages");
 const CRMRFQsPage        = lazyNamed(_CRMRFQPages, "CRMRFQsPage");
@@ -1309,11 +1311,13 @@ const AppRoutes = () => {
 
         {/* ── CRM ─────────────────────────────────────────────────────── */}
         <Route path="/crm/login"         element={<CRMLogin />} />
+        <Route path="/crm/forgot-password" element={<CRMForgotPassword />} />
         <Route path="/crm/hospital/operations" element={<HospitalCRMOperationsPage />} />
         <Route path="/crm/hospital/engagement" element={<HospitalCRMEngagementPage />} />
         <Route path="/crm/hospital/acquisition" element={<HospitalCRMAcquisitionPage />} />
         <Route path="/crm/hospital/experience" element={<HospitalCRMExperiencePage />} />
         <Route path="/crm/hospital/people" element={<HospitalCRMPeoplePage />} />
+        <Route path="/crm/hospital/business-head" element={<HospitalCRMPeoplePage />} />
         <Route path="/crm/hospital/governance" element={<HospitalCRMGovernancePage />} />
         {/* Alias redirects — common alternative URLs for CRM login */}
         <Route path="/rfq/login"         element={<Navigate to="/crm/login" replace />} />
@@ -1334,6 +1338,7 @@ const AppRoutes = () => {
         <Route path="/crm/pipeline"      element={<CRMPipelinePage />} />
         <Route path="/crm/reports"       element={<CRMReportsPage />} />
         <Route path="/crm/settings"      element={<CRMSettingsPage />} />
+        <Route path="/crm/team"          element={<CRMTeamPage />} />
         <Route path="/crm/rfqs"           element={<CRMRFQsPage />} />
         <Route path="/crm/rfqs/:id"       element={<CRMRFQDetailPage />} />
         <Route path="/crm/rfqs/:id/quote/:quoteId" element={<CRMQuoteBuilderPage />} />
