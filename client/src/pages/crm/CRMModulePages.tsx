@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +16,7 @@ import {
 import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
 import LeadDetailDrawer from './shared/LeadDetailDrawer';
+import CommandPalette from './shared/CommandPalette';
 
 // ─── Shared sidebar nav config ─────────────────────────────────────────────────
 // Items with a `cap` are visible only to CRM roles that hold that capability
@@ -75,6 +76,11 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
   const [crmUser, setCrmUser] = useState<any>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+
+  const flatNavItems = sidebarNav.flatMap(({ section, items }) =>
+    items.filter((item) => !('cap' in item) || hasCRMCapability(crmUser, (item as any).cap)).map(({ label, path }) => ({ label, path, section }))
+  );
 
   useEffect(() => {
     const token = localStorage.getItem('crmToken');
@@ -185,6 +191,12 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
             <h1 className="text-lg font-bold text-white">{title}</h1>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={() => setPaletteOpen(true)} className="hidden sm:flex items-center gap-2 h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 text-xs transition-colors">
+              <Search className="h-3.5 w-3.5" /> Search <kbd className="text-[10px] text-slate-600 border border-white/10 rounded px-1">⌘K</kbd>
+            </button>
+            <button onClick={() => setPaletteOpen(true)} className="sm:hidden p-2.5 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition-colors">
+              <Search className="h-4.5 w-4.5" />
+            </button>
             <button className="relative p-2.5 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition-colors">
               <Bell className="h-4.5 w-4.5" />
             </button>
@@ -192,6 +204,7 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
         </header>
         <main className="p-6 pb-24 lg:pb-6">{children}</main>
       </div>
+      <CommandPalette navItems={flatNavItems} open={paletteOpen} onOpenChange={setPaletteOpen} />
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0d1120]/95 backdrop-blur-xl border-t border-white/[0.06] px-2 py-1.5 z-40">
         <div className="flex justify-around">
           {[
@@ -284,6 +297,13 @@ export function CRMLeadsPage() {
   const [editLead, setEditLead] = useState<any>(null);
   const [detailLeadId, setDetailLeadId] = useState<number | null>(null);
   const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' });
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (openId) { setDetailLeadId(Number(openId)); setSearchParams({}, { replace: true }); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const navigate = useNavigate();
 
   const fetchLeads = useCallback(async () => {

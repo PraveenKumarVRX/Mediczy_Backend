@@ -60,7 +60,7 @@ export default function HospitalCRMWorldclassPage() {
       <div className="space-y-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">Business, marketing, and operations</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-violet-300">Business, marketing, and operations</p>
             <h2 className="mt-1 text-2xl font-bold text-white">Command Center</h2>
             <p className="mt-1 max-w-3xl text-sm text-slate-400">Executive views for business heads and marketing heads — acquisition, patient journey, revenue, SLA, and reputation in one place.</p>
           </div>
@@ -87,7 +87,7 @@ export default function HospitalCRMWorldclassPage() {
                 { label: 'Marketing spend', value: `₹${spend.toLocaleString('en-IN')}`, icon: Building2 },
                 { label: 'NPS', value: business?.feedback?.nps == null ? '—' : `${Number(business.feedback.nps).toFixed(0)}`, icon: Star },
                 { label: 'SLA at risk', value: sla.length.toLocaleString('en-IN'), icon: Timer },
-              ].map(({ label, value, icon: Icon }) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4"><Icon className="h-5 w-5 text-cyan-300" /><p className="mt-4 text-xl font-bold text-white">{value}</p><p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">{label}</p></div>)}
+              ].map(({ label, value, icon: Icon }) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-4"><Icon className="h-5 w-5 text-violet-300" /><p className="mt-4 text-xl font-bold text-white">{value}</p><p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-slate-500">{label}</p></div>)}
             </div>
 
             <section className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-5">
