@@ -2,7 +2,8 @@ import express from 'express';
 import { authCRM } from '../middleware/crm.middleware.js';
 import { CRM_CAPABILITY_ROLES, hasCRMCapability } from '../config/crm-roles.config.js';
 import {
-  createAutomation, updateAutomationStatus, listAutomations, deleteAutomation, listExecutions, runAutomationTick,
+  createAutomation, updateAutomation, updateAutomationStatus, listAutomations, getAutomation,
+  deleteAutomation, listExecutions, runAutomationTick, listAssignableUsers, runAutomationForLead,
 } from '../services/crm-automations.service.js';
 import { CRM_V2_DEFAULT_TENANT_ID } from '../services/crm-v2-sync.service.js';
 
@@ -31,9 +32,13 @@ router.post('/', action((req, tenantId) => createAutomation({
   delayMinutes: req.body.delayMinutes, actionType: req.body.actionType, actionConfig: req.body.actionConfig,
   createdBy: req.crmUser.id,
 }), 'automations:write'));
+router.get('/assignable-users', action(() => listAssignableUsers()));
+router.get('/:id', action((req, tenantId) => getAutomation(tenantId, req.params.id)));
+router.patch('/:id', action((req, tenantId) => updateAutomation(tenantId, req.params.id, req.body), 'automations:write'));
 router.patch('/:id/status', action((req, tenantId) => updateAutomationStatus(tenantId, req.params.id, req.body.status), 'automations:write'));
 router.delete('/:id', action((req, tenantId) => deleteAutomation(tenantId, req.params.id), 'automations:write'));
 router.get('/:id/executions', action((req, tenantId) => listExecutions(tenantId, req.params.id, req.query)));
+router.post('/:id/run/:leadId', action((req, tenantId) => runAutomationForLead(tenantId, req.params.id, req.params.leadId), 'automations:write'));
 router.post('/tick', action(() => runAutomationTick(), 'automations:write')); // manual trigger, mainly for testing/ops
 
 export default router;
