@@ -329,9 +329,9 @@ async function _logCrmCommunication({ channel, recipientLabel, subject, message,
       `INSERT INTO crm_communication_events
          (tenant_id, lead_id, contact_id, channel, direction, message_type, subject, body_preview,
           provider, provider_message_id, status, sent_at, failed_at, failure_reason, owner_user_id, metadata)
-       VALUES ($1,$2,$3,$4,'outbound','message',$5,$6,$7,$8,$9,
-               CASE WHEN $9 = 'sent' THEN NOW() ELSE NULL END,
-               CASE WHEN $9 = 'failed' THEN NOW() ELSE NULL END,
+       VALUES ($1,$2,$3,$4,'outbound','message',$5,$6,$7,$8,$9::varchar,
+               CASE WHEN $9::varchar = 'sent' THEN NOW() ELSE NULL END,
+               CASE WHEN $9::varchar = 'failed' THEN NOW() ELSE NULL END,
                $10,$11,$12)`,
       [
         v2TenantId || CRM_V2_DEFAULT_TENANT_ID, v2LeadId || null, v2ContactId || null, channel,
@@ -355,6 +355,67 @@ async function _logCrmCommunication({ channel, recipientLabel, subject, message,
   );
   if (leadId) {
     await sharedPool.query(`UPDATE crm_leads SET last_contacted = NOW(), updated_at = NOW() WHERE id = $1`, [leadId]);
+  }
+}
+
+/**
+ * Low-level per-channel dispatch, no recipient resolution or CRM logging —
+ * used by the segment blast worker, which already has recipient info from
+ * the segment membership query. sendCrmMessage() (below) is the 1:1 path.
+ */
+export async function dispatchToChannel({ channel, to, subject, message }) {
+  const safeChannel = String(channel || '').toLowerCase();
+  const safeMessage = String(message || '').trim();
+
+  if (safeChannel === 'email') {
+    const email = _normalizeEmail(to);
+    if (!/^\S+@\S+\.\S+$/.test(email)) return { success: false, provider: 'unified', error: 'Invalid email address' };
+    const safeSubject = String(subject || 'Hospital CRM Communication').slice(0, 200);
+    try {
+      await sendTransactionalEmail({ to: email, subject: safeSubject, html: _buildCrmEmailHtml({ subject: safeSubject, message: safeMessage }), text: safeMessage, fromName: 'Hospital CRM' });
+      return { success: true, provider: 'unified', recipient: email };
+    } catch (err) {
+      return { success: false, provider: 'unified', recipient: email, error: err?.message || 'Email send failed' };
+    }
+  }
+
+  if (safeChannel === 'whatsapp') {
+    const phone = _normalizePhone(to);
+    if (!phone || phone.length < 10) return { success: false, provider: 'twilio', error: 'Invalid WhatsApp number' };
+    if (whatsappProductionService?.twilioConfigured) {
+      try {
+        const response = await whatsappProductionService.sendSessionMessage({ to: phone, body: safeMessage.slice(0, 4096) });
+        return { success: true, provider: 'twilio', recipient: phone, providerMessageId: response?.sid };
+      } catch (err) {
+        return { success: false, provider: 'twilio', recipient: phone, error: err?.message || 'WhatsApp send failed' };
+      }
+    }
+    const accessToken = process.env.FACEBOOK_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    if (!accessToken || !phoneNumberId) return { success: false, provider: 'meta', error: 'WhatsApp not configured' };
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        { messaging_product: 'whatsapp', to: phone, type: 'text', text: { body: safeMessage.slice(0, 4096) } },
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      );
+      return { success: true, provider: 'meta', recipient: phone, providerMessageId: response?.data?.messages?.[0]?.id || null };
+    } catch (err) {
+      return { success: false, provider: 'meta', recipient: phone, error: err?.response?.data?.error?.message || err?.message || 'WhatsApp send failed' };
+    }
+  }
+
+  // sms
+  const smsService = _smsService();
+  if (!smsService) return { success: false, provider: 'sms', error: 'SMS not configured' };
+  const phone = _normalizePhone(to);
+  if (!phone || phone.length < 10) return { success: false, provider: 'sms', error: 'Invalid mobile number' };
+  try {
+    const result = await smsService.sendSMS({ to: phone, message: safeMessage, templateId: process.env.SMS_TEMPLATE_ID });
+    if (!result?.success) return { success: false, provider: result?.provider || 'sms', recipient: phone, error: result?.error || 'SMS provider rejected the message' };
+    return { success: true, provider: result?.provider || 'sms', recipient: phone, providerMessageId: result?.messageId };
+  } catch (err) {
+    return { success: false, provider: 'sms', recipient: phone, error: err?.message || 'SMS send failed' };
   }
 }
 
@@ -520,6 +581,7 @@ export default {
   recordCommunicationIntegrationHealth,
   acknowledgeCommunicationHubAlert,
   sendCrmMessage,
+  dispatchToChannel,
   listCrmCallActivity,
   listCrmCommunicationLog,
 };

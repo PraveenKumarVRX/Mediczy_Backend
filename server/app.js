@@ -93,6 +93,7 @@ import hospitalCrmWorldclassRouter from './routes/hospital-crm-worldclass.route.
 import hospitalCrmGrowthRouter from './routes/hospital-crm-growth.route.js';
 import hospitalCrmSpecialtyRouter from './routes/hospital-crm-specialty.route.js';
 import hospitalCrmCommunicationHubRouter from './routes/hospital-crm-communication-hub.route.js';
+import crmSegmentsRouter from './routes/crm-segments.route.js';
 import crmUnderwritingRouter from './routes/crm-underwriting.route.js';
 import asyncRouter from './routes/async.route.js';
 import appointmentRouter from './routes/appointment.route.js';
@@ -110,6 +111,7 @@ import crmCampaignAnalyticsRouter from './routes/crmCampaignAnalytics.route.js';
 import crmAIRouter from './routes/crm-ai.route.js';
 import crmAnalysisRouter from './routes/crm-analysis.route.js';
 import './workers/crm-campaign.worker.js';
+import './workers/crm-segment-blast.worker.js';
 import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
 import emailSettingsRouter from './routes/emailSettings.route.js';
 import marketingLeadsRouter from './routes/marketing-leads.route.js';
@@ -1498,6 +1500,7 @@ app.use('/api/crm/worldclass', hospitalCrmWorldclassRouter);
 app.use('/api/crm/growth', hospitalCrmGrowthRouter); // Hospital CRM phases 2-8
 app.use('/api/crm/growth', hospitalCrmSpecialtyRouter); // Specialty, diagnostic, and digital growth domains
 app.use('/api/crm/communication-hub', hospitalCrmCommunicationHubRouter); // Brevo-style campaign and communications monitoring
+app.use('/api/crm/segments', crmSegmentsRouter);
 app.use('/api/crm/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline
 app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
 app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns
@@ -1918,6 +1921,9 @@ startImagingDailyMinioCron();
 // ============== PACS S3 → on-prem MinIO nightly archive (midnight) ==============
 import { startPacsMinioArchiveCron } from './services/imaging/pacs-minio-archive-cron.service.js';
 startPacsMinioArchiveCron();
+
+import { startCrmSegmentRefreshCron } from './services/crm-segment-refresh-cron.service.js';
+startCrmSegmentRefreshCron();
 
 // ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
 import governanceServiceForCron from './services/ai-model-governance.service.js';

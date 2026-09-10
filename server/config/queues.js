@@ -10,6 +10,8 @@ export const QUEUE_NAMES = {
   ANALYTICS: 'analytics-queue',
   CLEANUP: 'cleanup-queue',
   EMERGENCY: 'emergency-queue',    // highest priority — triage, critical alerts
+  CRM_SEGMENT_BLAST: 'crm-segment-blast-queue',
+  CRM_AUTOMATION: 'crm-automation-queue',
 };
 
 const isTest = process.env.NODE_ENV === 'test';
@@ -39,6 +41,8 @@ if (isTest) {
     analytics: mockQueue,
     cleanup: mockQueue,
     emergency: mockQueue,
+    crmSegmentBlast: mockQueue,
+    crmAutomation: mockQueue,
   };
   console.log('✅ BullMQ queues mocked for test mode');
 } else {
@@ -52,6 +56,8 @@ if (isTest) {
     analytics:    new Queue(QUEUE_NAMES.ANALYTICS,    { connection }),
     cleanup:      new Queue(QUEUE_NAMES.CLEANUP,      { connection }),
     emergency:    new Queue(QUEUE_NAMES.EMERGENCY,    { connection }),
+    crmSegmentBlast: new Queue(QUEUE_NAMES.CRM_SEGMENT_BLAST, { connection }),
+    crmAutomation:   new Queue(QUEUE_NAMES.CRM_AUTOMATION,    { connection }),
   };
   console.log('✅ BullMQ queues initialized');
 }
