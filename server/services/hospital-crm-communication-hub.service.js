@@ -3,6 +3,7 @@ import axios from 'axios';
 import { sendTransactionalEmail } from './welcome-email.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { SMSService } from './sms.service.js';
+import { resolveV2LeadByLegacyId, CRM_V2_DEFAULT_TENANT_ID } from './crm-v2-sync.service.js';
 
 const CHANNELS = new Set(['email', 'whatsapp', 'sms', 'push', 'in_app']);
 const CAMPAIGN_STATUSES = new Set(['draft', 'active', 'paused', 'completed', 'archived']);
@@ -294,6 +295,13 @@ const _buildCrmEmailHtml = ({ subject, message }) => {
 
 async function _resolveCrmRecipient({ leadId, dealId, contactId }) {
   if (leadId) {
+    // crm_leads_v2 is the tenant-scoped mirror kept live by crm-v2-sync.service.js.
+    // Prefer it (so sends log into crm_communication_events, feeding the hub's own
+    // dashboard); fall back to the legacy row if the mirror hasn't caught up yet.
+    const v2 = await resolveV2LeadByLegacyId(leadId).catch(() => null);
+    if (v2) {
+      return { kind: 'lead', id: leadId, v2LeadId: v2.id, v2ContactId: v2.contact_id, v2TenantId: v2.tenant_id, name: v2.name, email: v2.email, phone: v2.phone };
+    }
     const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_leads WHERE id = $1`, [leadId]);
     if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     return { kind: 'lead', id: rows[0].id, name: rows[0].name, email: rows[0].email, phone: rows[0].phone };
@@ -311,8 +319,32 @@ async function _resolveCrmRecipient({ leadId, dealId, contactId }) {
   throw Object.assign(new Error('One of leadId, dealId, or contactId is required'), { statusCode: 400 });
 }
 
-async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, userId }) {
-  const outcome = errorMessage ? `failed: ${errorMessage}`.slice(0, 100) : (status || 'sent');
+async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, v2LeadId, v2ContactId, v2TenantId, userId }) {
+  const failed = Boolean(errorMessage);
+  const bodyPreview = message ? String(message).slice(0, 2000) : null;
+
+  if (v2LeadId || v2ContactId) {
+    // Tenant-scoped path — feeds getCommunicationHubDashboard() directly.
+    await sharedPool.query(
+      `INSERT INTO crm_communication_events
+         (tenant_id, lead_id, contact_id, channel, direction, message_type, subject, body_preview,
+          provider, provider_message_id, status, sent_at, failed_at, failure_reason, owner_user_id, metadata)
+       VALUES ($1,$2,$3,$4,'outbound','message',$5,$6,$7,$8,$9,
+               CASE WHEN $9 = 'sent' THEN NOW() ELSE NULL END,
+               CASE WHEN $9 = 'failed' THEN NOW() ELSE NULL END,
+               $10,$11,$12)`,
+      [
+        v2TenantId || CRM_V2_DEFAULT_TENANT_ID, v2LeadId || null, v2ContactId || null, channel,
+        subject || null, bodyPreview, provider || null, providerMessageId || null,
+        failed ? 'failed' : (status || 'sent'), errorMessage || null, userId || null,
+        JSON.stringify({ recipientLabel }),
+      ]
+    );
+    return;
+  }
+
+  // Fallback — deal/contact-sourced sends (no v2 mirror) or a lead not yet synced.
+  const outcome = failed ? `failed: ${errorMessage}`.slice(0, 100) : (status || 'sent');
   const title = `${channel} to ${recipientLabel}`.slice(0, 255);
   const description = [subject ? `Subject: ${subject}` : null, message, provider ? `Provider: ${provider}` : null, providerMessageId ? `Ref: ${providerMessageId}` : null]
     .filter(Boolean).join('\n');
@@ -340,7 +372,14 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
     contactId: positiveInt(contactId),
   });
   const recipientLabel = recipient.name || `${recipient.kind} #${recipient.id}`;
-  const logBase = { leadId: recipient.kind === 'lead' ? recipient.id : null, dealId: recipient.kind === 'deal' ? recipient.id : null, userId, subject, message: safeMessage };
+  const logBase = {
+    leadId: recipient.kind === 'lead' ? recipient.id : null,
+    dealId: recipient.kind === 'deal' ? recipient.id : null,
+    v2LeadId: recipient.v2LeadId || null,
+    v2ContactId: recipient.v2ContactId || null,
+    v2TenantId: recipient.v2TenantId || null,
+    userId, subject, message: safeMessage,
+  };
 
   if (safeChannel === 'email') {
     const to = _normalizeEmail(recipient.email);
@@ -427,12 +466,38 @@ export async function listCrmCallActivity({ leadId, dealId, limit } = {}) {
 }
 
 export async function listCrmCommunicationLog({ leadId, dealId, channel, limit } = {}) {
+  const cappedLimit = Math.min(Math.max(positiveInt(limit) || 50, 1), 200);
+
+  // Leads are mirrored into crm_leads_v2 — read their message history from
+  // crm_communication_events (the table sendCrmMessage now writes to), shaped
+  // to match the legacy row contract the Communication Hub UI already expects.
+  if (leadId && !dealId) {
+    const v2 = await resolveV2LeadByLegacyId(positiveInt(leadId)).catch(() => null);
+    if (v2) {
+      const params = [v2.tenant_id, v2.id];
+      let channelClause = '';
+      if (channel && CHANNELS.has(channel)) { params.push(channel); channelClause = `AND channel = $${params.length}`; }
+      params.push(cappedLimit);
+      const { rows } = await sharedPool.query(`
+        SELECT id, channel AS type, body_preview AS description,
+               CASE WHEN status = 'failed' THEN ('failed: ' || COALESCE(failure_reason, '')) ELSE status END AS outcome,
+               created_at
+        FROM crm_communication_events
+        WHERE tenant_id = $1 AND lead_id = $2 ${channelClause}
+        ORDER BY created_at DESC
+        LIMIT $${params.length}
+      `, params);
+      return rows;
+    }
+  }
+
+  // Fallback — deal-sourced sends, or a lead whose v2 mirror hasn't caught up yet.
   const conditions = [`type IN ('email', 'whatsapp', 'sms')`];
   const params = [];
   if (leadId) { params.push(positiveInt(leadId)); conditions.push(`lead_id = $${params.length}`); }
   if (dealId) { params.push(positiveInt(dealId)); conditions.push(`deal_id = $${params.length}`); }
   if (channel && CHANNELS.has(channel)) { params.push(channel); conditions.push(`type = $${params.length}`); }
-  params.push(Math.min(Math.max(positiveInt(limit) || 50, 1), 200));
+  params.push(cappedLimit);
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
     FROM crm_activities a

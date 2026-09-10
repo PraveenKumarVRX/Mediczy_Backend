@@ -8,6 +8,7 @@ import sharedPool from '../db/pgPool.js';
 import { quickScoreLead } from './ai-crm.service.js';
 import metaCapi from './meta-capi.service.js';
 import whatsappProduction from './whatsapp-production.service.js';
+import { syncLegacyLeadToV2 } from './crm-v2-sync.service.js';
 
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/fb-lead-intake';
 const SALES_WHATSAPP = process.env.CRM_SALES_WHATSAPP || '+917826911911';
@@ -231,6 +232,8 @@ export async function runPostCaptureAutomation(leadId, options = {}) {
     );
 
     console.info('[CRM Automation] post-capture done', { leadId, score: scoreResult.score, tier: scoreResult.tier });
+
+    syncLegacyLeadToV2(leadId).catch(() => {});
   } catch (err) {
     console.error('[CRM Automation] post-capture error:', err.message);
   }

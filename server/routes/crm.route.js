@@ -13,6 +13,7 @@ import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { handleLeadStatusChange } from '../services/crm-lead-automation.service.js';
+import { syncLegacyLeadToV2, removeLegacyLeadFromV2 } from '../services/crm-v2-sync.service.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
 import nodemailer from 'nodemailer';
 import { DEFAULT_CRM_ROLE } from '../config/crm-roles.config.js';
@@ -918,6 +919,7 @@ router.post('/leads', authCRM, [body('name').notEmpty().withMessage('Lead name i
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [name, email||null, phone||null, company||null, designation||null, source||'manual', status||'new', priority||'medium', notes||null, JSON.stringify(tags||[]), next_followup||null, req.crmUser.id, req.crmUser.id]
     );
+    syncLegacyLeadToV2(rows[0].id).catch(() => {});
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create lead' }); }
 });
@@ -954,6 +956,7 @@ router.put('/leads/:id', authCRM, async (req, res) => {
     if (status && newStatus !== previousStatus) {
       handleLeadStatusChange(rows[0].id, previousStatus, newStatus).catch(() => {});
     }
+    syncLegacyLeadToV2(rows[0].id).catch(() => {});
 
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to update lead' }); }
@@ -963,6 +966,7 @@ router.delete('/leads/:id', authCRM, async (req, res) => {
   try {
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_leads WHERE id = $1`, [req.params.id]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Lead not found' });
+    removeLegacyLeadFromV2(req.params.id).catch(() => {});
     return res.status(200).json({ success: true, message: 'Lead deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete lead' }); }
 });
