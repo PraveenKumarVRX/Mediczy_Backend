@@ -7,6 +7,7 @@ import XLSX from '../utils/excel-compat.js';
 import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import userModel from '../models/user.model.intelligent.js';
 import { authCRM } from '../middleware/crm.middleware.js';
+import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
@@ -1277,7 +1278,7 @@ function generateQuoteNumber(rfqNumber) {
 }
 
 // ─── RFQ Stats by Product Type ───────────────────────────────────────────────
-router.get('/rfqs/stats/by-product', authCRM, async (req, res) => {
+router.get('/rfqs/stats/by-product', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`
       SELECT
@@ -1311,7 +1312,7 @@ router.get('/rfqs/stats/by-product', authCRM, async (req, res) => {
 });
 
 // ─── List RFQs ───────────────────────────────────────────────────────────────
-router.get('/rfqs', authCRM, async (req, res) => {
+router.get('/rfqs', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { page = 1, limit = 25, status, product_type, search, sortBy = 'created_at', sortOrder = 'DESC' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -1338,7 +1339,7 @@ router.get('/rfqs', authCRM, async (req, res) => {
 });
 
 // ─── Create RFQ ──────────────────────────────────────────────────────────────
-router.post('/rfqs', authCRM, [body('insured_name').notEmpty().withMessage('Insured name is required')], async (req, res) => {
+router.post('/rfqs', authTeam, requirePermission('Insurance RFQ Management'), [body('insured_name').notEmpty().withMessage('Insured name is required')], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
   try {
@@ -1363,7 +1364,7 @@ router.post('/rfqs', authCRM, [body('insured_name').notEmpty().withMessage('Insu
         JSON.stringify(coverage_scope || {}), JSON.stringify(special_conditions || []), exclusions || null,
         terms_and_conditions || null, notes || null, existing_coverages || null, required_coverages || null,
         JSON.stringify(sum_insured_slabs || []),
-        req.crmUser.id, req.crmUser.id]
+        req.teamUser.id, req.teamUser.id]
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { console.error('[CRM RFQ Create]', error.message); return res.status(500).json({ success: false, message: 'Failed to create RFQ' }); }
@@ -1376,7 +1377,7 @@ router.param('id', (req, res, next, id) => {
 });
 
 // ─── Get RFQ Detail ──────────────────────────────────────────────────────────
-router.get('/rfqs/:id', authCRM, async (req, res) => {
+router.get('/rfqs/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [req.params.id]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
@@ -1391,7 +1392,7 @@ router.get('/rfqs/:id', authCRM, async (req, res) => {
 });
 
 // ─── Update RFQ ──────────────────────────────────────────────────────────────
-router.put('/rfqs/:id', authCRM, async (req, res) => {
+router.put('/rfqs/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const {
       insured_name, insured_address, policy_type, product_type, status,
@@ -1470,7 +1471,7 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
     if (status && oldStatus && oldStatus !== status) {
       sharedPool.query(
         `INSERT INTO crm_rfq_audit_log (rfq_id, event_type, old_value, new_value, changed_by) VALUES ($1,'status_change',$2,$3,$4)`,
-        [rows[0].id, oldStatus, status, req.crmUser?.id || null]
+        [rows[0].id, oldStatus, status, req.teamUser?.id || null]
       ).catch(() => {});
     }
 
@@ -1479,7 +1480,7 @@ router.put('/rfqs/:id', authCRM, async (req, res) => {
 });
 
 // ─── Delete RFQ ──────────────────────────────────────────────────────────────
-router.delete('/rfqs/:id', authCRM, async (req, res) => {
+router.delete('/rfqs/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_rfqs WHERE id = $1`, [req.params.id]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'RFQ not found' });
@@ -1488,7 +1489,7 @@ router.delete('/rfqs/:id', authCRM, async (req, res) => {
 });
 
 // ─── List RFQ Files ──────────────────────────────────────────────────────────
-router.get('/rfqs/:id/files', authCRM, async (req, res) => {
+router.get('/rfqs/:id/files', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT id, category, original_name, file_size, mime_type, uploaded_by, uploaded_at FROM crm_rfq_files WHERE rfq_id = $1 ORDER BY uploaded_at DESC`,
@@ -1501,7 +1502,7 @@ router.get('/rfqs/:id/files', authCRM, async (req, res) => {
 });
 
 // ─── Download RFQ File ───────────────────────────────────────────────────────
-router.get('/rfqs/:id/files/:fileId/download', authCRM, async (req, res) => {
+router.get('/rfqs/:id/files/:fileId/download', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT * FROM crm_rfq_files WHERE id = $1 AND rfq_id = $2`,
@@ -1617,7 +1618,7 @@ const stdComputeAge = (dob) => {
 const newCleaningStats = () => ({ gender: 0, relationship: 0, age_computed: 0, date_fixed: 0, amount_fixed: 0, emp_code: 0, claim_status: 0, service_type: 0 });
 
 // ─── Upload Member Excel ─────────────────────────────────────────────────────
-router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (req, res) => {
+router.post('/rfqs/:id/upload-members', authTeam, requirePermission('Insurance RFQ Management'), upload.single('file'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const rfqCheck = await sharedPool.query(`SELECT id FROM crm_rfqs WHERE id = $1`, [rfqId]);
@@ -1736,7 +1737,7 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
       throw txErr;
     }
     txClient.release();
-    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'members', req.crmUser.id);
+    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'members', req.teamUser.id);
 
     console.log(`RFQ ${rfqId}: ${inserted} members (${duplicatesRemoved} dupes removed), cleaned: ${JSON.stringify(stats)}`);
     return res.status(200).json({
@@ -1751,7 +1752,7 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
 });
 
 // ─── Upload RFQ from Broker Excel (auto-parse broking slip) ──────────────────
-router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, res) => {
+router.post('/rfqs/upload-excel', authTeam, requirePermission('Insurance RFQ Management'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'Excel file required' });
 
@@ -1941,8 +1942,8 @@ ${sheetText.substring(0, 6000)}`;
         parsed.terms_and_conditions || null,
         `Auto-parsed from broker Excel: ${req.file.originalname}`,
         JSON.stringify(siSlabs),
-        req.crmUser.id,
-        req.crmUser.id,
+        req.teamUser.id,
+        req.teamUser.id,
       ]
     );
 
@@ -1950,13 +1951,13 @@ ${sheetText.substring(0, 6000)}`;
 
     // Auto-push parsed T&Cs to product-wise master (as pending, requires admin approval)
     if (parsed.terms_and_conditions) {
-      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.crmUser.id).catch(() => {});
+      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.teamUser.id).catch(() => {});
     }
 
     // Persist original file to S3 for future re-parsing
     const slipKey = await uploadSlipToS3(req.file.buffer, req.file.originalname, rfqId);
     if (slipKey) await sharedPool.query('UPDATE crm_rfqs SET slip_file_key=$1 WHERE id=$2', [slipKey, rfqId]);
-    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'slip', req.crmUser.id);
+    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'slip', req.teamUser.id);
 
     let memberCount = 0;
 
@@ -2021,7 +2022,7 @@ ${sheetText.substring(0, 6000)}`;
 });
 
 // ─── Re-parse existing RFQ from new Excel / PDF / Image upload ───────────────
-router.post('/rfqs/:id/reparse', authCRM, (req, res, next) => {
+router.post('/rfqs/:id/reparse', authTeam, requirePermission('Insurance RFQ Management'), (req, res, next) => {
   // multer is optional — skip if content-type is not multipart
   if (!req.headers['content-type']?.includes('multipart/form-data')) return next();
   upload.single('file')(req, res, next);
@@ -2218,14 +2219,14 @@ Return ONLY JSON.`;
 
     // Auto-push re-parsed T&Cs to product-wise master (pending, requires admin approval)
     if (parsed.terms_and_conditions && rows[0]) {
-      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.crmUser.id).catch(() => {});
+      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.teamUser.id).catch(() => {});
     }
 
     // If a new file was uploaded (not from S3), store it in S3 for future reparsing
     if (req.file?.buffer) {
       const newKey = await uploadSlipToS3(req.file.buffer, req.file.originalname, rfqId);
       if (newKey) await sharedPool.query('UPDATE crm_rfqs SET slip_file_key=$1 WHERE id=$2', [newKey, rfqId]);
-      await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'slip', req.crmUser.id);
+      await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'slip', req.teamUser.id);
     }
 
     return res.status(200).json({ success: true, message: `RFQ updated from ${isExcel ? 'Excel' : 'document'} via AI.`, data: rows[0] });
@@ -2236,7 +2237,7 @@ Return ONLY JSON.`;
 });
 
 // ─── Upload RFQ from PDF / Image (Vision AI + LLM parsing) ───────────────────
-router.post('/rfqs/upload-document', authCRM, upload.single('file'), async (req, res) => {
+router.post('/rfqs/upload-document', authTeam, requirePermission('Insurance RFQ Management'), upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: 'File required' });
 
@@ -2374,8 +2375,8 @@ Return ONLY the JSON object, no explanation.`;
         parsed.terms_and_conditions || null,
         `Auto-parsed via Vision AI from: ${originalName}`,
         JSON.stringify(siSlabs),
-        req.crmUser.id,
-        req.crmUser.id,
+        req.teamUser.id,
+        req.teamUser.id,
       ]
     );
 
@@ -2388,10 +2389,10 @@ Return ONLY the JSON object, no explanation.`;
 
     // Auto-push parsed T&Cs to product-wise master (pending, requires admin approval)
     if (parsed.terms_and_conditions) {
-      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.crmUser.id).catch(() => {});
+      syncTCsFromRFQ(rfqId, rows[0].product_type, parsed.terms_and_conditions, req.teamUser.id).catch(() => {});
     }
 
-    await uploadRfqFile(req.file.buffer, originalName, rfqId, 'slip', req.crmUser.id);
+    await uploadRfqFile(req.file.buffer, originalName, rfqId, 'slip', req.teamUser.id);
 
     return res.status(201).json({
       success: true,
@@ -2405,7 +2406,7 @@ Return ONLY the JSON object, no explanation.`;
 });
 
 // ─── Member Analytics ────────────────────────────────────────────────────────
-router.get('/rfqs/:id/member-analytics', authCRM, async (req, res) => {
+router.get('/rfqs/:id/member-analytics', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const pool = sharedPool;
@@ -2564,7 +2565,7 @@ async function parseSupplementalInputs(files = [], additionalContext = '') {
 // Accepts optional multipart/form-data with:
 //   - additionalContext (text field)
 //   - files[] (Excel, PDF, image — up to 10 files, 50MB each)
-router.post('/rfqs/:id/ai-generate-quote', authCRM, upload.array('files', 10), async (req, res) => {
+router.post('/rfqs/:id/ai-generate-quote', authTeam, requirePermission('Insurance RFQ Management'), upload.array('files', 10), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const pool = sharedPool;
@@ -3663,7 +3664,7 @@ const aiQuoteResult = {
 
 // ─── Upload Claims History ───────────────────────────────────────────────────
 // Accepts claims MIS Excel/CSV with flexible column mapping
-router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (req, res) => {
+router.post('/rfqs/:id/upload-claims', authTeam, requirePermission('Insurance RFQ Management'), upload.single('file'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const rfqCheck = await sharedPool.query(`SELECT id FROM crm_rfqs WHERE id = $1`, [rfqId]);
@@ -3820,7 +3821,7 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
     claimTxClient.release();
 
     console.log(`[CRM Upload Claims] RFQ ${rfqId}: ${inserted} claims, cleaned: ${JSON.stringify(stats)}`);
-    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'claims', req.crmUser.id);
+    await uploadRfqFile(req.file.buffer, req.file.originalname, rfqId, 'claims', req.teamUser.id);
     return res.status(200).json({
       success: true,
       message: `Uploaded ${inserted} claims from sheet "${claimsSheetName}" — AI cleaned & standardized`,
@@ -3839,7 +3840,7 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
 
 // ─── Claims Experience Analysis ──────────────────────────────────────────────
 // Deep actuarial analysis of claims history for underwriting
-router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
+router.get('/rfqs/:id/claims-analysis', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const pool = sharedPool;
@@ -4222,7 +4223,7 @@ router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
 });
 
 // ─── Get Members (paginated) ─────────────────────────────────────────────────
-router.get('/rfqs/:id/members', authCRM, async (req, res) => {
+router.get('/rfqs/:id/members', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { page = 1, limit = 50, search, band, relationship } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -4245,7 +4246,7 @@ router.get('/rfqs/:id/members', authCRM, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Create Quote ────────────────────────────────────────────────────────────
-router.post('/rfqs/:id/quotes', authCRM, async (req, res) => {
+router.post('/rfqs/:id/quotes', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const rfqCheck = await sharedPool.query(`SELECT id, rfq_number FROM crm_rfqs WHERE id = $1`, [rfqId]);
@@ -4289,7 +4290,7 @@ router.post('/rfqs/:id/quotes', authCRM, async (req, res) => {
         total_premium || 0, total_lives || 0, per_life_cost || 0, per_family_cost || 0,
         pricing_model || 'per_family', commission_pct || 0, gst_pct ?? 18, discount_pct || 0,
         JSON.stringify(coverage_details || {}), JSON.stringify(slab_pricing || []),
-        terms || null, notes || null, req.crmUser.id]
+        terms || null, notes || null, req.teamUser.id]
     );
 
     // Update RFQ status to quoting if still received
@@ -4300,7 +4301,7 @@ router.post('/rfqs/:id/quotes', authCRM, async (req, res) => {
 });
 
 // ─── List Quotes for RFQ ─────────────────────────────────────────────────────
-router.get('/rfqs/:id/quotes', authCRM, async (req, res) => {
+router.get('/rfqs/:id/quotes', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 ORDER BY version DESC`, [req.params.id]);
     return res.status(200).json({ success: true, data: rows });
@@ -4484,7 +4485,7 @@ router.delete('/quotes/:id', authCRM, async (req, res) => {
 // DISTRIBUTION — AGENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/agents', authCRM, async (req, res) => {
+router.get('/agents', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { page = 1, limit = 20, search, channelType, status } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -4504,7 +4505,7 @@ router.get('/agents', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.post('/agents', authCRM, [body('name').notEmpty()], async (req, res) => {
+router.post('/agents', authTeam, requirePermission('Insurance RFQ Management'), [body('name').notEmpty()], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
   try {
@@ -4512,13 +4513,13 @@ router.post('/agents', authCRM, [body('name').notEmpty()], async (req, res) => {
     const { rows } = await sharedPool.query(
       `INSERT INTO crm_agents (name, email, phone, city, channel_type, agent_code, agency_id, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [name, email || null, phone || null, city || null, channelType, agentCode || null, agencyId || null, notes || null, req.crmUser?.id || null]
+      [name, email || null, phone || null, city || null, channelType, agentCode || null, agencyId || null, notes || null, req.teamUser?.id || null]
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/agents/:id', authCRM, async (req, res) => {
+router.put('/agents/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { name, email, phone, city, channelType, agentCode, agencyId, status, notes, totalActivations, totalEarned, pendingPayout } = req.body;
     const { rows } = await sharedPool.query(
@@ -4534,7 +4535,7 @@ router.put('/agents/:id', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.delete('/agents/:id', authCRM, async (req, res) => {
+router.delete('/agents/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_agents WHERE id = $1`, [req.params.id]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Agent not found' });
@@ -4546,7 +4547,7 @@ router.delete('/agents/:id', authCRM, async (req, res) => {
 // DISTRIBUTION — AGENCIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/agencies', authCRM, async (req, res) => {
+router.get('/agencies', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { page = 1, limit = 20, search, tier } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -4569,7 +4570,7 @@ router.get('/agencies', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.post('/agencies', authCRM, [body('name').notEmpty()], async (req, res) => {
+router.post('/agencies', authTeam, requirePermission('Insurance RFQ Management'), [body('name').notEmpty()], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
   try {
@@ -4577,13 +4578,13 @@ router.post('/agencies', authCRM, [body('name').notEmpty()], async (req, res) =>
     const { rows } = await sharedPool.query(
       `INSERT INTO crm_agencies (name, owner_name, email, phone, city, territory, gstin, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [name, ownerName || null, email || null, phone || null, city || null, territory || null, gstin || null, notes || null, req.user.id]
+      [name, ownerName || null, email || null, phone || null, city || null, territory || null, gstin || null, notes || null, req.teamUser.id]
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/agencies/:id', authCRM, async (req, res) => {
+router.put('/agencies/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { name, ownerName, email, phone, city, territory, gstin, onboardingStep, status, monthlyActivations, agentCount, totalOverride, notes } = req.body;
     const { rows } = await sharedPool.query(
@@ -4600,7 +4601,7 @@ router.put('/agencies/:id', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.delete('/agencies/:id', authCRM, async (req, res) => {
+router.delete('/agencies/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_agencies WHERE id = $1`, [req.params.id]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Agency not found' });
@@ -4612,7 +4613,7 @@ router.delete('/agencies/:id', authCRM, async (req, res) => {
 // DISTRIBUTION — COMMISSIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.get('/commissions', authCRM, async (req, res) => {
+router.get('/commissions', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { page = 1, limit = 25, search, status, planCode } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -4641,19 +4642,19 @@ router.get('/commissions', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.post('/commissions', authCRM, async (req, res) => {
+router.post('/commissions', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { agentId, agentCode, agentName, subscriberName, subscriberPhone, subscriberEmail, planCode, amount, commissionType = 'y1', activationDate, eligibleDate, notes } = req.body;
     const { rows } = await sharedPool.query(
       `INSERT INTO crm_commissions (agent_id, agent_code, agent_name, subscriber_name, subscriber_phone, subscriber_email, plan_code, amount, commission_type, activation_date, eligible_date, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-      [agentId || null, agentCode || null, agentName || null, subscriberName || null, subscriberPhone || null, subscriberEmail || null, planCode || null, amount, commissionType, activationDate || null, eligibleDate || null, notes || null, req.user.id]
+      [agentId || null, agentCode || null, agentName || null, subscriberName || null, subscriberPhone || null, subscriberEmail || null, planCode || null, amount, commissionType, activationDate || null, eligibleDate || null, notes || null, req.teamUser.id]
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/commissions/:id', authCRM, async (req, res) => {
+router.put('/commissions/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { status, paidAt, clawbackReason, notes } = req.body;
     const { rows } = await sharedPool.query(
@@ -4679,7 +4680,7 @@ async function generateContractRef(corporateName, planYear) {
   return `${initials}-${planYear}-${seq}`;
 }
 
-router.get('/corporate-plans', authCRM, async (req, res) => {
+router.get('/corporate-plans', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { page = 1, limit = 20, search, status, planYear, corporateId } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
@@ -4710,7 +4711,7 @@ router.get('/corporate-plans', authCRM, async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.post('/corporate-plans', authCRM, [body('corporateName').notEmpty(), body('planTemplateCode').optional(), body('displayName').notEmpty()], async (req, res) => {
+router.post('/corporate-plans', authTeam, requirePermission('Insurance RFQ Management'), [body('corporateName').notEmpty(), body('planTemplateCode').optional(), body('displayName').notEmpty()], async (req, res) => {
   try {
     const { corporateId, corporateName, planTemplateCode, displayName, planYear = new Date().getFullYear(), planGrade, negotiatedPricePerEmp, employeeHeadcount, corporateShare = 100, employeeShare = 0, startDate, endDate, renewalOfId, notes, rfqId } = req.body;
     const contractRef = await generateContractRef(corporateName, planYear);
@@ -4718,7 +4719,7 @@ router.post('/corporate-plans', authCRM, [body('corporateName').notEmpty(), body
       `INSERT INTO crm_corporate_health_plans
        (corporate_id, corporate_name, plan_template_code, display_name, plan_year, plan_grade, contract_ref, negotiated_price_per_emp, employee_headcount, corporate_share, employee_share, start_date, end_date, status, renewal_of_id, notes, rfq_id, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16,$17) RETURNING *`,
-      [corporateId || null, corporateName, planTemplateCode || null, displayName, planYear, planGrade || null, contractRef, negotiatedPricePerEmp || null, employeeHeadcount || 0, corporateShare, employeeShare, startDate || null, endDate || null, renewalOfId || null, notes || null, rfqId ? parseInt(rfqId) : null, req.user.id]
+      [corporateId || null, corporateName, planTemplateCode || null, displayName, planYear, planGrade || null, contractRef, negotiatedPricePerEmp || null, employeeHeadcount || 0, corporateShare, employeeShare, startDate || null, endDate || null, renewalOfId || null, notes || null, rfqId ? parseInt(rfqId) : null, req.teamUser.id]
     );
     // Mark the RFQ as won if creating a plan from it
     if (rfqId) {
@@ -4728,7 +4729,7 @@ router.post('/corporate-plans', authCRM, [body('corporateName').notEmpty(), body
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.put('/corporate-plans/:id', authCRM, async (req, res) => {
+router.put('/corporate-plans/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { corporateName, planTemplateCode, displayName, planYear, planGrade, negotiatedPricePerEmp, employeeHeadcount, corporateShare, employeeShare, startDate, endDate, status, notes, contractDocUrl } = req.body;
     const { rows } = await sharedPool.query(
@@ -4748,7 +4749,7 @@ router.put('/corporate-plans/:id', authCRM, async (req, res) => {
 });
 
 // Renew a plan: clone it with incremented year
-router.post('/corporate-plans/:id/renew', authCRM, async (req, res) => {
+router.post('/corporate-plans/:id/renew', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows: existing } = await sharedPool.query(`SELECT * FROM crm_corporate_health_plans WHERE id = $1`, [req.params.id]);
     if (!existing.length) return res.status(404).json({ success: false, message: 'Plan not found' });
@@ -4760,13 +4761,13 @@ router.post('/corporate-plans/:id/renew', authCRM, async (req, res) => {
       `INSERT INTO crm_corporate_health_plans
        (corporate_id, corporate_name, plan_template_code, display_name, plan_year, plan_grade, contract_ref, negotiated_price_per_emp, employee_headcount, corporate_share, employee_share, start_date, end_date, status, renewal_of_id, notes, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'draft',$14,$15,$16) RETURNING *`,
-      [src.corporate_id, src.corporate_name, src.plan_template_code, newDisplayName, newYear, src.plan_grade, contractRef, src.negotiated_price_per_emp, src.employee_headcount, src.corporate_share, src.employee_share, null, null, src.id, src.notes, req.user.id]
+      [src.corporate_id, src.corporate_name, src.plan_template_code, newDisplayName, newYear, src.plan_grade, contractRef, src.negotiated_price_per_emp, src.employee_headcount, src.corporate_share, src.employee_share, null, null, src.id, src.notes, req.teamUser.id]
     );
     return res.status(201).json({ success: true, data: rows[0], message: `Renewal plan created for ${newYear}` });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 });
 
-router.delete('/corporate-plans/:id', authCRM, async (req, res) => {
+router.delete('/corporate-plans/:id', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_corporate_health_plans WHERE id = $1`, [req.params.id]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Corporate plan not found' });
@@ -4778,7 +4779,7 @@ router.delete('/corporate-plans/:id', authCRM, async (req, res) => {
 // Reads all RFQ fields and auto-generates a uniquely named corporate plan.
 // Plan name format: "<InuredName> – <ProductType> Plan FY<YYYY>"
 // e.g.  "Tata Steel Ltd – GMC+OPD Plan FY2026"
-router.post('/rfqs/:id/autocapture-plan', authCRM, async (req, res) => {
+router.post('/rfqs/:id/autocapture-plan', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = parseInt(req.params.id);
     if (!rfqId || isNaN(rfqId)) return res.status(400).json({ success: false, message: 'Invalid RFQ ID' });
@@ -4867,7 +4868,7 @@ router.post('/rfqs/:id/autocapture-plan', authCRM, async (req, res) => {
        negotiatedPricePerEmp ? Math.round(negotiatedPricePerEmp) : null,
        employeeHeadcount,
        rfq.policy_start || null, rfq.policy_end || null,
-       autoNotes, rfqId, req.user.id]
+       autoNotes, rfqId, req.teamUser.id]
     );
 
     // Mark RFQ as won if it was quoted/negotiating
@@ -4886,7 +4887,7 @@ router.post('/rfqs/:id/autocapture-plan', authCRM, async (req, res) => {
 
 // ─── RFQ Autocapture Inbox — RFQs eligible to be captured as plans ─────────
 // Returns quoted/won RFQs that have no corporate plan yet
-router.get('/rfqs-autocapture-inbox', authCRM, async (req, res) => {
+router.get('/rfqs-autocapture-inbox', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`
       SELECT r.id, r.rfq_number, r.insured_name, r.status, r.member_count,
@@ -4980,7 +4981,7 @@ router.get('/funnel-analytics', authCRM, async (req, res) => {
 });
 
 // ─── RFQ Dashboard Stats ────────────────────────────────────────────────────
-router.get('/rfqs-stats', authCRM, async (req, res) => {
+router.get('/rfqs-stats', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`SELECT
       COUNT(*) AS total,
@@ -5013,7 +5014,7 @@ router.get('/rfqs-stats', authCRM, async (req, res) => {
  *  6. Severity-frequency portfolio cohort model
  *  7. Industry-sector actuarial benchmarking
  */
-router.get('/rfqs/:id/deep-analytics', authCRM, async (req, res) => {
+router.get('/rfqs/:id/deep-analytics', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = parseInt(req.params.id);
     if (!rfqId || isNaN(rfqId)) return res.status(400).json({ success: false, message: 'Invalid RFQ ID' });
@@ -5613,7 +5614,7 @@ router.get('/rfqs/:id/deep-analytics', authCRM, async (req, res) => {
  *  - Trend analysis from our pipeline
  *  - Pricing recommendations
  */
-router.post('/rfqs/:id/ai-intelligence', authCRM, async (req, res) => {
+router.post('/rfqs/:id/ai-intelligence', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const pool = sharedPool;
@@ -5969,7 +5970,7 @@ Required JSON structure (fill every field with data specific to this exact deal)
  * POST /rfqs/:id/ai-proposal
  * Generates a full professional proposal document using LLM
  */
-router.post('/rfqs/:id/ai-proposal', authCRM, async (req, res) => {
+router.post('/rfqs/:id/ai-proposal', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const rfqId = req.params.id;
     const pool = sharedPool;
@@ -6571,7 +6572,7 @@ async function syncTCsFromRFQ(rfqId, productType, tcText, createdBy) {
 
 // Guard: only CRM users with admin/manager permission or isAdmin flag may manage the T&C master
 function requireTCAdmin(req, res, next) {
-  const user = req.crmUser || {};
+  const user = req.teamUser || {};
   // Middleware stores permissions as user.permissions (decoded from JWT)
   const perms = user.permissions || user.crmPermissions || [];
   const isAdmin = user.isAdmin === true || user.role === 'admin' || user.role === 'superadmin';
@@ -6710,7 +6711,7 @@ router.post('/tc-master/bulk-approve', authCRM, requireTCAdmin, async (req, res)
 
 // ─── Sync T&Cs from a specific RFQ into pending master ───────────────────────
 // POST /api/crm/tc-master/sync-rfq/:rfqId
-router.post('/tc-master/sync-rfq/:rfqId', authCRM, requireTCAdmin, async (req, res) => {
+router.post('/tc-master/sync-rfq/:rfqId', authTeam, requirePermission('Insurance RFQ Management'), requireTCAdmin, async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT id, product_type, terms_and_conditions FROM crm_rfqs WHERE id = $1`,
@@ -6721,7 +6722,7 @@ router.post('/tc-master/sync-rfq/:rfqId', authCRM, requireTCAdmin, async (req, r
     if (!rfq.terms_and_conditions) {
       return res.status(400).json({ success: false, message: 'This RFQ has no parsed terms & conditions to sync' });
     }
-    await syncTCsFromRFQ(rfq.id, rfq.product_type, rfq.terms_and_conditions, req.crmUser?.id);
+    await syncTCsFromRFQ(rfq.id, rfq.product_type, rfq.terms_and_conditions, req.teamUser?.id);
     // Count how many pending were created
     const { rows: pending } = await sharedPool.query(
       `SELECT COUNT(*) FROM crm_product_tc_master WHERE source_rfq_id=$1 AND is_pending=TRUE`,

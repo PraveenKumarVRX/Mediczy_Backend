@@ -15,7 +15,7 @@ import {
 import { RFQUnderwritingTab } from './RFQUnderwritingTab';
 import { toast } from 'sonner';
 import api from '@/utils/api';
-import { CRMLayout } from './CRMModulePages';
+import { TeamInsuranceLayout } from './TeamInsuranceLayout';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RePieChart, Pie, Cell, Legend,
@@ -28,7 +28,7 @@ import {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function authHeaders() {
-  const t = localStorage.getItem('crmToken');
+  const t = localStorage.getItem('teamToken');
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -329,7 +329,7 @@ const STATUS_DOT: Record<string, string> = {
 // RFQ LIST PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function CRMRFQsPage() {
+export function TeamRFQsPage() {
   const [rfqs, setRfqs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
@@ -424,7 +424,7 @@ export function CRMRFQsPage() {
   };
 
   return (
-    <CRMLayout title="RFQs">
+    <TeamInsuranceLayout title="RFQs">
     <div className="space-y-6">
       {showCreateModal && (
         <CreateRFQModal
@@ -601,7 +601,7 @@ export function CRMRFQsPage() {
       </Card>
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }
 
@@ -737,7 +737,7 @@ function EditRFQModal({ rfq, onClose, onSaved }: { rfq: any; onClose: () => void
 // RFQ DETAIL PAGE (Broking Slip + Analytics + Members + Quotes)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function CRMRFQDetailPage() {
+export function TeamRFQDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -1007,21 +1007,21 @@ export function CRMRFQDetailPage() {
   };
 
   if (loading) return (
-    <CRMLayout title="RFQ Detail">
+    <TeamInsuranceLayout title="RFQ Detail">
     <div className="flex items-center justify-center h-64">
       <RefreshCw className="h-6 w-6 text-violet-400 animate-spin" />
     </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 
   if (!rfq) return (
-    <CRMLayout title="RFQ Detail">
+    <TeamInsuranceLayout title="RFQ Detail">
     <div className="text-center py-20">
       <AlertCircle className="h-12 w-12 text-slate-600 mx-auto mb-3" />
       <p className="text-slate-400">RFQ not found</p>
       <Button onClick={() => navigate('/crm/rfqs')} variant="outline" className="mt-4 border-white/[0.1] text-slate-300">Back to RFQs</Button>
     </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 
   const lives = typeof rfq.lives_at_inception === 'string' ? JSON.parse(rfq.lives_at_inception || '{}') : (rfq.lives_at_inception || {});
@@ -1045,7 +1045,7 @@ export function CRMRFQDetailPage() {
   ] as const;
 
   return (
-    <CRMLayout title={rfq.insured_name || 'RFQ Detail'}>
+    <TeamInsuranceLayout title={rfq.insured_name || 'RFQ Detail'}>
     <div className="space-y-6">
       {showEditModal && (
         <EditRFQModal rfq={rfq} onClose={() => setShowEditModal(false)} onSaved={() => { setShowEditModal(false); fetchRFQ(); }} />
@@ -1147,7 +1147,7 @@ export function CRMRFQDetailPage() {
       {tab === 'deep-analytics' && <DeepAnalyticsTab rfqId={rfq.id} rfq={rfq} deepAnalytics={deepAnalytics} loading={deepAnalyticsLoading} onAnalyze={fetchDeepAnalytics} />}
       {tab === 'ai-quote' && <AIQuoteTab rfqId={rfq.id} aiQuote={aiQuote} aiLoading={aiLoading} onGenerate={generateAIQuote} navigate={navigate} claimsAnalysis={claimsAnalysis} />}
     </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }
 
@@ -3772,7 +3772,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
 // QUOTE BUILDER PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function CRMQuoteBuilderPage() {
+export function TeamQuoteBuilderPage() {
   const { id: rfqId, quoteId } = useParams<{ id: string; quoteId: string }>();
   const navigate = useNavigate();
   const [rfq, setRfq] = useState<any>(null);
@@ -3928,15 +3928,15 @@ export function CRMQuoteBuilderPage() {
   }, [form.total_premium, form.total_lives]);
 
   if (loading) return (
-    <CRMLayout title="Quote Builder">
+    <TeamInsuranceLayout title="Quote Builder">
     <div className="flex items-center justify-center h-64">
       <RefreshCw className="h-6 w-6 text-violet-400 animate-spin" />
     </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 
   return (
-    <CRMLayout title={isNew ? 'Create Quote' : 'Edit Quote'}>
+    <TeamInsuranceLayout title={isNew ? 'Create Quote' : 'Edit Quote'}>
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -4084,7 +4084,7 @@ export function CRMQuoteBuilderPage() {
         </Button>
       </div>
     </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }
 

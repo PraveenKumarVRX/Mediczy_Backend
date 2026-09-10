@@ -149,6 +149,7 @@ export const TEAM_PERMISSIONS = Object.freeze([
   'Broker Management',
   'Support Tickets',
   'Audit Access',
+  'Insurance RFQ Management',
 ]);
 
 export default { ROLES, TENANT_BYPASS_ROLES, ORG_ADMIN_ROLES, HOSPITAL_ROLES,

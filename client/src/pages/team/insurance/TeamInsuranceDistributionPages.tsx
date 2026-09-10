@@ -10,10 +10,10 @@ import {
   CircleDollarSign, BadgeCheck, SquareArrowOutUpRight, Trash2, Edit,
 } from 'lucide-react';
 import api from '@/utils/api';
-import { CRMLayout } from './CRMModulePages';
+import { TeamInsuranceLayout } from './TeamInsuranceLayout';
 
 function authHeaders() {
-  const t = localStorage.getItem('crmToken');
+  const t = localStorage.getItem('teamToken');
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
@@ -69,7 +69,7 @@ const CITY_CODES: Record<string, string> = {
   Chennai: 'CHE', Pune: 'PUN', Ahmedabad: 'AMD', Kolkata: 'KOL',
 };
 
-export function CRMAgentsPage() {
+export function TeamAgentsPage() {
   const navigate = useNavigate();
   const [agents, setAgents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,7 +98,7 @@ export function CRMAgentsPage() {
         if (data.stats) setStats(data.stats);
       }
     } catch (err: any) {
-      if (err.response?.status === 401) navigate('/crm/login');
+      if (err.response?.status === 401) navigate('/team/login');
       // Fallback: show empty state gracefully
       setAgents([]);
     } finally { setLoading(false); }
@@ -148,7 +148,7 @@ export function CRMAgentsPage() {
   }[ct] || 'bg-slate-500/15 text-slate-400');
 
   return (
-    <CRMLayout title="Agents & Partners">
+    <TeamInsuranceLayout title="Agents & Partners">
       <div className="space-y-5">
 
         {/* Stats row */}
@@ -335,7 +335,7 @@ export function CRMAgentsPage() {
         </div>
         <Pagination page={page} totalPages={totalPages} setPage={setPage} />
       </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }
 
@@ -351,7 +351,7 @@ const ONBOARDING_STEPS = [
   { step: 5, label: 'Go-Live',         desc: 'First activation done' },
 ];
 
-export function CRMAgenciesPage() {
+export function TeamAgenciesPage() {
   const navigate = useNavigate();
   const [agencies, setAgencies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -379,7 +379,7 @@ export function CRMAgenciesPage() {
         if (data.stats) setStats(data.stats);
       }
     } catch (err: any) {
-      if (err.response?.status === 401) navigate('/crm/login');
+      if (err.response?.status === 401) navigate('/team/login');
       setAgencies([]);
     } finally { setLoading(false); }
   }, [page, search, tierFilter, navigate]);
@@ -420,7 +420,7 @@ export function CRMAgenciesPage() {
   };
 
   return (
-    <CRMLayout title="Agencies & Channel Partners">
+    <TeamInsuranceLayout title="Agencies & Channel Partners">
       <div className="space-y-5">
 
         {/* Stats */}
@@ -687,7 +687,7 @@ export function CRMAgenciesPage() {
           </>
         )}
       </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }
 
@@ -703,7 +703,7 @@ const PAYOUT_STATUS_STYLE: Record<string, string> = {
   on_hold:   'bg-slate-500/10 text-slate-400 border-slate-500/20',
 };
 
-export function CRMCommissionsPage() {
+export function TeamCommissionsPage() {
   const navigate = useNavigate();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -729,7 +729,7 @@ export function CRMCommissionsPage() {
         if (data.summary) setSummary(data.summary);
       }
     } catch (err: any) {
-      if (err.response?.status === 401) navigate('/crm/login');
+      if (err.response?.status === 401) navigate('/team/login');
       setRecords([]);
     } finally { setLoading(false); }
   }, [page, search, statusFilter, planFilter, navigate]);
@@ -752,7 +752,7 @@ export function CRMCommissionsPage() {
   };
 
   return (
-    <CRMLayout title="Commissions & Payouts">
+    <TeamInsuranceLayout title="Commissions & Payouts">
       <div className="space-y-5">
 
         {/* Summary cards */}
@@ -985,7 +985,7 @@ export function CRMCommissionsPage() {
           </>
         )}
       </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }
 
@@ -1042,7 +1042,7 @@ const CORP_PLAN_STATUS_STYLE: Record<string, string> = {
 
 const CORP_STATUS_FLOW = ['draft', 'active', 'expired', 'renewed', 'cancelled'];
 
-export function CRMCorporatePlansPage() {
+export function TeamCorporatePlansPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [plans, setPlans] = useState<any[]>([]);
@@ -1099,7 +1099,7 @@ export function CRMCorporatePlansPage() {
         if (data.stats) setStats(data.stats);
       }
     } catch (err: any) {
-      if (err.response?.status === 401) navigate('/crm/login');
+      if (err.response?.status === 401) navigate('/team/login');
       setPlans([]);
     } finally { setLoading(false); }
   }, [page, search, statusFilter, yearFilter, navigate]);
@@ -1173,7 +1173,7 @@ export function CRMCorporatePlansPage() {
   const templateFor = (code: string) => PLAN_TEMPLATES.find(t => t.code === code);
 
   return (
-    <CRMLayout title="Corporate Health Plans">
+    <TeamInsuranceLayout title="Corporate Health Plans">
       <div className="space-y-5">
 
         {/* Stats */}
@@ -1530,6 +1530,6 @@ export function CRMCorporatePlansPage() {
         </div>
         <Pagination page={page} totalPages={totalPages} setPage={setPage} />
       </div>
-    </CRMLayout>
+    </TeamInsuranceLayout>
   );
 }

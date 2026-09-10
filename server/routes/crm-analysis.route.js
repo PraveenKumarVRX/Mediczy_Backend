@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import { authCRM } from '../middleware/crm.middleware.js';
+import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 
@@ -502,7 +502,7 @@ function computeRiskScore({ avgLR, trendDirection, avgAge, industryFactor, catCl
 // ═════════════════════════════════════════════════════════════════════════════
 
 // ─── GET policy history (retrospective data) ─────────────────────────────────
-router.get('/rfqs/:rfqId/policy-history', authCRM, async (req, res) => {
+router.get('/rfqs/:rfqId/policy-history', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT * FROM crm_rfq_policy_history WHERE rfq_id = $1 ORDER BY
@@ -514,7 +514,7 @@ router.get('/rfqs/:rfqId/policy-history', authCRM, async (req, res) => {
 });
 
 // ─── UPSERT one policy year (retrospective data entry) ───────────────────────
-router.put('/rfqs/:rfqId/policy-history/:yearLabel', authCRM, async (req, res) => {
+router.put('/rfqs/:rfqId/policy-history/:yearLabel', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId, yearLabel } = req.params;
     if (!['Y-1', 'Y-2', 'Y-3'].includes(yearLabel)) {
@@ -561,14 +561,14 @@ router.put('/rfqs/:rfqId/policy-history/:yearLabel', authCRM, async (req, res) =
        parseFloat(copay_collected) || 0, parseFloat(ibnr_reserve) || 0,
        parseInt(lives_count) || 0, parseInt(employee_count) || 0,
        JSON.stringify(top_diagnoses || []), notes || null,
-       req.crmUser?.id || null]
+       req.teamUser?.id || null]
     );
     return res.json({ success: true, data: rows[0] });
   } catch (err) { console.error('[Policy History Upsert]', err.message); return res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ─── DELETE one policy year ───────────────────────────────────────────────────
-router.delete('/rfqs/:rfqId/policy-history/:yearLabel', authCRM, async (req, res) => {
+router.delete('/rfqs/:rfqId/policy-history/:yearLabel', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     await sharedPool.query(`DELETE FROM crm_rfq_policy_history WHERE rfq_id=$1 AND year_label=$2`,
       [req.params.rfqId, req.params.yearLabel]);
@@ -577,7 +577,7 @@ router.delete('/rfqs/:rfqId/policy-history/:yearLabel', authCRM, async (req, res
 });
 
 // ─── GET cached latest analysis ──────────────────────────────────────────────
-router.get('/rfqs/:rfqId/analysis', authCRM, async (req, res) => {
+router.get('/rfqs/:rfqId/analysis', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT * FROM crm_rfq_analysis_cache WHERE rfq_id=$1 ORDER BY version DESC LIMIT 1`,
@@ -589,7 +589,7 @@ router.get('/rfqs/:rfqId/analysis', authCRM, async (req, res) => {
 });
 
 // ─── POST: Generate full analysis (the main engine) ──────────────────────────
-router.post('/rfqs/:rfqId/generate', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/generate', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
     const { prospective = {} } = req.body; // optional overrides: projected_lives, si_override, industry, stop_loss_pct
@@ -789,7 +789,7 @@ Produce a JSON with exactly these keys:
        JSON.stringify(aiOutput),
        aiOutput.executive_summary || '',
        JSON.stringify(inputsSnapshot),
-       req.crmUser?.id || null]
+       req.teamUser?.id || null]
     );
 
     return res.json({
@@ -825,7 +825,7 @@ Produce a JSON with exactly these keys:
 });
 
 // ─── GET all analysis versions for an RFQ ────────────────────────────────────
-router.get('/rfqs/:rfqId/analysis/versions', authCRM, async (req, res) => {
+router.get('/rfqs/:rfqId/analysis/versions', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT id, version, risk_score, risk_tier, ai_executive_summary, generated_at, generated_by
@@ -837,7 +837,7 @@ router.get('/rfqs/:rfqId/analysis/versions', authCRM, async (req, res) => {
 });
 
 // ─── GET one specific version ─────────────────────────────────────────────────
-router.get('/rfqs/:rfqId/analysis/:versionId', authCRM, async (req, res) => {
+router.get('/rfqs/:rfqId/analysis/:versionId', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT * FROM crm_rfq_analysis_cache WHERE rfq_id=$1 AND id=$2`,
@@ -849,7 +849,7 @@ router.get('/rfqs/:rfqId/analysis/:versionId', authCRM, async (req, res) => {
 });
 
 // ─── Quick cost model (no DB save — for live calculator) ─────────────────────
-router.post('/rfqs/:rfqId/cost-model-preview', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/cost-model-preview', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const {
       projected_lives, avg_si, industry,
@@ -904,7 +904,7 @@ router.post('/rfqs/:rfqId/cost-model-preview', authCRM, async (req, res) => {
 });
 
 // ─── POST: Convert a recommended strategy directly into a quote draft ─────────
-router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId, strategy } = req.params;
     const strategyLetter = strategy.toUpperCase();
@@ -957,7 +957,7 @@ router.post('/rfqs/:rfqId/strategy-to-quote/:strategy', authCRM, async (req, res
        chosen.premium_per_life_incl_gst,
        termsText,
        `Auto-generated from Strategy ${strategyLetter}: ${chosen.name}. Analysis v${analysis.version}.`,
-       req.crmUser?.id || null]
+       req.teamUser?.id || null]
     );
     return res.status(201).json({ success: true, data: rows[0], strategyUsed: chosen });
   } catch (err) { console.error('[Strategy-to-Quote]', err.message); return res.status(500).json({ success: false, message: err.message }); }

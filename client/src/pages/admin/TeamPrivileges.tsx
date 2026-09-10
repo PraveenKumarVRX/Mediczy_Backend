@@ -31,6 +31,7 @@ const ALL_PERMISSIONS = [
   'Broker Management',
   'Support Tickets',
   'Audit Access',
+  'Insurance RFQ Management',
 ];
 
 const EDITABLE_MODULES = [

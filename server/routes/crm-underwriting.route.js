@@ -11,7 +11,7 @@
  */
 
 import express from 'express';
-import { authCRM } from '../middleware/crm.middleware.js';
+import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { getS3Client, getUploadsBucket } from '../services/s3-presign.service.js';
@@ -512,7 +512,7 @@ Always cite specific IRDAI regulations, waiting period rules, and actuarial rati
 
 // ─── GET /api/crm/underwriting/products ──────────────────────────────────────
 
-router.get('/products', authCRM, async (req, res) => {
+router.get('/products', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT * FROM crm_insurance_products WHERE is_active = true ORDER BY sort_order`
@@ -526,7 +526,7 @@ router.get('/products', authCRM, async (req, res) => {
 
 // ─── GET /api/crm/underwriting/products/:code/matrix ─────────────────────────
 
-router.get('/products/:code/matrix', authCRM, async (req, res) => {
+router.get('/products/:code/matrix', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { code } = req.params;
     const prod = await sharedPool.query(
@@ -555,7 +555,7 @@ router.get('/products/:code/matrix', authCRM, async (req, res) => {
 
 // ─── GET /api/crm/underwriting/rfqs/:rfqId ────────────────────────────────────
 
-router.get('/rfqs/:rfqId', authCRM, async (req, res) => {
+router.get('/rfqs/:rfqId', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
     const { rows } = await sharedPool.query(
@@ -577,7 +577,7 @@ router.get('/rfqs/:rfqId', authCRM, async (req, res) => {
 // AI parses the RFQ's existing_coverages / required_coverages text and
 // structured fields into a normalised coverage requirement list.
 
-router.post('/rfqs/:rfqId/parse-slip', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/parse-slip', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
     const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
@@ -667,11 +667,11 @@ Return ONLY valid JSON, no other text.`;
 //   4. AI underwriting decision + narrative
 //   5. Save assessment to crm_rfq_underwriting
 
-router.post('/rfqs/:rfqId/analyze', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/analyze', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
     const { productCode = 'GMC', requestedCoverages = [], forcedReParse = false } = req.body;
-    const userId = req.user?.id || req.crmUser?.id || 0;
+    const userId = req.teamUser?.id || 0;
 
     // ── 1. Fetch RFQ ──────────────────────────────────────────────────────────
     const rfqRes = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
@@ -950,7 +950,7 @@ Be precise, professional, and cite specific IRDAI regulations where relevant.`;
 // ─── POST /api/crm/underwriting/rfqs/:rfqId/ai-chat ──────────────────────────
 // iSHA-UW conversational AI — loads full analytics so responses are specific.
 
-router.post('/rfqs/:rfqId/ai-chat', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/ai-chat', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
     const { message, history = [], productCode = 'GMC' } = req.body;
@@ -1148,7 +1148,7 @@ Rules:
 // ─── POST /api/crm/underwriting/rfqs/:rfqId/generate-terms ──────────────────
 // Generate formal underwriting terms letter for a completed assessment.
 
-router.post('/rfqs/:rfqId/generate-terms', authCRM, async (req, res) => {
+router.post('/rfqs/:rfqId/generate-terms', authTeam, requirePermission('Insurance RFQ Management'), async (req, res) => {
   try {
     const { rfqId } = req.params;
     const { productCode = 'GMC' } = req.body;

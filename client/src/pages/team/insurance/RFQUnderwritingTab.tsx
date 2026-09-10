@@ -18,7 +18,7 @@ import api from '@/utils/api';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function authHeaders() {
-  const t = localStorage.getItem('crmToken');
+  const t = localStorage.getItem('teamToken');
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 

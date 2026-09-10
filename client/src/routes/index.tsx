@@ -273,16 +273,18 @@ const CRMReportsPage    = lazyNamed(_CRMModulePages, "CRMReportsPage");
 const CRMSettingsPage   = lazyNamed(_CRMModulePages, "CRMSettingsPage");
 const CRMTeamPage       = lazyNamed(_CRMModulePages, "CRMTeamPage");
 
-const _CRMRFQPages = () => import("@/pages/crm/CRMRFQPages");
-const CRMRFQsPage        = lazyNamed(_CRMRFQPages, "CRMRFQsPage");
-const CRMRFQDetailPage   = lazyNamed(_CRMRFQPages, "CRMRFQDetailPage");
-const CRMQuoteBuilderPage = lazyNamed(_CRMRFQPages, "CRMQuoteBuilderPage");
+// Insurance RFQ / distribution — moved to the Team module (2026-09-10):
+// these aren't hospital-CRM functions, see TeamInsuranceLayout.tsx's header comment.
+const _TeamRFQPages = () => import("@/pages/team/insurance/TeamRFQPages");
+const TeamRFQsPage        = lazyNamed(_TeamRFQPages, "TeamRFQsPage");
+const TeamRFQDetailPage   = lazyNamed(_TeamRFQPages, "TeamRFQDetailPage");
+const TeamQuoteBuilderPage = lazyNamed(_TeamRFQPages, "TeamQuoteBuilderPage");
 
-const _CRMDistributionPages = () => import("@/pages/crm/CRMDistributionPages");
-const CRMAgentsPage          = lazyNamed(_CRMDistributionPages, "CRMAgentsPage");
-const CRMAgenciesPage        = lazyNamed(_CRMDistributionPages, "CRMAgenciesPage");
-const CRMCommissionsPage     = lazyNamed(_CRMDistributionPages, "CRMCommissionsPage");
-const CRMCorporatePlansPage  = lazyNamed(_CRMDistributionPages, "CRMCorporatePlansPage");
+const _TeamInsuranceDistributionPages = () => import("@/pages/team/insurance/TeamInsuranceDistributionPages");
+const TeamAgentsPage          = lazyNamed(_TeamInsuranceDistributionPages, "TeamAgentsPage");
+const TeamAgenciesPage        = lazyNamed(_TeamInsuranceDistributionPages, "TeamAgenciesPage");
+const TeamCommissionsPage     = lazyNamed(_TeamInsuranceDistributionPages, "TeamCommissionsPage");
+const TeamCorporatePlansPage  = lazyNamed(_TeamInsuranceDistributionPages, "TeamCorporatePlansPage");
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 const TeamLogin              = lazy(() => import("@/pages/team/TeamLogin"));
@@ -1319,10 +1321,17 @@ const AppRoutes = () => {
         <Route path="/crm/hospital/people" element={<HospitalCRMPeoplePage />} />
         <Route path="/crm/hospital/business-head" element={<HospitalCRMPeoplePage />} />
         <Route path="/crm/hospital/governance" element={<HospitalCRMGovernancePage />} />
-        {/* Alias redirects — common alternative URLs for CRM login */}
-        <Route path="/rfq/login"         element={<Navigate to="/crm/login" replace />} />
-        <Route path="/rfq"               element={<Navigate to="/crm/login" replace />} />
+        {/* Alias redirects — RFQ/insurance moved to Team login 2026-09-10 */}
+        <Route path="/rfq/login"         element={<Navigate to="/team/login" replace />} />
+        <Route path="/rfq"               element={<Navigate to="/team/login" replace />} />
         <Route path="/crm"               element={<Navigate to="/crm/login" replace />} />
+        {/* Backward-compat: old CRM-hosted URLs for the moved insurance/RFQ pages */}
+        <Route path="/crm/rfqs"           element={<Navigate to="/team/rfqs" replace />} />
+        <Route path="/crm/rfqs/:id"       element={<Navigate to="/team/rfqs" replace />} />
+        <Route path="/crm/agents"         element={<Navigate to="/team/agents" replace />} />
+        <Route path="/crm/agencies"       element={<Navigate to="/team/agencies" replace />} />
+        <Route path="/crm/commissions"    element={<Navigate to="/team/commissions" replace />} />
+        <Route path="/crm/corporate-plans" element={<Navigate to="/team/corporate-plans" replace />} />
         <Route path="/crm/dashboard"     element={<CRMDashboard />} />
         <Route path="/crm/hospital"       element={<HospitalCRMFoundationPage />} />
         <Route path="/crm/hospital/command-center" element={<HospitalCRMWorldclassPage />} />
@@ -1339,13 +1348,6 @@ const AppRoutes = () => {
         <Route path="/crm/reports"       element={<CRMReportsPage />} />
         <Route path="/crm/settings"      element={<CRMSettingsPage />} />
         <Route path="/crm/team"          element={<CRMTeamPage />} />
-        <Route path="/crm/rfqs"           element={<CRMRFQsPage />} />
-        <Route path="/crm/rfqs/:id"       element={<CRMRFQDetailPage />} />
-        <Route path="/crm/rfqs/:id/quote/:quoteId" element={<CRMQuoteBuilderPage />} />
-        <Route path="/crm/agents"              element={<CRMAgentsPage />} />
-        <Route path="/crm/agencies"            element={<CRMAgenciesPage />} />
-        <Route path="/crm/commissions"         element={<CRMCommissionsPage />} />
-        <Route path="/crm/corporate-plans"     element={<CRMCorporatePlansPage />} />
         <Route path="/crm/emails"              element={<CRMEmailPage />} />
         <Route path="/crm/campaigns"           element={<CRMCampaignsPage />} />
         <Route path="/crm/campaigns/new"       element={<CRMCampaignBuilderPage />} />
@@ -1375,6 +1377,21 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Corporate Management"><TeamProviderNetwork /></TeamGuard>} />
 
         {/* ── Team (permission-gated modules) ─────────────────────────── */}
+        {/* Insurance RFQ / distribution — moved here from CRM login 2026-09-10 */}
+        <Route path="/team/rfqs"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamRFQsPage /></TeamGuard>} />
+        <Route path="/team/rfqs/:id"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamRFQDetailPage /></TeamGuard>} />
+        <Route path="/team/rfqs/:id/quote/:quoteId"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamQuoteBuilderPage /></TeamGuard>} />
+        <Route path="/team/agents"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamAgentsPage /></TeamGuard>} />
+        <Route path="/team/agencies"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamAgenciesPage /></TeamGuard>} />
+        <Route path="/team/commissions"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamCommissionsPage /></TeamGuard>} />
+        <Route path="/team/corporate-plans"
+          element={<TeamGuard permission="Insurance RFQ Management"><TeamCorporatePlansPage /></TeamGuard>} />
         <Route path="/team/directory"
           element={<TeamGuard permission="User Management"><TeamDirectory /></TeamGuard>} />
         <Route path="/team/user-management"

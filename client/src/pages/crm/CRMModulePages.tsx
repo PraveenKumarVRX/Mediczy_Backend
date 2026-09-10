@@ -9,9 +9,9 @@ import {
   Briefcase, ChevronRight, ChevronLeft, LayoutGrid,
   PieChart, Settings, Plus, Search, Trash2, Edit,
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
-  Building2, IndianRupee, Brain, Sparkles, MessageSquare, Star, ShieldCheck,
+  Brain, Sparkles, MessageSquare, Star, ShieldCheck,
   Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
-  UserCog, Contact, List, ClipboardList, Handshake, Landmark, Bot, UserPlus, Crown,
+  UserCog, Contact, List, Bot, UserPlus, Crown,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
@@ -54,15 +54,6 @@ const sidebarNav = [
     { icon: FileText, label: 'Templates', path: '/crm/templates' },
     { icon: UserCheck, label: 'Senders', path: '/crm/senders' },
     { icon: X, label: 'Suppressions', path: '/crm/suppressions' },
-  ]},
-  { section: 'INSURANCE', items: [
-    { icon: ClipboardList, label: 'RFQs', path: '/crm/rfqs' },
-  ]},
-  { section: 'DISTRIBUTION', items: [
-    { icon: Handshake, label: 'Agents', path: '/crm/agents' },
-    { icon: Building2, label: 'Agencies', path: '/crm/agencies' },
-    { icon: IndianRupee, label: 'Commissions', path: '/crm/commissions' },
-    { icon: Landmark, label: 'Corp Plans', path: '/crm/corporate-plans' },
   ]},
   { section: 'INSIGHTS', items: [
     { icon: Brain,    label: 'AI Insights', path: '/crm/ai-insights' },
