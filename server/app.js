@@ -1915,6 +1915,10 @@ corporateEmployeeQcService.start();
 import { startImagingDailyMinioCron } from './services/imaging/imaging-daily-minio-cron.service.js';
 startImagingDailyMinioCron();
 
+// ============== PACS S3 → on-prem MinIO nightly archive (midnight) ==============
+import { startPacsMinioArchiveCron } from './services/imaging/pacs-minio-archive-cron.service.js';
+startPacsMinioArchiveCron();
+
 // ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
 import governanceServiceForCron from './services/ai-model-governance.service.js';
 import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';

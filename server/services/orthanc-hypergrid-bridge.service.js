@@ -10,8 +10,6 @@ import { orthancBasicAuthHeader } from '../utils/orthanc-credentials.js';
 const ORTHANC_URL = (process.env.ORTHANC_URL || 'http://127.0.0.1:8042').replace(/\/$/, '');
 const MEDICZY_API_URL = process.env.MEDICZY_API_URL || process.env.API_BASE_URL || 'http://127.0.0.1:8888';
 const BRIDGE_TOKEN = process.env.ORTHANC_BRIDGE_TOKEN || process.env.MEDICZY_INTERNAL_TOKEN || '';
-// Single-tenant default until per-modality tenant resolution exists (see dicom_modalities).
-const DEFAULT_BRIDGE_TENANT_ID = process.env.MEDICZY_IMAGING_BRIDGE_TENANT_ID || '';
 
 function orthancAuthHeader() {
   return orthancBasicAuthHeader({ defaultUser: 'pacs' });
@@ -46,6 +44,20 @@ export async function fetchOrthancSeriesMetadata(seriesId) {
 
 /**
  * POST DICOM buffer to HyperGrid STOW-RS.
+ *
+ * `tenantId` must be a real, already-resolved lab id (see
+ * resolveLabIdForOrthancIngest in imaging-ris-auto-ingest.service.js) — the
+ * caller (handleOrthancNewInstance) is responsible for not calling this at
+ * all when resolution fails. This used to silently fall back to
+ * process.env.MEDICZY_IMAGING_BRIDGE_TENANT_ID whenever tenantId was falsy;
+ * that env var was hardcoded to lab 2368 ("Rado Labs") and, because the
+ * Orthanc webhook payload never actually carries a tenantId, fired on
+ * effectively every single ingest — every other lab's studies (confirmed:
+ * ICH Egmore's MRI studies, 153 of them through 2026-09-08) were silently
+ * stamped into Rado Labs' tenant in hg_dicom_studies. The receiving route
+ * (POST /api/hypergrid/dicom/studies, via authAnyDicom's internal-bridge
+ * branch) already 400s on a missing X-Tenant-Id header, so omitting it here
+ * for an unresolved tenant fails loudly instead of guessing wrong.
  */
 export async function forwardToHyperGridStow(dicomBuffer, meta = {}, tenantId = null) {
   const form = new FormData();
@@ -66,8 +78,7 @@ export async function forwardToHyperGridStow(dicomBuffer, meta = {}, tenantId = 
 
   const headers = { ...form.getHeaders() };
   if (BRIDGE_TOKEN) headers.Authorization = `Bearer ${BRIDGE_TOKEN}`;
-  const resolvedTenantId = tenantId || DEFAULT_BRIDGE_TENANT_ID;
-  if (resolvedTenantId) headers['X-Tenant-Id'] = String(resolvedTenantId);
+  if (tenantId) headers['X-Tenant-Id'] = String(tenantId);
 
   const res = await fetch(`${MEDICZY_API_URL}/api/hypergrid/dicom/studies`, {
     method: 'POST',
@@ -187,9 +198,39 @@ export async function handleOrthancNewInstance(payload) {
     institutionName: mainTags.InstitutionName || studyTags.InstitutionName || null,
   };
 
+  const { resolveLabIdForOrthancIngest, ensureRisStudyFromOrthancIngest } =
+    await import('./imaging/imaging-ris-auto-ingest.service.js');
+  const remoteAet = payload?.RemoteAET || payload?.remoteAet || meta?.RemoteAET || null;
+
+  // Resolve ONCE, up front, and reuse for both the HyperGrid STOW forward
+  // (hg_dicom_studies) and the RIS ingest below — real per-modality
+  // (AE-title) or per-institution routing first, explicit id only as an
+  // authoritative override, no single-tenant env default. See the
+  // forwardToHyperGridStow doc comment above for why this was previously
+  // resolved independently (and wrongly) per call site.
+  const resolvedTenantId = await resolveLabIdForOrthancIngest({
+    explicitLabId: payload?.tenantId || payload?.labId || null,
+    remoteAet,
+    institutionName: parsedMeta.institutionName,
+  });
+
+  if (!resolvedTenantId) {
+    logger.warn('[OrthancBridge] study has no matching AE-title or InstitutionName — quarantined, not forwarded to any lab', {
+      remoteAet: remoteAet || null,
+      institutionName: parsedMeta.institutionName || null,
+      studyInstanceUID: parsedMeta.studyInstanceUID || null,
+    });
+    return {
+      success: false,
+      skipped: true,
+      reason: 'no_lab_id',
+      message: 'Register this modality AE title or InstitutionName under PACS Settings so studies from it route to the correct lab',
+    };
+  }
+
   let result = {};
   try {
-    result = await forwardToHyperGridStow(buffer, parsedMeta, payload?.tenantId || null);
+    result = await forwardToHyperGridStow(buffer, parsedMeta, resolvedTenantId);
   } catch (stowErr) {
     // Still register RIS even if HyperGrid STOW auth is misconfigured
     logger.warn('[OrthancBridge] HyperGrid STOW failed; continuing RIS auto-ingest', {
@@ -200,19 +241,8 @@ export async function handleOrthancNewInstance(payload) {
 
   let ris = null;
   try {
-    const { ensureRisStudyFromOrthancIngest } = await import('./imaging/imaging-ris-auto-ingest.service.js');
-    const remoteAet = payload?.RemoteAET || payload?.remoteAet || meta?.RemoteAET || null;
     ris = await ensureRisStudyFromOrthancIngest({
-      // Deliberately NOT falling back to process.env.ORTHANC_DEFAULT_LAB_ID
-      // here — that decision belongs entirely inside
-      // resolveLabIdForOrthancIngest, which already tries real per-modality
-      // (AE-title) and per-institution routing first and only uses the env
-      // default as a genuine last resort. Resolving it here instead passed
-      // it through as `explicitLabId`, which resolveLabIdForOrthancIngest
-      // treats as an authoritative override and returns immediately —
-      // silently defeating both of those real-routing lookups for every
-      // single call, regardless of what they would have found.
-      labId: payload?.tenantId || payload?.labId || null,
+      labId: resolvedTenantId,
       remoteAet,
       orthancStudyId: resolvedStudyId || result.orthancStudyId || null,
       orthancInstanceId: resolvedInstanceId,

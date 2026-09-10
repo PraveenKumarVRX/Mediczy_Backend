@@ -27,6 +27,7 @@ services:
       - "8042:8042"
     volumes:
       - orthanc-data:/var/lib/orthanc/db
+      - ./orthanc/webhook.lua:/etc/orthanc/webhook.lua:ro
     environment:
       VERBOSE_STARTUP: "true"
       ORTHANC__NAME: "MediczyPACS"
@@ -45,20 +46,34 @@ services:
       ORTHANC__DICOM_WEB__ROOT: "/dicom-web/"
       ORTHANC__DICOM_WEB__ENABLE_WADO: "true"
       ORTHANC__DICOM_WEB__WADO_ROOT: "/wado"
-      # AwsS3Storage plugin -- on-prem PACS MinIO via Cloudflare Tunnel.
-      # HybridMode=WriteToObjectStorage (reverted 2026-08-22): minio-pacs.mediqzy.com
-      # write path re-verified stable. New files go to MinIO; local disk stays as
-      # read-fallback for files migrated there during the 2026-08-19 to 2026-08-22
-      # stopgap window (see scripts/imaging/migrate-local-to-minio.* for that migration).
+      # AwsS3Storage plugin -- object storage backend, endpoint/region/addressing
+      # style all env-driven so this can point at on-prem MinIO (via Cloudflare
+      # Tunnel) or real AWS S3 without editing this file. 2026-09-09: switched to
+      # real AWS S3 (mediczy-pacs-storage, ap-south-1) as a stopgap while
+      # minio-pacs.mediqzy.com is down (Cloudflare 530 — tunnel/origin unreachable,
+      # Orthanc was failing every new C-STORE write). Revert S3_STORAGE_* in
+      # docker/imaging/.env back to the minio-pacs.mediqzy.com values once that's
+      # confirmed healthy again — see docker/imaging/.env.example for both forms.
+      # HybridMode=WriteToObjectStorage: new files go to object storage; local disk
+      # stays as read-fallback for files migrated there during the 2026-08-19 to
+      # 2026-08-22 stopgap window (see scripts/imaging/migrate-local-to-minio.*).
       AWS_S3_STORAGE_PLUGIN_ENABLED: ${AWS_S3_STORAGE_PLUGIN_ENABLED:-false}
       ORTHANC__AWS_S3_STORAGE__BUCKET_NAME: ${S3_STORAGE_BUCKET_NAME:-}
-      ORTHANC__AWS_S3_STORAGE__REGION: us-east-1
+      ORTHANC__AWS_S3_STORAGE__REGION: ${S3_STORAGE_REGION:-us-east-1}
       ORTHANC__AWS_S3_STORAGE__ENDPOINT: ${S3_STORAGE_ENDPOINT:-}
       ORTHANC__AWS_S3_STORAGE__ACCESS_KEY: ${S3_STORAGE_ACCESS_KEY:-}
       ORTHANC__AWS_S3_STORAGE__SECRET_KEY: ${S3_STORAGE_SECRET_KEY:-}
-      ORTHANC__AWS_S3_STORAGE__VIRTUAL_ADDRESSING: "false"
+      ORTHANC__AWS_S3_STORAGE__VIRTUAL_ADDRESSING: ${S3_STORAGE_VIRTUAL_ADDRESSING:-false}
       ORTHANC__AWS_S3_STORAGE__STORAGE_STRUCTURE: flat
       ORTHANC__AWS_S3_STORAGE__HYBRID_MODE: WriteToObjectStorage
+      # Instant push (webhook.lua's OnStableStudy) to the same target the
+      # orthanc-bridge polling sidecar below forwards to — replaces the 30s
+      # poll cycle for the common case (poll-sync.sh stays as a fallback).
+      # webhook.lua hardcodes the URL/secret directly (Orthanc's Lua sandbox
+      # here has no Configuration()/os.getenv() to read them from env) — keep
+      # that file's values in sync with MEDICZY_API_URL / ORTHANC_WEBHOOK_SECRET
+      # below if either ever changes.
+      ORTHANC__LUA_SCRIPTS: '["/etc/orthanc/webhook.lua"]'
     healthcheck:
       test: ["CMD-SHELL", "python3 /probes/test-aliveness.py --user=$${ORTHANC_USER:-pacs} --pwd=$${ORTHANC_PASSWORD}"]
       interval: 15s

@@ -486,6 +486,30 @@ router.post('/storage/daily-transfer/run', authImaging, async (req, res) => {
   }
 });
 
+// ─── PACS S3 → on-prem MinIO nightly archive ────────────────────────────────
+router.get('/storage/pacs-archive', authImaging, async (_req, res) => {
+  try {
+    const { getPacsArchiveStatus } = await import('../services/imaging/pacs-minio-archive.service.js');
+    const status = await getPacsArchiveStatus(100);
+    return res.json({ success: true, ...status });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/storage/pacs-archive/run', authImaging, async (req, res) => {
+  try {
+    const { archivePacsBucketToMinio } = await import('../services/imaging/pacs-minio-archive.service.js');
+    const result = await archivePacsBucketToMinio({
+      dryRun: Boolean(req.body?.dryRun),
+      force: Boolean(req.body?.force),
+    });
+    return res.json({ success: true, result });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.post('/measurements/from-viewer', authImaging, async (req, res) => {
   try {
     const { studyId, studyInstanceUID, lesionLabel, location, sizeMm, volumeMm3, patientName, data } = req.body || {};

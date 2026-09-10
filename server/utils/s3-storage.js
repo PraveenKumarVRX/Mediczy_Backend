@@ -43,7 +43,12 @@ export const pacsMinioClient = isPacsMinioConfigured()
   ? new S3Client({
       region: process.env.PACS_MINIO_REGION || 'us-east-1',
       endpoint: process.env.PACS_MINIO_ENDPOINT,
-      forcePathStyle: true,
+      // MinIO needs path-style; real AWS S3 (used as a stopgap while MinIO is
+      // down, see server/.env PACS_MINIO_* comment) needs virtual-hosted-style
+      // for buckets created after 2020 outside us-east-1 — path-style requests
+      // to those get rejected, which is what surfaced this as an XML
+      // deserialization error rather than a clean auth/config failure.
+      forcePathStyle: String(process.env.PACS_MINIO_FORCE_PATH_STYLE ?? 'true') === 'true',
       credentials: {
         accessKeyId: process.env.PACS_MINIO_ACCESS_KEY,
         secretAccessKey: process.env.PACS_MINIO_SECRET_KEY,
