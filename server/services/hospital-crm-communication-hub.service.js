@@ -346,6 +346,27 @@ export async function findOrCreateConversation({ tenantId, leadId, channel }) {
   return created.rows[0].id;
 }
 
+/** Full message history for one thread, plus who it's with — for the Communication Hub's conversation inbox reply view. */
+export async function getConversationThread(tenantId, conversationId) {
+  const { rows: convRows } = await sharedPool.query(
+    `SELECT c.id, c.channel, c.status, c.lead_id, lv.legacy_lead_id, ct.name AS contact_name, ct.email, ct.phone_e164 AS phone
+     FROM crm_conversations c
+     LEFT JOIN crm_leads_v2 lv ON lv.id = c.lead_id
+     LEFT JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id
+     WHERE c.tenant_id = $1 AND c.id = $2`,
+    [tenantId, conversationId]
+  );
+  const conversation = convRows[0];
+  if (!conversation) throw Object.assign(new Error('Conversation not found'), { statusCode: 404 });
+
+  const { rows: messages } = await sharedPool.query(
+    `SELECT id, direction, channel, subject, body_preview, status, provider, created_at
+     FROM crm_communication_events WHERE tenant_id = $1 AND conversation_id = $2 ORDER BY created_at ASC`,
+    [tenantId, conversationId]
+  );
+  return { conversation, messages };
+}
+
 async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, v2LeadId, v2ContactId, v2TenantId, userId }) {
   const failed = Boolean(errorMessage);
   const bodyPreview = message ? String(message).slice(0, 2000) : null;
@@ -612,6 +633,7 @@ export default {
   sendCrmMessage,
   dispatchToChannel,
   findOrCreateConversation,
+  getConversationThread,
   listCrmCallActivity,
   listCrmCommunicationLog,
 };

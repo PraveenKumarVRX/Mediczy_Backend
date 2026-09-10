@@ -355,7 +355,68 @@ function Integrations({ integrations }: { integrations: any[] }) {
 }
 
 function ConversationInbox({ data }: { data: HubData }) {
-  return <div className="space-y-5"><div><h2 className="text-lg font-semibold text-white">Conversation inbox</h2><p className="text-sm text-slate-500 mt-1">See live patient threads alongside outbound campaign activity.</p></div><section className={`${panel} overflow-hidden`}><SectionHeader icon={Inbox} title="Open conversations" hint={`${(data.conversations || []).length} recent threads`} /><div className="divide-y divide-white/[0.05]">{(data.conversations || []).length ? (data.conversations || []).map((item: any) => <div key={item.id} className="px-5 py-4 flex items-center gap-4"><div className="h-9 w-9 rounded-xl bg-violet-500/10 flex items-center justify-center"><MessageCircle className="h-4 w-4 text-violet-300" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-sm text-white">{item.contact_name}</span><span className="text-[11px] text-slate-600 capitalize">{item.channel}</span></div><p className="text-xs text-slate-500 truncate mt-1">{item.last_message || 'No message preview'}</p></div><span className={`rounded-full px-2 py-1 text-[11px] ${statusClass(item.status)}`}>{item.status}</span></div>) : <Empty text="No conversation threads have been synced." />}</div></section><section className={`${panel} overflow-hidden`}><SectionHeader icon={Clock3} title="Message stream" hint="Inbound, outbound, and system events" /><ActivityTable rows={data.activity || []} /></section></div>;
+  const [openId, setOpenId] = useState<number | null>(null);
+  return <div className="space-y-5"><div><h2 className="text-lg font-semibold text-white">Conversation inbox</h2><p className="text-sm text-slate-500 mt-1">See live patient threads alongside outbound campaign activity.</p></div><section className={`${panel} overflow-hidden`}><SectionHeader icon={Inbox} title="Open conversations" hint={`${(data.conversations || []).length} recent threads`} /><div className="divide-y divide-white/[0.05]">{(data.conversations || []).length ? (data.conversations || []).map((item: any) => <button key={item.id} onClick={() => setOpenId(item.id)} className="w-full text-left px-5 py-4 flex items-center gap-4 hover:bg-white/[0.03] transition-colors"><div className="h-9 w-9 rounded-xl bg-violet-500/10 flex items-center justify-center"><MessageCircle className="h-4 w-4 text-violet-300" /></div><div className="min-w-0 flex-1"><div className="flex items-center gap-2"><span className="text-sm text-white">{item.contact_name}</span><span className="text-[11px] text-slate-600 capitalize">{item.channel}</span></div><p className="text-xs text-slate-500 truncate mt-1">{item.last_message || 'No message preview'}</p></div><span className={`rounded-full px-2 py-1 text-[11px] ${statusClass(item.status)}`}>{item.status}</span></button>) : <Empty text="No conversation threads have been synced." />}</div></section><section className={`${panel} overflow-hidden`}><SectionHeader icon={Clock3} title="Message stream" hint="Inbound, outbound, and system events" /><ActivityTable rows={data.activity || []} /></section>
+    {openId != null && <ConversationThreadModal conversationId={openId} onClose={() => setOpenId(null)} />}
+  </div>;
+}
+
+function ConversationThreadModal({ conversationId, onClose }: { conversationId: number; onClose: () => void }) {
+  const [thread, setThread] = useState<{ conversation: any; messages: any[] } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get(`/crm/communication-hub/conversations/${conversationId}`, { headers: headers() });
+      setThread(response.data?.data || null);
+    } catch { setThread(null); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [conversationId]);
+
+  const reply = async () => {
+    if (!thread?.conversation?.legacy_lead_id || !message.trim()) return;
+    setSending(true);
+    setResult(null);
+    try {
+      await api.post('/crm/communication-hub/send', { channel: thread.conversation.channel, message, leadId: thread.conversation.legacy_lead_id }, { headers: headers() });
+      setMessage('');
+      await load();
+    } catch (e: any) {
+      setResult({ ok: false, text: e?.response?.data?.message || 'Failed to send reply.' });
+    } finally { setSending(false); }
+  };
+
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" onClick={onClose}>
+    <div className={`${panel} bg-[#141422] w-full max-w-lg max-h-[80vh] flex flex-col`} onClick={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
+        <div>
+          <h3 className="text-sm font-semibold text-white">{thread?.conversation?.contact_name || 'Conversation'}</h3>
+          <p className="text-xs text-slate-500 mt-1 capitalize">{thread?.conversation?.channel} · {thread?.conversation?.email || thread?.conversation?.phone || ''}</p>
+        </div>
+        <button className="text-slate-500 hover:text-white" onClick={onClose}><X className="h-4 w-4" /></button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-5 space-y-3">
+        {loading ? <div className="text-xs text-slate-500 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading…</div> :
+          (thread?.messages || []).length ? thread!.messages.map((m: any) => (
+            <div key={m.id} className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${m.direction === 'inbound' ? 'bg-white/[0.06] text-slate-200' : 'bg-violet-600/20 text-violet-100 ml-auto'}`}>
+              <p className="whitespace-pre-line">{m.body_preview || m.subject || '(no preview)'}</p>
+              <p className="text-[11px] text-slate-500 mt-1">{new Date(m.created_at).toLocaleString()} · {m.direction}{m.status === 'failed' ? ' · failed' : ''}</p>
+            </div>
+          )) : <Empty text="No messages in this thread yet." />}
+      </div>
+      <div className="p-4 border-t border-white/[0.06] space-y-2">
+        {result && <div className="rounded-lg px-3 py-2 text-xs bg-red-500/10 text-red-300">{result.text}</div>}
+        <div className="flex gap-2">
+          <input className={`${input} flex-1`} placeholder="Reply…" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && reply()} />
+          <button className={primary} disabled={sending || !message.trim()} onClick={reply}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+        </div>
+      </div>
+    </div>
+  </div>;
 }
 
 function Templates({ templates, showForm, setShowForm, form, setForm, create }: any) {

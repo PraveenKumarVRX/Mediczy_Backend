@@ -6,6 +6,7 @@ import {
   createCommunicationHubCampaign,
   createCommunicationHubTemplate,
   getCommunicationHubDashboard,
+  getConversationThread,
   listCommunicationHubCampaigns,
   listCommunicationHubTemplates,
   listCrmCallActivity,
@@ -59,5 +60,6 @@ router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeComm
 router.post('/send', action((req) => sendCrmMessage({ ...req.body, userId: req.crmUser.id }), 'communication:write'));
 router.get('/calls', action((req) => listCrmCallActivity(req.query)));
 router.get('/log', action((req) => listCrmCommunicationLog(req.query)));
+router.get('/conversations/:id', action((req, tenantId) => getConversationThread(tenantId, req.params.id)));
 
 export default router;
