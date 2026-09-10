@@ -783,7 +783,7 @@ router.post('/auth/refresh', async (req, res) => {
       userType: 'crm',
       isCRM: true,
       isAdmin: user.isAdmin || false,
-      tenantId: metadata.tenantId || user.organizationId || null,
+      tenantId: metadata.tenantId || user.tenant_id || user.organizationId || user.organization_id || null,
       crmPermissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports'],
       crmRole: metadata.crmRole || DEFAULT_CRM_ROLE
     };
