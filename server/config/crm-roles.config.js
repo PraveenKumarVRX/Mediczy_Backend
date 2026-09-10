@@ -49,7 +49,11 @@ export const CRM_CAPABILITY_ROLES = Object.freeze({
   'specialty:write': [CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING],
 
   'communication:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP],
-  'communication:write': [CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING],
+  // Includes telecaller/conversion/sales_rep alongside marketing: these are the
+  // roles that actually work individual leads/deals day-to-day (the send scope
+  // here is real leads/contacts/deals, not campaign broadcast — see
+  // sendCrmMessage in hospital-crm-communication-hub.service.js).
+  'communication:write': [CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP],
 
   'foundation:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.MARKETING, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP],
   'foundation:write': [CRM_ROLES.MARKETING_HEAD, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION, CRM_ROLES.SALES_REP],

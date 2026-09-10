@@ -8,7 +8,10 @@ import {
   getCommunicationHubDashboard,
   listCommunicationHubCampaigns,
   listCommunicationHubTemplates,
+  listCrmCallActivity,
+  listCrmCommunicationLog,
   recordCommunicationIntegrationHealth,
+  sendCrmMessage,
   updateCommunicationHubCampaignStatus,
 } from '../services/hospital-crm-communication-hub.service.js';
 
@@ -51,5 +54,10 @@ router.get('/templates', action((req, tenantId) => listCommunicationHubTemplates
 router.post('/templates', action((req, tenantId) => createCommunicationHubTemplate({ ...req.body, tenantId }, req.crmUser.id), 'communication:write'));
 router.patch('/integrations/:id/health', action((req, tenantId) => recordCommunicationIntegrationHealth({ ...req.body, tenantId, integrationId: req.params.id }, req.crmUser.id), 'communication:write'));
 router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id), 'communication:write'));
+
+// ─── Real send + calls, scoped to this CRM user's own leads/contacts/deals ───
+router.post('/send', action((req) => sendCrmMessage({ ...req.body, userId: req.crmUser.id }), 'communication:write'));
+router.get('/calls', action((req) => listCrmCallActivity(req.query)));
+router.get('/log', action((req) => listCrmCommunicationLog(req.query)));
 
 export default router;

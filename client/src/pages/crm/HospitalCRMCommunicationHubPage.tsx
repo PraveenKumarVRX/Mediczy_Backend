@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   AlertTriangle, ArrowUpRight, BarChart3, CheckCircle2, ChevronDown, Clock3,
-  Inbox, Mail, MessageCircle, Pause, Play, Plus, RefreshCw, Send, Settings2,
-  ShieldCheck, Smartphone, Sparkles, Users, XCircle, Zap,
+  Inbox, Loader2, Mail, MessageCircle, Pause, Phone, PhoneCall, Play, Plus, RefreshCw, Search, Send, Settings2,
+  ShieldCheck, Smartphone, Sparkles, Users, X, XCircle, Zap,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { CRMLayout } from './CRMModulePages';
@@ -112,18 +112,206 @@ export default function HospitalCRMCommunicationHubPage() {
 
       <div className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
         {[
-          ['overview', 'Overview', BarChart3], ['campaigns', 'Campaigns', Send], ['integrations', 'Integrations', Zap],
+          ['overview', 'Overview', BarChart3], ['compose', 'Send message', Send], ['calls', 'Calls', PhoneCall],
+          ['campaigns', 'Campaigns', Send], ['integrations', 'Integrations', Zap],
           ['inbox', 'Conversation inbox', Inbox], ['templates', 'Templates', Sparkles],
         ].map(([key, label, Icon]: any) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-sm flex items-center gap-2 border-b-2 whitespace-nowrap ${tab === key ? 'text-violet-300 border-violet-400' : 'text-slate-500 border-transparent hover:text-slate-300'}`}><Icon className="h-4 w-4" />{label}</button>)}
       </div>
 
       {tab === 'overview' && <Overview data={data} overview={overview} healthyIntegrations={healthyIntegrations} attentionCount={attentionCount} />}
+      {tab === 'compose' && <ComposeMessage />}
+      {tab === 'calls' && <CallsPanel />}
       {tab === 'campaigns' && <Campaigns campaigns={campaigns} showForm={showCampaignForm} setShowForm={setShowCampaignForm} form={campaignForm} setForm={setCampaignForm} create={createCampaign} update={updateCampaign} />}
       {tab === 'integrations' && <Integrations integrations={integrations} />}
       {tab === 'inbox' && <ConversationInbox data={data} />}
       {tab === 'templates' && <Templates templates={templates} showForm={showTemplateForm} setShowForm={setShowTemplateForm} form={templateForm} setForm={setTemplateForm} create={createTemplate} />}
     </div>
   </CRMLayout>;
+}
+
+type CrmRecord = { id: number; name: string; email?: string; phone?: string; company?: string };
+
+function RecipientPicker({ recipientType, setRecipientType, selected, onSelect }: {
+  recipientType: 'lead' | 'deal' | 'contact';
+  setRecipientType: (type: 'lead' | 'deal' | 'contact') => void;
+  selected: CrmRecord | null;
+  onSelect: (record: CrmRecord | null) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<CrmRecord[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!query.trim()) { setResults([]); return; }
+    const handle = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const endpoint = recipientType === 'lead' ? '/crm/leads' : recipientType === 'deal' ? '/crm/deals' : '/crm/contacts';
+        const response = await api.get(endpoint, { headers: headers(), params: { search: query, limit: 8 } });
+        const rows = response.data?.data || [];
+        setResults(rows.map((row: any): CrmRecord => recipientType === 'deal'
+          ? { id: row.id, name: row.contact_name || row.title, email: row.contact_email, phone: row.contact_phone, company: row.company }
+          : { id: row.id, name: row.name, email: row.email, phone: row.phone, company: row.company }));
+      } catch { setResults([]); } finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query, recipientType]);
+
+  return <div className="space-y-2">
+    <div className="flex gap-2">
+      {(['lead', 'deal', 'contact'] as const).map((type) => <button key={type} className={`h-8 px-3 rounded-lg text-xs capitalize ${recipientType === type ? 'bg-violet-600 text-white' : 'bg-white/[0.05] text-slate-400'}`} onClick={() => { setRecipientType(type); onSelect(null); setQuery(''); }}>{type}</button>)}
+    </div>
+    {selected ? (
+      <div className="flex items-center justify-between rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2">
+        <div><div className="text-sm text-white">{selected.name || `${recipientType} #${selected.id}`}</div><div className="text-xs text-slate-500">{selected.email || selected.phone || 'No contact info'}</div></div>
+        <button className="text-slate-400 hover:text-white" onClick={() => onSelect(null)}><X className="h-4 w-4" /></button>
+      </div>
+    ) : (
+      <div className="relative">
+        <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" /><input className={`${input} w-full pl-9`} placeholder={`Search ${recipientType}s by name, email, or phone`} value={query} onChange={(e) => { setQuery(e.target.value); setOpen(true); }} onFocus={() => setOpen(true)} /></div>
+        {open && query.trim() && (
+          <div className="absolute z-10 mt-1 w-full rounded-xl border border-white/[0.08] bg-[#141422] shadow-xl max-h-64 overflow-y-auto">
+            {searching && <div className="px-3 py-3 text-xs text-slate-500 flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" />Searching…</div>}
+            {!searching && results.length === 0 && <div className="px-3 py-3 text-xs text-slate-600">No matches.</div>}
+            {!searching && results.map((record) => (
+              <button key={record.id} className="w-full text-left px-3 py-2 hover:bg-white/[0.05] text-sm text-slate-200" onClick={() => { onSelect(record); setOpen(false); }}>
+                <div>{record.name || `${recipientType} #${record.id}`}</div>
+                <div className="text-xs text-slate-500">{record.email || record.phone || 'No contact info'}{record.company ? ` · ${record.company}` : ''}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    )}
+  </div>;
+}
+
+function ComposeMessage() {
+  const [recipientType, setRecipientType] = useState<'lead' | 'deal' | 'contact'>('lead');
+  const [selected, setSelected] = useState<CrmRecord | null>(null);
+  const [channel, setChannel] = useState<'email' | 'whatsapp' | 'sms'>('email');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [log, setLog] = useState<any[]>([]);
+
+  const loadLog = async (leadId?: number, dealId?: number) => {
+    try {
+      const response = await api.get('/crm/communication-hub/log', { headers: headers(), params: { leadId, dealId, limit: 15 } });
+      setLog(response.data?.data || []);
+    } catch { setLog([]); }
+  };
+
+  useEffect(() => {
+    if (selected && recipientType !== 'contact') loadLog(recipientType === 'lead' ? selected.id : undefined, recipientType === 'deal' ? selected.id : undefined);
+    else setLog([]);
+  }, [selected, recipientType]);
+
+  const send = async () => {
+    if (!selected || !message.trim()) return;
+    setSending(true);
+    setResult(null);
+    try {
+      const payload: any = { channel, subject, message };
+      if (recipientType === 'lead') payload.leadId = selected.id;
+      if (recipientType === 'deal') payload.dealId = selected.id;
+      if (recipientType === 'contact') payload.contactId = selected.id;
+      const response = await api.post('/crm/communication-hub/send', payload, { headers: headers() });
+      setResult({ ok: true, text: response.data?.message || `${channel} sent to ${selected.name}.` });
+      setMessage('');
+      if (recipientType !== 'contact') loadLog(recipientType === 'lead' ? selected.id : undefined, recipientType === 'deal' ? selected.id : undefined);
+    } catch (e: any) {
+      setResult({ ok: false, text: e?.response?.data?.message || `Failed to send ${channel}.` });
+    } finally { setSending(false); }
+  };
+
+  return <div className="space-y-5">
+    <div><h2 className="text-lg font-semibold text-white">Send a message</h2><p className="text-sm text-slate-500 mt-1">Email, WhatsApp, or SMS to one of your own leads, contacts, or deals. Corporate account messaging stays in the Team portal.</p></div>
+    <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className={`${panel} p-5 space-y-4`}>
+        <div><div className="text-xs uppercase tracking-wide text-slate-600 mb-2">Recipient</div><RecipientPicker recipientType={recipientType} setRecipientType={setRecipientType} selected={selected} onSelect={setSelected} /></div>
+        <div><div className="text-xs uppercase tracking-wide text-slate-600 mb-2">Channel</div>
+          <div className="flex gap-2">
+            {([['email', Mail], ['whatsapp', MessageCircle], ['sms', Smartphone]] as const).map(([key, Icon]) => <button key={key} className={`h-9 px-3 rounded-lg text-xs capitalize flex items-center gap-1.5 ${channel === key ? 'bg-violet-600 text-white' : 'bg-white/[0.05] text-slate-400'}`} onClick={() => setChannel(key)}><Icon className="h-3.5 w-3.5" />{key}</button>)}
+          </div>
+        </div>
+        {channel === 'email' && <input className={`${input} w-full`} placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />}
+        <textarea className="min-h-32 w-full rounded-xl bg-white/[0.05] border border-white/[0.08] p-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/40" placeholder="Message" value={message} onChange={(e) => setMessage(e.target.value)} />
+        {result && <div className={`rounded-xl px-3 py-2 text-sm ${result.ok ? 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/20' : 'bg-red-500/10 text-red-300 border border-red-500/20'}`}>{result.text}</div>}
+        <button className={`${primary} w-full justify-center`} disabled={!selected || !message.trim() || sending} onClick={send}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{sending ? 'Sending…' : 'Send'}</button>
+      </section>
+      <section className={`${panel} overflow-hidden`}>
+        <SectionHeader icon={Clock3} title="Recent messages" hint={selected ? `History for ${selected.name || 'this record'}` : 'Select a recipient to see their message history'} />
+        {log.length ? <div className="divide-y divide-white/[0.05]">{log.map((row: any) => <div key={row.id} className="px-5 py-3"><div className="flex items-center gap-2 text-sm"><span className="text-white capitalize">{row.type}</span><span className={`rounded-full px-2 py-0.5 text-[11px] ${statusClass(String(row.outcome || '').startsWith('failed') ? 'failed' : 'sent')}`}>{String(row.outcome || '').startsWith('failed') ? 'failed' : 'sent'}</span></div><p className="text-xs text-slate-500 mt-1 whitespace-pre-line line-clamp-3">{row.description}</p><p className="text-[11px] text-slate-600 mt-1">{row.created_at ? new Date(row.created_at).toLocaleString() : ''}</p></div>)}</div> : <Empty text="No messages sent yet." />}
+      </section>
+    </div>
+  </div>;
+}
+
+function CallsPanel() {
+  const [recipientType, setRecipientType] = useState<'lead' | 'deal'>('lead');
+  const [selected, setSelected] = useState<CrmRecord | null>(null);
+  const [calls, setCalls] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [logging, setLogging] = useState(false);
+  const [outcome, setOutcome] = useState('');
+  const [notes, setNotes] = useState('');
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const response = await api.get('/crm/communication-hub/calls', { headers: headers(), params: { leadId: recipientType === 'lead' ? selected?.id : undefined, dealId: recipientType === 'deal' ? selected?.id : undefined, limit: 50 } });
+      setCalls(response.data?.data || []);
+    } catch { setCalls([]); } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [selected, recipientType]);
+
+  const logCall = async () => {
+    if (!selected || !outcome.trim()) return;
+    setLogging(true);
+    try {
+      const created = await api.post('/crm/activities', {
+        type: 'call',
+        title: `Call with ${selected.name || `${recipientType} #${selected.id}`}`,
+        description: notes,
+        lead_id: recipientType === 'lead' ? selected.id : undefined,
+        deal_id: recipientType === 'deal' ? selected.id : undefined,
+      }, { headers: headers() });
+      const activityId = created.data?.data?.id;
+      if (activityId) await api.put(`/crm/activities/${activityId}/complete`, { outcome }, { headers: headers() });
+      setOutcome(''); setNotes('');
+      await load();
+    } catch { /* surfaced via unchanged list */ } finally { setLogging(false); }
+  };
+
+  return <div className="space-y-5">
+    <div><h2 className="text-lg font-semibold text-white">Calls</h2><p className="text-sm text-slate-500 mt-1">Call activity already logged on your leads and deals, surfaced alongside the other channels.</p></div>
+    <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className={`${panel} p-5 space-y-4`}>
+        <div><div className="text-xs uppercase tracking-wide text-slate-600 mb-2">Filter by</div><RecipientPicker recipientType={recipientType} setRecipientType={(t) => setRecipientType(t as 'lead' | 'deal')} selected={selected} onSelect={setSelected} /></div>
+        {selected && <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+          <div className="text-xs uppercase tracking-wide text-slate-600">Log a call</div>
+          <select className={`${input} w-full`} value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+            <option value="">Outcome…</option>
+            <option value="connected">Connected</option>
+            <option value="no_answer">No answer</option>
+            <option value="voicemail">Voicemail</option>
+            <option value="follow_up_needed">Follow-up needed</option>
+            <option value="not_interested">Not interested</option>
+          </select>
+          <textarea className="min-h-20 w-full rounded-xl bg-white/[0.05] border border-white/[0.08] p-3 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/40" placeholder="Call notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <button className={`${primary} w-full justify-center`} disabled={!outcome.trim() || logging} onClick={logCall}>{logging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}{logging ? 'Logging…' : 'Log call'}</button>
+        </div>}
+      </section>
+      <section className={`${panel} overflow-hidden`}>
+        <SectionHeader icon={PhoneCall} title="Call history" hint={loading ? 'Loading…' : `${calls.length} calls`} />
+        {calls.length ? <div className="divide-y divide-white/[0.05]">{calls.map((call: any) => <div key={call.id} className="px-5 py-3"><div className="flex items-center gap-2 text-sm"><span className="text-white">{call.lead_name || call.deal_title || call.title}</span>{call.outcome && <span className={`rounded-full px-2 py-0.5 text-[11px] ${statusClass(call.outcome)}`}>{call.outcome}</span>}</div>{call.description && <p className="text-xs text-slate-500 mt-1 whitespace-pre-line line-clamp-2">{call.description}</p>}<p className="text-[11px] text-slate-600 mt-1">{(call.completed_at || call.created_at) ? new Date(call.completed_at || call.created_at).toLocaleString() : ''}</p></div>)}</div> : <Empty text="No calls logged yet." />}
+      </section>
+    </div>
+  </div>;
 }
 
 function Overview({ data, overview, healthyIntegrations, attentionCount }: { data: HubData; overview: any; healthyIntegrations: number; attentionCount: number }) {

@@ -1,4 +1,8 @@
 import sharedPool from '../db/pgPool.js';
+import axios from 'axios';
+import { sendTransactionalEmail } from './welcome-email.service.js';
+import whatsappProductionService from './whatsapp-production.service.js';
+import { SMSService } from './sms.service.js';
 
 const CHANNELS = new Set(['email', 'whatsapp', 'sms', 'push', 'in_app']);
 const CAMPAIGN_STATUSES = new Set(['draft', 'active', 'paused', 'completed', 'archived']);
@@ -240,6 +244,207 @@ export async function acknowledgeCommunicationHubAlert(tenant, alertId, actorUse
   return result.rows[0];
 }
 
+// ─── Real send + call-log surfacing, scoped to CRM leads/contacts/deals only ──
+// (Corporate-account messaging stays Team-only; see server/routes/team.route.js
+// /communications/* for that path. This mirrors the same provider integrations
+// so both surfaces send through the same email/WhatsApp/SMS backends.)
+
+const _normalizeEmail = (input = '') => String(input || '').trim().toLowerCase();
+
+const _normalizePhone = (input = '') => {
+  const digits = String(input || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10) return `91${digits}`;
+  return digits;
+};
+
+const _smsService = () => {
+  const apiKey = process.env.SMS_API_KEY || '';
+  if (!apiKey) return null;
+  return new SMSService({
+    provider: process.env.SMS_PROVIDER || 'pay4sms',
+    apiKey,
+    apiSecret: process.env.SMS_API_SECRET || '',
+    senderId: process.env.SMS_SENDER_ID || 'MSMART',
+    templateId: process.env.SMS_TEMPLATE_ID,
+    otpTemplateId: process.env.SMS_OTP_TEMPLATE_ID,
+    apiUrl: process.env.SMS_API_URL,
+  });
+};
+
+const _buildCrmEmailHtml = ({ subject, message }) => {
+  const esc = (v) => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#f4f7fb;font-family:Segoe UI,Arial,sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:640px;background:#ffffff;border-radius:14px;overflow:hidden;box-shadow:0 10px 28px rgba(12,38,74,.12);">
+        <tr><td style="background:linear-gradient(120deg,#6d28d9,#4c1d95);padding:22px 28px;color:#ffffff;">
+          <div style="font-size:12px;letter-spacing:.08em;opacity:.9;text-transform:uppercase;">Hospital CRM Communication</div>
+          <div style="font-size:24px;font-weight:700;margin-top:8px;line-height:1.25;">${esc(subject || 'CRM Communication')}</div>
+        </td></tr>
+        <tr><td style="padding:24px 28px 12px 28px;color:#0f172a;font-size:15px;line-height:1.75;">${esc(message).replace(/\n/g, '<br/>')}</td></tr>
+        <tr><td style="border-top:1px solid #e2e8f0;padding:14px 28px;color:#64748b;font-size:12px;line-height:1.6;">Regards,<br/><strong>Hospital CRM Team</strong><br/>support@mediqzy.com</td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+};
+
+async function _resolveCrmRecipient({ leadId, dealId, contactId }) {
+  if (leadId) {
+    const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_leads WHERE id = $1`, [leadId]);
+    if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
+    return { kind: 'lead', id: rows[0].id, name: rows[0].name, email: rows[0].email, phone: rows[0].phone };
+  }
+  if (dealId) {
+    const { rows } = await sharedPool.query(`SELECT id, contact_name, contact_email, contact_phone FROM crm_deals WHERE id = $1`, [dealId]);
+    if (!rows[0]) throw Object.assign(new Error('Deal not found'), { statusCode: 404 });
+    return { kind: 'deal', id: rows[0].id, name: rows[0].contact_name, email: rows[0].contact_email, phone: rows[0].contact_phone };
+  }
+  if (contactId) {
+    const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_contacts WHERE id = $1`, [contactId]);
+    if (!rows[0]) throw Object.assign(new Error('Contact not found'), { statusCode: 404 });
+    return { kind: 'contact', id: rows[0].id, name: rows[0].name, email: rows[0].email, phone: rows[0].phone };
+  }
+  throw Object.assign(new Error('One of leadId, dealId, or contactId is required'), { statusCode: 400 });
+}
+
+async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, userId }) {
+  const outcome = errorMessage ? `failed: ${errorMessage}`.slice(0, 100) : (status || 'sent');
+  const title = `${channel} to ${recipientLabel}`.slice(0, 255);
+  const description = [subject ? `Subject: ${subject}` : null, message, provider ? `Provider: ${provider}` : null, providerMessageId ? `Ref: ${providerMessageId}` : null]
+    .filter(Boolean).join('\n');
+  await sharedPool.query(
+    `INSERT INTO crm_activities (type, title, description, lead_id, deal_id, outcome, completed_at, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)`,
+    [channel, title, description, leadId || null, dealId || null, outcome, userId || null]
+  );
+  if (leadId) {
+    await sharedPool.query(`UPDATE crm_leads SET last_contacted = NOW(), updated_at = NOW() WHERE id = $1`, [leadId]);
+  }
+}
+
+export async function sendCrmMessage({ channel, subject, message, leadId, dealId, contactId, userId }) {
+  const safeChannel = String(channel || '').toLowerCase();
+  if (!['email', 'whatsapp', 'sms'].includes(safeChannel)) {
+    throw Object.assign(new Error('Invalid channel. Use email, whatsapp, or sms.'), { statusCode: 400 });
+  }
+  const safeMessage = String(message || '').trim();
+  if (!safeMessage) throw Object.assign(new Error('Message is required'), { statusCode: 400 });
+
+  const recipient = await _resolveCrmRecipient({
+    leadId: positiveInt(leadId),
+    dealId: positiveInt(dealId),
+    contactId: positiveInt(contactId),
+  });
+  const recipientLabel = recipient.name || `${recipient.kind} #${recipient.id}`;
+  const logBase = { leadId: recipient.kind === 'lead' ? recipient.id : null, dealId: recipient.kind === 'deal' ? recipient.id : null, userId, subject, message: safeMessage };
+
+  if (safeChannel === 'email') {
+    const to = _normalizeEmail(recipient.email);
+    if (!/^\S+@\S+\.\S+$/.test(to)) throw Object.assign(new Error(`${recipientLabel} has no valid email address on file`), { statusCode: 400 });
+    const safeSubject = String(subject || 'Hospital CRM Communication').slice(0, 200);
+    try {
+      await sendTransactionalEmail({ to, subject: safeSubject, html: _buildCrmEmailHtml({ subject: safeSubject, message: safeMessage }), text: safeMessage, fromName: 'Hospital CRM' });
+      await _logCrmCommunication({ ...logBase, channel: 'email', recipientLabel, subject: safeSubject, status: 'sent', provider: 'unified' });
+      return { success: true, channel: safeChannel, recipient: to, status: 'sent' };
+    } catch (err) {
+      await _logCrmCommunication({ ...logBase, channel: 'email', recipientLabel, subject: safeSubject, status: 'failed', provider: 'unified', errorMessage: err?.message });
+      throw Object.assign(new Error(err?.message || 'Email send failed'), { statusCode: 502 });
+    }
+  }
+
+  if (safeChannel === 'whatsapp') {
+    const to = _normalizePhone(recipient.phone);
+    if (!to || to.length < 10) throw Object.assign(new Error(`${recipientLabel} has no valid WhatsApp number on file`), { statusCode: 400 });
+    if (whatsappProductionService?.twilioConfigured) {
+      try {
+        const response = await whatsappProductionService.sendSessionMessage({ to, body: safeMessage.slice(0, 4096) });
+        await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'sent', provider: 'twilio', providerMessageId: response?.sid });
+        return { success: true, channel: safeChannel, recipient: to, status: 'sent', provider: 'twilio' };
+      } catch (err) {
+        await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'failed', provider: 'twilio', errorMessage: err?.message });
+        throw Object.assign(new Error(err?.message || 'WhatsApp send failed'), { statusCode: 502 });
+      }
+    }
+    const accessToken = process.env.FACEBOOK_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    if (!accessToken || !phoneNumberId) throw Object.assign(new Error('WhatsApp is not configured on server'), { statusCode: 503 });
+    try {
+      const response = await axios.post(
+        `https://graph.facebook.com/v18.0/${phoneNumberId}/messages`,
+        { messaging_product: 'whatsapp', to, type: 'text', text: { body: safeMessage.slice(0, 4096) } },
+        { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }, timeout: 15000 }
+      );
+      const providerMessageId = response?.data?.messages?.[0]?.id || null;
+      await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'sent', provider: 'meta', providerMessageId });
+      return { success: true, channel: safeChannel, recipient: to, status: 'sent', provider: 'meta' };
+    } catch (err) {
+      await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'failed', provider: 'meta', errorMessage: err?.response?.data?.error?.message || err?.message });
+      throw Object.assign(new Error(err?.response?.data?.error?.message || err?.message || 'WhatsApp send failed'), { statusCode: 502 });
+    }
+  }
+
+  // sms
+  const smsService = _smsService();
+  if (!smsService) throw Object.assign(new Error('SMS is not configured on server'), { statusCode: 503 });
+  const to = _normalizePhone(recipient.phone);
+  if (!to || to.length < 10) throw Object.assign(new Error(`${recipientLabel} has no valid mobile number on file`), { statusCode: 400 });
+  try {
+    const result = await smsService.sendSMS({ to, message: safeMessage, templateId: process.env.SMS_TEMPLATE_ID });
+    if (!result?.success) {
+      await _logCrmCommunication({ ...logBase, channel: 'sms', recipientLabel, status: 'failed', provider: result?.provider || 'sms', errorMessage: result?.error });
+      throw Object.assign(new Error(result?.error || 'SMS provider rejected the message'), { statusCode: 502 });
+    }
+    await _logCrmCommunication({ ...logBase, channel: 'sms', recipientLabel, status: 'sent', provider: result?.provider || 'sms', providerMessageId: result?.messageId });
+    return { success: true, channel: safeChannel, recipient: to, status: 'sent', provider: result?.provider || 'sms' };
+  } catch (err) {
+    if (!err.statusCode) {
+      await _logCrmCommunication({ ...logBase, channel: 'sms', recipientLabel, status: 'failed', provider: 'sms', errorMessage: err?.message });
+    }
+    throw Object.assign(new Error(err?.message || 'SMS send failed'), { statusCode: err.statusCode || 502 });
+  }
+}
+
+export async function listCrmCallActivity({ leadId, dealId, limit } = {}) {
+  const conditions = [`type = 'call'`];
+  const params = [];
+  if (leadId) { params.push(positiveInt(leadId)); conditions.push(`lead_id = $${params.length}`); }
+  if (dealId) { params.push(positiveInt(dealId)); conditions.push(`deal_id = $${params.length}`); }
+  params.push(Math.min(Math.max(positiveInt(limit) || 50, 1), 200));
+  const { rows } = await sharedPool.query(`
+    SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
+    FROM crm_activities a
+    LEFT JOIN crm_leads l ON l.id = a.lead_id
+    LEFT JOIN crm_deals d ON d.id = a.deal_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY COALESCE(a.completed_at, a.scheduled_at, a.created_at) DESC
+    LIMIT $${params.length}
+  `, params);
+  return rows;
+}
+
+export async function listCrmCommunicationLog({ leadId, dealId, channel, limit } = {}) {
+  const conditions = [`type IN ('email', 'whatsapp', 'sms')`];
+  const params = [];
+  if (leadId) { params.push(positiveInt(leadId)); conditions.push(`lead_id = $${params.length}`); }
+  if (dealId) { params.push(positiveInt(dealId)); conditions.push(`deal_id = $${params.length}`); }
+  if (channel && CHANNELS.has(channel)) { params.push(channel); conditions.push(`type = $${params.length}`); }
+  params.push(Math.min(Math.max(positiveInt(limit) || 50, 1), 200));
+  const { rows } = await sharedPool.query(`
+    SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
+    FROM crm_activities a
+    LEFT JOIN crm_leads l ON l.id = a.lead_id
+    LEFT JOIN crm_deals d ON d.id = a.deal_id
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY a.created_at DESC
+    LIMIT $${params.length}
+  `, params);
+  return rows;
+}
+
 export default {
   getCommunicationHubDashboard,
   listCommunicationHubCampaigns,
@@ -249,4 +454,7 @@ export default {
   createCommunicationHubTemplate,
   recordCommunicationIntegrationHealth,
   acknowledgeCommunicationHubAlert,
+  sendCrmMessage,
+  listCrmCallActivity,
+  listCrmCommunicationLog,
 };
