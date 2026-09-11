@@ -158,7 +158,7 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
   const loadMatrix = useCallback(async (code: string) => {
     setMatrixLoading(true);
     try {
-      const { data } = await api.get(`/crm/underwriting/products/${code}/matrix`, { headers: authHeaders() });
+      const { data } = await api.get(`/rfq/underwriting/products/${code}/matrix`, { headers: authHeaders() });
       if (data.success) setMatrix(data);
     } catch (err: any) {
       toast.error('Failed to load coverage matrix');
@@ -170,7 +170,7 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
   // ── Load saved assessments ──────────────────────────────────────────────────
   const loadAssessments = useCallback(async () => {
     try {
-      const { data } = await api.get(`/crm/underwriting/rfqs/${rfqId}`, { headers: authHeaders() });
+      const { data } = await api.get(`/rfq/underwriting/rfqs/${rfqId}`, { headers: authHeaders() });
       if (data.success) setSavedAssessments(data.assessments || []);
     } catch { /* silent */ }
   }, [rfqId]);
@@ -188,7 +188,7 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
   const parseSlip = async () => {
     setParseLoading(true);
     try {
-      const { data } = await api.post(`/crm/underwriting/rfqs/${rfqId}/parse-slip`, {}, { headers: authHeaders() });
+      const { data } = await api.post(`/rfq/underwriting/rfqs/${rfqId}/parse-slip`, {}, { headers: authHeaders() });
       if (data.success) {
         setParsedSlip(data.parsed);
         toast.success(`Slip parsed — ${data.parsed.coverages?.length || 0} coverage items extracted`);
@@ -210,7 +210,7 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
       if (parsedSlip?.coverages?.length) {
         payload.requestedCoverages = parsedSlip.coverages.map((c: any) => c.head);
       }
-      const { data } = await api.post(`/crm/underwriting/rfqs/${rfqId}/analyze`, payload, {
+      const { data } = await api.post(`/rfq/underwriting/rfqs/${rfqId}/analyze`, payload, {
         headers: authHeaders(), timeout: 45000,
       });
       if (data.success) {
@@ -234,7 +234,7 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
     setChatInput('');
     setChatLoading(true);
     try {
-      const { data } = await api.post(`/crm/underwriting/rfqs/${rfqId}/ai-chat`, {
+      const { data } = await api.post(`/rfq/underwriting/rfqs/${rfqId}/ai-chat`, {
         message: msg, history: newHistory.slice(-6), productCode: selectedProduct,
       }, { headers: authHeaders(), timeout: 30000 });
       if (data.success) setChatHistory(h => [...h, { role: 'assistant', content: data.reply }]);
@@ -250,7 +250,7 @@ export function RFQUnderwritingTab({ rfqId, rfq }: { rfqId: number; rfq: any }) 
     setTermsLoading(true);
     setActiveSection('terms');
     try {
-      const { data } = await api.post(`/crm/underwriting/rfqs/${rfqId}/generate-terms`, {
+      const { data } = await api.post(`/rfq/underwriting/rfqs/${rfqId}/generate-terms`, {
         productCode: selectedProduct,
       }, { headers: authHeaders(), timeout: 30000 });
       if (data.success) {

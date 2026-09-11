@@ -1503,12 +1503,12 @@ app.use('/api/crm/growth', hospitalCrmSpecialtyRouter); // Specialty, diagnostic
 app.use('/api/crm/communication-hub', hospitalCrmCommunicationHubRouter); // Brevo-style campaign and communications monitoring
 app.use('/api/crm/segments', crmSegmentsRouter);
 app.use('/api/crm/automations', crmAutomationsRouter);
-app.use('/api/crm/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline
+app.use('/api/rfq/underwriting', crmUnderwritingRouter); // RFQ underwriting pipeline — isolated from /api/crm; Team-only (authTeam)
 app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP settings
 app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns
 app.use('/api/crm/campaign-analytics', crmCampaignAnalyticsRouter); // CRM marketing analytics
 app.use('/api/crm/ai', crmAIRouter); // CRM AI — scoring, prediction, insights, forecast
-app.use('/api/crm/analysis', crmAnalysisRouter); // RFQ retrospective/prospective analysis + quote engine
+app.use('/api/rfq/analysis', crmAnalysisRouter); // RFQ retrospective/prospective analysis + quote engine — isolated from /api/crm; Team-only (authTeam)
 app.use('/api/fcm', fcmRouter);
 app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
 app.use('/api/firebase', firebaseStatusRouter);
