@@ -322,26 +322,13 @@ const USER_TYPE_PERMISSIONS = {
       '/api/emr',  // EMR folder — team can view all users
       '/v1',  // API v1 multi-tenant mobile app endpoints
       // Insurance RFQ / distribution — moved from CRM login to Team module
-      // 2026-09-10 (authCRM -> authTeam + requirePermission('Insurance RFQ
-      // Management') on these specific routes). Most of this logic still
-      // lives inline in crm.route.js (shared file, /api/crm/* namespace) —
-      // without these explicit entries, a valid team token 403s here
-      // before ever reaching the route's own auth check.
-      '/api/crm/rfqs',
-      '/api/crm/rfqs-autocapture-inbox',
-      '/api/crm/rfqs-stats',
-      '/api/crm/agents',
-      '/api/crm/agencies',
-      '/api/crm/commissions',
-      '/api/crm/corporate-plans',
-      '/api/crm/tc-master',
-      // underwriting + analysis (crm-underwriting.route.js / crm-analysis.route.js)
-      // moved off /api/crm entirely on 2026-09-11 into their own /api/rfq
-      // namespace — real isolation, not just an auth check, since neither
-      // was reachable through the CRM login's own blanket /api/crm access
-      // in the first place (authTeam already blocked that at the route level).
-      '/api/rfq/underwriting',
-      '/api/rfq/analysis',
+      // 2026-09-10, then fully extracted off /api/crm into its own module
+      // 2026-09-11 (rfq.route.js, mounted at /api/rfq — real isolation, not
+      // just an auth check: a CRM login token has no path to any of this at
+      // all now, versus before where it was merely blocked by each route's
+      // own authTeam check). One blanket entry now covers what used to be
+      // eight itemized /api/crm/* sub-paths.
+      '/api/rfq',
     ],
     tokenField: 'teamId'
   },

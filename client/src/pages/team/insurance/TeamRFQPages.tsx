@@ -131,7 +131,7 @@ function CreateRFQModal({ onClose, onCreated }: { onClose: () => void; onCreated
     if (!form.insured_name.trim()) { toast.error('Insured name is required'); return; }
     setSaving(true);
     try {
-      const { data } = await api.post('/crm/rfqs', form, { headers: authHeaders() });
+      const { data } = await api.post('/rfq/rfqs', form, { headers: authHeaders() });
       if (data.success) {
         toast.success(`RFQ ${data.data.rfq_number} created`);
         onCreated(data.data.id);
@@ -284,7 +284,7 @@ function StatusChip({ rfqId, current, onUpdated }: { rfqId: number; current: str
     if (s === current) { setOpen(false); return; }
     setSaving(true);
     try {
-      await api.put(`/crm/rfqs/${rfqId}`, { status: s }, { headers: authHeaders() });
+      await api.put(`/rfq/rfqs/${rfqId}`, { status: s }, { headers: authHeaders() });
       toast.success(`Status updated to ${s}`);
       onUpdated();
     } catch {
@@ -348,7 +348,7 @@ export function TeamRFQsPage() {
       const params: any = { page, limit: 20 };
       if (search) params.search = search;
       if (statusFilter !== 'all') params.status = statusFilter;
-      const { data } = await api.get('/crm/rfqs', { headers: authHeaders(), params });
+      const { data } = await api.get('/rfq/rfqs', { headers: authHeaders(), params });
       if (data.success) { setRfqs(data.data); setTotalPages(data.pagination?.totalPages || 1); }
     } catch { /* */ }
     setLoading(false);
@@ -356,7 +356,7 @@ export function TeamRFQsPage() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const { data } = await api.get('/crm/rfqs-stats', { headers: authHeaders() });
+      const { data } = await api.get('/rfq/rfqs-stats', { headers: authHeaders() });
       if (data.success) setStats(data.data);
     } catch { /* */ }
   }, []);
@@ -375,7 +375,7 @@ export function TeamRFQsPage() {
       const file = files[i];
       if (files.length > 1) setUploadProgress(`Parsing ${i + 1}/${files.length}...`);
       const isExcel = /\.(xlsx|xls)$/i.test(file.name);
-      const endpoint = isExcel ? '/crm/rfqs/upload-excel' : '/crm/rfqs/upload-document';
+      const endpoint = isExcel ? '/rfq/rfqs/upload-excel' : '/rfq/rfqs/upload-document';
       const label = isExcel ? 'Excel' : file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'image';
       try {
         const fd = new FormData();
@@ -397,13 +397,13 @@ export function TeamRFQsPage() {
     if (fileRef.current) fileRef.current.value = '';
     fetchRFQs();
     fetchStats();
-    if (lastCreatedId && files.length === 1) navigate(`/crm/rfqs/${lastCreatedId}`);
+    if (lastCreatedId && files.length === 1) navigate(`/rfq/rfqs/${lastCreatedId}`);
   };
 
   const deleteRFQ = async (id: number) => {
     if (!confirm('Delete this RFQ and all its members/quotes?')) return;
     try {
-      await api.delete(`/crm/rfqs/${id}`, { headers: authHeaders() });
+      await api.delete(`/rfq/rfqs/${id}`, { headers: authHeaders() });
       toast.success('RFQ deleted');
       fetchRFQs();
       fetchStats();
@@ -415,7 +415,7 @@ export function TeamRFQsPage() {
   const quickCapturePlan = async (rfqId: number, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await api.post(`/crm/rfqs/${rfqId}/autocapture-plan`, {}, { headers: authHeaders() });
+      const res = await api.post(`/rfq/rfqs/${rfqId}/autocapture-plan`, {}, { headers: authHeaders() });
       if (res.data.success) {
         if (res.data.alreadyCaptured) toast.info(res.data.message);
         else { toast.success(`Plan captured: ${res.data.data.display_name}`); fetchRFQs(); }
@@ -429,7 +429,7 @@ export function TeamRFQsPage() {
       {showCreateModal && (
         <CreateRFQModal
           onClose={() => setShowCreateModal(false)}
-          onCreated={id => { setShowCreateModal(false); fetchRFQs(); fetchStats(); navigate(`/crm/rfqs/${id}`); }}
+          onCreated={id => { setShowCreateModal(false); fetchRFQs(); fetchStats(); navigate(`/rfq/rfqs/${id}`); }}
         />
       )}
       {/* Stats Row */}
@@ -526,7 +526,7 @@ export function TeamRFQsPage() {
                 const winValue = quotedPremium > 0 ? Math.round(quotedPremium * 1.18) : 0; // inc. GST
                 return (
                   <tr key={r.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer transition-colors group"
-                    onClick={() => navigate(`/crm/rfqs/${r.id}`)}>
+                    onClick={() => navigate(`/rfq/rfqs/${r.id}`)}>
                     <td className="px-4 py-3 text-xs font-mono text-violet-400 font-medium">{r.rfq_number}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
@@ -634,7 +634,7 @@ function EditRFQModal({ rfq, onClose, onSaved }: { rfq: any; onClose: () => void
     if (!form.insured_name.trim()) { toast.error('Insured name is required'); return; }
     setSaving(true);
     try {
-      const { data } = await api.put(`/crm/rfqs/${rfq.id}`, form, { headers: authHeaders() });
+      const { data } = await api.put(`/rfq/rfqs/${rfq.id}`, form, { headers: authHeaders() });
       if (data.success) { toast.success('RFQ updated'); onSaved(); }
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to update RFQ');
@@ -743,7 +743,7 @@ export function TeamRFQDetailPage() {
 
   // Guard: if id is not numeric (e.g. "new"), redirect to RFQ list
   useEffect(() => {
-    if (id && !/^\d+$/.test(id)) navigate('/crm/rfqs', { replace: true });
+    if (id && !/^\d+$/.test(id)) navigate('/rfq/rfqs', { replace: true });
   }, [id, navigate]);
 
   const [rfq, setRfq] = useState<any>(null);
@@ -780,7 +780,7 @@ export function TeamRFQDetailPage() {
     if (!isValidId) return;
     setLoading(true);
     try {
-      const { data } = await api.get(`/crm/rfqs/${id}`, { headers: authHeaders() });
+      const { data } = await api.get(`/rfq/rfqs/${id}`, { headers: authHeaders() });
       if (data.success) {
         setRfq(data.data);
         // Restore persisted AI quote result from DB (replaces sessionStorage handoff)
@@ -797,7 +797,7 @@ export function TeamRFQDetailPage() {
   const fetchAnalytics = useCallback(async () => {
     if (!isValidId) return;
     try {
-      const { data } = await api.get(`/crm/rfqs/${id}/member-analytics`, { headers: authHeaders() });
+      const { data } = await api.get(`/rfq/rfqs/${id}/member-analytics`, { headers: authHeaders() });
       if (data.success) setAnalytics(data.data);
     } catch { /* */ }
   }, [id, isValidId]);
@@ -807,7 +807,7 @@ export function TeamRFQDetailPage() {
     try {
       const params: any = { page: memberPage, limit: 50 };
       if (memberSearch) params.search = memberSearch;
-      const { data } = await api.get(`/crm/rfqs/${id}/members`, { headers: authHeaders(), params });
+      const { data } = await api.get(`/rfq/rfqs/${id}/members`, { headers: authHeaders(), params });
       if (data.success) { setMembers(data.data); setMemberTotalPages(data.pagination?.totalPages || 1); }
     } catch { /* */ }
   }, [id, isValidId, memberPage, memberSearch]);
@@ -827,7 +827,7 @@ export function TeamRFQDetailPage() {
     if (!isValidId) return;
     setClaimsLoading(true);
     try {
-      const { data } = await api.get(`/crm/rfqs/${id}/claims-analysis`, { headers: authHeaders() });
+      const { data } = await api.get(`/rfq/rfqs/${id}/claims-analysis`, { headers: authHeaders() });
       if (data.success && data.data) setClaimsAnalysis(data.data);
     } catch { /* */ }
     setClaimsLoading(false);
@@ -852,7 +852,7 @@ export function TeamRFQDetailPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await api.post(`/crm/rfqs/${id}/upload-claims`, fd, {
+      const { data } = await api.post(`/rfq/rfqs/${id}/upload-claims`, fd, {
         headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       });
@@ -885,7 +885,7 @@ export function TeamRFQDetailPage() {
         // Don't set Content-Type — browser sets multipart boundary automatically
       }
 
-      const { data } = await api.post(`/crm/rfqs/${id}/ai-generate-quote`, requestData, {
+      const { data } = await api.post(`/rfq/rfqs/${id}/ai-generate-quote`, requestData, {
         headers: requestHeaders, timeout: 60000,
       });
       if (data.success) setAiQuote(data.data);
@@ -898,7 +898,7 @@ export function TeamRFQDetailPage() {
   const fetchIntelligence = useCallback(async () => {
     setIntelligenceLoading(true);
     try {
-      const { data } = await api.post(`/crm/rfqs/${id}/ai-intelligence`, {}, { headers: authHeaders(), timeout: 45000 });
+      const { data } = await api.post(`/rfq/rfqs/${id}/ai-intelligence`, {}, { headers: authHeaders(), timeout: 45000 });
       if (data.success) setIntelligence(data.data);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Intelligence analysis failed');
@@ -909,7 +909,7 @@ export function TeamRFQDetailPage() {
   const fetchDeepAnalytics = useCallback(async () => {
     setDeepAnalyticsLoading(true);
     try {
-      const { data } = await api.get(`/crm/rfqs/${id}/deep-analytics`, { headers: authHeaders(), timeout: 30000 });
+      const { data } = await api.get(`/rfq/rfqs/${id}/deep-analytics`, { headers: authHeaders(), timeout: 30000 });
       if (data.success) setDeepAnalytics(data.data);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Deep analytics failed');
@@ -926,7 +926,7 @@ export function TeamRFQDetailPage() {
       try {
         const fd = new FormData();
         fd.append('file', file);
-        const { data } = await api.post(`/crm/rfqs/${id}/reparse`, fd, {
+        const { data } = await api.post(`/rfq/rfqs/${id}/reparse`, fd, {
           headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
           timeout: 120000,
         });
@@ -946,7 +946,7 @@ export function TeamRFQDetailPage() {
   const handleReparseFromStored = async () => {
     setReparseLoading(true);
     try {
-      const { data } = await api.post(`/crm/rfqs/${id}/reparse`, {}, {
+      const { data } = await api.post(`/rfq/rfqs/${id}/reparse`, {}, {
         headers: authHeaders(),
         timeout: 120000,
       });
@@ -968,7 +968,7 @@ export function TeamRFQDetailPage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const res = await api.post(`/crm/rfqs/${id}/upload-members`, fd, {
+      const res = await api.post(`/rfq/rfqs/${id}/upload-members`, fd, {
         headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
         timeout: 120000,
       });
@@ -990,7 +990,7 @@ export function TeamRFQDetailPage() {
   const handleAutocapturePlan = async () => {
     setCapturingPlan(true);
     try {
-      const res = await api.post(`/crm/rfqs/${id}/autocapture-plan`, {}, { headers: authHeaders() });
+      const res = await api.post(`/rfq/rfqs/${id}/autocapture-plan`, {}, { headers: authHeaders() });
       if (res.data.success) {
         setCapturedPlan(res.data.data);
         if (res.data.alreadyCaptured) {
@@ -1019,7 +1019,7 @@ export function TeamRFQDetailPage() {
     <div className="text-center py-20">
       <AlertCircle className="h-12 w-12 text-slate-600 mx-auto mb-3" />
       <p className="text-slate-400">RFQ not found</p>
-      <Button onClick={() => navigate('/crm/rfqs')} variant="outline" className="mt-4 border-white/[0.1] text-slate-300">Back to RFQs</Button>
+      <Button onClick={() => navigate('/rfq/rfqs')} variant="outline" className="mt-4 border-white/[0.1] text-slate-300">Back to RFQs</Button>
     </div>
     </TeamInsuranceLayout>
   );
@@ -1053,7 +1053,7 @@ export function TeamRFQDetailPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex items-center gap-4">
-          <button onClick={() => navigate('/crm/rfqs')} className="p-2 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors">
+          <button onClick={() => navigate('/rfq/rfqs')} className="p-2 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
@@ -1093,14 +1093,14 @@ export function TeamRFQDetailPage() {
             {uploading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
             Upload Members
           </Button>
-          <Button onClick={() => navigate(`/crm/rfqs/${id}/quote/new`)}
+          <Button onClick={() => navigate(`/rfq/rfqs/${id}/quote/new`)}
             className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-0 rounded-xl h-9 px-4 gap-2 text-sm font-medium shadow-lg shadow-emerald-600/20">
             <IndianRupee className="h-3.5 w-3.5" /> Create Quote
           </Button>
           {['quoted', 'negotiating', 'won'].includes(rfq.status) && (
             capturedPlan ? (
               <Button
-                onClick={() => navigate('/crm/corporate-plans')}
+                onClick={() => navigate('/rfq/corporate-plans')}
                 className="bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 rounded-xl h-9 px-4 gap-2 text-sm font-medium">
                 <CheckCircle2 className="h-3.5 w-3.5" /> Plan Captured · {capturedPlan.contract_ref}
               </Button>
@@ -1324,7 +1324,7 @@ function OverviewTab({ rfq, lives, livesRenewal, coverage, conditions, slabs, fi
                   <button
                     onClick={async () => {
                       try {
-                        const resp = await api.get(`/crm/rfqs/${rfqId}/files/${f.id}/download`, { headers: authHeaders(), responseType: 'blob' });
+                        const resp = await api.get(`/rfq/rfqs/${rfqId}/files/${f.id}/download`, { headers: authHeaders(), responseType: 'blob' });
                         const url = URL.createObjectURL(resp.data);
                         const a = document.createElement('a'); a.href = url; a.download = f.original_name; a.click();
                         setTimeout(() => URL.revokeObjectURL(url), 5000);
@@ -1546,7 +1546,7 @@ function MembersTab({ members, search, setSearch, page, totalPages, setPage }: a
 function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
   const updateQuoteStatus = async (quoteId: number, status: string) => {
     try {
-      const res = await api.put(`/crm/quotes/${quoteId}`, { status }, { headers: authHeaders() });
+      const res = await api.put(`/rfq/quotes/${quoteId}`, { status }, { headers: authHeaders() });
       toast.success(`Quote marked as ${status}`);
       if (status === 'sent') {
         if (res.data?.email?.sent) {
@@ -1567,7 +1567,7 @@ function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
   const deleteQuote = async (quoteId: number) => {
     if (!confirm('Delete this quote?')) return;
     try {
-      await api.delete(`/crm/quotes/${quoteId}`, { headers: authHeaders() });
+      await api.delete(`/rfq/quotes/${quoteId}`, { headers: authHeaders() });
       toast.success('Quote deleted');
       onRefresh();
     } catch { toast.error('Failed to delete quote'); }
@@ -1576,7 +1576,7 @@ function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button onClick={() => navigate(`/crm/rfqs/${rfqId}/quote/new`)}
+        <Button onClick={() => navigate(`/rfq/rfqs/${rfqId}/quote/new`)}
           className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-0 rounded-xl h-9 px-4 gap-2 text-sm font-medium shadow-lg shadow-emerald-600/20">
           <Plus className="h-3.5 w-3.5" /> New Quote
         </Button>
@@ -1656,7 +1656,7 @@ function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
                         </button>
                       </>
                     )}
-                    <button onClick={() => navigate(`/crm/rfqs/${rfqId}/quote/${q.id}`)} title="Edit Quote"
+                    <button onClick={() => navigate(`/rfq/rfqs/${rfqId}/quote/${q.id}`)} title="Edit Quote"
                       className="p-2 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors">
                       <Edit className="h-4 w-4" />
                     </button>
@@ -2077,7 +2077,7 @@ function IntelligenceTab({ rfqId, rfq, intelligence, loading, onAnalyze }: any) 
   const generateProposal = async () => {
     setProposalLoading(true);
     try {
-      const { data } = await api.post(`/crm/rfqs/${rfqId}/ai-proposal`, { intelligence }, { headers: authHeaders(), timeout: 60000 });
+      const { data } = await api.post(`/rfq/rfqs/${rfqId}/ai-proposal`, { intelligence }, { headers: authHeaders(), timeout: 60000 });
       if (data.success) { setProposalMarkdown(data.data.proposal_markdown); setShowProposal(true); }
     } catch (err: any) { toast.error(err?.response?.data?.message || 'Proposal generation failed'); }
     setProposalLoading(false);
@@ -2892,7 +2892,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
       }
     }
     sessionStorage.setItem('ai_quote_prefill', JSON.stringify(prefill));
-    navigate(`/crm/rfqs/${rfqId}/quote/new`, { state: { aiPrefill: prefill } });
+    navigate(`/rfq/rfqs/${rfqId}/quote/new`, { state: { aiPrefill: prefill } });
   };
 
   if (!aiQuote && !aiLoading) {
@@ -3802,7 +3802,7 @@ export function TeamQuoteBuilderPage() {
     (async () => {
       setLoading(true);
       try {
-        const { data } = await api.get(`/crm/rfqs/${rfqId}`, { headers: authHeaders() });
+        const { data } = await api.get(`/rfq/rfqs/${rfqId}`, { headers: authHeaders() });
         if (data.success) {
           setRfq(data.data);
           // Pre-populate lives
@@ -3855,7 +3855,7 @@ export function TeamQuoteBuilderPage() {
           }
           // If editing existing quote, load via dedicated endpoint (Fix: no longer searches embedded quotes array)
           if (!isNew) {
-            const quoteRes = await api.get(`/crm/quotes/${quoteId}`, { headers: authHeaders() }).catch(() => null);
+            const quoteRes = await api.get(`/rfq/quotes/${quoteId}`, { headers: authHeaders() }).catch(() => null);
             const q = quoteRes?.data?.data;
             if (q) {
               setForm({
@@ -3904,11 +3904,11 @@ export function TeamQuoteBuilderPage() {
         coverage_details: {},
       };
       if (isNew) {
-        await api.post(`/crm/rfqs/${rfqId}/quotes`, payload, { headers: authHeaders() });
+        await api.post(`/rfq/rfqs/${rfqId}/quotes`, payload, { headers: authHeaders() });
       } else {
-        await api.put(`/crm/quotes/${quoteId}`, payload, { headers: authHeaders() });
+        await api.put(`/rfq/quotes/${quoteId}`, payload, { headers: authHeaders() });
       }
-      navigate(`/crm/rfqs/${rfqId}`);
+      navigate(`/rfq/rfqs/${rfqId}`);
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Failed to save quote');
     }
@@ -3940,7 +3940,7 @@ export function TeamQuoteBuilderPage() {
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <button onClick={() => navigate(`/crm/rfqs/${rfqId}`)} className="p-2 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors">
+        <button onClick={() => navigate(`/rfq/rfqs/${rfqId}`)} className="p-2 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div>
@@ -4073,7 +4073,7 @@ export function TeamQuoteBuilderPage() {
 
       {/* Actions */}
       <div className="flex items-center justify-between pt-2">
-        <Button onClick={() => navigate(`/crm/rfqs/${rfqId}`)} variant="outline"
+        <Button onClick={() => navigate(`/rfq/rfqs/${rfqId}`)} variant="outline"
           className="border-white/[0.1] text-slate-400 hover:bg-white/[0.05] rounded-xl h-10 px-5">
           Cancel
         </Button>

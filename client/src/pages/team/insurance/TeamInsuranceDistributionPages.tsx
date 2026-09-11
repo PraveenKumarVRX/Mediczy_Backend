@@ -91,7 +91,7 @@ export function TeamAgentsPage() {
       if (search) params.search = search;
       if (channelFilter !== 'all') params.channelType = channelFilter;
       if (statusFilter !== 'all') params.status = statusFilter;
-      const { data } = await api.get('/crm/agents', { headers: authHeaders(), params });
+      const { data } = await api.get('/rfq/agents', { headers: authHeaders(), params });
       if (data.success) {
         setAgents(data.data || []);
         setTotalPages(data.pagination?.totalPages || 1);
@@ -115,8 +115,8 @@ export function TeamAgentsPage() {
   const handleSave = async () => {
     try {
       const payload = { ...form, agentCode: editAgent?.agentCode || generateCode(form.city, form.channelType, agents.length + 1) };
-      if (editAgent) await api.put(`/crm/agents/${editAgent.id}`, payload, { headers: authHeaders() });
-      else await api.post('/crm/agents', payload, { headers: authHeaders() });
+      if (editAgent) await api.put(`/rfq/agents/${editAgent.id}`, payload, { headers: authHeaders() });
+      else await api.post('/rfq/agents', payload, { headers: authHeaders() });
       setShowForm(false); setEditAgent(null); setForm(emptyForm);
       fetchAgents();
     } catch (err: any) {
@@ -133,7 +133,7 @@ export function TeamAgentsPage() {
   const deleteAgent = async (id: number, name: string) => {
     if (!window.confirm(`Delete agent "${name}"? This cannot be undone.`)) return;
     try {
-      await api.delete(`/crm/agents/${id}`, { headers: authHeaders() });
+      await api.delete(`/rfq/agents/${id}`, { headers: authHeaders() });
       fetchAgents();
     } catch (err: any) { alert(err.response?.data?.message || 'Delete failed'); }
   };
@@ -372,7 +372,7 @@ export function TeamAgenciesPage() {
       const params: any = { page, limit: 20 };
       if (search) params.search = search;
       if (tierFilter !== 'all') params.tier = tierFilter;
-      const { data } = await api.get('/crm/agencies', { headers: authHeaders(), params });
+      const { data } = await api.get('/rfq/agencies', { headers: authHeaders(), params });
       if (data.success) {
         setAgencies(data.data || []);
         setTotalPages(data.pagination?.totalPages || 1);
@@ -388,8 +388,8 @@ export function TeamAgenciesPage() {
 
   const handleSave = async () => {
     try {
-      if (editAgency) await api.put(`/crm/agencies/${editAgency.id}`, form, { headers: authHeaders() });
-      else await api.post('/crm/agencies', form, { headers: authHeaders() });
+      if (editAgency) await api.put(`/rfq/agencies/${editAgency.id}`, form, { headers: authHeaders() });
+      else await api.post('/rfq/agencies', form, { headers: authHeaders() });
       setShowForm(false); setEditAgency(null); setForm(emptyForm);
       fetchAgencies();
     } catch (err: any) {
@@ -406,7 +406,7 @@ export function TeamAgenciesPage() {
   const advanceStep = async (agency: any) => {
     if (agency.onboardingStep >= 5) return;
     try {
-      await api.put(`/crm/agencies/${agency.id}`, { ...agency, onboardingStep: agency.onboardingStep + 1 }, { headers: authHeaders() });
+      await api.put(`/rfq/agencies/${agency.id}`, { ...agency, onboardingStep: agency.onboardingStep + 1 }, { headers: authHeaders() });
       fetchAgencies();
     } catch {}
   };
@@ -414,7 +414,7 @@ export function TeamAgenciesPage() {
   const deleteAgency = async (id: number, name: string) => {
     if (!window.confirm(`Delete agency "${name}"? All associated agents will be unlinked.`)) return;
     try {
-      await api.delete(`/crm/agencies/${id}`, { headers: authHeaders() });
+      await api.delete(`/rfq/agencies/${id}`, { headers: authHeaders() });
       fetchAgencies();
     } catch (err: any) { alert(err.response?.data?.message || 'Delete failed'); }
   };
@@ -722,7 +722,7 @@ export function TeamCommissionsPage() {
       if (search) params.search = search;
       if (statusFilter !== 'all') params.status = statusFilter;
       if (planFilter !== 'all') params.planCode = planFilter;
-      const { data } = await api.get('/crm/commissions', { headers: authHeaders(), params });
+      const { data } = await api.get('/rfq/commissions', { headers: authHeaders(), params });
       if (data.success) {
         setRecords(data.data || []);
         setTotalPages(data.pagination?.totalPages || 1);
@@ -738,7 +738,7 @@ export function TeamCommissionsPage() {
 
   const markPaid = async (id: number) => {
     try {
-      await api.put(`/crm/commissions/${id}`, { status: 'paid', paidAt: new Date().toISOString() }, { headers: authHeaders() });
+      await api.put(`/rfq/commissions/${id}`, { status: 'paid', paidAt: new Date().toISOString() }, { headers: authHeaders() });
       fetchCommissions();
     } catch {}
   };
@@ -746,7 +746,7 @@ export function TeamCommissionsPage() {
   const markClawback = async (id: number) => {
     if (!window.confirm('Mark this commission as clawback?')) return;
     try {
-      await api.put(`/crm/commissions/${id}`, { status: 'clawback' }, { headers: authHeaders() });
+      await api.put(`/rfq/commissions/${id}`, { status: 'clawback' }, { headers: authHeaders() });
       fetchCommissions();
     } catch {}
   };
@@ -1092,7 +1092,7 @@ export function TeamCorporatePlansPage() {
       if (search) params.search = search;
       if (statusFilter !== 'all') params.status = statusFilter;
       if (yearFilter !== 'all') params.planYear = yearFilter;
-      const { data } = await api.get('/crm/corporate-plans', { headers: authHeaders(), params });
+      const { data } = await api.get('/rfq/corporate-plans', { headers: authHeaders(), params });
       if (data.success) {
         setPlans(data.data || []);
         setTotalPages(data.pagination?.totalPages || 1);
@@ -1126,8 +1126,8 @@ export function TeamCorporatePlansPage() {
 
   const handleSave = async () => {
     try {
-      if (editPlan) await api.put(`/crm/corporate-plans/${editPlan.id}`, form, { headers: authHeaders() });
-      else await api.post('/crm/corporate-plans', form, { headers: authHeaders() });
+      if (editPlan) await api.put(`/rfq/corporate-plans/${editPlan.id}`, form, { headers: authHeaders() });
+      else await api.post('/rfq/corporate-plans', form, { headers: authHeaders() });
       setShowForm(false); setEditPlan(null); setForm(emptyForm);
       fetchPlans();
     } catch (err: any) { alert(err.response?.data?.message || 'Save failed'); }
@@ -1136,14 +1136,14 @@ export function TeamCorporatePlansPage() {
   const handleRenew = async (plan: any) => {
     if (!window.confirm(`Create renewal plan for ${plan.plan_year + 1}?`)) return;
     try {
-      await api.post(`/crm/corporate-plans/${plan.id}/renew`, {}, { headers: authHeaders() });
+      await api.post(`/rfq/corporate-plans/${plan.id}/renew`, {}, { headers: authHeaders() });
       fetchPlans();
     } catch (err: any) { alert(err.response?.data?.message || 'Renewal failed'); }
   };
 
   const handleStatusChange = async (plan: any, newStatus: string) => {
     try {
-      await api.put(`/crm/corporate-plans/${plan.id}`, { status: newStatus }, { headers: authHeaders() });
+      await api.put(`/rfq/corporate-plans/${plan.id}`, { status: newStatus }, { headers: authHeaders() });
       fetchPlans();
     } catch {}
   };
@@ -1151,7 +1151,7 @@ export function TeamCorporatePlansPage() {
   const handleDeletePlan = async (id: number, name: string) => {
     if (!window.confirm(`Delete corporate plan "${name}"? This cannot be undone.`)) return;
     try {
-      await api.delete(`/crm/corporate-plans/${id}`, { headers: authHeaders() });
+      await api.delete(`/rfq/corporate-plans/${id}`, { headers: authHeaders() });
       fetchPlans();
     } catch (err: any) { alert(err.response?.data?.message || 'Delete failed'); }
   };
@@ -1284,7 +1284,7 @@ export function TeamCorporatePlansPage() {
                   <span className="ml-2 text-xs font-mono font-semibold text-violet-400">{form.rfqNumber}</span>
                   <span className="ml-2 text-[10px] text-emerald-400">· Won</span>
                 </div>
-                <button onClick={() => navigate(`/crm/rfqs/${form.rfqId}`)} className="text-[10px] text-slate-600 hover:text-violet-400 transition-colors flex items-center gap-1">
+                <button onClick={() => navigate(`/rfq/rfqs/${form.rfqId}`)} className="text-[10px] text-slate-600 hover:text-violet-400 transition-colors flex items-center gap-1">
                   <SquareArrowOutUpRight className="h-3 w-3" /> View RFQ
                 </button>
               </div>
@@ -1292,7 +1292,7 @@ export function TeamCorporatePlansPage() {
             {!form.rfqNumber && !editPlan && (
               <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/5 border border-amber-500/10">
                 <AlertTriangle className="h-3.5 w-3.5 text-amber-500/70 flex-shrink-0" />
-                <span className="text-[11px] text-slate-500">Corporate plans should flow through an <button onClick={() => navigate('/crm/rfqs')} className="text-amber-400 hover:text-amber-300 underline underline-offset-2">RFQ</button> — Win an RFQ first, then create the plan from it.</span>
+                <span className="text-[11px] text-slate-500">Corporate plans should flow through an <button onClick={() => navigate('/rfq/rfqs')} className="text-amber-400 hover:text-amber-300 underline underline-offset-2">RFQ</button> — Win an RFQ first, then create the plan from it.</span>
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1470,7 +1470,7 @@ export function TeamCorporatePlansPage() {
                         </td>
                         <td className={tdClass}>
                           {p.rfq_number ? (
-                            <button onClick={() => navigate(`/crm/rfqs/${p.rfq_id}`)}
+                            <button onClick={() => navigate(`/rfq/rfqs/${p.rfq_id}`)}
                               className="font-mono text-[11px] text-violet-400 hover:text-violet-300 transition-colors flex items-center gap-1">
                               {p.rfq_number}
                               <SquareArrowOutUpRight className="h-2.5 w-2.5 opacity-50" />
