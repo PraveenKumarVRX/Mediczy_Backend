@@ -81,71 +81,7 @@ const TeamDirectory = () => {
     fetchTeamMembers();
   }, []);
 
-  // Fallback mock team data for development
-  const mockTeamMembers = [
-    {
-      id: 1,
-      firstName: 'Dr. Sarah',
-      lastName: 'Johnson',
-      email: 'sarah.johnson@mediczy.com',
-      phone: '+1 234-567-8901',
-      department: 'Medical',
-      designation: 'Chief Medical Officer',
-      role: 'Admin',
-      isActive: true,
-      avatar: null
-    },
-    {
-      id: 2,
-      firstName: 'John',
-      lastName: 'Smith',
-      email: 'john.smith@mediczy.com',
-      phone: '+1 234-567-8902',
-      department: 'Technology',
-      designation: 'Technical Lead',
-      role: 'Team Lead',
-      isActive: true,
-      avatar: null
-    },
-    {
-      id: 3,
-      firstName: 'Emily',
-      lastName: 'Davis',
-      email: 'emily.davis@mediczy.com',
-      phone: '+1 234-567-8903',
-      department: 'Operations',
-      designation: 'Operations Manager',
-      role: 'Manager',
-      isActive: true,
-      avatar: null
-    },
-    {
-      id: 4,
-      firstName: 'Michael',
-      lastName: 'Brown',
-      email: 'michael.brown@mediczy.com',
-      phone: '+1 234-567-8904',
-      department: 'Customer Service',
-      designation: 'Support Lead',
-      role: 'Team Lead',
-      isActive: false,
-      avatar: null
-    },
-    {
-      id: 5,
-      firstName: 'Lisa',
-      lastName: 'Anderson',
-      email: 'lisa.anderson@mediczy.com',
-      phone: '+1 234-567-8905',
-      department: 'Medical',
-      designation: 'Healthcare Coordinator',
-      role: 'Executive',
-      isActive: true,
-      avatar: null
-    }
-  ];
-
-  const displayMembers = teamMembers.length > 0 ? teamMembers : mockTeamMembers;
+  const displayMembers = teamMembers;
   const departments = ['all', ...new Set(displayMembers.map(m => m.department))];
 
   if (loading) {
@@ -199,12 +135,20 @@ const TeamDirectory = () => {
         </Link>
 
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
-            <Users className="h-8 w-8 text-blue-500" />
-            Team Directory
-          </h1>
-          <p className="text-muted-foreground">Browse and connect with team members</p>
+        <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3 mb-2">
+              <Users className="h-8 w-8 text-blue-500" />
+              Team Directory
+            </h1>
+            <p className="text-muted-foreground">Browse and connect with team members</p>
+          </div>
+          <Button asChild variant="outline">
+            <Link to="/team/user-management">
+              <Shield className="h-4 w-4 mr-2" />
+              Manage Team &amp; Permissions
+            </Link>
+          </Button>
         </div>
 
         {/* Search and Filter */}

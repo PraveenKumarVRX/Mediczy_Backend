@@ -6,6 +6,7 @@ import {
   findExistingLead,
   runPostCaptureAutomation,
 } from '../services/crm-lead-automation.service.js';
+import { handleSocialMessagingEntry } from '../services/social-inbox.service.js';
 
 const router = express.Router();
 
@@ -92,9 +93,10 @@ router.post(
       return;
     }
 
-    if (payload.object !== 'page') return;
+    if (payload.object !== 'page' && payload.object !== 'instagram') return;
 
     for (const entry of payload.entry || []) {
+      // Lead Ads (Page object only) — existing CRM lead capture pipeline
       for (const change of entry.changes || []) {
         if (change.field !== 'leadgen') continue;
         const { leadgen_id, page_id, form_id, ad_id, adset_id, campaign_id } = change.value || {};
@@ -102,6 +104,14 @@ router.post(
 
         processLead({ leadgen_id, page_id, form_id, ad_id, adset_id, campaign_id }).catch((err) =>
           console.error('[FB Leads] processLead error:', err.message)
+        );
+      }
+
+      // Messenger (Page object) / Instagram Direct — Team Social Inbox
+      if (Array.isArray(entry.messaging) && entry.messaging.length) {
+        const channel = payload.object === 'instagram' ? 'instagram' : 'facebook';
+        handleSocialMessagingEntry(entry, channel).catch((err) =>
+          console.error('[Social Inbox] handleSocialMessagingEntry error:', err.message)
         );
       }
     }

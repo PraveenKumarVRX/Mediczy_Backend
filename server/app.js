@@ -118,6 +118,7 @@ import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js
 import emailSettingsRouter from './routes/emailSettings.route.js';
 import marketingLeadsRouter from './routes/marketing-leads.route.js';
 import fbLeadsRouter from './routes/fb-leads.route.js';
+import socialInboxRouter from './routes/social-inbox.route.js';
 import nurseRouter from './routes/nurse.route.js';
 import assistantRouter from './routes/assistant.route.js';
 import prometheus from './config/prometheus.js';
@@ -1541,6 +1542,7 @@ app.use('/api/sms', smsRouter); // SMS gateway management
 app.use('/api/video-config', videoConfigRouter); // Video configuration management
 app.use('/api/public', marketingLeadsRouter); // Public marketing lead capture
 app.use('/api/fb-leads', fbLeadsRouter);    // Facebook Lead Ads webhook (public — no auth)
+app.use('/api/social-inbox', socialInboxRouter); // Instagram/Facebook Messenger Team inbox (authTeam)
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
 app.use('/api/whatsapp', whatsappRouter); // WhatsApp templates, campaigns & messaging
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management

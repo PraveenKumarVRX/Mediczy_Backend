@@ -329,6 +329,7 @@ const USER_TYPE_PERMISSIONS = {
       // own authTeam check). One blanket entry now covers what used to be
       // eight itemized /api/crm/* sub-paths.
       '/api/rfq',
+      '/api/social-inbox',  // Instagram/Facebook Messenger Team inbox
     ],
     tokenField: 'teamId'
   },

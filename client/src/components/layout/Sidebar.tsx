@@ -10,7 +10,7 @@ import {
   FileStack, BookHeart, Watch, Gift, CalendarDays, UserPlus,
   ClipboardList, Receipt, Brain, Ticket, Sparkles, Briefcase,
   HelpCircle, Phone, Mail, LayoutTemplate, ChevronDown, ChevronRight,
-  Zap, UsersRound, Target,
+  Zap, UsersRound, Target, Instagram,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -126,9 +126,10 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Users,       label: "Team Directory",          path: "/team/directory",               permission: "User Management" },
   { icon: BarChart3,   label: "Reports",                 path: "/team/reports",                 permission: ["Patient Reports","Analytics Access","Reports Access"] },
   { icon: Activity,    label: "System Tools",            path: "/team/tools",                   adminOnly: true },
-  { icon: Users,       label: "User Management",         path: "/team/user-management",         permission: "User Management" },
+  { icon: Users,       label: "Team Members",            path: "/team/user-management",         permission: "User Management" },
   { icon: Stethoscope, label: "Doctors",                 path: "/team/doctor-management",       permission: "Doctor Management" },
   { icon: Building2,   label: "Corporate Management",    path: "/team/corporate-management",    permission: "Corporate Management" },
+  { icon: Users,       label: "Corporate Employees",     path: "/team/corporate-employees",     permission: "Corporate Management" },
   { icon: Database,    label: "Provider Network",        path: "/team/provider-network",        permission: "Corporate Management" },
   { icon: Briefcase,   label: "Broker Management",       path: "/team/broker-management",       permission: "Broker Management" },
   { icon: FlaskConical,label: "Corporate Health Booking",path: "/team/corporate-health-booking",permission: "Corporate Management" },
@@ -142,6 +143,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Mail,        label: "Email Inbox",             path: "/team/email-inbox" },
   { icon: LayoutTemplate,label:"Welcome Emails",         path: "/team/settings?tab=email-templates", adminOnly: true },
   { icon: MessageSquare,label:"WhatsApp Inbox",          path: "/team/whatsapp-inbox",          permission: "Chat Dashboard Access" },
+  { icon: Instagram,   label: "Social Inbox",            path: "/team/social-inbox",            permission: "Chat Dashboard Access" },
   { icon: MessageSquare,label:"RC Omnichannel",          path: "/team/rc-omnichannel",          permission: "Chat Dashboard Access" },
   { icon: Pill,        label: "Pharmacies",              path: "/team/pharmacy-management",     permission: "Pharmacy Management" },
   { icon: Heart,       label: "Health Plans",            path: "/team/health-plans",            permission: "Health Plans Access" },

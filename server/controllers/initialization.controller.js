@@ -188,6 +188,10 @@ class InitializationController {
       await runTicketSlaMigration().catch(e =>
         console.warn('⚠️  ticket_sla migration skipped:', e.message)
       );
+      const { runSocialInboxMigration } = await import('../migrations/social-inbox.migration.js');
+      await runSocialInboxMigration().catch(e =>
+        console.warn('⚠️  social_inbox migration skipped:', e.message)
+      );
       const { runDicomInstitutionPatternsMigration } = await import('../migrations/dicom-institution-patterns.migration.js');
       await runDicomInstitutionPatternsMigration().catch(e =>
         console.warn('⚠️  dicom_institution_patterns migration skipped:', e.message)

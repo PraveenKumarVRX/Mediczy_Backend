@@ -208,7 +208,6 @@ const VoiceCallManagement      = lazy(() => import("@/pages/admin/VoiceCallManag
 const TicketManagement         = lazy(() => import("@/pages/admin/TicketManagement"));
 const AdminHealthRiskAssessment = lazy(() => import("@/pages/admin/HealthRiskAssessment"));
 const TeamManagement           = lazy(() => import("@/pages/admin/TeamManagement"));
-const TeamPrivileges           = lazy(() => import("@/pages/admin/TeamPrivileges"));
 const ReportsPage              = lazyNamed(() => import("@/pages/admin/AdminPlaceholders"), "ReportsPage");
 const SettingsPage             = lazy(() => import("@/pages/admin/SettingsPage"));
 const CRMPage                  = lazy(() => import("@/pages/admin/CRMPage"));
@@ -303,6 +302,8 @@ const RocketChatOmnichannel  = lazy(() => import("@/pages/team/RocketChatOmnicha
 const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateManagement"));
 const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
+const TeamStaffManagement      = lazy(() => import("@/pages/team/TeamStaffManagement"));
+const TeamSocialInbox          = lazy(() => import("@/pages/team/TeamSocialInbox"));
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
 const TeamUserPlanCustomization = lazy(() => import("@/pages/team/TeamUserPlanCustomization"));
@@ -1398,7 +1399,9 @@ const AppRoutes = () => {
         <Route path="/team/directory"
           element={<TeamGuard permission="User Management"><TeamDirectory /></TeamGuard>} />
         <Route path="/team/user-management"
-          element={<TeamGuard permission="User Management"><TeamEmployeeManagement /></TeamGuard>} />
+          element={<TeamGuard permission="User Management"><TeamStaffManagement /></TeamGuard>} />
+        <Route path="/team/corporate-employees"
+          element={<TeamGuard permission="Corporate Management"><TeamEmployeeManagement /></TeamGuard>} />
         <Route path="/team/doctor-management"
           element={<TeamGuard permission="Doctor Management"><TeamDoctorManagement /></TeamGuard>} />
         <Route path="/team/corporate-management"
@@ -1425,6 +1428,8 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppTemplates /></TeamGuard>} />
         <Route path="/team/whatsapp-inbox"
           element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppInbox /></TeamGuard>} />
+        <Route path="/team/social-inbox"
+          element={<TeamGuard permission="Chat Dashboard Access"><TeamSocialInbox /></TeamGuard>} />
         <Route path="/team/rc-omnichannel"
           element={<TeamGuard permission="Chat Dashboard Access"><RocketChatOmnichannel /></TeamGuard>} />
         <Route path="/team/chat-analytics"
@@ -1460,7 +1465,6 @@ const AppRoutes = () => {
         <Route path="/admin/doctors"             element={<AdminRoute><DoctorsManagement /></AdminRoute>} />
         <Route path="/admin/users"               element={<AdminRoute><UsersManagement /></AdminRoute>} />
         <Route path="/admin/team"                element={<AdminRoute><TeamManagement /></AdminRoute>} />
-        <Route path="/admin/team-privileges"     element={<AdminRoute><TeamPrivileges /></AdminRoute>} />
         <Route path="/admin/chat"                element={<AdminRoute><AdminChatDashboard /></AdminRoute>} />
         <Route path="/admin/appointments"        element={<AdminRoute><AdminAppointments /></AdminRoute>} />
         <Route path="/admin/plans"               element={<AdminRoute><AdminPlans /></AdminRoute>} />

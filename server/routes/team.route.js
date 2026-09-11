@@ -936,7 +936,9 @@ router.get('/users', authTeam, requirePermission('User Management'), async (req,
     const { department, role, status, page = 1, limit = 50 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const where = { membershipType: 'team', status: status || 'active' };
+    const where = { membershipType: 'team' };
+    if (!status || status === 'active') where.status = 'active';
+    else if (status !== 'all') where.status = status;
     if (department) where.department = department;
     if (role)       where.role = role;
     if (teamUser.tenantId) where.organization_id = teamUser.tenantId;
@@ -962,6 +964,7 @@ router.get('/users', authTeam, requirePermission('User Management'), async (req,
         department: meta.department || 'Healthcare',
         designation: meta.designation || 'Staff',
         isActive: user.status === 'active',
+        permissions: Array.isArray(meta.permissions) ? meta.permissions : [],
         lastLogin: user.lastLoginAt,
         createdAt: user.createdAt
       };
@@ -977,6 +980,53 @@ router.get('/users', authTeam, requirePermission('User Management'), async (req,
   } catch (error) {
     console.error('List users error:', error);
     return res.status(500).json({ success: false, message: 'Error fetching users' });
+  }
+});
+
+// Get the RBAC permission catalog (for the Team Members admin UI)
+router.get('/permissions-catalog', authTeam, requirePermission('User Management'), async (req, res) => {
+  const { TEAM_PERMISSIONS_CATALOG } = await import('../config/team-permissions.config.js');
+  return res.status(200).json({ success: true, permissions: TEAM_PERMISSIONS_CATALOG });
+});
+
+// Update a team member's profile fields and/or active status (not permissions — use /privileges for that)
+router.patch('/users/:id', authTeam, requirePermission('User Management'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const adminUser = req.teamUser;
+    if (adminUser.role !== 'admin' && adminUser.role !== 'super_admin' && !adminUser.isAdmin) {
+      return res.status(403).json({ success: false, message: 'Admin access required to modify team members' });
+    }
+
+    const target = await userModel.findOne({ where: { id } });
+    if (!target || target.membershipType !== 'team') {
+      return res.status(404).json({ success: false, message: 'Team member not found' });
+    }
+
+    const { firstName, lastName, phone, department, designation, role, isActive } = req.body;
+    let meta = {};
+    try { meta = target.metadata && typeof target.metadata === 'object' ? target.metadata : JSON.parse(target.metadata || '{}'); } catch (_) { meta = {}; }
+
+    const updates = {};
+    if (firstName !== undefined) updates.firstName = firstName;
+    if (lastName !== undefined) updates.lastName = lastName;
+    if (phone !== undefined) updates.phoneNumber = phone;
+    if (role !== undefined) updates.role = role;
+    if (typeof isActive === 'boolean') {
+      updates.status = isActive ? 'active' : 'inactive';
+    }
+    if (department !== undefined) meta.department = department;
+    if (designation !== undefined) meta.designation = designation;
+    meta.updatedBy = adminUser.id;
+    meta.updatedAt = new Date().toISOString();
+    updates.metadata = JSON.stringify(meta);
+
+    await target.update(updates);
+
+    return res.status(200).json({ success: true, message: 'Team member updated', id: target.id });
+  } catch (error) {
+    console.error('Update team member error:', error);
+    return res.status(500).json({ success: false, message: 'Error updating team member' });
   }
 });
 
