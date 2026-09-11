@@ -11,7 +11,7 @@ import {
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
   Brain, Sparkles, MessageSquare, Star, ShieldCheck,
   Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
-  UserCog, Contact, List, Bot, UserPlus, Filter,
+  UserCog, Contact, List, Bot, UserPlus, Filter, Inbox,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
@@ -51,6 +51,7 @@ const sidebarNav = [
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
   ]},
   { section: 'MARKETING', items: [
+    { icon: Inbox, label: 'Email', path: '/crm/emails' },
     { icon: Bot, label: 'AI Copilot', path: '/crm/marketing-copilot' },
     { icon: Mail, label: 'Campaigns', path: '/crm/campaigns' },
     { icon: List, label: 'Lists', path: '/crm/lists' },

@@ -294,9 +294,17 @@ export async function findDuplicateIdentities(tenantId, limit = 100) {
   const result = await sharedPool.query(
     `SELECT k.key_type, k.normalized_value,
             COUNT(DISTINCT k.person_id)::int AS person_count,
-            jsonb_agg(DISTINCT jsonb_build_object('person_id', k.person_id, 'name', p.display_name)) AS people
+            jsonb_agg(DISTINCT jsonb_build_object(
+              'person_id', k.person_id, 'name', p.display_name,
+              'lead_id', lv.lead_id, 'lifecycle_stage', lv.lifecycle_stage
+            )) AS people
        FROM crm_identity_keys k
        JOIN crm_person_identities p ON p.id = k.person_id AND p.tenant_id = k.tenant_id
+       LEFT JOIN LATERAL (
+         SELECT id AS lead_id, lifecycle_stage FROM crm_leads_v2
+          WHERE tenant_id = k.tenant_id AND person_id = k.person_id
+          ORDER BY updated_at DESC LIMIT 1
+       ) lv ON TRUE
       WHERE k.tenant_id = $1
       GROUP BY k.key_type, k.normalized_value
      HAVING COUNT(DISTINCT k.person_id) > 1

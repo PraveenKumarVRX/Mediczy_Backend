@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  AlertCircle, Check, ChevronRight, Clock, Copy, Download,
+  AlertCircle, BarChart3, Check, ChevronRight, Clock, Copy, Download,
   Mail, Pause, Play, Plus, Save, Send, Settings2, Shield, Sparkles, Trash2,
   Upload, Users, X, ZapOff,
 } from 'lucide-react';
@@ -129,6 +129,9 @@ export function CRMCampaignsPage() {
                   <td className="p-4 text-right text-emerald-400">{c.sent_count ?? 0}</td>
                   <td className="p-4">
                     <div className="flex items-center gap-1">
+                      <button title="View analytics" onClick={(e) => { e.stopPropagation(); navigate(`/crm/campaigns/${c.id}/analytics`); }} className="p-1.5 rounded-lg hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors">
+                        <BarChart3 className="h-3.5 w-3.5" />
+                      </button>
                       <button title="Duplicate" onClick={(e) => duplicate(e, c.id)} className="p-1.5 rounded-lg hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 transition-colors">
                         <Copy className="h-3.5 w-3.5" />
                       </button>

@@ -19,7 +19,7 @@ type DuplicateGroup = {
   key_type: string;
   normalized_value: string;
   person_count: number;
-  people: Array<{ person_id: number; name: string | null }>;
+  people: Array<{ person_id: number; name: string | null; lead_id: number | null; lifecycle_stage: string | null }>;
 };
 
 const authHeaders = () => ({
@@ -228,11 +228,54 @@ export default function HospitalCRMFoundationPage() {
         <section className="rounded-xl border border-amber-400/15 bg-amber-400/[0.04] p-5">
           <div className="mb-4 flex items-center gap-3"><AlertTriangle className="h-5 w-5 text-amber-300" /><div><h3 className="text-base font-semibold text-white">Duplicate identity review</h3><p className="text-xs text-slate-500">Same normalized contact keys attached to multiple people</p></div></div>
           <div className="space-y-2">
-            {duplicates.map((group) => <div key={`${group.key_type}-${group.normalized_value}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/10 px-3 py-3 text-sm"><span className="text-amber-200">{group.key_type}: {group.normalized_value}</span><span className="text-slate-400">{group.person_count} identities</span></div>)}
+            {duplicates.map((group) => <DuplicateGroupRow key={`${group.key_type}-${group.normalized_value}`} group={group} onMerged={load} />)}
             {!loading && duplicates.length === 0 && <p className="text-sm text-slate-500">No duplicate identity groups detected.</p>}
           </div>
         </section>
       </div>
     </CRMLayout>
   );
+}
+
+/**
+ * One duplicate-identity group. Only identities with a resolved lead can
+ * actually be merged — merge operates on crm_leads_v2 rows, not identities
+ * directly, so a person with no lead yet has nothing to merge.
+ */
+function DuplicateGroupRow({ group, onMerged }: { group: DuplicateGroup; onMerged: () => void }) {
+  const mergeable = group.people.filter((p) => p.lead_id != null);
+  const [keepId, setKeepId] = useState<number | ''>('');
+  const [merging, setMerging] = useState(false);
+  const [error, setError] = useState('');
+
+  const merge = async () => {
+    if (!keepId) return;
+    setMerging(true);
+    setError('');
+    try {
+      const target = mergeable.find((p) => p.person_id === keepId);
+      const others = mergeable.filter((p) => p.person_id !== keepId);
+      for (const source of others) {
+        await api.post(`/crm/v2/leads/${source.lead_id}/merge`, { targetLeadId: target!.lead_id, reason: `Duplicate ${group.key_type}: ${group.normalized_value}` }, { headers: authHeaders() });
+      }
+      onMerged();
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'Merge failed.');
+    } finally { setMerging(false); }
+  };
+
+  return <div className="rounded-lg border border-white/[0.06] bg-black/10 px-3 py-3 text-sm space-y-2">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <span className="text-amber-200">{group.key_type}: {group.normalized_value}</span>
+      <span className="text-slate-400">{group.person_count} identities{mergeable.length < group.person_count ? ` (${mergeable.length} with a lead)` : ''}</span>
+    </div>
+    {mergeable.length >= 2 ? <div className="flex flex-wrap items-center gap-2">
+      <select value={keepId} onChange={(e) => setKeepId(Number(e.target.value) || '')} className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
+        <option value="">Keep…</option>
+        {mergeable.map((p) => <option key={p.person_id} value={p.person_id}>{p.name || `#${p.person_id}`} ({p.lifecycle_stage})</option>)}
+      </select>
+      <Button size="sm" disabled={!keepId || merging} onClick={merge} className="h-8 gap-1.5 bg-amber-600 hover:bg-amber-500 text-xs"><GitMerge className="h-3.5 w-3.5" />{merging ? 'Merging…' : 'Merge others into this one'}</Button>
+      {error && <span className="text-xs text-red-300">{error}</span>}
+    </div> : <p className="text-xs text-slate-600">Fewer than two of these identities have a lead yet — nothing to merge.</p>}
+  </div>;
 }
