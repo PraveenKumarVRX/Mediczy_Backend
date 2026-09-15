@@ -67,6 +67,7 @@ const patientSections: SidebarSection[] = [
       { icon: FlaskRound,    label: "Lab Tests",             path: "/patient/lab-tests" },
       { icon: FileSearch,    label: "Scan a Report",         path: "/report-scanner" },
       { icon: FileStack,     label: "My Reports",            path: "/patient/my-reports" },
+      { icon: ShieldCheck,   label: "My Certificates",       path: "/patient/fitness-certificates" },
       { icon: AlertCircle,   label: "Emergency",             path: "/emergency" },
     ],
   },

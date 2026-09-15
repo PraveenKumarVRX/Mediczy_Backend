@@ -2,10 +2,15 @@
  * Fitness certificate / MER issuance for a clinic's own doctor, as opposed
  * to Mediqzy's own Team clinical staff running an on-site camp (see
  * team-occupational-health.route.js). Same underlying fitness_certificates
- * table and PDF renderer; scoped strictly to the doctor's own clinic tenant
- * (never taken from the request body — always from the authenticated
- * doctor's own record, so a clinic doctor can never issue a certificate
- * against another clinic's employees).
+ * table and PDF renderer.
+ *
+ * organizationId always means the *employer* (e.g. Ninjacart) whose
+ * employee is being examined — never the issuing clinic itself. A clinic
+ * doctor may see patients from many different employers (or none), so the
+ * doctor picks the employer per certificate, exactly like the Team camp
+ * flow (team-occupational-health.route.js). What's scoped to "this doctor"
+ * is issuance/audit (certificate_data.issuedByClinicStaffId), not the
+ * employer.
  *
  * Two doctor login shapes both reach here, since real doctors turned out to
  * be onboarded through the standalone doctor platform (doctors table,
@@ -23,7 +28,10 @@ import fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import sharedPool from '../db/pgPool.js';
-import { issueFitnessCertificate, getFitnessCertificatesByPatient, getFitnessCertificateById } from '../services/corporate-hmis.service.js';
+import {
+  issueFitnessCertificate, getFitnessCertificatesByPatient, getFitnessCertificateById,
+  getFitnessCertificatesIssuedByClinicStaff,
+} from '../services/corporate-hmis.service.js';
 import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 
 const router = express.Router();
@@ -76,25 +84,69 @@ async function authClinicDoctor(req, res, next) {
   return res.status(403).json({ success: false, message: 'Only a clinic doctor can issue a fitness certificate' });
 }
 
+// GET /api/clinic/occupational-health/corporates?search=
+router.get('/corporates', authClinicDoctor, async (req, res) => {
+  try {
+    const { search = '' } = req.query;
+    const { rows } = await sharedPool.query(
+      `SELECT id, "companyName" FROM corporates WHERE "companyName" ILIKE $1 ORDER BY "companyName" LIMIT 20`,
+      [`%${search}%`]
+    );
+    return res.json({ success: true, corporates: rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/clinic/occupational-health/employees?corporateId=&search=
+router.get('/employees', authClinicDoctor, async (req, res) => {
+  try {
+    const { corporateId, search = '' } = req.query;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
+    const { rows } = await sharedPool.query(
+      `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber"
+         FROM user_associations ua
+         JOIN users u ON u.id = ua."userId"
+        WHERE ua."entityType" = 'corporate' AND ua."entityId" = $1 AND ua.role = 'employee' AND ua.status = 'active'
+          AND (LOWER(u."firstName" || ' ' || u."lastName") LIKE LOWER($2) OR LOWER(u.email) LIKE LOWER($2) OR u."phoneNumber" LIKE $2)
+        ORDER BY u."firstName", u."lastName" LIMIT 30`,
+      [parseInt(corporateId), `%${search}%`]
+    );
+    return res.json({ success: true, employees: rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/clinic/occupational-health/fitness-certificates/mine — this doctor's own recent issuances
+router.get('/fitness-certificates/mine', authClinicDoctor, async (req, res) => {
+  try {
+    const data = await getFitnessCertificatesIssuedByClinicStaff(req.clinicDoctor.id);
+    return res.json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.post('/fitness-certificate', authClinicDoctor, async (req, res) => {
   try {
     const doctor = req.clinicDoctor;
     const {
-      patientId, patientName, employeeId, employerName, jobDescription,
+      organizationId, patientId, patientName, employeeId, employerName, jobDescription,
       examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks, doctorRegNo,
     } = req.body;
 
-    if (!patientId || !fitnessStatus) {
-      return res.status(400).json({ success: false, message: 'patientId and fitnessStatus are required' });
+    if (!organizationId || !patientId || !fitnessStatus) {
+      return res.status(400).json({ success: false, message: 'organizationId, patientId and fitnessStatus are required' });
     }
 
     const issuedBy = `${doctor.first_name || ''} ${doctor.last_name || ''}`.trim() || doctor.email;
 
     const cert = await issueFitnessCertificate({
-      organizationId: doctor.tenant_id, patientId, certificateType: 'clinic_general_fitness',
+      organizationId, patientId, certificateType: 'clinic_general_fitness',
       issuedBy, doctorRegNo: doctorRegNo || doctor.registrationNumber, patientName, employeeId, employerName, jobDescription,
       examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks,
-      certificateData: { issuedByClinicStaffId: doctor.id, source: 'clinic' },
+      certificateData: { issuedByClinicStaffId: doctor.id, issuingClinicTenantId: doctor.tenant_id, source: 'clinic' },
     });
 
     await generateFitnessCertificatePdf(cert);
@@ -112,7 +164,9 @@ router.post('/fitness-certificate', authClinicDoctor, async (req, res) => {
 
 router.get('/fitness-certificate/patient/:patientId', authClinicDoctor, async (req, res) => {
   try {
-    const data = await getFitnessCertificatesByPatient(parseInt(req.params.patientId), req.clinicDoctor.tenant_id);
+    const { organizationId } = req.query;
+    if (!organizationId) return res.status(400).json({ success: false, message: 'organizationId is required' });
+    const data = await getFitnessCertificatesByPatient(parseInt(req.params.patientId), parseInt(organizationId));
     return res.json({ success: true, data });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
@@ -122,7 +176,8 @@ router.get('/fitness-certificate/patient/:patientId', authClinicDoctor, async (r
 router.get('/fitness-certificate/:id/pdf', authClinicDoctor, async (req, res) => {
   try {
     const cert = await getFitnessCertificateById(req.params.id);
-    if (!cert || Number(cert.organization_id) !== Number(req.clinicDoctor.tenant_id)) {
+    const issuedByThisDoctor = String(cert?.certificate_data?.issuedByClinicStaffId) === String(req.clinicDoctor.id);
+    if (!cert || !issuedByThisDoctor) {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
     const filePath = fitnessCertificatePdfPath(req.params.id);

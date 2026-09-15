@@ -88,6 +88,7 @@ const ProgramJourney        = lazy(() => import("@/pages/ProgramJourney"));
 const PatientNotifications  = lazy(() => import("@/pages/patient/PatientNotifications"));
 const LabTests              = lazy(() => import("@/pages/patient/LabTests"));
 const MyReports             = lazy(() => import("@/pages/patient/MyReports"));
+const MyFitnessCertificates = lazy(() => import("@/pages/patient/MyFitnessCertificates"));
 const Pharmacy              = lazy(() => import("@/pages/patient/Pharmacy"));
 const VitalReports          = lazy(() => import("@/pages/patient/VitalReports"));
 const DeviceIntegration     = lazy(() => import("@/pages/patient/DeviceIntegration"));
@@ -127,6 +128,7 @@ const DoctorMobileHome         = lazy(() => import("@/pages/doctor/DoctorMobileH
 const DoctorAppointments       = lazy(() => import("@/pages/doctor/DoctorAppointments"));
 const DoctorAppointmentSettings = lazy(() => import("@/pages/doctor/DoctorAppointmentSettings"));
 const DoctorPrescriptions      = lazy(() => import("@/pages/doctor/DoctorPrescriptions"));
+const DoctorFitnessCertificates = lazy(() => import("@/pages/doctor/DoctorFitnessCertificates"));
 const DoctorContact            = lazy(() => import("@/pages/doctor/DoctorContact"));
 const DoctorAlerts             = lazy(() => import("@/pages/doctor/DoctorAlerts"));
 const DoctorVideoConsultation  = lazy(() => import("@/pages/doctor/DoctorVideoConsultation"));
@@ -535,6 +537,7 @@ const CorporateAppointments         = lazy(() => import("@/pages/corporate/Corpo
 const CorporateHealthAnalysis       = lazy(() => import("@/pages/corporate/CorporateHealthAnalysis"));
 const CorporateDepartments          = lazy(() => import("@/pages/corporate/CorporateDepartments"));
 const CorporateClaims               = lazy(() => import("@/pages/corporate/CorporateClaims"));
+const CorporateFitnessCertificates  = lazy(() => import("@/pages/corporate/CorporateFitnessCertificates"));
 const CorporateReports              = lazy(() => import("@/pages/corporate/CorporateReports"));
 const CorporateComplaints           = lazy(() => import("@/pages/corporate/CorporateComplaints"));
 const CorporateSettings             = lazy(() => import("@/pages/corporate/CorporateSettings"));
@@ -1066,6 +1069,7 @@ const AppRoutes = () => {
         <Route path="/doctor/appointments"        element={<DoctorAppointments />} />
         <Route path="/doctor/availability"        element={<DoctorAppointmentSettings />} />
         <Route path="/doctor/prescriptions"       element={<DoctorPrescriptions />} />
+        <Route path="/doctor/fitness-certificates" element={<DoctorFitnessCertificates />} />
         <Route path="/doctor/patients"            element={<DoctorPatients />} />
         <Route path="/doctor/triage"              element={<DoctorTriage />} />
         <Route path="/doctor/remote-monitoring"   element={<Navigate to="/doctor/health-monitoring?view=advanced" replace />} />
@@ -1548,6 +1552,7 @@ const AppRoutes = () => {
         <Route path="/corporate/health-analysis"         element={<CorporateHealthAnalysis />} />
         <Route path="/corporate/departments"             element={<CorporateDepartments />} />
         <Route path="/corporate/claims"                  element={<CorporateClaims />} />
+        <Route path="/corporate/fitness-certificates"    element={<CorporateFitnessCertificates />} />
         <Route path="/corporate/reports"                 element={<CorporateReports />} />
         <Route path="/corporate/complaints"              element={<CorporateComplaints />} />
         <Route path="/corporate/compliance"              element={<CorporateCompliance />} />
@@ -1972,6 +1977,7 @@ const AppRoutes = () => {
         <Route path="/patient/notifications"      element={<MainLayout><PatientNotifications /></MainLayout>} />
         <Route path="/patient/lab-tests"          element={<MainLayout><LabTests /></MainLayout>} />
         <Route path="/patient/my-reports"         element={<MainLayout><MyReports /></MainLayout>} />
+        <Route path="/patient/fitness-certificates" element={<MainLayout><MyFitnessCertificates /></MainLayout>} />
         <Route path="/patient/pharmacy"           element={<MainLayout><Pharmacy /></MainLayout>} />
         <Route path="/patient/vital-reports"      element={<MainLayout><VitalReports /></MainLayout>} />
         <Route path="/patient/device-integration" element={<MainLayout><DeviceIntegration /></MainLayout>} />

@@ -22,6 +22,7 @@ import {
   Gauge,
   UserCog,
   UserPlus,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -52,6 +53,7 @@ const mainNavItems: SidebarItem[] = [
 const managementItems: SidebarItem[] = [
   { icon: Wallet, label: "Benefits & Plans", href: "/corporate/benefits" },
   { icon: FileText, label: "Claims", href: "/corporate/claims" },
+  { icon: ShieldCheck, label: "Fitness Certificates", href: "/corporate/fitness-certificates" },
   { icon: TrendingUp, label: "Reports", href: "/corporate/reports" },
   { icon: FileText, label: "Complaints", href: "/corporate/complaints" },
   { icon: Shield, label: "Compliance", href: "/corporate/compliance" },

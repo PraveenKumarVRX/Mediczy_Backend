@@ -1809,6 +1809,7 @@ import billingEstimateRouter from './routes/billing-estimate.route.js';
 import corporateHmisRouter from './routes/corporate-hmis.route.js';
 import teamOccupationalHealthRouter from './routes/team-occupational-health.route.js';
 import clinicOccupationalHealthRouter from './routes/clinic-occupational-health.route.js';
+import patientFitnessCertificatesRouter from './routes/patient-fitness-certificates.route.js';
 import dischargeWorkflowRouter from './routes/discharge-workflow.route.js';
 import followUpHmisRouter from './routes/follow-up-hmis.route.js';
 import icuRouter from './routes/icu.route.js';
@@ -1856,6 +1857,7 @@ app.use('/api/v1/billing', billingEstimateRouter);
 app.use('/api/v1/corporate', corporateHmisRouter);
 app.use('/api/team/occupational-health', teamOccupationalHealthRouter); // Camp/on-site fitness certificate issuance by Team clinical staff
 app.use('/api/clinic/occupational-health', clinicOccupationalHealthRouter); // Fitness certificate issuance by a clinic's own doctor (clinic_staff login)
+app.use('/api/user/fitness-certificates', patientFitnessCertificatesRouter); // Patient's own view of fitness certificates issued to them
 app.use('/api/v1/occupational-health', corporateHmisRouter);
 app.use('/api/v1/discharge', dischargeWorkflowRouter);
 app.use('/api/v1/follow-up', followUpHmisRouter);

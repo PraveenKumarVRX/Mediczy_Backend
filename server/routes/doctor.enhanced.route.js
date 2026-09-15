@@ -812,11 +812,17 @@ router.post('/login', authLimiter, async (req, res) => {
       doctor: {
         id: doctor.id,
         name: `${doctor.prefix} ${doctor.firstName} ${doctor.lastName}`,
+        firstName: doctor.firstName,
+        lastName: doctor.lastName,
         email: doctor.email,
         specialization: doctor.specialization,
         isVerified: doctor.isVerified,
         profileImage: doctor.profileImage || null,
         profilePicture: doctor.profileImage || null,
+        organization_type: doctor.organization_type || null,
+        organization_id: doctor.organization_id || null,
+        tenant_id: doctor.tenant_id || null,
+        registrationNumber: doctor.registrationNumber || null,
       },
       token
     });

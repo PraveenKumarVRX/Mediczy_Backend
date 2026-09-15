@@ -1,11 +1,14 @@
 import express from 'express';
+import fs from 'fs';
 import { authCorporate } from '../middleware/corporate.middleware.js';
 import {
   createReferral, updateReferralStatus, getReferralsByPatient,
   recordEligibilityCheck,
   issueFitnessCertificate, getFitnessCertificatesByPatient,
-  issueReturnToWorkClearance
+  issueReturnToWorkClearance,
+  getFitnessCertificatesForOrganization, getFitnessCertificateById,
 } from '../services/corporate-hmis.service.js';
+import { fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 
 const router = express.Router();
 
@@ -96,6 +99,34 @@ router.get('/fitness-certificate/patient/:patientId', authCorporate, async (req,
   try {
     const data = await getFitnessCertificatesByPatient(parseInt(req.params.patientId), corporateIdOf(req));
     res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/occupational-health/fitness-certificates — every certificate for HR's own corporate,
+// across all employees. Any authenticated corporate role can view (only issuing is clinical-staff-gated).
+router.get('/fitness-certificates', authCorporate, async (req, res) => {
+  try {
+    const data = await getFitnessCertificatesForOrganization(corporateIdOf(req));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/occupational-health/fitness-certificate/:id/pdf
+router.get('/fitness-certificate/:id/pdf', authCorporate, async (req, res) => {
+  try {
+    const cert = await getFitnessCertificateById(req.params.id);
+    if (!cert || Number(cert.organization_id) !== Number(corporateIdOf(req))) {
+      return res.status(404).json({ success: false, message: 'Certificate not found' });
+    }
+    const filePath = fitnessCertificatePdfPath(req.params.id);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: 'Certificate PDF not available' });
+    }
+    return res.download(filePath, `fitness-certificate-${req.params.id}.pdf`);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

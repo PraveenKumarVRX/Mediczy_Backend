@@ -26,10 +26,24 @@ export function isDoctorHospitalAffiliated(
   return false;
 }
 
+/** True when the doctor is linked to a clinic tenant (doctors.organization_type = 'clinic'). */
+export function isDoctorClinicAffiliated(
+  doctor: DoctorLike | null | undefined
+): boolean {
+  if (!doctor) return false;
+  const orgType = String(
+    doctor.organization_type ?? doctor.organizationType ?? ''
+  ).toLowerCase();
+  return orgType === 'clinic';
+}
+
 export function filterDoctorNavItems(
   items: DoctorNavItem[],
   doctor: DoctorLike | null | undefined
 ): DoctorNavItem[] {
   const affiliated = isDoctorHospitalAffiliated(doctor);
-  return items.filter((item) => !item.hospitalOnly || affiliated);
+  const clinicAffiliated = isDoctorClinicAffiliated(doctor);
+  return items.filter((item) =>
+    (!item.hospitalOnly || affiliated) && (!item.clinicOnly || clinicAffiliated)
+  );
 }

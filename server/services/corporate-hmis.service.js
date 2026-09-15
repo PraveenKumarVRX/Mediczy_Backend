@@ -260,6 +260,32 @@ export async function getFitnessCertificateById(id) {
   return rows[0] || null;
 }
 
+/** A clinic doctor's own recently-issued certificates, across whichever employer each patient works for. */
+export async function getFitnessCertificatesIssuedByClinicStaff(clinicStaffId, limit = 50) {
+  return sequelize.query(
+    `SELECT * FROM fitness_certificates
+      WHERE certificate_data->>'issuedByClinicStaffId' = :clinicStaffId
+      ORDER BY created_at DESC LIMIT :limit`,
+    { replacements: { clinicStaffId: String(clinicStaffId), limit }, type: QueryTypes.SELECT }
+  );
+}
+
+/** Every certificate an employer's HR should be able to see, across all their employees. */
+export async function getFitnessCertificatesForOrganization(organizationId, limit = 200) {
+  return sequelize.query(
+    `SELECT * FROM fitness_certificates WHERE organization_id = :organizationId ORDER BY created_at DESC LIMIT :limit`,
+    { replacements: { organizationId, limit }, type: QueryTypes.SELECT }
+  );
+}
+
+/** An employee's own certificates, regardless of which employer/clinic issued them. */
+export async function getFitnessCertificatesForPatientOnly(patientId, limit = 100) {
+  return sequelize.query(
+    `SELECT * FROM fitness_certificates WHERE patient_id = :patientId ORDER BY created_at DESC LIMIT :limit`,
+    { replacements: { patientId, limit }, type: QueryTypes.SELECT }
+  );
+}
+
 // ── Return-to-work clearance ──────────────────────────────────────────────────
 
 export async function issueReturnToWorkClearance({
