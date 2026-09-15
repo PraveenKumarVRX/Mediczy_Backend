@@ -252,6 +252,14 @@ export async function getFitnessCertificatesByPatient(patientId, organizationId)
   );
 }
 
+export async function getFitnessCertificateById(id) {
+  const rows = await sequelize.query(
+    `SELECT * FROM fitness_certificates WHERE id = :id`,
+    { replacements: { id }, type: QueryTypes.SELECT }
+  );
+  return rows[0] || null;
+}
+
 // ── Return-to-work clearance ──────────────────────────────────────────────────
 
 export async function issueReturnToWorkClearance({

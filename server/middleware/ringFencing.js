@@ -574,6 +574,13 @@ const USER_TYPE_ALIASES = {
 };
 
 const resolveUserType = (decoded) => {
+  // clinic-staff tokens (doctor/nurse/doctor_assistant logins under a clinic
+  // tenant, clinic-staff-auth.controller.js) set role to the clinical role
+  // ('doctor' etc), which collides with the *standalone* doctor-platform
+  // token's role of the same name (tokenField: 'doctorId', a different
+  // portal entirely). type: 'clinic_staff' is the unambiguous discriminator,
+  // so it must win over the generic role/type fallback below.
+  if (decoded.type === 'clinic_staff') return 'clinic';
   const rawType = decoded.userType || decoded.role || decoded.type || (decoded.userId ? 'user' : null);
   if (!rawType) return null;
   return USER_TYPE_ALIASES[rawType] || rawType;
