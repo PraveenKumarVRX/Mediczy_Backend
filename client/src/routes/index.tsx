@@ -305,6 +305,7 @@ const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealth
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamStaffManagement      = lazy(() => import("@/pages/team/TeamStaffManagement"));
 const TeamSocialInbox          = lazy(() => import("@/pages/team/TeamSocialInbox"));
+const TeamFitnessCertificates  = lazy(() => import("@/pages/team/TeamFitnessCertificates"));
 const TeamOrdersRevenue        = lazy(() => import("@/pages/team/TeamOrdersRevenue"));
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
@@ -1432,6 +1433,8 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppInbox /></TeamGuard>} />
         <Route path="/team/social-inbox"
           element={<TeamGuard permission="Chat Dashboard Access"><TeamSocialInbox /></TeamGuard>} />
+        <Route path="/team/fitness-certificates"
+          element={<TeamGuard permission="Doctor Management"><TeamFitnessCertificates /></TeamGuard>} />
         <Route path="/team/orders-revenue"
           element={<TeamGuard permission="Finance Access"><TeamOrdersRevenue /></TeamGuard>} />
         <Route path="/team/rc-omnichannel"

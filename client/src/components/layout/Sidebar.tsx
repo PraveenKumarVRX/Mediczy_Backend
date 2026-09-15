@@ -128,6 +128,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Activity,    label: "System Tools",            path: "/team/tools",                   adminOnly: true },
   { icon: Users,       label: "Team Members",            path: "/team/user-management",         permission: "User Management" },
   { icon: Stethoscope, label: "Doctors",                 path: "/team/doctor-management",       permission: "Doctor Management" },
+  { icon: ShieldCheck, label: "Fitness Certificates",    path: "/team/fitness-certificates",    permission: "Doctor Management" },
   { icon: Building2,   label: "Corporate Management",    path: "/team/corporate-management",    permission: "Corporate Management" },
   { icon: Users,       label: "Corporate Employees",     path: "/team/corporate-employees",     permission: "Corporate Management" },
   { icon: Database,    label: "Provider Network",        path: "/team/provider-network",        permission: "Corporate Management" },
