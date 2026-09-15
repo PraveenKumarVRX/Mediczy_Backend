@@ -193,6 +193,7 @@ const NGOManagement            = lazy(() => import("@/pages/admin/NGOManagement"
 const PSUManagement            = lazy(() => import("@/pages/admin/PSUManagement"));
 const AdminRegisterPatient     = lazy(() => import("@/pages/admin/AdminRegisterPatient"));
 const AdminManageAssistants    = lazy(() => import("@/pages/admin/AdminManageAssistants"));
+const OrdersRevenue            = lazy(() => import("@/pages/admin/OrdersRevenue"));
 const BillingManagement        = lazy(() => import("@/pages/admin/BillingManagement"));
 const AccountingManagement     = lazy(() => import("@/pages/admin/AccountingManagement"));
 const PaymentManagement        = lazy(() => import("@/pages/admin/PaymentManagement"));
@@ -304,6 +305,7 @@ const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealth
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamStaffManagement      = lazy(() => import("@/pages/team/TeamStaffManagement"));
 const TeamSocialInbox          = lazy(() => import("@/pages/team/TeamSocialInbox"));
+const TeamOrdersRevenue        = lazy(() => import("@/pages/team/TeamOrdersRevenue"));
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
 const TeamUserPlanCustomization = lazy(() => import("@/pages/team/TeamUserPlanCustomization"));
@@ -1430,6 +1432,8 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Chat Dashboard Access"><WhatsAppInbox /></TeamGuard>} />
         <Route path="/team/social-inbox"
           element={<TeamGuard permission="Chat Dashboard Access"><TeamSocialInbox /></TeamGuard>} />
+        <Route path="/team/orders-revenue"
+          element={<TeamGuard permission="Finance Access"><TeamOrdersRevenue /></TeamGuard>} />
         <Route path="/team/rc-omnichannel"
           element={<TeamGuard permission="Chat Dashboard Access"><RocketChatOmnichannel /></TeamGuard>} />
         <Route path="/team/chat-analytics"
@@ -1492,6 +1496,7 @@ const AppRoutes = () => {
         <Route path="/admin/psu"                 element={<AdminRoute><PSUManagement /></AdminRoute>} />
         <Route path="/admin/ohc"                 element={<AdminRoute><OHCManagement /></AdminRoute>} />
         <Route path="/admin/labs"                element={<AdminRoute><LabsManagement /></AdminRoute>} />
+        <Route path="/admin/orders-revenue"      element={<AdminRoute><OrdersRevenue /></AdminRoute>} />
         <Route path="/admin/billing"             element={<AdminRoute><BillingManagement /></AdminRoute>} />
         <Route path="/admin/accounting"          element={<AdminRoute><AccountingManagement /></AdminRoute>} />
         <Route path="/admin/payments"            element={<AdminRoute><PaymentManagement /></AdminRoute>} />

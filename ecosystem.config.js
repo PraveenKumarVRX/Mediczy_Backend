@@ -249,6 +249,30 @@ module.exports = {
     // Token generation is in mediczy-server via livekit-server-sdk — no local server needed.
     // To remove an existing PM2 process: pm2 delete livekit-server && pm2 save
 
+    // ==================== Imaging Triage (uvicorn) ====================
+    {
+      name: 'imaging-triage',
+      script: path.join(ROOT_DIR, 'infra', 'imaging', 'imaging-triage', '.venv', 'bin', 'python'),
+      args: '-m uvicorn app:app --host 127.0.0.1 --port 8010 --workers 2',
+      cwd: path.join(ROOT_DIR, 'infra', 'imaging', 'imaging-triage'),
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        PYTHONUNBUFFERED: '1',
+      },
+      error_file: path.join(LOGS_DIR, 'imaging-triage-error.log'),
+      out_file: path.join(LOGS_DIR, 'imaging-triage-out.log'),
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '1G',
+      watch: false,
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: '15s',
+      restart_delay: 5000,
+      kill_timeout: 10000
+    },
+
     // ==================== n8n Workflow Automation ====================
     {
       name: 'n8n-server',

@@ -84,6 +84,7 @@ import placesRouter from './routes/places.js';
 import ttsRouter from './routes/tts.route.js';
 
 import adminRouter from './routes/admin.route.js';
+import adminOrdersRevenueRouter from './routes/admin-orders-revenue.route.js';
 import fcmRouter from './routes/fcm.route.js';
 import callNotificationRouter from './routes/call-notification.route.js';
 import firebaseStatusRouter from './routes/firebase-status.route.js';
@@ -1479,6 +1480,7 @@ app.use('/api/places', placesRouter);
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
 app.use('/api/admin', adminRouter);
 app.use('/api/admin', adminApiRouter); // API credentials, aggregators, and other admin APIs
+app.use('/api/admin/orders-revenue', adminOrdersRevenueRouter); // Real orders/payments/membership-upgrade purchase history
 app.use('/api/admin/webinars', authUser, requireRole('admin'), adminWebinarRouter); // Super admin webinar management
 app.use('/api/admin/webinar-modules', authUser, requireRole('admin'), adminWebinarModulesRouter); // Webinar module & notification configuration
 app.use('/api/admin/pending-registrations', adminPendingRegistrationsRouter); // Super admin review & approve entity registrations

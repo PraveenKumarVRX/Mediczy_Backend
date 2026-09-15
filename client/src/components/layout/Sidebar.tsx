@@ -144,6 +144,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: LayoutTemplate,label:"Welcome Emails",         path: "/team/settings?tab=email-templates", adminOnly: true },
   { icon: MessageSquare,label:"WhatsApp Inbox",          path: "/team/whatsapp-inbox",          permission: "Chat Dashboard Access" },
   { icon: Instagram,   label: "Social Inbox",            path: "/team/social-inbox",            permission: "Chat Dashboard Access" },
+  { icon: Receipt,     label: "Orders & Revenue",        path: "/team/orders-revenue",          permission: "Finance Access" },
   { icon: MessageSquare,label:"RC Omnichannel",          path: "/team/rc-omnichannel",          permission: "Chat Dashboard Access" },
   { icon: Pill,        label: "Pharmacies",              path: "/team/pharmacy-management",     permission: "Pharmacy Management" },
   { icon: Heart,       label: "Health Plans",            path: "/team/health-plans",            permission: "Health Plans Access" },

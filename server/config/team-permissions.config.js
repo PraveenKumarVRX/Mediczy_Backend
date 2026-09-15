@@ -18,6 +18,7 @@ export const TEAM_PERMISSIONS_CATALOG = [
   { key: 'Broker Management',         group: 'Corporate',  description: 'Manage insurance brokers' },
   { key: 'Insurance RFQ Management',  group: 'Insurance',  description: 'Manage RFQs, quotes, agents, agencies and commissions' },
   { key: 'Chat Dashboard Access',     group: 'Communication', description: 'Access chat, WhatsApp and social inbox' },
+  { key: 'Finance Access',            group: 'Finance',    description: 'View orders, payments and revenue history' },
 ];
 
 export const TEAM_PERMISSION_KEYS = TEAM_PERMISSIONS_CATALOG.map((p) => p.key);

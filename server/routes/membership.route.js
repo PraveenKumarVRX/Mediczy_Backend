@@ -6,6 +6,7 @@ import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.mode
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
+import purchaseNotification from '../services/purchase-notification.service.js';
 
 const router = express.Router();
 
@@ -832,6 +833,15 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
     } catch (waErr) {
       console.error('WA upgrade activation notification error:', waErr.message);
     }
+
+    // Fire-and-forget: customer confirmation email + invoice, and internal team alert.
+    purchaseNotification.notifyMembershipPurchase({
+      user: req.user,
+      plan: newPlan,
+      payment: { paymentId: razorpay_payment_id, method: razorpay_payment_id ? 'razorpay' : 'corporate' },
+      previousPlanName: currentPlan.name,
+      amountDue,
+    }).catch(notifyErr => console.error('Membership purchase notification dispatch failed:', notifyErr.message));
 
     res.json({
       success: true,

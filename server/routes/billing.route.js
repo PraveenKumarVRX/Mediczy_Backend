@@ -5,6 +5,7 @@ import ledgerBridge from '../services/billing-ledger-bridge.service.js';
 import { Order, Invoice, Payment, Transaction, Refund } from '../models/billing.model.intelligent.js';
 import paymentGateway from '../services/payment-gateway.service.js';
 import invoiceService from '../services/invoice.service.js';
+import purchaseNotification from '../services/purchase-notification.service.js';
 import { User } from '../models/user.model.intelligent.js';
 import doctorModel from '../models/postgres/doctor.model.postgres.js';
 import { Op } from 'sequelize';
@@ -13,6 +14,20 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 const router = express.Router();
 
 router.use(legacyBillingDeprecation);
+
+function buildOrderItemLabel(order) {
+  const meta = order.metadata || {};
+  if (order.orderType === 'lab_test' && meta.testName) {
+    return `${meta.testName} — Lab Test${meta.isHomeCollection ? ' (Home Collection)' : ''}`;
+  }
+  if (order.orderType === 'medicine' || order.orderType === 'pharmacy') {
+    return 'Pharmacy Order';
+  }
+  if (order.orderType) {
+    return `${String(order.orderType).replace(/_/g, ' ')} — Order #${order.orderNumber}`;
+  }
+  return `Order #${order.orderNumber}`;
+}
 
 // ============================================================================
 // UNIFIED LEDGER (canonical — hospital RCM)
@@ -838,6 +853,27 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
       message: 'Payment verified successfully',
       data: { payment }
     });
+
+    // Fire-and-forget: customer confirmation email + invoice, and internal team alert.
+    // Never blocks the response and never affects the recorded order/payment on failure.
+    (async () => {
+      try {
+        const [order, user] = await Promise.all([
+          Order.findByPk(payment.orderId),
+          User.findByPk(userId),
+        ]);
+        if (order && user) {
+          await purchaseNotification.notifyOrderPurchase({
+            order,
+            user,
+            payment,
+            itemLabel: buildOrderItemLabel(order),
+          });
+        }
+      } catch (notifyErr) {
+        console.error('Purchase notification dispatch failed:', notifyErr.message);
+      }
+    })();
 
     // Fire-and-forget: enrich payment record with method/email/phone from Razorpay.
     // A failure here does not affect the client or the order.
