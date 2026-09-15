@@ -213,6 +213,10 @@ const USER_TYPE_PERMISSIONS = {
       '/api/fcm',  // FCM push notification token registration
       '/api/voice-assistant',  // iSHA Voice Assistant agent
       '/api/doctor-copilot',  // AI-PLATFORM-001 unified doctor copilot gateway
+      '/api/clinic/occupational-health',  // Fitness certificate issuance — for a standalone
+      // doctor account that's also linked to a clinic tenant (doctors.tenant_id); scoped
+      // narrowly to this one sub-path, not all of /api/clinic, since most standalone
+      // doctors have no clinic affiliation at all.
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'
