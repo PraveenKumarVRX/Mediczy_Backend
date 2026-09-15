@@ -1,9 +1,10 @@
 /**
  * Renders a printable Medical Examination Report / Fitness Certificate PDF
  * for a corporate occupational-health record (fitness_certificates table —
- * see corporate-hmis.service.js).
+ * see corporate-hmis.service.js), on the SmartHealth Clinic letterhead
+ * (server/templates/documents/fitness-certificate-template.html — kept in
+ * visual sync with prescription-template.html).
  */
-import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -12,6 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PDF_DIR = path.join(__dirname, '../public/pdfs/fitness-certificates');
+const TEMPLATE_PATH = path.join(__dirname, '../templates/documents/fitness-certificate-template.html');
 
 function ensureDir() {
   if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
@@ -35,88 +37,66 @@ function fmtDate(d) {
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/** @param {object} cert - a row from fitness_certificates (as returned by issueFitnessCertificate) */
-export async function generateFitnessCertificatePdf(cert) {
+function renderConditionalBlock(template, key, value) {
+  const blockRe = new RegExp(`\\{\\{#${key}\\}\\}([\\s\\S]*?)\\{\\{/${key}\\}\\}`, 'g');
+  if (!value) return template.replace(blockRe, '');
+  return template.replace(blockRe, (_m, inner) => inner.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value));
+}
+
+/**
+ * @param {object} cert - a row from fitness_certificates (as returned by issueFitnessCertificate)
+ * @param {object} [letterhead] - issuer context not stored flat on the cert row:
+ *   { doctorQualifications, doctorSpecialty, clinicName, clinicAddress, clinicPhone }
+ */
+export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
   ensureDir();
   const filePath = fitnessCertificatePdfPath(cert.id);
 
-  return new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ size: 'A4', margins: { top: 56, bottom: 56, left: 56, right: 56 } });
-      const stream = fs.createWriteStream(filePath);
-      doc.pipe(stream);
+  let html = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
-      doc.fontSize(18).font('Helvetica-Bold').text('Medical Examination Report', { align: 'center' });
-      doc.fontSize(11).font('Helvetica').fillColor('#555').text('General Fitness Certificate', { align: 'center' });
-      doc.moveDown(0.3);
-      doc.fontSize(9).fillColor('#888').text(`Certificate No. FC-${cert.id}  ·  Issued ${fmtDate(cert.signed_at || cert.created_at)}`, { align: 'center' });
-      doc.fillColor('#000');
-      doc.moveDown(1.2);
-      doc.moveTo(56, doc.y).lineTo(539, doc.y).strokeColor('#ccc').stroke();
-      doc.moveDown(1);
+  const replacements = {
+    '{{certificateId}}': cert.id,
+    '{{issuedDate}}': fmtDate(cert.signed_at || cert.created_at),
+    '{{patientName}}': cert.patient_name || '—',
+    '{{employeeId}}': cert.employee_id || '—',
+    '{{employerName}}': cert.employer_name || '—',
+    '{{jobDescription}}': cert.job_description || '—',
+    '{{examinationDate}}': fmtDate(cert.examination_date),
+    '{{validFrom}}': fmtDate(cert.valid_from),
+    '{{validUntil}}': fmtDate(cert.valid_until),
+    '{{statusClass}}': cert.fitness_status || 'fit',
+    '{{statusLabel}}': STATUS_LABEL[cert.fitness_status] || String(cert.fitness_status || '').toUpperCase(),
+    '{{doctorName}}': cert.issued_by || '—',
+    '{{doctorRegNo}}': cert.doctor_reg_no || '—',
+    '{{doctorQualifications}}': letterhead.doctorQualifications || '',
+    '{{doctorSpecialty}}': letterhead.doctorSpecialty || '',
+    '{{clinicName}}': letterhead.clinicName || 'Mediqzy',
+    '{{clinicAddress}}': letterhead.clinicAddress || '',
+    '{{clinicPhone}}': letterhead.clinicPhone || '',
+    '{{generatedDateTime}}': new Date().toLocaleString('en-IN'),
+  };
+  for (const [token, value] of Object.entries(replacements)) {
+    html = html.replace(new RegExp(token.replace(/[{}]/g, '\\$&'), 'g'), String(value));
+  }
+  html = renderConditionalBlock(html, 'restrictions', cert.restrictions);
+  html = renderConditionalBlock(html, 'remarks', cert.remarks);
 
-      const row = (label, value) => {
-        doc.fontSize(10).font('Helvetica-Bold').text(label, { continued: true, width: 160 });
-        doc.font('Helvetica').text(`  ${value ?? '—'}`);
-        doc.moveDown(0.35);
-      };
-
-      doc.fontSize(12).font('Helvetica-Bold').text('Employee Details');
-      doc.moveDown(0.4);
-      row('Name:', cert.patient_name);
-      row('Employee ID:', cert.employee_id);
-      row('Employer:', cert.employer_name);
-      row('Job / Role:', cert.job_description);
-      doc.moveDown(0.8);
-
-      doc.fontSize(12).font('Helvetica-Bold').text('Examination');
-      doc.moveDown(0.4);
-      row('Examination date:', fmtDate(cert.examination_date));
-      row('Valid from:', fmtDate(cert.valid_from));
-      row('Valid until:', fmtDate(cert.valid_until));
-      doc.moveDown(0.8);
-
-      const statusLabel = STATUS_LABEL[cert.fitness_status] || String(cert.fitness_status || '').toUpperCase();
-      const statusColor = cert.fitness_status === 'unfit' ? '#b91c1c'
-        : cert.fitness_status === 'temporarily_unfit' ? '#b45309'
-        : cert.fitness_status === 'fit_with_restrictions' ? '#a16207'
-        : '#15803d';
-      const boxTop = doc.y + 6;
-      const boxHeight = 36;
-      doc.roundedRect(56, boxTop, 483, boxHeight, 6).fillAndStroke('#f5f5f5', '#ddd');
-      doc.fillColor(statusColor).fontSize(13).font('Helvetica-Bold')
-        .text(statusLabel, 56, boxTop + 11, { width: 483, align: 'center' });
-      doc.fillColor('#000');
-      doc.y = boxTop + boxHeight + 16;
-      doc.x = 56;
-
-      if (cert.restrictions) {
-        doc.fontSize(10).font('Helvetica-Bold').text('Restrictions:');
-        doc.font('Helvetica').text(cert.restrictions, { width: 483 });
-        doc.moveDown(0.6);
-      }
-      if (cert.remarks) {
-        doc.fontSize(10).font('Helvetica-Bold').text('Clinical remarks:');
-        doc.font('Helvetica').text(cert.remarks, { width: 483 });
-        doc.moveDown(0.6);
-      }
-
-      doc.moveDown(1.5);
-      doc.moveTo(56, doc.y).lineTo(539, doc.y).strokeColor('#ccc').stroke();
-      doc.moveDown(0.8);
-      doc.fontSize(10).font('Helvetica-Bold').text('Examining Physician');
-      doc.font('Helvetica').text(cert.issued_by || '—');
-      if (cert.doctor_reg_no) doc.fontSize(9).fillColor('#555').text(`Reg. No. ${cert.doctor_reg_no}`).fillColor('#000');
-      doc.moveDown(1.2);
-
-      doc.fontSize(8).fillColor('#999')
-        .text('This certificate reflects findings at the time of examination only and is not a diagnosis. Generated by Mediqzy.', { align: 'center' });
-
-      doc.end();
-      stream.on('finish', () => resolve(filePath));
-      stream.on('error', reject);
-    } catch (err) {
-      reject(err);
-    }
+  const puppeteer = await import('puppeteer');
+  const browser = await puppeteer.default.launch({
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = Buffer.from(await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+    }));
+    fs.writeFileSync(filePath, pdfBuffer);
+  } finally {
+    await browser.close();
+  }
+
+  return filePath;
 }

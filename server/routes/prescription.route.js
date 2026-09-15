@@ -113,7 +113,7 @@ const renderPrescriptionHTML = (prescription) => {
   if (labTests.length > 0) {
     let testsHTML = '';
     labTests.forEach(test => {
-      testsHTML += `<div class="test-item">🔬 ${test.testName || test}</div>`;
+      testsHTML += `<div class="test-item">${test.testName || test}</div>`;
     });
     template = template.replace('{{#hasTests}}', '');
     template = template.replace('{{/hasTests}}', '');
@@ -128,7 +128,7 @@ const renderPrescriptionHTML = (prescription) => {
   let instructionsHTML = '';
   instructions.forEach(inst => {
     const instruction = typeof inst === 'string' ? inst : inst.instruction;
-    instructionsHTML += `<li>✓ ${instruction}</li>`;
+    instructionsHTML += `<li>${instruction}</li>`;
   });
   template = template.replace(/\{\{#instructions\}\}[\s\S]*?\{\{\/instructions\}\}/g, instructionsHTML);
 

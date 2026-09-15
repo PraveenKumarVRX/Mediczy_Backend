@@ -3,606 +3,363 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical Prescription - EMR</title>
+    <title>Prescription</title>
     <style>
-        @page {
-            size: A4;
-            margin: 12mm;
-        }
+        @page { size: A4; margin: 0; }
+        * { box-sizing: border-box; }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.5;
-            color: #1a1a1a;
+            font-family: 'Segoe UI', -apple-system, Helvetica, Arial, sans-serif;
+            color: #1c1917;
             margin: 0;
             padding: 0;
+            font-size: 13px;
         }
-        .prescription-container {
+        .sheet {
             max-width: 210mm;
             margin: 0 auto;
-            background: white;
-            padding: 15px;
-            border: 2px solid #2563eb;
-            position: relative;
+            padding: 16mm 14mm;
         }
-        
-        /* EMR Header with Doctor Credentials */
-        .emr-header {
-            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
-            color: white;
-            padding: 20px;
-            margin: -15px -15px 20px -15px;
-            border-radius: 0;
-        }
-        .header-top {
+
+        /* ---- Letterhead ---- */
+        .letterhead {
             display: flex;
-            justify-content: space-between;
             align-items: flex-start;
-            margin-bottom: 15px;
+            justify-content: space-between;
+            gap: 16px;
+            padding-bottom: 14px;
+            border-bottom: 2.5px solid #0f766e;
         }
-        .doctor-info {
-            flex: 1;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
-        .doctor-name {
-            font-size: 26px;
-            font-weight: bold;
-            margin: 0 0 8px 0;
-            letter-spacing: 0.5px;
+        .brand-mark { flex-shrink: 0; }
+        .brand-text .clinic-name {
+            font-size: 22px;
+            font-weight: 700;
+            color: #0f172a;
+            letter-spacing: 0.2px;
+            margin: 0;
         }
-        .doctor-qualifications {
-            font-size: 14px;
-            margin: 0 0 5px 0;
-            opacity: 0.95;
-            font-weight: 500;
+        .brand-text .clinic-url {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: #0f766e;
+            letter-spacing: 0.4px;
+            margin-top: 2px;
         }
-        .doctor-specialty {
+        .doctor-block {
+            text-align: right;
+        }
+        .doctor-block .doctor-name {
             font-size: 15px;
-            margin: 0 0 5px 0;
+            font-weight: 700;
+            color: #0f172a;
+            margin: 0;
+        }
+        .doctor-block .doctor-quals {
+            font-size: 11px;
+            color: #57534e;
+            margin-top: 1px;
+        }
+        .doctor-block .doctor-specialty {
+            font-size: 11.5px;
             font-weight: 600;
-            color: #fbbf24;
+            color: #0f766e;
+            margin-top: 2px;
         }
-        .doctor-registration {
-            font-size: 12px;
-            margin: 5px 0 0 0;
-            opacity: 0.9;
-            font-style: italic;
+        .doctor-block .doctor-reg {
+            font-size: 10.5px;
+            color: #78716c;
+            margin-top: 2px;
         }
-        .clinic-logo {
-            width: 90px;
-            height: 90px;
-            background: white;
+
+        /* ---- Patient / doc-meta row ---- */
+        .meta-row {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: 50%;
-            font-size: 42px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            border: 3px solid #fbbf24;
-        }
-        .clinic-details {
-            background: rgba(255, 255, 255, 0.1);
-            padding: 12px;
-            border-radius: 6px;
+            flex-wrap: wrap;
+            gap: 4px 28px;
+            padding: 12px 0;
             margin-top: 10px;
+            border-bottom: 1px solid #e7e5e4;
+            font-size: 12.5px;
         }
-        .clinic-name {
-            font-size: 18px;
-            font-weight: bold;
-            margin: 0 0 8px 0;
-        }
-        .clinic-address {
-            font-size: 12px;
-            margin: 3px 0;
-            opacity: 0.95;
-            line-height: 1.4;
-        }
-        .clinic-address {
-            font-size: 12px;
-            margin: 3px 0;
-            opacity: 0.95;
-            line-height: 1.4;
-        }
-        
-        /* Prescription Details Bar */
-        .prescription-bar {
-            background: #f3f4f6;
-            padding: 12px 15px;
-            margin: 0 -15px 20px -15px;
+        .meta-row .field { white-space: nowrap; }
+        .meta-row .field .label { color: #78716c; margin-right: 4px; }
+        .meta-row .field .value { font-weight: 600; color: #1c1917; }
+        .doc-id-line {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            border-top: 2px solid #e5e7eb;
-            border-bottom: 2px solid #e5e7eb;
+            font-size: 10.5px;
+            color: #a8a29e;
+            margin-top: 6px;
         }
-        .prescription-id {
-            font-size: 14px;
-            font-weight: bold;
-            color: #2563eb;
+
+        /* ---- Rx body ---- */
+        .rx-body { margin-top: 18px; }
+        .rx-mark {
+            font-family: 'Times New Roman', Georgia, serif;
+            font-size: 34px;
+            font-weight: 700;
+            color: #0f766e;
+            line-height: 1;
+            float: left;
+            margin-right: 10px;
         }
-        .prescription-date {
-            font-size: 13px;
-            color: #4b5563;
-        }
-        
-        /* Rx Symbol */
-        .rx-symbol {
-            font-size: 56px;
-            color: #2563eb;
-            font-weight: bold;
-            text-align: center;
-            margin: 15px 0;
-            font-family: 'Times New Roman', serif;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
-        }
-        .patient-section {
-            background: #f9fafb;
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-        }
-        .patient-info {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-        .info-row {
-            display: flex;
-            align-items: center;
-        }
-        .info-label {
-            font-weight: 600;
-            color: #374151;
-            min-width: 120px;
-        }
-        .info-value {
-            color: #1f2937;
-        }
-        .vitals-section {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: #eff6ff;
-            border-radius: 8px;
-        }
-        .vital-item {
-            text-align: center;
-        }
-        .vital-label {
-            font-size: 11px;
-            color: #6b7280;
-            font-weight: 500;
-        }
-        .vital-value {
-            font-size: 18px;
-            font-weight: bold;
-            color: #1e40af;
-            margin-top: 5px;
-        }
-        .diagnosis-section, .medications-section, .instructions-section {
-            margin-bottom: 25px;
-        }
+        .rx-content { overflow: hidden; }
+
+        .section { margin-bottom: 16px; }
         .section-title {
-            font-size: 16px;
-            font-weight: bold;
-            color: #1f2937;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 2px solid #e5e7eb;
-        }
-        .diagnosis-text {
-            padding: 10px;
-            background: #fef3c7;
-            border-left: 4px solid #f59e0b;
-            border-radius: 4px;
-            margin-bottom: 10px;
-        }
-        .medications-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-        .medications-table th {
-            background: #f3f4f6;
-            padding: 10px;
-            text-align: left;
-            font-weight: 600;
-            font-size: 12px;
-            color: #374151;
-            border: 1px solid #e5e7eb;
-        }
-        .medications-table td {
-            padding: 10px;
-            border: 1px solid #e5e7eb;
-            font-size: 13px;
-        }
-        .med-name {
-            font-weight: 600;
-            color: #1f2937;
-        }
-        .med-composition {
             font-size: 11px;
-            color: #6b7280;
-            margin-top: 3px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #0f766e;
+            margin-bottom: 6px;
         }
-        .instructions-list {
-            list-style: none;
-            padding: 0;
+        .vitals-row {
+            display: flex;
+            gap: 22px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            background: #f0fdfa;
+            border-radius: 6px;
+            margin-bottom: 16px;
         }
-        .instructions-list li {
+        .vitals-row .vital { text-align: left; }
+        .vitals-row .vital .vlabel { font-size: 9.5px; color: #78716c; text-transform: uppercase; letter-spacing: 0.3px; }
+        .vitals-row .vital .vvalue { font-size: 14px; font-weight: 700; color: #0f172a; }
+
+        .box-text {
             padding: 8px 10px;
-            margin-bottom: 8px;
-            background: #f0fdf4;
-            border-left: 3px solid #10b981;
-            border-radius: 4px;
+            background: #fafaf9;
+            border-left: 3px solid #0f766e;
+            border-radius: 3px;
+            font-size: 12.5px;
         }
-        .tests-section {
-            margin-bottom: 25px;
-        }
-        .tests-list {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-        }
-        .test-item {
-            padding: 8px 12px;
-            background: #fef2f2;
-            border-left: 3px solid #ef4444;
-            border-radius: 4px;
-            font-size: 13px;
-        }
-        .follow-up {
-            background: #dbeafe;
-            padding: 12px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        .follow-up-icon {
-            font-size: 24px;
-        }
-        
-        /* EMR Footer with Signature and Seal */
-        .emr-footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 2px solid #e5e7eb;
-        }
-        .signature-section {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-end;
-            margin-bottom: 20px;
-        }
-        .doctor-signature-box {
-            flex: 1;
-            max-width: 45%;
-        }
-        .signature-image {
-            height: 60px;
-            margin-bottom: 5px;
-            border-bottom: 2px solid #374151;
-            display: flex;
-            align-items: flex-end;
-            justify-content: center;
-            font-family: 'Brush Script MT', cursive;
-            font-size: 32px;
-            color: #1e40af;
-            padding-bottom: 5px;
-        }
-        .signature-label {
-            font-size: 11px;
-            color: #6b7280;
-            text-align: center;
-            margin-top: 5px;
-        }
-        .signature-doctor-name {
-            font-weight: bold;
-            color: #1f2937;
-            text-align: center;
-            margin: 5px 0 2px 0;
-            font-size: 14px;
-        }
-        .signature-credentials {
-            font-size: 11px;
-            color: #6b7280;
-            text-align: center;
-            margin: 2px 0;
-        }
-        .signature-registration {
-            font-size: 11px;
-            color: #4b5563;
-            text-align: center;
+
+        .med-table { width: 100%; border-collapse: collapse; }
+        .med-table th {
+            text-align: left;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            color: #78716c;
             font-weight: 600;
-            margin-top: 3px;
+            padding: 6px 8px;
+            border-bottom: 1.5px solid #d6d3d1;
         }
-        .clinic-seal {
-            flex: 0 0 140px;
-            text-align: center;
+        .med-table td {
+            padding: 8px;
+            border-bottom: 1px solid #e7e5e4;
+            font-size: 12.5px;
+            vertical-align: top;
         }
-        .seal-container {
-            width: 130px;
-            height: 130px;
-            border: 4px double #2563eb;
-            border-radius: 50%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto;
-            background: radial-gradient(circle, #eff6ff 0%, #dbeafe 100%);
+        .med-name { font-weight: 600; color: #1c1917; }
+        .med-composition { font-size: 10.5px; color: #78716c; margin-top: 2px; }
+
+        .tests-list { display: flex; flex-wrap: wrap; gap: 8px; }
+        .test-item {
+            font-size: 11.5px;
+            padding: 5px 10px;
+            background: #fafaf9;
+            border: 1px solid #e7e5e4;
+            border-radius: 14px;
+        }
+
+        .instructions-list { list-style: none; padding: 0; margin: 0; }
+        .instructions-list li {
+            font-size: 12.5px;
+            padding: 5px 0 5px 18px;
             position: relative;
         }
-        .seal-text {
-            font-size: 11px;
-            font-weight: bold;
-            color: #1e40af;
-            text-align: center;
-            line-height: 1.3;
-            margin: 3px 0;
-        }
-        .seal-icon {
-            font-size: 36px;
-            margin: 5px 0;
-        }
-        .seal-number {
-            font-size: 9px;
-            color: #4b5563;
-            font-weight: 600;
-            margin-top: 3px;
-        }
-        .prescription-footer {
-            margin-top: 20px;
-            padding: 15px;
-            background: #f9fafb;
-            border-radius: 6px;
-            font-size: 10px;
-            color: #6b7280;
-            text-align: center;
-            line-height: 1.5;
-        }
-        .disclaimer {
-            font-style: italic;
-            margin-top: 8px;
-        }
-        .emr-badge {
-            display: inline-block;
-            background: #10b981;
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 10px;
-            font-weight: bold;
-            margin-top: 5px;
-        }
-        .watermark {
+        .instructions-list li::before {
+            content: "✓";
             position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-45deg);
-            font-size: 120px;
-            color: rgba(37, 99, 235, 0.03);
-            font-weight: bold;
-            z-index: -1;
-            pointer-events: none;
+            left: 0;
+            color: #0f766e;
+            font-weight: 700;
         }
-        @media print {
-            .prescription-container {
-                padding: 10px;
-                border: none;
-            }
+
+        .followup {
+            font-size: 12.5px;
+            padding: 8px 10px;
+            background: #f0fdfa;
+            border-radius: 6px;
+        }
+
+        /* ---- Footer / signature ---- */
+        .footer { margin-top: 30px; }
+        .signature-row {
+            display: flex;
+            justify-content: flex-end;
+        }
+        .signature-block {
+            text-align: center;
+            width: 220px;
+        }
+        .signature-line {
+            border-bottom: 1.4px solid #78716c;
+            height: 34px;
+        }
+        .signature-block .sig-name { font-size: 12px; font-weight: 700; color: #0f172a; margin-top: 6px; }
+        .signature-block .sig-quals { font-size: 10.5px; color: #57534e; }
+        .signature-block .sig-reg { font-size: 10.5px; color: #78716c; }
+
+        .clinic-footer {
+            margin-top: 22px;
+            padding-top: 12px;
+            border-top: 2.5px solid #0f766e;
+            text-align: center;
+            font-size: 10.5px;
+            color: #57534e;
+            line-height: 1.6;
+        }
+        .clinic-footer .fline1 { font-weight: 600; color: #0f172a; }
+
+        .disclaimer {
+            margin-top: 8px;
+            font-size: 9px;
+            color: #a8a29e;
+            text-align: center;
+            font-style: italic;
         }
     </style>
 </head>
 <body>
-    <div class="watermark">℞ PRESCRIPTION</div>
-    <div class="prescription-container">
-        
-        <!-- EMR Header with Complete Doctor Credentials -->
-        <div class="emr-header">
-            <div class="header-top">
-                <div class="doctor-info">
-                    <h1 class="doctor-name">{{doctorName}}</h1>
-                    <p class="doctor-qualifications">{{doctorQualifications}}</p>
-                    <p class="doctor-specialty">{{doctorSpecialty}}</p>
-                    <p class="doctor-registration">Registration No: {{doctorRegNo}}</p>
-                </div>
-                <div class="clinic-logo">
-                    🏥
-                </div>
-            </div>
-            
-            <div class="clinic-details">
-                <div class="clinic-name">{{clinicName}}</div>
-                <div class="clinic-address">📍 {{clinicAddress}}</div>
-                <div class="clinic-address">📞 {{clinicPhone}} | ✉️ {{clinicEmail}}</div>
-            </div>
-        </div>
+    <div class="sheet">
 
-        <!-- Prescription ID and Date Bar -->
-        <div class="prescription-bar">
-            <div class="prescription-id">Prescription No: {{prescriptionId}}</div>
-            <div class="prescription-date">📅 Date: {{prescriptionDate}}</div>
-        </div>
-
-        <!-- Patient Information -->
-        <div class="patient-section">
-            <div class="patient-info">
-                <div class="info-row">
-                    <span class="info-label">Patient Name:</span>
-                    <span class="info-value">{{patientName}}</span>
+        <div class="letterhead">
+            <div class="brand">
+                <div class="brand-mark">
+                    <svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="26" cy="26" r="25" stroke="#0f766e" stroke-width="1.6" fill="#f0fdfa"/>
+                        <path d="M15 27c3-6 8-9 11-9 2 0 2.5 1.6 1 3-2 2-5 3-7 6 3-1 7-3 10-6 2-2 4-1 3 1.3-1.7 3.7-6 6.7-10 8.2" stroke="#0f766e" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                        <path d="M37 25c-3-6-8-9-11-9-2 0-2.5 1.6-1 3 2 2 5 3 7 6-3-1-7-3-10-6-2-2-4-1-3 1.3 1.7 3.7 6 6.7 10 8.2" stroke="#5eead4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                    </svg>
                 </div>
-                <div class="info-row">
-                    <span class="info-label">Age/Gender:</span>
-                    <span class="info-value">{{patientAge}} Years / {{patientGender}}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Patient ID:</span>
-                    <span class="info-value">{{patientId}}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Date:</span>
-                    <span class="info-value">{{prescriptionDate}}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Contact:</span>
-                    <span class="info-value">{{patientPhone}}</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Prescription ID:</span>
-                    <span class="info-value">{{prescriptionId}}</span>
+                <div class="brand-text">
+                    <p class="clinic-name">{{clinicName}}</p>
+                    <div class="clinic-url">MySmartHealth.in</div>
                 </div>
             </div>
-        </div>
-
-        <!-- Vitals -->
-        <div class="vitals-section">
-            <div class="vital-item">
-                <div class="vital-label">BP</div>
-                <div class="vital-value">{{bloodPressure}}</div>
-            </div>
-            <div class="vital-item">
-                <div class="vital-label">Pulse</div>
-                <div class="vital-value">{{pulse}} bpm</div>
-            </div>
-            <div class="vital-item">
-                <div class="vital-label">Temperature</div>
-                <div class="vital-value">{{temperature}}°F</div>
-            </div>
-            <div class="vital-item">
-                <div class="vital-label">Weight</div>
-                <div class="vital-value">{{weight}} kg</div>
+            <div class="doctor-block">
+                <p class="doctor-name">Dr. {{doctorName}}</p>
+                <div class="doctor-quals">{{doctorQualifications}}</div>
+                <div class="doctor-specialty">{{doctorSpecialty}}</div>
+                <div class="doctor-reg">Reg No. {{doctorRegNo}}</div>
             </div>
         </div>
 
-        <!-- Chief Complaints -->
-        <div class="diagnosis-section">
-            <div class="section-title">Chief Complaints</div>
-            <div class="diagnosis-text">
-                {{chiefComplaints}}
-            </div>
+        <div class="meta-row">
+            <div class="field"><span class="label">Name:</span><span class="value">{{patientName}}</span></div>
+            <div class="field"><span class="label">Age:</span><span class="value">{{patientAge}}</span></div>
+            <div class="field"><span class="label">Sex:</span><span class="value">{{patientGender}}</span></div>
+            <div class="field"><span class="label">Date:</span><span class="value">{{prescriptionDate}}</span></div>
+        </div>
+        <div class="doc-id-line">
+            <span>Prescription No. {{prescriptionId}}</span>
+            <span>Patient ID {{patientId}} · {{patientPhone}}</span>
         </div>
 
-        <!-- Diagnosis -->
-        <div class="diagnosis-section">
-            <div class="section-title">Diagnosis</div>
-            <div class="diagnosis-text">
-                {{diagnosis}}
-            </div>
+        <div class="vitals-row">
+            <div class="vital"><div class="vlabel">BP</div><div class="vvalue">{{bloodPressure}}</div></div>
+            <div class="vital"><div class="vlabel">Pulse</div><div class="vvalue">{{pulse}} bpm</div></div>
+            <div class="vital"><div class="vlabel">Temp</div><div class="vvalue">{{temperature}}°F</div></div>
+            <div class="vital"><div class="vlabel">Weight</div><div class="vvalue">{{weight}} kg</div></div>
         </div>
 
-        <!-- Medications -->
-        <div class="medications-section">
-            <div class="section-title">Medications Prescribed</div>
-            <table class="medications-table">
-                <thead>
-                    <tr>
-                        <th style="width: 5%">#</th>
-                        <th style="width: 30%">Medicine Name</th>
-                        <th style="width: 20%">Dosage</th>
-                        <th style="width: 25%">Frequency</th>
-                        <th style="width: 10%">Duration</th>
-                        <th style="width: 10%">Quantity</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{#medications}}
-                    <tr>
-                        <td>{{index}}</td>
-                        <td>
-                            <div class="med-name">{{name}}</div>
-                            <div class="med-composition">{{composition}}</div>
-                        </td>
-                        <td>{{dosage}}</td>
-                        <td>{{frequency}}</td>
-                        <td>{{duration}}</td>
-                        <td>{{quantity}}</td>
-                    </tr>
-                    {{/medications}}
-                </tbody>
-            </table>
-        </div>
+        <div class="rx-body">
+            <div class="rx-mark">℞</div>
+            <div class="rx-content">
 
-        <!-- Lab Tests (if any) -->
-        {{#hasTests}}
-        <div class="tests-section">
-            <div class="section-title">Laboratory Tests Advised</div>
-            <div class="tests-list">
-                {{#tests}}
-                <div class="test-item">🔬 {{testName}}</div>
-                {{/tests}}
-            </div>
-        </div>
-        {{/hasTests}}
-
-        <!-- Instructions -->
-        <div class="instructions-section">
-            <div class="section-title">Instructions & Precautions</div>
-            <ul class="instructions-list">
-                {{#instructions}}
-                <li>✓ {{instruction}}</li>
-                {{/instructions}}
-            </ul>
-        </div>
-
-        <!-- Follow-up -->
-        <div class="follow-up">
-            <div class="follow-up-icon">📅</div>
-            <div>
-                <strong>Follow-up Visit:</strong> {{followUpDate}}<br>
-                <span style="font-size: 12px; color: #6b7280;">Please schedule your next appointment for review</span>
-            </div>
-        </div>
-
-        <!-- EMR Footer with Digital Signature and Clinic Seal -->
-        <div class="emr-footer">
-            <div class="signature-section">
-                <!-- Doctor's Digital Signature -->
-                <div class="doctor-signature-box">
-                    <div class="signature-image">{{doctorName}}</div>
-                    <div class="signature-label">Digital Signature</div>
-                    <div class="signature-doctor-name">Dr. {{doctorName}}</div>
-                    <div class="signature-credentials">{{doctorQualifications}}</div>
-                    <div class="signature-credentials">{{doctorSpecialty}}</div>
-                    <div class="signature-registration">Reg. No: {{doctorRegNo}}</div>
+                <div class="section">
+                    <div class="section-title">Chief Complaints</div>
+                    <div class="box-text">{{chiefComplaints}}</div>
                 </div>
-                
-                <!-- Clinic Official Seal -->
-                <div class="clinic-seal">
-                    <div class="seal-container">
-                        <div class="seal-text">{{clinicName}}</div>
-                        <div class="seal-icon">🏥</div>
-                        <div class="seal-text">OFFICIAL SEAL</div>
-                        <div class="seal-number">Est. 2024</div>
+
+                <div class="section">
+                    <div class="section-title">Diagnosis</div>
+                    <div class="box-text">{{diagnosis}}</div>
+                </div>
+
+                <div class="section">
+                    <div class="section-title">Medications</div>
+                    <table class="med-table">
+                        <thead>
+                            <tr>
+                                <th style="width:5%">#</th>
+                                <th style="width:32%">Medicine</th>
+                                <th style="width:18%">Dosage</th>
+                                <th style="width:25%">Frequency</th>
+                                <th style="width:10%">Duration</th>
+                                <th style="width:10%">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {{#medications}}
+                            <tr>
+                                <td>{{index}}</td>
+                                <td>
+                                    <div class="med-name">{{name}}</div>
+                                    <div class="med-composition">{{composition}}</div>
+                                </td>
+                                <td>{{dosage}}</td>
+                                <td>{{frequency}}</td>
+                                <td>{{duration}}</td>
+                                <td>{{quantity}}</td>
+                            </tr>
+                            {{/medications}}
+                        </tbody>
+                    </table>
+                </div>
+
+                {{#hasTests}}
+                <div class="section">
+                    <div class="section-title">Laboratory Tests Advised</div>
+                    <div class="tests-list">
+                        {{#tests}}<div class="test-item">{{testName}}</div>{{/tests}}
                     </div>
-                    <div class="signature-label" style="margin-top: 8px;">Clinic Seal</div>
                 </div>
+                {{/hasTests}}
+
+                <div class="section">
+                    <div class="section-title">Instructions</div>
+                    <ul class="instructions-list">
+                        {{#instructions}}<li>{{instruction}}</li>{{/instructions}}
+                    </ul>
+                </div>
+
+                <div class="followup">
+                    <strong>Follow-up:</strong> {{followUpDate}} · valid {{validityDays}} days from date of issue
+                </div>
+
+            </div>
+            <div style="clear:both;"></div>
+        </div>
+
+        <div class="footer">
+            <div class="signature-row">
+                <div class="signature-block">
+                    <div class="signature-line"></div>
+                    <div class="sig-name">Dr. {{doctorName}}</div>
+                    <div class="sig-quals">{{doctorQualifications}}</div>
+                    <div class="sig-quals">{{doctorSpecialty}}</div>
+                    <div class="sig-reg">Reg No. {{doctorRegNo}}</div>
+                </div>
+            </div>
+
+            <div class="clinic-footer">
+                <div class="fline1">{{clinicName}}</div>
+                <div>{{clinicAddress}}</div>
+                <div>{{clinicPhone}} · {{clinicEmail}}</div>
+            </div>
+            <div class="disclaimer">
+                Digitally generated prescription · Document ID {{prescriptionId}} · Generated {{generatedDateTime}}
             </div>
         </div>
 
-        <!-- EMR Prescription Footer -->
-        <div class="prescription-footer">
-            <div style="margin-bottom: 8px;">
-                <strong>📋 EMR PRESCRIPTION - LEGALLY VALID DOCUMENT</strong>
-                <span class="emr-badge">CERTIFIED EMR</span>
-            </div>
-            <p style="margin: 0; line-height: 1.6;">
-                ✓ This is a digitally signed Electronic Medical Record (EMR) prescription<br>
-                ✓ Valid for {{validityDays}} days from date of issue | Authentication: Digital Signature + Clinic Seal<br>
-                ✓ Accepted at all pharmacies | Complies with Medical Council of India regulations
-            </p>
-            <p class="disclaimer">
-                <strong>Important:</strong> Do not self-medicate • Complete full course as prescribed • 
-                Store medicines properly • Contact doctor if adverse reactions occur • 
-                This prescription is valid only with digital signature and seal displayed above
-            </p>
-            <div style="margin-top: 10px; font-size: 9px; color: #9ca3af;">
-                Generated: {{generatedDateTime}} | Platform: Mediczy Healthcare EMR System<br>
-                Document ID: {{prescriptionId}} | Doctor ID: {{doctorId}}
-            </div>
-        </div>
     </div>
 </body>
 </html>

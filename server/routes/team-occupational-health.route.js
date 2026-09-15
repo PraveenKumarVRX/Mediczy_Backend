@@ -8,10 +8,32 @@
 import express from 'express';
 import fs from 'fs';
 import { authTeam, requirePermission } from '../middleware/team.middleware.js';
+import sharedPool from '../db/pgPool.js';
 import { issueFitnessCertificate, getFitnessCertificatesByPatient } from '../services/corporate-hmis.service.js';
 import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 
 const router = express.Router();
+
+// Team camps operate under the parent "My SmartHealth" account (tenant 7) — used as the
+// letterhead branding for camp-issued certificates, since Team staff aren't tied to one clinic.
+const MYSMARTHEALTH_TENANT_ID = 7;
+let letterheadCache = null;
+async function getMySmartHealthLetterhead() {
+  if (letterheadCache) return letterheadCache;
+  try {
+    const { rows } = await sharedPool.query(`SELECT name, address, phone FROM tenants WHERE id = $1`, [MYSMARTHEALTH_TENANT_ID]);
+    const t = rows[0];
+    const addr = t?.address || {};
+    letterheadCache = {
+      clinicName: t?.name || 'Mediqzy',
+      clinicAddress: [addr.street, addr.city, addr.state, addr.pincode].filter(Boolean).join(', '),
+      clinicPhone: t?.phone || '',
+    };
+  } catch {
+    letterheadCache = { clinicName: 'Mediqzy', clinicAddress: '', clinicPhone: '' };
+  }
+  return letterheadCache;
+}
 
 router.post('/fitness-certificate', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
@@ -19,6 +41,7 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const {
       organizationId, patientId, patientName, employeeId, employerName, jobDescription,
       examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks, doctorRegNo,
+      doctorQualifications, doctorSpecialty,
     } = req.body;
 
     if (!organizationId || !patientId || !fitnessStatus) {
@@ -34,7 +57,12 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
       certificateData: { issuedByTeamUserId: teamUser.id, source: 'health_camp' },
     });
 
-    await generateFitnessCertificatePdf(cert);
+    const letterhead = await getMySmartHealthLetterhead();
+    await generateFitnessCertificatePdf(cert, {
+      ...letterhead,
+      doctorQualifications: doctorQualifications || '',
+      doctorSpecialty: doctorSpecialty || 'Occupational Health',
+    });
 
     return res.status(201).json({
       success: true,
