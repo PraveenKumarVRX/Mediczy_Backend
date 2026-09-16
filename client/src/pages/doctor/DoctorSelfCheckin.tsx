@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { QrCode, Copy, ExternalLink, Loader2, Users, RefreshCw } from 'lucide-react';
+import { QrCode, Copy, ExternalLink, Loader2, Users, RefreshCw, Download } from 'lucide-react';
 import api from '@/utils/api';
 
 interface QueueEntry {
@@ -82,7 +82,7 @@ const DoctorSelfCheckin = () => {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Self check-in kiosk</CardTitle>
-            <CardDescription>Print this QR at your reception desk, or open the link on a tablet for walk-ins.</CardDescription>
+            <CardDescription>Print this QR at reception, put it on a camp banner, or share it on WhatsApp — patients scan it and register themselves in seconds, no queueing at a desk.</CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -98,6 +98,11 @@ const DoctorSelfCheckin = () => {
                   <div className="text-xs break-all p-2.5 rounded-lg bg-muted font-mono">{kioskUrl}</div>
                   <div className="flex gap-2 flex-wrap">
                     <Button size="sm" onClick={copyLink}><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy link</Button>
+                    {qrDataUrl && (
+                      <Button size="sm" variant="outline" asChild>
+                        <a href={qrDataUrl} download="self-checkin-qr.png"><Download className="h-3.5 w-3.5 mr-1.5" /> Download QR</a>
+                      </Button>
+                    )}
                     <Button size="sm" variant="outline" asChild>
                       <a href={kioskUrl} target="_blank" rel="noreferrer"><ExternalLink className="h-3.5 w-3.5 mr-1.5" /> Open kiosk</a>
                     </Button>
