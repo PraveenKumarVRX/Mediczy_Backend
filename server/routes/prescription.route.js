@@ -63,7 +63,7 @@ const renderPrescriptionHTML = (prescription) => {
     '{{patientName}}': prescription.patientName || 'N/A',
     '{{patientAge}}': prescription.patientAge || 'N/A',
     '{{patientGender}}': prescription.patientGender || 'N/A',
-    '{{patientId}}': `P${String(prescription.patientId).padStart(6, '0')}`,
+    '{{patientId}}': prescription.patientId ? `P${String(prescription.patientId).padStart(6, '0')}` : 'Walk-in',
     '{{patientPhone}}': prescription.patientPhone || 'N/A',
     '{{prescriptionDate}}': new Date(prescription.createdAt).toLocaleDateString('en-IN', {
       day: 'numeric', month: 'long', year: 'numeric'
@@ -73,7 +73,9 @@ const renderPrescriptionHTML = (prescription) => {
     '{{pulse}}': prescription.vitals?.pulse || 'N/A',
     '{{temperature}}': prescription.vitals?.temperature || 'N/A',
     '{{weight}}': prescription.vitals?.weight || 'N/A',
-    '{{chiefComplaints}}': prescription.chiefComplaints || 'As discussed during consultation',
+    '{{chiefComplaints}}': Array.isArray(prescription.chiefComplaints)
+      ? (prescription.chiefComplaints.join(', ') || 'As discussed during consultation')
+      : (prescription.chiefComplaints || 'As discussed during consultation'),
     '{{diagnosis}}': prescription.diagnosis || 'N/A',
     '{{followUpDate}}': prescription.followUpDate
       ? new Date(prescription.followUpDate).toLocaleDateString('en-IN', {
