@@ -871,8 +871,12 @@ router.get('/floor-map', optionalDisplayDeviceOrDefaultOrg, async (req, res) => 
   }
 });
 
-// POST /api/display/video/sessions — LiveKit room for display surfaces
-router.post('/video/sessions', async (req, res) => {
+// POST /api/display/video/sessions — LiveKit room for display surfaces.
+// Same trust model as the other public display reads (optionalDisplayDeviceOrDefaultOrg):
+// a valid deviceToken binds the real org so the video_session_start push only
+// reaches that hospital's own zone, instead of every tenant's screens sharing
+// a zone name like "ward".
+router.post('/video/sessions', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const { sessionType, targetZone, bedId, patientId, role = 'patient' } = req.body;
     const roomId = `display-${sessionType || 'consult'}-${Date.now()}`;
@@ -886,7 +890,7 @@ router.post('/video/sessions', async (req, res) => {
       sessionType,
       bedId,
       join,
-    });
+    }, req.organizationId);
     res.json({ success: true, roomId, join });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -894,10 +898,10 @@ router.post('/video/sessions', async (req, res) => {
 });
 
 // POST /api/display/video/sessions/end — dismiss video overlay on zone displays
-router.post('/video/sessions/end', async (req, res) => {
+router.post('/video/sessions/end', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const { targetZone, roomId } = req.body;
-    pushToZone(targetZone || 'ward', 'video_session_end', { roomId, ts: Date.now() });
+    pushToZone(targetZone || 'ward', 'video_session_end', { roomId, ts: Date.now() }, req.organizationId);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -906,15 +910,15 @@ router.post('/video/sessions/end', async (req, res) => {
 
 // ─── Admin display control ────────────────────────────────────────────────────
 
-// POST /api/display/announce — push text announcement to specific zone
-router.post('/announce', async (req, res) => {
+// POST /api/display/announce — push text announcement to specific zone (hospital staff only)
+router.post('/announce', verifyHospitalToken, async (req, res) => {
   const { message, zone_id } = req.body;
   if (!message) return res.status(400).json({ success: false, message: 'message required' });
 
   if (zone_id) {
-    pushToZone(zone_id, 'announcement', { message, ts: Date.now() });
+    pushToZone(zone_id, 'announcement', { message, ts: Date.now() }, req.hospitalOrgId);
   } else {
-    pushToAll('announcement', { message, ts: Date.now() });
+    pushToAll('announcement', { message, ts: Date.now() }, req.hospitalOrgId);
   }
   res.json({ success: true });
 });

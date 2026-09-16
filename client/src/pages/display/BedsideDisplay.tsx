@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import DisplayShell from './DisplayShell';
+import { displayDeviceHeaders } from '@/utils/displayDeviceAuth';
 
 interface BedData {
   bed_number: string;
@@ -218,7 +219,7 @@ export default function BedsideDisplay() {
                 const ward = new URLSearchParams(window.location.search).get('ward') || 'ward';
                 await fetch('/api/display/video/sessions', {
                   method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
+                  headers: displayDeviceHeaders(),
                   body: JSON.stringify({
                     sessionType: 'bedside-consult',
                     targetZone: ward,

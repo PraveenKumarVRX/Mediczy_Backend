@@ -4,6 +4,7 @@
 
 import { createClient } from 'redis';
 import mqtt from 'mqtt';
+import pool from '../db/pgPool.js';
 import { pushToZone, pushToAll } from './display-sse-broker.service.js';
 import { pushAmbientDeteriorationAlert } from './ambient-deterioration.service.js';
 
@@ -13,6 +14,31 @@ const MQTT_URL = process.env.MQTT_BROKER_URL || process.env.MQTT_URL || '';
 let _started = false;
 let redisSub = null;
 let mqttClient = null;
+const gatewayOrgCache = new Map(); // gatewayId → { organizationId, at }
+const GATEWAY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Resolve which tenant a HyperGrid gateway belongs to (hg_devices.tenant_id),
+ * so vitals/alerts land only on that tenant's boards — zone names like "icu"
+ * are reused by every hospital (see display-sse-broker.service.js).
+ */
+async function resolveGatewayOrgId(gatewayId) {
+  if (!gatewayId) return null;
+  const cached = gatewayOrgCache.get(gatewayId);
+  if (cached && Date.now() - cached.at < GATEWAY_CACHE_TTL_MS) return cached.organizationId;
+  try {
+    const { rows } = await pool.query(
+      `SELECT tenant_id FROM hg_devices WHERE gateway_key = $1 OR id::text = $1 LIMIT 1`,
+      [String(gatewayId)]
+    );
+    const organizationId = rows[0]?.tenant_id ? parseInt(rows[0].tenant_id, 10) : null;
+    gatewayOrgCache.set(gatewayId, { organizationId, at: Date.now() });
+    return organizationId;
+  } catch (e) {
+    console.warn('[display-mqtt] gateway org lookup failed:', e.message);
+    return null;
+  }
+}
 
 function parseVitalsPayload(payload, topic) {
   const p = payload || {};
@@ -33,9 +59,9 @@ function parseVitalsPayload(payload, topic) {
   };
 }
 
-export function pushVitalsToDisplay(wardZone, bedId, vitals) {
-  pushToZone(wardZone, 'vitals_update', { bedId, vitals, ts: Date.now() });
-  pushAmbientDeteriorationAlert(wardZone, bedId, vitals);
+export function pushVitalsToDisplay(wardZone, bedId, vitals, organizationId = null) {
+  pushToZone(wardZone, 'vitals_update', { bedId, vitals, ts: Date.now() }, organizationId);
+  pushAmbientDeteriorationAlert(wardZone, bedId, vitals, organizationId);
 }
 
 async function handleHypergridEvent(event) {
@@ -43,7 +69,8 @@ async function handleHypergridEvent(event) {
   const payload = event.payload || {};
   const bedId = payload.bedId || event.deviceId || 'unknown';
   const wardZone = payload.ward || payload.icuWard || 'icu';
-  pushVitalsToDisplay(wardZone, bedId, parseVitalsPayload(payload).vitals);
+  const organizationId = await resolveGatewayOrgId(event.gatewayId);
+  pushVitalsToDisplay(wardZone, bedId, parseVitalsPayload(payload).vitals, organizationId);
 }
 
 async function startRedisBridge() {
@@ -79,7 +106,12 @@ function startExternalMqttBridge() {
     try {
       const payload = JSON.parse(buf.toString());
       const { wardZone, bedId, vitals } = parseVitalsPayload(payload, topic);
-      pushVitalsToDisplay(wardZone, bedId, vitals);
+      // External broker topics (vitals/#, hospital/vitals/#) carry no gateway/tenant
+      // identifier in the current scheme, so this path cannot yet be org-scoped —
+      // same zone-only behavior as before. Not reachable in production today
+      // (MQTT_BROKER_URL/MQTT_URL are unset); wire a tenant claim into the topic
+      // or payload before pointing a real external broker at this.
+      pushVitalsToDisplay(wardZone, bedId, vitals, null);
     } catch (_) {}
   });
   mqttClient.on('error', (e) => console.warn('[display-mqtt] MQTT error:', e.message));

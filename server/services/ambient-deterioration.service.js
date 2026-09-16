@@ -40,10 +40,10 @@ function computeNews2(v) {
   return score || null;
 }
 
-export function pushAmbientDeteriorationAlert(wardZone, bedId, vitals) {
+export function pushAmbientDeteriorationAlert(wardZone, bedId, vitals, organizationId = null) {
   const alert = evaluateNews2Deterioration({ bedId, wardZone, vitals });
   if (!alert) return null;
-  pushToZone(wardZone, 'ambient_deterioration', alert);
-  pushToZone('command', 'ambient_deterioration', alert);
+  pushToZone(wardZone, 'ambient_deterioration', alert, organizationId);
+  pushToZone('command', 'ambient_deterioration', alert, organizationId);
   return alert;
 }

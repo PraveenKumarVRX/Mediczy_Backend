@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SimpleLiveKitRoom } from '@/components/video/LiveKitRoom';
+import { displayDeviceHeaders, getDisplayDeviceToken } from '@/utils/displayDeviceAuth';
 
 interface VideoSession {
   roomId: string;
@@ -17,6 +18,8 @@ export default function DisplayVideoOverlay({ zone }: Props) {
   useEffect(() => {
     const params = new URLSearchParams();
     if (zone) params.set('zone', zone);
+    const deviceToken = getDisplayDeviceToken();
+    if (deviceToken) params.set('deviceToken', deviceToken);
     const es = new EventSource(`/api/display/events?${params}`);
     es.addEventListener('video_session_start', (e) => {
       try {
@@ -54,7 +57,7 @@ export default function DisplayVideoOverlay({ zone }: Props) {
           try {
             await fetch('/api/display/video/sessions/end', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: displayDeviceHeaders(),
               body: JSON.stringify({ targetZone: zone, roomId: session.roomId }),
             });
           } catch (_) {}

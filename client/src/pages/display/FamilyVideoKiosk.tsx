@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import DisplayShell from './DisplayShell';
+import { displayDeviceHeaders } from '@/utils/displayDeviceAuth';
 
 export default function FamilyVideoKiosk() {
   const [bed, setBed] = useState('');
@@ -17,7 +18,7 @@ export default function FamilyVideoKiosk() {
     try {
       const res = await fetch('/api/display/video/sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: displayDeviceHeaders(),
         body: JSON.stringify({
           sessionType: 'family',
           targetZone: 'bedside',
