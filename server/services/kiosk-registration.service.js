@@ -455,6 +455,48 @@ export async function getInviteByRawToken(rawToken) {
  * appointment booking, and camp registration so all three kiosk paths use
  * one identity for the same phone number instead of drifting apart.
  */
+/**
+ * When a walk-in identifies their employer, link them to the REAL corporate
+ * account (if one exists) — not just the free-text metadata field — so
+ * clinic staff can find them under that employer when issuing fitness
+ * certificates (see clinic-occupational-health.route.js's employee search,
+ * which queries user_associations, not users.metadata). Exact name match
+ * only, to avoid mis-linking to a similarly-named company; if no formal
+ * corporate account exists yet, the free-text metadata is all that's kept —
+ * same as before this existed.
+ */
+async function linkToCorporateIfMatched(patientId, corporateName, employeeId) {
+  if (!corporateName) return;
+  try {
+    const corp = await pool.query(
+      `SELECT id FROM corporates WHERE LOWER(TRIM("companyName")) = LOWER(TRIM($1)) LIMIT 1`,
+      [corporateName]
+    );
+    if (!corp.rows[0]) return;
+    const corporateId = corp.rows[0].id;
+    const already = await pool.query(
+      `SELECT id FROM user_associations WHERE "userId" = $1 AND "entityType" = 'corporate' AND "entityId" = $2`,
+      [patientId, corporateId]
+    );
+    if (already.rows[0]) return;
+    await pool.query(
+      `INSERT INTO user_associations
+         ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", metadata, notes, "createdAt", "updatedAt")
+       VALUES ($1, 'corporate', $2, 'employee', true, 'active', NOW(), $3::jsonb, $4, NOW(), NOW())`,
+      [
+        patientId,
+        corporateId,
+        JSON.stringify({ source: 'kiosk-checkin', employeeId: employeeId || undefined }),
+        'Auto-linked from kiosk self check-in (corporate employee toggle)',
+      ]
+    );
+  } catch (e) {
+    // Non-fatal — the walk-in's check-in/booking/camp-registration must still
+    // succeed even if this side-effect fails.
+    console.warn('[kiosk] corporate auto-link failed:', e.message);
+  }
+}
+
 export async function findOrCreateWalkInPatient({
   phone,
   firstName,
@@ -523,6 +565,7 @@ export async function findOrCreateWalkInPatient({
         }),
       ]
     );
+    await linkToCorporateIfMatched(patientId, corpName, empId);
     return { patientId, isNew: false, normalizedPhone };
   }
 
@@ -582,6 +625,7 @@ export async function findOrCreateWalkInPatient({
   }
   if (!ins?.rows?.[0]) throw lastErr || new Error('Failed to create patient');
   patientId = ins.rows[0].id;
+  await linkToCorporateIfMatched(patientId, corpName, empId);
   return { patientId, isNew: true, normalizedPhone };
 }
 
