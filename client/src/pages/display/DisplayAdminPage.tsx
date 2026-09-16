@@ -71,10 +71,15 @@ export default function DisplayAdminPage() {
   const [broadcastForm, setBroadcastForm] = useState({ title: '', message: '', severity: 'critical', zone_id: '' });
   const [broadcastSent, setBroadcastSent] = useState(false);
 
+  const authHeaders = useCallback((): Record<string, string> => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }, []);
+
   const fetchAll = useCallback(async () => {
     try {
       const [devRes, brRes, stRes] = await Promise.all([
-        fetch('/api/display/devices'),
+        fetch('/api/display/devices', { headers: authHeaders() }),
         fetch('/api/display/emergency'),
         fetch('/api/display/stats'),
       ]);
@@ -83,7 +88,7 @@ export default function DisplayAdminPage() {
       if (brJson.success) setBroadcasts(brJson.broadcasts);
       if (stJson.success) setStats(stJson);
     } catch (_) {} finally { setLoading(false); }
-  }, []);
+  }, [authHeaders]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -93,7 +98,7 @@ export default function DisplayAdminPage() {
     try {
       await fetch('/api/display/devices', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ ...newDevice, url_path: dt?.path }),
       });
       setNewDevice({ name: '', zone_id: '', display_type: '', ip_address: '' });
@@ -103,7 +108,7 @@ export default function DisplayAdminPage() {
   };
 
   const deactivateDevice = async (token: string) => {
-    await fetch(`/api/display/devices/${token}`, { method: 'DELETE' });
+    await fetch(`/api/display/devices/${token}`, { method: 'DELETE', headers: authHeaders() });
     fetchAll();
   };
 
@@ -112,8 +117,8 @@ export default function DisplayAdminPage() {
     try {
       await fetch('/api/display/emergency', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...broadcastForm, pushed_by: 'admin' }),
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
+        body: JSON.stringify(broadcastForm),
       });
       setBroadcastSent(true);
       setBroadcastForm({ title: '', message: '', severity: 'critical', zone_id: '' });
@@ -124,7 +129,7 @@ export default function DisplayAdminPage() {
   };
 
   const dismissBroadcast = async (id: number) => {
-    await fetch(`/api/display/emergency/${id}`, { method: 'DELETE' });
+    await fetch(`/api/display/emergency/${id}`, { method: 'DELETE', headers: authHeaders() });
     fetchAll();
   };
 

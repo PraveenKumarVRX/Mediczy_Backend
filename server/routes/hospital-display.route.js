@@ -10,6 +10,7 @@ import {
   optionalDisplayDeviceOrDefaultOrg,
   ensureDisplayDeviceSchema,
 } from '../middleware/authDisplayDevice.middleware.js';
+import { verifyHospitalToken } from '../middleware/hospitalAuth.middleware.js';
 
 const router = express.Router();
 
@@ -115,11 +116,14 @@ function deviceAuth(req, res, next) {
 
 // ─── Emergency broadcasts ─────────────────────────────────────────────────────
 
-// POST /api/display/emergency — push a broadcast
-router.post('/emergency', async (req, res) => {
+// POST /api/display/emergency — push a broadcast (hospital staff only — this
+// reaches every board/kiosk screen in the building, so an unauthenticated
+// caller must never be able to trigger it)
+router.post('/emergency', verifyHospitalToken, async (req, res) => {
   try {
-    const { title, message, severity = 'critical', zone_id = null, pushed_by = 'admin' } = req.body;
+    const { title, message, severity = 'critical', zone_id = null } = req.body;
     if (!title || !message) return res.status(400).json({ success: false, message: 'title and message required' });
+    const pushed_by = req.hospitalName || req.hospitalUser?.name || 'Hospital staff';
 
     const db = await connectPostgres();
     const result = await db.query(
@@ -150,7 +154,11 @@ router.get('/emergency', async (_req, res) => {
   res.json({ success: true, broadcasts: rows });
 });
 
-// DELETE /api/display/emergency/:id — dismiss
+// DELETE /api/display/emergency/:id — dismiss. Left public on purpose: any
+// screen currently showing the alert (DisplayShell, unauthenticated by
+// design) has a local "dismiss" tap, same as the admin page. Creating an
+// alert is the privileged action (gated above); silencing one a screen is
+// already displaying is a lower-severity, intentionally-public affordance.
 router.delete('/emergency/:id', async (req, res) => {
   await safeQuery(
     'UPDATE emergency_broadcasts SET dismissed_at=NOW() WHERE id=$1',
@@ -161,22 +169,28 @@ router.delete('/emergency/:id', async (req, res) => {
 });
 
 // ─── Device registry ─────────────────────────────────────────────────────────
+// device_token is the ONLY thing standing between an anonymous kiosk visitor
+// and this tenant's queue/patient data (see authDisplayDevice.middleware.js).
+// Listing, minting, or deactivating tokens must therefore never be reachable
+// without proof of who you are, and never leak or touch another org's rows.
 
-// GET /api/display/devices
-router.get('/devices', async (_req, res) => {
+// GET /api/display/devices — this hospital's own devices only
+router.get('/devices', verifyHospitalToken, async (req, res) => {
   const devices = await safeQuery(
-    'SELECT * FROM display_devices ORDER BY registered_at DESC'
+    'SELECT * FROM display_devices WHERE organization_id = $1 ORDER BY registered_at DESC',
+    [req.hospitalOrgId]
   );
   res.json({ success: true, devices });
 });
 
-// POST /api/display/devices — register or update a device
-router.post('/devices', async (req, res) => {
+// POST /api/display/devices — register a new device for THIS hospital
+// (organization_id is always taken from the verified token, never the body)
+router.post('/devices', verifyHospitalToken, async (req, res) => {
   try {
-    const { name, zone_id, display_type, url_path, ip_address, config, organization_id, organizationId } = req.body;
+    const { name, zone_id, display_type, url_path, ip_address, config } = req.body;
     const crypto = await import('crypto');
     const device_token = crypto.randomBytes(24).toString('hex');
-    const orgId = parseInt(organization_id || organizationId || config?.organization_id || process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
+    const orgId = req.hospitalOrgId;
     const cfg = { ...(config && typeof config === 'object' ? config : {}), organization_id: orgId };
 
     const db = await connectPostgres();
@@ -196,9 +210,13 @@ router.post('/devices', async (req, res) => {
   }
 });
 
-// DELETE /api/display/devices/:token — deactivate
-router.delete('/devices/:token', async (req, res) => {
-  await safeQuery('UPDATE display_devices SET active=false WHERE device_token=$1', [req.params.token]);
+// DELETE /api/display/devices/:token — deactivate, only if it belongs to this hospital
+router.delete('/devices/:token', verifyHospitalToken, async (req, res) => {
+  const rows = await safeQuery(
+    'UPDATE display_devices SET active=false WHERE device_token=$1 AND organization_id=$2 RETURNING id',
+    [req.params.token, req.hospitalOrgId]
+  );
+  if (!rows.length) return res.status(404).json({ success: false, message: 'Device not found for this hospital' });
   res.json({ success: true });
 });
 
