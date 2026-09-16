@@ -11,6 +11,10 @@ import { cache } from '../db/redis.js';
 import OTP from '../models/otp.model.intelligent.js';
 import twilioOtpService from './twilio-otp.service.js';
 import { SMSService, SMSTemplateManager } from './sms.service.js';
+import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
+
+const INTERNAL_API_BASE = `http://127.0.0.1:${process.env.PORT || 8888}`;
 
 const KIOSK_OTP_PURPOSE = 'kiosk-selfcheckin';
 const KIOSK_OTP_VERIFIED_TTL_SEC = 600; // 10 min — long enough to finish the register form
@@ -446,8 +450,12 @@ export async function getInviteByRawToken(rawToken) {
 /**
  * Create/find patient + issue walk-in queue token (shared by kiosk + mobile complete).
  */
-export async function registerWalkInPatient({
-  organizationId,
+/**
+ * Find-or-create the walk-in's own `users` row — shared by queue check-in,
+ * appointment booking, and camp registration so all three kiosk paths use
+ * one identity for the same phone number instead of drifting apart.
+ */
+export async function findOrCreateWalkInPatient({
   phone,
   firstName,
   lastName,
@@ -457,16 +465,8 @@ export async function registerWalkInPatient({
   email = null,
   corporateName = null,
   employeeId = null,
-  department = 'opd',
-  queueZone = 'opd-waiting',
-  doctorId = null,
-  doctorName = null,
-  chiefComplaint = null,
-  consentVersion = 'kiosk-v1',
   photoKey = null,
   abhaId = null,
-  notifyOptIn = true,
-  notifyPhone = null,
   address = null,
   aadhaarLast4 = null,
   source = 'kiosk',
@@ -523,64 +523,100 @@ export async function registerWalkInPatient({
         }),
       ]
     );
-  } else {
-    // Brand-new phone number — this is a real identity, not just a queue slip,
-    // so it must be proven live via WhatsApp OTP before we create a record.
-    if (requireOtpForNewPatient && !(await isKioskPhoneVerified(normalizedPhone))) {
-      throw Object.assign(
-        new Error('Please verify your mobile number via WhatsApp OTP first'),
-        { status: 403, code: 'OTP_REQUIRED' }
-      );
-    }
-    let insEmail = null;
-    if (cleanEmail) {
-      const taken = await pool.query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [cleanEmail]);
-      if (!taken.rows[0]) insEmail = cleanEmail;
-    }
-    const finalEmail = insEmail || `kiosk+${normalizedPhone}@patient.mediqzy.local`;
-    const hash = await bcrypt.hash(`kiosk-${normalizedPhone}-${Date.now()}`, 10);
-    let ins = null;
-    let lastErr = null;
-    for (const g of genderCandidates) {
-      try {
-        ins = await pool.query(
-          `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", "dateOfBirth", gender, status, "emailVerified", role, metadata)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'active',true,'user',$8)
-           RETURNING id`,
-          [
-            firstName,
-            lastName || '',
-            finalEmail,
-            hash,
-            normalizedPhone,
-            dateOfBirth || approxDobFromAge(age) || '1990-01-01',
-            g,
-            JSON.stringify({
-              uhidPending: true,
-              abhaId: abhaId || null,
-              photoKey: photoKey || null,
-              address: address || null,
-              aadhaarLast4: aadhaarLast4 || null,
-              age: age || null,
-              requestedEmail: cleanEmail || null,
-              emailConflict: Boolean(cleanEmail && !insEmail),
-              corporateName: corpName,
-              employeeId: empId,
-              source,
-              genderRequested: genderRaw || null,
-              otpVerified: requireOtpForNewPatient || undefined,
-            }),
-          ]
-        );
-        break;
-      } catch (e) {
-        lastErr = e;
-        if (!/enum_users_gender|invalid input value for enum/i.test(e.message)) throw e;
-      }
-    }
-    if (!ins?.rows?.[0]) throw lastErr || new Error('Failed to create patient');
-    patientId = ins.rows[0].id;
+    return { patientId, isNew: false, normalizedPhone };
   }
+
+  // Brand-new phone number — this is a real identity, not just a queue slip,
+  // so it must be proven live via WhatsApp OTP before we create a record.
+  if (requireOtpForNewPatient && !(await isKioskPhoneVerified(normalizedPhone))) {
+    throw Object.assign(
+      new Error('Please verify your mobile number via WhatsApp OTP first'),
+      { status: 403, code: 'OTP_REQUIRED' }
+    );
+  }
+  let insEmail = null;
+  if (cleanEmail) {
+    const taken = await pool.query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [cleanEmail]);
+    if (!taken.rows[0]) insEmail = cleanEmail;
+  }
+  const finalEmail = insEmail || `kiosk+${normalizedPhone}@patient.mediqzy.local`;
+  const hash = await bcrypt.hash(`kiosk-${normalizedPhone}-${Date.now()}`, 10);
+  let ins = null;
+  let lastErr = null;
+  for (const g of genderCandidates) {
+    try {
+      ins = await pool.query(
+        `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", "dateOfBirth", gender, status, "emailVerified", role, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'active',true,'user',$8)
+         RETURNING id`,
+        [
+          firstName,
+          lastName || '',
+          finalEmail,
+          hash,
+          normalizedPhone,
+          dateOfBirth || approxDobFromAge(age) || '1990-01-01',
+          g,
+          JSON.stringify({
+            uhidPending: true,
+            abhaId: abhaId || null,
+            photoKey: photoKey || null,
+            address: address || null,
+            aadhaarLast4: aadhaarLast4 || null,
+            age: age || null,
+            requestedEmail: cleanEmail || null,
+            emailConflict: Boolean(cleanEmail && !insEmail),
+            corporateName: corpName,
+            employeeId: empId,
+            source,
+            genderRequested: genderRaw || null,
+            otpVerified: requireOtpForNewPatient || undefined,
+          }),
+        ]
+      );
+      break;
+    } catch (e) {
+      lastErr = e;
+      if (!/enum_users_gender|invalid input value for enum/i.test(e.message)) throw e;
+    }
+  }
+  if (!ins?.rows?.[0]) throw lastErr || new Error('Failed to create patient');
+  patientId = ins.rows[0].id;
+  return { patientId, isNew: true, normalizedPhone };
+}
+
+export async function registerWalkInPatient({
+  organizationId,
+  phone,
+  firstName,
+  lastName,
+  dateOfBirth,
+  age = null,
+  gender: genderRaw,
+  email = null,
+  corporateName = null,
+  employeeId = null,
+  department = 'opd',
+  queueZone = 'opd-waiting',
+  doctorId = null,
+  doctorName = null,
+  chiefComplaint = null,
+  consentVersion = 'kiosk-v1',
+  photoKey = null,
+  abhaId = null,
+  notifyOptIn = true,
+  notifyPhone = null,
+  address = null,
+  aadhaarLast4 = null,
+  source = 'kiosk',
+  requireOtpForNewPatient = false,
+}) {
+  const normalizedPhone = normalizePhone10(phone);
+  const { patientId } = await findOrCreateWalkInPatient({
+    phone, firstName, lastName, dateOfBirth, age, gender: genderRaw, email,
+    corporateName, employeeId, photoKey, abhaId, address, aadhaarLast4,
+    source, requireOtpForNewPatient,
+  });
 
   const uhid = await queue.allocateUhid(organizationId);
   await pool.query(
@@ -742,6 +778,210 @@ export async function getInviteStatusForKiosk({ organizationId, phone }) {
   return row.rows[0] || null;
 }
 
+// ── Purpose-of-visit: doctor consultation (walk-in or booked slot) ──────────
+
+/**
+ * Doctors actively practicing at this clinic/hospital tenant, with today's
+ * live queue load so the kiosk can show "2 waiting" next to each name.
+ */
+export async function listKioskDoctors(organizationId) {
+  const { rows } = await pool.query(
+    `SELECT id, "firstName", "lastName", specialization, qualifications,
+            "slotDuration", "profileImage", "consultationFees"
+     FROM doctors
+     WHERE tenant_id = $1 AND status = 'active'
+     ORDER BY "firstName" ASC`,
+    [organizationId]
+  );
+  const withLoad = await Promise.all(rows.map(async (d) => {
+    const { rows: wr } = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
+       WHERE organization_id = $1 AND doctor_id = $2
+         AND status IN ('waiting','called') AND check_in_at::date = CURRENT_DATE`,
+      [organizationId, d.id]
+    );
+    return {
+      id: d.id,
+      firstName: d.firstName,
+      lastName: d.lastName,
+      specialization: d.specialization,
+      qualifications: d.qualifications,
+      slotDuration: d.slotDuration || 15,
+      profileImage: d.profileImage,
+      consultationFee: d.consultationFees,
+      waitingCount: wr[0]?.c || 0,
+    };
+  }));
+  return withLoad;
+}
+
+/**
+ * Book a real appointment (not a walk-in queue token) for a chosen doctor +
+ * time slot, going through the SAME authenticated /api/appointments flow
+ * every logged-in patient uses — conflict checks, fees, RLS — by minting a
+ * short-lived internal token for the walk-in's own patient record, rather
+ * than re-implementing that logic here.
+ */
+export async function bookKioskAppointment({
+  organizationId,
+  phone,
+  firstName,
+  lastName,
+  age = null,
+  gender: genderRaw,
+  email = null,
+  corporateName = null,
+  employeeId = null,
+  doctorId,
+  appointmentDate,
+  appointmentTime,
+  reason = null,
+  requireOtpForNewPatient = false,
+  source = 'kiosk-appointment',
+}) {
+  if (!doctorId || !appointmentDate || !appointmentTime) {
+    throw Object.assign(new Error('doctorId, appointmentDate and appointmentTime are required'), { status: 400 });
+  }
+  const { patientId } = await findOrCreateWalkInPatient({
+    phone, firstName, lastName, age, gender: genderRaw, email,
+    corporateName, employeeId, source, requireOtpForNewPatient,
+  });
+
+  const internalToken = jwt.sign({ id: patientId, role: 'user', userType: 'user' }, JWT_CONFIG.SECRET, { expiresIn: '2m' });
+  const res = await fetch(`${INTERNAL_API_BASE}/api/appointments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${internalToken}` },
+    body: JSON.stringify({
+      doctorId,
+      appointmentDate,
+      appointmentTime,
+      consultationType: 'in-person',
+      reason: reason || 'Booked at clinic self check-in kiosk',
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json.success) {
+    const err = new Error(json.message || 'Could not book this slot — please try another.');
+    err.status = res.status === 409 ? 409 : res.status >= 400 && res.status < 500 ? 400 : 500;
+    err.conflict = json.conflict || null;
+    throw err;
+  }
+  return { patientId, appointment: json.appointment || json.data || json };
+}
+
+// ── Purpose-of-visit: health camp registration ──────────────────────────────
+
+let campTableReady = false;
+async function ensureCampRegistrationTable() {
+  if (campTableReady) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS health_camp_registrations (
+      id BIGSERIAL PRIMARY KEY,
+      camp_id INTEGER NOT NULL REFERENCES health_camps(id) ON DELETE CASCADE,
+      organization_id INTEGER NOT NULL,
+      patient_id INTEGER NOT NULL,
+      queue_entry_id INTEGER,
+      full_name VARCHAR(200),
+      age INTEGER,
+      gender VARCHAR(20),
+      phone VARCHAR(20),
+      corporate_name VARCHAR(200),
+      employee_id VARCHAR(80),
+      source VARCHAR(40) DEFAULT 'kiosk',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_camp_registrations_camp ON health_camp_registrations (camp_id)
+  `);
+  campTableReady = true;
+}
+
+/** Camps happening today or in the future at this tenant, for the kiosk to list. */
+export async function listKioskCamps(organizationId) {
+  const { rows } = await pool.query(
+    `SELECT id, camp_name, camp_type, location, address, start_date, end_date,
+            start_time, end_time, status, expected_patients, registered_patients
+     FROM health_camps
+     WHERE tenant_id = $1
+       AND status IN ('planned','active')
+       AND end_date >= CURRENT_DATE
+     ORDER BY start_date ASC`,
+    [organizationId]
+  );
+  return rows;
+}
+
+/**
+ * Register a walk-in for a specific camp: creates/reuses their patient
+ * record, records a real registrant row (health_camps.registered_patients
+ * was previously just an unlinked counter), and gives them a queue token for
+ * the day so they still get called like any other walk-in.
+ */
+export async function registerKioskCamp({
+  organizationId,
+  campId,
+  phone,
+  firstName,
+  lastName,
+  age = null,
+  gender: genderRaw,
+  email = null,
+  corporateName = null,
+  employeeId = null,
+  notifyOptIn = true,
+  requireOtpForNewPatient = false,
+  source = 'kiosk-camp',
+}) {
+  await ensureCampRegistrationTable();
+  const camp = await pool.query(`SELECT id, camp_name, tenant_id FROM health_camps WHERE id = $1`, [campId]);
+  if (!camp.rows[0] || camp.rows[0].tenant_id !== organizationId) {
+    throw Object.assign(new Error('Camp not found'), { status: 404 });
+  }
+
+  const { patientId, normalizedPhone } = await findOrCreateWalkInPatient({
+    phone, firstName, lastName, age, gender: genderRaw, email,
+    corporateName, employeeId, source, requireOtpForNewPatient,
+  });
+
+  const uhid = await queue.allocateUhid(organizationId);
+  await pool.query(
+    `UPDATE users SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb WHERE id = $1`,
+    [patientId, JSON.stringify({ uhid, registeredVia: source })]
+  );
+  const entry = await queue.checkIn({
+    organizationId,
+    department: 'opd',
+    queueZone: 'camp-checkin',
+    patientId,
+    patientName: `${firstName} ${lastName || ''}`.trim(),
+    queueType: 'camp',
+    chiefComplaint: `Health camp: ${camp.rows[0].camp_name}`,
+    metadata: {
+      uhid, campId, campName: camp.rows[0].camp_name,
+      notifyOptIn: notifyOptIn === true || notifyOptIn === 'true',
+      notifyPhone: normalizedPhone, source,
+    },
+  });
+
+  await pool.query(
+    `INSERT INTO health_camp_registrations
+       (camp_id, organization_id, patient_id, queue_entry_id, full_name, age, gender, phone, corporate_name, employee_id, source)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    [
+      campId, organizationId, patientId, entry.id,
+      `${firstName} ${lastName || ''}`.trim(), age ? parseInt(age, 10) : null, genderRaw || null,
+      normalizedPhone, corporateName || null, employeeId || null, source,
+    ]
+  );
+  await pool.query(
+    `UPDATE health_camps SET registered_patients = COALESCE(registered_patients, 0) + 1 WHERE id = $1`,
+    [campId]
+  );
+
+  return { patientId, uhid, entry, campName: camp.rows[0].camp_name };
+}
+
 export default {
   ensureKioskRegistrationTables,
   createRegistrationInvite,
@@ -755,4 +995,9 @@ export default {
   markKioskPhoneVerified,
   isKioskPhoneVerified,
   resolveOrgDisplayName,
+  findOrCreateWalkInPatient,
+  listKioskDoctors,
+  bookKioskAppointment,
+  listKioskCamps,
+  registerKioskCamp,
 };

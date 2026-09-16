@@ -22,6 +22,10 @@ import {
   lookupWalkInPatient,
   sendKioskPhoneOtp,
   verifyKioskPhoneOtp,
+  listKioskDoctors,
+  bookKioskAppointment,
+  listKioskCamps,
+  registerKioskCamp,
 } from '../services/kiosk-registration.service.js';
 import { Op } from 'sequelize';
 
@@ -114,6 +118,91 @@ router.post('/verify-otp', async (req, res) => {
     res.json({ success: true, message: 'Phone verified' });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * GET /api/display/kiosk/doctors
+ * Doctors at this clinic/hospital, with today's live queue load, for the
+ * "see a doctor" purpose step.
+ */
+router.get('/doctors', async (req, res) => {
+  try {
+    const doctors = await listKioskDoctors(req.organizationId);
+    res.json({ success: true, doctors });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /api/display/kiosk/book-appointment
+ * Book a real appointment (not a walk-in token) for a chosen doctor + slot.
+ * Body mirrors /register plus { doctorId, appointmentDate, appointmentTime, reason? }.
+ */
+router.post('/book-appointment', async (req, res) => {
+  try {
+    const {
+      phone, firstName, lastName, age, gender: genderRaw, email,
+      corporateName, employeeId, doctorId, appointmentDate, appointmentTime,
+      reason, requireOtpForNewPatient,
+    } = req.body || {};
+    const result = await bookKioskAppointment({
+      organizationId: req.organizationId,
+      phone, firstName, lastName, age, gender: genderRaw, email,
+      corporateName, employeeId, doctorId, appointmentDate, appointmentTime, reason,
+      requireOtpForNewPatient: requireOtpForNewPatient === true || requireOtpForNewPatient === 'true',
+    });
+    res.status(201).json({ success: true, ...result });
+  } catch (e) {
+    const status = e.status || 500;
+    res.status(status).json({ success: false, message: e.message, conflict: e.conflict || null });
+  }
+});
+
+/**
+ * GET /api/display/kiosk/camps
+ * Health camps happening today or upcoming at this tenant, for the
+ * "attending a camp" purpose step.
+ */
+router.get('/camps', async (req, res) => {
+  try {
+    const camps = await listKioskCamps(req.organizationId);
+    res.json({ success: true, camps });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /api/display/kiosk/camps/:campId/register
+ * Body mirrors /register: { phone, firstName, lastName, age, gender, email,
+ * corporateName, employeeId, notifyOptIn, requireOtpForNewPatient }.
+ */
+router.post('/camps/:campId/register', async (req, res) => {
+  try {
+    const {
+      phone, firstName, lastName, age, gender: genderRaw, email,
+      corporateName, employeeId, notifyOptIn, requireOtpForNewPatient,
+    } = req.body || {};
+    const campId = parseInt(req.params.campId, 10);
+    const result = await registerKioskCamp({
+      organizationId: req.organizationId,
+      campId, phone, firstName, lastName, age, gender: genderRaw, email,
+      corporateName, employeeId, notifyOptIn,
+      requireOtpForNewPatient: requireOtpForNewPatient === true || requireOtpForNewPatient === 'true',
+    });
+    res.status(201).json({
+      success: true,
+      patientId: result.patientId,
+      uhid: result.uhid,
+      entry: result.entry,
+      token: result.entry,
+      campName: result.campName,
+    });
+  } catch (e) {
+    const status = e.status || 500;
+    res.status(status).json({ success: false, message: e.message });
   }
 });
 

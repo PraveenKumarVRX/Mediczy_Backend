@@ -7,6 +7,10 @@ import { displayDeviceHeaders, getDisplayDeviceToken } from '@/utils/displayDevi
 type Step =
   | 'idle'
   | 'choose'
+  | 'purpose'
+  | 'doctor-select'
+  | 'doctor-slot'
+  | 'camp-select'
   | 'register-form'
   | 'register-otp'
   | 'scan-aadhaar'
@@ -15,6 +19,9 @@ type Step =
   | 'select-appointment'
   | 'confirm-appointment'
   | 'token-issued';
+
+type Purpose = 'doctor' | 'camp' | 'general';
+type DoctorMode = 'walkin' | 'slot';
 
 interface Appointment {
   id: string;
@@ -37,6 +44,38 @@ interface IssuedToken {
   queue_zone?: string;
   specialization?: string | null;
   whatsapp?: boolean;
+  isBooking?: boolean;
+  appointmentDate?: string;
+  appointmentTime?: string;
+  campName?: string;
+}
+
+interface KioskDoctor {
+  id: number;
+  firstName: string;
+  lastName: string;
+  specialization: string;
+  qualifications: string[];
+  slotDuration: number;
+  waitingCount: number;
+}
+
+interface KioskCamp {
+  id: number;
+  camp_name: string;
+  camp_type: string;
+  address: string;
+  start_date: string;
+  end_date: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+}
+
+interface SlotOption {
+  time: string;
+  available: boolean;
+  blocked: boolean;
 }
 
 interface AadhaarFields {
@@ -111,6 +150,18 @@ export default function SelfCheckinKiosk() {
   const [otpCode, setOtpCode] = useState('');
   const [otpChannel, setOtpChannel] = useState<'whatsapp' | 'sms'>('whatsapp');
   const [otpSentVia, setOtpSentVia] = useState<'whatsapp' | 'sms'>('whatsapp');
+  const [purpose, setPurpose] = useState<Purpose | null>(null);
+  const [doctors, setDoctors] = useState<KioskDoctor[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [selectedDoctor, setSelectedDoctor] = useState<KioskDoctor | null>(null);
+  const [doctorMode, setDoctorMode] = useState<DoctorMode | null>(null);
+  const [slotDateOffset, setSlotDateOffset] = useState(0);
+  const [slots, setSlots] = useState<{ online: SlotOption[]; inPerson: SlotOption[] } | null>(null);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [camps, setCamps] = useState<KioskCamp[]>([]);
+  const [campsLoading, setCampsLoading] = useState(false);
+  const [selectedCamp, setSelectedCamp] = useState<KioskCamp | null>(null);
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selected, setSelected] = useState<Appointment | null>(null);
@@ -143,6 +194,13 @@ export default function SelfCheckinKiosk() {
     setConsent(false);
     setNotifyOptIn(true);
     setLoading(false);
+    setPurpose(null);
+    setSelectedDoctor(null);
+    setDoctorMode(null);
+    setSlotDateOffset(0);
+    setSlots(null);
+    setSelectedSlot(null);
+    setSelectedCamp(null);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -187,8 +245,56 @@ export default function SelfCheckinKiosk() {
     setRegForm((f) => ({ ...f, [key]: value }));
   };
 
-  function issueFromRegisterResponse(json: {
+  const slotDateStr = (offset: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  };
+
+  const loadDoctors = async () => {
+    setDoctorsLoading(true);
+    try {
+      const res = await fetch('/api/display/kiosk/doctors', { headers: displayDeviceHeaders() });
+      const json = await res.json();
+      if (json.success) setDoctors(json.doctors || []);
+    } catch {
+      /* leave list empty, user can go back */
+    } finally {
+      setDoctorsLoading(false);
+    }
+  };
+
+  const loadCamps = async () => {
+    setCampsLoading(true);
+    try {
+      const res = await fetch('/api/display/kiosk/camps', { headers: displayDeviceHeaders() });
+      const json = await res.json();
+      if (json.success) setCamps(json.camps || []);
+    } catch {
+      /* leave list empty */
+    } finally {
+      setCampsLoading(false);
+    }
+  };
+
+  const loadSlots = async (doctorId: number, offset: number) => {
+    setSlotsLoading(true);
+    setSelectedSlot(null);
+    try {
+      const res = await fetch(`/api/doctors/${doctorId}/user-slots?date=${slotDateStr(offset)}`);
+      const json = await res.json();
+      if (json.success) setSlots(json.slots);
+    } catch {
+      setSlots(null);
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  /** Unified confirmation handler for all three purposes: queue token, booked appointment, or camp registration. */
+  function completeAndIssue(json: {
     success?: boolean;
+    message?: string;
     token?: { tokenNumber?: string };
     entry?: {
       tokenNumber?: string;
@@ -198,21 +304,40 @@ export default function SelfCheckinKiosk() {
       queueZone?: string;
     };
     uhid?: string;
-    message?: string;
-  }) {
+    campName?: string;
+    appointment?: { doctorName?: string; appointmentDate?: string; appointmentTime?: string };
+  }, kind: 'queue' | 'booking' | 'camp') {
     if (!json.success) {
-      setError(json.message || 'Registration failed.');
+      setError(json.message || 'Something went wrong. Please try again.');
       return false;
+    }
+    if (kind === 'booking') {
+      const appt = json.appointment;
+      const issued: IssuedToken = {
+        token_number: '',
+        patient_name: regForm.name.trim(),
+        doctor_name: appt?.doctorName || (selectedDoctor ? `Dr. ${selectedDoctor.firstName} ${selectedDoctor.lastName}` : ''),
+        issued_at: new Date().toISOString(),
+        isBooking: true,
+        appointmentDate: appt?.appointmentDate,
+        appointmentTime: appt?.appointmentTime,
+        whatsapp: notifyOptIn,
+      };
+      setToken(issued);
+      setStep('token-issued');
+      setTimeout(resetToIdle, 45000);
+      return true;
     }
     const issued: IssuedToken = {
       token_number: json.token?.tokenNumber || json.entry?.tokenNumber || '',
       patient_name: regForm.name.trim(),
-      doctor_name: json.entry?.doctorName || 'General OPD',
+      doctor_name: json.entry?.doctorName || (kind === 'camp' ? '' : 'General OPD'),
       issued_at: new Date().toISOString(),
       estimated_wait_minutes: json.entry?.estimatedWaitMinutes,
       uhid: json.uhid,
       counter_id: json.entry?.counterId,
       queue_zone: json.entry?.queueZone,
+      campName: kind === 'camp' ? json.campName : undefined,
       whatsapp: notifyOptIn,
     };
     setToken(issued);
@@ -222,26 +347,56 @@ export default function SelfCheckinKiosk() {
     return true;
   }
 
-  const registerNow = async (opts: { requireOtpForNewPatient: boolean }) => {
+  /** Runs the right kiosk action for the chosen purpose once the person is looked up / OTP-verified. */
+  const completeForPurpose = async (opts: { requireOtpForNewPatient: boolean }): Promise<{ json: Record<string, unknown>; kind: 'queue' | 'booking' | 'camp' }> => {
+    const basePatient = {
+      phone: regForm.phone,
+      firstName: regForm.name.trim(),
+      age: regForm.age || null,
+      gender: regForm.gender,
+      email: regForm.email || null,
+      corporateName: regForm.isCorporate ? regForm.corporateName.trim() : null,
+      employeeId: regForm.isCorporate ? regForm.employeeId.trim() : null,
+      requireOtpForNewPatient: opts.requireOtpForNewPatient,
+    };
+
+    if (purpose === 'doctor' && doctorMode === 'slot' && selectedDoctor && selectedSlot) {
+      const res = await fetch('/api/display/kiosk/book-appointment', {
+        method: 'POST',
+        headers: displayDeviceHeaders(),
+        body: JSON.stringify({
+          ...basePatient,
+          doctorId: selectedDoctor.id,
+          appointmentDate: slotDateStr(slotDateOffset),
+          appointmentTime: selectedSlot,
+        }),
+      });
+      return { json: await res.json(), kind: 'booking' };
+    }
+
+    if (purpose === 'camp' && selectedCamp) {
+      const res = await fetch(`/api/display/kiosk/camps/${selectedCamp.id}/register`, {
+        method: 'POST',
+        headers: displayDeviceHeaders(),
+        body: JSON.stringify({ ...basePatient, notifyOptIn }),
+      });
+      return { json: await res.json(), kind: 'camp' };
+    }
+
+    // Doctor walk-in (join queue now) or general visit — both use the same check-in endpoint.
     const res = await fetch('/api/display/kiosk/register', {
       method: 'POST',
       headers: displayDeviceHeaders(),
       body: JSON.stringify({
-        phone: regForm.phone,
-        firstName: regForm.name.trim(),
-        age: regForm.age || null,
-        gender: regForm.gender,
-        email: regForm.email || null,
-        corporateName: regForm.isCorporate ? regForm.corporateName.trim() : null,
-        employeeId: regForm.isCorporate ? regForm.employeeId.trim() : null,
+        ...basePatient,
         consentVersion: 'kiosk-selfreg-v1',
         notifyOptIn,
         notifyPhone: regForm.phone,
-        requireOtpForNewPatient: opts.requireOtpForNewPatient,
+        doctorId: purpose === 'doctor' && selectedDoctor ? selectedDoctor.id : undefined,
+        doctorName: purpose === 'doctor' && selectedDoctor ? `${selectedDoctor.firstName} ${selectedDoctor.lastName}`.trim() : undefined,
       }),
     });
-    const json = await res.json();
-    return json;
+    return { json: await res.json(), kind: 'queue' };
   };
 
   /** Step 1: validate the form, then look up whether this person already has a record. */
@@ -277,9 +432,9 @@ export default function SelfCheckinKiosk() {
       const lookup = await lookupRes.json();
 
       if (lookup.success && lookup.found) {
-        // Existing record — complete check-in immediately, no OTP needed.
-        const json = await registerNow({ requireOtpForNewPatient: false });
-        issueFromRegisterResponse(json);
+        // Existing record — complete right away, no OTP needed.
+        const { json, kind } = await completeForPurpose({ requireOtpForNewPatient: false });
+        completeAndIssue(json, kind);
         return;
       }
 
@@ -305,10 +460,10 @@ export default function SelfCheckinKiosk() {
     }
   };
 
-  /** Step 2 (new patients only): verify the WhatsApp OTP, then complete registration. */
+  /** Step 2 (new patients only): verify the WhatsApp/SMS OTP, then complete the chosen action. */
   const verifyOtpAndRegister = async () => {
     if (otpCode.length !== 6) {
-      setError('Enter the 6-digit code sent on WhatsApp.');
+      setError('Enter the 6-digit code we sent you.');
       return;
     }
     setLoading(true);
@@ -324,8 +479,8 @@ export default function SelfCheckinKiosk() {
         setError(verifyJson.message || 'Incorrect code. Please try again.');
         return;
       }
-      const json = await registerNow({ requireOtpForNewPatient: true });
-      issueFromRegisterResponse(json);
+      const { json, kind } = await completeForPurpose({ requireOtpForNewPatient: true });
+      completeAndIssue(json, kind);
     } catch {
       setError('Connection error. Please try again.');
     } finally {
@@ -603,14 +758,14 @@ export default function SelfCheckinKiosk() {
                 setError(null);
                 setRegForm(EMPTY_REGISTER_FORM);
                 setConsent(false);
-                setStep('register-form');
+                setStep('purpose');
                 resetIdleTimer();
               }}
               className="group w-full rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-900/80 to-slate-900 px-6 py-8 text-left transition hover:border-teal-400/60 hover:from-teal-800/90"
             >
               <p className="text-2xl font-bold text-white">Register now</p>
               <p className="mt-2 text-base text-teal-100/70">
-                Name, age, gender & mobile — takes under a minute
+                Takes under a minute — we’ll ask what brings you in first
               </p>
             </button>
 
@@ -648,6 +803,282 @@ export default function SelfCheckinKiosk() {
           </div>
         )}
 
+        {step === 'purpose' && (
+          <div className="w-full max-w-xl space-y-5">
+            <div className="text-center mb-2">
+              <h2 className="text-2xl md:text-3xl font-semibold text-white">What brings you in today?</h2>
+              <p className="mt-2 text-slate-400">This helps us get you to the right place</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setPurpose('doctor');
+                setSelectedDoctor(null);
+                setDoctorMode(null);
+                setStep('doctor-select');
+                resetIdleTimer();
+                void loadDoctors();
+              }}
+              className="w-full rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-900/80 to-slate-900 px-6 py-7 text-left transition hover:border-teal-400/60"
+            >
+              <p className="text-xl font-bold text-white">See a doctor</p>
+              <p className="mt-1.5 text-sm text-teal-100/70">Walk in now, or book a specific time</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setPurpose('camp');
+                setSelectedCamp(null);
+                setStep('camp-select');
+                resetIdleTimer();
+                void loadCamps();
+              }}
+              className="w-full rounded-3xl border border-sky-500/25 bg-gradient-to-br from-sky-950/80 to-slate-900 px-6 py-7 text-left transition hover:border-sky-400/50"
+            >
+              <p className="text-xl font-bold text-white">Attending a health camp</p>
+              <p className="mt-1.5 text-sm text-sky-100/70">Register for a screening or wellness camp</p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setPurpose('general');
+                setRegForm(EMPTY_REGISTER_FORM);
+                setConsent(false);
+                setStep('register-form');
+                resetIdleTimer();
+              }}
+              className="w-full rounded-3xl border border-slate-700 bg-slate-900/60 px-6 py-6 text-left transition hover:border-slate-500"
+            >
+              <p className="text-lg font-semibold text-white">General visit / other</p>
+              <p className="mt-1 text-sm text-slate-400">Not sure, or something else — register anyway</p>
+            </button>
+
+            <button type="button" onClick={() => setStep('choose')} className="w-full py-2 text-center text-sm text-slate-500">
+              ← Back
+            </button>
+          </div>
+        )}
+
+        {step === 'doctor-select' && (
+          <div className="w-full max-w-xl space-y-4">
+            <div className="text-center mb-2">
+              <h2 className="text-2xl md:text-3xl font-semibold text-white">Choose your doctor</h2>
+              <p className="mt-2 text-slate-400">{brand}</p>
+            </div>
+
+            {doctorsLoading ? (
+              <p className="py-10 text-center text-slate-500">Loading doctors…</p>
+            ) : doctors.length === 0 ? (
+              <div className="rounded-3xl border border-slate-700/80 bg-slate-900/60 p-6 text-center">
+                <p className="text-slate-300">No doctors are available for booking right now.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPurpose('general');
+                    setRegForm(EMPTY_REGISTER_FORM);
+                    setConsent(false);
+                    setStep('register-form');
+                    resetIdleTimer();
+                  }}
+                  className="mt-4 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold hover:bg-teal-500"
+                >
+                  Continue as general visit
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {doctors.map((doc) => (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDoctor(doc);
+                      setDoctorMode(null);
+                      setStep('doctor-slot');
+                      resetIdleTimer();
+                    }}
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-800/80 p-5 text-left transition hover:border-teal-400/50 hover:bg-slate-800"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-bold text-white">Dr. {doc.firstName} {doc.lastName}</p>
+                        <p className="text-sm text-teal-300/90">{doc.specialization}</p>
+                        {doc.qualifications?.length > 0 && (
+                          <p className="mt-0.5 text-xs text-slate-500">{doc.qualifications.join(', ')}</p>
+                        )}
+                      </div>
+                      <span className="shrink-0 rounded-full bg-slate-700/80 px-3 py-1 text-xs font-semibold text-slate-300">
+                        {doc.waitingCount > 0 ? `${doc.waitingCount} waiting` : 'No wait'}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button type="button" onClick={() => setStep('purpose')} className="w-full py-2 text-center text-sm text-slate-500">
+              ← Back
+            </button>
+          </div>
+        )}
+
+        {step === 'doctor-slot' && selectedDoctor && (
+          <div className="w-full max-w-xl space-y-4">
+            <div className="text-center mb-2">
+              <h2 className="text-2xl md:text-3xl font-semibold text-white">
+                Dr. {selectedDoctor.firstName} {selectedDoctor.lastName}
+              </h2>
+              <p className="mt-1 text-slate-400">{selectedDoctor.specialization}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setDoctorMode('walkin');
+                setRegForm(EMPTY_REGISTER_FORM);
+                setConsent(false);
+                setStep('register-form');
+                resetIdleTimer();
+              }}
+              className="w-full rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-900/80 to-slate-900 px-6 py-6 text-left transition hover:border-teal-400/60"
+            >
+              <p className="text-lg font-bold text-white">See them now — join the queue</p>
+              <p className="mt-1 text-sm text-teal-100/70">
+                {selectedDoctor.waitingCount > 0 ? `${selectedDoctor.waitingCount} people waiting` : 'No one waiting right now'}
+              </p>
+            </button>
+
+            <div className="rounded-3xl border border-slate-700/80 bg-slate-900/60 p-5">
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-base font-semibold text-white">Or book a specific time</p>
+                <div className="flex gap-2">
+                  {[0, 1].map((offset) => (
+                    <button
+                      key={offset}
+                      type="button"
+                      onClick={() => {
+                        setSlotDateOffset(offset);
+                        void loadSlots(selectedDoctor.id, offset);
+                      }}
+                      className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition ${
+                        slotDateOffset === offset ? 'bg-teal-600 text-white' : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {offset === 0 ? 'Today' : 'Tomorrow'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {slots === null && !slotsLoading && (
+                <button
+                  type="button"
+                  onClick={() => void loadSlots(selectedDoctor.id, slotDateOffset)}
+                  className="w-full rounded-xl border border-slate-700 py-3 text-sm text-slate-400 hover:text-slate-200"
+                >
+                  Show available times
+                </button>
+              )}
+              {slotsLoading && <p className="py-6 text-center text-sm text-slate-500">Loading times…</p>}
+              {slots && !slotsLoading && (
+                slots.inPerson.filter((s) => s.available).length === 0 ? (
+                  <p className="py-4 text-center text-sm text-slate-500">No open slots {slotDateOffset === 0 ? 'today' : 'tomorrow'}.</p>
+                ) : (
+                  <div className="grid grid-cols-3 gap-2">
+                    {slots.inPerson.filter((s) => s.available).map((s) => (
+                      <button
+                        key={s.time}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSlot(s.time);
+                          setDoctorMode('slot');
+                          setRegForm(EMPTY_REGISTER_FORM);
+                          setConsent(false);
+                          setStep('register-form');
+                          resetIdleTimer();
+                        }}
+                        className="rounded-xl bg-slate-800 py-2.5 text-xs font-semibold text-slate-200 transition hover:bg-teal-700 hover:text-white"
+                      >
+                        {s.time.split(' - ')[0]}
+                      </button>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+
+            <button type="button" onClick={() => setStep('doctor-select')} className="w-full py-2 text-center text-sm text-slate-500">
+              ← Choose a different doctor
+            </button>
+          </div>
+        )}
+
+        {step === 'camp-select' && (
+          <div className="w-full max-w-xl space-y-4">
+            <div className="text-center mb-2">
+              <h2 className="text-2xl md:text-3xl font-semibold text-white">Choose a camp</h2>
+              <p className="mt-2 text-slate-400">{brand}</p>
+            </div>
+
+            {campsLoading ? (
+              <p className="py-10 text-center text-slate-500">Loading camps…</p>
+            ) : camps.length === 0 ? (
+              <div className="rounded-3xl border border-slate-700/80 bg-slate-900/60 p-6 text-center">
+                <p className="text-slate-300">No camps are scheduled right now.</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPurpose('general');
+                    setRegForm(EMPTY_REGISTER_FORM);
+                    setConsent(false);
+                    setStep('register-form');
+                    resetIdleTimer();
+                  }}
+                  className="mt-4 rounded-xl bg-teal-600 px-5 py-2.5 text-sm font-semibold hover:bg-teal-500"
+                >
+                  Continue as general visit
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {camps.map((camp) => (
+                  <button
+                    key={camp.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedCamp(camp);
+                      setRegForm(EMPTY_REGISTER_FORM);
+                      setConsent(false);
+                      setStep('register-form');
+                      resetIdleTimer();
+                    }}
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-800/80 p-5 text-left transition hover:border-sky-400/50 hover:bg-slate-800"
+                  >
+                    <p className="text-lg font-bold text-white">{camp.camp_name}</p>
+                    <p className="mt-1 text-sm text-sky-300/90 capitalize">{camp.camp_type?.replace(/_/g, ' ')}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {new Date(camp.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {' – '}
+                      {new Date(camp.end_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      {camp.address ? ` · ${camp.address}` : ''}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <button type="button" onClick={() => setStep('purpose')} className="w-full py-2 text-center text-sm text-slate-500">
+              ← Back
+            </button>
+          </div>
+        )}
+
         {step === 'register-form' && (
           <div className="w-full max-w-lg space-y-4">
             <div className="text-center">
@@ -659,6 +1090,19 @@ export default function SelfCheckinKiosk() {
               </h2>
               <p className="mt-2 text-sm text-slate-400">We’ll check if you’re already registered with us</p>
             </div>
+
+            {purpose === 'doctor' && selectedDoctor && (
+              <div className="rounded-2xl border border-teal-700/50 bg-teal-950/40 px-4 py-3 text-center text-sm text-teal-200">
+                {doctorMode === 'slot' && selectedSlot
+                  ? <>Booking with <b>Dr. {selectedDoctor.firstName} {selectedDoctor.lastName}</b> — {slotDateOffset === 0 ? 'today' : 'tomorrow'} at {selectedSlot.split(' - ')[0]}</>
+                  : <>Joining <b>Dr. {selectedDoctor.firstName} {selectedDoctor.lastName}</b>'s queue now</>}
+              </div>
+            )}
+            {purpose === 'camp' && selectedCamp && (
+              <div className="rounded-2xl border border-sky-700/50 bg-sky-950/40 px-4 py-3 text-center text-sm text-sky-200">
+                Registering for <b>{selectedCamp.camp_name}</b>
+              </div>
+            )}
 
             <div className="space-y-3 rounded-3xl border border-slate-700/80 bg-slate-900/70 p-5">
               <KioskField
@@ -786,9 +1230,23 @@ export default function SelfCheckinKiosk() {
               onClick={() => void submitRegisterForm()}
               className="w-full rounded-2xl bg-teal-600 py-4 text-xl font-bold hover:bg-teal-500 disabled:opacity-50"
             >
-              {loading ? 'Checking…' : 'Continue'}
+              {loading
+                ? 'Checking…'
+                : purpose === 'doctor' && doctorMode === 'slot'
+                  ? 'Confirm booking'
+                  : purpose === 'camp'
+                    ? 'Register for camp'
+                    : 'Continue'}
             </button>
-            <button type="button" onClick={() => setStep('choose')} className="w-full py-2 text-sm text-slate-500">
+            <button
+              type="button"
+              onClick={() => {
+                if (purpose === 'doctor') setStep(selectedDoctor ? 'doctor-slot' : 'doctor-select');
+                else if (purpose === 'camp') setStep('camp-select');
+                else setStep('purpose');
+              }}
+              className="w-full py-2 text-sm text-slate-500"
+            >
               ← Back
             </button>
           </div>
@@ -1044,26 +1502,54 @@ export default function SelfCheckinKiosk() {
             >
               {brand}
             </p>
-            <h2 className="mt-2 text-3xl font-semibold text-white">You’re checked in</h2>
-            <div className="my-5 font-mono text-7xl font-black tracking-wider text-teal-300 md:text-8xl">
-              {token.token_number}
-            </div>
-            {token.doctor_name && <p className="mb-1 text-xl text-teal-100">{token.doctor_name}</p>}
-            {token.specialization && <p className="mb-2 text-slate-400">OPD · {token.specialization}</p>}
-            {token.counter_id && <p className="mb-2 text-slate-300">Counter / Room: {token.counter_id}</p>}
-            {token.uhid && <p className="mb-2 text-slate-400">UHID: {token.uhid}</p>}
-            {token.estimated_wait_minutes != null && (
-              <p className="mb-2 text-teal-200">Estimated wait: ~{token.estimated_wait_minutes} min</p>
+
+            {token.isBooking ? (
+              <>
+                <h2 className="mt-2 text-3xl font-semibold text-white">Appointment confirmed</h2>
+                <div className="my-6 rounded-3xl border border-teal-700/50 bg-teal-950/40 px-6 py-6">
+                  <p className="text-xl font-bold text-teal-100">{token.doctor_name}</p>
+                  <p className="mt-2 font-mono text-3xl font-black text-teal-300">
+                    {token.appointmentTime?.split(' - ')[0] || token.appointmentTime}
+                  </p>
+                  <p className="mt-1 text-sm text-teal-200">
+                    {token.appointmentDate
+                      ? new Date(token.appointmentDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })
+                      : ''}
+                  </p>
+                </div>
+                <p className="mb-6 text-slate-400">
+                  Arrive 10 minutes early. {token.whatsapp ? "We'll send a reminder on WhatsApp/SMS." : ''}
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="mt-2 text-3xl font-semibold text-white">
+                  {token.campName ? `Registered — ${token.campName}` : "You're checked in"}
+                </h2>
+                <div className="my-5 font-mono text-7xl font-black tracking-wider text-teal-300 md:text-8xl">
+                  {token.token_number}
+                </div>
+                {token.doctor_name && <p className="mb-1 text-xl text-teal-100">{token.doctor_name}</p>}
+                {token.specialization && <p className="mb-2 text-slate-400">OPD · {token.specialization}</p>}
+                {token.counter_id && <p className="mb-2 text-slate-300">Counter / Room: {token.counter_id}</p>}
+                {token.uhid && <p className="mb-2 text-slate-400">UHID: {token.uhid}</p>}
+                {token.estimated_wait_minutes != null && (
+                  <p className="mb-2 text-teal-200">Estimated wait: ~{token.estimated_wait_minutes} min</p>
+                )}
+                <p className="mb-6 text-slate-400">Please wait in the lounge. Your token will be announced.</p>
+              </>
             )}
-            <p className="mb-6 text-slate-400">Please wait in the lounge. Your token will be announced.</p>
+
             <div className="flex justify-center gap-4">
-              <button
-                type="button"
-                onClick={() => printToken(token)}
-                className="rounded-xl bg-sky-800 px-6 py-3"
-              >
-                Print slip
-              </button>
+              {!token.isBooking && (
+                <button
+                  type="button"
+                  onClick={() => printToken(token)}
+                  className="rounded-xl bg-sky-800 px-6 py-3"
+                >
+                  Print slip
+                </button>
+              )}
               <button type="button" onClick={resetToIdle} className="rounded-xl bg-slate-700 px-6 py-3">
                 Done
               </button>
