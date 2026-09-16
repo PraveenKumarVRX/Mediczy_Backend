@@ -17,6 +17,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { COOKIE_NAMES } from '../config/cookies.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
+import { getDoctorSignatureDataUri } from '../services/doctor-signature.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import * as prescriptionRepository from '../repositories/prescription.repository.js';
@@ -45,8 +46,14 @@ const renderPrescriptionHTML = (prescription) => {
   const templatePath = path.join(__dirname, '../templates/documents/prescription-template.html');
   let template = fs.readFileSync(templatePath, 'utf-8');
 
+  const signatureDataUri = getDoctorSignatureDataUri(prescription.doctorId);
+  const signatureSlot = signatureDataUri
+    ? `<img src="${signatureDataUri}" class="signature-img" alt="Signature" />`
+    : '<div class="signature-line"></div>';
+
   // Basic replacements
   const replacements = {
+    '{{signatureSlot}}': signatureSlot,
     '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'Mediczy Healthcare',
     '{{clinicAddress}}': prescription.clinicAddress || prescription.clinicDetails?.address || 'Virtual Consultation Platform',
     '{{clinicPhone}}': prescription.clinicPhone || prescription.clinicDetails?.phone || '+91-XXX-XXX-XXXX',

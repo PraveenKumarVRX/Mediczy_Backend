@@ -160,6 +160,7 @@ router.post('/fitness-certificate', authClinicDoctor, async (req, res) => {
     });
 
     await generateFitnessCertificatePdf(cert, {
+      doctorId: doctor.id,
       doctorQualifications: doctor.qualifications,
       doctorSpecialty: doctor.specialization,
       clinicName: doctor.clinicName,

@@ -8,6 +8,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getDoctorSignatureDataUri } from './doctor-signature.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,7 +47,7 @@ function renderConditionalBlock(template, key, value) {
 /**
  * @param {object} cert - a row from fitness_certificates (as returned by issueFitnessCertificate)
  * @param {object} [letterhead] - issuer context not stored flat on the cert row:
- *   { doctorQualifications, doctorSpecialty, clinicName, clinicAddress, clinicPhone }
+ *   { doctorQualifications, doctorSpecialty, clinicName, clinicAddress, clinicPhone, doctorId }
  */
 export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
   ensureDir();
@@ -54,7 +55,13 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
 
   let html = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
+  const signatureDataUri = getDoctorSignatureDataUri(letterhead.doctorId);
+  const signatureSlot = signatureDataUri
+    ? `<img src="${signatureDataUri}" class="signature-img" alt="Signature" />`
+    : '<div class="signature-line"></div>';
+
   const replacements = {
+    '{{signatureSlot}}': signatureSlot,
     '{{certificateId}}': cert.id,
     '{{issuedDate}}': fmtDate(cert.signed_at || cert.created_at),
     '{{patientName}}': cert.patient_name || '—',

@@ -197,15 +197,24 @@
         }
         .signature-block {
             text-align: center;
-            width: 220px;
+            width: 230px;
         }
         .signature-line {
             border-bottom: 1.4px solid #78716c;
             height: 34px;
         }
-        .signature-block .sig-name { font-size: 12px; font-weight: 700; color: #0f172a; margin-top: 6px; }
-        .signature-block .sig-quals { font-size: 10.5px; color: #57534e; }
-        .signature-block .sig-reg { font-size: 10.5px; color: #78716c; }
+        .signature-img { height: 46px; max-width: 210px; object-fit: contain; display: block; margin: 0 auto; }
+        .doctor-stamp {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 6px 16px;
+            border: 1.5px solid #1e3a8a;
+            border-radius: 5px;
+            transform: rotate(-2.5deg);
+            color: #1e3a8a;
+        }
+        .doctor-stamp .stamp-name { font-size: 12px; font-weight: 700; }
+        .doctor-stamp .stamp-line { font-size: 9.5px; line-height: 1.4; }
 
         .clinic-footer {
             margin-top: 22px;
@@ -342,11 +351,13 @@
         <div class="footer">
             <div class="signature-row">
                 <div class="signature-block">
-                    <div class="signature-line"></div>
-                    <div class="sig-name">Dr. {{doctorName}}</div>
-                    <div class="sig-quals">{{doctorQualifications}}</div>
-                    <div class="sig-quals">{{doctorSpecialty}}</div>
-                    <div class="sig-reg">Reg No. {{doctorRegNo}}</div>
+                    {{signatureSlot}}
+                    <div class="doctor-stamp">
+                        <div class="stamp-name">Dr. {{doctorName}}</div>
+                        <div class="stamp-line">{{doctorQualifications}}</div>
+                        <div class="stamp-line">{{doctorSpecialty}}</div>
+                        <div class="stamp-line">Reg No. {{doctorRegNo}}</div>
+                    </div>
                 </div>
             </div>
 
