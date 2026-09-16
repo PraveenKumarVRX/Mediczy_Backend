@@ -10,9 +10,25 @@ import { parseAadhaarQrInput } from './aadhaar-qr.service.js';
 import { cache } from '../db/redis.js';
 import OTP from '../models/otp.model.intelligent.js';
 import twilioOtpService from './twilio-otp.service.js';
+import { SMSService, SMSTemplateManager } from './sms.service.js';
 
 const KIOSK_OTP_PURPOSE = 'kiosk-selfcheckin';
 const KIOSK_OTP_VERIFIED_TTL_SEC = 600; // 10 min — long enough to finish the register form
+
+let kioskSmsService = null;
+function getKioskSmsService() {
+  if (kioskSmsService) return kioskSmsService;
+  const apiKey = process.env.SMS_API_KEY || process.env.TWILIO_ACCOUNT_SID;
+  const apiSecret = process.env.SMS_API_SECRET || process.env.TWILIO_AUTH_TOKEN;
+  if (!apiKey || !apiSecret) return null;
+  kioskSmsService = new SMSService({
+    provider: process.env.SMS_PROVIDER || 'twilio',
+    apiKey,
+    apiSecret,
+    senderId: process.env.SMS_SENDER_ID || process.env.TWILIO_PHONE_NUMBER || 'MEDICZY',
+  });
+  return kioskSmsService;
+}
 
 const INVITE_TTL_MIN = parseInt(process.env.KIOSK_REG_INVITE_TTL_MIN || '30', 10);
 const APP_BASE =
@@ -104,19 +120,34 @@ export async function isKioskPhoneVerified(phone) {
   return Boolean(await cache.get(otpVerifiedKey(phone)));
 }
 
-/** Send a WhatsApp OTP to a new walk-in's phone before creating their record. */
-export async function sendKioskPhoneOtp(phone) {
+/** Send a WhatsApp or SMS OTP to a new walk-in's phone before creating their record. */
+export async function sendKioskPhoneOtp(phone, channel = 'whatsapp') {
   const normalizedPhone = normalizePhone10(phone);
   if (!/^\d{10}$/.test(normalizedPhone)) {
     throw Object.assign(new Error('Enter a valid 10-digit mobile number'), { status: 400 });
   }
   const otp = await OTP.generate({ phone: normalizedPhone, purpose: KIOSK_OTP_PURPOSE, expiryMinutes: 10 });
-  if (twilioOtpService.disabled) {
+  const devCode = process.env.NODE_ENV !== 'production' ? otp.code : undefined;
+
+  if (channel === 'sms') {
+    const sms = getKioskSmsService();
+    if (!sms) {
+      return { sent: false, channel, reason: 'SMS OTP is not configured on this environment', devCode };
+    }
+    const result = await sms.sendSMS({
+      to: `+91${normalizedPhone}`,
+      message: SMSTemplateManager.renderTemplate('otp_verification', { otp: otp.code }),
+    });
     return {
-      sent: false,
-      reason: 'WhatsApp OTP is not configured on this environment',
-      devCode: process.env.NODE_ENV !== 'production' ? otp.code : undefined,
+      sent: result.success === true,
+      channel,
+      reason: result.success ? null : result.error || 'Could not send SMS OTP',
+      devCode,
     };
+  }
+
+  if (twilioOtpService.disabled) {
+    return { sent: false, channel: 'whatsapp', reason: 'WhatsApp OTP is not configured on this environment', devCode };
   }
   const result = await twilioOtpService.sendWhatsAppOTP({
     phone: normalizedPhone,
@@ -125,8 +156,9 @@ export async function sendKioskPhoneOtp(phone) {
   });
   return {
     sent: result.success === true,
+    channel: 'whatsapp',
     reason: result.success ? null : result.message || 'Could not send WhatsApp OTP',
-    devCode: process.env.NODE_ENV !== 'production' ? otp.code : undefined,
+    devCode,
   };
 }
 

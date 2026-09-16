@@ -81,17 +81,19 @@ router.post('/lookup', async (req, res) => {
 
 /**
  * POST /api/display/kiosk/send-otp
- * Body: { phone } — WhatsApp OTP for a brand-new walk-in, before we create their record.
+ * Body: { phone, channel? } — 'whatsapp' (default) or 'sms', for a brand-new
+ * walk-in, before we create their record.
  */
 router.post('/send-otp', async (req, res) => {
   try {
-    const { phone } = req.body || {};
+    const { phone, channel } = req.body || {};
     if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
-    const result = await sendKioskPhoneOtp(phone);
+    const normalizedChannel = channel === 'sms' ? 'sms' : 'whatsapp';
+    const result = await sendKioskPhoneOtp(phone, normalizedChannel);
     if (!result.sent) {
       return res.status(502).json({ success: false, message: result.reason || 'Could not send OTP', devCode: result.devCode });
     }
-    res.json({ success: true, message: 'OTP sent via WhatsApp', devCode: result.devCode });
+    res.json({ success: true, message: `OTP sent via ${result.channel === 'sms' ? 'SMS' : 'WhatsApp'}`, channel: result.channel, devCode: result.devCode });
   } catch (e) {
     const status = e.status || 500;
     res.status(status).json({ success: false, message: e.message });

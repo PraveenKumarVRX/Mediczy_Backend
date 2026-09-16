@@ -109,6 +109,8 @@ export default function SelfCheckinKiosk() {
   });
   const [regForm, setRegForm] = useState<RegisterForm>(EMPTY_REGISTER_FORM);
   const [otpCode, setOtpCode] = useState('');
+  const [otpChannel, setOtpChannel] = useState<'whatsapp' | 'sms'>('whatsapp');
+  const [otpSentVia, setOtpSentVia] = useState<'whatsapp' | 'sms'>('whatsapp');
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selected, setSelected] = useState<Appointment | null>(null);
@@ -133,6 +135,7 @@ export default function SelfCheckinKiosk() {
     setRegForm(EMPTY_REGISTER_FORM);
     setOtpCode('');
     setOtpDevCode(null);
+    setOtpChannel('whatsapp');
     setAppointments([]);
     setSelected(null);
     setToken(null);
@@ -284,14 +287,15 @@ export default function SelfCheckinKiosk() {
       const otpRes = await fetch('/api/display/kiosk/send-otp', {
         method: 'POST',
         headers: displayDeviceHeaders(),
-        body: JSON.stringify({ phone: regForm.phone }),
+        body: JSON.stringify({ phone: regForm.phone, channel: otpChannel }),
       });
       const otpJson = await otpRes.json();
       if (!otpJson.success) {
-        setError(otpJson.message || 'Could not send WhatsApp OTP. Please try again.');
+        setError(otpJson.message || `Could not send ${otpChannel === 'sms' ? 'SMS' : 'WhatsApp'} OTP. Please try again.`);
         return;
       }
       setOtpDevCode(otpJson.devCode || null);
+      setOtpSentVia(otpJson.channel === 'sms' ? 'sms' : 'whatsapp');
       setOtpCode('');
       setStep('register-otp');
     } catch {
@@ -329,14 +333,15 @@ export default function SelfCheckinKiosk() {
     }
   };
 
-  const resendOtp = async () => {
+  const resendOtp = async (viaChannel?: 'whatsapp' | 'sms') => {
+    const channel = viaChannel || otpChannel;
     setLoading(true);
     setError(null);
     try {
       const res = await fetch('/api/display/kiosk/send-otp', {
         method: 'POST',
         headers: displayDeviceHeaders(),
-        body: JSON.stringify({ phone: regForm.phone }),
+        body: JSON.stringify({ phone: regForm.phone, channel }),
       });
       const json = await res.json();
       if (!json.success) {
@@ -344,6 +349,9 @@ export default function SelfCheckinKiosk() {
         return;
       }
       setOtpDevCode(json.devCode || null);
+      setOtpChannel(channel);
+      setOtpSentVia(json.channel === 'sms' ? 'sms' : 'whatsapp');
+      setOtpCode('');
       setError(null);
     } catch {
       setError('Connection error.');
@@ -689,6 +697,35 @@ export default function SelfCheckinKiosk() {
                 inputMode="numeric"
                 placeholder="10-digit number"
               />
+              <div>
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  If we need to verify your number, send the code via
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { resetIdleTimer(); setOtpChannel('whatsapp'); }}
+                    className={`rounded-2xl border py-2.5 text-sm font-semibold transition ${
+                      otpChannel === 'whatsapp'
+                        ? 'border-teal-400 bg-teal-900/50 text-teal-200'
+                        : 'border-slate-600 bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { resetIdleTimer(); setOtpChannel('sms'); }}
+                    className={`rounded-2xl border py-2.5 text-sm font-semibold transition ${
+                      otpChannel === 'sms'
+                        ? 'border-teal-400 bg-teal-900/50 text-teal-200'
+                        : 'border-slate-600 bg-slate-800 text-slate-400'
+                    }`}
+                  >
+                    SMS
+                  </button>
+                </div>
+              </div>
               <KioskField
                 label={regForm.isCorporate ? 'Email (required)' : 'Email (optional)'}
                 type="email"
@@ -766,7 +803,7 @@ export default function SelfCheckinKiosk() {
               Verify your number
             </h2>
             <p className="mt-3 text-base text-slate-300">
-              We’ve sent a 6-digit code on WhatsApp to{' '}
+              We’ve sent a 6-digit code via {otpSentVia === 'sms' ? 'SMS' : 'WhatsApp'} to{' '}
               <span className="font-mono font-semibold text-teal-300">******{regForm.phone.slice(-4)}</span>
             </p>
             {otpDevCode && (
@@ -791,12 +828,22 @@ export default function SelfCheckinKiosk() {
             >
               {loading ? 'Verifying…' : 'Verify & get token'}
             </button>
-            <div className="mt-4 flex justify-center gap-6 text-sm">
-              <button type="button" disabled={loading} onClick={() => void resendOtp()} className="text-teal-400/90 hover:text-teal-300">
-                Resend code
-              </button>
-              <button type="button" onClick={() => setStep('register-form')} className="text-slate-500">
-                ← Change details
+            <div className="mt-4 flex flex-col items-center gap-2 text-sm">
+              <div className="flex justify-center gap-6">
+                <button type="button" disabled={loading} onClick={() => void resendOtp()} className="text-teal-400/90 hover:text-teal-300">
+                  Resend code
+                </button>
+                <button type="button" onClick={() => setStep('register-form')} className="text-slate-500">
+                  ← Change details
+                </button>
+              </div>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void resendOtp(otpSentVia === 'sms' ? 'whatsapp' : 'sms')}
+                className="text-xs text-slate-500 hover:text-slate-300"
+              >
+                Didn’t get it? Try {otpSentVia === 'sms' ? 'WhatsApp' : 'SMS'} instead
               </button>
             </div>
           </div>
