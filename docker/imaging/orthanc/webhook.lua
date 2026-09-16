@@ -38,7 +38,7 @@ function OnStableStudy(studyId, tags, metadata)
   end)
 
   if ok then
-    print('[webhook.lua] pushed study ' .. studyId .. ' -> ' .. WEBHOOK_URL)
+    print('[webhook.lua] attempted study push ' .. studyId .. ' -> ' .. WEBHOOK_URL)
   else
     print('[webhook.lua] push FAILED for study ' .. studyId .. ': ' .. tostring(result))
   end

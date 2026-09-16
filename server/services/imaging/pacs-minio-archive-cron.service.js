@@ -32,6 +32,7 @@ export function startPacsMinioArchiveCron() {
         copied: result.copied,
         skipped: result.skipped,
         failed: result.failed,
+        deletedFromSource: result.deletedFromSource,
         bytes: result.bytes,
       });
     } catch (err) {

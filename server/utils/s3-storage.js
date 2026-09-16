@@ -31,10 +31,9 @@ export const s3Client = new S3Client({
   region: process.env.AWS_REGION || 'ap-south-1',
 });
 
-// DICOM/imaging objects live on the dedicated on-prem PACS MinIO — the same instance
-// Orthanc's own AwsS3Storage plugin writes to — not on AWS S3. Kept as a separate client
-// (different endpoint, credentials, and path-style addressing) from the general s3Client
-// above, which non-imaging uploads (prescriptions, chat attachments, etc.) still use.
+// DICOM/imaging writes use a dedicated PACS S3-compatible target. In production
+// this is currently AWS S3 as the hot ingest buffer; a separate archive client
+// below reads from on-prem pacs-minio after the nightly copy deletes the hot object.
 export function isPacsMinioConfigured() {
   return Boolean(process.env.PACS_MINIO_ENDPOINT && process.env.PACS_MINIO_ACCESS_KEY);
 }
@@ -60,6 +59,26 @@ export function getPacsMinioBucket() {
   return process.env.PACS_MINIO_BUCKET || 'pacs-entity-001';
 }
 
+export function isPacsArchiveMinioConfigured() {
+  return Boolean(process.env.PACS_ARCHIVE_MINIO_ENDPOINT && process.env.PACS_ARCHIVE_MINIO_ACCESS_KEY);
+}
+
+export const pacsArchiveMinioClient = isPacsArchiveMinioConfigured()
+  ? new S3Client({
+      region: process.env.PACS_ARCHIVE_MINIO_REGION || 'us-east-1',
+      endpoint: process.env.PACS_ARCHIVE_MINIO_ENDPOINT,
+      forcePathStyle: true,
+      credentials: {
+        accessKeyId: process.env.PACS_ARCHIVE_MINIO_ACCESS_KEY,
+        secretAccessKey: process.env.PACS_ARCHIVE_MINIO_SECRET_KEY,
+      },
+    })
+  : null;
+
+export function getPacsArchiveMinioBucket() {
+  return process.env.PACS_ARCHIVE_MINIO_BUCKET || 'pacs-entity-001';
+}
+
 export function getUploadsBucket() {
   return process.env.S3_UPLOADS_BUCKET || 'mediczy-uploads';
 }
@@ -71,9 +90,14 @@ export function getImagingDailyBucket(tenantId = null) {
 }
 
 /** Client to use for a given object key — pacs-minio for imaging keys when configured. */
+function isPacsObjectKey(key) {
+  const value = String(key || '');
+  const prefix = value.split('/')[0];
+  return IMAGING_PREFIXES.has(prefix) || /\.dcm$/i.test(value);
+}
+
 function clientForKey(key) {
-  const prefix = String(key || '').split('/')[0];
-  if (pacsMinioClient && IMAGING_PREFIXES.has(prefix)) return pacsMinioClient;
+  if (pacsMinioClient && isPacsObjectKey(key)) return pacsMinioClient;
   return s3Client;
 }
 
@@ -127,6 +151,7 @@ export function resolveBucketForKey(key) {
   if (IMAGING_PREFIXES.has(prefix)) {
     return pacsMinioClient ? getPacsMinioBucket() : resolveImagingBucketFromKey(key);
   }
+  if (pacsMinioClient && isPacsObjectKey(key)) return getPacsMinioBucket();
   return getUploadsBucket();
 }
 
@@ -154,8 +179,8 @@ export function s3Storage(folder, opts = {}) {
       }
     },
     contentType: multerS3.AUTO_CONTENT_TYPE,
-    // pacs-minio isn't confirmed to have SSE-S3/KMS configured (Orthanc's own writes to
-    // this same bucket don't request it); AWS S3 always supports it for non-imaging uploads.
+    // The PACS target may be AWS S3 or MinIO-compatible storage; avoid assuming
+    // SSE-S3/KMS support for that path. Non-imaging AWS uploads still request SSE.
     ...(usePacsMinio ? {} : { serverSideEncryption: 'AES256' }),
     key(req, file, cb) {
       try {
@@ -177,23 +202,33 @@ export function s3Storage(folder, opts = {}) {
   });
 }
 
-/** (bucket, client) candidates for a key — pacs-minio first for imaging keys (where
- * everything now actually lives), legacy AWS S3 locations as a fallback safety net for
- * anything not yet migrated. */
+/** Bucket/client candidates for a key: hot PACS store first, archive MinIO second,
+ * then legacy AWS locations as a fallback safety net for older imaging uploads. */
 function candidatesForKey(key) {
   const client = clientForKey(key);
   const primary = resolveBucketForKey(key);
   const uploads = getUploadsBucket();
   const shared = sharedImagingDailyBucket();
   const tid = parseTenantIdFromKey(key);
+  const isPacsKey = isPacsObjectKey(key);
   const seen = new Set();
   const out = [];
+  const clientLabel = (c) => {
+    if (c === s3Client) return 'aws';
+    if (c === pacsArchiveMinioClient) return 'archive-minio';
+    if (c === pacsMinioClient) return 'pacs-hot';
+    return 's3';
+  };
   const add = (bucket, c) => {
-    if (!bucket || seen.has(`${c === s3Client ? 'aws' : 'minio'}:${bucket}`)) return;
-    seen.add(`${c === s3Client ? 'aws' : 'minio'}:${bucket}`);
+    const id = `${clientLabel(c)}:${bucket}`;
+    if (!bucket || seen.has(id)) return;
+    seen.add(id);
     out.push({ bucket, client: c });
   };
   add(primary, client);
+  if (isPacsKey && pacsArchiveMinioClient) {
+    add(getPacsArchiveMinioBucket(), pacsArchiveMinioClient);
+  }
   if (client !== s3Client) {
     // Legacy AWS S3 fallback for imaging keys uploaded before the pacs-minio switch.
     add(shared, s3Client);

@@ -1,27 +1,44 @@
 /** @type {AppConfig} */
 window.config = {
-  routerBasename: '/ohif',
+  routerBasename: '/ohif/',
   showStudyList: true,
+  extensions: [],
+  modes: [],
+  defaultDataSourceName: 'mediczy-hypergrid',
 
-  dataSources: [{
-    namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
-    sourceName: 'mediqzyOrthanc',
-    configuration: {
-      friendlyName: 'MediQzy PACS',
-      name: 'orthanc',
-      qidoRoot: '/pacs/dicom-web',
-      wadoRoot: '/pacs/dicom-web',
-      wadoUriRoot: '/pacs/wado',
-      qidoSupportsIncludeField: true,
-      supportsFuzzyMatching: true,
-      supportsWildcard: true,
-      imageRendering: 'wadors',
-      thumbnailRendering: 'wadors',
-      enableStudyLazyLoad: true,
+  dataSources: [
+    {
+      namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
+      sourceName: 'mediczy-hypergrid',
+      configuration: {
+        friendlyName: 'Mediczy HyperGrid DICOMweb',
+        name: 'mediczy',
+        qidoRoot: '/api/hypergrid/dicom',
+        wadoRoot: '/api/hypergrid/dicom',
+        wadoUriRoot: '/api/hypergrid/dicom',
+        qidoSupportsIncludeField: true,
+        supportsFuzzyMatching: true,
+        supportsWildcard: true,
+        supportsReject: false,
+        imageRendering: 'wadors',
+        thumbnailRendering: 'wadors',
+        enableStudyLazyLoad: true,
+        staticWado: false,
+        singlepart: 'bulkdata,video,pdf',
+        requestOptions: {
+          auth: (options) => {
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('access_token') || params.get('token');
+            if (token) {
+              options.headers = options.headers || {};
+              options.headers.Authorization = `Bearer ${token}`;
+            }
+            return options;
+          },
+        },
+      },
     },
-  }],
-
-  defaultDataSourceName: 'mediqzyOrthanc',
+  ],
 
   // Phase 4: modality hanging protocols (Cornerstone3D / OHIF v3)
   hangingProtocols: [

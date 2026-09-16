@@ -28,6 +28,8 @@ services:
     volumes:
       - orthanc-data:/var/lib/orthanc/db
       - ./orthanc/webhook.lua:/etc/orthanc/webhook.lua:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       VERBOSE_STARTUP: "true"
       ORTHANC__NAME: "MediczyPACS"

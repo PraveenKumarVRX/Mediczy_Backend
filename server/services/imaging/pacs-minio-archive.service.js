@@ -5,7 +5,7 @@
  * AwsS3Storage plugin (docker/imaging/.env S3_STORAGE_*) and the HyperGrid
  * ingest pipeline (server/utils/s3-storage.js pacsMinioClient, env
  * PACS_MINIO_*) both write new DICOM data synchronously to a single AWS S3
- * bucket now — that's the permanent primary, not a stopgap. A MinIO outage
+ * bucket as the hot ingest buffer. A MinIO outage
  * can no longer block new studies from being received at all.
  *
  * This job additionally mirrors that S3 bucket to the on-prem PACS MinIO
@@ -13,8 +13,8 @@
  * so MinIO still ends up with a full archive copy on a schedule that
  * tolerates its demonstrated flakiness (502/530s under load) via retries +
  * exponential backoff, resumable via the idempotent size-match skip check.
- * Source objects in S3 are NEVER deleted — S3 stays the permanent primary
- * copy; this is purely an archive push, not a migration.
+ * Once an object is verified in MinIO, the matching source object is deleted
+ * from S3 so AWS only acts as the hot ingest buffer.
  *
  * PACS_ARCHIVE_MINIO_* are deliberately separate from PACS_MINIO_* (which
  * now names the primary S3 target, not MinIO, despite the name) to avoid
@@ -26,6 +26,7 @@ import {
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import pool from '../../db/pgPool.js';
 import logger from '../../config/logger.js';
@@ -35,6 +36,10 @@ const AWS_REGION = process.env.AWS_REGION || 'ap-south-1';
 const SOURCE_BUCKET = process.env.PACS_ARCHIVE_SOURCE_BUCKET || getPacsMinioBucket() || 'mediczy-pacs-storage';
 const CONCURRENCY = Math.max(1, Number(process.env.PACS_MINIO_ARCHIVE_CONCURRENCY || 4));
 const MAX_RETRIES = Math.max(1, Number(process.env.PACS_MINIO_ARCHIVE_MAX_RETRIES || 4));
+const HYDRATE_ORTHANC_ONLY = !['0', 'false', 'no'].includes(
+  String(process.env.PACS_MINIO_ARCHIVE_HYDRATE_ORTHANC_ONLY ?? 'true').toLowerCase(),
+);
+const HYDRATE_LIMIT = Math.max(0, Number(process.env.PACS_MINIO_ARCHIVE_HYDRATE_LIMIT || 0));
 
 export function isPacsArchiveMinioConfigured() {
   return Boolean(process.env.PACS_ARCHIVE_MINIO_ENDPOINT && process.env.PACS_ARCHIVE_MINIO_ACCESS_KEY);
@@ -68,10 +73,15 @@ async function ensureLogTable() {
       size_bytes BIGINT,
       status TEXT NOT NULL,
       error_message TEXT,
+      deleted_from_source BOOLEAN NOT NULL DEFAULT FALSE,
       archived_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (object_key)
     )
   `).catch(() => {});
+  await pool.query(
+    `ALTER TABLE pacs_minio_archive_log
+     ADD COLUMN IF NOT EXISTS deleted_from_source BOOLEAN NOT NULL DEFAULT FALSE`,
+  ).catch(() => {});
 }
 
 async function* listAllKeys(client, bucket) {
@@ -86,12 +96,21 @@ async function* listAllKeys(client, bucket) {
   } while (token);
 }
 
+async function deleteSourceObject(src, key) {
+  await src.send(new DeleteObjectCommand({ Bucket: SOURCE_BUCKET, Key: key }));
+  return true;
+}
+
 async function copyOne({ src, dst, key, size, force }) {
   if (!force) {
+    let head = null;
     try {
-      const head = await dst.send(new HeadObjectCommand({ Bucket: destBucket(), Key: key }));
-      if (head.ContentLength === size) return { status: 'skip', key };
+      head = await dst.send(new HeadObjectCommand({ Bucket: destBucket(), Key: key }));
     } catch { /* not present yet in archive */ }
+    if (head?.ContentLength === size) {
+      await deleteSourceObject(src, key);
+      return { status: 'skip', key, bytes: size, deleted: true };
+    }
   }
 
   let lastErr;
@@ -107,7 +126,12 @@ async function copyOne({ src, dst, key, size, force }) {
         Body: body,
         ContentType: obj.ContentType || 'application/dicom',
       }));
-      return { status: 'ok', key, bytes: body.length };
+      const head = await dst.send(new HeadObjectCommand({ Bucket: destBucket(), Key: key }));
+      if (head.ContentLength !== body.length) {
+        throw new Error(`MinIO size verification failed after copy: expected ${body.length}, got ${head.ContentLength}`);
+      }
+      await deleteSourceObject(src, key);
+      return { status: 'ok', key, bytes: body.length, deleted: true };
     } catch (err) {
       lastErr = err;
       await new Promise((r) => setTimeout(r, Math.min(2 ** attempt * 1000, 20000)));
@@ -118,15 +142,63 @@ async function copyOne({ src, dst, key, size, force }) {
 
 async function recordResult(row) {
   await pool.query(
-    `INSERT INTO pacs_minio_archive_log (object_key, size_bytes, status, error_message, archived_at)
-     VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO pacs_minio_archive_log (object_key, size_bytes, status, error_message, deleted_from_source, archived_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
      ON CONFLICT (object_key) DO UPDATE SET
        size_bytes = EXCLUDED.size_bytes,
        status = EXCLUDED.status,
        error_message = EXCLUDED.error_message,
+       deleted_from_source = EXCLUDED.deleted_from_source,
        archived_at = NOW()`,
-    [row.key, row.size ?? null, row.status, row.error ?? null],
+    [row.key, row.size ?? null, row.status, row.error ?? null, Boolean(row.deleted)],
   ).catch((err) => logger.warn('[PacsMinioArchive] log insert failed', { error: err.message }));
+}
+
+async function hydrateOrthancOnlyInstances() {
+  if (!HYDRATE_ORTHANC_ONLY) {
+    return { scanned: 0, hydrated: 0, failed: 0, disabled: true };
+  }
+
+  const limitSql = HYDRATE_LIMIT > 0 ? `LIMIT ${HYDRATE_LIMIT}` : '';
+  const r = await pool.query(
+    `SELECT DISTINCT regexp_replace(file_path, '^orthanc://', '') AS orthanc_instance_id
+       FROM hg_dicom_instances
+      WHERE file_path LIKE 'orthanc://%'
+        AND regexp_replace(file_path, '^orthanc://', '') <> ''
+      ORDER BY orthanc_instance_id
+      ${limitSql}`,
+  ).catch((err) => {
+    logger.warn('[PacsMinioArchive] orthanc-only hydration scan failed', { error: err.message });
+    return { rows: [] };
+  });
+
+  if (!r.rows.length) return { scanned: 0, hydrated: 0, failed: 0 };
+
+  const { handleOrthancNewInstance } = await import('../orthanc-hypergrid-bridge.service.js');
+  const summary = { scanned: r.rows.length, hydrated: 0, failed: 0 };
+  let idx = 0;
+
+  async function worker() {
+    while (idx < r.rows.length) {
+      const current = r.rows[idx];
+      idx += 1;
+      try {
+        const out = await handleOrthancNewInstance({ ID: current.orthanc_instance_id });
+        if (out?.success) summary.hydrated += 1;
+        else summary.failed += 1;
+      } catch (err) {
+        summary.failed += 1;
+        logger.warn('[PacsMinioArchive] orthanc-only hydration failed', {
+          orthancInstanceId: current.orthanc_instance_id,
+          error: err.message,
+        });
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: CONCURRENCY }, () => worker()));
+  logger.info('[PacsMinioArchive] orthanc-only hydration complete', summary);
+  return summary;
 }
 
 /** @param {{ dryRun?: boolean, force?: boolean }} [opts] */
@@ -145,13 +217,19 @@ export async function archivePacsBucketToMinio(opts = {}) {
     sourceBucket: SOURCE_BUCKET,
     destBucket: destBucket(),
     dryRun,
+    hydratedOrthancOnly: null,
     scanned: 0,
     copied: 0,
     skipped: 0,
     failed: 0,
+    deletedFromSource: 0,
     bytes: 0,
     errors: [],
   };
+
+  if (!dryRun) {
+    summary.hydratedOrthancOnly = await hydrateOrthancOnlyInstances();
+  }
 
   const keys = [];
   for await (const obj of listAllKeys(src, SOURCE_BUCKET)) {
@@ -174,13 +252,16 @@ export async function archivePacsBucketToMinio(opts = {}) {
       if (result.status === 'ok') {
         summary.copied += 1;
         summary.bytes += result.bytes;
-        await recordResult({ key: result.key, size: result.bytes, status: 'copied' });
+        if (result.deleted) summary.deletedFromSource += 1;
+        await recordResult({ key: result.key, size: result.bytes, status: 'copied', deleted: result.deleted });
       } else if (result.status === 'skip') {
         summary.skipped += 1;
+        if (result.deleted) summary.deletedFromSource += 1;
+        await recordResult({ key: result.key, size: result.bytes ?? obj.Size, status: 'archived_source_deleted', deleted: result.deleted });
       } else {
         summary.failed += 1;
         summary.errors.push({ key: result.key, error: result.error });
-        await recordResult({ key: result.key, size: obj.Size, status: 'failed', error: result.error });
+        await recordResult({ key: result.key, size: obj.Size, status: 'failed', error: result.error, deleted: false });
         logger.error('[PacsMinioArchive] copy failed', { key: result.key, error: result.error });
       }
     }
@@ -193,6 +274,7 @@ export async function archivePacsBucketToMinio(opts = {}) {
     copied: summary.copied,
     skipped: summary.skipped,
     failed: summary.failed,
+    deletedFromSource: summary.deletedFromSource,
     bytes: summary.bytes,
   });
   return summary;

@@ -372,7 +372,13 @@ async function ensureStudyIndexedFromOrthanc(pool, studyUID, tid) {
      ON CONFLICT (sop_instance_uid, tenant_id)
      DO UPDATE SET study_instance_uid = EXCLUDED.study_instance_uid,
                    series_instance_uid = EXCLUDED.series_instance_uid,
-                   file_path = EXCLUDED.file_path,
+                   file_path = CASE
+                     WHEN hg_dicom_instances.file_path IS NULL
+                       OR hg_dicom_instances.file_path = ''
+                       OR hg_dicom_instances.file_path LIKE 'orthanc://%'
+                     THEN EXCLUDED.file_path
+                     ELSE hg_dicom_instances.file_path
+                   END,
                    content_type = EXCLUDED.content_type,
                    modality = EXCLUDED.modality,
                    instance_number = EXCLUDED.instance_number,

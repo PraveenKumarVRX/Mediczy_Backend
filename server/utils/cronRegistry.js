@@ -84,6 +84,7 @@ export const TASK_DEFINITIONS = [
   { key: 'corp_employee_qc',      name: 'Corporate Employee QC Sweep',           schedule: 'Daily 3 AM IST',   category: 'corporate',  scheduleDesc: '0 3 * * *' },
   // Imaging storage
   { key: 'imaging_daily_minio_transfer', name: 'Imaging Daily S3 → MinIO/Wasabi Transfer', schedule: 'Daily 2:30 AM', category: 'imaging', scheduleDesc: '30 2 * * *' },
+  { key: 'pacs_minio_archive', name: 'PACS S3 → On-Prem MinIO Archive', schedule: 'Daily midnight', category: 'imaging', scheduleDesc: '0 0 * * *' },
   // CRM Growth Engine
   { key: 'crm_segment_refresh',   name: 'CRM Segment Membership Refresh',        schedule: 'Every 15 min',     category: 'crm',        scheduleDesc: '*/15 * * * *' },
   { key: 'crm_automation_tick',   name: 'CRM Automation Trigger Sweep',          schedule: 'Every 5 min',      category: 'crm',        scheduleDesc: '*/5 * * * *' },
