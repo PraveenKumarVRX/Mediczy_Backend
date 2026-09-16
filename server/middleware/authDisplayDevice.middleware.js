@@ -101,12 +101,14 @@ export async function requireDisplayDevice(req, res, next) {
 }
 
 /**
- * Optional device auth for public read boards.
- * If token present → bind org from device.
- * If organizationId query present without token → 401 (prevents cross-tenant scrape).
- * If neither → default org (LAN single-tenant displays).
+ * Shared resolution logic behind optionalDisplayDeviceOrDefaultOrg, factored
+ * out so non-middleware call sites (the SSE stream) can reuse the exact same
+ * trust model instead of re-implementing it.
+ *
+ * Returns { organizationId, displayDevice } on success, or { error: { status, body } }
+ * when the caller should reject the request instead of proceeding.
  */
-export async function optionalDisplayDeviceOrDefaultOrg(req, res, next) {
+export async function resolveOptionalDisplayOrg(req) {
   try {
     const token = tokenFromReq(req);
     const requestedOrg = req.query.organizationId || req.query.organization_id;
@@ -114,35 +116,43 @@ export async function optionalDisplayDeviceOrDefaultOrg(req, res, next) {
     if (token) {
       const device = await lookupDevice(token);
       if (!device) {
-        return res.status(401).json({ success: false, code: 'UNKNOWN_DEVICE', message: 'Unknown device token' });
+        return { error: { status: 401, body: { success: false, code: 'UNKNOWN_DEVICE', message: 'Unknown device token' } } };
       }
       const organizationId = orgFromDevice(device);
-      req.displayDevice = device;
-      req.organizationId = organizationId;
       if (requestedOrg && parseInt(requestedOrg, 10) !== organizationId) {
-        return res.status(403).json({
-          success: false,
-          code: 'ORG_MISMATCH',
-          message: 'organizationId does not match device registry',
-        });
+        return { error: { status: 403, body: { success: false, code: 'ORG_MISMATCH', message: 'organizationId does not match device registry' } } };
       }
-      return next();
+      return { organizationId, displayDevice: device };
     }
 
     if (requestedOrg) {
-      return res.status(401).json({
-        success: false,
-        code: 'DEVICE_TOKEN_REQUIRED',
-        message: 'x-device-token is required when organizationId is specified',
-      });
+      return { error: { status: 401, body: { success: false, code: 'DEVICE_TOKEN_REQUIRED', message: 'x-device-token is required when organizationId is specified' } } };
     }
 
-    req.organizationId = parseInt(process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10);
-    return next();
+    return { organizationId: parseInt(process.env.HOSPITAL_DEFAULT_ORG_ID || '1', 10) };
   } catch (e) {
-    console.error('[optionalDisplayDeviceOrDefaultOrg]', e.message);
-    return res.status(500).json({ success: false, message: 'Device auth error' });
+    console.error('[resolveOptionalDisplayOrg]', e.message);
+    return { error: { status: 500, body: { success: false, message: 'Device auth error' } } };
   }
 }
 
-export default { requireDisplayDevice, optionalDisplayDeviceOrDefaultOrg, ensureDisplayDeviceSchema };
+/**
+ * Optional device auth for public read boards.
+ * If token present → bind org from device.
+ * If organizationId query present without token → 401 (prevents cross-tenant scrape).
+ * If neither → default org (LAN single-tenant displays).
+ */
+export async function optionalDisplayDeviceOrDefaultOrg(req, res, next) {
+  const result = await resolveOptionalDisplayOrg(req);
+  if (result.error) return res.status(result.error.status).json(result.error.body);
+  req.organizationId = result.organizationId;
+  if (result.displayDevice) req.displayDevice = result.displayDevice;
+  return next();
+}
+
+export default {
+  requireDisplayDevice,
+  optionalDisplayDeviceOrDefaultOrg,
+  resolveOptionalDisplayOrg,
+  ensureDisplayDeviceSchema,
+};

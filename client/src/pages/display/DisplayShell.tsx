@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import DisplayVideoOverlay from '@/components/display/DisplayVideoOverlay';
+import { getDisplayDeviceToken } from '@/utils/displayDeviceAuth';
 
 interface EmergencyBroadcast {
   id: number;
@@ -32,6 +33,11 @@ export function useDisplaySSE(zone?: string, deviceId?: string) {
     const params = new URLSearchParams();
     if (zone) params.set('zone', zone);
     if (deviceId) params.set('deviceId', deviceId);
+    // Binds this connection to the real tenant (see authDisplayDevice.middleware.js
+    // resolveOptionalDisplayOrg) instead of the single-tenant LAN default — every
+    // screen that has gone through a kiosk/device URL has this cached already.
+    const deviceToken = getDisplayDeviceToken();
+    if (deviceToken) params.set('deviceToken', deviceToken);
     const url = `/api/display/events?${params.toString()}`;
 
     const es = new EventSource(url);

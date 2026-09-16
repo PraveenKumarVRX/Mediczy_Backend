@@ -57,9 +57,9 @@ async function ensureRedis() {
         // Ignore echoes from this process — we already wrote locally
         if (msg.origin === process.pid) return;
         if (msg.scope === 'zone') {
-          localPushToZone(msg.zone, msg.event, msg.data);
+          localPushToZone(msg.organizationId ?? null, msg.zone, msg.event, msg.data);
         } else if (msg.scope === 'signal') {
-          localPushSignal(msg.event, msg.data);
+          localPushSignal(msg.event, msg.data, msg.organizationId ?? null);
         }
       } catch (_) { /* ignore bad payloads */ }
     });
@@ -83,50 +83,61 @@ function writeEvent(res, event, data) {
   try { res.write(payload); } catch (_) {}
 }
 
-function localPushToZone(zone, event, data) {
+// Zone names (icu, opd-waiting, er-triage, ...) are reused across every
+// tenant on the platform — they are NOT unique. organizationId is what
+// actually keeps one hospital's PHI off another hospital's screens; a push
+// that omits it (legacy callers not yet threaded through — see
+// display-mqtt-bridge / ambient-deterioration) falls back to zone-only
+// matching, same as before. Every new/updated call site should pass it.
+function localPushToZone(organizationId, zone, event, data) {
   sseClients.forEach((client) => {
+    if (organizationId != null && client.organizationId !== organizationId) return;
     if (!zone || client.zone === zone) {
       writeEvent(client.res, event, data);
     }
   });
 }
 
-/** Lightweight non-PHI signal to all clients (zone name only). */
-function localPushSignal(event, data) {
+/** Lightweight non-PHI signal (zone name only). Org-filtered when organizationId is passed. */
+function localPushSignal(event, data, organizationId = null) {
   sseClients.forEach((client) => {
+    if (organizationId != null && client.organizationId !== organizationId) return;
     writeEvent(client.res, event, data);
   });
 }
 
-export function pushToZone(zone, event, data) {
-  localPushToZone(zone, event, data);
+export function pushToZone(zone, event, data, organizationId = null) {
+  localPushToZone(organizationId, zone, event, data);
   if (redisReady && pub) {
     pub.publish(CHANNEL, JSON.stringify({
-      scope: 'zone', zone, event, data, origin: process.pid,
+      scope: 'zone', zone, event, data, organizationId, origin: process.pid,
     })).catch(() => {});
   }
 }
 
 /**
  * @deprecated Do not use for PHI. Prefer pushQueueEvent / pushToZone.
- * Kept for non-PHI announcements only.
+ * Kept for non-PHI announcements only. Pass organizationId to scope to one
+ * tenant — omitting it broadcasts platform-wide, which should only ever be
+ * intentional (e.g. a true platform-ops signal), never the default.
  */
-export function pushToAll(event, data) {
-  localPushSignal(event, data);
+export function pushToAll(event, data, organizationId = null) {
+  localPushSignal(event, data, organizationId);
   if (redisReady && pub) {
     pub.publish(CHANNEL, JSON.stringify({
-      scope: 'signal', event, data, origin: process.pid,
+      scope: 'signal', event, data, organizationId, origin: process.pid,
     })).catch(() => {});
   }
 }
 
 /**
- * Zone-scoped queue event with PHI limited to subscribers of that zone.
- * Global clients only receive a non-PHI refresh signal: { zone, event }.
+ * Zone-scoped queue event with PHI limited to subscribers of that zone AND
+ * organization. Global clients only receive a non-PHI refresh signal
+ * ({ zone, event }, no patient data) — that one stays platform-wide, since
+ * it carries nothing sensitive.
  */
-export function pushQueueEvent(zone, event, data) {
-  pushToZone(zone, event, data);
-  // Non-PHI signal only — never spread entry/board (patient names, phones, aadhaar)
+export function pushQueueEvent(zone, event, data, organizationId = null) {
+  pushToZone(zone, event, data, organizationId);
   const signal = { zone, event, ts: Date.now() };
   localPushSignal('queue_updated', signal);
   if (redisReady && pub) {
@@ -136,10 +147,15 @@ export function pushQueueEvent(zone, event, data) {
   }
 }
 
-export function registerDisplaySSE(router) {
-  router.get('/events', (req, res) => {
+export function registerDisplaySSE(router, resolveOrgId) {
+  router.get('/events', async (req, res) => {
     const zone = req.query.zone || null;
     const deviceId = req.query.deviceId || null;
+    // Same trust model as the other public display reads (optionalDisplayDeviceOrDefaultOrg):
+    // a valid deviceToken binds the real org; no token falls back to the single-tenant
+    // LAN default so existing unauthenticated boards keep working unchanged.
+    const organizationId = resolveOrgId ? await resolveOrgId(req, res) : null;
+    if (organizationId === false) return; // resolver already sent an error response
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -150,7 +166,7 @@ export function registerDisplaySSE(router) {
     res.write(`event: connected\ndata: ${JSON.stringify({ ts: Date.now(), zone })}\n\n`);
 
     const clientId = ++_clientSeq;
-    sseClients.set(clientId, { res, zone, deviceId });
+    sseClients.set(clientId, { res, zone, deviceId, organizationId });
 
     const keepalive = setInterval(() => {
       try { res.write(': ping\n\n'); } catch (_) {}

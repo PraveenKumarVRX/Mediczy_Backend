@@ -8,13 +8,21 @@ import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import {
   requireDisplayDevice,
   optionalDisplayDeviceOrDefaultOrg,
+  resolveOptionalDisplayOrg,
   ensureDisplayDeviceSchema,
 } from '../middleware/authDisplayDevice.middleware.js';
 import { verifyHospitalToken } from '../middleware/hospitalAuth.middleware.js';
 
 const router = express.Router();
 
-registerDisplaySSE(router);
+registerDisplaySSE(router, async (req, res) => {
+  const result = await resolveOptionalDisplayOrg(req);
+  if (result.error) {
+    res.status(result.error.status).json(result.error.body);
+    return false;
+  }
+  return result.organizationId;
+});
 ensureDisplayDeviceSchema().catch(() => {});
 
 // ─── DB helpers ──────────────────────────────────────────────────────────────
@@ -69,11 +77,13 @@ async function ensureTables() {
         message TEXT NOT NULL,
         severity VARCHAR(30) DEFAULT 'critical',
         zone_id VARCHAR(80),
+        organization_id INTEGER,
         pushed_by VARCHAR(200),
         dismissed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+    await db.query(`ALTER TABLE emergency_broadcasts ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
     await db.query(`
       CREATE TABLE IF NOT EXISTS checkin_tokens (
         id SERIAL PRIMARY KEY,
@@ -118,26 +128,29 @@ function deviceAuth(req, res, next) {
 
 // POST /api/display/emergency — push a broadcast (hospital staff only — this
 // reaches every board/kiosk screen in the building, so an unauthenticated
-// caller must never be able to trigger it)
+// caller must never be able to trigger it). Scoped to the caller's own
+// hospital — zone names like "icu" or "opd-waiting" are reused across every
+// tenant, so an unscoped push would also reach other hospitals' screens.
 router.post('/emergency', verifyHospitalToken, async (req, res) => {
   try {
     const { title, message, severity = 'critical', zone_id = null } = req.body;
     if (!title || !message) return res.status(400).json({ success: false, message: 'title and message required' });
     const pushed_by = req.hospitalName || req.hospitalUser?.name || 'Hospital staff';
+    const orgId = req.hospitalOrgId;
 
     const db = await connectPostgres();
     const result = await db.query(
-      `INSERT INTO emergency_broadcasts (title, message, severity, zone_id, pushed_by)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [title, message, severity, zone_id, pushed_by]
+      `INSERT INTO emergency_broadcasts (title, message, severity, zone_id, organization_id, pushed_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [title, message, severity, zone_id, orgId, pushed_by]
     );
     const broadcast = result.rows[0];
 
-    // Push to all SSE clients (or zone-specific)
+    // Push to this hospital's SSE clients only (all zones, or one zone)
     if (zone_id) {
-      pushToZone(zone_id, 'emergency', broadcast);
+      pushToZone(zone_id, 'emergency', broadcast, orgId);
     } else {
-      pushToAll('emergency', broadcast);
+      pushToAll('emergency', broadcast, orgId);
     }
 
     res.json({ success: true, broadcast });
@@ -146,10 +159,11 @@ router.post('/emergency', verifyHospitalToken, async (req, res) => {
   }
 });
 
-// GET /api/display/emergency — active broadcasts
-router.get('/emergency', async (_req, res) => {
+// GET /api/display/emergency — this hospital's own active broadcasts
+router.get('/emergency', verifyHospitalToken, async (req, res) => {
   const rows = await safeQuery(
-    'SELECT * FROM emergency_broadcasts WHERE dismissed_at IS NULL ORDER BY created_at DESC'
+    'SELECT * FROM emergency_broadcasts WHERE dismissed_at IS NULL AND organization_id = $1 ORDER BY created_at DESC',
+    [req.hospitalOrgId]
   );
   res.json({ success: true, broadcasts: rows });
 });

@@ -315,7 +315,7 @@ export async function checkIn({
   const entry = mapRow(rows[0]);
   if (!entry) throw new Error('Queue check-in failed to persist entry');
   const board = await getBoardSnapshot({ organizationId: org, queueZone: zone, doctorId });
-  pushQueueEvent(zone, 'queue_token_issued', { entry, board });
+  pushQueueEvent(zone, 'queue_token_issued', { entry, board }, org);
 
   const meta = typeof entry.metadata === 'object' && entry.metadata ? entry.metadata : {};
   if (meta.notifyOptIn && meta.notifyPhone) {
@@ -413,8 +413,8 @@ export async function transferToDepartment(entryId, organizationId, nextDepartme
     stepOrder: (from.stepOrder || 1) + 1,
   });
 
-  pushQueueEvent(from.queueZone, 'queue_token_transferred', { from, to });
-  pushQueueEvent(to.queueZone, 'queue_token_issued', { entry: to });
+  pushQueueEvent(from.queueZone, 'queue_token_transferred', { from, to }, org);
+  pushQueueEvent(to.queueZone, 'queue_token_issued', { entry: to }, org);
 
   return { from, to, reused: false };
 }
@@ -502,7 +502,7 @@ export async function callNext({ doctorId, organizationId, entryId }) {
   );
   const updated = mapRow(rows[0]);
   const board = await getBoardSnapshot({ organizationId: org, queueZone: updated.queueZone });
-  pushQueueEvent(updated.queueZone, 'queue_token_called', { entry: updated, board });
+  pushQueueEvent(updated.queueZone, 'queue_token_called', { entry: updated, board }, org);
 
   const meta = updated.metadata || {};
   if (meta.notifyPhone) {
@@ -530,7 +530,7 @@ export async function startServing(id, organizationId) {
     [id, actualWait]
   );
   const updated = mapRow(rows[0]);
-  pushQueueEvent(updated.queueZone, 'queue_token_serving', { entry: updated });
+  pushQueueEvent(updated.queueZone, 'queue_token_serving', { entry: updated }, org);
   return updated;
 }
 
@@ -543,7 +543,7 @@ export async function completeEntry(id, organizationId) {
   );
   if (!rows[0]) return null;
   const updated = mapRow(rows[0]);
-  pushQueueEvent(updated.queueZone, 'queue_token_completed', { entry: updated });
+  pushQueueEvent(updated.queueZone, 'queue_token_completed', { entry: updated }, defaultOrgId(organizationId));
   return updated;
 }
 
@@ -567,9 +567,10 @@ export async function reorderEntry(id, organizationId, priorityScore) {
   );
   const updated = rows[0] ? mapRow(rows[0]) : null;
   if (updated) {
+    const org = defaultOrgId(organizationId);
     pushQueueEvent(updated.queueZone, 'queue_updated', {
-      board: await getBoardSnapshot({ organizationId: defaultOrgId(organizationId), queueZone: updated.queueZone }),
-    });
+      board: await getBoardSnapshot({ organizationId: org, queueZone: updated.queueZone }),
+    }, org);
   }
   return updated;
 }
@@ -683,7 +684,7 @@ export async function createNurseCall({ organizationId, bedId, wardZone, patient
     [org, bedId, wardZone || 'ward', patientId || null, patientName || null]
   );
   const call = rows[0];
-  pushToZone(wardZone || 'ward', 'nurse_call', call);
+  pushToZone(wardZone || 'ward', 'nurse_call', call, org);
   return call;
 }
 

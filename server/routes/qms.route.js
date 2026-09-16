@@ -442,7 +442,7 @@ async function staffTransition(req, res, status) {
       if (rows[0]) {
         entry = await queue.getEntryById(id, org);
         const board = await queue.getBoardSnapshot({ organizationId: org, queueZone: entry.queueZone });
-        pushQueueEvent(entry.queueZone, 'queue_token_called', { entry, board });
+        pushQueueEvent(entry.queueZone, 'queue_token_called', { entry, board }, org);
         const phone = entry.metadata?.notifyPhone;
         if (phone) {
           queueNotify.notifyTokenCalled(entry, phone).catch(() => {});
@@ -452,7 +452,7 @@ async function staffTransition(req, res, status) {
       entry = await queue.startServing(id, org);
       if (entry) {
         const board = await queue.getBoardSnapshot({ organizationId: org, queueZone: entry.queueZone });
-        pushQueueEvent(entry.queueZone, 'queue_token_serving', { entry, board });
+        pushQueueEvent(entry.queueZone, 'queue_token_serving', { entry, board }, org);
       }
     } else if (status === 'completed') {
       const nextDepartment = req.body?.nextDepartment;

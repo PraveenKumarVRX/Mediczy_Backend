@@ -225,7 +225,7 @@ router.patch('/:id/call-staff', authUser, requireRole('admin', 'hospital_admin',
     const { pushQueueEvent } = await import('../services/display-sse-broker.service.js');
     const entry = rows[0];
     const board = await queue.getBoardSnapshot({ organizationId: org, queueZone: entry.queue_zone });
-    pushQueueEvent(entry.queue_zone, 'queue_token_called', { entry, board });
+    pushQueueEvent(entry.queue_zone, 'queue_token_called', { entry, board }, org);
     const mapped = await queue.getEntryById(entry.id, org);
     const phone = mapped?.metadata?.notifyPhone;
     if (phone) {

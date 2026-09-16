@@ -80,7 +80,7 @@ export default function DisplayAdminPage() {
     try {
       const [devRes, brRes, stRes] = await Promise.all([
         fetch('/api/display/devices', { headers: authHeaders() }),
-        fetch('/api/display/emergency'),
+        fetch('/api/display/emergency', { headers: authHeaders() }),
         fetch('/api/display/stats'),
       ]);
       const [devJson, brJson, stJson] = await Promise.all([devRes.json(), brRes.json(), stRes.json()]);

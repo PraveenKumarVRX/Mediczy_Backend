@@ -437,7 +437,7 @@ router.post('/er-triage', async (req, res) => {
         sessionType: 'er-triage',
         bedId: entry.tokenNumber,
         join,
-      });
+      }, req.organizationId);
       video = { roomId, join };
     }
 
