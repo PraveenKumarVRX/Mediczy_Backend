@@ -33,6 +33,10 @@ router.use(express.urlencoded({ extended: true }));
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Footer contact on the printed prescription — a shared support address, not the
+// individual doctor's own inbox.
+const PRESCRIPTION_SUPPORT_EMAIL = 'care@mysmarthealth.in';
+
 const canAccessPrescriptionPdf = (decoded, prescription) => {
   if (!decoded) return false;
   if (decoded.role === 'doctor' || decoded.role === 'admin' || decoded.role === 'super_admin') {
@@ -381,7 +385,7 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
         clinicName: letterhead.clinicName,
         clinicAddress,
         clinicPhone: letterhead.clinicPhone || doctor.phone || doctor.phoneNumber,
-        clinicEmail: doctor.email,
+        clinicEmail: PRESCRIPTION_SUPPORT_EMAIL,
         clinicDetails: {
           name: letterhead.clinicName,
           address: clinicAddress,
@@ -573,7 +577,7 @@ router.post('/', authDoctor, [
       clinicName: letterhead.clinicName,
       clinicAddress: letterhead.clinicAddress,
       clinicPhone: letterhead.clinicPhone || doctor.phone || doctor.phoneNumber,
-      clinicEmail: doctor.email,
+      clinicEmail: PRESCRIPTION_SUPPORT_EMAIL,
       clinicDetails: {
         name: letterhead.clinicName,
         address: letterhead.clinicAddress,
