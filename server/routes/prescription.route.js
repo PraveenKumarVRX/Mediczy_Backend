@@ -18,6 +18,7 @@ import { COOKIE_NAMES } from '../config/cookies.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
 import { getDoctorSignatureDataUri } from '../services/doctor-signature.service.js';
+import { resolveDoctorLetterhead } from '../services/doctor-letterhead.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import * as prescriptionRepository from '../repositories/prescription.repository.js';
@@ -342,9 +343,10 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
 
     // Determine if this was an online consultation
     const consultationType = appointment.consultationType || 'in-person';
+    const letterhead = await resolveDoctorLetterhead(doctor);
     const clinicAddress = consultationType === 'online'
       ? 'Online Consultation / Telemedicine'
-      : (doctor.clinicAddress || doctor.address?.street || 'Clinic');
+      : (letterhead.clinicAddress || 'Clinic');
 
     // Create prescription linked to appointment, then mark the appointment
     // completed — both prescriptions and appointments have FORCE ROW LEVEL
@@ -363,14 +365,14 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
           : (doctor.qualifications || doctor.qualification || 'MBBS'),
         doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
         specialty: doctor.specialization || 'General Medicine',
-        clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+        clinicName: letterhead.clinicName,
         clinicAddress,
-        clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
+        clinicPhone: letterhead.clinicPhone || doctor.phone || doctor.phoneNumber,
         clinicEmail: doctor.email,
         clinicDetails: {
-          name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+          name: letterhead.clinicName,
           address: clinicAddress,
-          phone: doctor.phone || doctor.phoneNumber,
+          phone: letterhead.clinicPhone || doctor.phone || doctor.phoneNumber,
           email: doctor.email,
           specialty: doctor.specialization,
           consultationType
@@ -540,6 +542,8 @@ router.post('/', authDoctor, [
       instructions: med?.instructions || med?.notes || '',
     }));
 
+    const letterhead = await resolveDoctorLetterhead(doctor);
+
     const prescriptionPayload = {
       appointmentId,
       patientId: patientUserId,
@@ -553,14 +557,14 @@ router.post('/', authDoctor, [
         : (doctor.qualifications || doctor.qualification || 'MBBS'),
       doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
       specialty: doctor.specialization || 'General Medicine',
-      clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-      clinicAddress: doctor.clinicAddress || doctor.address?.street || 'Online Consultation',
-      clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
+      clinicName: letterhead.clinicName,
+      clinicAddress: letterhead.clinicAddress,
+      clinicPhone: letterhead.clinicPhone || doctor.phone || doctor.phoneNumber,
       clinicEmail: doctor.email,
       clinicDetails: {
-        name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-        address: doctor.clinicAddress || doctor.address?.street || 'Online Consultation',
-        phone: doctor.phone || doctor.phoneNumber,
+        name: letterhead.clinicName,
+        address: letterhead.clinicAddress,
+        phone: letterhead.clinicPhone || doctor.phone || doctor.phoneNumber,
         email: doctor.email,
         specialty: doctor.specialization
       },

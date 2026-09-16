@@ -33,6 +33,7 @@ import {
   getFitnessCertificatesIssuedByClinicStaff,
 } from '../services/corporate-hmis.service.js';
 import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
+import { resolveDoctorLetterhead } from '../services/doctor-letterhead.service.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -61,28 +62,25 @@ async function authClinicDoctor(req, res, next) {
   if (decoded.role === 'doctor') {
     try {
       const { rows } = await sharedPool.query(
-        `SELECT d.id, d."firstName", d."lastName", d.email, d.tenant_id, d."organization_type",
-                d."registrationNumber", d.qualifications, d.specialization,
-                t.name AS clinic_name, t.address AS clinic_address, t.phone AS clinic_phone
-           FROM doctors d
-           LEFT JOIN tenants t ON t.id = d.tenant_id
-          WHERE d.id = $1`,
+        `SELECT id, "firstName", "lastName", email, tenant_id, "organization_type",
+                "registrationNumber", qualifications, specialization
+           FROM doctors WHERE id = $1`,
         [decoded.id]
       );
       const doctor = rows[0];
       if (!doctor || doctor.organization_type !== 'clinic' || !doctor.tenant_id) {
         return res.status(403).json({ success: false, message: 'Your account is not linked to a clinic' });
       }
-      const addr = doctor.clinic_address || {};
+      const letterhead = await resolveDoctorLetterhead(doctor);
       req.clinicDoctor = {
         id: doctor.id, tenant_id: doctor.tenant_id,
         first_name: doctor.firstName, last_name: doctor.lastName, email: doctor.email,
         registrationNumber: doctor.registrationNumber,
         qualifications: Array.isArray(doctor.qualifications) ? doctor.qualifications.join(', ') : (doctor.qualifications || ''),
         specialization: doctor.specialization || '',
-        clinicName: doctor.clinic_name || 'SmartHealth Clinic',
-        clinicAddress: [addr.street, addr.city, addr.state, addr.pincode].filter(Boolean).join(', '),
-        clinicPhone: doctor.clinic_phone || '',
+        clinicName: letterhead.clinicName,
+        clinicAddress: letterhead.clinicAddress,
+        clinicPhone: letterhead.clinicPhone,
       };
       return next();
     } catch (err) {
