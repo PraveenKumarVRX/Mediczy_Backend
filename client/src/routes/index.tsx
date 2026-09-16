@@ -129,6 +129,7 @@ const DoctorAppointments       = lazy(() => import("@/pages/doctor/DoctorAppoint
 const DoctorAppointmentSettings = lazy(() => import("@/pages/doctor/DoctorAppointmentSettings"));
 const DoctorPrescriptions      = lazy(() => import("@/pages/doctor/DoctorPrescriptions"));
 const DoctorFitnessCertificates = lazy(() => import("@/pages/doctor/DoctorFitnessCertificates"));
+const DoctorSelfCheckin        = lazy(() => import("@/pages/doctor/DoctorSelfCheckin"));
 const DoctorContact            = lazy(() => import("@/pages/doctor/DoctorContact"));
 const DoctorAlerts             = lazy(() => import("@/pages/doctor/DoctorAlerts"));
 const DoctorVideoConsultation  = lazy(() => import("@/pages/doctor/DoctorVideoConsultation"));
@@ -1070,6 +1071,7 @@ const AppRoutes = () => {
         <Route path="/doctor/availability"        element={<DoctorAppointmentSettings />} />
         <Route path="/doctor/prescriptions"       element={<DoctorPrescriptions />} />
         <Route path="/doctor/fitness-certificates" element={<DoctorFitnessCertificates />} />
+        <Route path="/doctor/self-checkin" element={<DoctorSelfCheckin />} />
         <Route path="/doctor/patients"            element={<DoctorPatients />} />
         <Route path="/doctor/triage"              element={<DoctorTriage />} />
         <Route path="/doctor/remote-monitoring"   element={<Navigate to="/doctor/health-monitoring?view=advanced" replace />} />

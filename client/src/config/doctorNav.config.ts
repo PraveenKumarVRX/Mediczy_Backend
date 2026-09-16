@@ -3,7 +3,7 @@ import {
   Home, Calendar, Users, FileText, AlertTriangle, FilePlus2,
   Sparkles, Calculator, MessageSquare, Video, Wallet, Clock,
   BarChart3, UserCircle, Bell, HeartPulse, ScanLine, ClipboardList,
-  BrainCircuit, LayoutGrid, ShieldCheck,
+  BrainCircuit, LayoutGrid, ShieldCheck, QrCode,
 } from 'lucide-react';
 
 export interface DoctorNavItem {
@@ -36,6 +36,7 @@ export const DOCTOR_NAV_ITEMS: DoctorNavItem[] = [
   { icon: ClipboardList, label: 'Clinical Notes', path: '/doctor/clinical-workspace', category: 'Clinical' },
   { icon: FileText, label: 'Prescriptions', path: '/doctor/prescriptions', category: 'Clinical' },
   { icon: ShieldCheck, label: 'Fitness Certificates', path: '/doctor/fitness-certificates', category: 'Clinical', clinicOnly: true },
+  { icon: QrCode, label: 'Patient Self Check-in', path: '/doctor/self-checkin', category: 'Clinical', clinicOnly: true },
   { icon: HeartPulse, label: 'Health Monitoring', path: '/doctor/health-monitoring', category: 'Clinical' },
   {
     icon: FilePlus2,
