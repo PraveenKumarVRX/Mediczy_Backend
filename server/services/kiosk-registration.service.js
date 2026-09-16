@@ -7,6 +7,12 @@ import pool from '../db/pgPool.js';
 import * as queue from './hospital-queue.service.js';
 import { sendKioskRegistrationNotify } from './queue-notify.service.js';
 import { parseAadhaarQrInput } from './aadhaar-qr.service.js';
+import { cache } from '../db/redis.js';
+import OTP from '../models/otp.model.intelligent.js';
+import twilioOtpService from './twilio-otp.service.js';
+
+const KIOSK_OTP_PURPOSE = 'kiosk-selfcheckin';
+const KIOSK_OTP_VERIFIED_TTL_SEC = 600; // 10 min — long enough to finish the register form
 
 const INVITE_TTL_MIN = parseInt(process.env.KIOSK_REG_INVITE_TTL_MIN || '30', 10);
 const APP_BASE =
@@ -78,6 +84,92 @@ function normalizeAbhaId(value) {
   return null;
 }
 
+function approxDobFromAge(age) {
+  const n = parseInt(age, 10);
+  if (!Number.isFinite(n) || n <= 0 || n > 120) return null;
+  const year = new Date().getFullYear() - n;
+  return `${year}-01-01`;
+}
+
+function otpVerifiedKey(phone) {
+  return `kiosk-otp-verified:${normalizePhone10(phone)}`;
+}
+
+/** Mark a phone as OTP-verified (server-trusted; never set from client input directly). */
+export async function markKioskPhoneVerified(phone) {
+  await cache.set(otpVerifiedKey(phone), true, KIOSK_OTP_VERIFIED_TTL_SEC);
+}
+
+export async function isKioskPhoneVerified(phone) {
+  return Boolean(await cache.get(otpVerifiedKey(phone)));
+}
+
+/** Send a WhatsApp OTP to a new walk-in's phone before creating their record. */
+export async function sendKioskPhoneOtp(phone) {
+  const normalizedPhone = normalizePhone10(phone);
+  if (!/^\d{10}$/.test(normalizedPhone)) {
+    throw Object.assign(new Error('Enter a valid 10-digit mobile number'), { status: 400 });
+  }
+  const otp = await OTP.generate({ phone: normalizedPhone, purpose: KIOSK_OTP_PURPOSE, expiryMinutes: 10 });
+  if (twilioOtpService.disabled) {
+    return {
+      sent: false,
+      reason: 'WhatsApp OTP is not configured on this environment',
+      devCode: process.env.NODE_ENV !== 'production' ? otp.code : undefined,
+    };
+  }
+  const result = await twilioOtpService.sendWhatsAppOTP({
+    phone: normalizedPhone,
+    otp: otp.code,
+    purpose: 'verification',
+  });
+  return {
+    sent: result.success === true,
+    reason: result.success ? null : result.message || 'Could not send WhatsApp OTP',
+    devCode: process.env.NODE_ENV !== 'production' ? otp.code : undefined,
+  };
+}
+
+/** Verify a walk-in's phone OTP and mark it server-side verified for the register call. */
+export async function verifyKioskPhoneOtp(phone, code) {
+  const normalizedPhone = normalizePhone10(phone);
+  const result = await OTP.verify({ phone: normalizedPhone, code, purpose: KIOSK_OTP_PURPOSE });
+  if (result.success) await markKioskPhoneVerified(normalizedPhone);
+  return result;
+}
+
+/**
+ * Check whether a walk-in already has a record, by phone (primary) or by
+ * corporate name + employee ID (secondary, for corporate camp attendees who
+ * may show up on a different phone than the one on file).
+ */
+export async function lookupWalkInPatient({ phone, corporateName, employeeId }) {
+  const normalizedPhone = normalizePhone10(phone);
+  if (/^\d{10}$/.test(normalizedPhone)) {
+    const r = await pool.query(
+      `SELECT id, "firstName", "lastName" FROM users WHERE "phoneNumber" LIKE $1 LIMIT 1`,
+      [`%${normalizedPhone}`]
+    );
+    if (r.rows[0]) {
+      return { found: true, matchedBy: 'phone', firstName: r.rows[0].firstName, lastName: r.rows[0].lastName };
+    }
+  }
+  const empId = String(employeeId || '').trim();
+  const corpName = String(corporateName || '').trim();
+  if (empId && corpName) {
+    const r2 = await pool.query(
+      `SELECT id, "firstName", "lastName" FROM users
+       WHERE metadata->>'employeeId' = $1 AND metadata->>'corporateName' ILIKE $2
+       LIMIT 1`,
+      [empId, corpName]
+    );
+    if (r2.rows[0]) {
+      return { found: true, matchedBy: 'employee', firstName: r2.rows[0].firstName, lastName: r2.rows[0].lastName };
+    }
+  }
+  return { found: false };
+}
+
 function mapGender(genderRaw) {
   const genderNorm = String(genderRaw || '').trim();
   const genderLower = genderNorm.toLowerCase();
@@ -109,7 +201,12 @@ function looksLikeDeviceLabel(name) {
 export async function resolveOrgDisplayName(organizationId, fallback = 'the hospital') {
   const org = parseInt(organizationId, 10);
   if (!org) return fallback;
+  // `tenants` is the real home for clinic-type organizations (SmartHealth Clinic
+  // etc. — see doctor-letterhead.service.js). It must be checked first: `hospitals`,
+  // `clinics` and `labs` use their own separate id sequences, so a clinic's
+  // organization_id can collide with an unrelated hospital/lab row of the same id.
   const queries = [
+    `SELECT name AS n FROM tenants WHERE id = $1 LIMIT 1`,
     `SELECT "hospitalName" AS n FROM hospitals WHERE id = $1 LIMIT 1`,
     `SELECT hospital_name AS n FROM hospitals WHERE id = $1 LIMIT 1`,
     `SELECT name AS n FROM hospitals WHERE id = $1 LIMIT 1`,
@@ -323,7 +420,11 @@ export async function registerWalkInPatient({
   firstName,
   lastName,
   dateOfBirth,
+  age = null,
   gender: genderRaw,
+  email = null,
+  corporateName = null,
+  employeeId = null,
   department = 'opd',
   queueZone = 'opd-waiting',
   doctorId = null,
@@ -337,12 +438,25 @@ export async function registerWalkInPatient({
   address = null,
   aadhaarLast4 = null,
   source = 'kiosk',
+  requireOtpForNewPatient = false,
 }) {
   if (!phone || !firstName) {
     throw Object.assign(new Error('phone and firstName required'), { status: 400 });
   }
   const normalizedPhone = normalizePhone10(phone);
   const genderCandidates = mapGender(genderRaw);
+  const corpName = String(corporateName || '').trim() || null;
+  const empId = String(employeeId || '').trim() || null;
+  if (empId && !corpName) {
+    throw Object.assign(new Error('Corporate name is required with employee ID'), { status: 400 });
+  }
+  const cleanEmail = String(email || '').trim().toLowerCase() || null;
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    throw Object.assign(new Error('Enter a valid email address'), { status: 400 });
+  }
+  if (empId && !cleanEmail) {
+    throw Object.assign(new Error('Email is required for corporate employees'), { status: 400 });
+  }
 
   let patientId;
   const existing = await pool.query(
@@ -363,18 +477,35 @@ export async function registerWalkInPatient({
         patientId,
         firstName,
         lastName || '',
-        dateOfBirth || null,
+        dateOfBirth || approxDobFromAge(age) || null,
         JSON.stringify({
           address: address || undefined,
           aadhaarLast4: aadhaarLast4 || undefined,
           abhaId: abhaId || undefined,
           photoKey: photoKey || undefined,
+          age: age || undefined,
+          requestedEmail: cleanEmail || undefined,
+          corporateName: corpName || undefined,
+          employeeId: empId || undefined,
           source,
         }),
       ]
     );
   } else {
-    const email = `kiosk+${normalizedPhone}@patient.mediqzy.local`;
+    // Brand-new phone number — this is a real identity, not just a queue slip,
+    // so it must be proven live via WhatsApp OTP before we create a record.
+    if (requireOtpForNewPatient && !(await isKioskPhoneVerified(normalizedPhone))) {
+      throw Object.assign(
+        new Error('Please verify your mobile number via WhatsApp OTP first'),
+        { status: 403, code: 'OTP_REQUIRED' }
+      );
+    }
+    let insEmail = null;
+    if (cleanEmail) {
+      const taken = await pool.query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [cleanEmail]);
+      if (!taken.rows[0]) insEmail = cleanEmail;
+    }
+    const finalEmail = insEmail || `kiosk+${normalizedPhone}@patient.mediqzy.local`;
     const hash = await bcrypt.hash(`kiosk-${normalizedPhone}-${Date.now()}`, 10);
     let ins = null;
     let lastErr = null;
@@ -387,10 +518,10 @@ export async function registerWalkInPatient({
           [
             firstName,
             lastName || '',
-            email,
+            finalEmail,
             hash,
             normalizedPhone,
-            dateOfBirth || '1990-01-01',
+            dateOfBirth || approxDobFromAge(age) || '1990-01-01',
             g,
             JSON.stringify({
               uhidPending: true,
@@ -398,8 +529,14 @@ export async function registerWalkInPatient({
               photoKey: photoKey || null,
               address: address || null,
               aadhaarLast4: aadhaarLast4 || null,
+              age: age || null,
+              requestedEmail: cleanEmail || null,
+              emailConflict: Boolean(cleanEmail && !insEmail),
+              corporateName: corpName,
+              employeeId: empId,
               source,
               genderRequested: genderRaw || null,
+              otpVerified: requireOtpForNewPatient || undefined,
             }),
           ]
         );
@@ -580,4 +717,10 @@ export default {
   completeInviteRegistration,
   registerWalkInPatient,
   getInviteStatusForKiosk,
+  lookupWalkInPatient,
+  sendKioskPhoneOtp,
+  verifyKioskPhoneOtp,
+  markKioskPhoneVerified,
+  isKioskPhoneVerified,
+  resolveOrgDisplayName,
 };

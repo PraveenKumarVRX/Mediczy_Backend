@@ -18,6 +18,10 @@ import {
   getInviteStatusForKiosk,
   registerWalkInPatient,
   ensureKioskRegistrationTables,
+  resolveOrgDisplayName,
+  lookupWalkInPatient,
+  sendKioskPhoneOtp,
+  verifyKioskPhoneOtp,
 } from '../services/kiosk-registration.service.js';
 import { Op } from 'sequelize';
 
@@ -43,6 +47,73 @@ router.use(requireDisplayDevice);
 ensureKioskRegistrationTables().catch((e) =>
   console.warn('[kiosk] invite tables:', e.message)
 );
+
+/**
+ * GET /api/display/kiosk/context
+ * Device-auth: the real org name for this device, so the kiosk screen
+ * never falls back to a generic hardcoded brand.
+ */
+router.get('/context', async (req, res) => {
+  try {
+    const organizationName = await resolveOrgDisplayName(req.organizationId, req.displayDevice?.name || 'Mediqzy');
+    res.json({ success: true, organizationId: req.organizationId, organizationName });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /api/display/kiosk/lookup
+ * Body: { phone, corporateName?, employeeId? } — checks whether this walk-in
+ * already has a record (by phone, or by corporate name + employee ID), so the
+ * kiosk can skip OTP for returning patients and only ask new ones to verify.
+ */
+router.post('/lookup', async (req, res) => {
+  try {
+    const { phone, corporateName, employeeId } = req.body || {};
+    if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
+    const result = await lookupWalkInPatient({ phone, corporateName, employeeId });
+    res.json({ success: true, ...result });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /api/display/kiosk/send-otp
+ * Body: { phone } — WhatsApp OTP for a brand-new walk-in, before we create their record.
+ */
+router.post('/send-otp', async (req, res) => {
+  try {
+    const { phone } = req.body || {};
+    if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
+    const result = await sendKioskPhoneOtp(phone);
+    if (!result.sent) {
+      return res.status(502).json({ success: false, message: result.reason || 'Could not send OTP', devCode: result.devCode });
+    }
+    res.json({ success: true, message: 'OTP sent via WhatsApp', devCode: result.devCode });
+  } catch (e) {
+    const status = e.status || 500;
+    res.status(status).json({ success: false, message: e.message });
+  }
+});
+
+/**
+ * POST /api/display/kiosk/verify-otp
+ * Body: { phone, code } — marks the phone verified server-side (Redis, short TTL)
+ * so the subsequent /register call is trusted to create a new patient.
+ */
+router.post('/verify-otp', async (req, res) => {
+  try {
+    const { phone, code } = req.body || {};
+    if (!phone || !code) return res.status(400).json({ success: false, message: 'phone and code required' });
+    const result = await verifyKioskPhoneOtp(phone, code);
+    if (!result.success) return res.status(400).json({ success: false, message: result.message });
+    res.json({ success: true, message: 'Phone verified' });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
 
 /**
  * GET /api/display/kiosk/notify-health
@@ -241,9 +312,11 @@ router.post('/decode-aadhaar-image', async (req, res) => {
 router.post('/register', async (req, res) => {
   try {
     const {
-      phone, firstName, lastName, dateOfBirth, gender: genderRaw,
+      phone, firstName, lastName, dateOfBirth, age, gender: genderRaw,
+      email, corporateName, employeeId,
       department, queueZone, doctorId, doctorName, chiefComplaint, consentVersion,
       photoKey, abhaId, notifyOptIn, notifyPhone, address, aadhaarLast4,
+      requireOtpForNewPatient,
     } = req.body;
 
     const result = await registerWalkInPatient({
@@ -252,7 +325,11 @@ router.post('/register', async (req, res) => {
       firstName,
       lastName,
       dateOfBirth,
+      age,
       gender: genderRaw,
+      email,
+      corporateName,
+      employeeId,
       department,
       queueZone,
       doctorId,
@@ -266,6 +343,7 @@ router.post('/register', async (req, res) => {
       address,
       aadhaarLast4,
       source: 'kiosk',
+      requireOtpForNewPatient: requireOtpForNewPatient === true || requireOtpForNewPatient === 'true',
     });
 
     res.status(201).json({

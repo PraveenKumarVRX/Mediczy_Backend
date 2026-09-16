@@ -7,8 +7,8 @@ import { displayDeviceHeaders, getDisplayDeviceToken } from '@/utils/displayDevi
 type Step =
   | 'idle'
   | 'choose'
-  | 'phone'
-  | 'phone-sent'
+  | 'register-form'
+  | 'register-otp'
   | 'scan-aadhaar'
   | 'aadhaar-confirm'
   | 'appointment-phone'
@@ -48,8 +48,29 @@ interface AadhaarFields {
   aadhaarLast4: string | null;
 }
 
+interface RegisterForm {
+  name: string;
+  age: string;
+  gender: string;
+  phone: string;
+  email: string;
+  isCorporate: boolean;
+  corporateName: string;
+  employeeId: string;
+}
+
+const EMPTY_REGISTER_FORM: RegisterForm = {
+  name: '',
+  age: '',
+  gender: 'Male',
+  phone: '',
+  email: '',
+  isCorporate: false,
+  corporateName: '',
+  employeeId: '',
+};
+
 const IDLE_TIMEOUT_MS = 90000;
-const POLL_MS = 4000;
 
 function printToken(token: IssuedToken) {
   printQmsTokenSlip(token);
@@ -77,6 +98,7 @@ function mapGender(g: string): string {
 export default function SelfCheckinKiosk() {
   const [step, setStep] = useState<Step>('idle');
   const [phone, setPhone] = useState('');
+  const [orgName, setOrgName] = useState<string | null>(null);
   const [aadhaar, setAadhaar] = useState<AadhaarFields>({
     firstName: '',
     lastName: '',
@@ -85,6 +107,9 @@ export default function SelfCheckinKiosk() {
     address: '',
     aadhaarLast4: null,
   });
+  const [regForm, setRegForm] = useState<RegisterForm>(EMPTY_REGISTER_FORM);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selected, setSelected] = useState<Appointment | null>(null);
   const [token, setToken] = useState<IssuedToken | null>(null);
@@ -92,22 +117,9 @@ export default function SelfCheckinKiosk() {
   const [error, setError] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [notifyOptIn, setNotifyOptIn] = useState(true);
-  const [inviteChannels, setInviteChannels] = useState<string[]>([]);
-  const [registerUrl, setRegisterUrl] = useState<string | null>(null);
-  const [registerQr, setRegisterQr] = useState<string | null>(null);
-  const [linkSent, setLinkSent] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearPoll = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
-    }
-  }, []);
 
   const resetToIdle = useCallback(() => {
-    clearPoll();
     setStep('idle');
     setPhone('');
     setAadhaar({
@@ -118,22 +130,21 @@ export default function SelfCheckinKiosk() {
       address: '',
       aadhaarLast4: null,
     });
+    setRegForm(EMPTY_REGISTER_FORM);
+    setOtpCode('');
+    setOtpDevCode(null);
     setAppointments([]);
     setSelected(null);
     setToken(null);
     setError(null);
     setConsent(false);
     setNotifyOptIn(true);
-    setInviteChannels([]);
-    setRegisterUrl(null);
-    setRegisterQr(null);
-    setLinkSent(false);
     setLoading(false);
-  }, [clearPoll]);
+  }, []);
 
   const resetIdleTimer = useCallback(() => {
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    if (step !== 'idle' && step !== 'token-issued' && step !== 'phone-sent') {
+    if (step !== 'idle' && step !== 'token-issued') {
       idleTimer.current = setTimeout(resetToIdle, IDLE_TIMEOUT_MS);
     }
   }, [step, resetToIdle]);
@@ -147,9 +158,16 @@ export default function SelfCheckinKiosk() {
 
   useEffect(() => {
     getDisplayDeviceToken();
+    (async () => {
+      try {
+        const res = await fetch('/api/display/kiosk/context', { headers: displayDeviceHeaders() });
+        const json = await res.json();
+        if (json.success && json.organizationName) setOrgName(json.organizationName);
+      } catch {
+        /* keep default brand */
+      }
+    })();
   }, []);
-
-  useEffect(() => () => clearPoll(), [clearPoll]);
 
   const handlePhoneDigit = (d: string) => {
     resetIdleTimer();
@@ -161,54 +179,121 @@ export default function SelfCheckinKiosk() {
     setPhone((p) => p + d);
   };
 
-  const sendRegistrationInvite = async () => {
-    if (phone.length < 10) {
-      setError('Enter your 10-digit mobile number.');
-      return;
+  const setRegField = <K extends keyof RegisterForm>(key: K, value: RegisterForm[K]) => {
+    resetIdleTimer();
+    setRegForm((f) => ({ ...f, [key]: value }));
+  };
+
+  function issueFromRegisterResponse(json: {
+    success?: boolean;
+    token?: { tokenNumber?: string };
+    entry?: {
+      tokenNumber?: string;
+      doctorName?: string;
+      estimatedWaitMinutes?: number;
+      counterId?: string;
+      queueZone?: string;
+    };
+    uhid?: string;
+    message?: string;
+  }) {
+    if (!json.success) {
+      setError(json.message || 'Registration failed.');
+      return false;
     }
-    setLoading(true);
+    const issued: IssuedToken = {
+      token_number: json.token?.tokenNumber || json.entry?.tokenNumber || '',
+      patient_name: regForm.name.trim(),
+      doctor_name: json.entry?.doctorName || 'General OPD',
+      issued_at: new Date().toISOString(),
+      estimated_wait_minutes: json.entry?.estimatedWaitMinutes,
+      uhid: json.uhid,
+      counter_id: json.entry?.counterId,
+      queue_zone: json.entry?.queueZone,
+      whatsapp: notifyOptIn,
+    };
+    setToken(issued);
+    setStep('token-issued');
+    setTimeout(() => printToken(issued), 400);
+    setTimeout(resetToIdle, 45000);
+    return true;
+  }
+
+  const registerNow = async (opts: { requireOtpForNewPatient: boolean }) => {
+    const res = await fetch('/api/display/kiosk/register', {
+      method: 'POST',
+      headers: displayDeviceHeaders(),
+      body: JSON.stringify({
+        phone: regForm.phone,
+        firstName: regForm.name.trim(),
+        age: regForm.age || null,
+        gender: regForm.gender,
+        email: regForm.email || null,
+        corporateName: regForm.isCorporate ? regForm.corporateName.trim() : null,
+        employeeId: regForm.isCorporate ? regForm.employeeId.trim() : null,
+        consentVersion: 'kiosk-selfreg-v1',
+        notifyOptIn,
+        notifyPhone: regForm.phone,
+        requireOtpForNewPatient: opts.requireOtpForNewPatient,
+      }),
+    });
+    const json = await res.json();
+    return json;
+  };
+
+  /** Step 1: validate the form, then look up whether this person already has a record. */
+  const submitRegisterForm = async () => {
     setError(null);
+    if (!regForm.name.trim()) return setError('Please enter your full name.');
+    if (!regForm.age || Number(regForm.age) <= 0 || Number(regForm.age) > 120) {
+      return setError('Please enter a valid age.');
+    }
+    if (regForm.phone.length < 10) return setError('Please enter a 10-digit mobile number.');
+    if (regForm.isCorporate && !regForm.corporateName.trim()) {
+      return setError('Please enter your company name.');
+    }
+    if (regForm.isCorporate && !regForm.employeeId.trim()) {
+      return setError('Please enter your employee ID.');
+    }
+    if (regForm.isCorporate && !regForm.email.trim()) {
+      return setError('Email is required for corporate employees.');
+    }
+    if (!consent) return setError('Please accept consent to continue.');
+
+    setLoading(true);
     try {
-      const res = await fetch('/api/display/kiosk/registration-invite', {
+      const lookupRes = await fetch('/api/display/kiosk/lookup', {
         method: 'POST',
         headers: displayDeviceHeaders(),
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({
+          phone: regForm.phone,
+          corporateName: regForm.isCorporate ? regForm.corporateName.trim() : undefined,
+          employeeId: regForm.isCorporate ? regForm.employeeId.trim() : undefined,
+        }),
       });
-      const json = await res.json();
-      if (!json.success) {
-        setError(json.message || 'Could not send registration link.');
+      const lookup = await lookupRes.json();
+
+      if (lookup.success && lookup.found) {
+        // Existing record — complete check-in immediately, no OTP needed.
+        const json = await registerNow({ requireOtpForNewPatient: false });
+        issueFromRegisterResponse(json);
         return;
       }
-      setInviteChannels(Array.isArray(json.channels) ? json.channels : []);
-      setLinkSent(Boolean(json.linkSent));
-      const url = typeof json.registerUrl === 'string' ? json.registerUrl : null;
-      setRegisterUrl(url);
-      if (url) {
-        try {
-          const QRCode = (await import('qrcode')).default;
-          const dataUrl = await QRCode.toDataURL(url, {
-            width: 280,
-            margin: 2,
-            errorCorrectionLevel: 'M',
-          });
-          setRegisterQr(dataUrl);
-        } catch {
-          setRegisterQr(null);
-        }
-      } else {
-        setRegisterQr(null);
+
+      // New person — verify their number is real before we create a record.
+      const otpRes = await fetch('/api/display/kiosk/send-otp', {
+        method: 'POST',
+        headers: displayDeviceHeaders(),
+        body: JSON.stringify({ phone: regForm.phone }),
+      });
+      const otpJson = await otpRes.json();
+      if (!otpJson.success) {
+        setError(otpJson.message || 'Could not send WhatsApp OTP. Please try again.');
+        return;
       }
-      const notifyErrors = Array.isArray(json.notifyErrors) ? json.notifyErrors : [];
-      const waFailed =
-        notifyErrors.some((e: string) => /whatsapp/i.test(String(e))) ||
-        (!json.linkSent && notifyErrors.length > 0);
-      if (waFailed || (!json.linkSent && url)) {
-        const tip = notifyErrors[0]
-          ? String(notifyErrors[0]).replace(/^WhatsApp:\s*/i, '')
-          : 'not delivered';
-        setError(`WhatsApp ${tip} — scan the QR with your phone camera.`);
-      }
-      setStep('phone-sent');
+      setOtpDevCode(otpJson.devCode || null);
+      setOtpCode('');
+      setStep('register-otp');
     } catch {
       setError('Connection error. Please try again.');
     } finally {
@@ -216,46 +301,56 @@ export default function SelfCheckinKiosk() {
     }
   };
 
-  // Poll invite status while waiting for phone registration
-  useEffect(() => {
-    if (step !== 'phone-sent' || phone.length < 10) {
-      clearPoll();
+  /** Step 2 (new patients only): verify the WhatsApp OTP, then complete registration. */
+  const verifyOtpAndRegister = async () => {
+    if (otpCode.length !== 6) {
+      setError('Enter the 6-digit code sent on WhatsApp.');
       return;
     }
-    clearPoll();
-    const tick = async () => {
-      try {
-        const res = await fetch(
-          `/api/display/kiosk/registration-invite/status?phone=${encodeURIComponent(phone)}`,
-          { headers: displayDeviceHeaders() }
-        );
-        const json = await res.json();
-        if (json.success && json.status === 'completed' && json.tokenNumber) {
-          clearPoll();
-          const issued: IssuedToken = {
-            token_number: json.tokenNumber,
-            patient_name: 'Patient',
-            doctor_name: 'General OPD',
-            issued_at: new Date().toISOString(),
-            whatsapp: true,
-          };
-          setToken(issued);
-          setStep('token-issued');
-          setTimeout(() => printToken(issued), 400);
-          setTimeout(resetToIdle, 45000);
-        } else if (json.status === 'expired' || json.status === 'revoked') {
-          clearPoll();
-          setError('Link expired. Please enter your number again.');
-          setStep('phone');
-        }
-      } catch {
-        /* keep polling */
+    setLoading(true);
+    setError(null);
+    try {
+      const verifyRes = await fetch('/api/display/kiosk/verify-otp', {
+        method: 'POST',
+        headers: displayDeviceHeaders(),
+        body: JSON.stringify({ phone: regForm.phone, code: otpCode }),
+      });
+      const verifyJson = await verifyRes.json();
+      if (!verifyJson.success) {
+        setError(verifyJson.message || 'Incorrect code. Please try again.');
+        return;
       }
-    };
-    void tick();
-    pollRef.current = setInterval(tick, POLL_MS);
-    return clearPoll;
-  }, [step, phone, clearPoll, resetToIdle]);
+      const json = await registerNow({ requireOtpForNewPatient: true });
+      issueFromRegisterResponse(json);
+    } catch {
+      setError('Connection error. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOtp = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/display/kiosk/send-otp', {
+        method: 'POST',
+        headers: displayDeviceHeaders(),
+        body: JSON.stringify({ phone: regForm.phone }),
+      });
+      const json = await res.json();
+      if (!json.success) {
+        setError(json.message || 'Could not resend OTP.');
+        return;
+      }
+      setOtpDevCode(json.devCode || null);
+      setError(null);
+    } catch {
+      setError('Connection error.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAadhaarScan = async (payload: {
     qrBytesBase64?: string;
@@ -437,13 +532,10 @@ export default function SelfCheckinKiosk() {
   };
 
   const age = ageFromDob(aadhaar.dateOfBirth);
-  const channelHint =
-    inviteChannels.length > 0
-      ? inviteChannels.map((c) => (c === 'whatsapp' ? 'WhatsApp' : c === 'sms' ? 'SMS' : c)).join(' + ')
-      : 'WhatsApp / SMS';
+  const brand = orgName || 'Mediqzy';
 
   return (
-    <DisplayShell zone="opd-counter" zoneName="Self Check-in" fullscreen>
+    <DisplayShell zone="opd-counter" zoneName="Self Check-in" hospitalName={brand} fullscreen>
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
@@ -470,10 +562,10 @@ export default function SelfCheckinKiosk() {
               className="text-6xl md:text-7xl font-bold tracking-tight text-teal-300 mb-6"
               style={{ fontFamily: 'Fraunces, Georgia, serif' }}
             >
-              Mediqzy
+              {brand}
             </p>
             <h1 className="text-3xl md:text-4xl font-semibold text-white mb-3">Touch to start</h1>
-            <p className="text-lg text-slate-400">Register in under a minute · Phone or Aadhaar</p>
+            <p className="text-lg text-slate-400">Register in under a minute · Self check-in or Aadhaar</p>
             <div className="mt-12 inline-flex h-16 w-16 items-center justify-center rounded-full border border-teal-400/40 text-teal-300 animate-pulse">
               <span className="text-2xl" aria-hidden>
                 ◎
@@ -489,7 +581,7 @@ export default function SelfCheckinKiosk() {
                 className="text-3xl font-bold text-teal-300"
                 style={{ fontFamily: 'Fraunces, Georgia, serif' }}
               >
-                Mediqzy
+                {brand}
               </p>
               <h2 className="mt-3 text-2xl md:text-3xl font-semibold text-white">
                 How would you like to register?
@@ -501,15 +593,16 @@ export default function SelfCheckinKiosk() {
               type="button"
               onClick={() => {
                 setError(null);
-                setPhone('');
-                setStep('phone');
+                setRegForm(EMPTY_REGISTER_FORM);
+                setConsent(false);
+                setStep('register-form');
                 resetIdleTimer();
               }}
               className="group w-full rounded-3xl border border-teal-500/30 bg-gradient-to-br from-teal-900/80 to-slate-900 px-6 py-8 text-left transition hover:border-teal-400/60 hover:from-teal-800/90"
             >
-              <p className="text-2xl font-bold text-white">Mobile number</p>
+              <p className="text-2xl font-bold text-white">Register now</p>
               <p className="mt-2 text-base text-teal-100/70">
-                We’ll send a secure link on WhatsApp — finish on your phone
+                Name, age, gender & mobile — takes under a minute
               </p>
             </button>
 
@@ -547,69 +640,163 @@ export default function SelfCheckinKiosk() {
           </div>
         )}
 
-        {step === 'phone' && (
-          <PhonePad
-            title="Your mobile number"
-            subtitle="We’ll send a secure registration link"
-            phone={phone}
-            error={error}
-            loading={loading}
-            okLabel="Send link"
-            onDigit={handlePhoneDigit}
-            onOk={() => void sendRegistrationInvite()}
-            onBack={() => setStep('choose')}
-          />
+        {step === 'register-form' && (
+          <div className="w-full max-w-lg space-y-4">
+            <div className="text-center">
+              <h2
+                className="text-3xl font-semibold text-white"
+                style={{ fontFamily: 'Fraunces, Georgia, serif' }}
+              >
+                Your details
+              </h2>
+              <p className="mt-2 text-sm text-slate-400">We’ll check if you’re already registered with us</p>
+            </div>
+
+            <div className="space-y-3 rounded-3xl border border-slate-700/80 bg-slate-900/70 p-5">
+              <KioskField
+                label="Full name"
+                value={regForm.name}
+                onChange={(v) => setRegField('name', v)}
+                placeholder="As on your ID"
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <KioskField
+                  label="Age"
+                  value={regForm.age}
+                  onChange={(v) => setRegField('age', v.replace(/\D/g, '').slice(0, 3))}
+                  inputMode="numeric"
+                  placeholder="Years"
+                />
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Gender
+                  </span>
+                  <select
+                    className="w-full rounded-2xl border border-slate-600 bg-slate-800 px-3 py-3 text-base"
+                    value={regForm.gender}
+                    onChange={(e) => setRegField('gender', e.target.value)}
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </label>
+              </div>
+              <KioskField
+                label="Mobile number"
+                value={regForm.phone}
+                onChange={(v) => setRegField('phone', v.replace(/\D/g, '').slice(0, 10))}
+                inputMode="numeric"
+                placeholder="10-digit number"
+              />
+              <KioskField
+                label={regForm.isCorporate ? 'Email (required)' : 'Email (optional)'}
+                type="email"
+                value={regForm.email}
+                onChange={(v) => setRegField('email', v)}
+                placeholder="you@example.com"
+              />
+
+              <label className="flex items-center gap-3 text-sm text-slate-300 pt-1">
+                <input
+                  type="checkbox"
+                  checked={regForm.isCorporate}
+                  onChange={(e) => setRegField('isCorporate', e.target.checked)}
+                />
+                I’m here as a corporate / camp employee
+              </label>
+
+              {regForm.isCorporate && (
+                <div className="grid grid-cols-2 gap-3">
+                  <KioskField
+                    label="Company name"
+                    value={regForm.corporateName}
+                    onChange={(v) => setRegField('corporateName', v)}
+                  />
+                  <KioskField
+                    label="Employee ID"
+                    value={regForm.employeeId}
+                    onChange={(v) => setRegField('employeeId', v)}
+                  />
+                </div>
+              )}
+
+              <label className="flex items-start gap-3 text-sm text-slate-300 pt-1">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={consent}
+                  onChange={(e) => setConsent(e.target.checked)}
+                />
+                I consent to registration and queue management at this facility.
+              </label>
+              <label className="flex items-start gap-3 text-sm text-slate-300">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={notifyOptIn}
+                  onChange={(e) => setNotifyOptIn(e.target.checked)}
+                />
+                Send WhatsApp / SMS queue updates.
+              </label>
+            </div>
+
+            {error && <p className="text-sm text-rose-400">{error}</p>}
+
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void submitRegisterForm()}
+              className="w-full rounded-2xl bg-teal-600 py-4 text-xl font-bold hover:bg-teal-500 disabled:opacity-50"
+            >
+              {loading ? 'Checking…' : 'Continue'}
+            </button>
+            <button type="button" onClick={() => setStep('choose')} className="w-full py-2 text-sm text-slate-500">
+              ← Back
+            </button>
+          </div>
         )}
 
-        {step === 'phone-sent' && (
-          <div className="w-full max-w-lg text-center px-2">
+        {step === 'register-otp' && (
+          <div className="w-full max-w-md text-center">
             <h2
               className="text-3xl font-semibold text-white"
               style={{ fontFamily: 'Fraunces, Georgia, serif' }}
             >
-              Finish on your phone
+              Verify your number
             </h2>
-            <p className="mt-3 text-lg text-slate-300">
-              For{' '}
-              <span className="font-mono font-semibold text-teal-300">******{phone.slice(-4)}</span>
+            <p className="mt-3 text-base text-slate-300">
+              We’ve sent a 6-digit code on WhatsApp to{' '}
+              <span className="font-mono font-semibold text-teal-300">******{regForm.phone.slice(-4)}</span>
             </p>
-            <p className="mt-2 text-sm text-slate-500">
-              {linkSent
-                ? `Sent via ${channelHint}. If it doesn’t arrive in ~30s, scan the QR.`
-                : 'WhatsApp/SMS didn’t deliver — scan the QR below on your phone'}
-            </p>
-
-            {registerQr && (
-              <div className="mx-auto mt-6 inline-block rounded-3xl bg-white p-4 shadow-xl">
-                <img src={registerQr} alt="Scan to open registration" className="h-56 w-56" />
-              </div>
+            {otpDevCode && (
+              <p className="mt-2 text-xs text-amber-400">Dev mode code: {otpDevCode}</p>
             )}
-            <p className="mt-3 text-sm font-medium text-teal-200">
-              Scan this QR with your phone camera to open the registration link
-            </p>
-
-            <div className="mt-6 rounded-3xl border border-slate-700/80 bg-slate-900/60 px-5 py-5">
-              <div className="mx-auto mb-3 h-2 w-2 animate-pulse rounded-full bg-teal-400" />
-              <p className="text-base text-slate-300">Waiting for you to submit…</p>
-              <p className="mt-2 text-sm text-slate-500">
-                Your token will appear here when registration is complete.
-              </p>
-            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="mx-auto mt-6 block w-52 rounded-2xl border border-slate-600 bg-slate-800 px-4 py-4 text-center font-mono text-3xl tracking-[0.4em]"
+              placeholder="······"
+            />
             {error && <p className="mt-4 text-sm text-rose-400">{error}</p>}
-            {registerUrl && (
-              <p className="mt-3 break-all px-2 text-[11px] text-slate-600">{registerUrl}</p>
-            )}
-            <div className="mt-6 flex flex-col gap-2">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => void sendRegistrationInvite()}
-                className="w-full py-3 text-sm text-teal-400/90 hover:text-teal-300"
-              >
-                Resend / refresh QR
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void verifyOtpAndRegister()}
+              className="mt-6 w-full rounded-2xl bg-teal-600 py-4 text-xl font-bold hover:bg-teal-500 disabled:opacity-50"
+            >
+              {loading ? 'Verifying…' : 'Verify & get token'}
+            </button>
+            <div className="mt-4 flex justify-center gap-6 text-sm">
+              <button type="button" disabled={loading} onClick={() => void resendOtp()} className="text-teal-400/90 hover:text-teal-300">
+                Resend code
               </button>
-              <button type="button" onClick={() => setStep('phone')} className="w-full py-2 text-sm text-slate-500">
-                ← Change number
+              <button type="button" onClick={() => setStep('register-form')} className="text-slate-500">
+                ← Change details
               </button>
             </div>
           </div>
@@ -808,7 +995,7 @@ export default function SelfCheckinKiosk() {
               className="text-2xl font-bold text-teal-300"
               style={{ fontFamily: 'Fraunces, Georgia, serif' }}
             >
-              Mediqzy
+              {brand}
             </p>
             <h2 className="mt-2 text-3xl font-semibold text-white">You’re checked in</h2>
             <div className="my-5 font-mono text-7xl font-black tracking-wider text-teal-300 md:text-8xl">
