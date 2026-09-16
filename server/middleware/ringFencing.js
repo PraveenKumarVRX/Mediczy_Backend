@@ -217,6 +217,9 @@ const USER_TYPE_PERMISSIONS = {
       // doctor account that's also linked to a clinic tenant (doctors.tenant_id); scoped
       // narrowly to this one sub-path, not all of /api/clinic, since most standalone
       // doctors have no clinic affiliation at all.
+      '/api/qms',  // Unified QMS + Aadhaar QR check-in — same clinic-tenant-linked-doctor
+      // case as occupational-health above; authPortalQms itself still rejects any
+      // standalone doctor with no clinic attached, so this is safe to open broadly.
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'

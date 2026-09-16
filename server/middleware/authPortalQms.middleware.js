@@ -8,6 +8,7 @@ import { QMS_PORTAL_DEFAULTS } from '../config/qms.config.js';
 import { authUser } from './auth.middleware.js';
 import { authLab } from './authLab.middleware.js';
 import { authClinicPortal } from './clinicPortalAuth.middleware.js';
+import sharedPool from '../db/pgPool.js';
 
 export { QMS_PORTAL_DEFAULTS };
 
@@ -46,7 +47,7 @@ function bindQms(req, portalKey, organizationId, actor = {}) {
 /**
  * Accept hospital staff, clinic portal, or lab JWT.
  */
-export function authPortalQms(req, res, next) {
+export async function authPortalQms(req, res, next) {
   const decoded = peekToken(req);
   if (!decoded) {
     return res.status(401).json({ success: false, message: 'Authentication required', code: 'NO_TOKEN' });
@@ -68,6 +69,36 @@ export function authPortalQms(req, res, next) {
       }
       return next();
     });
+  }
+
+  // Standalone doctor account (doctors table, /api/doctors/login) linked to a
+  // clinic tenant — same real-world case fitness-certificate issuance already
+  // handles: real doctors are onboarded through the standalone doctor platform,
+  // not the separate clinic_staff (users table) login below.
+  if (role === 'doctor') {
+    try {
+      const { rows } = await sharedPool.query(
+        `SELECT id, "firstName", "lastName", email, tenant_id, "organization_type" FROM doctors WHERE id = $1`,
+        [decoded.id]
+      );
+      const doctor = rows[0];
+      if (!doctor || doctor.organization_type !== 'clinic' || !doctor.tenant_id) {
+        return res.status(403).json({ success: false, message: 'Your account is not linked to a clinic' });
+      }
+      req.user = { id: doctor.id, email: doctor.email, role: 'doctor', organization_id: doctor.tenant_id, tenant_id: doctor.tenant_id };
+      const ok = bindQms(req, 'clinic', doctor.tenant_id, {
+        id: doctor.id,
+        name: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim() || doctor.email,
+        email: doctor.email,
+        role: 'doctor',
+      });
+      if (!ok) {
+        return res.status(403).json({ success: false, message: 'Clinic tenant missing for QMS' });
+      }
+      return next();
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'QMS authentication check failed' });
+    }
   }
 
   if (role === 'clinic' || role === 'clinic_admin') {
