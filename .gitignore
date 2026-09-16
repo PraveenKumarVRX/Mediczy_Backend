@@ -149,3 +149,4 @@ __pycache__/
 offline_scribe/__pycache__/
 offline_scribe/**/__pycache__/
 server/__pycache__/
+qa-samples/

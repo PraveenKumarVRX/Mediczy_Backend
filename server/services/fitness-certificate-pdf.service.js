@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getDoctorSignatureDataUri } from './doctor-signature.service.js';
+import { getClinicLogoDataUri } from './clinic-branding.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,7 +48,7 @@ function renderConditionalBlock(template, key, value) {
 /**
  * @param {object} cert - a row from fitness_certificates (as returned by issueFitnessCertificate)
  * @param {object} [letterhead] - issuer context not stored flat on the cert row:
- *   { doctorQualifications, doctorSpecialty, clinicName, clinicAddress, clinicPhone, doctorId }
+ *   { doctorQualifications, doctorSpecialty, clinicName, clinicAddress, clinicPhone, doctorId, tenantId }
  */
 export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
   ensureDir();
@@ -60,8 +61,18 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
     ? `<img src="${signatureDataUri}" class="signature-img" alt="Signature" />`
     : '<div class="signature-line"></div>';
 
+  const logoDataUri = getClinicLogoDataUri(letterhead.tenantId);
+  const logoSlot = logoDataUri
+    ? `<img src="${logoDataUri}" class="brand-logo-img" alt="${letterhead.clinicName || 'Clinic'} logo" />`
+    : `<svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+         <circle cx="26" cy="26" r="25" stroke="#0f766e" stroke-width="1.6" fill="#f0fdfa"/>
+         <path d="M15 27c3-6 8-9 11-9 2 0 2.5 1.6 1 3-2 2-5 3-7 6 3-1 7-3 10-6 2-2 4-1 3 1.3-1.7 3.7-6 6.7-10 8.2" stroke="#0f766e" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+         <path d="M37 25c-3-6-8-9-11-9-2 0-2.5 1.6-1 3 2 2 5 3 7 6-3-1-7-3-10-6-2-2-4-1-3 1.3 1.7 3.7 6 6.7 10 8.2" stroke="#5eead4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+       </svg>`;
+
   const replacements = {
     '{{signatureSlot}}': signatureSlot,
+    '{{logoSlot}}': logoSlot,
     '{{certificateId}}': cert.id,
     '{{issuedDate}}': fmtDate(cert.signed_at || cert.created_at),
     '{{patientName}}': cert.patient_name || '—',

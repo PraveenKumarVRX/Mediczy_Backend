@@ -60,6 +60,7 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const letterhead = await getMySmartHealthLetterhead();
     await generateFitnessCertificatePdf(cert, {
       ...letterhead,
+      tenantId: MYSMARTHEALTH_TENANT_ID,
       doctorQualifications: doctorQualifications || '',
       doctorSpecialty: doctorSpecialty || 'Occupational Health',
     });

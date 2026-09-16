@@ -19,6 +19,7 @@ import AuditLog from '../models/auditLog.model.intelligent.js';
 import n8nService from '../services/n8n.service.js';
 import { getDoctorSignatureDataUri } from '../services/doctor-signature.service.js';
 import { resolveDoctorLetterhead } from '../services/doctor-letterhead.service.js';
+import { getClinicLogoDataUri } from '../services/clinic-branding.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import * as prescriptionRepository from '../repositories/prescription.repository.js';
@@ -52,9 +53,19 @@ const renderPrescriptionHTML = (prescription) => {
     ? `<img src="${signatureDataUri}" class="signature-img" alt="Signature" />`
     : '<div class="signature-line"></div>';
 
+  const logoDataUri = getClinicLogoDataUri(prescription.tenant_id);
+  const logoSlot = logoDataUri
+    ? `<img src="${logoDataUri}" class="brand-logo-img" alt="Clinic logo" />`
+    : `<svg width="52" height="52" viewBox="0 0 52 52" fill="none" xmlns="http://www.w3.org/2000/svg">
+         <circle cx="26" cy="26" r="25" stroke="#0f766e" stroke-width="1.6" fill="#f0fdfa"/>
+         <path d="M15 27c3-6 8-9 11-9 2 0 2.5 1.6 1 3-2 2-5 3-7 6 3-1 7-3 10-6 2-2 4-1 3 1.3-1.7 3.7-6 6.7-10 8.2" stroke="#0f766e" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+         <path d="M37 25c-3-6-8-9-11-9-2 0-2.5 1.6-1 3 2 2 5 3 7 6-3-1-7-3-10-6-2-2-4-1-3 1.3 1.7 3.7 6 6.7 10 8.2" stroke="#5eead4" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+       </svg>`;
+
   // Basic replacements
   const replacements = {
     '{{signatureSlot}}': signatureSlot,
+    '{{logoSlot}}': logoSlot,
     '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'Mediczy Healthcare',
     '{{clinicAddress}}': prescription.clinicAddress || prescription.clinicDetails?.address || 'Virtual Consultation Platform',
     '{{clinicPhone}}': prescription.clinicPhone || prescription.clinicDetails?.phone || '+91-XXX-XXX-XXXX',
