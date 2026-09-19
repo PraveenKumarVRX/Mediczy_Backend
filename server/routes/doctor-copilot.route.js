@@ -16,9 +16,16 @@ import {
   delegateToRouter,
   getCopilotMeta,
 } from '../services/doctor-copilot.service.js';
+import qualityGates from '../services/ai-quality-gates.service.js';
 
 const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
+// Roles allowed to reach the clinical-decision-support path specifically.
+// requireDoctor above gates the gateway itself (administrative + clinical
+// callers both authenticate here); this second, narrower check decides
+// which of those callers may be routed to /medical-ai/consult's clinical
+// mode rather than the administrative /voice-assistant/agent path.
+const CLINICAL_ROLES = ['doctor', 'admin', 'medical_director', 'super_admin'];
 
 router.get('/health', authUser, requireDoctor, (_req, res) => {
   res.json({
@@ -44,7 +51,13 @@ router.post('/chat', authUser, requireDoctor, async (req, res) => {
     return res.status(400).json({ success: false, error: 'message or text is required', traceId });
   }
 
-  const mode = classifyDoctorCopilotPath(text, req.body?.mode || 'auto');
+  let mode = classifyDoctorCopilotPath(text, req.body?.mode || 'auto');
+  // Keyword classification alone must never grant clinical-path access —
+  // downgrade to the administrative path for any caller who isn't a
+  // clinical role, regardless of what the message text contains.
+  if (mode === 'clinical' && !CLINICAL_ROLES.includes(req.user?.role)) {
+    mode = 'agent';
+  }
   const history = normalizeCopilotHistory(req.body?.history);
   const context = enrichDoctorCopilotContext(req.user, req.body?.context || {});
   const sessionId = buildCopilotSessionId(req.user.id, req.body?.sessionId);
@@ -58,6 +71,13 @@ router.post('/chat', authUser, requireDoctor, async (req, res) => {
 
   try {
     if (mode === 'clinical') {
+      qualityGates.logCopilotConversation({
+        patientId: req.body?.context?.patientId || null,
+        userId: req.user?.id,
+        role: req.user?.role,
+        source: 'doctor-copilot/chat',
+        traceId,
+      }).catch(() => {}); // audit logging must never block the clinical workflow
       await delegateToRouter(medicalAIRouter, '/consult', req, res, {
         query: text,
         sessionId,

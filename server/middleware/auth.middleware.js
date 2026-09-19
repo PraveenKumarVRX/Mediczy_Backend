@@ -641,6 +641,20 @@ export const requireRole = (role) => {
   };
 };
 
+/**
+ * requireRole() normalises a `hospital_admin` token to plain `hospital` (ROLE_ALIASES), so a role
+ * list that names only 'hospital_admin' can never match a real hospital admin. Use this for
+ * admin-only routes: a genuine hospital_admin token passes, every other role goes through the
+ * normal requireRole(roles) check — it does NOT open the route to other hospital staff.
+ */
+export const requireRoleOrHospitalAdmin = (roles) => {
+  const base = requireRole(roles);
+  return (req, res, next) => {
+    if (req.user?.role === 'hospital_admin' && req.user?.userType === 'hospital') return next();
+    return base(req, res, next);
+  };
+};
+
 export const authDoctor = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(" ")[1];

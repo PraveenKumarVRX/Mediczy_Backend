@@ -1,5 +1,13 @@
 /**
  * Hospital OS — AI Brain tools for unified copilot
+ *
+ * Security fix (2026-09-18): organizationId must come ONLY from the
+ * authenticated request context, never from an LLM-suppliable tool-call
+ * argument. Previously every tool resolved
+ * `orgId = params.organizationId || context.organizationId || 1`, which
+ * let organizationId be steered by the LLM (prompt-injectable) or silently
+ * default to org 1 — a cross-tenant PHI exposure. Tools now read
+ * `context.organizationId` exclusively and fail closed if it's missing.
  */
 import { register } from './index.js';
 import {
@@ -17,6 +25,8 @@ import {
 } from '../../hospital-os/index.js';
 import { getPatientWorkspace, toPatientSummary } from '../../clinical-workspace.service.js';
 
+const NO_ORG_CONTEXT = { success: false, error: 'Organization context missing from the authenticated session — cannot execute this tool.' };
+
 register({
   name: 'get_patient_workspace_summary',
   description: 'Get unified inpatient/clinical workspace summary for a patient',
@@ -25,13 +35,12 @@ register({
     type: 'object',
     properties: {
       patientId: { type: 'integer', description: 'Patient ID' },
-      organizationId: { type: 'integer', description: 'Hospital organization ID' },
     },
     required: ['patientId'],
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    const ws = await getPatientWorkspace(params.patientId, orgId);
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    const ws = await getPatientWorkspace(params.patientId, context.organizationId);
     return { success: true, summary: toPatientSummary(ws) };
   },
 });
@@ -44,13 +53,12 @@ register({
     type: 'object',
     properties: {
       patientId: { type: 'integer' },
-      organizationId: { type: 'integer' },
     },
     required: ['patientId'],
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    const twin = await getPatientTwin(params.patientId, orgId);
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    const twin = await getPatientTwin(params.patientId, context.organizationId);
     return { success: true, twin };
   },
 });
@@ -59,13 +67,10 @@ register({
   name: 'get_command_center_ai_recommendations',
   description: 'Get AI operational recommendations for hospital command center',
   category: 'hospital_os',
-  parameters: {
-    type: 'object',
-    properties: { organizationId: { type: 'integer' } },
-  },
+  parameters: { type: 'object', properties: {} },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await getAIRecommendations(orgId);
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await getAIRecommendations(context.organizationId);
   },
 });
 
@@ -76,14 +81,13 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      organizationId: { type: 'integer' },
       wardId: { type: 'integer' },
       shift: { type: 'string', enum: ['day', 'evening', 'night'] },
     },
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await generateShiftHandover({ wardId: params.wardId, organizationId: orgId, shift: params.shift || 'day' });
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await generateShiftHandover({ wardId: params.wardId, organizationId: context.organizationId, shift: params.shift || 'day' });
   },
 });
 
@@ -94,15 +98,14 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      organizationId: { type: 'integer' },
       scenarioKey: { type: 'string', enum: ['ed_surge_20pct', 'close_ot_room', 'icu_overflow'] },
     },
     required: ['scenarioKey'],
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
+    if (!context.organizationId) return NO_ORG_CONTEXT;
     return await runHospitalSimulation({
-      organizationId: orgId,
+      organizationId: context.organizationId,
       scenarioKey: params.scenarioKey,
       userId: context.userId,
     });
@@ -117,13 +120,12 @@ register({
     type: 'object',
     properties: {
       patientId: { type: 'integer' },
-      organizationId: { type: 'integer' },
     },
     required: ['patientId'],
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await buildPatientSubgraph(params.patientId, orgId);
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await buildPatientSubgraph(params.patientId, context.organizationId);
   },
 });
 
@@ -150,13 +152,12 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      organizationId: { type: 'integer' },
       hoursAhead: { type: 'integer' },
     },
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await forecastED({ organizationId: orgId, hoursAhead: params.hoursAhead || 8 });
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await forecastED({ organizationId: context.organizationId, hoursAhead: params.hoursAhead || 8 });
   },
 });
 
@@ -168,14 +169,13 @@ register({
     type: 'object',
     properties: {
       patientId: { type: 'integer' },
-      organizationId: { type: 'integer' },
       goals: { type: 'array', items: { type: 'string' } },
     },
     required: ['patientId'],
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await optimizeJourney({ patientId: params.patientId, organizationId: orgId, goals: params.goals || [] });
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await optimizeJourney({ patientId: params.patientId, organizationId: context.organizationId, goals: params.goals || [] });
   },
 });
 
@@ -187,13 +187,12 @@ register({
     type: 'object',
     properties: {
       patientId: { type: 'integer' },
-      organizationId: { type: 'integer' },
     },
     required: ['patientId'],
   },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await matchClinicalTrials({ patientId: params.patientId, organizationId: orgId });
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await matchClinicalTrials({ patientId: params.patientId, organizationId: context.organizationId });
   },
 });
 
@@ -201,13 +200,10 @@ register({
   name: 'sync_hospital_digital_twin',
   description: 'Sync live hospital operational digital twin snapshot',
   category: 'hospital_os',
-  parameters: {
-    type: 'object',
-    properties: { organizationId: { type: 'integer' } },
-  },
+  parameters: { type: 'object', properties: {} },
   async execute(params, context) {
-    const orgId = params.organizationId || context.organizationId || 1;
-    return await syncHospitalTwin(orgId);
+    if (!context.organizationId) return NO_ORG_CONTEXT;
+    return await syncHospitalTwin(context.organizationId);
   },
 });
 

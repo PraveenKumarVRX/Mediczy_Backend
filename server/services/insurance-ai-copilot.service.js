@@ -100,6 +100,12 @@ export async function draftAppealLetter(claim, options = {}) {
   });
 
   const parsed = parseJson(result.content);
+  // reviewRequired: true on every path, matching the existing convention in
+  // ai-model-governance.service.js's clinical-coding-suggestion-llm card
+  // ("every billing charge created from a suggestion carries reviewRequired:
+  // true"). This is administrative/financial AI (NOT SaMD per CLAUDE.md),
+  // but per the audit finding, nothing previously marked this draft as
+  // requiring human sign-off before submission to an insurer.
   if (!parsed) {
     return {
       subject: `Appeal — Claim ${c.claimNumber}`,
@@ -108,10 +114,12 @@ export async function draftAppealLetter(claim, options = {}) {
       confidence: 0.3,
       provider: result.provider,
       structuredParseFailed: true,
+      reviewRequired: true,
+      status: 'draft',
     };
   }
 
-  return { ...parsed, provider: result.provider };
+  return { ...parsed, provider: result.provider, reviewRequired: true, status: 'draft' };
 }
 
 // ─── Documentation coherence check ──────────────────────────────────────

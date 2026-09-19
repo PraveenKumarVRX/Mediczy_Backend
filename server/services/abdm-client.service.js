@@ -34,6 +34,24 @@ const ABDM_CLIENT_SEC = process.env.ABDM_CLIENT_SECRET || '';
 const ABDM_HIP_ID     = process.env.ABDM_HIP_ID       || 'MEDICZY_HMIS_001';
 const ABDM_CALLBACK   = process.env.ABDM_CALLBACK_URL  || 'https://app.mediqzy.com/api/abdm/callback';
 const IS_SANDBOX      = !process.env.ABDM_BASE_URL || process.env.ABDM_BASE_URL.includes('dev.abdm');
+// HFR/HPR fallbacks swallow gateway errors ONLY when a sandbox URL is explicitly configured;
+// an unset ABDM_BASE_URL (e.g. a misconfigured production) must surface the error instead.
+const HFR_HPR_SANDBOX_FALLBACK = Boolean(process.env.ABDM_BASE_URL) && process.env.ABDM_BASE_URL.includes('dev.abdm');
+
+// HFR/HPR (Health Facility Registry / Health Professional Registry) — added
+// 2026-09-18 per audit finding: only patient-side ABHA/consent/PHI flows
+// existed, no facility or provider registration. Paths below are
+// configurable via env because NHA's HFR/HPR API paths have changed across
+// spec versions — VERIFY THESE AGAINST THE CURRENT NHA API DOCS before
+// pointing this at a real facility ID; this scaffolding (auth reuse, error
+// handling, DB persistence, circuit breaker) is production-shaped, but the
+// exact path constants are a best-effort default, not a confirmed live
+// integration (no ABDM sandbox HFR/HPR credentials were available to test
+// against when this was written).
+const ABDM_HFR_REGISTER_PATH = process.env.ABDM_HFR_REGISTER_PATH || '/v1/facility/register';
+const ABDM_HFR_STATUS_PATH   = process.env.ABDM_HFR_STATUS_PATH   || '/v1/facility/status';
+const ABDM_HPR_REGISTER_PATH = process.env.ABDM_HPR_REGISTER_PATH || '/v1/hpr/register';
+const ABDM_HPR_STATUS_PATH   = process.env.ABDM_HPR_STATUS_PATH   || '/v1/hpr/status';
 
 // ── DB bootstrap ──────────────────────────────────────────────────────────────
 export async function ensureAbdmTables() {
@@ -87,9 +105,34 @@ export async function ensureAbdmTables() {
       requested_at    TIMESTAMPTZ DEFAULT NOW(),
       received_at     TIMESTAMPTZ
     );
+    CREATE TABLE IF NOT EXISTS hfr_facility_registrations (
+      id                BIGSERIAL PRIMARY KEY,
+      tenant_id         INTEGER NOT NULL UNIQUE,
+      facility_id       VARCHAR(50),
+      facility_name     TEXT NOT NULL,
+      registration_status VARCHAR(20) DEFAULT 'pending',
+      response_json     JSONB,
+      registered_at     TIMESTAMPTZ,
+      created_at        TIMESTAMPTZ DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS hpr_provider_registrations (
+      id                BIGSERIAL PRIMARY KEY,
+      tenant_id         INTEGER NOT NULL,
+      doctor_id         INTEGER,
+      hpr_id            VARCHAR(50),
+      provider_name     TEXT NOT NULL,
+      registration_status VARCHAR(20) DEFAULT 'pending',
+      response_json     JSONB,
+      registered_at     TIMESTAMPTZ,
+      created_at        TIMESTAMPTZ DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (tenant_id, doctor_id)
+    );
     CREATE INDEX IF NOT EXISTS idx_abha_tenant     ON abha_registrations(tenant_id, abha_number);
     CREATE INDEX IF NOT EXISTS idx_abdm_consent_pat ON abdm_consents(patient_id, consent_status);
     CREATE INDEX IF NOT EXISTS idx_abdm_phi_consent ON abdm_phi_requests(consent_id, request_status);
+    CREATE INDEX IF NOT EXISTS idx_hpr_tenant ON hpr_provider_registrations(tenant_id, registration_status);
   `);
 }
 
@@ -467,4 +510,114 @@ export async function linkCareContext(abhaNumber, careContext) {
     if (!IS_SANDBOX) throw err;
   }
   return { abhaNumber, careContext, linked: true, hipId: ABDM_HIP_ID };
+}
+
+// ── HFR: Health Facility Registry ──────────────────────────────────────────────
+export async function registerFacilityOnHfr(tenantId, { facilityName, address, ownershipType, facilityType }) {
+  await ensureAbdmTables();
+
+  let responseJson = null;
+  let facilityId = null;
+  try {
+    responseJson = await abdmPost(ABDM_HFR_REGISTER_PATH, {
+      facilityName,
+      address,
+      ownershipType,
+      facilityType,
+      hipId: ABDM_HIP_ID,
+    });
+    facilityId = responseJson?.facilityId || responseJson?.id || null;
+  } catch (err) {
+    if (!HFR_HPR_SANDBOX_FALLBACK) throw err;
+    // Sandbox outage must never erase a registry id we already obtained.
+    const { rows: existing } = await pool.query(`SELECT * FROM hfr_facility_registrations WHERE tenant_id = $1`, [tenantId]);
+    if (existing[0]?.facility_id) return existing[0];
+    responseJson = { sandboxMock: true, note: 'ABDM sandbox credentials for HFR were not available when this was built' };
+  }
+  const mockOnly = Boolean(responseJson?.sandboxMock);
+
+  const { rows } = await pool.query(
+    `INSERT INTO hfr_facility_registrations (tenant_id, facility_id, facility_name, registration_status, response_json, registered_at)
+     VALUES ($1, $2, $3, CASE WHEN $5::boolean THEN 'sandbox_mock' ELSE 'submitted' END, $4, NOW())
+     ON CONFLICT (tenant_id) DO UPDATE SET facility_id = COALESCE(EXCLUDED.facility_id, hfr_facility_registrations.facility_id), facility_name = EXCLUDED.facility_name,
+       registration_status = EXCLUDED.registration_status, response_json = EXCLUDED.response_json, updated_at = NOW()
+     RETURNING *`,
+    [tenantId, facilityId, facilityName, JSON.stringify(responseJson), mockOnly]
+  );
+  return rows[0];
+}
+
+export async function getFacilityRegistryStatus(tenantId) {
+  const { rows } = await pool.query(`SELECT * FROM hfr_facility_registrations WHERE tenant_id = $1`, [tenantId]);
+  const local = rows[0];
+  if (!local?.facility_id) return local || null;
+
+  try {
+    const remote = await abdmGet(`${ABDM_HFR_STATUS_PATH}/${local.facility_id}`);
+    if (remote?.status) {
+      await pool.query(
+        `UPDATE hfr_facility_registrations SET registration_status = $2, updated_at = NOW() WHERE tenant_id = $1`,
+        [tenantId, remote.status]
+      );
+    }
+    return { ...local, remoteStatus: remote };
+  } catch {
+    return local; // fall back to last-known local status if the gateway is unreachable
+  }
+}
+
+// ── HPR: Health Professional Registry ──────────────────────────────────────────
+export async function registerProviderOnHpr(tenantId, { doctorId, providerName, qualification, registrationCouncil, registrationNumber }) {
+  await ensureAbdmTables();
+
+  let responseJson = null;
+  let hprId = null;
+  try {
+    responseJson = await abdmPost(ABDM_HPR_REGISTER_PATH, {
+      providerName,
+      qualification,
+      registrationCouncil,
+      registrationNumber,
+      hipId: ABDM_HIP_ID,
+    });
+    hprId = responseJson?.hprId || responseJson?.id || null;
+  } catch (err) {
+    if (!HFR_HPR_SANDBOX_FALLBACK) throw err;
+    const { rows: existing } = await pool.query(`SELECT * FROM hpr_provider_registrations WHERE tenant_id = $1 AND doctor_id = $2`, [tenantId, doctorId]);
+    if (existing[0]?.hpr_id) return existing[0];
+    responseJson = { sandboxMock: true, note: 'ABDM sandbox credentials for HPR were not available when this was built' };
+  }
+  const mockOnly = Boolean(responseJson?.sandboxMock);
+
+  const { rows } = await pool.query(
+    `INSERT INTO hpr_provider_registrations (tenant_id, doctor_id, hpr_id, provider_name, registration_status, response_json, registered_at)
+     VALUES ($1, $2, $3, $4, CASE WHEN $6::boolean THEN 'sandbox_mock' ELSE 'submitted' END, $5, NOW())
+     ON CONFLICT (tenant_id, doctor_id) DO UPDATE SET hpr_id = COALESCE(EXCLUDED.hpr_id, hpr_provider_registrations.hpr_id), provider_name = EXCLUDED.provider_name,
+       registration_status = EXCLUDED.registration_status, response_json = EXCLUDED.response_json
+     RETURNING *`,
+    [tenantId, doctorId, hprId, providerName, JSON.stringify(responseJson), mockOnly]
+  );
+  return rows[0];
+}
+
+export async function getProviderRegistryStatus(tenantId, doctorId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM hpr_provider_registrations WHERE tenant_id = $1 AND doctor_id = $2`,
+    [tenantId, doctorId]
+  );
+  const local = rows[0];
+  if (!local?.hpr_id) return local || null;
+
+  try {
+    const remote = await abdmGet(`${ABDM_HPR_STATUS_PATH}/${local.hpr_id}`);
+    if (remote?.status) {
+      await pool.query(
+        `UPDATE hpr_provider_registrations SET registration_status = $3, updated_at = NOW() WHERE tenant_id = $1 AND doctor_id = $2`,
+        [tenantId, doctorId, remote.status]
+      );
+    }
+    return { ...local, remoteStatus: remote };
+  } catch {
+    return local;
+  }
 }

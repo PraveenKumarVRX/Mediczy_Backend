@@ -22,6 +22,11 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 const router = Router();
 const adminOnly = [authUser, requireRole('admin')];
 const doctorOrAdmin = [authUser, requireRole(['doctor', 'admin'])];
+// Drug-interaction/medication-alternative checks are clinical-decision-support
+// output and must not be reachable by non-clinical roles (billing, front-desk,
+// patients) — previously these two routes only required authUser with no role
+// check at all.
+const clinicalOnly = [authUser, requireRole(['doctor', 'nurse', 'admin', 'medical_director'])];
 
 /**
  * POST /cdss/knowledge/query
@@ -135,7 +140,7 @@ router.get('/health', async (req, res) => {
  *   ]
  * }
  */
-router.post('/drug-interactions', authUser, async (req, res) => {
+router.post('/drug-interactions', ...clinicalOnly, async (req, res) => {
   try {
     const { medications = [] } = req.body;
 
@@ -174,7 +179,7 @@ router.post('/drug-interactions', authUser, async (req, res) => {
  *   limit: 5
  * }
  */
-router.post('/medication-alternatives', authUser, async (req, res) => {
+router.post('/medication-alternatives', ...clinicalOnly, async (req, res) => {
   try {
     const { genericName, limit = 5 } = req.body;
 

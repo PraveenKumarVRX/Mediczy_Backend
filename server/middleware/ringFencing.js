@@ -824,6 +824,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/lab-tests/catalog',  // Public lab test catalog — browse tests and prices without login
   '/api/email/track/',       // Email open/click tracking pixels (hit by email clients, no auth)
   '/api/display',            // Hospital kiosk & waiting-room displays (LAN/public)
+  '/api/asset-tracking/reader/events', // RFID/IoT reader ingest — no user JWT; the route authenticates each device by its own hashed X-Reader-Key
   '/api/abdm/kiosk',         // ABHA kiosk registration flow
   // Device-token gated (authDisplayDevice) — must bypass JWT ring-fence
   '/api/v1/queue/board',

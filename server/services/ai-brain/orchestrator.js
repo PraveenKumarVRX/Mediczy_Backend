@@ -169,9 +169,10 @@ async function getConversationMessages(conversationId, limit = MAX_CONVERSATION_
  * @param {number} params.userId
  * @param {string} [params.userType] - 'patient' | 'doctor' | 'admin'
  * @param {number} [params.conversationId] - Existing conversation to continue
+ * @param {number} [params.organizationId] - Authenticated user's org/tenant ID (server-derived only — never accept this from client input downstream of auth)
  * @returns {Object} { response, conversationId, toolsUsed, tokensUsed, iterations, latencyMs }
  */
-async function think({ message, userId, userType = 'patient', conversationId = null, onToolCall = null, onToolResult = null, onIteration = null }) {
+async function think({ message, userId, userType = 'patient', conversationId = null, organizationId = null, onToolCall = null, onToolResult = null, onIteration = null }) {
   const startTime = Date.now();
   const db = pool;
 
@@ -295,7 +296,7 @@ async function think({ message, userId, userType = 'patient', conversationId = n
         try { onToolCall(toolName, toolArgs); } catch (cbErr) { console.error('[Brain] onToolCall callback error:', cbErr.message); }
       }
 
-      const context = { userId, userType, conversationId: convId };
+      const context = { userId, userType, conversationId: convId, organizationId };
       const toolResult = await executeTool(toolName, toolArgs, context);
 
       const toolOutputSummary = typeof toolResult === 'string' ? toolResult.substring(0, 500) : JSON.stringify(toolResult).substring(0, 500);
