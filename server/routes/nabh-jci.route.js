@@ -17,6 +17,7 @@
 
 import { Router } from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { requireModule } from '../middleware/moduleEntitlement.middleware.js';
 import {
   ensureNabhjciTables,
   getComplianceDashboard,
@@ -32,6 +33,7 @@ const router = Router();
 ensureNabhjciTables().catch(e => console.warn('[Compliance] Table init warning:', e.message));
 
 router.use(authUser);
+router.use(requireModule('quality'));
 
 const tenantId  = (req) => req.user?.tenant_id || req.user?.organization_id || req.user?.id;
 const normFw    = (s) => (s || '').toUpperCase() === 'JCI' ? 'JCI' : 'NABH';

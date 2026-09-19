@@ -18,6 +18,7 @@
  */
 import express from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { requireModule } from '../middleware/moduleEntitlement.middleware.js';
 import mrd from '../services/mrd.service.js';
 
 const router = express.Router();
@@ -36,7 +37,7 @@ const wrap = (handler) => async (req, res) => {
 };
 
 // ── Record index ─────────────────────────────────────────────────────────
-router.get('/records', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.listRecords({
+router.get('/records', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.listRecords({
   patientId: req.query.patientId,
   organizationId: req.query.organizationId || orgId(req),
   status: req.query.status,
@@ -45,13 +46,13 @@ router.get('/records', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.listR
   offset: req.query.offset,
 })));
 
-router.get('/records/:id', authUser, requireRole(MRD_STAFF), wrap(async (req) => {
+router.get('/records/:id', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap(async (req) => {
   const record = await mrd.getRecord(req.params.id);
   if (!record) throw new Error('Record not found');
   return record;
 }));
 
-router.post('/records', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.indexRecord({
+router.post('/records', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.indexRecord({
   patientId: req.body.patientId,
   organizationId: req.body.organizationId || orgId(req),
   recordType: req.body.recordType,
@@ -60,7 +61,7 @@ router.post('/records', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.inde
   indexedBy: req.user.id,
 })));
 
-router.post('/records/:id/checkout', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.checkoutRecord({
+router.post('/records/:id/checkout', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.checkoutRecord({
   recordId: req.params.id,
   checkedOutBy: req.user.id,
   department: req.body.department,
@@ -68,17 +69,17 @@ router.post('/records/:id/checkout', authUser, requireRole(MRD_STAFF), wrap((req
   expectedReturnAt: req.body.expectedReturnAt,
 })));
 
-router.post('/records/:id/return', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.returnRecord({
+router.post('/records/:id/return', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.returnRecord({
   recordId: req.params.id,
   returnedTo: req.user.id,
 })));
 
-router.get('/checkouts/open', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.listOpenCheckouts({
+router.get('/checkouts/open', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.listOpenCheckouts({
   organizationId: req.query.organizationId || orgId(req),
 })));
 
 // ── Retrieval requests ───────────────────────────────────────────────────
-router.get('/retrieval-requests', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.listRetrievalRequests({
+router.get('/retrieval-requests', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.listRetrievalRequests({
   status: req.query.status,
   organizationId: req.query.organizationId || orgId(req),
   patientId: req.query.patientId,
@@ -88,7 +89,7 @@ router.get('/retrieval-requests', authUser, requireRole(MRD_STAFF), wrap((req) =
 
 // Any authenticated staff can raise a request — the requesting side is
 // intentionally not restricted to MRD/admin roles.
-router.post('/retrieval-requests', authUser, wrap((req) => mrd.createRetrievalRequest({
+router.post('/retrieval-requests', authUser, requireModule('mrd'), wrap((req) => mrd.createRetrievalRequest({
   recordId: req.body.recordId,
   patientId: req.body.patientId,
   organizationId: req.body.organizationId || orgId(req),
@@ -98,7 +99,7 @@ router.post('/retrieval-requests', authUser, wrap((req) => mrd.createRetrievalRe
   notes: req.body.notes,
 })));
 
-router.patch('/retrieval-requests/:id', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.updateRetrievalRequestStatus({
+router.patch('/retrieval-requests/:id', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.updateRetrievalRequestStatus({
   id: req.params.id,
   status: req.body.status,
   fulfilledBy: req.user.id,
@@ -106,15 +107,15 @@ router.patch('/retrieval-requests/:id', authUser, requireRole(MRD_STAFF), wrap((
 })));
 
 // ── Retention schedule ───────────────────────────────────────────────────
-router.get('/retention-schedule', authUser, requireRole(MRD_STAFF), wrap(() => mrd.getRetentionSchedule()));
+router.get('/retention-schedule', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap(() => mrd.getRetentionSchedule()));
 
-router.put('/retention-schedule', authUser, requireRole(['admin', 'system_admin']), wrap((req) => mrd.upsertRetentionPolicy({
+router.put('/retention-schedule', authUser, requireRole(['admin', 'system_admin']), requireModule('mrd'), wrap((req) => mrd.upsertRetentionPolicy({
   recordType: req.body.recordType,
   retentionYears: req.body.retentionYears,
   notes: req.body.notes,
 })));
 
-router.get('/retention-due', authUser, requireRole(MRD_STAFF), wrap((req) => mrd.listRecordsDueForRetention({
+router.get('/retention-due', authUser, requireRole(MRD_STAFF), requireModule('mrd'), wrap((req) => mrd.listRecordsDueForRetention({
   organizationId: req.query.organizationId || orgId(req),
   withinDays: req.query.withinDays,
 })));
