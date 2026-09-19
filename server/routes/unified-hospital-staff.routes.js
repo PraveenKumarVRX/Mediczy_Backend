@@ -10,6 +10,7 @@ import express from 'express';
 import { body, query } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import hospitalGl from '../services/hospital-gl.service.js';
 import {
   doctorSignup,
   doctorLogin,
@@ -156,6 +157,18 @@ const requireSecurityStaff = (req, res, next) => {
   }
   next();
 };
+
+const requireAccountsStaff = (req, res, next) => {
+  if (!req.user || !['accounts_staff', 'admin', 'hospital_admin'].includes(req.user.role)) {
+    return res.status(403).json({
+      success: false,
+      message: 'Only accounts staff can access this resource'
+    });
+  }
+  next();
+};
+
+const getOrgIdForAccounts = (req) => Number(req.user?.organization_id || req.user?.tenant_id || req.user?.hospital_id || 0) || null;
 
 // ==================== DOCTOR ENDPOINTS ====================
 
@@ -346,6 +359,32 @@ const deptLoginValidation = [
 // Accounts
 router.post('/accounts/signup', deptBodyValidation, accountsStaffSignup);
 router.post('/accounts/login', authLimiter, deptLoginValidation, accountsStaffLogin);
+
+// Added 2026-09-18: the audit found the Accounts portal had signup/login
+// only, no data endpoints — hospital-gl.service.js's GL logic is real and
+// already used correctly by billing, it just had no Accounts-facing API.
+// Additive only; does not touch signup/login above.
+router.get('/accounts/portal-data', authUser, requireAccountsStaff, async (req, res) => {
+  try {
+    const orgId = getOrgIdForAccounts(req);
+    if (!orgId) return res.status(400).json({ success: false, message: 'Organization context missing' });
+    const summary = await hospitalGl.getGlSummary(orgId, req.query);
+    res.json({ success: true, data: summary });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/accounts/gl-journal', authUser, requireAccountsStaff, async (req, res) => {
+  try {
+    const orgId = getOrgIdForAccounts(req);
+    if (!orgId) return res.status(400).json({ success: false, message: 'Organization context missing' });
+    const journal = await hospitalGl.exportGlJournal(orgId, req.query);
+    res.json({ success: true, data: journal });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
 
 // MRD
 router.post('/mrd/signup', deptBodyValidation, mrdStaffSignup);

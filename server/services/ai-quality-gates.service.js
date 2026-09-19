@@ -32,7 +32,7 @@ const FORBIDDEN_DRUG_COMBINATIONS = [
 // ─── Dosage anomaly patterns — if LLM generates these, flag immediately ───────
 const ANOMALOUS_DOSAGES = [
   { pattern: /(\d{4,})\s*mg/,    label: 'Dose ≥ 1000 mg', check: v => parseInt(v) >= 1000 },
-  { pattern: /(\d+)\s*g\b/i,     label: 'Gram-level dose', check: v => parseInt(v) >= 5 },
+  { pattern: /(\d+)\s*g\b(?!\s*\/)/i, label: 'Gram-level dose', check: v => parseInt(v) >= 5 },   // not g/dL, g/L (lab units)
   { pattern: /(\d+)\s*tablets?\s*(?:daily|per day|\/day)/i, label: 'High tablet count', check: v => parseInt(v) > 8 },
 ];
 
@@ -383,11 +383,17 @@ class AIQualityGatesService {
    * Run quality gates on a medical scribe output (clinical note).
    * This is the final safety check before presenting to the physician.
    */
-  async checkScribeOutput({ noteText, patientAllergies = [], patientMedications = [], specialtyTemplate }) {
+  async checkScribeOutput({ noteText, patientAllergies = [], patientMedications = [], specialtyTemplate, strictDosage = false, medicationDoseText = '' }) {
     const result = this._newResult('medical_scribe', null);
 
     // Gate 1: Dosage hallucination
     this._gateDosageHallucination(result, noteText);
+    if (strictDosage) {
+      // Prescription context: an EXTREME dose in a structured medication line must stop the draft
+      // from being issued. Deliberately narrow: routine doses (e.g. 1000 mg metformin/paracetamol)
+      // and lab values in free text stay warning-level, so the gate does not cry wolf.
+      result.blockers.push(...this._strictDoseBlockers(medicationDoseText));
+    }
 
     // Gate 2: Allergy omission — if allergies exist but note doesn't mention them
     if (patientAllergies.length > 0) {
@@ -423,6 +429,48 @@ class AIQualityGatesService {
     }
 
     return this._finalize(result);
+  }
+
+  /**
+   * Gate decision for an AI-drafted prescription (POST /api/ai/generate-prescription).
+   * Scans the medications (name/dosage/frequency/route/duration) as well as the free text,
+   * and FAILS SAFE: if the gate itself throws, the draft is treated as blocked — an AI
+   * prescription is never issued without the gate having actually passed.
+   *
+   * @returns {{gate: object, blocked: boolean, reviewRequired: boolean, gateFailed: boolean}}
+   *   blocked=true  -> caller must NOT persist as final (issued)
+   *   reviewRequired is always true (physician review is mandatory for AI output).
+   */
+  async evaluateAiPrescriptionDraft(content, { gateFn } = {}) {
+    const run = gateFn || (args => this.checkScribeOutput(args));
+    const meds = Array.isArray(content?.medications) ? content.medications : [];
+    const medText = meds.map(m => {
+      if (m == null) return '';
+      if (typeof m !== 'object') return String(m);
+      return [m.name, m.composition, m.dosage, m.dose, m.strength, m.frequency, m.route, m.duration, m.quantity, m.instructions]
+        .filter(v => v != null && String(v).trim() !== '').join(' ');
+    }).filter(Boolean).join('\n');
+    const noteText = [
+      content?.diagnosis,
+      medText,
+      Array.isArray(content?.instructions) ? content.instructions.join(' ') : content?.instructions,
+      content?.notes,
+    ].filter(Boolean).join('\n');
+
+    try {
+      const gate = await run({ noteText, strictDosage: true, medicationDoseText: medText });
+      if (!gate || !Array.isArray(gate.blockers)) throw new Error('quality gate returned no result');
+      return { gate, blocked: gate.blockers.length > 0, reviewRequired: true, gateFailed: false };
+    } catch (err) {
+      console.error('[QualityGates] checkScribeOutput failed for AI prescription — failing safe (blocked):', err.message);
+      const gate = this._newResult('medical_scribe', null);
+      gate.blockers.push({
+        code:    'GATE_EXECUTION_FAILURE',
+        message: `Quality gate could not run (${err.message})`,
+        action:  'Treated as blocked — physician must review the AI draft before it can be issued'
+      });
+      return { gate: this._finalize(gate), blocked: true, reviewRequired: true, gateFailed: true };
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -508,11 +556,39 @@ class AIQualityGatesService {
     }
   }
 
+  /** Blockers for implausible single doses in structured medication lines (one line per medication). */
+  _strictDoseBlockers(medicationDoseText) {
+    const blockers = [];
+    const seen = new Set();
+    const add = (raw, label) => {
+      if (seen.has(raw)) return;
+      seen.add(raw);
+      blockers.push({
+        code:    'ANOMALOUS_DOSAGE',
+        message: `Implausible dosage in a medication line: "${raw}" — ${label}`,
+        action:  'Physician must correct or confirm this dosage before the prescription can be issued'
+      });
+    };
+    for (const line of String(medicationDoseText || '').split('\n')) {
+      for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*mg\b(?!\s*\/)/gi)) if (parseFloat(m[1]) >= 5000) add(m[0], 'single dose of 5 g or more');
+      for (const m of line.matchAll(/(\d+(?:\.\d+)?)\s*g\b(?!\s*\/)/gi)) if (parseFloat(m[1]) >= 5) add(m[0], 'single dose of 5 g or more');
+      for (const m of line.matchAll(/(\d+)\s*tablets?\s*(?:daily|per day|\/day)/gi)) if (parseInt(m[1], 10) > 8) add(m[0], 'more than 8 tablets a day');
+    }
+    return blockers;
+  }
+
   _gateDosageHallucination(result, text) {
     if (!text) return;
+    const seen = new Set();
     for (const anomaly of ANOMALOUS_DOSAGES) {
-      const match = text.match(anomaly.pattern);
-      if (match && anomaly.check(match[1])) {
+      // Scan EVERY occurrence: with several medications in the text a benign first match
+      // must not hide an anomalous later one.
+      const flags = anomaly.pattern.flags.includes('g') ? anomaly.pattern.flags : anomaly.pattern.flags + 'g';
+      for (const match of text.matchAll(new RegExp(anomaly.pattern.source, flags))) {
+        if (!anomaly.check(match[1])) continue;
+        const key = `${anomaly.label}|${match[0]}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         result.warnings.push({
           code:    'ANOMALOUS_DOSAGE',
           message: `Potentially halluciniated dosage detected: "${match[0]}" — ${anomaly.label}`,
@@ -959,6 +1035,24 @@ class AIQualityGatesService {
                     :                         'pass';
 
     return result;
+  }
+
+  /**
+   * Audit-trail entry for a copilot conversation reaching clinical-decision-
+   * support output (doctor-copilot /chat clinical mode, /medical-ai/consult
+   * with isClinicalAuthority=true). Added 2026-09-18 per the AI copilot RBAC
+   * audit finding: these conversations previously logged only to a
+   * PHI-redacted hash store, never to the governed ai_quality_gate_log table
+   * CLAUDE.md mandates. This is intentionally a thin audit record, not a
+   * safety gate — the actual clinical-safety checks (drug interactions,
+   * triage) already run their own dedicated gates; this just makes "who
+   * asked what kind of clinical question, and were they authorized"
+   * reviewable in the same place as everything else.
+   */
+  async logCopilotConversation({ patientId = null, userId, role, source, traceId }) {
+    const result = this._newResult('copilot_conversation', patientId);
+    result.severity = 'pass';
+    await this.logGateResult(result, { userId, role, source, traceId });
   }
 
   /**

@@ -381,23 +381,60 @@ router.post('/ap/invoices', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
+// Extended to a real 3-way match 2026-09-18 (previously PO-vs-invoice only,
+// ignoring the GRN even though invoice.grn_id was already a precondition —
+// per the audit finding that "vendor bill reconciliation is a 2-way match,
+// not a full 3-way line-level reconciliation"). Now compares PO total,
+// GRN-derived received value, and invoice total; reports which leg
+// disagrees rather than a single opaque "variance".
 router.post('/ap/invoices/:id/match', authScm, async (req, res) => {
   const db = await ensureTables();
   const { rows: invoices } = await db.query('SELECT * FROM scm_ap_invoices WHERE id = $1', [req.params.id]);
   const invoice = invoices[0];
   if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
+
   let matchStatus = 'unmatched';
+  let matchDetail = null;
+  const TOLERANCE = 0.01;
+
   if (invoice.po_id && invoice.grn_id) {
     const { rows: po } = await db.query('SELECT total_amount FROM scm_purchase_orders WHERE id = $1', [invoice.po_id]);
     const poTotal = Number(po[0]?.total_amount || 0);
-    const invoiceTotal = Number(invoice.amount) + Number(invoice.tax_amount || 0);
-    matchStatus = Math.abs(poTotal - invoiceTotal) < 0.01 ? 'matched' : 'variance';
+    // PO totals and GRN values are net of tax (qty x unit_price); the invoice
+    // stores tax separately, so the match is done on the net amount.
+    const invoiceNet = Number(invoice.amount);
+    const invoiceTax = Number(invoice.tax_amount || 0);
+
+    const { rows: grnValueRows } = await db.query(
+      `SELECT COALESCE(SUM(gl.quantity * pl.unit_price), 0) AS received_value
+       FROM scm_grn_lines gl
+       JOIN scm_po_lines pl ON pl.id = gl.po_line_id
+       WHERE gl.grn_id = $1`,
+      [invoice.grn_id]
+    );
+    const grnValue = Number(grnValueRows[0]?.received_value || 0);
+
+    // Partial receipts are normal: the vendor bills what was received on this
+    // GRN, which can be less than the PO. So:
+    //  - invoice must equal what this GRN received (billed == received)
+    //  - invoice must not exceed the PO (not billed more than ordered)
+    //  - this GRN must not exceed the PO (not received more than ordered)
+    const grnVsInvoice = Math.abs(grnValue - invoiceNet) < TOLERANCE;
+    const poVsInvoice = invoiceNet <= poTotal + TOLERANCE;
+    const poVsGrn = grnValue <= poTotal + TOLERANCE;
+
+    matchStatus = (poVsInvoice && grnVsInvoice && poVsGrn) ? 'matched' : 'variance';
+    matchDetail = {
+      poTotal, grnReceivedValue: grnValue, invoiceTotal: invoiceNet, invoiceTax, invoiceGross: invoiceNet + invoiceTax,
+      poVsInvoiceMatch: poVsInvoice, grnVsInvoiceMatch: grnVsInvoice, poVsGrnMatch: poVsGrn,
+    };
   }
+
   const { rows } = await db.query(
     'UPDATE scm_ap_invoices SET match_status = $2, status = CASE WHEN $2 = \'matched\' THEN \'matched\' ELSE status END WHERE id = $1 RETURNING *',
     [req.params.id, matchStatus]
   );
-  res.json({ success: true, data: rows[0] });
+  res.json({ success: true, data: rows[0], matchDetail });
 });
 
 router.patch('/ap/invoices/:id/approve', authScm, async (req, res) => {

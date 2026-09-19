@@ -20,7 +20,7 @@ import {
   Building2, Target, AlertTriangle, CheckCircle2, Download,
   BarChart3, ArrowUpRight, ArrowDownRight, Zap, Shield,
   PieChart as PieIcon, Calendar, Bell, FileText, Star, Award,
-  RefreshCw, ChevronRight, Stethoscope, Heart, Briefcase,
+  RefreshCw, ChevronRight, Stethoscope, Heart, Briefcase, AlertCircle,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useHospitalAuth } from '@/hooks/useHospitalAuth';
@@ -133,6 +133,10 @@ export default function CEODashboard() {
   const [revenueTrend, setRevenueTrend] = useState(seedRevenueTrend);
   const [deptRevenue, setDeptRevenue]   = useState(seedDeptRevenue);
   const [payerMix, setPayerMix]         = useState(seedPayerMix);
+  const [payerMixIsSample, setPayerMixIsSample] = useState(true);
+  // Real revenue must never be compared against the placeholder target (that would show a bogus %).
+  const [revenueLive, setRevenueLive] = useState(false);
+  const [targetIsReal, setTargetIsReal] = useState(false);
   const [volume, setVolume]             = useState(seedVolume);
 
   // Live KPI values
@@ -162,11 +166,37 @@ export default function CEODashboard() {
             ipdCensus: d.totalPatients ?? prev.ipdCensus,
           }));
         }
+        // finRes was previously fetched and discarded (pre-existing dead
+        // code). Now applied — but only fields the backend can genuinely
+        // compute (monthlyRevenue [Rs lakhs, same unit as seed], alos). revenueTarget/ebitdaMargin/
+        // arpob come back null (no expense-ledger table exists yet), so we
+        // keep the existing seed/prev values for those rather than show
+        // "null%" — and revenueTrend (the 12-month chart) is left as seed
+        // data since the real trend has no expenses/target series yet and
+        // swapping it would silently drop those two chart lines.
+        if (finRes.status === 'fulfilled') {
+          const f = finRes.value.data?.data ?? finRes.value.data;
+          setKpis(prev => ({
+            ...prev,
+            monthlyRevenue: f?.monthlyRevenue ?? prev.monthlyRevenue,
+            revenueTarget: f?.revenueTarget ?? prev.revenueTarget,
+            alos: f?.alos ?? prev.alos,
+          }));
+          if (f?.monthlyRevenue != null) setRevenueLive(true);
+          if (f?.revenueTarget != null) setTargetIsReal(true);
+          // payerMix is null from the backend (no reliable payer-category
+          // source in the schema) — the pie stays on labelled sample data.
+          if (Array.isArray(f?.payerMix) && f.payerMix.length > 0) {
+            setPayerMix(f.payerMix);
+            setPayerMixIsSample(false);
+          }
+        }
       } catch { /* use seed data */ }
     })();
   }, [period]);
 
-  const achievementPct = Math.round((kpis.monthlyRevenue / kpis.revenueTarget) * 100);
+  const noTarget = revenueLive && !targetIsReal;
+  const achievementPct: number | null = noTarget ? null : Math.round((kpis.monthlyRevenue / kpis.revenueTarget) * 100);
   const ebitda = kpis.monthlyRevenue * (kpis.ebitdaMargin / 100);
 
   return (
@@ -203,7 +233,7 @@ export default function CEODashboard() {
 
       {/* ── Headline KPIs ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-        <KPI label="Monthly Revenue" value={`₹${kpis.monthlyRevenue}L`} sub={`${achievementPct}% of target`} icon={DollarSign} color="text-emerald-600" up />
+        <KPI label="Monthly Revenue" value={`₹${kpis.monthlyRevenue}L`} sub={achievementPct == null ? 'No revenue target set' : `${achievementPct}% of target`} icon={DollarSign} color="text-emerald-600" up />
         <KPI label="EBITDA" value={`₹${ebitda.toFixed(0)}L`} sub={`${kpis.ebitdaMargin}% margin`} icon={TrendingUp} color="text-indigo-600" up />
         <KPI label="Bed Occupancy" value={`${kpis.bedOccupancy}%`} sub="284 / 346 beds" icon={Bed} color="text-blue-600" up />
         <KPI label="ARPOB/Day" value={`₹${(kpis.arpob/1000).toFixed(1)}K`} sub="+6.2% vs last month" icon={Target} color="text-purple-600" up />
@@ -237,21 +267,21 @@ export default function CEODashboard() {
                       cx={80} cy={80}
                       innerRadius={50} outerRadius={70}
                       startAngle={180} endAngle={0}
-                      data={[{ value: achievementPct, fill: achievementPct >= 100 ? '#22c55e' : '#6366f1' }]}>
+                      data={[{ value: achievementPct ?? 0, fill: (achievementPct ?? 0) >= 100 ? '#22c55e' : '#6366f1' }]}>
                       <RadialBar dataKey="value" background={{ fill: '#f1f5f9' }} cornerRadius={6} />
                     </RadialBarChart>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-bold text-indigo-600">{achievementPct}%</span>
-                      <span className="text-xs text-muted-foreground">achieved</span>
+                      <span className="text-2xl font-bold text-indigo-600">{achievementPct == null ? '—' : `${achievementPct}%`}</span>
+                      <span className="text-xs text-muted-foreground">{achievementPct == null ? 'no target set' : 'achieved'}</span>
                     </div>
                   </div>
                 </div>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between"><span className="text-muted-foreground">Actual</span><span className="font-semibold text-emerald-600">₹{kpis.monthlyRevenue}L</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span className="font-semibold">₹{kpis.revenueTarget}L</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">Target</span><span className="font-semibold">{noTarget ? '—' : `₹${kpis.revenueTarget}L`}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">Gap</span>
-                    <span className={`font-semibold ${kpis.monthlyRevenue >= kpis.revenueTarget ? 'text-emerald-600' : 'text-red-500'}`}>
-                      {kpis.monthlyRevenue >= kpis.revenueTarget ? '+' : '-'}₹{Math.abs(kpis.monthlyRevenue - kpis.revenueTarget)}L
+                    <span className={`font-semibold ${noTarget ? 'text-muted-foreground' : kpis.monthlyRevenue >= kpis.revenueTarget ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {noTarget ? '—' : `${kpis.monthlyRevenue >= kpis.revenueTarget ? '+' : '-'}₹${Math.round(Math.abs(kpis.monthlyRevenue - kpis.revenueTarget) * 100) / 100}L`}
                     </span>
                   </div>
                 </div>
@@ -266,6 +296,14 @@ export default function CEODashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {payerMixIsSample && (
+                  <div className="flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-lg p-2 mb-2">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                    <span className="text-amber-800 dark:text-amber-200">
+                      <strong>Sample data.</strong> Payer-category billing data is not yet captured; these figures are illustrative.
+                    </span>
+                  </div>
+                )}
                 <ResponsiveContainer width="100%" height={150}>
                   <PieChart>
                     <Pie data={payerMix} dataKey="value" cx="50%" cy="50%" outerRadius={60} paddingAngle={3}>

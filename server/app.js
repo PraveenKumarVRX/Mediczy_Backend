@@ -13,6 +13,7 @@ if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'tru
 // Run startup safety guards BEFORE any other initialisation.
 // In production, exits the process immediately on any violation.
 import { runStartupGuards } from './utils/startup-guard.js';
+import { sendCriticalAlert } from './utils/alerting.js';
 runStartupGuards();
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -46,7 +47,7 @@ import enhancedAppointmentRoutes from './routes/enhanced-appointment.route.js';
 
 // Clinical workflow routes
 import clinicalWorkflowRouter from './routes/clinical-workflow.route.js';
-import labIntegrationRouter from './routes/lab-integration.route.js';
+import { mountLabRoutes } from './routes/lab/registry.js';
 import carePlanRouter from './routes/care-plan.route.js';
 import queueManagementRouter from './routes/queue-management.route.js';
 import consentManagementRouter from './routes/consent-management.route.js';
@@ -63,6 +64,16 @@ import aiHealthRouter from "./routes/ai-health.route.js";
 import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import aiGovernanceRouter from "./routes/ai-governance.route.js";
+import clinicalKnowledgeFabricRouter from "./routes/clinical-knowledge-fabric.route.js";
+import hospitalBranchRouter from "./routes/hospital-branch.route.js";
+import assetTrackingRouter from "./routes/asset-tracking.route.js";
+import dmsRouter from "./routes/dms.route.js";
+import housekeepingRouter from "./routes/housekeeping.route.js";
+import corporateAccountRouter from "./routes/corporate-account.route.js";
+import careSeriesRouter from "./routes/care-series.route.js";
+import dialysisRouter from "./routes/dialysis.route.js";
+import chemotherapyRouter from "./routes/chemotherapy.route.js";
+import specialtyOtExtensionsRouter from "./routes/specialty-ot-extensions.route.js";
 import samdRegulatoryRouter from "./routes/samd-regulatory.route.js";
 import feedbackIntelligenceRouter from "./routes/feedback-intelligence.route.js";
 import telemetryRouter from "./routes/telemetry.route.js";
@@ -101,7 +112,6 @@ import crmUnderwritingRouter from './routes/crm-underwriting.route.js';
 import asyncRouter from './routes/async.route.js';
 import appointmentRouter from './routes/appointment.route.js';
 import reportsRouter from './routes/reports.route.js';
-import labTestsRouter from './routes/lab-tests.route.js';
 import availabilityRouter from './routes/availability.route.js';
 import membershipRouter from './routes/membership.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
@@ -153,7 +163,6 @@ import orderRouter from './routes/order.route.js';
 import videoEventsRouter from './routes/video-events.route.js';
 import otpRouter from './routes/otp.route.js';
 import otpTestRouter from './routes/otp.test.route.js';
-import enhancedLabRouter from './routes/lab.route.enhanced.js';
 import corporateRouter from './routes/corporate.route.js';
 import aggregatorRouter from './routes/aggregator.route.js';
 import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
@@ -449,8 +458,7 @@ process.on('unhandledRejection', async (reason, promise) => {
   
   // Send alert to monitoring system
   try {
-    // TODO: Integrate with alerting system (Sentry, PagerDuty, etc.)
-    // await sendCriticalAlert('Unhandled Promise Rejection', { reason, env: process.env.NODE_ENV });
+    await sendCriticalAlert('Unhandled Promise Rejection', { reason: reason?.message || String(reason), env: process.env.NODE_ENV });
   } catch (alertError) {
     logger.error('Failed to send alert:', { error: alertError.message });
   }
@@ -472,7 +480,7 @@ process.on('uncaughtException', async (error) => {
   
   // Send alert
   try {
-    // await sendCriticalAlert('Uncaught Exception', { error, env: process.env.NODE_ENV });
+    await sendCriticalAlert('Uncaught Exception', { error: error?.message, name: error?.name, env: process.env.NODE_ENV });
   } catch (alertError) {
     logger.error('Failed to send alert:', { error: alertError.message });
   }
@@ -897,7 +905,8 @@ app.use(compression({
 app.use(express.json({
   limit: '50mb',
   verify: (req, _res, buf) => {
-    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook') {
+    // The WhatsApp webhook is HMAC-signed by Meta over the exact bytes it sent, so the raw body is required to verify it.
+    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook') {
       req.rawBody = buf.toString('utf8');
     }
   }
@@ -1406,7 +1415,7 @@ app.use("/api/enhanced-appointments", enhancedAppointmentRoutes); // Enhanced ap
 
 // Clinical workflow routes
 app.use("/api/doctor/clinical-workflow", clinicalWorkflowRouter); // SOAP notes, ICD-10/CPT codes, AI summaries
-app.use("/api/doctor/lab-integration", labIntegrationRouter); // Lab results, abnormal flagging, patient notifications
+mountLabRoutes(app, 'doctorIntegration'); // lab routes — see routes/lab/registry.js
 app.use("/api/doctor/care-plans", carePlanRouter); // Care plans, tasks, reminders
 app.use("/api/doctor/queue", queueManagementRouter); // Queue management, triage, ETA, no-show handling
 app.use("/api/doctor/consent", consentManagementRouter); // Consent management, e-signatures, HIPAA compliance
@@ -1426,7 +1435,7 @@ app.use("/api/hospital-insurance/auth", hospitalInsuranceAuthRouter); // Separat
 app.use("/api/hospital/insurance/emails", hospitalInsuranceEmailRouter); // Insurance portal email AI inbox
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
-app.use("/api/lab-tests", labTestsRouter);
+mountLabRoutes(app, 'catalog'); // lab routes — see routes/lab/registry.js
 app.use("/api/employee", employeeNetworkRouter); // Corporate employee network (my-labs, my-hospitals, my-clinics)
 app.use("/api/corporate-bookings", corporateBookingsRouter); // Team member books corporate health checkups + notifies employees
 app.use("/api/cart", cartRouter); // Lab test cart management
@@ -1459,6 +1468,16 @@ app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration 
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
+app.use("/api/clinical-knowledge-fabric", clinicalKnowledgeFabricRouter); // Per-specialty CDSS/copilot knowledge base; draft rules gated behind medical-director approval
+app.use("/api/hospital-branch", hospitalBranchRouter); // Multi-branch architecture Phase 1: branches, staff assignment, tariff overrides
+app.use("/api/asset-tracking", assetTrackingRouter); // Asset Tracking: software scaffolding for RFID/IoT — manual-entry only, no reader hardware connected yet
+app.use("/api/dms", dmsRouter); // Document Management System: policies, SOPs, consent forms, NABH/HR documents — administrative, not SaMD
+app.use("/api/housekeeping", housekeepingRouter); // Housekeeping: task tracking (cleaning/disinfection/waste collection) — administrative, not SaMD
+app.use("/api/corporate-account", corporateAccountRouter); // Module 24: MoU versioning, rate cards, SPOC, credit ledger, employee consent grants
+app.use("/api/care-series", careSeriesRouter); // Recurring-treatment workflow shell (dialysis/chemo/etc.) — content gated via Clinical Knowledge Fabric
+app.use("/api/dialysis", dialysisRouter); // Vascular access, UF/dialysate parameters, medication administration, chair/schedule management
+app.use("/api/chemotherapy", chemotherapyRouter); // Regimen reference, BSA, pre-cycle checklist, infusion monitoring, extravasation, CTCAE grading
+app.use("/api/specialty-ot", specialtyOtExtensionsRouter); // Ophthalmology IOL, cardiac surgery, orthopaedic implant fields (merged into operative_notes.note_data) + post-op follow-up plan
 app.use("/api/samd-regulatory", samdRegulatoryRouter);       // SaMD regulatory items 11-16: clinical validation, QMS, IEC 62304, ISO 14971, CDSCO
 app.use("/api/feedback-intelligence", authUser, feedbackIntelligenceRouter); // Self-healing feedback loop: quality scores, SLA, signals
 app.use("/api/telemetry", telemetryRouter);                   // Client-side event ingestion (perf, funnels, errors)
@@ -1587,7 +1606,7 @@ app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & 
 app.use('/api/user-associations', userAssociationRouter); // User hierarchy and entity associations
 app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
 app.use('/api/coupons', couponRouter); // Corporate HC coupon management
-app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with comprehensive search
+mountLabRoutes(app, 'directory'); // lab routes — see routes/lab/registry.js
 app.use('/api/pharmacy', pharmacyRouter); // Pharmacy authentication and management
 app.use('/api/ambulance', ambulanceRouter); // Ambulance service authentication and management
 app.use('/api/homecare', homecareRouter); // Homecare provider authentication and management
@@ -1610,7 +1629,6 @@ app.use('/api/masterdata', masterdataRouter); // Master data providers (hospital
 
 // Admin Management Routes
 import adminHospitalsRouter from './routes/admin/hospitals.routes.js';
-import adminLabsRouter from './routes/admin/labs.routes.js';
 import adminCorporateQuotesRouter from './routes/admin/corporate-quotes.routes.js';
 import adminCorporateBenefitProvidersRouter from './routes/admin/corporate-benefit-providers.routes.js';
 import adminClinicsRouter from './routes/admin/clinics.routes.js';
@@ -1620,7 +1638,7 @@ import adminAppointmentsRouter from './routes/admin/appointments.routes.js';
 import drugPriceSyncRouter from './routes/admin/drug-price-sync.route.js';
 
 app.use('/api/admin/hospitals', adminHospitalsRouter); // Admin hospital CRUD operations
-app.use('/api/admin/labs', adminLabsRouter); // Admin lab CRUD operations
+mountLabRoutes(app, 'admin'); // lab routes — see routes/lab/registry.js
 app.use('/api/admin/corporate-quotes', adminCorporateQuotesRouter); // Corporate OPD/wellness wallet quoting tool
 app.use('/api/admin/corporate-benefit-providers', adminCorporateBenefitProvidersRouter); // Cashless network provider directory CRUD
 app.use('/api/admin/clinics', adminClinicsRouter); // Admin clinic CRUD operations
@@ -1737,17 +1755,9 @@ app.use('/api/corporate/hr', corporateHrManagementRouter); // Super-HR self-serv
 app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (login, logout, verify)
 
 // Lab Service Routes
-import labAuthRouter from './routes/lab/auth.routes.js';
-import labOrdersRouter from './routes/lab/orders.route.js';
-import labRisImagingRouter from './routes/lab/ris-imaging.route.js';
-import labBranchesRouter from './routes/lab/branches.route.js';
 import dicomModalityRouter from './routes/dicom-modality.route.js';
 
-app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
-app.use('/api/lab/orders', labOrdersRouter); // Lab incoming EMR orders
-app.use('/api/lab/ris', labRisImagingRouter); // Lab RIS — PACS/DICOM imaging
-app.use('/api/clinic/ris', labRisImagingRouter); // Clinic RIS — dental OPG / C-arm / angio (same router)
-app.use('/api/lab/branches', labBranchesRouter); // Lab branch registry — shared login, branch-scoped views
+mountLabRoutes(app, 'portal'); // lab routes — see routes/lab/registry.js
 app.use('/api/dicom', dicomModalityRouter); // DICOM modality peer registry (Orthanc sync)
 
 // Pharmacy Service Routes
@@ -1816,7 +1826,6 @@ import icuRouter from './routes/icu.route.js';
 import hmisPreAuthRouter from './routes/hmis-preauth.route.js';
 import nursingEchartRouter from './routes/nursing-echart.route.js';
 import clinicalScoresRouter from './routes/clinical-scores.route.js';
-import labRuleEngineRouter from './routes/lab-rule-engine.route.js';
 import bedsideReferenceRouter from './routes/bedside-reference.route.js';
 import hl7GatewayRouter from './routes/hl7-gateway.route.js';
 import hmisAnalyticsRouter from './routes/hmis-analytics.route.js';
@@ -1866,7 +1875,7 @@ app.use('/api/v1/icu', icuRouter);
 app.use('/api/v1/insurance', hmisPreAuthRouter);
 app.use('/api/v1/echart', nursingEchartRouter);
 app.use('/api/v1/scores', clinicalScoresRouter);
-app.use('/api/v1/lab-rules', labRuleEngineRouter);
+mountLabRoutes(app, 'rules'); // lab routes — see routes/lab/registry.js
 app.use('/api/v1/reference', bedsideReferenceRouter);
 app.use('/api/v1/hl7', hl7GatewayRouter);
 app.use('/api/v1/analytics', hmisAnalyticsRouter);

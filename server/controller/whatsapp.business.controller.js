@@ -577,20 +577,38 @@ export const handleWebhook = async (req, res) => {
   try {
     const { body } = req;
 
-    // Verify webhook signature
-    const signature = req.headers['x-hub-signature-256'];
-    if (signature) {
-      const expectedSignature = crypto
-        .createHmac('sha256', WHATSAPP_APP_SECRET)
-        .update(JSON.stringify(body))
-        .digest('hex');
-
-      if (signature !== `sha256=${expectedSignature}`) {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid webhook signature'
-        });
+    // Verify webhook signature. Fixed 2026-09-18 per WABA production-readiness
+    // review: this previously only checked the signature IF the header was
+    // present — an attacker could bypass verification entirely by simply
+    // omitting X-Hub-Signature-256. Now mandatory whenever a Meta app secret is
+    // configured. With no secret it is skipped (with a warning) outside production
+    // only, so local/dev works; in production the webhook is refused (fail closed).
+    if (FACEBOOK_APP_SECRET) {
+      const signature = req.headers['x-hub-signature-256'];
+      if (!signature) {
+        return res.status(401).json({ success: false, error: 'Missing webhook signature' });
       }
+      // Meta signs the exact bytes it sent. Re-serialising the parsed body
+      // (JSON.stringify) changes non-ASCII escaping/whitespace, which would
+      // reject genuine webhooks carrying e.g. Hindi/Telugu text or emoji.
+      const signedPayload = req.rawBody ?? JSON.stringify(body);
+      const expectedSignature = crypto
+        .createHmac('sha256', FACEBOOK_APP_SECRET)
+        .update(signedPayload)
+        .digest('hex');
+      const expected = Buffer.from(`sha256=${expectedSignature}`);
+      const received = Buffer.from(String(signature));
+      const validSignature = expected.length === received.length && crypto.timingSafeEqual(expected, received);
+      if (!validSignature) {
+        return res.status(401).json({ success: false, error: 'Invalid webhook signature' });
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      // Fail closed: without the app secret an unsigned POST cannot be told apart
+      // from a forged one, so refuse rather than accept unauthenticated events.
+      console.error('[WhatsApp Webhook] FACEBOOK_APP_SECRET is not configured — rejecting webhook in production.');
+      return res.status(503).json({ success: false, error: 'Webhook not configured' });
+    } else {
+      console.warn('[WhatsApp Webhook] FACEBOOK_APP_SECRET not configured — signature verification skipped (non-production only).');
     }
 
     // Process webhook data

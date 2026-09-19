@@ -136,8 +136,30 @@ export function pushToAll(event, data, organizationId = null) {
  * ({ zone, event }, no patient data) — that one stays platform-wide, since
  * it carries nothing sensitive.
  */
+// Display SSE reaches public waiting-room screens. The green-channel marker
+// (metadata.greenChannel) is staff-only in every display mode, so it is removed
+// here, at the single choke point, from every entry a queue event can carry —
+// no caller can bypass it by building its own payload.
+function withoutGreenChannel(entry) {
+  if (!entry || typeof entry !== 'object' || !entry.metadata || typeof entry.metadata !== 'object' || !('greenChannel' in entry.metadata)) return entry;
+  const { greenChannel: _omit, ...metadata } = entry.metadata;
+  return { ...entry, metadata };
+}
+
+function sanitizeQueuePayload(data) {
+  if (!data || typeof data !== 'object') return data;
+  const safe = { ...data };
+  for (const key of ['entry', 'from', 'to']) {
+    if (safe[key]) safe[key] = withoutGreenChannel(safe[key]);
+  }
+  if (safe.board && Array.isArray(safe.board.entries)) {
+    safe.board = { ...safe.board, entries: safe.board.entries.map(withoutGreenChannel) };
+  }
+  return safe;
+}
+
 export function pushQueueEvent(zone, event, data, organizationId = null) {
-  pushToZone(zone, event, data, organizationId);
+  pushToZone(zone, event, sanitizeQueuePayload(data), organizationId);
   const signal = { zone, event, ts: Date.now() };
   localPushSignal('queue_updated', signal);
   if (redisReady && pub) {

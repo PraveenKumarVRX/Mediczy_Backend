@@ -11,8 +11,26 @@ import crypto from 'crypto';
 import pool from '../db/pgPool.js';
 import { pushQueueEvent, pushToZone } from './display-sse-broker.service.js';
 import * as queueNotify from './queue-notify.service.js';
+import greenChannel from './green-channel.service.js';
+import hospitalBranch from './hospital-branch.service.js';
 
 const DEPT_PREFIX = { opd: 'A', pharmacy: 'P', lab: 'L', er: 'ER', radiology: 'R' };
+// Display SSE reaches public waiting-room screens. The green-channel marker is
+// staff-only in every display mode, so it is stripped from anything pushed there.
+function stripGreenChannel(entry) {
+  if (!entry || !entry.metadata || typeof entry.metadata !== 'object' || !('greenChannel' in entry.metadata)) return entry;
+  const { greenChannel: _omit, ...metadata } = entry.metadata;
+  return { ...entry, metadata };
+}
+
+function pushPublicQueueEvent(zone, event, payload, org) {
+  const safe = { ...payload };
+  for (const key of ['entry', 'from', 'to']) {
+    if (safe[key]) safe[key] = stripGreenChannel(safe[key]);
+  }
+  return pushQueueEvent(zone, event, safe, org);
+}
+
 export const JOURNEY_DEPARTMENTS = ['opd', 'lab', 'radiology', 'pharmacy', 'er'];
 export const DEFAULT_ZONE_BY_DEPT = {
   opd: 'opd-waiting',
@@ -55,12 +73,22 @@ function todayDateStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function computePriorityScore({ triageLevel, queueType, priority }) {
+// Small, capped nudge for corporate-tier fast-track (Module 24 design,
+// 2026-09-18). Deliberately administrative-only: it never applies when a
+// recognized clinical triage level is present, so it can only ever
+// tie-break among routine/scheduled entries — it must never be able to
+// outrank clinical urgency. The visible queue-display treatment (a badge,
+// a quiet re-ordering, or a separate physical space) is an unresolved UX
+// question per the design doc; this is the backend hook only.
+const CORPORATE_FAST_TRACK_BONUS = 5;
+
+export function computePriorityScore({ triageLevel, queueType, priority, isCorporateFastTrack = false }) {
   if (priority != null) return priority;
   if (triageLevel && ESI_PRIORITY[triageLevel] != null) return ESI_PRIORITY[triageLevel];
-  if (queueType === 'emergency' || queueType === 'urgent') return 80;
-  if (queueType === 'scheduled') return 60;
-  return 50;
+  const base = (queueType === 'emergency' || queueType === 'urgent') ? 80
+    : (queueType === 'scheduled') ? 60
+    : 50;
+  return isCorporateFastTrack ? base + CORPORATE_FAST_TRACK_BONUS : base;
 }
 
 /**
@@ -279,9 +307,12 @@ export async function checkIn({
   parentEntryId = null,
   stepOrder = 1,
   nextDepartment = null,
+  /** Optional multi-branch tag; validated against the caller's organization, NULL if invalid */
+  branchId = null,
 }) {
   await ensureQueueTables();
   const org = defaultOrgId(organizationId);
+  const resolvedBranchId = await hospitalBranch.resolveBranchId(branchId, org);
   // Prefer per-doctor OPD zone when doctor is known (multi-OPD hospitals)
   let zone = queueZone || DEFAULT_ZONE_BY_DEPT[department] || 'opd-waiting';
   if (department === 'opd' && doctorId && (!queueZone || queueZone === 'OPD-MAIN' || queueZone === 'opd-waiting')) {
@@ -292,30 +323,47 @@ export async function checkIn({
   // Public token is journey-scoped (same at every department). Internal dept seq unused for display.
   const tokenNumber = journeyToken || (await nextJourneyToken(org));
   const resolvedJourneyId = journeyId || crypto.randomUUID();
-  const resolvedPriority = priorityScore ?? computePriorityScore({ triageLevel, queueType });
+  // Green channel: only when the caller did not set a priority and there is no
+  // clinical triage level (clinical urgency always outranks it).
+  const green = (priorityScore == null && !triageLevel)
+    ? await greenChannel.resolveForPatient({ organizationId: org, patientId })
+    : null;
+  const resolvedPriority = priorityScore ?? computePriorityScore({ triageLevel, queueType, isCorporateFastTrack: Boolean(green) });
+  const entryMetadata = (green && green.displayMode !== 'quiet')
+    ? { ...metadata, greenChannel: { corporateName: green.corporateName, lane: green.displayMode === 'separate_lane' } }
+    : metadata;
   const resolvedCounter = counterId || doctorName || await assignCounter(org, zone);
   const estimatedWaitMinutes = await estimateWaitMinutes({ organizationId: org, doctorId, department });
 
+  const insertParams = [
+    org, department, tokenNumber, zone, patientId || null, patientName || null,
+    appointmentId || null, doctorId || null, doctorName || null, resolvedCounter,
+    queueType, triageLevel || null, resolvedPriority, chiefComplaint || null,
+    estimatedWaitMinutes, consentVersion || null, JSON.stringify(entryMetadata),
+    resolvedJourneyId, tokenNumber, parentEntryId || null, stepOrder || 1, nextDepartment || null,
+  ];
+  // branch_id is only part of the statement when a valid branch was resolved, so
+  // the no-branch path is byte-identical to before (and safe if the column is absent).
+  const branchCol = resolvedBranchId ? ', branch_id' : '';
+  const branchVal = resolvedBranchId ? ',$23' : '';
+  if (resolvedBranchId) insertParams.push(resolvedBranchId);
   const { rows } = await pool.query(
     `INSERT INTO hospital_queue_entries (
       organization_id, department, token_number, queue_zone, patient_id, patient_name,
       appointment_id, doctor_id, doctor_name, counter_id, queue_type, triage_level,
       priority_score, chief_complaint, status, estimated_wait_minutes, consent_version, metadata,
-      journey_id, journey_token, parent_entry_id, step_order, next_department
-    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17,$18,$19,$20,$21,$22)
+      journey_id, journey_token, parent_entry_id, step_order, next_department${branchCol}
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'waiting',$15,$16,$17,$18,$19,$20,$21,$22${branchVal})
     RETURNING *`,
-    [
-      org, department, tokenNumber, zone, patientId || null, patientName || null,
-      appointmentId || null, doctorId || null, doctorName || null, resolvedCounter,
-      queueType, triageLevel || null, resolvedPriority, chiefComplaint || null,
-      estimatedWaitMinutes, consentVersion || null, JSON.stringify(metadata),
-      resolvedJourneyId, tokenNumber, parentEntryId || null, stepOrder || 1, nextDepartment || null,
-    ]
+    insertParams
   );
   const entry = mapRow(rows[0]);
   if (!entry) throw new Error('Queue check-in failed to persist entry');
+  if (green) {
+    await greenChannel.logApplication({ organizationId: org, queueEntryId: entry.id, corporateId: green.corporateId, bonusApplied: CORPORATE_FAST_TRACK_BONUS, displayMode: green.displayMode });
+  }
   const board = await getBoardSnapshot({ organizationId: org, queueZone: zone, doctorId });
-  pushQueueEvent(zone, 'queue_token_issued', { entry, board }, org);
+  pushPublicQueueEvent(zone, 'queue_token_issued', { entry, board }, org);
 
   const meta = typeof entry.metadata === 'object' && entry.metadata ? entry.metadata : {};
   if (meta.notifyOptIn && meta.notifyPhone) {
@@ -413,8 +461,8 @@ export async function transferToDepartment(entryId, organizationId, nextDepartme
     stepOrder: (from.stepOrder || 1) + 1,
   });
 
-  pushQueueEvent(from.queueZone, 'queue_token_transferred', { from, to }, org);
-  pushQueueEvent(to.queueZone, 'queue_token_issued', { entry: to }, org);
+  pushPublicQueueEvent(from.queueZone, 'queue_token_transferred', { from, to }, org);
+  pushPublicQueueEvent(to.queueZone, 'queue_token_issued', { entry: to }, org);
 
   return { from, to, reused: false };
 }
@@ -462,15 +510,40 @@ export async function getEntryById(id, organizationId) {
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
-export async function listDoctorQueue(doctorId, organizationId) {
+// branch_id exists only after multi-branch-architecture.migration.js has run. The
+// read filters below must not 500 on an environment where it has not: check the
+// catalog once (cached; a "no" is re-checked every minute so a later migration is picked up).
+let _branchColCache = { has: false, checkedAt: 0 };
+async function queueHasBranchColumn() {
+  if (_branchColCache.has) return true;
+  if (Date.now() - _branchColCache.checkedAt < 60_000) return false;
+  try {
+    const { rows } = await pool.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'hospital_queue_entries' AND column_name = 'branch_id' LIMIT 1`
+    );
+    _branchColCache = { has: rows.length > 0, checkedAt: Date.now() };
+  } catch {
+    _branchColCache = { has: false, checkedAt: Date.now() };
+  }
+  return _branchColCache.has;
+}
+
+export async function listDoctorQueue(doctorId, organizationId, { branchId } = {}) {
   await ensureQueueTables();
+  const params = [doctorId, defaultOrgId(organizationId)];
+  let branchClause = '';
+  const bId = parseInt(branchId, 10);
+  if (Number.isFinite(bId) && bId > 0 && await queueHasBranchColumn()) {
+    params.push(bId);
+    branchClause = ` AND (branch_id = $${params.length} OR branch_id IS NULL)`;
+  }
   const { rows } = await pool.query(
     `SELECT * FROM hospital_queue_entries
      WHERE doctor_id = $1 AND organization_id = $2
        AND status IN ('waiting','called','serving')
-       AND check_in_at::date = CURRENT_DATE
+       AND check_in_at::date = CURRENT_DATE${branchClause}
      ORDER BY priority_score DESC, check_in_at ASC`,
-    [doctorId, defaultOrgId(organizationId)]
+    params
   );
   return rows.map(mapRow);
 }
@@ -502,7 +575,7 @@ export async function callNext({ doctorId, organizationId, entryId }) {
   );
   const updated = mapRow(rows[0]);
   const board = await getBoardSnapshot({ organizationId: org, queueZone: updated.queueZone });
-  pushQueueEvent(updated.queueZone, 'queue_token_called', { entry: updated, board }, org);
+  pushPublicQueueEvent(updated.queueZone, 'queue_token_called', { entry: updated, board }, org);
 
   const meta = updated.metadata || {};
   if (meta.notifyPhone) {
@@ -530,7 +603,7 @@ export async function startServing(id, organizationId) {
     [id, actualWait]
   );
   const updated = mapRow(rows[0]);
-  pushQueueEvent(updated.queueZone, 'queue_token_serving', { entry: updated }, org);
+  pushPublicQueueEvent(updated.queueZone, 'queue_token_serving', { entry: updated }, org);
   return updated;
 }
 
@@ -543,7 +616,7 @@ export async function completeEntry(id, organizationId) {
   );
   if (!rows[0]) return null;
   const updated = mapRow(rows[0]);
-  pushQueueEvent(updated.queueZone, 'queue_token_completed', { entry: updated }, defaultOrgId(organizationId));
+  pushPublicQueueEvent(updated.queueZone, 'queue_token_completed', { entry: updated }, defaultOrgId(organizationId));
   return updated;
 }
 
@@ -568,14 +641,16 @@ export async function reorderEntry(id, organizationId, priorityScore) {
   const updated = rows[0] ? mapRow(rows[0]) : null;
   if (updated) {
     const org = defaultOrgId(organizationId);
-    pushQueueEvent(updated.queueZone, 'queue_updated', {
+    pushPublicQueueEvent(updated.queueZone, 'queue_updated', {
       board: await getBoardSnapshot({ organizationId: org, queueZone: updated.queueZone }),
     }, org);
   }
   return updated;
 }
 
-export async function getBoardSnapshot({ organizationId, queueZone, department, doctorId, counterId }) {
+// staffView=true is for the authenticated staff console only. The default (public
+// displays, SSE) strips the green-channel marker from every entry on the board.
+export async function getBoardSnapshot({ organizationId, queueZone, department, doctorId, counterId, branchId, staffView = false }) {
   await ensureQueueTables();
   const org = defaultOrgId(organizationId);
   const params = [org];
@@ -596,6 +671,12 @@ export async function getBoardSnapshot({ organizationId, queueZone, department, 
   if (counterId) {
     params.push(counterId);
     where += ` AND counter_id = $${params.length}`;
+  }
+  // Optional branch scope (staff views only): matching branch + legacy untagged rows.
+  const bId = parseInt(branchId, 10);
+  if (Number.isFinite(bId) && bId > 0 && await queueHasBranchColumn()) {
+    params.push(bId);
+    where += ` AND (branch_id = $${params.length} OR branch_id IS NULL)`;
   }
 
   const { rows } = await pool.query(
@@ -632,7 +713,7 @@ export async function getBoardSnapshot({ organizationId, queueZone, department, 
       sampleSize: durationStats.sampleSize,
     },
     live: true,
-    entries,
+    entries: staffView ? entries : entries.map(stripGreenChannel),
   };
 }
 
@@ -732,6 +813,7 @@ function mapRow(row) {
     parentEntryId: row.parent_entry_id,
     stepOrder: row.step_order || 1,
     nextDepartment: row.next_department || null,
+    branchId: row.branch_id ?? null,
   };
 }
 

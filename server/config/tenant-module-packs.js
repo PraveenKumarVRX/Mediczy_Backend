@@ -101,6 +101,10 @@ export const TENANT_MODULE_PACKS = {
     optionalModules: [
       mod('ambulance', 'Ambulance Desk', '/ambulance/login', { enabled: false, kind: 'role_login' }),
       mod('homecare', 'Homecare Desk', '/homecare/login', { enabled: false, kind: 'role_login' }),
+      mod('dms', 'Document Management', '/hospital/dms', { enabled: false, kind: 'ops' }),
+      mod('housekeeping', 'Housekeeping', '/hospital/housekeeping', { enabled: false, kind: 'ops' }),
+      mod('asset_tracking', 'Asset Tracking (RFID/IoT)', '/hospital/asset-tracking', { enabled: false, kind: 'ops' }),
+      mod('patient_portal', 'Patient Engagement Portal', '/patient-portal', { enabled: false, kind: 'ops' }),
     ],
   },
 

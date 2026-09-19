@@ -18,6 +18,7 @@ import { notifyCareTeamOfBooking } from '../services/care-team-notification.serv
 import redisClient from '../config/redis.js';
 import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import qualityGates from '../services/ai-quality-gates.service.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
@@ -318,6 +319,20 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     // Role-aware context resolution — clinicians must not inherit another user's patient record.
     const callerRole = String(req.userRole || req.user?.role || 'user').toLowerCase();
     const isClinician = ['doctor', 'nurse', 'assistant', 'admin', 'team'].includes(callerRole);
+    // Narrower than isClinician: only roles with actual clinical authority get the
+    // unrestricted clinical-decision-support system prompt below. nurse/assistant/team
+    // still get isClinician's UX conveniences (no patient-record auto-context, "Doctor"
+    // greeting, doctor_app channel tag) but not unrestricted clinical guidance.
+    const isClinicalAuthority = ['doctor', 'admin', 'medical_director', 'super_admin'].includes(callerRole);
+    if (isClinicalAuthority) {
+      qualityGates.logCopilotConversation({
+        patientId: userContext?.patientId || null,
+        userId: req.user.id,
+        role: callerRole,
+        source: 'medical-ai/consult',
+        traceId: sessionId,
+      }).catch(() => {}); // audit logging must never block the clinical workflow
+    }
 
     let dbContext = null;
     let wearableContext = null;
@@ -408,7 +423,7 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
     // LLM fallback when SIB is unavailable or returned empty
     if (!consultation) {
       try {
-        const fallbackSystemPrompt = isClinician
+        const fallbackSystemPrompt = isClinicalAuthority
           ? 'You are Dr. iSHA, a clinical decision-support AI for medical professionals. Provide concise, evidence-based clinical guidance. Include a reminder: "For reference only — apply your clinical judgment." Do not refuse clinical queries that would be appropriate for a licensed clinician.'
           : 'You are Dr. iSHA, a helpful medical AI assistant. Answer concisely and clearly. Never provide specific drug doses. Always recommend consulting a doctor for diagnosis.';
         const historyMessages = conversationHistory

@@ -365,6 +365,14 @@ const CEODashboard                     = lazy(() => import("@/pages/hospital/CEO
 const COODashboard                     = lazy(() => import("@/pages/hospital/COODashboard"));
 const MSDashboard                      = lazy(() => import("@/pages/hospital/MSDashboard"));
 const CFODashboard                     = lazy(() => import("@/pages/hospital/CFODashboard"));
+const BranchManagement                 = lazy(() => import("@/pages/hospital/BranchManagement"));
+const ClinicSearch                     = lazy(() => import("@/pages/patient-portal/ClinicSearch"));
+const PatientLogin                     = lazy(() => import("@/pages/patient-portal/PatientLogin"));
+const PatientDashboard                 = lazy(() => import("@/pages/patient-portal/PatientDashboard"));
+const DocumentManagement                = lazy(() => import("@/pages/hospital/DocumentManagement"));
+const HousekeepingManagement            = lazy(() => import("@/pages/hospital/HousekeepingManagement"));
+const CorporateAccountManagement       = lazy(() => import("@/pages/hospital/CorporateAccountManagement"));
+const CareSeriesWorkspace              = lazy(() => import("@/pages/hospital/CareSeriesWorkspace"));
 const AdmissionWristbandPrint          = lazy(() => import("@/pages/hospital/AdmissionWristbandPrint"));
 const HospitalPracticeManagement       = lazy(() => import("@/pages/hospital/HospitalPracticeManagement"));
 const HospitalCorporateManagement      = lazy(() => import("@/pages/hospital/HospitalCorporateManagement"));
@@ -899,6 +907,7 @@ const CLINICAL_PAGES = {
 
 const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
+const SpecialtyOtWorklist = lazy(() => import("@/pages/ot/SpecialtyOtWorklist"));
 const _OTModulePages = () => import("@/pages/ot/OTModulePages");
 const OTSchedulePage      = lazyNamed(_OTModulePages, "OTSchedulePage");
 const OTPreOpPage         = lazyNamed(_OTModulePages, "OTPreOpPage");
@@ -1126,6 +1135,11 @@ const AppRoutes = () => {
         <Route path="/hospital/coo"                        element={<COODashboard />} />
         <Route path="/hospital/ms"                         element={<MSDashboard />} />
         <Route path="/hospital/cfo"                        element={<CFODashboard />} />
+        <Route path="/hospital/branches"                   element={<BranchManagement />} />
+        <Route path="/hospital/dms"                        element={<DocumentManagement />} />
+        <Route path="/hospital/housekeeping"               element={<HousekeepingManagement />} />
+        <Route path="/hospital/corporate-accounts"         element={<CorporateAccountManagement />} />
+        <Route path="/hospital/care-series"                element={<CareSeriesWorkspace />} />
         <Route path="/hospital/practice-management"        element={<HospitalPracticeManagement />} />
         <Route path="/hospital/corporate-management"       element={<HospitalCorporateManagement />} />
         <Route path="/hospital/insurance-payer-management" element={<HospitalInsurancePayerManagement />} />
@@ -1831,6 +1845,7 @@ const AppRoutes = () => {
         <Route path="/ot/safety"         element={<OTSafetyPage />} />
         <Route path="/ot/post-op"        element={<OTPostOpPage />} />
         <Route path="/ot/records"        element={<OTRecordsPage />} />
+        <Route path="/ot/specialty"      element={<SpecialtyOtWorklist />} />
         <Route path="/ot/reports"        element={<OTReportsPage />} />
         <Route path="/ot/analytics"      element={<OTAnalyticsPage />} />
         <Route path="/ot/settings"       element={<OTSettingsPage />} />
@@ -2029,6 +2044,10 @@ const AppRoutes = () => {
         <Route path="/display/ward"             element={<WardNursingDisplay />} />
         <Route path="/display/bedside"          element={<BedsideDisplay />} />
         <Route path="/display/discharge-status" element={<DischargeStatusDisplay />} />
+        {/* ── Patient Engagement Portal (web) — public, MVP shell ──────── */}
+        <Route path="/patient-portal"           element={<ClinicSearch />} />
+        <Route path="/patient-portal/login"     element={<PatientLogin />} />
+        <Route path="/patient-portal/dashboard" element={<PatientDashboard />} />
         <Route path="/kiosk/checkin"            element={<SelfCheckinKiosk />} />
         <Route path="/kiosk/register/:token"    element={<KioskSecureRegister />} />
         <Route path="/hospital/queue-console"   element={<QueueConsole />} />

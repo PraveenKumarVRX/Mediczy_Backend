@@ -1,6 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Alerting (added 2026-09-18 per audit finding: Prometheus alert rules and
+# this script's own auto-recovery ran with no human-reachable notification
+# at all — an outage could fire and reach no one). Reads real webhook/key
+# values from environment variables, never from committed config —
+# config/health-check-config.json's slack_webhook/pagerduty_key fields are
+# placeholders and intentionally NOT read here. Set SLACK_WEBHOOK_URL and/or
+# PAGERDUTY_ROUTING_KEY in the environment (e.g. the PM2 ecosystem file or
+# systemd unit's Environment=) to activate; both are no-ops if unset, so
+# this script's existing exit-code/output behavior is unchanged either way.
+send_alert() {
+  local message="$1"
+  if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
+    curl -s -m 5 -X POST -H 'Content-Type: application/json' \
+      -d "{\"text\": \"[Mediczy health-check] ${message}\"}" \
+      "$SLACK_WEBHOOK_URL" > /dev/null 2>&1 || true
+  fi
+  if [[ -n "${PAGERDUTY_ROUTING_KEY:-}" ]]; then
+    curl -s -m 5 -X POST -H 'Content-Type: application/json' \
+      -d "{\"routing_key\": \"${PAGERDUTY_ROUTING_KEY}\", \"event_action\": \"trigger\", \"payload\": {\"summary\": \"${message}\", \"source\": \"mediczy-health-check\", \"severity\": \"warning\"}}" \
+      "https://events.pagerduty.com/v2/enqueue" > /dev/null 2>&1 || true
+  fi
+}
+
 BACKEND_OK=0
 FRONTEND_OK=0
 CLOUDFLARE_OK=0
@@ -77,6 +100,21 @@ if [[ $BACKEND_OK -eq 1 && $FRONTEND_OK -eq 1 && $CLOUDFLARE_OK -eq 1 && \
   echo "healthy"
   exit 0
 fi
+
+# A service was unhealthy — a human should know even if auto-recovery
+# below succeeds, since a recurring restart is itself a signal something
+# is wrong upstream.
+FAILED=""
+[[ $BACKEND_OK -eq 0 ]] && FAILED="${FAILED}backend "
+[[ $INTELLIGENT_DB_OK -eq 0 ]] && FAILED="${FAILED}intelligent-db "
+[[ $LLM_ORCHESTRATOR_OK -eq 0 ]] && FAILED="${FAILED}llm-orchestrator "
+[[ $FRONTEND_OK -eq 0 ]] && FAILED="${FAILED}frontend/nginx "
+[[ $CLOUDFLARE_OK -eq 0 ]] && FAILED="${FAILED}cloudflared "
+[[ $REDIS_OK -eq 0 ]] && FAILED="${FAILED}redis "
+[[ $KAFKA_OK -eq 0 ]] && FAILED="${FAILED}kafka "
+[[ $PROMETHEUS_OK -eq 0 ]] && FAILED="${FAILED}prometheus "
+[[ $GRAFANA_OK -eq 0 ]] && FAILED="${FAILED}grafana "
+send_alert "Unhealthy on $(hostname): ${FAILED}— attempting auto-recovery"
 
 # Attempt recovery
 [[ $BACKEND_OK -eq 0 ]] && pm2 restart mediczy-server || true

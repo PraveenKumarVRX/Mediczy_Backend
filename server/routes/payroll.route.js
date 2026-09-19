@@ -2,6 +2,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { connectPostgres } from '../db/postgres.js';
+import { generatePayslipPdf, buildStatutoryExportCsv } from '../services/payslip-pdf.service.js';
 
 const router = express.Router();
 const PAYROLL_ALLOWED_ROLES = new Set(['hr_staff', 'hospital_admin', 'admin', 'system_admin', 'super_admin']);
@@ -117,4 +118,61 @@ router.patch('/runs/:id/finalize', authPayroll, async (req, res) => {
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Payroll run not found' });
   res.json({ success: true, data: rows[0] });
 });
+
+// ── Payslip PDF + statutory export (added 2026-09-18) ─────────────────────────
+const safeFilePart = (v) => String(v ?? '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64) || 'x';
+const parseRunId = (v) => (/^\d{1,9}$/.test(String(v)) && Number(v) > 0 ? Number(v) : null);
+
+// Payslip PDF is generated in memory and streamed to the authenticated caller;
+// it is never written to disk and no filesystem path is ever returned.
+// ?format=json returns metadata only (no path, no download url).
+router.get('/runs/:id/employees/:employeeCode/payslip', authPayroll, async (req, res) => {
+  try {
+    const runId = parseRunId(req.params.id);
+    if (!runId) return res.status(400).json({ success: false, message: 'Invalid payroll run id' });
+    const db = await ensureTables();
+    const { rows } = await db.query(
+      `SELECT r.id, r.month, json_build_object('employeeCode', s.employee_code, 'employeeName', s.employee_name, 'department', s.department, 'gross', l.gross, 'pf', l.pf, 'esi', l.esi, 'tds', l.tds, 'otherDeductions', l.other_deductions, 'net', l.net) AS line
+       FROM payroll_runs r JOIN payroll_run_lines l ON l.run_id = r.id JOIN payroll_structures s ON s.id = l.structure_id
+       WHERE r.id = $1 AND r.tenant_id = $2 AND s.employee_code = $3`,
+      [runId, req.tenantId, req.params.employeeCode]
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Payroll line not found for this employee in this run' });
+    const fileName = `payslip-${runId}-${safeFilePart(rows[0].line.employeeCode)}.pdf`;
+    if (req.query.format === 'json') {
+      return res.json({ success: true, data: { runId, employeeCode: rows[0].line.employeeCode, month: rows[0].month, fileName, contentType: 'application/pdf' } });
+    }
+    const pdf = await generatePayslipPdf({ run: rows[0], line: rows[0].line });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Content-Length', pdf.length);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.end(pdf);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.get('/runs/:id/statutory-export.csv', authPayroll, async (req, res) => {
+  try {
+    const runId = parseRunId(req.params.id);
+    if (!runId) return res.status(400).json({ success: false, message: 'Invalid payroll run id' });
+    const db = await ensureTables();
+    const { rows } = await db.query(
+      `SELECT r.month, json_agg(json_build_object('employeeCode', s.employee_code, 'employeeName', s.employee_name, 'gross', l.gross, 'pf', l.pf, 'esi', l.esi, 'tds', l.tds, 'net', l.net)) AS lines
+       FROM payroll_runs r JOIN payroll_run_lines l ON l.run_id = r.id JOIN payroll_structures s ON s.id = l.structure_id
+       WHERE r.id = $1 AND r.tenant_id = $2 GROUP BY r.month`,
+      [runId, req.tenantId]
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Payroll run not found' });
+    const csv = buildStatutoryExportCsv(rows[0], rows[0].lines);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="statutory-export-run-${runId}.csv"`);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.send(csv);
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 export default router;

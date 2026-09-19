@@ -1,5 +1,6 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
+import { requireModule } from '../middleware/moduleEntitlement.middleware.js';
 import {
   createAssessment, getAssessmentByBooking,
   createRecord, getRecordByBooking, updateRecord
@@ -9,7 +10,7 @@ import { enforceAnesthesiaConsent } from '../services/consent-enforcement.servic
 const router = express.Router();
 
 // POST /api/v1/anesthesia/assessment
-router.post('/assessment', authUser, async (req, res) => {
+router.post('/assessment', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const result = await createAssessment({ ...req.body, organizationId });
@@ -20,7 +21,7 @@ router.post('/assessment', authUser, async (req, res) => {
 });
 
 // GET /api/v1/anesthesia/assessment/booking/:otBookingId
-router.get('/assessment/booking/:otBookingId', authUser, async (req, res) => {
+router.get('/assessment/booking/:otBookingId', authUser, requireModule('ot'), async (req, res) => {
   try {
     const result = await getAssessmentByBooking(parseInt(req.params.otBookingId));
     if (!result) return res.status(404).json({ success: false, message: 'Assessment not found' });
@@ -31,7 +32,7 @@ router.get('/assessment/booking/:otBookingId', authUser, async (req, res) => {
 });
 
 // POST /api/v1/anesthesia/record — B7: enforces anesthesia consent before creating intra-op record
-router.post('/record', authUser, async (req, res) => {
+router.post('/record', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     await enforceAnesthesiaConsent({
@@ -49,7 +50,7 @@ router.post('/record', authUser, async (req, res) => {
 });
 
 // GET /api/v1/anesthesia/record/booking/:otBookingId
-router.get('/record/booking/:otBookingId', authUser, async (req, res) => {
+router.get('/record/booking/:otBookingId', authUser, requireModule('ot'), async (req, res) => {
   try {
     const result = await getRecordByBooking(parseInt(req.params.otBookingId));
     if (!result) return res.status(404).json({ success: false, message: 'Record not found' });
@@ -60,7 +61,7 @@ router.get('/record/booking/:otBookingId', authUser, async (req, res) => {
 });
 
 // PATCH /api/v1/anesthesia/record/:recordId
-router.patch('/record/:recordId', authUser, async (req, res) => {
+router.patch('/record/:recordId', authUser, requireModule('ot'), async (req, res) => {
   try {
     const result = await updateRecord(parseInt(req.params.recordId), req.body);
     res.json(result);

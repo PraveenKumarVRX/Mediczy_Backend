@@ -1,6 +1,7 @@
 import express from 'express';
 import { authDoctor } from '../middleware/auth.middleware.js';
 import medicalAIService from '../services/medicalAI.service.js';
+import qualityGates from '../services/ai-quality-gates.service.js';
 import medicalTerminologyService from '../services/medical-terminology.service.js';
 import cimsService from '../services/cims.service.js';
 import { Appointment, User, Doctor } from '../models/index.js';
@@ -339,6 +340,13 @@ Generate the prescription JSON:`;
     }
     // ─────────────────────────────────────────────────────────────────────────
 
+    // ── Quality gate: dosage hallucination scan over medications + free text, with
+    // mandatory physician review. Fail-safe: a gate exception counts as blocked.
+    // Blocked drafts are persisted as status 'draft' (never 'issued') — see below.
+    const { gate: scribeGate, blocked: gateBlocked, gateFailed } =
+      await qualityGates.evaluateAiPrescriptionDraft(prescriptionContent);
+    qualityGates.logGateResult(scribeGate, { patientId: patientId || null, doctorId: req.doctor.id, source: 'ai-scribe/generate-prescription', gateFailed, persistedAs: gateBlocked ? 'draft' : 'issued' }).catch(() => {});
+
     // Save to database if requested
     let savedPrescription = null;
     if (saveToDatabase) {
@@ -410,8 +418,17 @@ Generate the prescription JSON:`;
           additionalNotes: {
             consultationNotes: consultationNotes
           },
-          status: 'issued',
+          // AI output is only 'issued' when the quality gate passed without blockers;
+          // otherwise it is a draft the physician must edit and issue explicitly.
+          status: gateBlocked ? 'draft' : 'issued',
           metadata: {
+            reviewRequired: true,
+            qualityGate: {
+              severity: scribeGate.severity,
+              blockers: scribeGate.blockers,
+              warnings: scribeGate.warnings,
+              gateFailed,
+            },
             generatedBy: 'AI',
             generatedAt: new Date().toISOString(),
             aiModel: 'Llama-3.1-8B-Instruct',
@@ -431,10 +448,14 @@ Generate the prescription JSON:`;
       success: true,
       prescription: prescriptionContent,
       drugInteractions: drugInteractions || null,
+      blocked: gateBlocked, // true => not issued; saved (if requested) as a draft for physician edit/issue
+      reviewRequired: true, // AI-generated draft — physician review/signature is mandatory before this is treated as final, per checkScribeOutput's non-negotiable gate
+      qualityGate: { severity: scribeGate.severity, warnings: scribeGate.warnings, blockers: scribeGate.blockers },
       savedPrescription: savedPrescription ? {
         id: savedPrescription.id,
         prescriptionId: savedPrescription.prescriptionId,
         prescriptionNumber: savedPrescription.prescriptionId,
+        status: savedPrescription.status ?? (gateBlocked ? 'draft' : 'issued'),
         createdAt: savedPrescription.createdAt
       } : null,
       usingFallback: usesFallback,

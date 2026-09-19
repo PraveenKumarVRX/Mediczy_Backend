@@ -115,6 +115,11 @@ export default function MSDashboard() {
   // Today's census (live fetch with seed fallback)
   const [todayCensus, setTodayCensus] = useState({ opd: 312, ipd: 284, er: 48, surgery: 26, discharges: 34, pendingDischarge: 14 });
 
+  // Clinical quality KPIs — readmissionRate is now backed by a real query
+  // (outcome_records); mortalityRate/haiRate/hcahps have no backing table
+  // yet, so they keep the seed values below rather than show blank/N-A.
+  const [qualityKpis, setQualityKpis] = useState({ mortalityRate: 1.3, readmissionRate: 3.2, haiRate: 0.4, hcahps: 87 });
+
   useEffect(() => {
     (async () => {
       try {
@@ -125,6 +130,11 @@ export default function MSDashboard() {
           opd:      d.todayOPD       ?? prev.opd,
           ipd:      d.totalPatients  ?? prev.ipd,
         }));
+      } catch { /* use seed */ }
+      try {
+        const msRes = await api.get('/hospital/ms/clinical');
+        const m = msRes.data?.data ?? msRes.data;
+        setQualityKpis(prev => ({ ...prev, readmissionRate: m?.readmissionRate ?? prev.readmissionRate }));
       } catch { /* use seed */ }
     })();
   }, []);
@@ -265,10 +275,10 @@ export default function MSDashboard() {
           {/* Quality indicator KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Gross Mortality Rate',    value: '1.3%', target: '≤2%', good: true,  icon: HeartPulse, color: 'text-emerald-600' },
-              { label: '30-day Readmission Rate', value: '3.2%', target: '≤5%', good: true,  icon: Activity,   color: 'text-emerald-600' },
-              { label: 'HAI Rate',                value: '0.4%', target: '≤1%', good: true,  icon: Shield,     color: 'text-emerald-600' },
-              { label: 'HCAHPS Score',            value: '87%',  target: '≥85%', good: true, icon: Award,      color: 'text-emerald-600' },
+              { label: 'Gross Mortality Rate',    value: `${qualityKpis.mortalityRate}%`, target: '≤2%', good: true,  icon: HeartPulse, color: 'text-emerald-600' },
+              { label: '30-day Readmission Rate', value: `${qualityKpis.readmissionRate}%`, target: '≤5%', good: true,  icon: Activity,   color: 'text-emerald-600' },
+              { label: 'HAI Rate',                value: `${qualityKpis.haiRate}%`, target: '≤1%', good: true,  icon: Shield,     color: 'text-emerald-600' },
+              { label: 'HCAHPS Score',            value: `${qualityKpis.hcahps}%`,  target: '≥85%', good: true, icon: Award,      color: 'text-emerald-600' },
             ].map(k => (
               <Card key={k.label} className="border-0 shadow-sm">
                 <CardContent className="p-4">

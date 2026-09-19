@@ -26,7 +26,7 @@
  */
 
 import { Router } from 'express';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, requireRole, requireRoleOrHospitalAdmin } from '../middleware/auth.middleware.js';
 import redisClient from '../config/redis.js';
 import {
   ensureAbdmTables,
@@ -43,6 +43,10 @@ import {
   handlePhiCallback,
   listPhiRequests,
   linkCareContext,
+  registerFacilityOnHfr,
+  getFacilityRegistryStatus,
+  registerProviderOnHpr,
+  getProviderRegistryStatus,
 } from '../services/abdm-client.service.js';
 import {
   initiateAadhaarAbhaEnrol,
@@ -282,6 +286,58 @@ router.post('/care-context/link', async (req, res) => {
     }
     const result = await linkCareContext(abhaNumber, { referenceNumber, display, hiTypes });
     res.status(201).json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── HFR/HPR (added 2026-09-18) ────────────────────────────────────────────────
+// Facility registration is admin-level; provider self-registration is
+// doctor-or-admin. Both inherit authUser from router.use() above.
+router.post('/hfr/register', requireRoleOrHospitalAdmin(['admin', 'hospital_admin', 'super_admin']), async (req, res) => {
+  try {
+    const { facilityName, address, ownershipType, facilityType } = req.body;
+    if (!facilityName) return res.status(400).json({ success: false, message: 'facilityName is required' });
+    const result = await registerFacilityOnHfr(tenantId(req), { facilityName, address, ownershipType, facilityType });
+    res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/hfr/status', async (req, res) => {
+  try {
+    const status = await getFacilityRegistryStatus(tenantId(req));
+    res.json({ success: true, data: status });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/hpr/register', requireRoleOrHospitalAdmin(['doctor', 'admin', 'hospital_admin', 'super_admin']), async (req, res) => {
+  try {
+    const { doctorId, providerName, qualification, registrationCouncil, registrationNumber } = req.body;
+    if (!doctorId || !providerName) return res.status(400).json({ success: false, message: 'doctorId and providerName are required' });
+    // A doctor may only register/overwrite their own registry record; admins can act for any doctor in the tenant.
+    const role = req.user?.role || req.userRole;
+    if (role === 'doctor' && String(doctorId) !== String(req.user?.id)) {
+      return res.status(403).json({ success: false, message: 'Doctors can only register their own HPR record' });
+    }
+    const result = await registerProviderOnHpr(tenantId(req), { doctorId, providerName, qualification, registrationCouncil, registrationNumber });
+    res.status(201).json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/hpr/:doctorId/status', async (req, res) => {
+  try {
+    const role = req.user?.role || req.userRole;
+    if (role === 'doctor' && String(req.params.doctorId) !== String(req.user?.id)) {
+      return res.status(403).json({ success: false, message: 'Doctors can only view their own HPR status' });
+    }
+    const status = await getProviderRegistryStatus(tenantId(req), Number(req.params.doctorId));
+    res.json({ success: true, data: status });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

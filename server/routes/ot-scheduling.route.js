@@ -1,5 +1,6 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
+import { requireModule } from '../middleware/moduleEntitlement.middleware.js';
 import {
   bookOT, emergencyActivateOT, updateOTStatus,
   submitChecklist, getChecklistStatus, getOTSchedule, checkConflicts
@@ -19,7 +20,7 @@ import {
 const router = express.Router();
 
 // POST /api/v1/ot/book
-router.post('/book', authUser, async (req, res) => {
+router.post('/book', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const override = req.body.consentOverride
@@ -38,7 +39,7 @@ router.post('/book', authUser, async (req, res) => {
 });
 
 // POST /api/v1/ot/emergency-activate
-router.post('/emergency-activate', authUser, async (req, res) => {
+router.post('/emergency-activate', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const booking = await emergencyActivateOT({ ...req.body, organizationId });
@@ -49,7 +50,7 @@ router.post('/emergency-activate', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/cases/today — document §8 Phase 3
-router.get('/cases/today', authUser, async (req, res) => {
+router.get('/cases/today', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const { roomId } = req.query;
@@ -61,7 +62,7 @@ router.get('/cases/today', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/case/:id/readiness — document §8 Phase 3: OT case readiness score
-router.get('/case/:id/readiness', authUser, async (req, res) => {
+router.get('/case/:id/readiness', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const bookingId = parseInt(req.params.id);
@@ -98,7 +99,7 @@ router.get('/case/:id/readiness', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/schedule
-router.get('/schedule', authUser, async (req, res) => {
+router.get('/schedule', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const { date, roomId } = req.query;
@@ -116,7 +117,7 @@ router.get('/schedule', authUser, async (req, res) => {
 // PUT /api/v1/ot/:id/status
 // B2: Accepts optional override: { reasonCode, approverId, approverRole }
 // B7: Enforces consent check before incision transition
-router.put('/:id/status', authUser, async (req, res) => {
+router.put('/:id/status', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const override = req.body.override
@@ -147,7 +148,7 @@ router.put('/:id/status', authUser, async (req, res) => {
 });
 
 // POST /api/v1/ot/:id/checklist
-router.post('/:id/checklist', authUser, async (req, res) => {
+router.post('/:id/checklist', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const result = await submitChecklist(
@@ -164,7 +165,7 @@ router.post('/:id/checklist', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/:id/checklist-status
-router.get('/:id/checklist-status', authUser, async (req, res) => {
+router.get('/:id/checklist-status', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const status = await getChecklistStatus(organizationId, parseInt(req.params.id));
@@ -175,7 +176,7 @@ router.get('/:id/checklist-status', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/conflicts
-router.get('/conflicts', authUser, async (req, res) => {
+router.get('/conflicts', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const { roomId, start, end } = req.query;
@@ -189,7 +190,7 @@ router.get('/conflicts', authUser, async (req, res) => {
 // ── Consumables (scan-to-consume) ────────────────────────────────────────────
 
 // POST /api/v1/ot/consumables/scan
-router.post('/consumables/scan', authUser, async (req, res) => {
+router.post('/consumables/scan', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const result = await scanConsumable({ ...req.body, organizationId, scannedBy: req.user.id });
@@ -200,7 +201,7 @@ router.post('/consumables/scan', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/:id/consumables
-router.get('/:id/consumables', authUser, async (req, res) => {
+router.get('/:id/consumables', authUser, requireModule('ot'), async (req, res) => {
   try {
     const data = await getConsumablesByBooking(parseInt(req.params.id));
     res.json({ success: true, data });
@@ -210,7 +211,7 @@ router.get('/:id/consumables', authUser, async (req, res) => {
 });
 
 // POST /api/v1/ot/implants
-router.post('/implants', authUser, async (req, res) => {
+router.post('/implants', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const result = await recordImplant({ ...req.body, organizationId, recordedBy: req.user.id });
@@ -221,7 +222,7 @@ router.post('/implants', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/:id/implants
-router.get('/:id/implants', authUser, async (req, res) => {
+router.get('/:id/implants', authUser, requireModule('ot'), async (req, res) => {
   try {
     const data = await getImplantsByBooking(parseInt(req.params.id));
     res.json({ success: true, data });
@@ -233,7 +234,7 @@ router.get('/:id/implants', authUser, async (req, res) => {
 // ── Family notifications ──────────────────────────────────────────────────────
 
 // POST /api/v1/ot/:id/family-notification
-router.post('/:id/family-notification', authUser, async (req, res) => {
+router.post('/:id/family-notification', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const result = await sendFamilyNotification({
@@ -249,7 +250,7 @@ router.post('/:id/family-notification', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/:id/family-notifications
-router.get('/:id/family-notifications', authUser, async (req, res) => {
+router.get('/:id/family-notifications', authUser, requireModule('ot'), async (req, res) => {
   try {
     const data = await getFamilyNotifications(parseInt(req.params.id));
     res.json({ success: true, data });
@@ -261,7 +262,7 @@ router.get('/:id/family-notifications', authUser, async (req, res) => {
 // ── Operative summary ─────────────────────────────────────────────────────────
 
 // GET /api/v1/ot/:id/operative-summary
-router.get('/:id/operative-summary', authUser, async (req, res) => {
+router.get('/:id/operative-summary', authUser, requireModule('ot'), async (req, res) => {
   try {
     const data = await getOperativeSummary(parseInt(req.params.id));
     res.json({ success: true, data });
@@ -273,7 +274,7 @@ router.get('/:id/operative-summary', authUser, async (req, res) => {
 // ── Operative notes ───────────────────────────────────────────────────────────
 
 // POST /api/v1/ot/:id/operative-note
-router.post('/:id/operative-note', authUser, async (req, res) => {
+router.post('/:id/operative-note', authUser, requireModule('ot'), async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const result = await createOperativeNote({
@@ -289,7 +290,7 @@ router.post('/:id/operative-note', authUser, async (req, res) => {
 });
 
 // GET /api/v1/ot/:id/operative-note
-router.get('/:id/operative-note', authUser, async (req, res) => {
+router.get('/:id/operative-note', authUser, requireModule('ot'), async (req, res) => {
   try {
     const result = await getOperativeNoteByBooking(parseInt(req.params.id));
     if (!result) return res.status(404).json({ success: false, message: 'No operative note found' });
@@ -300,7 +301,7 @@ router.get('/:id/operative-note', authUser, async (req, res) => {
 });
 
 // PATCH /api/v1/ot/operative-note/:noteId
-router.patch('/operative-note/:noteId', authUser, async (req, res) => {
+router.patch('/operative-note/:noteId', authUser, requireModule('ot'), async (req, res) => {
   try {
     const result = await updateOperativeNote(parseInt(req.params.noteId), req.body);
     res.json(result);
@@ -310,7 +311,7 @@ router.patch('/operative-note/:noteId', authUser, async (req, res) => {
 });
 
 // POST /api/v1/ot/operative-note/:noteId/sign
-router.post('/operative-note/:noteId/sign', authUser, async (req, res) => {
+router.post('/operative-note/:noteId/sign', authUser, requireModule('ot'), async (req, res) => {
   try {
     const result = await signOperativeNote(parseInt(req.params.noteId), {
       signedBy: req.user.id,

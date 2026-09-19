@@ -58,6 +58,13 @@ const ensureTables = async () => {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    CREATE TABLE IF NOT EXISTS cssd_set_usage (
+      id SERIAL PRIMARY KEY,
+      set_id INTEGER NOT NULL REFERENCES cssd_sets(id),
+      ot_booking_id INTEGER NOT NULL,
+      used_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      recorded_by VARCHAR(160)
+    );
   `);
   await ensureOperationsGovernanceTables(db);
   return db;
@@ -176,6 +183,94 @@ router.get('/approvals', authCSSD, async (_req, res) => {
 router.get('/audit', authCSSD, async (_req, res) => {
   const db = await ensureTables();
   res.json({ success: true, data: await listOperationsAudit(db, 'cssd') });
+});
+
+// ── OT-case traceability (added 2026-09-18) ───────────────────────────────────
+// Per the audit finding: no link existed between a sterilized set and the
+// specific OT case/patient it was used on — standard CSSD-OT integration.
+// A set is usable only when it is sterile and available: status = 'available'
+// (set by job release) and, when an expiry was recorded, sterile_until not past.
+// The status flip and the usage row happen in one transaction, and the flip is
+// conditional, so a set can never be issued twice or without a usage row.
+router.post('/sets/:id/usage', authCSSD, async (req, res) => {
+  try {
+    const setId = Number(req.params.id);
+    if (!Number.isInteger(setId) || setId <= 0) return res.status(400).json({ success: false, message: 'Invalid set id' });
+    const rawBooking = req.body?.otBookingId;
+    const otBookingId = typeof rawBooking === 'number' || (typeof rawBooking === 'string' && /^\d+$/.test(rawBooking.trim()))
+      ? Number(rawBooking) : NaN;
+    if (!Number.isInteger(otBookingId) || otBookingId <= 0 || otBookingId > 2147483647) {
+      return res.status(400).json({ success: false, message: 'otBookingId must be a positive integer' });
+    }
+    const pool = await ensureTables();
+    const actor = actorFrom(req.cssdUser, 'CSSD');
+    const client = await pool.connect();
+    let usage = null;
+    let failure = null;
+    try {
+      await client.query('BEGIN');
+      const flipped = await client.query(
+        `UPDATE cssd_sets SET status = 'in_use', updated_at = NOW()
+         WHERE id = $1 AND status = 'available' AND (sterile_until IS NULL OR sterile_until > NOW())
+         RETURNING id`,
+        [setId]
+      );
+      if (flipped.rows[0]) {
+        const ins = await client.query(
+          'INSERT INTO cssd_set_usage (set_id, ot_booking_id, recorded_by) VALUES ($1, $2, $3) RETURNING *',
+          [setId, otBookingId, actor]
+        );
+        usage = ins.rows[0];
+        await client.query('COMMIT');
+      } else {
+        const { rows } = await client.query(
+          'SELECT status, sterile_until, (sterile_until IS NOT NULL AND sterile_until <= NOW()) AS expired FROM cssd_sets WHERE id = $1',
+          [setId]
+        );
+        await client.query('ROLLBACK');
+        const cur = rows[0];
+        if (!cur) failure = { code: 404, message: 'Set not found' };
+        else if (cur.status === 'in_use') failure = { code: 409, message: 'Set is already in use and must be reprocessed before it can be used again' };
+        else if (cur.status === 'processing') failure = { code: 409, message: 'Set is still being processed and is not yet sterile' };
+        else if (cur.status === 'available' && cur.expired) failure = { code: 409, message: 'Set sterility has expired and it must be reprocessed' };
+        else failure = { code: 409, message: `Set is not sterile and available (status: ${cur.status})` };
+      }
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+    if (failure) return res.status(failure.code).json({ success: false, message: failure.message });
+    // Usage is already committed; an audit-log failure must not turn it into an error response.
+    await recordOperationsAudit(pool, { module: 'cssd', entityType: 'set', entityId: setId, action: 'set_used_in_ot_case', actor, details: { otBookingId } })
+      .catch((e) => console.error('[cssd] set usage audit failed:', e.message));
+    res.status(201).json({ success: true, data: usage });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// Full traceability: given an OT case, which sterilized sets were used?
+router.get('/ot-bookings/:otBookingId/sets', authCSSD, async (req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(
+    `SELECT u.*, s.set_code, s.name AS set_name, s.sterile_until
+     FROM cssd_set_usage u JOIN cssd_sets s ON s.id = u.set_id
+     WHERE u.ot_booking_id = $1 ORDER BY u.used_at`,
+    [req.params.otBookingId]
+  );
+  res.json({ success: true, data: rows });
+});
+
+// Reverse traceability: given a sterilized set, which OT cases has it been used in?
+router.get('/sets/:id/usage-history', authCSSD, async (req, res) => {
+  const db = await ensureTables();
+  const { rows } = await db.query(
+    'SELECT * FROM cssd_set_usage WHERE set_id = $1 ORDER BY used_at DESC',
+    [req.params.id]
+  );
+  res.json({ success: true, data: rows });
 });
 
 export default router;

@@ -4,6 +4,7 @@ import { loginBiomedical } from '../../controllers/dept/biomedical.controller.js
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../../db/postgres.js';
+import biomedicalEquipment from '../../services/biomedical-equipment.service.js';
 
 const router = express.Router();
 
@@ -309,6 +310,117 @@ Be data-driven and conservative (patient safety first).`;
   } catch (err) {
     console.error('[Biomedical AI] failure-prediction error:', err.message);
     res.status(500).json({ success: false, error: 'Failure prediction failed.' });
+  }
+});
+
+// ─── Real equipment registry (Workstream 6, added 2026-09-18) ────────────────
+// Additive only — does not change /equipment/sync-hypergrid or any AI route above.
+
+// Same derivation as /equipment/sync-hypergrid so registry rows line up with
+// the inventory rows that route writes.
+const registryTenantId = (req) => req.biomedUser?.tenant_id || req.biomedUser?.hospital_id || req.biomedUser?.id;
+const toPosInt = (v) => (/^\d+$/.test(String(v ?? '')) && Number(v) > 0 && Number(v) <= 2147483647 ? Number(v) : null);
+const TICKET_PRIORITIES = ['routine', 'urgent', 'critical'];
+
+router.get('/equipment', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const equipment = await biomedicalEquipment.listEquipment(tenantId);
+    res.json({ success: true, data: equipment });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to list equipment' });
+  }
+});
+
+router.post('/maintenance-tickets', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const { equipmentId, issueDescription, priority } = req.body;
+    if (!issueDescription) return res.status(400).json({ success: false, error: 'issueDescription is required' });
+    if (priority !== undefined && priority !== null && !TICKET_PRIORITIES.includes(priority)) return res.status(400).json({ success: false, error: `priority must be one of ${TICKET_PRIORITIES.join(', ')}` });
+    const hasEquip = equipmentId !== undefined && equipmentId !== null && equipmentId !== '';
+    if (hasEquip && !toPosInt(equipmentId)) return res.status(400).json({ success: false, error: 'Invalid equipmentId' });
+    const ticket = await biomedicalEquipment.openTicket({
+      tenantId, equipmentId: hasEquip ? toPosInt(equipmentId) : null, issueDescription, priority: priority || undefined, reportedBy: req.biomedUser?.email || req.biomedUser?.id,
+    });
+    if (!ticket) return res.status(404).json({ success: false, error: 'Equipment not found' });
+    res.status(201).json({ success: true, data: ticket });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to open maintenance ticket' });
+  }
+});
+
+router.get('/maintenance-tickets', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const tickets = await biomedicalEquipment.listTickets(tenantId, { status: req.query.status || null });
+    res.json({ success: true, data: tickets });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to list maintenance tickets' });
+  }
+});
+
+router.post('/maintenance-tickets/:id/resolve', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const ticketId = toPosInt(req.params.id);
+    if (!ticketId) return res.status(400).json({ success: false, error: 'Invalid ticket id' });
+    const ticket = await biomedicalEquipment.resolveTicket(tenantId, ticketId, {
+      resolutionNotes: req.body?.resolutionNotes, assignedTo: req.body?.assignedTo,
+    });
+    if (!ticket) return res.status(404).json({ success: false, error: 'Ticket not found' });
+    res.json({ success: true, data: ticket });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to resolve maintenance ticket' });
+  }
+});
+
+router.post('/calibration-schedule', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const { equipmentId, calibrationType, nextDueAt, frequencyDays } = req.body;
+    if (!equipmentId || !calibrationType || !nextDueAt) {
+      return res.status(400).json({ success: false, error: 'equipmentId, calibrationType, and nextDueAt are required' });
+    }
+    const equipId = toPosInt(equipmentId);
+    if (!equipId) return res.status(400).json({ success: false, error: 'Invalid equipmentId' });
+    const schedule = await biomedicalEquipment.scheduleCalibration({ tenantId, equipmentId: equipId, calibrationType, nextDueAt, frequencyDays });
+    if (!schedule) return res.status(404).json({ success: false, error: 'Equipment not found' });
+    res.status(201).json({ success: true, data: schedule });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to schedule calibration' });
+  }
+});
+
+router.post('/calibration-schedule/:id/complete', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const scheduleId = toPosInt(req.params.id);
+    if (!scheduleId) return res.status(400).json({ success: false, error: 'Invalid schedule id' });
+    const schedule = await biomedicalEquipment.recordCalibrationCompleted(tenantId, scheduleId);
+    if (!schedule) return res.status(404).json({ success: false, error: 'Calibration schedule not found' });
+    res.json({ success: true, data: schedule });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to record calibration completion' });
+  }
+});
+
+// NABH-gap-assessment-ready: equipment due for calibration soon.
+router.get('/calibration-due', authBiomedical, async (req, res) => {
+  try {
+    const tenantId = registryTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, error: 'Tenant could not be determined from token' });
+    const withinDays = Number(req.query.withinDays) || 30;
+    const due = await biomedicalEquipment.getCalibrationDueSoon(tenantId, withinDays);
+    res.json({ success: true, data: due });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Failed to fetch calibration due list' });
   }
 });
 

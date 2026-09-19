@@ -82,6 +82,9 @@ router.post('/think', requireAuth, async (req, res) => {
 
     const userId = req.user.id;
     const userType = req.user.role || req.userRole || 'patient';
+    // Server-derived only — never accept organizationId from req.body. This is
+    // the sole source hospital-os-tools.js reads for tenant scoping.
+    const organizationId = req.user.organization_id || req.user.tenant_id || null;
 
     // SSE streaming mode
     if (stream) {
@@ -97,6 +100,7 @@ router.post('/think', requireAuth, async (req, res) => {
         message: message.trim(),
         userId,
         userType,
+        organizationId,
         conversationId: conversationId ? parseInt(conversationId) : null,
         onToolCall: (toolName, toolArgs) => {
           res.write(`data: ${JSON.stringify({ type: 'tool_call', tool: toolName, args: toolArgs })}\n\n`);
@@ -131,6 +135,7 @@ router.post('/think', requireAuth, async (req, res) => {
       message: message.trim(),
       userId,
       userType,
+      organizationId,
       conversationId: conversationId ? parseInt(conversationId) : null
     });
 

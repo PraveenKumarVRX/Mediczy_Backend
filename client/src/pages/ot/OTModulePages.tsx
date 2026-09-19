@@ -47,6 +47,7 @@ export const otNavSections: DeptNavSection[] = [
       { icon: ShieldCheck,   label: 'Surgical Safety', href: '/ot/safety' },
       { icon: HeartPulse,    label: 'Post-Op Care',    href: '/ot/post-op' },
       { icon: ClipboardList, label: 'OT Records',      href: '/ot/records' },
+      { icon: Package,       label: 'Specialty Details', href: '/ot/specialty' },
     ],
   },
   {

@@ -408,6 +408,32 @@ export const MODEL_CARDS = {
     regulatoryNotes:     'Billing/coding decision support, not a clinical decision. Reclassify if code suggestions are ever used to justify clinical-necessity documentation.'
   },
 
+  'clinical-knowledge-fabric': {
+    componentName:      'Specialty-Wise Clinical Knowledge Fabric',
+    version:             'v1-seed',
+    regulatoryClass:      'Class IIb SaMD (moderate risk) — red-flag/referral criteria inform a clinical decision',
+    intendedUse:         'Serve per-specialty red-flag criteria, referral criteria, monitoring reminders, and documentation prompts to CDSS (cdss.service.js) and the doctor-copilot clinical path, organized by clinical domain (specialty/department).',
+    notIntendedFor:      'Autonomous alerting or order placement; diagnosis or treatment decisions without physician review; use of any rule still in draft/under_review status.',
+    inputFeatures:       ['Specialty/domain key', 'Optional rule-type filter'],
+    outputDescription:   'Approved rules only: rule_type, title, condition_text, recommendation_text, evidence_source. Draft/under_review rows are never returned by getApplicableKnowledge().',
+    modelType:           'Curated structured knowledge base (no LLM inference at read time) — authored content routed through human governance review, not model-generated at serve time.',
+    knownLimitations: [
+      'Seed content (v1) is illustrative/conservative — red-flag and monitoring reminders authored from general, widely-published clinical consensus, not sourced from a specific cited guideline version or peer-reviewed literature review',
+      'Coverage is limited to 5 priority specialties at launch (nephrology/dialysis, oncology/chemotherapy, ophthalmology-surgical, cardiology/cardiac-surgery, orthopaedics-surgical), not comprehensive across all departments',
+      'No automated staleness detection — an approved rule does not expire or re-flag for review as guidelines evolve',
+      'Does not itself check confidence/interpretability at serve time — governance review at approval time is the safety control, not a runtime quality gate'
+    ],
+    safetyControls: [
+      'Every rule is inserted as status=\'draft\'; only proposeForApproval() + approveRule() (medical-director/super-admin only, via governanceService) can flip status to \'approved\'',
+      'getApplicableKnowledge() — the only method consumed by CDSS/copilot — filters on status=\'approved\' exclusively',
+      'Every proposal is logged to ai_model_change_log with risk_assessment=\'high\' regardless of the rule\'s own confidence_level',
+      'API routes (clinical-knowledge-fabric.route.js) restrict authoring to clinical roles and governance actions (propose/approve/reject) to medical_director/super_admin/admin only'
+    ],
+    changeControlPlan:   'New/changed rules require governanceService.proposeChange() and medical director approval via approveRule(); nothing is served to a clinical workflow until approved.',
+    lastValidatedAt:     null,
+    regulatoryNotes:     'Seeded 2026-09-18 as illustrative draft content only — zero rules are approved by default. Medical Superintendent / department heads must review and approve each rule before it is served to any clinical workflow.'
+  },
+
   'ai-rcm-claim-scrub-shadow': {
     componentName:      'AI Claim Scrub (Shadow Mode)',
     version:             'v1-shadow',
@@ -533,19 +559,23 @@ class AIModelGovernanceService {
    * @param {Object} change.newConfig - Proposed config value
    * @param {string} change.rationale - Why this change is being proposed
    * @param {string} change.riskAssessment - 'low' | 'moderate' | 'high'
+   * @param {boolean} [change.dedupe=true] - Component+changeType idempotency (right for the periodic
+   *   self-learning cron, which re-files the same unresolved issue). Pass false when each call is a
+   *   DISTINCT reviewable item under one component (e.g. individual clinical-knowledge rules) so that
+   *   every item gets its own change id instead of sharing the first pending one.
    * @returns {string} changeId
    */
-  async proposeChange({ component, changeType, description, previousConfig, newConfig, rationale, riskAssessment = 'moderate' }) {
+  async proposeChange({ component, changeType, description, previousConfig, newConfig, rationale, riskAssessment = 'moderate', dedupe = true }) {
     try {
       // Idempotency: skip if an identical pending_review entry already exists for this component+changeType.
       // Prevents the cron (every 4h) from filing duplicate proposals for the same unresolved issue.
-      const existing = await pool.query(`
+      const existing = dedupe ? await pool.query(`
         SELECT id FROM ai_model_change_log
         WHERE model_component = $1
           AND change_type = $2
           AND status = 'pending_review'
         LIMIT 1
-      `, [component, changeType]);
+      `, [component, changeType]) : { rows: [] };
 
       if (existing.rows.length > 0) {
         const existingId = existing.rows[0].id;

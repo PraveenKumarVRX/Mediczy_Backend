@@ -19,6 +19,7 @@ import {
 } from '../controller/unified-patient.controller.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import pool from '../db/pgPool.js';
+import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
 
@@ -332,6 +333,105 @@ router.get('/my-data-access-log', authUser, requirePatient, async (req, res) => 
   } catch (err) {
     console.error('[DPDP] my-data-access-log error:', err.message);
     res.status(500).json({ success: false, message: 'Unable to retrieve access log' });
+  }
+});
+
+/**
+ * GET /api/patient/appointments
+ * Patient Engagement Portal (web) — the logged-in patient's own appointments,
+ * split into upcoming and past. Authenticated patient only.
+ *
+ * appointments has FORCE ROW LEVEL SECURITY in production (policy matches on
+ * organization_id/tenant_id/userId/doctorId session GUCs) — a bare pool.query()
+ * would silently return zero rows for a real patient. withRlsTransaction sets
+ * the app.current_org_id / app.current_user_id GUCs before running the query,
+ * same pattern used in server/api/mobile/index.js for RLS-protected reads.
+ */
+router.get('/appointments', authUser, requirePatient, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const orgId = req.user.organization_id || 0;
+
+    const { rows } = await withRlsTransaction(
+      pool,
+      { orgId, userId, isPlatformAdmin: false },
+      (client) => client.query(
+        `SELECT id, "appointmentId", "doctorName", specialization,
+                "appointmentDate", "appointmentTime", "appointmentDateTime",
+                status, "consultationType", reason, notes
+         FROM appointments
+         WHERE "userId" = $1
+         ORDER BY "appointmentDateTime" DESC`,
+        [userId]
+      )
+    );
+
+    const now = new Date();
+    const upcoming = [];
+    const past = [];
+
+    for (const row of rows) {
+      const isUpcoming = row.appointmentDateTime && new Date(row.appointmentDateTime) >= now
+        && !['completed', 'cancelled', 'no-show'].includes(row.status);
+      if (isUpcoming) {
+        upcoming.push(row);
+      } else {
+        past.push(row);
+      }
+    }
+
+    // Upcoming reads better soonest-first; past was already fetched DESC.
+    upcoming.sort((a, b) => new Date(a.appointmentDateTime) - new Date(b.appointmentDateTime));
+
+    res.json({
+      success: true,
+      data: { upcoming, past }
+    });
+  } catch (error) {
+    console.error('❌ Patient appointments fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching appointments',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/patient/reports
+ * Patient Engagement Portal (web) — the logged-in patient's own uploaded/
+ * generated medical reports. Authenticated patient only.
+ *
+ * Patients created via unifiedPatientSignup are `users` rows with
+ * role='patient' (see unifiedPatientSignup in unified-patient.controller.js),
+ * so reports."userId" (FK -> users.id) matches req.user.id directly. The
+ * `reports` table is not RLS-protected (unlike `appointments`), so a plain
+ * pool query is safe here — same query shape as GET /api/emr/my in
+ * server/routes/emr.route.js.
+ */
+router.get('/reports', authUser, requirePatient, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const { rows } = await pool.query(
+      `SELECT id, "fileName", "fileUrl", "reportType", description, status, "createdAt"
+       FROM reports
+       WHERE "userId" = $1
+       ORDER BY "createdAt" DESC`,
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      data: { reports: rows }
+    });
+  } catch (error) {
+    console.error('❌ Patient reports fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching reports',
+      error: error.message
+    });
   }
 });
 
