@@ -53,6 +53,14 @@ function resolveDoctorId(req) {
   return Number.isFinite(n) ? n : undefined;
 }
 
+// Optional multi-branch scope (body/query/X-Branch-Id header). Unvalidated here:
+// checkIn validates against the organization; list filters only bind it as an int.
+function resolveBranchId(req) {
+  const raw = req.body?.branchId ?? req.query.branchId ?? req.get('x-branch-id');
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 router.get('/context', (req, res) => {
   res.json({
     success: true,
@@ -245,6 +253,8 @@ router.get('/console', async (req, res) => {
       queueZone: doctorId ? queueZone : (req.query.zone || req.query.queueZone || undefined),
       department,
       doctorId,
+      branchId: resolveBranchId(req),
+      staffView: true,
     });
     res.json({
       success: true,
@@ -339,6 +349,7 @@ router.post('/check-in', async (req, res) => {
       organizationId: req.qms.organizationId,
       department: resolveDepartment(req),
       queueZone: zone,
+      branchId: resolveBranchId(req),
       patientId: body.patientId,
       patientName,
       appointmentId: body.appointmentId,

@@ -676,6 +676,7 @@ router.post('/appointments', verifyHospitalToken, async (req, res) => {
           organizationId,
           source: 'hospital-practice-booking',
           mode: 'auto',
+          branchId: req.body?.branchId,
         });
       }
     } catch (qmsErr) {

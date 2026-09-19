@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 import KioskAadhaarScanner from '@/components/display/KioskAadhaarScanner';
 import { parseAadhaarPayloadClient } from '@/lib/aadhaarQrParse';
+import { getSelectedBranchId } from '@/components/hospital/BranchSwitcher';
 import { printQmsTokenSlip } from '@/utils/qmsPrintSlip';
 import { IdCard, Phone, Plus, Printer, RefreshCw, ScanLine, UserRound } from 'lucide-react';
 
@@ -165,10 +166,11 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
 
   const refresh = useCallback(async () => {
     try {
-      const consoleQs =
-        selectedDoctorId && selectedDoctorId !== 'all'
-          ? `?doctorId=${encodeURIComponent(selectedDoctorId)}`
-          : '';
+      const consoleParams = new URLSearchParams();
+      if (selectedDoctorId && selectedDoctorId !== 'all') consoleParams.set('doctorId', selectedDoctorId);
+      const branchId = getSelectedBranchId();
+      if (branchId) consoleParams.set('branchId', String(branchId));
+      const consoleQs = consoleParams.toString() ? `?${consoleParams.toString()}` : '';
       const reqs: Promise<any>[] = [
         api.get('/qms/context'),
         api.get(`/qms/console${consoleQs}`),
@@ -197,6 +199,13 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
     refresh();
     const poll = setInterval(refresh, 20000);
     return () => clearInterval(poll);
+  }, [refresh]);
+
+  // Re-fetch when the hospital branch switcher changes the selected branch.
+  useEffect(() => {
+    const onBranchChanged = () => refresh();
+    window.addEventListener('branch-changed', onBranchChanged);
+    return () => window.removeEventListener('branch-changed', onBranchChanged);
   }, [refresh]);
 
   useEffect(() => {
@@ -320,6 +329,7 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
         notifyOptIn: form.notifyOptIn,
         notifyPhone: form.phone || undefined,
         source: aadhaarSource ? 'aadhaar-qr' : 'manual',
+        branchId: getSelectedBranchId() ?? undefined,
       });
       toast({
         title: 'Token issued',
@@ -561,7 +571,14 @@ export default function PortalQmsPage({ portal, title, subtitle, Layout }: Props
                           <Printer className="inline h-3.5 w-3.5 ml-1 opacity-50" />
                         </td>
                         <td className="pr-3">
-                          <div className="font-medium">{e.patientName || '—'}</div>
+                          <div className="font-medium">
+                            {e.patientName || '—'}
+                            {(e.metadata as any)?.greenChannel ? (
+                              <Badge className="ml-2 bg-emerald-600 text-white">
+                                {(e.metadata as any).greenChannel.lane ? 'Corporate lane' : 'Corporate'}
+                              </Badge>
+                            ) : null}
+                          </div>
                           {e.doctorName ? (
                             <div className="text-xs text-muted-foreground">{e.doctorName}</div>
                           ) : null}

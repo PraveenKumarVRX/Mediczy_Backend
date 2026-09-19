@@ -119,6 +119,7 @@ export async function issueTokenForAppointment(appointment, {
   organizationId,
   source = 'appointment-booking',
   mode = 'auto',
+  branchId = null,
 } = {}) {
   if (!appointment?.id) throw new Error('appointment required');
 
@@ -190,6 +191,7 @@ export async function issueTokenForAppointment(appointment, {
     organizationId: org,
     department: 'opd',
     queueZone: zone,
+    branchId, // optional; checkIn validates it against the organization
     patientId: appointment.userId || appointment.patientId || appointment.user_id || null,
     patientName: appointment.patientName || appointment.patient_name || 'Patient',
     appointmentId: appointment.id,

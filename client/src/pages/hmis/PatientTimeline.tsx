@@ -11,6 +11,12 @@ import {
 } from 'lucide-react';
 import api from '@/utils/api';
 
+interface BranchVisit {
+  branch_id: number;
+  name: string;
+  visit_count: number;
+}
+
 interface TimelineEvent {
   id: string | number;
   category: string;
@@ -70,6 +76,7 @@ export default function PatientTimeline() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [branchVisits, setBranchVisits] = useState<BranchVisit[]>([]);
 
   const load = async () => {
     if (!patientId) return;
@@ -85,7 +92,18 @@ export default function PatientTimeline() {
     }
   };
 
-  useEffect(() => { load(); }, [patientId]);
+  const loadBranchSummary = async () => {
+    if (!patientId) return;
+    try {
+      const res = await api.get(`/hospital-branch/patients/${patientId}/branch-summary`);
+      setBranchVisits(res.data?.data ?? []);
+    } catch {
+      // Multi-branch is opt-in; a 403/404 here just means it isn't set up for this tenant yet.
+      setBranchVisits([]);
+    }
+  };
+
+  useEffect(() => { load(); loadBranchSummary(); }, [patientId]);
 
   const categories = Array.from(new Set(events.map(e => e.category)));
 
@@ -127,6 +145,17 @@ export default function PatientTimeline() {
             {categories.map(c => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
+
+        {branchVisits.length > 1 && (
+          <div className="bg-teal-50 border border-teal-200 text-teal-800 rounded-lg p-3 mb-4 text-sm flex flex-wrap items-center gap-2">
+            <span className="font-medium">Also seen at:</span>
+            {branchVisits.map((b) => (
+              <Badge key={b.branch_id} variant="outline" className="bg-white text-teal-700 border-teal-300">
+                {b.name} ({b.visit_count})
+              </Badge>
+            ))}
+          </div>
+        )}
 
         {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 mb-4 text-sm">{error}</div>}
 

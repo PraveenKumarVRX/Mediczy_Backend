@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
 import { useHospitalAuth } from "@/hooks/useHospitalAuth";
+import BranchSwitcher from "./BranchSwitcher";
 import api from "@/utils/api";
 import ModuleCopilot from "@/components/copilot/ModuleCopilot";
 import type { ModuleCopilotId } from "@/config/moduleCopilot.registry";
@@ -155,6 +156,7 @@ const HospitalLayout = ({ children, title, subtitle, copilotModule }: HospitalLa
           </div>
 
           <div className="flex items-center gap-2">
+            <BranchSwitcher />
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "light" ? (
                 <Sun className="w-5 h-5 text-slate-600" />
