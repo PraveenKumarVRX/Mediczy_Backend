@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import pool from '../../db/pgPool.js';
 import hospitalBilling from '../../services/hospital-billing.service.js';
+import clinicalQualityDashboard from '../../services/clinical-quality-dashboard.service.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -26,6 +27,7 @@ const verifyHospitalToken = (req, res, next) => {
     if (!EXEC_ROLES.has(role)) {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
     }
+    req.hospitalRole = role;
     req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
     req.hospitalName = decoded.hospitalName || decoded.name || 'Hospital';
     return next();
@@ -33,6 +35,25 @@ const verifyHospitalToken = (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Invalid token', error: error.message });
   }
 };
+
+// Security fix (2026-09-18): EXEC_ROLES above only gates "is this hospital
+// staff at all" — it does not restrict WHICH dashboard a given role can see.
+// Previously every /ceo, /cfo, /coo, /ms endpoint accepted any EXEC_ROLES
+// member (including nurse, billing, staff), contradicting this dashboard
+// suite's own design intent that a CFO login cannot see MS-scoped clinical
+// data and vice versa. This factory must run AFTER verifyHospitalToken.
+const requireExecRole = (...allowedRoles) => (req, res, next) => {
+  if (!allowedRoles.includes(req.hospitalRole)) {
+    return res.status(403).json({ success: false, message: `This dashboard is restricted to: ${allowedRoles.join(', ')}` });
+  }
+  next();
+};
+
+const ceoOnly = requireExecRole('ceo', 'hospital', 'hospital_admin');
+const cfoOnly = requireExecRole('cfo', 'hospital', 'hospital_admin');
+const cooOnly = requireExecRole('coo', 'hospital', 'hospital_admin');
+const msOnly = requireExecRole('ms', 'medical_superintendent', 'cmo', 'chief_medical_officer', 'hospital', 'hospital_admin');
+const rcmOnly = requireExecRole('billing', 'accounts_staff', 'cfo', 'hospital', 'hospital_admin');
 
 async function liveStats(orgId) {
   const [beds, admissions, queue] = await Promise.all([
@@ -79,33 +100,20 @@ router.get('/dashboard/stats', verifyHospitalToken, async (req, res) => {
   }
 });
 
-router.get('/ceo/financials', verifyHospitalToken, async (req, res) => {
-  return res.json({
-    success: true,
-    data: {
-      monthlyRevenue: 4780,
-      revenueTarget: 4200,
-      ebitdaMargin: 38.2,
-      arpob: 18400,
-      alos: 4.2,
-      payerMix: [
-        { name: 'Insurance/TPA', value: 38 },
-        { name: 'Corporate', value: 22 },
-        { name: 'Govt Schemes', value: 18 },
-        { name: 'Self Pay', value: 22 },
-      ],
-      revenueTrend: [
-        { month: 'Jan', revenue: 3920, target: 3300, expenses: 2520 },
-        { month: 'Feb', revenue: 4180, target: 3400, expenses: 2610 },
-        { month: 'Mar', revenue: 4350, target: 3400, expenses: 2700 },
-        { month: 'Apr', revenue: 4520, target: 3500, expenses: 2780 },
-        { month: 'May', revenue: 4780, target: 3500, expenses: 2860 },
-      ],
-    },
-  });
+// Replaced 2026-09-18 (was fully hardcoded — see git history for the old
+// mock payload). Falls back to the same shape on any query failure so an
+// environment missing hospital_payments/ip_admissions degrades gracefully
+// instead of 500ing.
+router.get('/ceo/financials', verifyHospitalToken, ceoOnly, async (req, res) => {
+  try {
+    const data = await hospitalBilling.getCeoDashboard(req.hospitalId, req.query);
+    return res.json({ success: true, data });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
 });
 
-router.get('/cfo/financials', verifyHospitalToken, async (req, res) => {
+router.get('/cfo/financials', verifyHospitalToken, cfoOnly, async (req, res) => {
   try {
     const live = await hospitalBilling.getCfoDashboard(req.hospitalId, req.query);
     return res.json({
@@ -141,7 +149,7 @@ router.get('/cfo/financials', verifyHospitalToken, async (req, res) => {
   }
 });
 
-router.get('/coo/operations', verifyHospitalToken, async (req, res) => {
+router.get('/coo/operations', verifyHospitalToken, cooOnly, async (req, res) => {
   const stats = await liveStats(req.hospitalId).catch(() => ({}));
   return res.json({
     success: true,
@@ -149,17 +157,29 @@ router.get('/coo/operations', verifyHospitalToken, async (req, res) => {
   });
 });
 
-router.get('/ms/clinical', verifyHospitalToken, async (req, res) => {
-  return res.json({
-    success: true,
-    data: {
-      mortalityRate: 1.3,
-      readmissionRate: 3.2,
-      haiRate: 0.4,
-      nabhScore: 86,
-      adverseEventsOpen: 2,
-    },
-  });
+// Replaced 2026-09-18 — readmissionRate/complicationRate are now real
+// (outcome_records); mortalityRate/haiRate/nabhScore/adverseEventsOpen are
+// honestly null with dataAvailable:false rather than fabricated, since no
+// backing table exists for them yet (see clinical-quality-dashboard.service.js).
+router.get('/ms/clinical', verifyHospitalToken, msOnly, async (req, res) => {
+  try {
+    const data = await clinicalQualityDashboard.getMsDashboard(req.hospitalId, req.query);
+    return res.json({ success: true, data });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// Added 2026-09-18: this dashboard didn't exist at all previously, despite
+// the sales proposal explicitly listing "RCM Team Dashboard" as one of five
+// role-based executive dashboards. Built on real data via getRcmDashboard().
+router.get('/rcm/claims', verifyHospitalToken, rcmOnly, async (req, res) => {
+  try {
+    const data = await hospitalBilling.getRcmDashboard(req.hospitalId, req.query);
+    return res.json({ success: true, data });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
 });
 
 export default router;

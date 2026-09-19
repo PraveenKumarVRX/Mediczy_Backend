@@ -1102,6 +1102,122 @@ export async function getCfoDashboard(hospitalId, { from, to } = {}) {
   };
 }
 
+/**
+ * CEO Dashboard — real revenue trend (Rs lakhs) and ALOS. Added 2026-09-18
+ * to replace the hardcoded numbers the audit found in
+ * routes/hospital/executive-dashboard.route.js's /ceo/financials.
+ *
+ * Honesty note: ebitdaMargin, revenueTarget, arpob and payerMix are returned as null
+ * with a dataAvailable flag rather than fabricated — there is no expense
+ * ledger / chart-of-accounts table in this schema (the Accounting module is
+ * a UI shell per the audit), so a real EBITDA margin cannot be computed.
+ * Shipping a plausible-looking fake number would be worse than an honest
+ * null — this mirrors the "never guess, mark unverified" standard the
+ * audit itself was held to.
+ */
+export async function getCeoDashboard(hospitalId, { months = 5 } = {}) {
+  const since = new Date();
+  since.setMonth(since.getMonth() - months);
+
+  const [revenueTrend, alos] = await Promise.all([
+    pool.query(
+      `SELECT to_char(date_trunc('month', created_at), 'Mon') AS month,
+              date_trunc('month', created_at) AS month_start,
+              COALESCE(SUM(amount), 0) AS revenue
+       FROM hospital_payments
+       WHERE hospital_id = $1 AND status = 'completed' AND created_at >= $2
+       GROUP BY date_trunc('month', created_at)
+       ORDER BY month_start`,
+      [hospitalId, since.toISOString()]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (discharge_datetime - admission_datetime)) / 86400)::numeric, 1) AS alos
+       FROM ip_admissions WHERE organization_id = $1 AND discharge_datetime IS NOT NULL AND admission_datetime >= $2`,
+      [hospitalId, since.toISOString()]
+    ).catch(() => ({ rows: [{ alos: null }] })),
+  ]);
+
+  // UNITS: the CEO frontend's seed values, chart axis and labels ("₹4780L",
+  // "Revenue ... (₹ Lakhs)") are all in Rs LAKHS, so monthlyRevenue and the
+  // revenueTrend[].revenue series are returned in lakhs (rupees / 100000,
+  // 2 decimals). The raw rupee figure is exposed as monthlyRevenueRupees.
+  const toLakhs = (rupees) => Math.round((Number(rupees) / 100000) * 100) / 100;
+  const latest = revenueTrend.rows.length ? Number(revenueTrend.rows[revenueTrend.rows.length - 1].revenue) : null;
+
+  return {
+    monthlyRevenue: latest != null ? toLakhs(latest) : null,          // Rs lakhs
+    monthlyRevenueRupees: latest,                                      // raw Rs
+    revenueTrend: revenueTrend.rows.map((r) => ({ month: r.month, revenue: toLakhs(r.revenue) })), // Rs lakhs
+    // payerMix intentionally null: hospital_payments/hospital_invoices carry
+    // only payment METHOD (cash/card/upi) and an optional insurance_claim_id.
+    // There is no corporate-account or govt-scheme link on invoices, so a
+    // true Insurance/Corporate/Govt/Self-Pay split cannot be derived reliably.
+    // Payment-method mix must NOT be returned under a payer-mix name.
+    payerMix: null,
+    alos: alos.rows[0]?.alos != null ? Number(alos.rows[0].alos) : null,
+    // Not computable from current schema — no expense ledger exists yet.
+    revenueTarget: null,
+    ebitdaMargin: null,
+    arpob: null,
+    dataAvailable: { revenueTrend: true, payerMix: false, alos: true, ebitdaMargin: false, revenueTarget: false, arpob: false },
+  };
+}
+
+/**
+ * RCM Team Dashboard — claim status, denial trends, days-to-payment, and the
+ * pending pre-authorization queue. Added 2026-09-18: the audit found this
+ * dashboard didn't exist at all (only CEO/CFO/COO/MS were built), despite
+ * the proposal explicitly listing it. Built on the same real tables
+ * getCfoDashboard() already uses correctly (insurance_claims, plus
+ * claim_denials and pre_authorizations).
+ */
+export async function getRcmDashboard(hospitalId, { from, to } = {}) {
+  const fromDate = from || new Date(Date.now() - 90 * 86400000).toISOString();
+  const toDate = to || new Date().toISOString();
+
+  const [claimsByStatus, denials, daysToPayment, pendingPreauth] = await Promise.all([
+    pool.query(
+      `SELECT status, COUNT(*)::int AS cnt, COALESCE(SUM(claim_amount),0) AS claimed, COALESCE(SUM(settled_amount),0) AS settled
+       FROM insurance_claims WHERE hospital_id = $1 AND submitted_date >= $2 AND submitted_date < $3
+       GROUP BY status`,
+      [hospitalId, fromDate, toDate]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT denial_code, COUNT(*)::int AS cnt, COALESCE(SUM(denied_amount),0) AS amount
+       FROM claim_denials WHERE hospital_id = $1 AND created_at >= $2 AND created_at < $3
+       GROUP BY denial_code ORDER BY cnt DESC LIMIT 10`,
+      [hospitalId, fromDate, toDate]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT ROUND(AVG(payment_date - submitted_date)::numeric, 1) AS avg_days
+       FROM insurance_claims
+       WHERE hospital_id = $1 AND status = 'paid' AND payment_date IS NOT NULL AND submitted_date IS NOT NULL
+         AND submitted_date >= $2 AND submitted_date < $3`,
+      [hospitalId, fromDate, toDate]
+    ).catch(() => ({ rows: [{ avg_days: null }] })),
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt, COALESCE(SUM(estimated_amount),0) AS estimated
+       FROM pre_authorizations WHERE hospital_id = $1 AND status = 'pending'`,
+      [hospitalId]
+    ).catch(() => ({ rows: [{ cnt: 0, estimated: 0 }] })),
+  ]);
+
+  const totalClaims = claimsByStatus.rows.reduce((s, r) => s + r.cnt, 0);
+  const totalDenied = claimsByStatus.rows.find((r) => r.status === 'rejected')?.cnt || 0;
+
+  return {
+    period: { from: fromDate, to: toDate },
+    claimStatus: claimsByStatus.rows,
+    denialRate: totalClaims > 0 ? Math.round((totalDenied / totalClaims) * 1000) / 10 : 0,
+    denialTrends: denials.rows,
+    avgDaysToPayment: daysToPayment.rows[0]?.avg_days != null ? Number(daysToPayment.rows[0].avg_days) : null,
+    pendingPreauth: {
+      count: pendingPreauth.rows[0]?.cnt || 0,
+      estimatedAmount: Number(pendingPreauth.rows[0]?.estimated || 0),
+    },
+  };
+}
+
 export default {
   listStations, createStation, openCashierSession, closeCashierSession, getActiveSession,
   listTemplates, aggregatePatientAccount, getCentralizedDashboard, createInvoice, recordPayment,
@@ -1109,5 +1225,5 @@ export default {
   logBillingAudit, createAdjustment, voidInvoice, voidPayment, refundPayment,
   reconcileSession, approveCreditAccount, allocatePayment, generatePatientStatement,
   listPatientStatements, deliverPatientStatement,
-  closeBillingPeriod, getCfoDashboard,
+  closeBillingPeriod, getCfoDashboard, getRcmDashboard, getCeoDashboard,
 };

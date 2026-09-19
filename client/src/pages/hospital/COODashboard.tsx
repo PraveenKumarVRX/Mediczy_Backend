@@ -152,6 +152,24 @@ export default function COODashboard() {
   const occupiedBeds = seedBedsByWard.reduce((s,w) => s + w.occupied, 0);
   const occupancyPct = Math.round((occupiedBeds / totalBeds) * 100);
 
+  // This dashboard previously made zero API calls (confirmed by audit) —
+  // its bed-occupancy numbers above are a per-ward seed breakdown with no
+  // real per-ward backend endpoint to replace them with, so they're left
+  // as-is rather than mixed with partial real data. erWaitMins is a single,
+  // independent value the real /coo/operations endpoint already returns,
+  // so it's safe to wire without touching anything derived above.
+  const [erWaitMins, setErWaitMins] = useState(22);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await api.get('/hospital/coo/operations');
+        const d = res.data?.data ?? res.data;
+        if (typeof d?.erWaitMins === 'number') setErWaitMins(d.erWaitMins);
+      } catch { /* use seed */ }
+    })();
+  }, []);
+
   // Auto-refresh every 60s
   useEffect(() => {
     intervalRef.current = setInterval(() => setLastUpdated(new Date()), 60_000);
@@ -190,7 +208,7 @@ export default function COODashboard() {
           icon={Bed} color={occupancyPct >= 90 ? 'text-red-500' : 'text-teal-600'}
           badge={occupancyPct >= 90 ? 'Critical' : occupancyPct >= 80 ? 'High' : 'Normal'}
           badgeColor={occupancyPct >= 90 ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'} />
-        <KPI label="ER Wait Time" value="22 min" sub="Target: ≤30 min" icon={Timer} color="text-emerald-600" badge="On Target" badgeColor="bg-emerald-100 text-emerald-700" />
+        <KPI label="ER Wait Time" value={`${erWaitMins} min`} sub="Target: ≤30 min" icon={Timer} color={erWaitMins <= 30 ? 'text-emerald-600' : 'text-red-500'} badge={erWaitMins <= 30 ? 'On Target' : 'Above Target'} badgeColor={erWaitMins <= 30 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'} />
         <KPI label="OT Utilisation" value="87%" sub="6/7 theatres active" icon={Stethoscope} color="text-indigo-600" />
         <KPI label="Lab TAT (avg)" value="48 min" sub="Target: ≤60 min" icon={FlaskConical} color="text-blue-600" badge="On Target" badgeColor="bg-blue-100 text-blue-700" />
         <KPI label="Discharge Rate" value="32/day" sub="ALOS 4.8 days" icon={Activity} color="text-purple-600" />
