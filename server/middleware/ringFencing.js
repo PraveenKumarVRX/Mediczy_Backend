@@ -90,6 +90,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   patient: {  // Alias for 'user' - same permissions
     allowedPaths: [
+      '/api/patient',  // patient API namespace (unified patient routes, patient portal)
       '/api/user',
       '/api/auth',
       '/api/doctors',
@@ -174,6 +175,14 @@ const USER_TYPE_PERMISSIONS = {
   },
   doctor: {
     allowedPaths: [
+      '/api/care-series',  // module route (RBAC enforced per route)
+      '/api/dialysis',  // module route (RBAC enforced per route)
+      '/api/chemotherapy',  // module route (RBAC enforced per route)
+      '/api/specialty-ot',  // module route (RBAC enforced per route)
+      '/api/clinical-knowledge-fabric',  // module route (RBAC enforced per route)
+      '/api/hospital-branch',  // module route (RBAC enforced per route)
+      '/api/dms',  // module route (RBAC enforced per route)
+      '/api/abdm',  // module route (RBAC enforced per route)
       '/api/doctor',
       '/api/doctors',
       '/api/doctor-settings',
@@ -226,6 +235,17 @@ const USER_TYPE_PERMISSIONS = {
   },
   admin: {
     allowedPaths: [
+      '/api/care-series',  // module route (RBAC enforced per route)
+      '/api/dialysis',  // module route (RBAC enforced per route)
+      '/api/chemotherapy',  // module route (RBAC enforced per route)
+      '/api/specialty-ot',  // module route (RBAC enforced per route)
+      '/api/clinical-knowledge-fabric',  // module route (RBAC enforced per route)
+      '/api/hospital-branch',  // module route (RBAC enforced per route)
+      '/api/corporate-account',  // module route (RBAC enforced per route)
+      '/api/asset-tracking',  // module route (RBAC enforced per route)
+      '/api/dms',  // module route (RBAC enforced per route)
+      '/api/housekeeping',  // module route (RBAC enforced per route)
+      '/api/abdm',  // module route (RBAC enforced per route)
       '/api/admin',
       '/api/db',
       '/api/superadmin', // Super admin tenant/organization management
@@ -342,6 +362,14 @@ const USER_TYPE_PERMISSIONS = {
   },
   nurse: {
     allowedPaths: [
+      '/api/care-series',  // module route (RBAC enforced per route)
+      '/api/dialysis',  // module route (RBAC enforced per route)
+      '/api/chemotherapy',  // module route (RBAC enforced per route)
+      '/api/specialty-ot',  // module route (RBAC enforced per route)
+      '/api/hospital-branch',  // module route (RBAC enforced per route)
+      '/api/dms',  // module route (RBAC enforced per route)
+      '/api/housekeeping',  // module route (RBAC enforced per route)
+      '/api/asset-tracking',  // module route (RBAC enforced per route)
       '/api/nurse',
       '/api/patients',
       '/api/vitals',
@@ -357,6 +385,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   assistant: {
     allowedPaths: [
+      '/api/hospital-branch',  // module route (RBAC enforced per route)
       '/api/assistant',
       '/api/patients',
       '/api/orders',
@@ -403,6 +432,17 @@ const USER_TYPE_PERMISSIONS = {
   },
   hospital: {
     allowedPaths: [
+      '/api/care-series',  // module route (RBAC enforced per route)
+      '/api/dialysis',  // module route (RBAC enforced per route)
+      '/api/chemotherapy',  // module route (RBAC enforced per route)
+      '/api/specialty-ot',  // module route (RBAC enforced per route)
+      '/api/clinical-knowledge-fabric',  // module route (RBAC enforced per route)
+      '/api/hospital-branch',  // module route (RBAC enforced per route)
+      '/api/corporate-account',  // module route (RBAC enforced per route)
+      '/api/asset-tracking',  // module route (RBAC enforced per route)
+      '/api/dms',  // module route (RBAC enforced per route)
+      '/api/housekeeping',  // module route (RBAC enforced per route)
+      '/api/abdm',  // module route (RBAC enforced per route)
       '/api/hospital',
       '/api/hospital/staff',
       '/api/hr',
