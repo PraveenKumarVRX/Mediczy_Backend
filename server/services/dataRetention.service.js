@@ -1,5 +1,5 @@
 import cron from 'node-cron';
-import { Op } from 'sequelize';
+import { Op, fn, col } from 'sequelize';
 import User from '../models/user.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
@@ -37,13 +37,7 @@ async function archiveOldAuditLogs() {
     retentionDate.setDate(retentionDate.getDate() - RETENTION_PERIODS.AUDIT_LOGS);
     
     // In production, move to cold storage instead of delete
-    const oldLogs = await AuditLog.count({
-      where: {
-        timestamp: {
-          [Op.lt]: retentionDate
-        }
-      }
-    });
+    const oldLogs = await AuditLog.countOlderThan({ before: retentionDate });
     
     if (oldLogs > 0) {
       console.log(`📦 Found ${oldLogs} audit logs eligible for archival`);
@@ -67,28 +61,26 @@ async function archiveOldAuditLogs() {
  */
 async function expireOldConsents() {
   try {
-    const now = new Date();
-    
-    const expiredCount = await Consent.update(
-      { status: 'EXPIRED' },
-      {
-        where: {
-          status: 'ACTIVE',
-          expiresAt: {
-            [Op.lt]: now,
-            [Op.ne]: null
-          }
-        }
-      }
-    );
-    
-    if (expiredCount[0] > 0) {
-      console.log(`📅 Expired ${expiredCount[0]} old consents`);
+    // The consents table has no status column: expiry is enforced at read time
+    // (consent model hasActiveConsent checks expiresAt), so nothing needs flipping.
+    // This pass only reports granted consents that are past their expiry.
+    const [row] = await Consent.findAll({
+      attributes: [[fn('COUNT', col('id')), 'count']],
+      where: {
+        isGranted: true,
+        revokedAt: null,
+        expiresAt: { [Op.lt]: new Date(), [Op.ne]: null }
+      },
+      raw: true
+    });
+    const pastExpiry = Number(row?.count || 0);
+    if (pastExpiry > 0) {
+      console.log(`📅 ${pastExpiry} granted consents are past their expiry (treated as inactive at read time)`);
     } else {
-      console.log('✅ No consents to expire');
+      console.log('✅ No consents past expiry');
     }
   } catch (error) {
-    console.error('❌ Failed to expire consents:', error);
+    console.error('❌ Failed to check expired consents:', error);
   }
 }
 
@@ -99,23 +91,23 @@ async function cleanupExpiredConsents() {
   try {
     const retentionDate = new Date();
     retentionDate.setDate(retentionDate.getDate() - RETENTION_PERIODS.EXPIRED_CONSENTS);
-    
-    const deletedCount = await Consent.destroy({
-      where: {
-        status: 'EXPIRED',
-        updatedAt: {
-          [Op.lt]: retentionDate
-        }
-      }
+
+    // Report-only: consent records are legal evidence, so nothing is auto-deleted here
+    // (same approach as archiveOldAuditLogs). The wrapper has no destroy(), and a
+    // retention purge needs an explicit, reviewed decision.
+    const [row] = await Consent.findAll({
+      attributes: [[fn('COUNT', col('id')), 'count']],
+      where: { expiresAt: { [Op.lt]: retentionDate, [Op.ne]: null } },
+      raw: true
     });
-    
-    if (deletedCount > 0) {
-      console.log(`🗑️  Deleted ${deletedCount} old expired consents (past retention period)`);
+    const eligible = Number(row?.count || 0);
+    if (eligible > 0) {
+      console.log(`📦 ${eligible} consents expired more than ${RETENTION_PERIODS.EXPIRED_CONSENTS} days ago — eligible for reviewed purge (not auto-deleted)`);
     } else {
-      console.log('✅ No expired consents to clean up');
+      console.log('✅ No expired consents past the retention period');
     }
   } catch (error) {
-    console.error('❌ Failed to cleanup expired consents:', error);
+    console.error('❌ Failed to check expired consents for retention:', error);
   }
 }
 
@@ -132,8 +124,7 @@ async function checkInactiveUsers() {
         lastLoginAt: {
           [Op.lt]: inactivityDate
         },
-        status: 'active',
-        deletedAt: null
+        status: 'active'
       }
     });
     
@@ -157,26 +148,21 @@ async function cleanupSessionLogs() {
   try {
     const retentionDate = new Date();
     retentionDate.setDate(retentionDate.getDate() - RETENTION_PERIODS.SESSION_LOGS);
-    
-    const deletedCount = await AuditLog.destroy({
-      where: {
-        action: {
-          [Op.in]: ['LOGIN', 'LOGOUT', 'LOGIN_FAILED']
-        },
-        isPHI: false,
-        timestamp: {
-          [Op.lt]: retentionDate
-        }
-      }
+
+    // AuditLog records are immutable by design (destroy() throws), so this reports
+    // how many login/logout entries are past the retention window instead of deleting them.
+    const eligible = await AuditLog.countOlderThan({
+      before: retentionDate,
+      actions: ['LOGIN', 'LOGOUT', 'LOGIN_FAILED']
     });
-    
-    if (deletedCount > 0) {
-      console.log(`🗑️  Deleted ${deletedCount} old session logs`);
+
+    if (eligible > 0) {
+      console.log(`📦 ${eligible} session log entries are past the ${RETENTION_PERIODS.SESSION_LOGS}-day window (audit logs are immutable; not deleted)`);
     } else {
-      console.log('✅ No old session logs to clean up');
+      console.log('✅ No session logs past the retention window');
     }
   } catch (error) {
-    console.error('❌ Failed to cleanup session logs:', error);
+    console.error('❌ Failed to check session logs:', error);
   }
 }
 
@@ -188,37 +174,29 @@ async function generateComplianceReport() {
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     
-    // Count audit events in last 30 days
-    const auditStats = await AuditLog.findAll({
-      attributes: [
-        'action',
-        [AuditLog.sequelize.fn('COUNT', AuditLog.sequelize.col('id')), 'count']
-      ],
-      where: {
-        timestamp: {
-          [Op.gte]: thirtyDaysAgo
-        }
-      },
-      group: ['action']
-    });
-    
-    // Count active consents by type
+    // Count audit events in last 30 days. AuditLog is a raw-SQL wrapper, not a Sequelize model
+    // (findAll ignores attributes/group), so it has a dedicated grouped-count method.
+    const auditStats = await AuditLog.countByAction({ since: thirtyDaysAgo });
+
+    // Count active consents by type (Consent is a real Sequelize model)
     const consentStats = await Consent.findAll({
       attributes: [
         'consentType',
-        [Consent.sequelize.fn('COUNT', Consent.sequelize.col('id')), 'count']
+        [fn('COUNT', col('id')), 'count']
       ],
       where: {
-        status: 'ACTIVE'
+        isGranted: true,
+        revokedAt: null,
+        [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: now } }]
       },
       group: ['consentType']
     });
-    
+
     console.log('\n📊 COMPLIANCE REPORT (Last 30 Days)');
     console.log('=====================================');
     console.log('\nAudit Events:');
     auditStats.forEach(stat => {
-      console.log(`  ${stat.action}: ${stat.dataValues.count}`);
+      console.log(`  ${stat.action}: ${stat.count}`);
     });
     
     console.log('\nActive Consents:');

@@ -78,6 +78,22 @@ class ClinicalKnowledgeFabricService {
   }
 
   /** List all rules pending governance review, across all domains. */
+  /**
+   * Called when a governance change is decided from the AI Governance dashboard: keeps the rule that
+   * owns that change in step, so approving the change there also makes the rule live (and rejecting
+   * it retires the rule). Returns null when the change does not belong to an under_review rule.
+   */
+  async syncRuleWithChange(changeId, decision, decidedBy, notes = '') {
+    const { rows } = await pool.query(
+      `SELECT id FROM clinical_knowledge_rules WHERE governance_change_id = $1 AND status = 'under_review'`,
+      [changeId]
+    );
+    if (!rows[0]) return null;
+    return decision === 'approved'
+      ? this.approveRule(rows[0].id, decidedBy, notes)
+      : this.rejectRule(rows[0].id, decidedBy, notes || 'Rejected on the governance dashboard');
+  }
+
   async listPendingReview() {
     const { rows } = await pool.query(
       `SELECT * FROM clinical_knowledge_rules WHERE status IN ('draft', 'under_review') ORDER BY domain_key, created_at`

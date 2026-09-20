@@ -17,6 +17,7 @@
 
 import express from 'express';
 import governanceService from '../services/ai-model-governance.service.js';
+import knowledgeFabric from '../services/clinical-knowledge-fabric.service.js';
 import interpretabilityService from '../services/ai-interpretability.service.js';
 import qualityGates from '../services/ai-quality-gates.service.js';
 import pool, { getPoolStats } from '../db/pgPool.js';
@@ -137,6 +138,10 @@ router.post('/changes/:id/approve', requireSuperAdminOrMedDir, async (req, res) 
 
     const change = await governanceService.approveChange(changeId, approvedBy, notes);
 
+    // A knowledge rule owns its own governance change: keep the rule in step with the decision.
+    try { await knowledgeFabric.syncRuleWithChange(changeId, 'approved', approvedBy, notes); }
+    catch (e) { console.warn(`[ai-governance] rule sync after approving change ${changeId} failed:`, e.message); }
+
     // Audit log the approval
     await pool.query(`
       INSERT INTO operations_audit_log (module, action, actor, details, created_at)
@@ -166,6 +171,9 @@ router.post('/changes/:id/reject', requireSuperAdminOrMedDir, async (req, res) =
     if (!reason) return res.status(400).json({ error: 'Rejection reason is required' });
 
     await governanceService.rejectChange(changeId, rejectedBy, reason);
+
+    try { await knowledgeFabric.syncRuleWithChange(changeId, 'rejected', rejectedBy, reason); }
+    catch (e) { console.warn(`[ai-governance] rule sync after rejecting change ${changeId} failed:`, e.message); }
 
     await pool.query(`
       INSERT INTO operations_audit_log (module, action, actor, details, created_at)

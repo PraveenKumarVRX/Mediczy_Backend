@@ -303,6 +303,32 @@ const AuditLog = {
   // Audit logs are append-only by design — mutating or deleting a compliance
   // record defeats its purpose. Nothing in this codebase should call these;
   // they exist so a stray call fails loudly instead of silently no-op'ing.
+  // count() only understands the whitelisted equality filters in buildWhereClause and silently
+  // ignores Sequelize operators (Op.lt etc.), so date-bounded retention counts need this method.
+  countOlderThan: async ({ before, actions = null }) => {
+    return withAuditReadContext(async (db, transaction) => {
+      const bind = [before];
+      let sql = 'SELECT COUNT(*)::int AS count FROM audit_logs WHERE timestamp < $1';
+      if (Array.isArray(actions) && actions.length) {
+        bind.push(actions);
+        sql += ' AND action = ANY($2)';
+      }
+      const rows = await db.query(sql, { bind, type: db.QueryTypes.SELECT, transaction });
+      return rows[0]?.count || 0;
+    });
+  },
+
+  // Read-only aggregate for the compliance report: findAll() only supports where/limit/order,
+  // so grouped counts need their own query (same trusted read context as findAll).
+  countByAction: async ({ since }) => {
+    return withAuditReadContext(async (db, transaction) => {
+      return db.query(
+        `SELECT action, COUNT(*)::int AS count FROM audit_logs WHERE timestamp >= $1 GROUP BY action ORDER BY count DESC`,
+        { bind: [since], type: db.QueryTypes.SELECT, transaction }
+      );
+    });
+  },
+
   update: async () => {
     throw new Error('AuditLog records are immutable — update is not supported');
   },

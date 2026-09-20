@@ -23,6 +23,7 @@ import {
   XCircle, Info, BarChart3, Lock, AlertCircle, Sparkles, Eye
 } from 'lucide-react';
 import api from '@/lib/api';
+import KnowledgeRulesPanel from '@/components/admin/KnowledgeRulesPanel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -390,6 +391,9 @@ const AIGovernanceDashboard: React.FC = () => {
                 </span>
               )}
             </TabsTrigger>
+            <TabsTrigger value="rules" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+              <Brain className="h-3.5 w-3.5" />Knowledge Rules
+            </TabsTrigger>
             <TabsTrigger value="readiness" className="rounded-lg text-xs gap-1.5 data-[state=active]:bg-blue-600 data-[state=active]:text-white">
               <Shield className="h-3.5 w-3.5" />SaMD Readiness
             </TabsTrigger>
@@ -435,6 +439,11 @@ const AIGovernanceDashboard: React.FC = () => {
                 ))}
               </div>
             )}
+          </TabsContent>
+
+          {/* ── Clinical Knowledge Rules ── */}
+          <TabsContent value="rules" className="mt-4">
+            <KnowledgeRulesPanel onChanged={fetchAll} />
           </TabsContent>
 
           {/* ── SaMD Readiness ── */}
