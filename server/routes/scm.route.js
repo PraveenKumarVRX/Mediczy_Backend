@@ -280,7 +280,7 @@ router.patch('/orders/:id/approve', authScm, async (req, res) => {
   const { rows: approvals } = await db.query(`
     SELECT id FROM operations_approvals
     WHERE module='scm' AND entity_type='order' AND entity_id=$1 AND action='approve_po' AND status='pending'
-    ORDER BY created_at DESC LIMIT 1
+    ORDER BY requested_at DESC LIMIT 1
   `, [req.params.id]);
   if (approvals[0]) {
     await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor(req) });
@@ -343,7 +343,7 @@ router.patch('/grns/:id/post', authScm, async (req, res) => {
   const { rows: approvals } = await db.query(`
     SELECT id FROM operations_approvals
     WHERE module='scm' AND entity_type='grn' AND entity_id=$1 AND action='post_grn' AND status='pending'
-    ORDER BY created_at DESC LIMIT 1
+    ORDER BY requested_at DESC LIMIT 1
   `, [req.params.id]);
   if (approvals[0]) {
     await decideOperationsApproval(db, { id: approvals[0].id, status: 'approved', decidedBy: actor(req) });
@@ -431,7 +431,7 @@ router.post('/ap/invoices/:id/match', authScm, async (req, res) => {
   }
 
   const { rows } = await db.query(
-    'UPDATE scm_ap_invoices SET match_status = $2, status = CASE WHEN $2 = \'matched\' THEN \'matched\' ELSE status END WHERE id = $1 RETURNING *',
+    'UPDATE scm_ap_invoices SET match_status = $2::text, status = CASE WHEN $2::text = \'matched\' THEN \'matched\' ELSE status END WHERE id = $1 RETURNING *',
     [req.params.id, matchStatus]
   );
   res.json({ success: true, data: rows[0], matchDetail });

@@ -87,28 +87,31 @@ class AssetTrackingService {
   // Events created here come from the authenticated staff endpoint, so the source
   // is ALWAYS 'manual' — a client-supplied `source` is ignored on purpose. Only the
   // reader-authenticated path (ingestReaderScans) may write source='reader'.
-  async recordEvent({ tagId, eventType, location, notes, recordedBy }) {
+  // Only for a tag owned by organizationId; returns undefined (nothing written) otherwise.
+  async recordEvent({ tagId, organizationId, eventType, location, notes, recordedBy }) {
     const { rows } = await pool.query(
       `INSERT INTO asset_tag_event (tag_id, event_type, location, notes, source, recorded_by)
-       VALUES ($1, $2, $3, $4, 'manual', $5)
+       SELECT t.id, $3, $4, $5, 'manual', $6 FROM asset_tag t WHERE t.id = $1 AND t.organization_id = $2
        RETURNING *`,
-      [tagId, eventType, location || null, notes || null, recordedBy || null]
+      [tagId, organizationId, eventType, location || null, notes || null, recordedBy || null]
     );
     return rows[0];
   }
 
-  async updateTagStatus(tagId, status) {
+  async updateTagStatus(tagId, organizationId, status) {
     const { rows } = await pool.query(
-      `UPDATE asset_tag SET status = $2 WHERE id = $1 RETURNING *`,
-      [tagId, status]
+      `UPDATE asset_tag SET status = $3 WHERE id = $1 AND organization_id = $2 RETURNING *`,
+      [tagId, organizationId, status]
     );
     return rows[0];
   }
 
-  async getLastKnownLocation(tagId) {
+  async getLastKnownLocation(tagId, organizationId) {
     const { rows } = await pool.query(
-      `SELECT * FROM asset_tag_event WHERE tag_id = $1 AND location IS NOT NULL ORDER BY recorded_at DESC LIMIT 1`,
-      [tagId]
+      `SELECT e.* FROM asset_tag_event e JOIN asset_tag t ON t.id = e.tag_id
+       WHERE e.tag_id = $1 AND t.organization_id = $2 AND e.location IS NOT NULL
+       ORDER BY e.recorded_at DESC LIMIT 1`,
+      [tagId, organizationId]
     );
     return rows[0] || null;
   }

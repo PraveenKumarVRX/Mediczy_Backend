@@ -107,6 +107,9 @@ router.patch('/tasks/:id/complete', ...staffAccess, async (req, res) => {
     if (!task) return notFound(res);
     res.json({ success: true, data: task });
   } catch (error) {
+    if (error.message === 'Task must be in progress before it can be completed') {
+      return res.status(400).json({ success: false, message: error.message });
+    }
     res.status(500).json({ success: false, message: 'Failed to complete task', error: error.message });
   }
 });

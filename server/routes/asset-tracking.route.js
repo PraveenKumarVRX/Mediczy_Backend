@@ -9,10 +9,9 @@
  *      X-Reader-Key header (sha256-hashed at rest, see asset_reader_device) —
  *      no JWT. This is the only path that can write source='reader'. It is
  *      registered before any auth middleware and must not read req.user.
- *      NOTE: server/middleware/ringFencing.js runs globally before this mount
- *      and rejects requests without a Bearer token unless the path is listed in
- *      its PUBLIC_ENDPOINTS — '/api/asset-tracking/reader/events' must be added
- *      there for a real device to get through.
+ *      NOTE: server/middleware/ringFencing.js runs globally before this mount; the
+ *      path '/api/asset-tracking/reader/events' is listed in its PUBLIC_ENDPOINTS so
+ *      a device (which has no JWT) reaches this route's own key check.
  * No physical reader hardware is deployed yet; see scripts/simulate-rfid-reader.js.
  */
 
@@ -181,13 +180,17 @@ router.post('/tags/:id/events', ...staffAccess, async (req, res) => {
   try {
     const { eventType, location, notes } = req.body;
     if (!eventType) return res.status(400).json({ success: false, message: 'eventType is required' });
+    const org = orgId(req);
+    if (!org) return res.status(400).json({ success: false, message: 'Organization context missing' });
     const event = await assetTrackingService.recordEvent({
       tagId: Number(req.params.id),
+      organizationId: org,
       eventType,
       location,
       notes,
       recordedBy: req.user?.id || null,
     });
+    if (!event) return res.status(404).json({ success: false, message: 'Tag not found' });
     res.status(201).json({ success: true, data: event });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
@@ -198,7 +201,9 @@ router.patch('/tags/:id/status', ...staffAccess, async (req, res) => {
   try {
     const { status } = req.body;
     if (!status) return res.status(400).json({ success: false, message: 'status is required' });
-    const tag = await assetTrackingService.updateTagStatus(Number(req.params.id), status);
+    const org = orgId(req);
+    if (!org) return res.status(400).json({ success: false, message: 'Organization context missing' });
+    const tag = await assetTrackingService.updateTagStatus(Number(req.params.id), org, status);
     if (!tag) return res.status(404).json({ success: false, message: 'Tag not found' });
     res.json({ success: true, data: tag });
   } catch (error) {
@@ -208,7 +213,9 @@ router.patch('/tags/:id/status', ...staffAccess, async (req, res) => {
 
 router.get('/tags/:id/location', ...staffAccess, async (req, res) => {
   try {
-    const location = await assetTrackingService.getLastKnownLocation(Number(req.params.id));
+    const org = orgId(req);
+    if (!org) return res.status(400).json({ success: false, message: 'Organization context missing' });
+    const location = await assetTrackingService.getLastKnownLocation(Number(req.params.id), org);
     res.json({ success: true, data: location });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to get last known location', error: error.message });

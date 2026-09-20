@@ -78,11 +78,17 @@ class HousekeepingService {
       `UPDATE housekeeping_task
        SET status = 'completed', completed_at = NOW(),
            notes = CASE WHEN $3::text IS NOT NULL THEN COALESCE(notes || E'\n', '') || $3::text ELSE notes END
-       WHERE id = $1 AND organization_id = $2
+       WHERE id = $1 AND organization_id = $2 AND status = 'in_progress'
        RETURNING *`,
       [taskId, organizationId, notes || null]
     );
-    return rows[0];
+    if (rows[0]) return rows[0];
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM housekeeping_task WHERE id = $1 AND organization_id = $2`,
+      [taskId, organizationId]
+    );
+    if (existing.length) throw new Error('Task must be in progress before it can be completed');
+    return undefined;
   }
 
   async verifyTask(organizationId, taskId, verifiedBy) {

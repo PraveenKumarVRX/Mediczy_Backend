@@ -10,17 +10,26 @@ const router = express.Router();
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
 
+const BIOMED_ROLES = new Set(['biomedical', 'hospital_admin', 'hospital', 'admin', 'super_admin', 'medical_director']);
+
 const authBiomedical = (req, res, next) => {
   const token = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7)
     : null;
   if (!token) return res.status(401).json({ success: false, error: 'Biomedical token required' });
+  let decoded;
   try {
-    req.biomedUser = jwt.verify(token, JWT_CONFIG.SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_CONFIG.SECRET);
   } catch {
     return res.status(401).json({ success: false, error: 'Invalid or expired token' });
   }
+  // The secret is shared by every portal, so a valid signature alone proves nothing about the role:
+  // only biomedical staff and hospital/platform admins may use this module.
+  if (!BIOMED_ROLES.has(decoded.role)) {
+    return res.status(403).json({ success: false, error: 'Biomedical access required' });
+  }
+  req.biomedUser = decoded;
+  next();
 };
 
 // ─── Login ────────────────────────────────────────────────────────────────────
@@ -45,7 +54,7 @@ router.post('/equipment/sync-hypergrid', authBiomedical, async (req, res) => {
     if (!deviceName || !equipmentClass) return res.status(400).json({ success: false, error: 'deviceName and equipmentClass are required' });
     const db = await connectPostgres();
     await ensureHyperGridInventoryTable(db);
-    const tenantId = req.biomedUser?.tenant_id || req.biomedUser?.hospital_id || req.biomedUser?.id;
+    const tenantId = req.biomedUser?.tenant_id || req.biomedUser?.organization_id || req.biomedUser?.hospital_id || req.biomedUser?.id;
     const { rows } = await db.query(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Biomedical',$10) RETURNING *`, [tenantId, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, notes || null]);
     res.status(201).json({ success: true, equipment: rows[0] });
   } catch (err) {
@@ -318,7 +327,7 @@ Be data-driven and conservative (patient safety first).`;
 
 // Same derivation as /equipment/sync-hypergrid so registry rows line up with
 // the inventory rows that route writes.
-const registryTenantId = (req) => req.biomedUser?.tenant_id || req.biomedUser?.hospital_id || req.biomedUser?.id;
+const registryTenantId = (req) => req.biomedUser?.tenant_id || req.biomedUser?.organization_id || req.biomedUser?.hospital_id || req.biomedUser?.id;
 const toPosInt = (v) => (/^\d+$/.test(String(v ?? '')) && Number(v) > 0 && Number(v) <= 2147483647 ? Number(v) : null);
 const TICKET_PRIORITIES = ['routine', 'urgent', 'critical'];
 
