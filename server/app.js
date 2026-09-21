@@ -69,6 +69,7 @@ import hospitalBranchRouter from "./routes/hospital-branch.route.js";
 import assetTrackingRouter from "./routes/asset-tracking.route.js";
 import dmsRouter from "./routes/dms.route.js";
 import housekeepingRouter from "./routes/housekeeping.route.js";
+import parkingRouter from "./routes/parking.route.js";
 import corporateAccountRouter from "./routes/corporate-account.route.js";
 import careSeriesRouter from "./routes/care-series.route.js";
 import dialysisRouter from "./routes/dialysis.route.js";
@@ -1472,6 +1473,7 @@ app.use("/api/clinical-knowledge-fabric", clinicalKnowledgeFabricRouter); // Per
 app.use("/api/hospital-branch", hospitalBranchRouter); // Multi-branch architecture Phase 1: branches, staff assignment, tariff overrides
 app.use("/api/asset-tracking", assetTrackingRouter); // Asset Tracking: software scaffolding for RFID/IoT — manual-entry only, no reader hardware connected yet
 app.use("/api/dms", dmsRouter); // Document Management System: policies, SOPs, consent forms, NABH/HR documents — administrative, not SaMD
+app.use("/api/parking", parkingRouter); // Parking: lots, gate movements, passes, watchlist, incidents, overstay, devices — administrative, not SaMD
 app.use("/api/housekeeping", housekeepingRouter); // Housekeeping: task tracking (cleaning/disinfection/waste collection) — administrative, not SaMD
 app.use("/api/corporate-account", corporateAccountRouter); // Module 24: MoU versioning, rate cards, SPOC, credit ledger, employee consent grants
 app.use("/api/care-series", careSeriesRouter); // Recurring-treatment workflow shell (dialysis/chemo/etc.) — content gated via Clinical Knowledge Fabric
@@ -2059,6 +2061,10 @@ cron.schedule('0 1 25 * *', async () => {
 // ============== SCM: PAR Auto-Reorder (every 6h) ==============
 import { startScmParReorderCron } from './services/scm-par-reorder-cron.service.js';
 startScmParReorderCron();
+
+// ============== Parking: overstay scan (every 10 min) ==============
+import { startParkingOverstayCron } from './services/parking-overstay-cron.service.js';
+startParkingOverstayCron();
 
 // Final catch-all error handler -- must be the last middleware. Anything
 // that reaches here (including async route errors forwarded by

@@ -74,6 +74,8 @@ export const TASK_DEFINITIONS = [
   { key: 'drug_price_sync',       name: 'Drug Price Sync (NPPA/Jan Aushadhi)',   schedule: 'Daily 2:30 AM',    category: 'pharmacy',   scheduleDesc: '30 2 * * *' },
   // SCM
   { key: 'scm_par_reorder',       name: 'SCM PAR Auto-Reorder Scan',            schedule: 'Every 6 hours',    category: 'scm',        scheduleDesc: '45 */6 * * *' },
+  // Parking
+  { key: 'parking_overstay',       name: 'Parking Overstay Scan',                schedule: 'Every 10 min',     category: 'parking',    scheduleDesc: '*/10 * * * *' },
   // Security
   { key: 'token_purge',           name: 'Expired Refresh Token Purge',           schedule: 'Daily 3:30 AM',    category: 'security',   scheduleDesc: '30 3 * * *' },
   // Infrastructure

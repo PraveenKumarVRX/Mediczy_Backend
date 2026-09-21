@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Lock, Camera, Shield, AlertTriangle, Package } from 'lucide-react';
+import { Lock, Camera, Shield, AlertTriangle, Package, Car } from 'lucide-react';
 
 export default function HospitalSecurity() {
   const navigate = useNavigate();
@@ -15,7 +15,8 @@ export default function HospitalSecurity() {
           {[
             { title: 'Asset Tracking', desc: 'RFID/RTLS live map, IoT tags & theft alarms', path: '/hospital/asset-tracking', icon: Package },
             { title: 'CCTV Command', desc: 'Live camera feeds & incident log', path: '/security/cctv', icon: Camera },
-            { title: 'Access Control', desc: 'Staff badges & zone permissions', path: '/security/access', icon: Shield },
+            { title: 'Access Control', desc: 'Staff badges & zone permissions', path: '/security/access-points', icon: Shield },
+            { title: 'Parking', desc: 'Lots, gate entry/exit, passes, watchlist & overstay alerts', path: '/security/parking', icon: Car },
             { title: 'Incident Reports', desc: 'Security events & escalation', path: '/security/incidents', icon: AlertTriangle },
           ].map(item => {
             const Icon = item.icon;

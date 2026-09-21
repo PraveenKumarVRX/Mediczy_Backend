@@ -245,6 +245,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/asset-tracking',  // module route (RBAC enforced per route)
       '/api/dms',  // module route (RBAC enforced per route)
       '/api/housekeeping',  // module route (RBAC enforced per route)
+      '/api/parking',  // module route (RBAC enforced per route)
       '/api/abdm',  // module route (RBAC enforced per route)
       '/api/admin',
       '/api/db',
@@ -442,6 +443,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/asset-tracking',  // module route (RBAC enforced per route)
       '/api/dms',  // module route (RBAC enforced per route)
       '/api/housekeeping',  // module route (RBAC enforced per route)
+      '/api/parking',  // module route (RBAC enforced per route)
       '/api/abdm',  // module route (RBAC enforced per route)
       '/api/hospital',
       '/api/hospital/staff',

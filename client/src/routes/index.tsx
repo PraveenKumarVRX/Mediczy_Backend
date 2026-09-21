@@ -977,6 +977,7 @@ const SecurityReportsPage      = lazyNamed(_SecurityModulePages, "SecurityReport
 const SecuritySettingsPage     = lazyNamed(_SecurityModulePages, "SecuritySettingsPage");
 const SecuritySupportPage      = lazyNamed(_SecurityModulePages, "SecuritySupportPage");
 const SecurityAssetTrackingPage = lazyNamed(_SecurityModulePages, "SecurityAssetTrackingPage");
+const SecurityParkingPage       = lazyNamed(_SecurityModulePages, "SecurityParkingPage");
 const SecurityImplementationPage = lazyNamed(_SecurityModulePages, "SecurityImplementationPage");
 
 // ─── Hospital Display & Kiosk System ─────────────────────────────────────────
@@ -1924,6 +1925,7 @@ const AppRoutes = () => {
         <Route path="/security/guard-duty"    element={<SecurityGuardDutyPage />} />
         <Route path="/security/visitors"      element={<SecurityVisitorsPage />} />
         <Route path="/security/staff-log"     element={<SecurityStaffLogPage />} />
+        <Route path="/security/parking"        element={<SecurityParkingPage />} />
         <Route path="/security/assets"         element={<SecurityAssetTrackingPage />} />
         <Route path="/security/implementation"  element={<SecurityImplementationPage />} />
         <Route path="/security/reports"       element={<SecurityReportsPage />} />

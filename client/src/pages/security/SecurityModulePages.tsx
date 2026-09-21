@@ -15,10 +15,11 @@ import {
   Wifi, Bluetooth, Navigation, Signal, Cpu, Zap,
   Activity, CheckCircle2, Clock, AlertOctagon, TrendingUp, BookOpen,
   FlaskConical, ShieldEllipsis, Eye, HardDrive, LocateFixed, RefreshCw,
-  Fingerprint, Badge as BadgeIcon, BookMarked, ListChecks, X,
+  Fingerprint, Badge as BadgeIcon, BookMarked, ListChecks, X, ParkingSquare,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSecurityPortalData } from './useSecurityPortalData';
+import ParkingContent from '@/components/parking/ParkingContent';
 
 export const securityNavSections: DeptNavSection[] = [
   { title: 'Overview', items: [{ icon: Lock, label: 'Dashboard', href: '/security/dashboard' }] },
@@ -26,6 +27,7 @@ export const securityNavSections: DeptNavSection[] = [
     { icon: Camera, label: 'CCTV Monitor', href: '/security/cctv' },
     { icon: MapPin, label: 'Access Points', href: '/security/access-points' },
     { icon: KeyRound, label: 'Access Logs', href: '/security/access-logs' },
+    { icon: ParkingSquare, label: 'Parking', href: '/security/parking' },
   ]},
   { title: 'Response', items: [
     { icon: ShieldAlert, label: 'Incident Log', href: '/security/incidents' },
@@ -1292,6 +1294,21 @@ export const SecurityImplementationPage = () => {
     </HospDeptLayout>
   );
 };
+
+export const SecurityParkingPage = () => (
+  <HospDeptLayout
+    deptKey="security"
+    deptName="Security"
+    badgeLabel="Security"
+    loginPath="/security/login"
+    DeptIcon={Lock}
+    navSections={securityNavSections}
+    title="Parking"
+    subtitle="Lots, gate entry and exit, passes, watchlist, incidents, overstay alerts and devices"
+  >
+    <ParkingContent />
+  </HospDeptLayout>
+);
 
 export const SecurityAssetTrackingPage = () => (
   <HospDeptLayout
