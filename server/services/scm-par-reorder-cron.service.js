@@ -3,7 +3,7 @@
  */
 import cron from 'node-cron';
 import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
-import { getScmDb, poStatusAfterReceipt } from './scm-unified.service.js';
+import { getScmDb, getScopedScmDb, poStatusAfterReceipt } from './scm-unified.service.js';
 import { requestOperationsApproval } from './operations-governance.service.js';
 
 const DEFAULT_VENDOR_ID = null;
@@ -17,8 +17,31 @@ async function findPreferredVendor(db, itemId) {
   return rows[0] || null;
 }
 
-export async function runParReorderScan({ autoCreatePo = false } = {}) {
-  const db = await getScmDb();
+/**
+ * Scans every hospital separately, each with its own organization-bound handle, so purchase orders and log rows
+ * are only ever written to the hospital that owns the location (tenant isolation, WP-0.5).
+ */
+export async function runParReorderScan({ autoCreatePo = false, organizationId = null } = {}) {
+  const raw = await getScmDb();
+  const orgIds = organizationId
+    ? [Number(organizationId)]
+    : (await raw.query(`SELECT id FROM tenants WHERE type = 'hospital' ORDER BY id`)).rows.map((r) => r.id);
+  const total = { scanned: 0, actions: 0, results: [], organizations: 0 };
+  for (const orgId of orgIds) {
+    const db = await getScopedScmDb(orgId);
+    try {
+      const r = await scanOrganization(db, { autoCreatePo });
+      if (r.scanned) total.organizations += 1;
+      total.scanned += r.scanned; total.actions += r.actions;
+      total.results.push(...r.results.map((x) => ({ ...x, organizationId: orgId })));
+    } finally {
+      await db.release();
+    }
+  }
+  return total;
+}
+
+async function scanOrganization(db, { autoCreatePo }) {
   const { rows: parGaps } = await db.query(`
     SELECT loc.id AS location_id, loc.warehouse_id, loc.par_level, loc.code AS location_code,
            i.id AS item_id, i.item_code, i.name,

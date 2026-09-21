@@ -36,7 +36,9 @@ const loginFromUsersTable = async ({ email, password, role }) => {
   return user;
 };
 
-export const createDeptLogin = (Model, role) => async (req, res) => {
+// requireOrganization: the account must be attached to a hospital, and the token carries it (tenant isolation, WP-0.5).
+// A login for staff with no organization is refused rather than issuing a token that could reach nothing (or, worse, everything).
+export const createDeptLogin = (Model, role, { requireOrganization = false } = {}) => async (req, res) => {
   const { email, password } = req.body || {};
 
   if (!email || !password) {
@@ -51,8 +53,13 @@ export const createDeptLogin = (Model, role) => async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    const orgId = Number(user.organization_id);
+    if (requireOrganization && !(Number.isInteger(orgId) && orgId > 0)) {
+      return res.status(403).json({ message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
+    }
+
     const token = jwt.sign(
-      { id: user.id, role },
+      { id: user.id, role, ...(Number.isInteger(orgId) && orgId > 0 ? { organization_id: orgId } : {}) },
       JWT_CONFIG.SECRET,
       { expiresIn: JWT_CONFIG.EXPIRY.NORMAL }
     );
@@ -65,6 +72,9 @@ export const createDeptLogin = (Model, role) => async (req, res) => {
 
       if (!user) {
         return res.status(401).json({ message: 'Invalid credentials' });
+      }
+      if (requireOrganization && !(Number.isInteger(Number(user.organization_id)) && Number(user.organization_id) > 0)) {
+        return res.status(403).json({ message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
       }
 
       const token = jwt.sign(

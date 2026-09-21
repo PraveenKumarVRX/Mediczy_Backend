@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { createDeptLogin } from './loginController.js';
 
-const baseLogin = createDeptLogin(Scm, 'scm');
+const baseLogin = createDeptLogin(Scm, 'scm', { requireOrganization: true });
 
 export const loginScm = async (req, res) => {
   const originalJson = res.json.bind(res);

@@ -3,11 +3,12 @@
  * Legacy procurement_* tables are no longer written to.
  */
 import express from 'express';
+import { safeRouter } from '../../utils/safeRouter.js';
 import jwt from 'jsonwebtoken';
 import { loginProcurement } from '../../controllers/dept/procurement.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import {
-  getScmDb,
+  getScopedScmDb,
   resolveItemId,
   poStatusAfterReceipt,
   scmOverviewMetrics,
@@ -22,21 +23,30 @@ import {
   requestOperationsApproval,
 } from '../../services/operations-governance.service.js';
 
-const router = express.Router();
+const router = safeRouter(express.Router());
 
 const authProcurement = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ success: false, message: 'Procurement token required' });
+  let decoded;
   try {
-    req.procurementUser = jwt.verify(token, JWT_CONFIG.SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_CONFIG.SECRET);
   } catch {
     return res.status(401).json({ success: false, message: 'Invalid procurement token' });
   }
+  // Tenant isolation (WP-0.5): bound to the hospital in the token; a token without one is refused.
+  const org = Number(decoded.organization_id);
+  if (!Number.isInteger(org) || org <= 0) {
+    return res.status(403).json({ success: false, code: 'ORG_REQUIRED', message: 'This login is not attached to a hospital. Sign in again, or ask an administrator to attach the account.' });
+  }
+  req.procurementUser = decoded;
+  req.procurementOrgId = org;
+  next();
 };
 
-const ensureTables = async () => {
-  const db = await getScmDb();
+const ensureTables = async (req, res) => {
+  const db = await getScopedScmDb(req.procurementOrgId);
+  res.once('close', () => { db.release(); });
   await ensureOperationsGovernanceTables(db);
   return db;
 };
@@ -45,8 +55,8 @@ const actor = (req, fallback = 'Procurement') => actorFrom(req.procurementUser, 
 
 router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, loginProcurement);
 
-router.get('/overview', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/overview', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const metrics = await scmOverviewMetrics(db);
   res.json({
     success: true,
@@ -59,14 +69,14 @@ router.get('/overview', authProcurement, async (_req, res) => {
   });
 });
 
-router.get('/vendors', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/vendors', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_vendors ORDER BY name ASC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/vendors', authProcurement, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { vendorCode, name, category, contactName, phone } = req.body;
   if (!vendorCode || !name) return res.status(400).json({ success: false, message: 'vendorCode and name are required' });
   const { rows } = await db.query(`
@@ -76,8 +86,8 @@ router.post('/vendors', authProcurement, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/orders', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/orders', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT o.*, v.name AS vendor_name,
       COALESCE(json_agg(json_build_object(
@@ -94,8 +104,8 @@ router.get('/orders', authProcurement, async (_req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.get('/orders/receivable', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/orders/receivable', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT o.*, v.name AS vendor_name FROM scm_purchase_orders o
     LEFT JOIN scm_vendors v ON v.id = o.vendor_id
@@ -105,7 +115,7 @@ router.get('/orders/receivable', authProcurement, async (_req, res) => {
 });
 
 router.post('/orders', authProcurement, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { vendorId, department, requestedBy, requiredBy, lines = [] } = req.body;
   if (!vendorId || !lines.length) return res.status(400).json({ success: false, message: 'vendorId and lines are required' });
   const resolvedLines = [];
@@ -132,7 +142,7 @@ router.post('/orders', authProcurement, async (req, res) => {
 });
 
 router.patch('/orders/:id/approve', authProcurement, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const who = actor(req, 'Procurement Approver');
   const { rows: approvals } = await db.query(`
     SELECT id FROM operations_approvals
@@ -146,7 +156,7 @@ router.patch('/orders/:id/approve', authProcurement, async (req, res) => {
 });
 
 router.post('/orders/:id/grn', authProcurement, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { receivedBy, notes, lines = [] } = req.body;
   const { rows: orders } = await db.query('SELECT * FROM scm_purchase_orders WHERE id = $1', [req.params.id]);
   if (!orders[0]) return res.status(404).json({ success: false, message: 'Order not found' });
@@ -174,7 +184,7 @@ router.post('/orders/:id/grn', authProcurement, async (req, res) => {
 });
 
 router.patch('/grns/:id/approve', authProcurement, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const who = actor(req, 'Stores Approver');
   const { rows: grns } = await db.query('SELECT * FROM scm_grns WHERE id = $1', [req.params.id]);
   if (!grns[0]) return res.status(404).json({ success: false, message: 'GRN not found' });
@@ -200,14 +210,14 @@ router.patch('/grns/:id/approve', authProcurement, async (req, res) => {
   res.json({ success: true, data: grns[0] });
 });
 
-router.get('/approvals', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/approvals', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const approvals = await listOperationsApprovals(db, null);
   res.json({ success: true, data: approvals.filter((i) => ['procurement', 'stores', 'scm'].includes(i.module)) });
 });
 
-router.get('/audit', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/audit', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const [p, s, scm] = await Promise.all([
     listOperationsAudit(db, 'procurement', 50),
     listOperationsAudit(db, 'stores', 50),
@@ -216,8 +226,8 @@ router.get('/audit', authProcurement, async (_req, res) => {
   res.json({ success: true, data: [...p, ...s, ...scm].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 100) });
 });
 
-router.get('/stores/ledger', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/stores/ledger', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT l.*, i.item_code, i.name AS description
     FROM scm_inventory_ledger l
@@ -227,8 +237,8 @@ router.get('/stores/ledger', authProcurement, async (_req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.get('/stores/balances', authProcurement, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/stores/balances', authProcurement, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT i.item_code, i.name AS description, COALESCE(SUM(l.quantity_delta),0)::numeric AS quantity_on_hand
     FROM scm_items i

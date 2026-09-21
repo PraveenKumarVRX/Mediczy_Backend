@@ -1,5 +1,20 @@
+// Handles bound to a hospital (scoped SCM db) expose orgId; unscoped callers (CSSD, dietary — WP-0.5 PR 3) get null
+// and behave as before. When an organization is known every insert stores it and every read/decision filters by it.
+const orgOf = (db) => (Number.isInteger(db?.orgId) ? db.orgId : null);
+
+let orgColumnEnsured = false;
+const ensureOrgColumns = async (db) => {
+  if (orgColumnEnsured) return;
+  const raw = db.raw || db;
+  for (const t of ['operations_approvals', 'operations_audit_log']) {
+    const { rows } = await raw.query(`SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = 'organization_id'`, [t]);
+    if (!rows[0]) await raw.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS organization_id INTEGER`);
+  }
+  orgColumnEnsured = true;
+};
+
 export const ensureOperationsGovernanceTables = async (db) => {
-  await db.query(`
+  await (db.raw || db).query(`
     CREATE TABLE IF NOT EXISTS operations_approvals (
       id SERIAL PRIMARY KEY,
       module VARCHAR(80) NOT NULL,
@@ -25,6 +40,7 @@ export const ensureOperationsGovernanceTables = async (db) => {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
   `);
+  await ensureOrgColumns(db);
 };
 
 export const actorFrom = (user, fallback) =>
@@ -32,25 +48,26 @@ export const actorFrom = (user, fallback) =>
 
 export const recordOperationsAudit = async (db, { module, entityType, entityId, action, actor, details = {} }) => {
   await db.query(`
-    INSERT INTO operations_audit_log (module, entity_type, entity_id, action, actor, details)
-    VALUES ($1,$2,$3,$4,$5,$6::jsonb)
-  `, [module, entityType, entityId, action, actor || null, JSON.stringify(details)]);
+    INSERT INTO operations_audit_log (module, entity_type, entity_id, action, actor, details, organization_id)
+    VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
+  `, [module, entityType, entityId, action, actor || null, JSON.stringify(details), orgOf(db)]);
 };
 
 export const requestOperationsApproval = async (db, {
   module, entityType, entityId, action, requestedBy, notes,
 }) => {
   const { rows } = await db.query(`
-    INSERT INTO operations_approvals (module, entity_type, entity_id, action, requested_by, notes)
-    VALUES ($1,$2,$3,$4,$5,$6)
+    INSERT INTO operations_approvals (module, entity_type, entity_id, action, requested_by, notes, organization_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
     ON CONFLICT (module, entity_type, entity_id, action)
     DO UPDATE SET
       status = CASE WHEN operations_approvals.status = 'rejected' THEN 'pending' ELSE operations_approvals.status END,
       requested_by = EXCLUDED.requested_by,
       requested_at = CASE WHEN operations_approvals.status = 'rejected' THEN NOW() ELSE operations_approvals.requested_at END,
       notes = EXCLUDED.notes
+    WHERE operations_approvals.organization_id IS NOT DISTINCT FROM EXCLUDED.organization_id
     RETURNING *
-  `, [module, entityType, entityId, action, requestedBy || null, notes || null]);
+  `, [module, entityType, entityId, action, requestedBy || null, notes || null, orgOf(db)]);
   return rows[0];
 };
 
@@ -60,9 +77,9 @@ export const decideOperationsApproval = async (db, {
   const { rows } = await db.query(`
     UPDATE operations_approvals
     SET status = $2, decided_by = $3, decided_at = NOW(), notes = COALESCE($4, notes)
-    WHERE id = $1 AND status = 'pending'
+    WHERE id = $1 AND status = 'pending' AND ($5::int IS NULL OR organization_id = $5)
     RETURNING *
-  `, [id, status, decidedBy || null, notes || null]);
+  `, [id, status, decidedBy || null, notes || null, orgOf(db)]);
   return rows[0];
 };
 
@@ -70,9 +87,9 @@ export const listOperationsApprovals = async (db, module) => {
   const { rows } = await db.query(`
     SELECT *
     FROM operations_approvals
-    WHERE ($1::text IS NULL OR module = $1)
+    WHERE ($1::text IS NULL OR module = $1) AND ($2::int IS NULL OR organization_id = $2)
     ORDER BY requested_at DESC
-  `, [module || null]);
+  `, [module || null, orgOf(db)]);
   return rows;
 };
 
@@ -80,9 +97,9 @@ export const listOperationsAudit = async (db, module, limit = 100) => {
   const { rows } = await db.query(`
     SELECT *
     FROM operations_audit_log
-    WHERE ($1::text IS NULL OR module = $1)
+    WHERE ($1::text IS NULL OR module = $1) AND ($3::int IS NULL OR organization_id = $3)
     ORDER BY created_at DESC
     LIMIT $2
-  `, [module || null, limit]);
+  `, [module || null, limit, orgOf(db)]);
   return rows;
 };

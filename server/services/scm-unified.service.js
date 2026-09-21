@@ -3,12 +3,17 @@
  */
 import { ensureAllScmTables } from '../migrations/scm-tables.migration.js';
 import { connectPostgres } from '../db/postgres.js';
+import { ensureScmTenantIsolation, scopedScmDb } from './scm-tenant-scope.service.js';
 
 export const getScmDb = async () => {
   const db = await connectPostgres();
   await ensureAllScmTables(db);
+  await ensureScmTenantIsolation(db); // fails closed: never serves scm tables without row-level security
   return db;
 };
+
+/** A handle bound to one hospital for a request. Call release() when the request ends. */
+export const getScopedScmDb = async (organizationId) => scopedScmDb(await getScmDb(), organizationId);
 
 export const resolveItemId = async (db, { itemId, itemCode, description }) => {
   if (itemId) return Number(itemId);

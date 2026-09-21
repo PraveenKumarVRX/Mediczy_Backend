@@ -1139,7 +1139,7 @@ try {
   }
   {
     const g = 'G12c scm-3way';
-    const T = sign({ id: 5, role: 'scm', email: 'scm@smoke.invalid' });
+    const T = sign({ id: 5, role: 'scm', organization_id: A, email: 'scm@smoke.invalid' });
     const H = { token: T };
     const suffix = Date.now() % 1000000;
     const vend = await api('POST', '/api/scm/vendors', { ...H, body: { name: `${TAG} Vendor`, vendorCode: `${TAG}-V${suffix}` } });

@@ -3,8 +3,9 @@ import jwt from 'jsonwebtoken';
 import { loginScm } from '../controllers/dept/scm.controller.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
-import { getScmDb, poStatusAfterReceipt as unifiedPoStatus, scmOverviewMetrics } from '../services/scm-unified.service.js';
+import { getScopedScmDb, poStatusAfterReceipt as unifiedPoStatus, scmOverviewMetrics } from '../services/scm-unified.service.js';
 import { scmRbacGuard } from '../middleware/scm-rbac.middleware.js';
+import { safeRouter } from '../utils/safeRouter.js';
 import {
   actorFrom,
   decideOperationsApproval,
@@ -15,21 +16,32 @@ import {
   requestOperationsApproval,
 } from '../services/operations-governance.service.js';
 
-const router = express.Router();
+const router = safeRouter(express.Router());
 
 const authScm = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ success: false, message: 'SCM token required' });
+  let decoded;
   try {
-    req.scmUser = jwt.verify(token, JWT_CONFIG.SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_CONFIG.SECRET);
   } catch {
     return res.status(401).json({ success: false, message: 'Invalid SCM token' });
   }
+  // Tenant isolation (WP-0.5): every request is bound to the hospital named in the token. A token without one
+  // (issued before this change, or for an account with no hospital) is refused; the user signs in again.
+  const org = Number(decoded.organization_id);
+  if (!Number.isInteger(org) || org <= 0) {
+    return res.status(403).json({ success: false, code: 'ORG_REQUIRED', message: 'This login is not attached to a hospital. Sign in again, or ask an administrator to attach the account.' });
+  }
+  req.scmUser = decoded;
+  req.scmOrgId = org;
+  next();
 };
 
-const ensureTables = async () => {
-  const db = await getScmDb();
+// One database handle per request, bound to the caller's hospital and returned to the pool when the response ends.
+const ensureTables = async (req, res) => {
+  const db = await getScopedScmDb(req.scmOrgId);
+  res.once('close', () => { db.release(); });
   await ensureOperationsGovernanceTables(db);
   return db;
 };
@@ -40,22 +52,22 @@ router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, logi
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 
-router.get('/overview', authScm, scmRbacGuard, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/overview', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables(req, res);
   const data = await scmOverviewMetrics(db);
   res.json({ success: true, data });
 });
 
 // ─── Item master & inventory ─────────────────────────────────────────────────
 
-router.get('/items', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/items', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_items ORDER BY name ASC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/items', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { itemCode, name, category, uom, hsnCode, gstRate, reorderLevel, criticality, isControlled } = req.body;
   if (!itemCode || !name) return res.status(400).json({ success: false, message: 'itemCode and name are required' });
   const { rows } = await db.query(`
@@ -65,8 +77,8 @@ router.post('/items', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/inventory/balances', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/inventory/balances', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT i.id AS item_id, i.item_code, i.name, w.code AS warehouse_code,
            COALESCE(SUM(l.quantity_delta), 0)::numeric AS quantity_on_hand
@@ -79,14 +91,14 @@ router.get('/inventory/balances', authScm, async (_req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.get('/warehouses', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/warehouses', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_warehouses ORDER BY name');
   res.json({ success: true, data: rows });
 });
 
 router.post('/warehouses', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { code, name, storeType } = req.body;
   if (!code || !name) return res.status(400).json({ success: false, message: 'code and name are required' });
   const { rows } = await db.query(
@@ -98,8 +110,8 @@ router.post('/warehouses', authScm, async (req, res) => {
 
 // ─── Indents ─────────────────────────────────────────────────────────────────
 
-router.get('/indents', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/indents', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT i.*,
       COALESCE(json_agg(json_build_object('id', l.id, 'itemId', l.item_id, 'quantity', l.quantity, 'issuedQuantity', l.issued_quantity))
@@ -112,7 +124,7 @@ router.get('/indents', authScm, async (_req, res) => {
 });
 
 router.post('/indents', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { department, requestedBy, priority, requiredBy, lines = [] } = req.body;
   if (!department || !lines.length) return res.status(400).json({ success: false, message: 'department and lines are required' });
   const missing = lines.filter((l) => !l.itemId);
@@ -128,7 +140,7 @@ router.post('/indents', authScm, async (req, res) => {
 });
 
 router.patch('/indents/:id/approve', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(
     `UPDATE scm_indents SET status = 'approved' WHERE id = $1 AND status = 'submitted' RETURNING *`,
     [req.params.id]
@@ -139,7 +151,7 @@ router.patch('/indents/:id/approve', authScm, scmRbacGuard, async (req, res) => 
 });
 
 router.post('/indents/:id/convert-to-po', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { vendorId } = req.body;
   if (!vendorId) return res.status(400).json({ success: false, message: 'vendorId is required' });
   const { rows: indents } = await db.query('SELECT * FROM scm_indents WHERE id = $1', [req.params.id]);
@@ -176,14 +188,14 @@ router.post('/indents/:id/convert-to-po', authScm, scmRbacGuard, async (req, res
 
 // ─── Vendors ─────────────────────────────────────────────────────────────────
 
-router.get('/vendors', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/vendors', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_vendors ORDER BY name');
   res.json({ success: true, data: rows });
 });
 
 router.post('/vendors', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { vendorCode, name, category, gstin, contactName, phone, riskScore } = req.body;
   if (!vendorCode || !name) return res.status(400).json({ success: false, message: 'vendorCode and name are required' });
   const { rows } = await db.query(`
@@ -194,7 +206,7 @@ router.post('/vendors', authScm, async (req, res) => {
 });
 
 router.get('/vendors/:id/catalogue', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT c.*, i.item_code, i.name AS item_name
     FROM scm_vendor_catalogue c
@@ -205,7 +217,7 @@ router.get('/vendors/:id/catalogue', authScm, async (req, res) => {
 });
 
 router.post('/vendors/:id/catalogue', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { itemId, vendorSku, contractPrice, leadTimeDays } = req.body;
   if (!itemId) return res.status(400).json({ success: false, message: 'itemId is required' });
   const { rows } = await db.query(`
@@ -218,7 +230,7 @@ router.post('/vendors/:id/catalogue', authScm, async (req, res) => {
 });
 
 router.patch('/vendors/:id/risk', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { riskScore } = req.body;
   const { rows } = await db.query('UPDATE scm_vendors SET risk_score = $2 WHERE id = $1 RETURNING *', [req.params.id, riskScore]);
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Vendor not found' });
@@ -227,8 +239,8 @@ router.patch('/vendors/:id/risk', authScm, async (req, res) => {
 
 // ─── Purchase orders & GRN ─────────────────────────────────────────────────
 
-router.get('/orders', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/orders', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT o.*, v.name AS vendor_name,
       COALESCE(json_agg(json_build_object('id', l.id, 'itemId', l.item_id, 'description', l.description, 'quantity', l.quantity, 'unitPrice', l.unit_price, 'receivedQuantity', l.received_quantity))
@@ -241,8 +253,8 @@ router.get('/orders', authScm, async (_req, res) => {
   res.json({ success: true, data: rows });
 });
 
-router.get('/orders/receivable', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/orders/receivable', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT o.*, v.name AS vendor_name
     FROM scm_purchase_orders o
@@ -254,7 +266,7 @@ router.get('/orders/receivable', authScm, async (_req, res) => {
 });
 
 router.post('/orders', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { vendorId, department, requestedBy, requiredBy, blanketOrderId, lines = [] } = req.body;
   if (!vendorId || !lines.length) return res.status(400).json({ success: false, message: 'vendorId and lines are required' });
   const missing = lines.filter((l) => !l.itemId);
@@ -276,7 +288,7 @@ router.post('/orders', authScm, async (req, res) => {
 });
 
 router.patch('/orders/:id/approve', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows: approvals } = await db.query(`
     SELECT id FROM operations_approvals
     WHERE module='scm' AND entity_type='order' AND entity_id=$1 AND action='approve_po' AND status='pending'
@@ -292,7 +304,7 @@ router.patch('/orders/:id/approve', authScm, async (req, res) => {
 });
 
 router.post('/orders/:id/grn', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { receivedBy, notes, lines = [] } = req.body;
   const { rows: orders } = await db.query('SELECT * FROM scm_purchase_orders WHERE id = $1', [req.params.id]);
   const order = orders[0];
@@ -317,8 +329,8 @@ router.post('/orders/:id/grn', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: { ...rows[0], orderStatus: nextStatus } });
 });
 
-router.get('/grns', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/grns', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT g.*, o.po_number, o.vendor_id, v.name AS vendor_name,
       EXISTS(SELECT 1 FROM scm_inventory_ledger l WHERE l.reference_type = 'grn' AND l.reference_id = g.id) AS posted
@@ -332,7 +344,7 @@ router.get('/grns', authScm, async (_req, res) => {
 });
 
 router.patch('/grns/:id/post', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows: grns } = await db.query('SELECT * FROM scm_grns WHERE id = $1', [req.params.id]);
   if (!grns[0]) return res.status(404).json({ success: false, message: 'GRN not found' });
   const { rows: existing } = await db.query(
@@ -361,8 +373,8 @@ router.patch('/grns/:id/post', authScm, async (req, res) => {
 
 // ─── AP invoices & payments ──────────────────────────────────────────────────
 
-router.get('/ap/invoices', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/ap/invoices', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT i.*, v.name AS vendor_name FROM scm_ap_invoices i
     LEFT JOIN scm_vendors v ON v.id = i.vendor_id ORDER BY i.created_at DESC
@@ -371,12 +383,12 @@ router.get('/ap/invoices', authScm, async (_req, res) => {
 });
 
 router.post('/ap/invoices', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { invoiceNumber, vendorId, poId, grnId, invoiceDate, amount, taxAmount } = req.body;
   if (!invoiceNumber || !vendorId || amount == null) return res.status(400).json({ success: false, message: 'invoiceNumber, vendorId, and amount are required' });
   const { rows } = await db.query(`
     INSERT INTO scm_ap_invoices (invoice_number, vendor_id, po_id, grn_id, invoice_date, amount, tax_amount)
-    VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
+    VALUES ($1,$2,$3,$4,COALESCE($5::date, CURRENT_DATE),$6,$7) RETURNING *
   `, [invoiceNumber, vendorId, poId || null, grnId || null, invoiceDate || null, amount, taxAmount || 0]);
   res.status(201).json({ success: true, data: rows[0] });
 });
@@ -388,7 +400,7 @@ router.post('/ap/invoices', authScm, async (req, res) => {
 // GRN-derived received value, and invoice total; reports which leg
 // disagrees rather than a single opaque "variance".
 router.post('/ap/invoices/:id/match', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows: invoices } = await db.query('SELECT * FROM scm_ap_invoices WHERE id = $1', [req.params.id]);
   const invoice = invoices[0];
   if (!invoice) return res.status(404).json({ success: false, message: 'Invoice not found' });
@@ -438,7 +450,7 @@ router.post('/ap/invoices/:id/match', authScm, async (req, res) => {
 });
 
 router.patch('/ap/invoices/:id/approve', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`UPDATE scm_ap_invoices SET status = 'approved' WHERE id = $1 RETURNING *`, [req.params.id]);
   if (!rows[0]) return res.status(404).json({ success: false, message: 'Invoice not found' });
   res.json({ success: true, data: rows[0] });
@@ -450,7 +462,7 @@ router.post('/ap/invoices/:id/pay', authScm, async (req, res) => {
   const invoiceId = /^\d{1,9}$/.test(String(req.params.id)) ? Number(req.params.id) : null;
   if (!invoiceId) return res.status(400).json({ success: false, message: 'Invalid invoice id' });
   const { amount, paymentMethod, paymentRef } = req.body || {};
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const client = await db.connect();
   const round2 = (n) => Math.round(Number(n) * 100) / 100;
   try {
@@ -494,14 +506,14 @@ router.post('/ap/invoices/:id/pay', authScm, async (req, res) => {
 
 // ─── Cost centers ────────────────────────────────────────────────────────────
 
-router.get('/cost-centers', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/cost-centers', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_cost_centers ORDER BY code');
   res.json({ success: true, data: rows });
 });
 
 router.post('/cost-centers', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { code, name, department, glCode } = req.body;
   if (!code || !name) return res.status(400).json({ success: false, message: 'code and name are required' });
   const { rows } = await db.query(
@@ -513,14 +525,14 @@ router.post('/cost-centers', authScm, async (req, res) => {
 
 // ─── Clinical supply ─────────────────────────────────────────────────────────
 
-router.get('/preference-cards', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/preference-cards', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_preference_cards ORDER BY procedure_name');
   res.json({ success: true, data: rows });
 });
 
 router.post('/preference-cards', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { procedureCode, procedureName, surgeonName, items = [] } = req.body;
   if (!procedureCode || !procedureName) return res.status(400).json({ success: false, message: 'procedureCode and procedureName are required' });
   const { rows } = await db.query(
@@ -536,14 +548,14 @@ router.post('/preference-cards', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/case-carts', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/case-carts', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_case_carts ORDER BY created_at DESC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/case-carts', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { preferenceCardId, procedureCode, otRoom, scheduledAt, items = [] } = req.body;
   const { rows } = await db.query(`
     INSERT INTO scm_case_carts (cart_number, preference_card_id, procedure_code, ot_room, scheduled_at)
@@ -559,7 +571,7 @@ router.post('/case-carts', authScm, async (req, res) => {
 });
 
 router.post('/charge-captures', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { patientId, encounterId, itemId, quantity, unitPrice, costCenterId, sourceType, sourceId } = req.body;
   if (!itemId) return res.status(400).json({ success: false, message: 'itemId is required' });
   const { rows } = await db.query(`
@@ -569,8 +581,8 @@ router.post('/charge-captures', authScm, scmRbacGuard, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/charge-captures', authScm, scmRbacGuard, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/charge-captures', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT c.*, i.name AS item_name, i.item_code
     FROM scm_charge_captures c
@@ -581,7 +593,7 @@ router.get('/charge-captures', authScm, scmRbacGuard, async (_req, res) => {
 });
 
 router.post('/charge-captures/:id/bill', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows: caps } = await db.query('SELECT * FROM scm_charge_captures WHERE id = $1', [req.params.id]);
   const cap = caps[0];
   if (!cap) return res.status(404).json({ success: false, message: 'Charge capture not found' });
@@ -597,8 +609,8 @@ router.post('/charge-captures/:id/bill', authScm, scmRbacGuard, async (req, res)
   res.json({ success: true, data: { charge: rows[0], billingOrderNumber: orderNumber, amount } });
 });
 
-router.get('/formulary', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/formulary', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT f.*, i.item_code, i.name FROM scm_formulary f JOIN scm_items i ON i.id = f.item_id ORDER BY i.name
   `);
@@ -606,7 +618,7 @@ router.get('/formulary', authScm, async (_req, res) => {
 });
 
 router.post('/formulary', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { itemId, tier, restrictionNotes } = req.body;
   if (!itemId) return res.status(400).json({ success: false, message: 'itemId is required' });
   const { rows } = await db.query(`
@@ -619,14 +631,14 @@ router.post('/formulary', authScm, async (req, res) => {
 
 // ─── Supplier ops ────────────────────────────────────────────────────────────
 
-router.get('/asn', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/asn', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_asn ORDER BY created_at DESC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/asn', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { poId, vendorId, expectedAt, lines = [] } = req.body;
   const { rows } = await db.query(
     'INSERT INTO scm_asn (asn_number, po_id, vendor_id, expected_at) VALUES ($1,$2,$3,$4) RETURNING *',
@@ -638,14 +650,14 @@ router.post('/asn', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/blanket-orders', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/blanket-orders', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_blanket_orders ORDER BY created_at DESC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/blanket-orders', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { vendorId, maxAmount, validFrom, validTo } = req.body;
   if (!vendorId || maxAmount == null) return res.status(400).json({ success: false, message: 'vendorId and maxAmount are required' });
   const { rows } = await db.query(`
@@ -656,7 +668,7 @@ router.post('/blanket-orders', authScm, async (req, res) => {
 });
 
 router.post('/asn/ingest', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { documentType = '856', externalId, vendorCode, vendorId, poNumber, expectedAt, lines = [], rawPayload } = req.body;
   let vid = vendorId;
   if (!vid && vendorCode) {
@@ -691,14 +703,14 @@ router.post('/asn/ingest', authScm, scmRbacGuard, async (req, res) => {
 
 // ─── Ops control ─────────────────────────────────────────────────────────────
 
-router.get('/cycle-counts', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/cycle-counts', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_cycle_counts ORDER BY scheduled_date DESC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/cycle-counts', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { warehouseId, scheduledDate, lines = [] } = req.body;
   const { rows } = await db.query(
     'INSERT INTO scm_cycle_counts (count_number, warehouse_id, scheduled_date) VALUES ($1,$2,$3) RETURNING *',
@@ -714,7 +726,7 @@ router.post('/cycle-counts', authScm, async (req, res) => {
 });
 
 router.patch('/cycle-counts/:id/complete', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { countedBy, lines = [] } = req.body;
   for (const line of lines) {
     const variance = Number(line.countedQty) - Number(line.systemQty || 0);
@@ -736,14 +748,14 @@ router.patch('/cycle-counts/:id/complete', authScm, async (req, res) => {
   res.json({ success: true, data: rows[0] });
 });
 
-router.get('/cold-chain', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/cold-chain', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_cold_chain_logs ORDER BY recorded_at DESC LIMIT 200');
   res.json({ success: true, data: rows });
 });
 
 router.post('/cold-chain', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { itemId, warehouseId, batchNumber, temperatureC, recordedBy } = req.body;
   if (temperatureC == null) return res.status(400).json({ success: false, message: 'temperatureC is required' });
   const alertTriggered = Number(temperatureC) > 8 || Number(temperatureC) < 2;
@@ -754,14 +766,14 @@ router.post('/cold-chain', authScm, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/controlled-substances', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/controlled-substances', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM scm_controlled_substance_logs ORDER BY created_at DESC LIMIT 200');
   res.json({ success: true, data: rows });
 });
 
 router.post('/controlled-substances', authScm, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { itemId, txnType, quantity, witnessName, patientId, referenceType, referenceId, notes } = req.body;
   if (!itemId || !txnType || quantity == null) return res.status(400).json({ success: false, message: 'itemId, txnType, and quantity are required' });
   const { rows: bal } = await db.query(
@@ -782,8 +794,8 @@ router.post('/controlled-substances', authScm, async (req, res) => {
 
 // ─── PAR locations, implant UDI traceability, spend analytics ────────────────
 
-router.get('/locations', authScm, scmRbacGuard, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/locations', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT loc.*, w.name AS warehouse_name, w.code AS warehouse_code
     FROM scm_locations loc
@@ -794,7 +806,7 @@ router.get('/locations', authScm, scmRbacGuard, async (_req, res) => {
 });
 
 router.post('/locations', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { warehouseId, code, zone, parLevel, maxLevel } = req.body;
   if (!warehouseId || !code) return res.status(400).json({ success: false, message: 'warehouseId and code required' });
   const { rows } = await db.query(
@@ -805,7 +817,7 @@ router.post('/locations', authScm, scmRbacGuard, async (req, res) => {
 });
 
 router.patch('/locations/:id/par', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { parLevel, maxLevel } = req.body;
   const { rows } = await db.query(
     'UPDATE scm_locations SET par_level = COALESCE($2, par_level), max_level = COALESCE($3, max_level) WHERE id = $1 RETURNING *',
@@ -816,7 +828,7 @@ router.patch('/locations/:id/par', authScm, scmRbacGuard, async (req, res) => {
 });
 
 router.get('/implant-traces', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { patientId } = req.query;
   const params = [];
   let where = '1=1';
@@ -832,7 +844,7 @@ router.get('/implant-traces', authScm, scmRbacGuard, async (req, res) => {
 });
 
 router.post('/implant-traces', authScm, scmRbacGuard, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const {
     itemId, patientId, encounterId, udiDi, udiPi, serialNumber, lotNumber,
     manufacturer, implantedAt, implantedBy, procedureCode,
@@ -853,8 +865,8 @@ router.post('/implant-traces', authScm, scmRbacGuard, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/analytics/spend', authScm, scmRbacGuard, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/analytics/spend', authScm, scmRbacGuard, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows: monthly } = await db.query(`
     SELECT to_char(created_at, 'YYYY-MM') AS month,
            COUNT(*)::int AS po_count,
@@ -883,20 +895,21 @@ router.get('/analytics/spend', authScm, scmRbacGuard, async (_req, res) => {
 
 router.post('/par-reorder/run', authScm, scmRbacGuard, async (req, res) => {
   const { runParReorderScan } = await import('../services/scm-par-reorder-cron.service.js');
-  const result = await runParReorderScan({ autoCreatePo: Boolean(req.body?.autoCreatePo) });
+  // Only the caller's own hospital: never every tenant's locations.
+  const result = await runParReorderScan({ autoCreatePo: Boolean(req.body?.autoCreatePo), organizationId: req.scmOrgId });
   res.json({ success: true, data: result });
 });
 
 // ─── Governance ──────────────────────────────────────────────────────────────
 
-router.get('/approvals', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/approvals', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const approvals = await listOperationsApprovals(db, null);
   res.json({ success: true, data: approvals.filter((item) => item.module === 'scm') });
 });
 
-router.get('/audit', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/audit', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const audit = await listOperationsAudit(db, 'scm', 100);
   res.json({ success: true, data: audit });
 });
@@ -908,7 +921,7 @@ router.post('/ai/chat', authScm, async (req, res) => {
     const { message, context = '', history = [] } = req.body;
     if (!message?.trim()) return res.status(400).json({ success: false, message: 'message is required' });
 
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows: overview } = await db.query(`
       SELECT
         (SELECT COUNT(*)::int FROM scm_items WHERE status = 'active') AS active_items,
@@ -944,8 +957,8 @@ Be actionable, concise, and flag when physician/pharmacist sign-off is required.
   }
 });
 
-router.post('/ai/reorder-advisor', authScm, async (_req, res) => {
-  const db = await ensureTables();
+router.post('/ai/reorder-advisor', authScm, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT i.id, i.item_code, i.name, i.reorder_level, i.criticality,
            COALESCE(SUM(l.quantity_delta), 0)::numeric AS on_hand
