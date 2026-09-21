@@ -45,3 +45,13 @@ there is no RDS read replica / automatic failover, and RTO/RPO targets in
 `docs/deployment/PRODUCTION_CHECKLIST.md` were not derived from a real
 business-impact analysis. Fixing the documented command doesn't substitute
 for actually running the drill once — that's the next real step here.
+
+## Restore drill log
+
+| Date | Dump | Target | Result |
+|---|---|---|---|
+| 2026-09-21 | `/var/backups/mediczy/mediczy_db_20260921_020001.sql.gz` (293 MB) | scratch database `restore_drill` on the local PostgreSQL, dropped afterwards | Restored in 173 s with one harmless error (an unrecognised session setting). 953 tables and 3,926,418 rows matched the dump exactly; 18 row-level-security tables and 39 policies restored. First restore ever run. |
+
+Procedure used: `createdb restore_drill`; `zcat <dump> | psql -d restore_drill`; count every table with `query_to_xml` and compare with the
+`COPY` block counts in the dump (`_dump_copy_counts` in `scripts/backup/backup-integrity.lib.sh`); check RLS flags and `pg_policy`; `dropdb`.
+The scratch copy holds patient data: restore only on a trusted host and drop it immediately after.
