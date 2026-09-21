@@ -4,9 +4,12 @@ import { loginDietary } from '../../controllers/dept/dietary.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../../db/postgres.js';
+import { safeRouter } from '../../utils/safeRouter.js';
+import { dietaryScope } from '../../services/dept-tenant-scope.service.js';
+import { orgFromToken, orgRequiredResponse } from '../../services/tenant-scope.service.js';
 import { actorFrom, decideOperationsApproval, ensureOperationsGovernanceTables, listOperationsApprovals, listOperationsAudit, recordOperationsAudit, requestOperationsApproval } from '../../services/operations-governance.service.js';
 
-const router = express.Router();
+const router = safeRouter(express.Router());
 
 // ─── Auth middleware for dietary staff token ───────────────────────────────────
 
@@ -14,15 +17,21 @@ const authDietary = (req, res, next) => {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return res.status(401).json({ success: false, error: 'Dietary token required' });
+  let decoded;
   try {
-    req.dietaryUser = jwt.verify(token, JWT_CONFIG.SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_CONFIG.SECRET);
   } catch {
     return res.status(401).json({ success: false, error: 'Invalid or expired dietary token' });
   }
+  // Tenant isolation (WP-0.5): bound to the hospital in the token; a token without one is refused.
+  const org = orgFromToken(decoded);
+  if (!org) return res.status(403).json(orgRequiredResponse);
+  req.dietaryUser = decoded;
+  req.dietaryOrgId = org;
+  next();
 };
 
-const ensureDietaryTables = async () => {
+const ensureDietaryTablesRaw = async () => {
   const db = await connectPostgres();
   await db.query(`
     CREATE TABLE IF NOT EXISTS dietary_orders (
@@ -66,6 +75,14 @@ const ensureDietaryTables = async () => {
     );
   `);
   await ensureOperationsGovernanceTables(db);
+  return db;
+};
+
+const ensureDietaryTables = async (req, res) => {
+  const raw = await ensureDietaryTablesRaw();
+  await dietaryScope.ensure(raw);
+  const db = dietaryScope.scopedDb(raw, req.dietaryOrgId);
+  res.once('close', () => { db.release(); });
   return db;
 };
 
@@ -411,7 +428,7 @@ Be specific and data-driven.`;
 // ─── Inpatient workflow ──────────────────────────────────────────────────────
 router.get('/orders', authDietary, async (req, res) => {
   try {
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
     const { status } = req.query;
     const { rows } = await db.query(
       `SELECT * FROM dietary_orders WHERE ($1::text IS NULL OR status = $1) ORDER BY created_at DESC`,
@@ -427,7 +444,11 @@ router.post('/orders/from-admission', authDietary, async (req, res) => {
   try {
     const { admissionId, patientId, patientName, ward, bed, dietType, allergies = [], restrictions, calories, priority = 'normal', physician } = req.body;
     if (!patientName || !dietType) return res.status(400).json({ success: false, message: 'patientName and dietType are required' });
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
+    if (admissionId) {
+      const { rows: adm } = await db.raw.query('SELECT 1 FROM ip_admissions WHERE id::text = $1 AND organization_id = $2', [String(admissionId), req.dietaryOrgId]);
+      if (!adm[0]) return res.status(404).json({ success: false, message: 'Admission not found' });
+    }
     const { rows } = await db.query(`
       INSERT INTO dietary_orders
         (order_number, admission_id, patient_id, patient_name, ward, bed, diet_type, allergies, restrictions, calories, priority, physician)
@@ -446,7 +467,7 @@ router.post('/orders/from-admission', authDietary, async (req, res) => {
 router.patch('/orders/:id', authDietary, async (req, res) => {
   try {
     const { status, dietType, allergies, restrictions, calories, priority } = req.body;
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
     const { rows } = await db.query(`
       UPDATE dietary_orders SET
         status=COALESCE($2,status), diet_type=COALESCE($3,diet_type), allergies=COALESCE($4::text[],allergies),
@@ -463,7 +484,7 @@ router.patch('/orders/:id', authDietary, async (req, res) => {
 
 router.patch('/orders/:id/release', authDietary, async (req, res) => {
   try {
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
     const actor = actorFrom(req.dietaryUser, 'Dietary Approver');
     const { rows: approvals } = await db.query(`SELECT * FROM operations_approvals WHERE module='dietary' AND entity_type='order' AND entity_id=$1 AND action='release_meal'`, [req.params.id]);
     if (!approvals[0]) return res.status(409).json({ success: false, message: 'Meal release approval not requested' });
@@ -477,9 +498,9 @@ router.patch('/orders/:id/release', authDietary, async (req, res) => {
   }
 });
 
-router.get('/templates', authDietary, async (_req, res) => {
+router.get('/templates', authDietary, async (req, res) => {
   try {
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
     const { rows } = await db.query(`SELECT * FROM dietary_templates WHERE active=TRUE ORDER BY diet_type, name`);
     res.json({ success: true, data: rows });
   } catch {
@@ -491,7 +512,7 @@ router.post('/templates', authDietary, async (req, res) => {
   try {
     const { name, dietType, calories, mealPlan = {}, restrictions } = req.body;
     if (!name || !dietType) return res.status(400).json({ success: false, message: 'name and dietType are required' });
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
     const { rows } = await db.query(`
       INSERT INTO dietary_templates (name, diet_type, calories, meal_plan, restrictions)
       VALUES ($1,$2,$3,$4::jsonb,$5) RETURNING *
@@ -506,7 +527,7 @@ router.post('/counselling', authDietary, async (req, res) => {
   try {
     const { patientId, orderId, summary, instructions } = req.body;
     if (!summary) return res.status(400).json({ success: false, message: 'summary is required' });
-    const db = await ensureDietaryTables();
+    const db = await ensureDietaryTables(req, res);
     const { rows } = await db.query(`
       INSERT INTO dietary_counselling (patient_id, order_id, summary, instructions, created_by)
       VALUES ($1,$2,$3,$4,$5) RETURNING *
@@ -517,13 +538,13 @@ router.post('/counselling', authDietary, async (req, res) => {
   }
 });
 
-router.get('/approvals', authDietary, async (_req, res) => {
-  const db = await ensureDietaryTables();
+router.get('/approvals', authDietary, async (req, res) => {
+  const db = await ensureDietaryTables(req, res);
   res.json({ success: true, data: await listOperationsApprovals(db, 'dietary') });
 });
 
-router.get('/audit', authDietary, async (_req, res) => {
-  const db = await ensureDietaryTables();
+router.get('/audit', authDietary, async (req, res) => {
+  const db = await ensureDietaryTables(req, res);
   res.json({ success: true, data: await listOperationsAudit(db, 'dietary') });
 });
 

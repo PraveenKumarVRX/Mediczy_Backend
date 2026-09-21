@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Two-tenant isolation test for supply chain + procurement (WP-0.5, PR 1), through the REAL app and middleware chain,
+ * Two-tenant isolation test for supply chain, procurement, blood bank, CSSD and dietary (WP-0.5), through the REAL app and middleware chain,
  * connected to the database as a NON-SUPERUSER role — a superuser bypasses row-level security and would prove nothing.
  *
  * !! SAFETY !!  .env / server/.env point the default pgPool at PRODUCTION. Run only as OS user `postgres` against the
@@ -13,7 +13,7 @@
  *     POSTGRES_PRIMARY_HOST=/var/run/postgresql POSTGRES_PORT=5432 POSTGRES_PRIMARY_PORT=5432 \
  *     POSTGRES_DATABASE=mediczy_ai POSTGRES_PRIMARY_DATABASE=mediczy_ai POSTGRES_USER=postgres \
  *     POSTGRES_PRIMARY_USER=postgres POSTGRES_PASSWORD=unused POSTGRES_PRIMARY_PASSWORD=unused \
- *     POSTGRES_SSL=false NODE_ENV=development node scripts/testing/verify-tenant-isolation-scm.mjs
+ *     POSTGRES_SSL=false NODE_ENV=development node scripts/testing/verify-tenant-isolation.mjs
  */
 import { createRequire } from 'module';
 import path from 'path';
@@ -84,11 +84,15 @@ const call = async (method, url, token, body) => {
 };
 const S = (m, u, org, b) => call(m, `/api/scm${u}`, scmTok(org), b);
 const P = (m, u, org, b) => call(m, `/api/procurement${u}`, procTok(org), b);
+const deptTok = (role, org) => jwt.sign({ id: 1, role, ...(org ? { organization_id: org } : {}) }, process.env.JWT_SECRET, { expiresIn: '1h' });
+const D = (mount, role) => (m, u, org, b) => call(m, `/api/${mount}${u}`, deptTok(role, org), b);
+const BB = D('blood-bank', 'blood_bank'); const CS = D('cssd', 'cssd'); const DI = D('dietary', 'dietary');
 const ids = (r) => (r.json?.data || []).map((x) => x.id);
 
 const cleanup = async () => {
   const tables = (await admin.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'scm\\_%'`).catch(() => ({ rows: [] }))).rows.map((r) => r.tablename);
   for (let pass = 0; pass < 8; pass++) for (const t of tables) await admin.query(`DELETE FROM ${t} WHERE organization_id = ANY($1::int[])`, [ORGS]).catch(() => {});
+  for (const t of ['blood_bank_audit_events', 'blood_donor_comm_recipients', 'blood_donor_communications', 'blood_donor_donations', 'blood_bank_requisitions', 'blood_bank_units', 'blood_bank_donors', 'cssd_set_usage', 'cssd_jobs', 'cssd_cycles', 'cssd_sets', 'dietary_counselling', 'dietary_templates', 'dietary_orders']) await admin.query(`DELETE FROM ${t} WHERE organization_id = ANY($1::int[])`, [ORGS]).catch(() => {});
   await admin.query(`DELETE FROM operations_approvals WHERE organization_id = ANY($1::int[])`, [ORGS]).catch(() => {});
   await admin.query(`DELETE FROM operations_audit_log WHERE organization_id = ANY($1::int[])`, [ORGS]).catch(() => {});
   await admin.query(`DELETE FROM scm_staff WHERE email LIKE 'iso-%@verify.invalid'`).catch(() => {});
@@ -254,6 +258,92 @@ try {
   check('reorder job never wrote anything for hospital B, which has no locations', Number((await admin.query(`SELECT count(*) AS n FROM scm_purchase_orders WHERE organization_id = $1`, [B])).rows[0].n) === before && all.results.every((x) => x.organizationId === A || ![A, B].includes(x.organizationId)), JSON.stringify(all.results.map((x) => x.organizationId)));
   r = await S('POST', '/par-reorder/run', B, { autoCreatePo: true });
   check('B triggering "run reorder now" scans only its own hospital (finds nothing) and does not touch A', r.status === 200 && r.json.data.scanned === 0, r.text);
+
+  // ══════════ blood bank, CSSD, dietary (WP-0.5 PR 2 and 3) ══════════
+  const soon = new Date(Date.now() + 5 * 864e5).toISOString(); const now = new Date().toISOString();
+  for (const [label, fn, path_] of [['blood bank', BB, '/summary'], ['CSSD', CS, '/overview'], ['dietary', DI, '/orders']]) {
+    r = await fn('GET', path_, null);
+    check(`${label}: a token with no hospital -> 403 ORG_REQUIRED`, r.status === 403 && r.json?.code === 'ORG_REQUIRED', r.text);
+  }
+  const has = (r, marker) => r.status === 200 && r.text.includes(marker);
+
+  // blood bank
+  r = await BB('POST', '/inventory', A, { unitNumber: 'U-ISO-1', bloodGroup: 'O+', collectedAt: now, expiresAt: soon, donorName: 'Marker Donor A' });
+  const unitA = r.json?.data;
+  check('blood bank A: add unit', r.status === 201 && unitA?.organization_id === A, r.text);
+  r = await BB('POST', '/donors', A, { donorId: 'D-ISO-1', name: 'Marker Donor A', bloodGroup: 'O+' });
+  const donorA = r.json?.data;
+  check('blood bank A: register donor', r.status === 201 && donorA?.organization_id === A, r.text);
+  r = await BB('POST', '/requisitions', A, { patientName: 'Marker Patient A', bloodGroup: 'O+' });
+  const reqA = r.json?.data;
+  check('blood bank A: create requisition', r.status === 201 && reqA?.organization_id === A, r.text);
+  for (const [label, path_] of [['inventory', '/inventory'], ['donors', '/donors'], ['requisitions', '/requisitions'], ['audit', '/audit']]) {
+    r = await BB('GET', path_, B);
+    check(`blood bank B: ${label} does not include A's data`, r.status === 200 && !r.text.includes('Marker Donor A') && !r.text.includes('Marker Patient A') && !r.text.includes('U-ISO-1'), r.text.slice(0, 150));
+  }
+  r = await BB('GET', `/donors/${donorA.id}`, B);
+  check("blood bank B: A's donor by id -> 404", r.status === 404, r.text);
+  r = await BB('PUT', `/donors/${donorA.id}`, B, { name: 'hijack', bloodGroup: 'A+' });
+  check("blood bank B: cannot edit A's donor -> 404 and it is unchanged", r.status === 404 && (await admin.query(`SELECT name FROM blood_bank_donors WHERE id = $1`, [donorA.id])).rows[0].name === 'Marker Donor A', r.text);
+  r = await BB('DELETE', `/donors/${donorA.id}`, B);
+  check("blood bank B: cannot delete A's donor -> 404 and it still exists", r.status === 404 && (await admin.query(`SELECT 1 FROM blood_bank_donors WHERE id = $1`, [donorA.id])).rowCount === 1, r.text);
+  r = await BB('POST', `/donors/${donorA.id}/donations`, B, { bloodGroup: 'O+', collectedAt: now });
+  check("blood bank B: cannot record a donation against A's donor", r.status === 404 || r.status === 409, r.text);
+  r = await BB('POST', `/requisitions/${reqA.id}/issue`, B, { unitIds: [unitA.id] });
+  check("blood bank B: cannot issue blood against A's requisition", r.status >= 400 && (await admin.query(`SELECT status FROM blood_bank_units WHERE id = $1`, [unitA.id])).rows[0].status !== 'issued', r.text);
+  r = await BB('POST', '/inventory', B, { unitNumber: 'U-ISO-1', bloodGroup: 'A+', collectedAt: now, expiresAt: soon });
+  check('blood bank: B can use the same unit number as A (unique per hospital)', r.status === 201, r.text);
+  r = await BB('POST', '/donors', B, { donorId: 'D-ISO-1', name: 'Marker Donor B', bloodGroup: 'A+' });
+  check('blood bank: B can use the same donor code as A', r.status === 201, r.text);
+  r = await BB('POST', '/inventory', A, { unitNumber: 'U-ISO-1', bloodGroup: 'O+', collectedAt: now, expiresAt: soon });
+  check('blood bank: A cannot duplicate its own unit number', r.status >= 400, r.text);
+  check('blood bank: with NO organization context the app role sees no donors (fails closed)', Number((await sqlAs(null, `SELECT count(*) AS n FROM blood_bank_donors`)).rows[0].n) === 0 && Number((await admin.query(`SELECT count(*) AS n FROM blood_bank_donors WHERE organization_id = ANY($1::int[])`, [ORGS])).rows[0].n) === 2);
+
+  // CSSD
+  r = await CS('POST', '/sets', A, { setCode: 'SET-ISO-1', name: 'Marker Set A' });
+  const setA = r.json?.data;
+  let cdiag = '';
+  if (r.status !== 201) { try { const m = await import(pathToFileURL(path.join(SERVER, 'services/dept-tenant-scope.service.js')).href); await m.cssdScope.apply(appPool); } catch (e) { cdiag = ` DIAG=${e.code} ${e.message}`; } }
+  check('CSSD A: create instrument set', r.status === 201 && setA?.organization_id === A, r.text + cdiag);
+  r = await CS('GET', '/sets', B);
+  check("CSSD B: set list does not include A's set", r.status === 200 && !r.text.includes('Marker Set A'), r.text.slice(0, 150));
+  r = await CS('POST', '/jobs', B, { setId: setA.id });
+  check("CSSD B: cannot start a job on A's set -> refused, nothing created, set untouched", r.status >= 400 && (await admin.query(`SELECT count(*)::int AS n FROM cssd_jobs WHERE organization_id = $1`, [B])).rows[0].n === 0 && (await admin.query(`SELECT status FROM cssd_sets WHERE id = $1`, [setA.id])).rows[0].status !== 'processing', r.text);
+  r = await CS('POST', `/sets/${setA.id}/usage`, B, { otBookingId: 1 });
+  check("CSSD B: cannot record usage of A's set", r.status >= 400 && r.status !== 201, r.text);
+  r = await CS('POST', `/sets/${setA.id}/usage`, A, { otBookingId: 987654321 });
+  check("CSSD A: usage against an OT booking that is not this hospital's -> 404", r.status === 404, r.text);
+  r = await CS('GET', `/sets/${setA.id}/usage-history`, B);
+  check("CSSD B: cannot read A's set history", r.status === 404 || (r.status === 200 && (r.json?.data || []).length === 0), r.text);
+  r = await CS('POST', '/sets', B, { setCode: 'SET-ISO-1', name: 'Marker Set B' });
+  check('CSSD: B can use the same set code as A', r.status === 201, r.text);
+  r = await CS('POST', '/jobs', A, { setId: setA.id });
+  check('CSSD A: start a job on its own set', r.status === 201, r.text);
+  r = await CS('GET', '/approvals', B);
+  check("CSSD B: sees none of A's approvals", r.status === 200 && r.json.data.length === 0, r.text);
+  r = await CS('GET', '/audit', B);
+  check("CSSD B: sees none of A's audit entries", r.status === 200 && r.json.data.length === 0, r.text);
+
+  // dietary
+  r = await DI('POST', '/templates', A, { name: 'Marker Template A', dietType: 'diabetic' });
+  check('dietary A: create template', r.status === 201 && r.json?.data?.organization_id === A, r.text);
+  r = await DI('POST', '/orders/from-admission', A, { patientName: 'Marker Patient A', dietType: 'diabetic' });
+  const dietA = r.json?.data;
+  check('dietary A: create diet order', r.status === 201 && dietA?.organization_id === A, r.text);
+  r = await DI('POST', '/orders/from-admission', A, { patientName: 'X', dietType: 'diabetic', admissionId: '999999999' });
+  check("dietary A: an order from an admission that is not this hospital's -> 404", r.status === 404, r.text);
+  for (const [label, path_] of [['orders', '/orders'], ['templates', '/templates'], ['audit', '/audit'], ['approvals', '/approvals']]) {
+    r = await DI('GET', path_, B);
+    check(`dietary B: ${label} does not include A's data`, r.status === 200 && !r.text.includes('Marker Template A') && !r.text.includes('Marker Patient A'), r.text.slice(0, 150));
+  }
+  r = await DI('PATCH', `/orders/${dietA.id}`, B, { status: 'cancelled' });
+  check("dietary B: cannot change A's diet order -> 404", r.status === 404 && (await admin.query(`SELECT status FROM dietary_orders WHERE id = $1`, [dietA.id])).rows[0].status !== 'cancelled', r.text);
+  r = await DI('PATCH', `/orders/${dietA.id}/release`, B);
+  check("dietary B: cannot release A's meal -> refused and A's order is not delivered", r.status >= 400 && (await admin.query(`SELECT status FROM dietary_orders WHERE id = $1`, [dietA.id])).rows[0].status !== 'delivered', r.text);
+  r = await DI('POST', '/counselling', B, { orderId: dietA.id, patientName: 'x', notes: 'x' });
+  check("dietary B: cannot attach counselling to A's order", r.status >= 400, r.text);
+  r = await DI('GET', '/approvals', A);
+  check('dietary A: sees its own release approval', r.status === 200 && r.json.data.length >= 1, r.text);
 
   // ── logins ──
   const hash = await bcrypt.hash('Iso-Login-1', 10);

@@ -3,9 +3,12 @@ import jwt from 'jsonwebtoken';
 import { loginBloodBank } from '../../controllers/dept/bloodBank.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { connectPostgres } from '../../db/postgres.js';
+import { safeRouter } from '../../utils/safeRouter.js';
+import { bloodBankScope } from '../../services/dept-tenant-scope.service.js';
+import { orgFromToken, orgRequiredResponse } from '../../services/tenant-scope.service.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
 
-const router = express.Router();
+const router = safeRouter(express.Router());
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 // ─── Auth middleware ───────────────────────────────────────────────────────────
@@ -14,12 +17,18 @@ const authBloodBank = (req, res, next) => {
   const token = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7) : null;
   if (!token) return res.status(401).json({ success: false, message: 'Blood bank token required' });
+  let decoded;
   try {
-    req.bloodBankUser = jwt.verify(token, JWT_CONFIG.SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_CONFIG.SECRET);
   } catch {
     return res.status(401).json({ success: false, message: 'Invalid or expired blood bank token' });
   }
+  // Tenant isolation (WP-0.5): every request is bound to the hospital in the token; a token without one is refused.
+  const org = orgFromToken(decoded);
+  if (!org) return res.status(403).json(orgRequiredResponse);
+  req.bloodBankUser = decoded;
+  req.bloodBankOrgId = org;
+  next();
 };
 
 // ─── AI helper ────────────────────────────────────────────────────────────────
@@ -31,7 +40,7 @@ const aiComplete = async (messages, { maxTokens = 800, temperature = 0.5 } = {})
 
 // ─── Schema bootstrap ─────────────────────────────────────────────────────────
 
-const ensureTables = async () => {
+const ensureTablesRaw = async () => {
   const db = await connectPostgres();
 
   // Core blood unit inventory
@@ -167,6 +176,15 @@ const ensureTables = async () => {
   return db;
 };
 
+// One database handle per request, bound to the caller's hospital and returned to the pool when the response ends.
+const ensureTables = async (req, res) => {
+  const raw = await ensureTablesRaw();
+  await bloodBankScope.ensure(raw); // adds organization_id + forced row-level security; fails closed
+  const db = bloodBankScope.scopedDb(raw, req.bloodBankOrgId);
+  res.once('close', () => { db.release(); });
+  return db;
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const generateDonorId = () => `DNR-${Date.now().toString(36).toUpperCase()}`;
@@ -193,9 +211,9 @@ router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, logi
 
 // ─── Blood unit summary ───────────────────────────────────────────────────────
 
-router.get('/summary', authBloodBank, async (_req, res) => {
+router.get('/summary', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`
       SELECT
         COUNT(*) FILTER (WHERE status = 'available')::int AS available_units,
@@ -220,7 +238,7 @@ router.get('/summary', authBloodBank, async (_req, res) => {
 
 router.get('/inventory', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { bloodGroup, status } = req.query;
     const params = []; const filters = [];
     if (bloodGroup) { params.push(bloodGroup); filters.push(`blood_group = $${params.length}`); }
@@ -238,7 +256,7 @@ router.post('/inventory', authBloodBank, async (req, res) => {
     const { unitNumber, bloodGroup, component = 'whole_blood', donorName, collectedAt, expiresAt, location } = req.body;
     if (!unitNumber || !BLOOD_GROUPS.includes(bloodGroup) || !collectedAt || !expiresAt)
       return res.status(400).json({ success: false, message: 'unitNumber, valid bloodGroup, collectedAt and expiresAt are required' });
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`
       INSERT INTO blood_bank_units (unit_number, blood_group, component, donor_name, collected_at, expires_at, location)
       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *
@@ -254,7 +272,7 @@ router.post('/inventory', authBloodBank, async (req, res) => {
 
 router.get('/donors', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { bloodGroup, eligible, search, city, donorType, limit = 200, offset = 0 } = req.query;
     const params = []; const filters = ['is_active = TRUE'];
     if (bloodGroup) { params.push(bloodGroup); filters.push(`blood_group = $${params.length}`); }
@@ -293,7 +311,7 @@ router.post('/donors', authBloodBank, async (req, res) => {
     } = req.body;
     if (!name || !BLOOD_GROUPS.includes(bloodGroup))
       return res.status(400).json({ success: false, message: 'name and valid bloodGroup are required' });
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const id = donorId || generateDonorId();
     const nextDate = lastDonationDate ? nextEligible(lastDonationDate) : null;
     const { rows } = await db.query(`
@@ -302,7 +320,7 @@ router.post('/donors', authBloodBank, async (req, res) => {
          donor_type, last_donation_date, next_eligible_date, eligible, health_notes,
          notification_consent, preferred_channel)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-      ON CONFLICT (donor_id) DO UPDATE SET
+      ON CONFLICT (organization_id, donor_id) DO UPDATE SET
         name=$2, blood_group=$3, phone=$4, whatsapp=$5, email=$6, age=$7, gender=$8,
         address=$9, city=$10, pincode=$11, donor_type=$12, last_donation_date=$13,
         next_eligible_date=$14, eligible=$15, health_notes=$16,
@@ -321,7 +339,7 @@ router.post('/donors', authBloodBank, async (req, res) => {
 
 router.get('/donors/:id', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`SELECT * FROM blood_bank_donors WHERE id = $1`, [req.params.id]);
     if (!rows[0]) return res.status(404).json({ success: false, message: 'Donor not found' });
     const donations = await db.query(`SELECT * FROM blood_donor_donations WHERE donor_id = $1 ORDER BY donation_date DESC`, [req.params.id]);
@@ -333,7 +351,7 @@ router.get('/donors/:id', authBloodBank, async (req, res) => {
 
 router.put('/donors/:id', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const {
       name, bloodGroup, phone, whatsapp, email, age, gender, address, city, pincode,
       donorType, eligible, healthNotes, notificationConsent, preferredChannel, isActive,
@@ -361,8 +379,9 @@ router.put('/donors/:id', authBloodBank, async (req, res) => {
 
 router.delete('/donors/:id', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
-    await db.query(`UPDATE blood_bank_donors SET is_active = FALSE, updated_at = NOW() WHERE id = $1`, [req.params.id]);
+    const db = await ensureTables(req, res);
+    const { rowCount } = await db.query(`UPDATE blood_bank_donors SET is_active = FALSE, updated_at = NOW() WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'Donor not found' });
     res.json({ success: true, message: 'Donor deactivated' });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to deactivate donor' });
@@ -372,7 +391,7 @@ router.delete('/donors/:id', authBloodBank, async (req, res) => {
 // ─── Donation history ─────────────────────────────────────────────────────────
 
 router.post('/donors/:id/donations', authBloodBank, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -434,7 +453,7 @@ router.get('/donors/eligible/:bloodGroup', authBloodBank, async (req, res) => {
     if (!BLOOD_GROUPS.includes(bloodGroup))
       return res.status(400).json({ success: false, message: 'Invalid blood group' });
     const { compatibleGroups } = req.query;
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
 
     // Universal donors: O- can donate to anyone; for plasma AB+ is universal
     let groups = [bloodGroup];
@@ -548,7 +567,7 @@ Format your response as JSON: { "subject": "...", "body": "...", "summary": "...
 // ─── Send communication to eligible donors ────────────────────────────────────
 
 router.post('/communications/send', authBloodBank, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const client = await db.connect();
   try {
     const {
@@ -655,7 +674,7 @@ router.post('/communications/send', authBloodBank, async (req, res) => {
 
 router.get('/communications', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { limit = 50, offset = 0 } = req.query;
     const { rows } = await db.query(
       `SELECT c.*,
@@ -676,7 +695,7 @@ router.get('/communications', authBloodBank, async (req, res) => {
 
 router.get('/communications/:id/recipients', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`
       SELECT r.*, d.name, d.blood_group, d.phone
       FROM blood_donor_comm_recipients r
@@ -692,9 +711,9 @@ router.get('/communications/:id/recipients', authBloodBank, async (req, res) => 
 
 // ─── Requisitions ─────────────────────────────────────────────────────────────
 
-router.get('/requisitions', authBloodBank, async (_req, res) => {
+router.get('/requisitions', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`SELECT * FROM blood_bank_requisitions ORDER BY created_at DESC`);
     res.json({ success: true, data: rows });
   } catch {
@@ -707,7 +726,7 @@ router.post('/requisitions', authBloodBank, async (req, res) => {
     const { patientId, patientName, ward, bloodGroup, component = 'whole_blood', unitsRequested = 1, urgency = 'routine', requestedBy, notes } = req.body;
     if (!patientName || !BLOOD_GROUPS.includes(bloodGroup))
       return res.status(400).json({ success: false, message: 'patientName and valid bloodGroup are required' });
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`
       INSERT INTO blood_bank_requisitions
         (requisition_number, patient_id, patient_name, ward, blood_group, component, units_requested, urgency, requested_by, notes)
@@ -721,7 +740,7 @@ router.post('/requisitions', authBloodBank, async (req, res) => {
 });
 
 router.post('/requisitions/:id/issue', authBloodBank, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -766,7 +785,7 @@ router.post('/cross-match', authBloodBank, async (req, res) => {
       'AB+': ['A+','A-','B+','B-','AB+','AB-','O+','O-'], 'AB-': ['AB-','A-','B-','O-'],
       'O+': ['O+','O-'], 'O-': ['O-'],
     };
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const compatibleGroups = compatibility[bloodGroup] || [bloodGroup];
     const { rows } = await db.query(`
       SELECT id, unit_number, blood_group, component, expires_at
@@ -782,7 +801,7 @@ router.post('/cross-match', authBloodBank, async (req, res) => {
 });
 
 router.post('/requisitions/:id/return', authBloodBank, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -803,9 +822,9 @@ router.post('/requisitions/:id/return', authBloodBank, async (req, res) => {
   }
 });
 
-router.get('/alerts', authBloodBank, async (_req, res) => {
+router.get('/alerts', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const shortages = await db.query(`
       WITH groups AS (SELECT unnest($1::text[]) AS blood_group)
       SELECT groups.blood_group, COUNT(u.id)::int AS available_units
@@ -826,9 +845,9 @@ router.get('/alerts', authBloodBank, async (_req, res) => {
   }
 });
 
-router.get('/audit', authBloodBank, async (_req, res) => {
+router.get('/audit', authBloodBank, async (req, res) => {
   try {
-    const db = await ensureTables();
+    const db = await ensureTables(req, res);
     const { rows } = await db.query(`SELECT * FROM blood_bank_audit_events ORDER BY created_at DESC LIMIT 100`);
     res.json({ success: true, data: rows });
   } catch {

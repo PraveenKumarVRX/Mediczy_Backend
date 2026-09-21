@@ -3,22 +3,31 @@ import jwt from 'jsonwebtoken';
 import { loginCSSD } from '../../controllers/dept/cssd.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { connectPostgres } from '../../db/postgres.js';
+import { safeRouter } from '../../utils/safeRouter.js';
+import { cssdScope } from '../../services/dept-tenant-scope.service.js';
+import { orgFromToken, orgRequiredResponse } from '../../services/tenant-scope.service.js';
 import { actorFrom, decideOperationsApproval, ensureOperationsGovernanceTables, listOperationsApprovals, listOperationsAudit, recordOperationsAudit, requestOperationsApproval } from '../../services/operations-governance.service.js';
 
-const router = express.Router();
+const router = safeRouter(express.Router());
 
 const authCSSD = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) return res.status(401).json({ success: false, message: 'CSSD token required' });
+  let decoded;
   try {
-    req.cssdUser = jwt.verify(token, JWT_CONFIG.SECRET);
-    next();
+    decoded = jwt.verify(token, JWT_CONFIG.SECRET);
   } catch {
     return res.status(401).json({ success: false, message: 'Invalid CSSD token' });
   }
+  // Tenant isolation (WP-0.5): bound to the hospital in the token; a token without one is refused.
+  const org = orgFromToken(decoded);
+  if (!org) return res.status(403).json(orgRequiredResponse);
+  req.cssdUser = decoded;
+  req.cssdOrgId = org;
+  next();
 };
 
-const ensureTables = async () => {
+const ensureTablesRaw = async () => {
   const db = await connectPostgres();
   await db.query(`
     CREATE TABLE IF NOT EXISTS cssd_sets (
@@ -70,10 +79,18 @@ const ensureTables = async () => {
   return db;
 };
 
+const ensureTables = async (req, res) => {
+  const raw = await ensureTablesRaw();
+  await cssdScope.ensure(raw);
+  const db = cssdScope.scopedDb(raw, req.cssdOrgId);
+  res.once('close', () => { db.release(); });
+  return db;
+};
+
 router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, loginCSSD);
 
-router.get('/overview', authCSSD, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/overview', authCSSD, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT
       COUNT(*) FILTER (WHERE status = 'available')::int AS available_sets,
@@ -85,14 +102,14 @@ router.get('/overview', authCSSD, async (_req, res) => {
   res.json({ success: true, data: rows[0] });
 });
 
-router.get('/sets', authCSSD, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/sets', authCSSD, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM cssd_sets ORDER BY updated_at DESC, name ASC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/sets', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { setCode, name, serviceLine, currentLocation } = req.body;
   if (!setCode || !name) return res.status(400).json({ success: false, message: 'setCode and name are required' });
   const { rows } = await db.query(`
@@ -103,8 +120,8 @@ router.post('/sets', authCSSD, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/jobs', authCSSD, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/jobs', authCSSD, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(`
     SELECT j.*, s.set_code, s.name AS set_name
     FROM cssd_jobs j LEFT JOIN cssd_sets s ON s.id = j.set_id
@@ -114,7 +131,7 @@ router.get('/jobs', authCSSD, async (_req, res) => {
 });
 
 router.post('/jobs', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { setId, sourceDepartment, requestedBy, notes } = req.body;
   if (!setId) return res.status(400).json({ success: false, message: 'setId is required' });
   const { rows } = await db.query(`
@@ -127,14 +144,14 @@ router.post('/jobs', authCSSD, async (req, res) => {
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/cycles', authCSSD, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/cycles', authCSSD, async (req, res) => {
+  const db = await ensureTables(req, res);
   const { rows } = await db.query('SELECT * FROM cssd_cycles ORDER BY created_at DESC');
   res.json({ success: true, data: rows });
 });
 
 router.post('/cycles', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { autoclaveId, cycleNumber, temperature, pressure, durationMinutes } = req.body;
   if (!autoclaveId || !cycleNumber) return res.status(400).json({ success: false, message: 'autoclaveId and cycleNumber are required' });
   const { rows } = await db.query(`
@@ -146,7 +163,7 @@ router.post('/cycles', authCSSD, async (req, res) => {
 });
 
 router.post('/cycles/:id/release', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { biologicalIndicator = 'pass', releasedBy = 'CSSD' } = req.body;
   const { rows } = await db.query(`
     UPDATE cssd_cycles
@@ -159,7 +176,7 @@ router.post('/cycles/:id/release', authCSSD, async (req, res) => {
 });
 
 router.post('/jobs/:id/release', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const actor = actorFrom(req.cssdUser, 'CSSD');
   const approval = await requestOperationsApproval(db, { module: 'cssd', entityType: 'job', entityId: Number(req.params.id), action: 'release_job', requestedBy: actor });
   if (approval.status === 'pending') await decideOperationsApproval(db, { id: approval.id, status: 'approved', decidedBy: actor });
@@ -175,13 +192,13 @@ router.post('/jobs/:id/release', authCSSD, async (req, res) => {
   res.json({ success: true, data: rows[0] });
 });
 
-router.get('/approvals', authCSSD, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/approvals', authCSSD, async (req, res) => {
+  const db = await ensureTables(req, res);
   res.json({ success: true, data: await listOperationsApprovals(db, 'cssd') });
 });
 
-router.get('/audit', authCSSD, async (_req, res) => {
-  const db = await ensureTables();
+router.get('/audit', authCSSD, async (req, res) => {
+  const db = await ensureTables(req, res);
   res.json({ success: true, data: await listOperationsAudit(db, 'cssd') });
 });
 
@@ -202,7 +219,9 @@ router.post('/sets/:id/usage', authCSSD, async (req, res) => {
     if (!Number.isInteger(otBookingId) || otBookingId <= 0 || otBookingId > 2147483647) {
       return res.status(400).json({ success: false, message: 'otBookingId must be a positive integer' });
     }
-    const pool = await ensureTables();
+    const pool = await ensureTables(req, res);
+    const { rows: booking } = await pool.raw.query('SELECT 1 FROM ot_bookings WHERE id = $1 AND organization_id = $2', [otBookingId, req.cssdOrgId]);
+    if (!booking[0]) return res.status(404).json({ success: false, message: 'OT booking not found' });
     const actor = actorFrom(req.cssdUser, 'CSSD');
     const client = await pool.connect();
     let usage = null;
@@ -253,7 +272,7 @@ router.post('/sets/:id/usage', authCSSD, async (req, res) => {
 
 // Full traceability: given an OT case, which sterilized sets were used?
 router.get('/ot-bookings/:otBookingId/sets', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(
     `SELECT u.*, s.set_code, s.name AS set_name, s.sterile_until
      FROM cssd_set_usage u JOIN cssd_sets s ON s.id = u.set_id
@@ -265,7 +284,7 @@ router.get('/ot-bookings/:otBookingId/sets', authCSSD, async (req, res) => {
 
 // Reverse traceability: given a sterilized set, which OT cases has it been used in?
 router.get('/sets/:id/usage-history', authCSSD, async (req, res) => {
-  const db = await ensureTables();
+  const db = await ensureTables(req, res);
   const { rows } = await db.query(
     'SELECT * FROM cssd_set_usage WHERE set_id = $1 ORDER BY used_at DESC',
     [req.params.id]

@@ -1113,7 +1113,9 @@ try {
   }
   {
     const g = 'G12b cssd';
-    const T = sign({ id: 5, role: 'cssd', email: 'cssd@smoke.invalid' });
+    const T = sign({ id: 5, role: 'cssd', organization_id: A, email: 'cssd@smoke.invalid' });
+    // Usage must reference an OT booking of the caller's own hospital (WP-0.5): seed the two bookings this group uses.
+    for (const bid of [990001, 990002]) await q(`INSERT INTO ot_bookings (id, organization_id, patient_id, procedure_name, scheduled_start, scheduled_end, created_at, updated_at) VALUES ($1,$2,$3,'Smoke CSSD booking', NOW(), NOW() + INTERVAL '1 hour', NOW(), NOW()) ON CONFLICT (id) DO NOTHING`, [bid, A, U.patA]);
     const mk = async (code, status, sterile) => (await q1(`INSERT INTO cssd_sets (set_code, name, status, sterile_until) VALUES ($1,$2,$3,$4) RETURNING id`, [`${TAG}-${code}`, `Smoke set ${code}`, status, sterile])).id;
     const sAvail = await mk('AVAIL', 'available', new Date(Date.now() + 86400000));
     const sInUse = await mk('INUSE', 'in_use', null);
