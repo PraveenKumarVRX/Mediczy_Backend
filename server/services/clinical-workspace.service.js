@@ -8,6 +8,7 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 async function fetchPatientDemographics(patientId) {
   const [fromPatients] = await sequelize.query(
@@ -117,11 +118,17 @@ export async function getPatientWorkspace(patientId, organizationId) {
     { replacements: { admId: admission.id }, type: QueryTypes.SELECT }
   ).catch(() => []) : [];
 
-  const allergies = await sequelize.query(
-    `SELECT allergen, reaction_type, severity FROM patient_allergies
-     WHERE patient_id = :patientId AND active = TRUE`,
-    { replacements: { patientId }, type: QueryTypes.SELECT }
-  ).catch(() => []);
+  // patient_allergies is keyed by user_id / allergen_name and protected by FORCE RLS (organization OR own user), so
+  // the lookup must set that context or it silently sees no rows. A failed lookup must not read as "no allergies".
+  let allergyLookupFailed = false;
+  const allergies = await sequelize.transaction(async (transaction) => {
+    await setRlsContext(transaction, { orgId: organizationId || 0, userId: patientId, isPlatformAdmin: false });
+    return sequelize.query(
+      `SELECT allergen_name AS allergen, reaction_type, severity FROM patient_allergies
+       WHERE user_id = :patientId ORDER BY severity, allergen_name`,
+      { replacements: { patientId }, type: QueryTypes.SELECT, transaction }
+    );
+  }).catch((e) => { console.error('[clinical-workspace] allergy lookup failed:', e.message); allergyLookupFailed = true; return []; });
 
   const recentNotes = await sequelize.query(
     `SELECT id, note_type, chief_complaint, diagnosis, plan, created_at, signed_at
@@ -154,6 +161,7 @@ export async function getPatientWorkspace(patientId, organizationId) {
     vitalsTrend: vitals,
     activeAlerts: alerts,
     allergies,
+    allergyLookupFailed, // true = status UNKNOWN (the lookup failed); an empty list only means none are recorded
     activeMedications: activeMeds,
     recentNotes,
     pendingOrders,

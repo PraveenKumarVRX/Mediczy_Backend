@@ -92,19 +92,39 @@ router.get('/runs', authPayroll, async (req, res) => {
 router.post('/runs', authPayroll, async (req, res) => {
   const db = await ensureTables();
   const month = req.body.month || new Date().toISOString().slice(0, 7);
-  const { rows: structures } = await db.query('SELECT * FROM payroll_structures WHERE tenant_id = $1 AND active = TRUE', [req.tenantId]);
-  const lines = structures.map((s) => {
-    const gross = Number(s.basic) + Number(s.hra) + Number(s.allowances);
-    const pf = Math.min(Number(s.basic) * 0.12, 1800);
-    const esi = gross <= 21000 ? gross * 0.0075 : 0;
-    const tds = gross > 50000 ? gross * 0.1 : 0;
-    const other = Number(s.deductions);
-    return { s, gross, pf, esi, tds, other, net: gross - pf - esi - tds - other };
-  });
-  const totals = lines.reduce((a, l) => ({ gross: a.gross+l.gross, pf:a.pf+l.pf, esi:a.esi+l.esi, tds:a.tds+l.tds, net:a.net+l.net }), {gross:0,pf:0,esi:0,tds:0,net:0});
-  const { rows } = await db.query(`INSERT INTO payroll_runs (tenant_id, month, gross_total, pf_total, esi_total, tds_total, net_total) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [req.tenantId, month, totals.gross, totals.pf, totals.esi, totals.tds, totals.net]);
-  for (const l of lines) await db.query(`INSERT INTO payroll_run_lines (run_id, structure_id, gross, pf, esi, tds, other_deductions, net) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [rows[0].id, l.s.id, l.gross, l.pf, l.esi, l.tds, l.other, l.net]);
-  res.status(201).json({ success: true, data: rows[0], lineCount: lines.length });
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ success: false, message: 'month must be YYYY-MM' });
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    // One run per tenant per month, even without the unique index: serialise on an advisory lock, then check.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`payroll:${req.tenantId}:${month}`]);
+    const { rows: existing } = await client.query('SELECT id, status FROM payroll_runs WHERE tenant_id = $1 AND month = $2', [req.tenantId, month]);
+    if (existing[0]) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, message: `A payroll run for ${month} already exists (${existing[0].status})`, runId: existing[0].id });
+    }
+    const { rows: structures } = await client.query('SELECT * FROM payroll_structures WHERE tenant_id = $1 AND active = TRUE', [req.tenantId]);
+    const lines = structures.map((s) => {
+      const gross = Number(s.basic) + Number(s.hra) + Number(s.allowances);
+      const pf = Math.min(Number(s.basic) * 0.12, 1800);
+      const esi = gross <= 21000 ? gross * 0.0075 : 0;
+      const tds = gross > 50000 ? gross * 0.1 : 0;
+      const other = Number(s.deductions);
+      return { s, gross, pf, esi, tds, other, net: gross - pf - esi - tds - other };
+    });
+    const totals = lines.reduce((a, l) => ({ gross: a.gross+l.gross, pf:a.pf+l.pf, esi:a.esi+l.esi, tds:a.tds+l.tds, net:a.net+l.net }), {gross:0,pf:0,esi:0,tds:0,net:0});
+    const { rows } = await client.query(`INSERT INTO payroll_runs (tenant_id, month, gross_total, pf_total, esi_total, tds_total, net_total) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [req.tenantId, month, totals.gross, totals.pf, totals.esi, totals.tds, totals.net]);
+    for (const l of lines) await client.query(`INSERT INTO payroll_run_lines (run_id, structure_id, gross, pf, esi, tds, other_deductions, net) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [rows[0].id, l.s.id, l.gross, l.pf, l.esi, l.tds, l.other, l.net]);
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, data: rows[0], lineCount: lines.length });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.code === '23505') return res.status(409).json({ success: false, message: `A payroll run for ${month} already exists` });
+    console.error('[Payroll] run creation failed:', e.message);
+    res.status(500).json({ success: false, message: 'Payroll run could not be created' });
+  } finally {
+    client.release();
+  }
 });
 router.get('/runs/:id', authPayroll, async (req, res) => {
   const db = await ensureTables();
@@ -114,9 +134,12 @@ router.get('/runs/:id', authPayroll, async (req, res) => {
 });
 router.patch('/runs/:id/finalize', authPayroll, async (req, res) => {
   const db = await ensureTables();
-  const { rows } = await db.query(`UPDATE payroll_runs SET status = 'finalized' WHERE id = $1 AND tenant_id = $2 RETURNING *`, [req.params.id, req.tenantId]);
-  if (!rows[0]) return res.status(404).json({ success: false, message: 'Payroll run not found' });
-  res.json({ success: true, data: rows[0] });
+  // Conditional on draft: a run cannot be finalised twice, and the row that changed is what we return.
+  const { rows } = await db.query(`UPDATE payroll_runs SET status = 'finalized' WHERE id = $1 AND tenant_id = $2 AND status = 'draft' RETURNING *`, [req.params.id, req.tenantId]);
+  if (rows[0]) return res.json({ success: true, data: rows[0] });
+  const { rows: ex } = await db.query('SELECT status FROM payroll_runs WHERE id = $1 AND tenant_id = $2', [req.params.id, req.tenantId]);
+  if (!ex[0]) return res.status(404).json({ success: false, message: 'Payroll run not found' });
+  res.status(409).json({ success: false, message: `Payroll run is already ${ex[0].status}` });
 });
 
 // ── Payslip PDF + statutory export (added 2026-09-18) ─────────────────────────

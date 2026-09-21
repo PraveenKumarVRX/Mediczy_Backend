@@ -71,6 +71,7 @@ import dmsRouter from "./routes/dms.route.js";
 import housekeepingRouter from "./routes/housekeeping.route.js";
 import parkingRouter from "./routes/parking.route.js";
 import surveillanceRouter from "./routes/surveillance.route.js";
+import pgPool from './db/pgPool.js'; // /healthz round trip
 import corporateAccountRouter from "./routes/corporate-account.route.js";
 import careSeriesRouter from "./routes/care-series.route.js";
 import dialysisRouter from "./routes/dialysis.route.js";
@@ -1071,7 +1072,7 @@ app.use((req, res, next) => {
 });
 app.use(activityLogger({
   includeBody: false, // Set to detailed logging (be careful with sensitive data)
-  excludePaths: ['/health', '/api/admin/activity-logs', '/api/admin/activity-stats', '/api/team/activity-logs', '/api/team/activity-stats']
+  excludePaths: ['/health', '/healthz', '/api/admin/activity-logs', '/api/admin/activity-stats', '/api/team/activity-logs', '/api/team/activity-stats']
 }));
 
 // Twilio WhatsApp Webhook Bypass - MUST RUN FIRST before session/auth checks
@@ -1083,6 +1084,7 @@ app.use((req, res, next) => {
       req.path.startsWith('/api/support/webhook/rocketchat') ||
       req.path.startsWith('/api/support/webhook/whatsapp') ||
       req.path === '/api/payments/webhook' ||
+      req.path === '/api/hospital/billing/pgi/webhook' ||
       req.path === '/api/payments/config') {
     req.skipAuth = true;
   }
@@ -1164,54 +1166,43 @@ app.get('/health/ready', authUser, requireRole('admin'), async (req, res) => {
   }
 });
 
-// Detailed health check endpoint (public for monitoring/LB)
+// Minimal liveness/readiness for load balancers and deploy checks: unauthenticated, reveals nothing beyond up/down.
+// Does a real (2 s) database round trip so a dead database is reported, not just a live process.
+app.get('/healthz', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    await Promise.race([
+      pgPool.query('SELECT 1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2000)),
+    ]);
+    res.status(200).json({ status: 'ok' });
+  } catch {
+    res.status(503).json({ status: 'unavailable' });
+  }
+});
+
+// Public health summary (monitoring / LB). Deliberately coarse: no version, environment, memory, uptime,
+// connection details or error text. Full detail is behind admin login at /health/ready.
 app.get('/health', async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
-    const mem = process.memoryUsage();
     const dbStates = health.databases || {
       postgres: health.postgres,
       duckdb: health.duckdb,
       redis: health.redis
     };
-
     const normalizedDbStates = Object.fromEntries(
-      Object.entries(dbStates).map(([db, isConnected]) => [
-        db,
-        isConnected ? 'connected' : 'disconnected'
-      ])
+      Object.entries(dbStates).map(([db, isConnected]) => [db, isConnected ? 'connected' : 'disconnected'])
     );
-
     const criticalHealthy = Boolean(dbStates.postgresSequelize || dbStates.postgres);
-
-    const healthCheck = {
+    res.status(criticalHealthy ? 200 : 503).json({
       status: criticalHealthy ? 'healthy' : 'degraded',
-      orchestratorStatus: health.status,
       timestamp: new Date().toISOString(),
-      uptime: Math.floor(process.uptime()),
-      environment: process.env.NODE_ENV || 'development',
-      version: process.env.npm_package_version || '1.0.0',
-      memory: {
-        heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 100) / 100 + ' MB',
-        heapTotal: Math.round((mem.heapTotal / 1024 / 1024) * 100) / 100 + ' MB',
-        rss: Math.round((mem.rss / 1024 / 1024) * 100) / 100 + ' MB'
-      },
-      databases: normalizedDbStates,
-      capabilities: {
-        pgvector: health.pgvector || false,
-        citus: health.citus || false
-      },
-      connections: health.connections,
-      lastCheck: health.lastCheck
-    };
-    
-    res.status(criticalHealthy ? 200 : 503).json(healthCheck);
-  } catch (error) {
-    res.status(503).json({
-      status: 'error',
-      message: error.message,
-      timestamp: new Date().toISOString()
+      databases: normalizedDbStates
     });
+  } catch (error) {
+    console.error('[health] check failed:', error.message);
+    res.status(503).json({ status: 'error', timestamp: new Date().toISOString() });
   }
 });
 

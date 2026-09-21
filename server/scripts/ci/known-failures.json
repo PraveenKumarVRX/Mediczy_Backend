@@ -1,0 +1,11 @@
+{
+  "recordedAt": "2026-09-21",
+  "note": "Failures that existed when the gate was introduced. Remove entries as they are fixed; never add new ones.",
+  "failures": [
+    "__tests__/consultation-membership-exemption.test.js :: Consultation Membership Exemption Regression keeps non-exempt user blocked on pending-payment video appointment",
+    "__tests__/consultation-membership-exemption.test.js :: Consultation Membership Exemption Regression marks exempt user appointments as video-join eligible even when payment is pending",
+    "__tests__/imaging-ris-auto-ingest.test.js :: imaging RIS auto-ingest inserts a new ris_studies row for Orthanc MRI ingest",
+    "__tests__/imaging-ris-auto-ingest.test.js :: imaging RIS auto-ingest prefers explicit lab id, then env, then modality AE match",
+    "__tests__/imaging-ris-auto-ingest.test.js :: imaging RIS auto-ingest updates existing ris_studies instead of duplicating"
+  ]
+}

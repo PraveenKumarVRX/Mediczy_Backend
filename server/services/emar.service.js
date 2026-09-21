@@ -11,6 +11,7 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 
 // ── High-alert drug list (generic name / class fragments, lower-cased) ────────
 const HIGH_ALERT_DRUGS = new Set([
@@ -123,6 +124,76 @@ async function scheduleAdministrations(orderId, admissionId, start, end, frequen
   }
 }
 
+// ── Allergy check (WP-0.8 interim hotfix; the full design is WP-1.1) ─────────────────────────────
+// patient_allergies is keyed by users.id. In production, admissions and medication orders carry the user id
+// as patient_id (verified against ip_admissions), so the order's patient_id is the lookup key.
+// EMAR_ALLERGY_UNKNOWN_POLICY: 'require_ack' (default) blocks until the nurse acknowledges that no allergy
+// status is recorded; 'warn' only records it — a rollout aid for the first week on a ward.
+const allergyUnknownPolicy = () => (String(process.env.EMAR_ALLERGY_UNKNOWN_POLICY || 'require_ack').toLowerCase() === 'warn' ? 'warn' : 'require_ack');
+const NON_DRUG_ALLERGEN_TYPES = new Set(['food', 'environmental', 'latex']); // never matched against a drug name
+const ALLERGY_MATCH_NOTE = 'Allergies are matched by name only. Drug-class and brand matching arrive with the full allergy module.';
+
+/**
+ * Throws on any database error: callers must treat a failed lookup as "unknown", never as "no allergies".
+ * patient_allergies is protected by FORCE ROW LEVEL SECURITY (policy: organization = app.current_org_id OR
+ * user = app.current_user_id). A bare query as the application role therefore sees ZERO rows and would read every
+ * patient as "no allergy recorded" — so the lookup runs in a transaction that sets that context first.
+ */
+export async function lookupPatientAllergies(patientId, organizationId = null) {
+  return sequelize.transaction(async (transaction) => {
+    await setRlsContext(transaction, { orgId: organizationId || 0, userId: patientId, isPlatformAdmin: false });
+    return sequelize.query(
+      `SELECT allergen_name, allergen_type, reaction_type, severity, verified
+         FROM patient_allergies WHERE user_id = :patientId ORDER BY severity, allergen_name`,
+      { replacements: { patientId }, type: QueryTypes.SELECT, transaction }
+    );
+  });
+}
+
+const hasOverrideReason = (r) => typeof r === 'string' && r.trim().length >= 5;
+
+async function evaluateAllergy({ order, drugName, overrideReason, allergyAcknowledged, blocks }) {
+  const info = { status: 'unchecked', note: ALLERGY_MATCH_NOTE };
+  let allergies;
+  try {
+    allergies = await lookupPatientAllergies(order.patient_id ?? order.adm_patient_id, order.organization_id);
+  } catch (e) {
+    console.error('[eMAR] allergy lookup failed:', e.message);
+    info.status = 'lookup_failed';
+    if (hasOverrideReason(overrideReason)) info.overridden = true;
+    else blocks.push('Allergy status could not be checked, so this administration is blocked. A supervising nurse may record an overrideReason to proceed.');
+    return info;
+  }
+
+  if (allergies.length === 0) {
+    // No recorded status is unknown, not "no allergies" — the chart may simply never have been asked.
+    info.status = 'unknown';
+    info.acknowledged = Boolean(allergyAcknowledged);
+    if (allergyUnknownPolicy() === 'require_ack' && !allergyAcknowledged) {
+      blocks.push('No allergy status is recorded for this patient. Ask the patient or check the chart, then set allergyAcknowledged to proceed.');
+    }
+    return info;
+  }
+
+  const drug = String(drugName || '').toLowerCase();
+  const matches = allergies.filter((a) => {
+    const name = String(a.allergen_name || '').trim().toLowerCase();
+    return name && !NON_DRUG_ALLERGEN_TYPES.has(a.allergen_type) && drug.includes(name);
+  });
+  if (matches.length === 0) { info.status = 'checked_no_match'; return info; }
+
+  info.status = 'matched';
+  info.matches = matches.map((a) => a.allergen_name);
+  if (hasOverrideReason(overrideReason)) {
+    info.overridden = true;
+  } else {
+    for (const a of matches) {
+      blocks.push(`Allergy alert: patient has documented allergy to '${a.allergen_name}' (${a.reaction_type || 'unknown reaction'}${a.severity && a.severity !== 'UNKNOWN' ? `, ${String(a.severity).toLowerCase()}` : ''}). Provide overrideReason to bypass.`);
+    }
+  }
+  return info;
+}
+
 /**
  * B3: Pre-flight administration validation.
  * Returns { blocked: false } or throws with a human-readable block reason.
@@ -142,9 +213,11 @@ export async function validateAdministration({
   routeUsed,
   scheduledTime,
   cosignBy = null,
-  overrideReason = null
+  overrideReason = null,
+  allergyAcknowledged = false
 }) {
   const blocks = [];
+  let allergy = null;
 
   // Right 1 & 2: active order for this admission
   const [order] = await sequelize.query(
@@ -177,19 +250,8 @@ export async function validateAdministration({
       }
     }
 
-    // Right 6 (allergy): check patient allergies against drug name
-    const allergies = await sequelize.query(
-      `SELECT allergen, reaction_type FROM patient_allergies
-       WHERE patient_id = :patientId AND active = TRUE`,
-      { replacements: { patientId: order.patient_id }, type: QueryTypes.SELECT }
-    ).catch(() => []);
-    for (const allergy of allergies) {
-      if (order.drug_name?.toLowerCase().includes(allergy.allergen?.toLowerCase())) {
-        if (!overrideReason) {
-          blocks.push(`Allergy alert: patient has documented allergy to '${allergy.allergen}' (${allergy.reaction_type || 'unknown reaction'}). Provide overrideReason to bypass.`);
-        }
-      }
-    }
+    // Right 6 (allergy): fail closed. A lookup failure blocks; an empty allergy record is 'unknown', not 'none'.
+    allergy = await evaluateAllergy({ order, drugName: order.drug_name, overrideReason, allergyAcknowledged, blocks });
 
     // High-alert: dual signoff required
     if (isHighAlert(order.drug_name) && !cosignBy) {
@@ -198,9 +260,9 @@ export async function validateAdministration({
   }
 
   if (blocks.length > 0) {
-    return { blocked: true, reasons: blocks };
+    return { blocked: true, reasons: blocks, allergy };
   }
-  return { blocked: false, highAlert: order ? isHighAlert(order.drug_name) : false };
+  return { blocked: false, highAlert: order ? isHighAlert(order.drug_name) : false, allergy };
 }
 
 export async function recordAdministration({
@@ -218,11 +280,12 @@ export async function recordAdministration({
   nurseNotes,
   barcodeVerified = false,
   cosignBy = null,          // B3: high-alert dual signoff
-  overrideReason = null     // B3: allergy override reason
+  overrideReason = null,    // B3: allergy override reason
+  allergyAcknowledged = false // WP-0.8: nurse acknowledges that no allergy status is recorded
 }) {
   // B3: Run safety validation before any DB write
   const validation = await validateAdministration({
-    orderId, admissionId, patientId, routeUsed, scheduledTime, cosignBy, overrideReason
+    orderId, admissionId, patientId, routeUsed, scheduledTime, cosignBy, overrideReason, allergyAcknowledged
   });
 
   if (validation.blocked) {
@@ -234,7 +297,7 @@ export async function recordAdministration({
         replacements: {
           orderId, admId: admissionId, by: administeredBy,
           reason: validation.reasons.join(' | '),
-          data: JSON.stringify({ routeUsed, scheduledTime, doseGiven, outcome })
+          data: JSON.stringify({ routeUsed, scheduledTime, doseGiven, outcome, allergy: validation.allergy || null })
         },
         type: QueryTypes.INSERT
       }
@@ -252,7 +315,7 @@ export async function recordAdministration({
   );
 
   const cosignAt = cosignBy ? new Date() : null;
-  const validationResult = JSON.stringify({ checked: true, highAlert: validation.highAlert, overrideReason: overrideReason || null });
+  const validationResult = JSON.stringify({ checked: true, highAlert: validation.highAlert, overrideReason: overrideReason || null, allergy: validation.allergy || null });
 
   if (existing) {
     await sequelize.query(

@@ -1,0 +1,24 @@
+# gitleaks configuration (WP-0.6). Extends the default rule set.
+# The repository history already contains committed secrets (tracked separately as WP-0.1: rotate, then purge),
+# so CI scans only the commits a pull request adds — see .github/workflows/ci.yml — and this file only allow-lists
+# obviously synthetic test values so the gate does not cry wolf.
+title = "mediczy gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic values used only by local test harnesses"
+regexes = [
+  '''smoke-test-secret''',
+  '''smoke-test-refresh''',
+  '''whsec_verify_only''',
+  '''keysec_verify_only''',
+  '''sgw_[0-9a-f]{64}''',        # gateway keys generated inside tests are random per run and never committed
+]
+paths = [
+  '''docs/.*''',
+  '''.*\.example\.(json|env|yml|yaml)$''',
+  '''edge/surveillance-agent/config\.example\.json''',
+  '''client/dist.*''',
+]

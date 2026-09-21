@@ -444,18 +444,52 @@ router.patch('/ap/invoices/:id/approve', authScm, async (req, res) => {
   res.json({ success: true, data: rows[0] });
 });
 
+// Vendor payment: one transaction, invoice row locked, amount bounded by what is still outstanding,
+// idempotent on (invoice, paymentRef) so a retry never pays twice, and partial payments keep the invoice open.
 router.post('/ap/invoices/:id/pay', authScm, async (req, res) => {
+  const invoiceId = /^\d{1,9}$/.test(String(req.params.id)) ? Number(req.params.id) : null;
+  if (!invoiceId) return res.status(400).json({ success: false, message: 'Invalid invoice id' });
+  const { amount, paymentMethod, paymentRef } = req.body || {};
   const db = await ensureTables();
-  const { amount, paymentMethod, paymentRef } = req.body;
-  const { rows: invoices } = await db.query('SELECT * FROM scm_ap_invoices WHERE id = $1', [req.params.id]);
-  if (!invoices[0]) return res.status(404).json({ success: false, message: 'Invoice not found' });
-  const payAmount = amount ?? invoices[0].amount;
-  const { rows } = await db.query(
-    'INSERT INTO scm_ap_payments (invoice_id, amount, payment_method, payment_ref) VALUES ($1,$2,$3,$4) RETURNING *',
-    [req.params.id, payAmount, paymentMethod || 'neft', paymentRef || null]
-  );
-  await db.query(`UPDATE scm_ap_invoices SET status = 'paid' WHERE id = $1`, [req.params.id]);
-  res.status(201).json({ success: true, data: rows[0] });
+  const client = await db.connect();
+  const round2 = (n) => Math.round(Number(n) * 100) / 100;
+  try {
+    await client.query('BEGIN');
+    const { rows: invoices } = await client.query('SELECT * FROM scm_ap_invoices WHERE id = $1 FOR UPDATE', [invoiceId]);
+    const invoice = invoices[0];
+    if (!invoice) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Invoice not found' }); }
+
+    const ref = paymentRef ? String(paymentRef).slice(0, 120) : null;
+    if (ref) {
+      const { rows: dup } = await client.query('SELECT * FROM scm_ap_payments WHERE invoice_id = $1 AND payment_ref = $2', [invoiceId, ref]);
+      if (dup[0]) { await client.query('ROLLBACK'); return res.status(200).json({ success: true, duplicate: true, data: dup[0] }); }
+    }
+    if (!['approved', 'matched', 'partial'].includes(invoice.status)) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, message: `Invoice is ${invoice.status}; it must be approved (or matched) before it can be paid` });
+    }
+    const { rows: paidRows } = await client.query(`SELECT COALESCE(SUM(amount), 0) AS s FROM scm_ap_payments WHERE invoice_id = $1 AND COALESCE(status, 'paid') NOT IN ('failed', 'reversed')`, [invoiceId]);
+    const outstanding = round2(Number(invoice.amount) - Number(paidRows[0].s));
+    const payAmount = amount === undefined || amount === null || amount === '' ? outstanding : round2(Number(amount));
+    if (!Number.isFinite(payAmount) || payAmount <= 0) { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: 'Payment amount must be greater than zero' }); }
+    if (payAmount > outstanding + 0.005) { await client.query('ROLLBACK'); return res.status(400).json({ success: false, message: `Payment exceeds the outstanding balance (${outstanding.toFixed(2)})` }); }
+
+    const { rows } = await client.query(
+      'INSERT INTO scm_ap_payments (invoice_id, amount, payment_method, payment_ref) VALUES ($1,$2,$3,$4) RETURNING *',
+      [invoiceId, payAmount, paymentMethod || 'neft', ref]
+    );
+    const settled = round2(Number(paidRows[0].s) + payAmount) >= round2(Number(invoice.amount)) - 0.005;
+    await client.query('UPDATE scm_ap_invoices SET status = $2 WHERE id = $1', [invoiceId, settled ? 'paid' : 'partial']);
+    await client.query('COMMIT');
+    res.status(201).json({ success: true, data: rows[0], invoiceStatus: settled ? 'paid' : 'partial', outstanding: round2(outstanding - payAmount) });
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.code === '23505') return res.status(200).json({ success: true, duplicate: true });
+    console.error('[SCM] AP payment failed:', e.message);
+    res.status(500).json({ success: false, message: 'Payment could not be recorded' });
+  } finally {
+    client.release();
+  }
 });
 
 // ─── Cost centers ────────────────────────────────────────────────────────────

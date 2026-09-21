@@ -1,0 +1,108 @@
+name: CI
+
+# Pull-request gate (WP-0.6). Runs on every pull request and on pushes to main. Nothing here touches production.
+# NOTE: this pipeline was written and its individual steps were verified locally, but it has not yet run on GitHub.
+# Expect to tune the first run (missing env for a test, runner differences), then make the jobs required checks in
+# branch protection.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server tests (no new failures)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-only-secret
+      JWT_REFRESH_SECRET: ci-only-refresh-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      # The suite has 5 known failures (server/scripts/ci/known-failures.json). The gate fails on any NEW failure,
+      # and lists baseline entries that now pass so they can be removed.
+      - name: Run Jest
+        run: npm test -- --json --outputFile=jest-results.json --forceExit || true
+      - name: Gate on new failures
+        run: node scripts/ci/jest-baseline-gate.mjs jest-results.json
+
+  client:
+    name: Client build and tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      # Advisory until the existing findings are cleaned up: tsc currently reports syntax errors in two unrelated
+      # files (ChatDashboard.tsx, VideoChatdoctor.tsx) and eslint has a backlog. Flip these to required once green.
+      - name: Type-check (advisory)
+        continue-on-error: true
+        run: npx tsc --noEmit -p tsconfig.app.json
+      - name: Lint (advisory)
+        continue-on-error: true
+        run: npm run lint
+
+  secrets:
+    name: Secret scan (commits in this pull request)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # On pull requests this scans only the commits the PR adds. The already-committed history is a separate,
+      # owner-driven clean-up (rotate the secrets, then purge) and would fail every build if scanned here.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  module-checks:
+    name: Local-database checks (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      JWT_SECRET: smoke-test-secret
+      JWT_REFRESH_SECRET: smoke-test-refresh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+        working-directory: server
+      - name: Start a local PostgreSQL (unix socket only, as the safety guards in the verify scripts require)
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres createdb mediczy_ai
+      - name: Backup integrity tests
+        run: |
+          sudo -u postgres bash scripts/backup/test-backup-integrity.sh
+          bash scripts/backup/test-check-offsite-freshness.sh
+      # The verify-*.mjs scripts need the application schema (an empty database is not enough). Enable them here once a
+      # schema bootstrap exists for CI; they are run locally today as described in each script's header.

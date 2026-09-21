@@ -34,9 +34,10 @@ KAFKA_OK=0
 PROMETHEUS_OK=0
 GRAFANA_OK=0
 
-# Backend health: port 8000 responding
-if ss -tln | grep -q ":8000"; then
-  if curl -s -m 5 http://localhost:8000/health > /dev/null 2>&1; then
+# Backend health: the API listens on 8888 (this check used to probe 8000, so it always reported the API down
+# and "recovered" it by restarting it). /healthz does a real database round trip and returns only ok/unavailable.
+if ss -tln | grep -q ":8888"; then
+  if curl -sf -m 5 http://localhost:8888/healthz | grep -q '"ok"'; then
     BACKEND_OK=1
   fi
 fi
@@ -91,6 +92,23 @@ if systemctl is-active --quiet grafana-server; then
   if curl -s -m 3 http://localhost:3000/api/health | grep -q 'ok'; then
     GRAFANA_OK=1
   fi
+fi
+
+# Backup status (written by scripts/database/backup-database.sh and scripts/backup/check-offsite-freshness.sh).
+# Alert-only: a bad backup is not something restarting a service can fix, so it never triggers auto-recovery.
+BACKUP_STATUS_FILE="${BACKUP_STATUS_FILE:-/home/ubuntu/Mediczy/logs/backup-status.json}"
+BACKUP_MAX_AGE_HOURS="${BACKUP_MAX_AGE_HOURS:-26}"
+if [[ -f "$BACKUP_STATUS_FILE" ]]; then
+  b_status=$(sed -n 's/.*"status":"\([a-z]*\)".*/\1/p' "$BACKUP_STATUS_FILE")
+  b_epoch=$(sed -n 's/.*"epoch":\([0-9]*\).*/\1/p' "$BACKUP_STATUS_FILE")
+  b_age_h=$(( ( $(date +%s) - ${b_epoch:-0} ) / 3600 ))
+  if [[ "$b_status" != "ok" ]]; then
+    send_alert "Backup problem on $(hostname): $(sed -n 's/.*"detail":"\([^"]*\)".*/\1/p' "$BACKUP_STATUS_FILE")"
+  elif [[ $b_age_h -gt $BACKUP_MAX_AGE_HOURS ]]; then
+    send_alert "Backup status on $(hostname) is ${b_age_h}h old (max ${BACKUP_MAX_AGE_HOURS}h): the nightly backup did not report"
+  fi
+else
+  send_alert "No backup status file on $(hostname) ($BACKUP_STATUS_FILE): the backup has never reported"
 fi
 
 if [[ $BACKEND_OK -eq 1 && $FRONTEND_OK -eq 1 && $CLOUDFLARE_OK -eq 1 && \

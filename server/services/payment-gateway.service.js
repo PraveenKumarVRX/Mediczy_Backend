@@ -68,6 +68,14 @@ if (resolvedRazorpayKeyId && resolvedRazorpaySecret) {
 /**
  * Payment Gateway Service
  */
+// Constant-time comparison of two hex signatures (unequal lengths never match).
+function safeEqualHex(expected, provided) {
+  if (typeof expected !== 'string' || typeof provided !== 'string') return false;
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(provided, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 class PaymentGatewayService {
   
   // ============================================================================
@@ -153,7 +161,7 @@ class PaymentGatewayService {
       .update(`${orderId}|${paymentId}`)
       .digest('hex');
 
-    return generatedSignature === signature;
+    return safeEqualHex(generatedSignature, signature);
   }
 
   /**
@@ -224,17 +232,25 @@ class PaymentGatewayService {
   /**
    * Verify Razorpay webhook signature
    */
-  verifyRazorpayWebhook(body, signature) {
+  /**
+   * Verify a Razorpay webhook. `rawBody` MUST be the exact bytes/string Razorpay sent (captured
+   * before JSON parsing) — re-serialising a parsed body never reproduces the signed text.
+   * Returns false for anything not verifiable (missing body or signature, wrong length, mismatch);
+   * throws only when the webhook secret is not configured so the caller can answer 503.
+   */
+  verifyRazorpayWebhook(rawBody, signature) {
     if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
       throw new Error('Razorpay webhook secret not configured');
     }
+    if ((typeof rawBody !== 'string' && !Buffer.isBuffer(rawBody)) || rawBody.length === 0) return false;
+    if (typeof signature !== 'string' || !signature) return false;
 
-    const expectedSignature = crypto
+    const expected = crypto
       .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-      .update(JSON.stringify(body))
+      .update(rawBody)
       .digest('hex');
 
-    return expectedSignature === signature;
+    return safeEqualHex(expected, signature);
   }
 
   // ============================================================================

@@ -172,7 +172,9 @@ else
     try_rds_secrets_manager && DUMP_OK=1
     [ "$DUMP_OK" -eq 1 ] || try_env_master && DUMP_OK=1
     [ "$DUMP_OK" -eq 1 ] || try_root_backup_env && DUMP_OK=1
-    if [ "$DUMP_OK" -eq 0 ]; then
+    if [ "$DUMP_OK" -eq 0 ] && [ "${BACKUP_ALLOW_APP_USER:-false}" = "true" ]; then
+      # Off by default (WP-0.7): the application user cannot bypass row-level security, so this dump would silently
+      # omit patient tables. The verified local nightly dump is used instead.
       log "WARN: master pg_dump unavailable — mediczy_helper cannot bypass RLS on PHI tables"
       if run_pg_dump "${POSTGRES_USER:-mediczy_helper}" "$POSTGRES_PASSWORD" "${PG_DUMP_EXCLUDE_SCHEMAS:-n8n}"; then
         DUMP_OK=1

@@ -5,6 +5,7 @@
 RDS_INSTANCE_ID="${RDS_INSTANCE_ID:-mediczy-prod}"
 AWS_REGION="${AWS_REGION:-ap-south-1}"
 PG_DUMP_EXCLUDE_ARGS=()
+PG_DUMP_USED_USER=""; PG_DUMP_USED_PASS=""; PG_DUMP_USED_EXCLUDES=""
 
 pg_dump_log() {
   echo "[pg-dump $(date +%H:%M:%S)] $*"
@@ -77,6 +78,8 @@ pg_dump_prod_to_file() {
     set -o pipefail
     if [ "$rc" -eq 0 ] && [ -s "$outfile" ]; then
       pg_dump_log "OK (${user})"
+      # Remembered so the caller can verify the dump was made by a role that can read every row (WP-0.7).
+      PG_DUMP_USED_USER="$user"; PG_DUMP_USED_PASS="$pass"; PG_DUMP_USED_EXCLUDES="$excludes"
       rm -f "$errlog"
       return 0
     fi
@@ -137,7 +140,12 @@ pg_dump_prod_to_file() {
     fi
   fi
 
-  # 4. App user — exclude n8n; may still fail on FORCE RLS tables without master
+  # 4. App user — cannot bypass FORCE RLS, so its dump silently omits protected (patient) rows and would be
+  #    rejected by the integrity check anyway. Only used when explicitly allowed (e.g. a non-RLS database).
+  if [ "${BACKUP_ALLOW_APP_USER:-false}" != "true" ]; then
+    pg_dump_log "No RDS master credentials worked; not falling back to the application user (it cannot read RLS-protected rows). Set BACKUP_ALLOW_APP_USER=true to override."
+    return 1
+  fi
   _try_dump "${POSTGRES_USER:-mediczy_helper}" "${POSTGRES_PASSWORD}" "${PG_DUMP_EXCLUDE_SCHEMAS:-n8n}" && return 0
 
   return 1

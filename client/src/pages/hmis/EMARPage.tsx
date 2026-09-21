@@ -54,7 +54,9 @@ export default function EMARPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  const administer = async (item: EMARItem) => {
+  // `extra` carries the nurse's allergy acknowledgement / override after the server has blocked the dose.
+  // (`window` is a state variable in this component, so the browser dialogs come from globalThis.)
+  const administer = async (item: EMARItem, extra: { allergyAcknowledged?: boolean; overrideReason?: string } = {}): Promise<void> => {
     setAdministering(item.orderId);
     try {
       await api.post('/v1/emar/administer', {
@@ -62,10 +64,28 @@ export default function EMARPage() {
         admissionId: item.admissionId,
         patientId: item.patientId,
         routeUsed: item.route,
+        ...extra,
       });
       setItems(prev => prev.map(i => i.orderId === item.orderId ? { ...i, status: 'administered' } : i));
+      setError(null);
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? 'Administration failed');
+      const reasons: string[] = e?.response?.data?.reasons ?? [];
+      const noStatus = reasons.filter(r => r.startsWith('No allergy status is recorded'));
+      const allergyBlocks = reasons.filter(r => r.startsWith('Allergy alert') || r.startsWith('Allergy status could not'));
+      const rest = reasons.filter(r => !noStatus.includes(r) && !allergyBlocks.includes(r));
+      if (e?.response?.data?.blocked && rest.length === 0) {
+        if (allergyBlocks.length === 0 && noStatus.length > 0 && !extra.allergyAcknowledged) {
+          if (globalThis.confirm(`${item.drugName}\n\nNo allergy status is recorded for this patient. Have you asked the patient or checked the chart?\n\nOK = allergy status checked, continue.`)) {
+            return administer(item, { ...extra, allergyAcknowledged: true });
+          }
+        } else if (allergyBlocks.length > 0 && !extra.overrideReason) {
+          const reason = globalThis.prompt(`${allergyBlocks.join('\n')}\n\nEnter the reason to override (a supervising nurse should agree):`);
+          if (reason && reason.trim().length >= 5) {
+            return administer(item, { ...extra, overrideReason: reason.trim(), ...(noStatus.length > 0 ? { allergyAcknowledged: true } : {}) });
+          }
+        }
+      }
+      setError(reasons.length ? reasons.join(' | ') : (e?.response?.data?.message ?? 'Administration failed'));
     } finally {
       setAdministering(null);
     }

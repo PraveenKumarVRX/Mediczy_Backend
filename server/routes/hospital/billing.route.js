@@ -4,6 +4,8 @@
  */
 
 import express from 'express';
+import crypto from 'crypto';
+import pool from '../../db/pgPool.js';
 import { verifyHospitalToken } from '../../middleware/hospitalAuth.middleware.js';
 import { requireBillingRead, requireBillingWrite, requireBillingSupervisor } from '../../middleware/billingAuth.middleware.js';
 import hospitalBilling from '../../services/hospital-billing.service.js';
@@ -19,34 +21,64 @@ const ctxFrom = (req) => ({
   actorName: req.hospitalUser?.name || req.hospitalUser?.email || req.userRole,
 });
 
-// Razorpay webhook — no hospital JWT; mounted before auth middleware
+// Razorpay webhook — no hospital JWT; mounted before auth middleware and whitelisted in ringFencing.
+// Signature is checked over the RAW request text (captured in app.js before JSON parsing), fails closed,
+// and each event is applied at most once: the event id is claimed first (payment_gateway_events),
+// and the payment itself is protected by a unique (gateway, gateway_payment_id).
 router.post('/pgi/webhook', async (req, res) => {
+  let claimed = null;
   try {
-    const signature = req.headers['x-razorpay-signature'];
-    const body = req.rawBody || JSON.stringify(req.body);
-    if (!paymentGateway.verifyRazorpayWebhook(body, signature)) {
-      return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+    const raw = req.rawBody;
+    if (typeof raw !== 'string' || !raw) {
+      return res.status(400).json({ success: false, message: 'Webhook body was not captured' });
     }
-    const event = JSON.parse(body);
-    if (event.event === 'payment.captured') {
-      const payment = event.payload?.payment?.entity;
-      const orderId = payment?.order_id;
-      const notes = payment?.notes || {};
-      const hospitalId = Number(notes.hospitalId);
-      const invoiceId = Number(notes.invoiceId);
-      if (hospitalId && invoiceId && orderId) {
-        await hospitalBilling.confirmPgiPayment(hospitalId, {
-          invoiceId,
-          razorpayOrderId: orderId,
-          razorpayPaymentId: payment.id,
-          signature: signature || 'webhook',
-        });
-      }
+    let signatureOk;
+    try {
+      signatureOk = paymentGateway.verifyRazorpayWebhook(raw, req.headers['x-razorpay-signature']);
+    } catch (e) {
+      console.error('[PGI webhook] not configured:', e.message);
+      return res.status(503).json({ success: false, message: 'Webhook is not configured' });
     }
-    res.json({ success: true });
+    if (!signatureOk) return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+
+    let event;
+    try { event = JSON.parse(raw); } catch { return res.status(400).json({ success: false, message: 'Invalid JSON' }); }
+    if (event.event !== 'payment.captured') return res.json({ success: true, ignored: true });
+
+    const payment = event.payload?.payment?.entity;
+    const notes = payment?.notes || {};
+    const hospitalId = Number(notes.hospitalId);
+    const invoiceId = Number(notes.invoiceId);
+    if (!payment?.id || !payment.order_id || !Number.isInteger(hospitalId) || !Number.isInteger(invoiceId) || hospitalId <= 0 || invoiceId <= 0) {
+      return res.json({ success: true, ignored: true }); // not one of our invoice payments
+    }
+
+    // Claim the event id first; a redelivery of the same event stops here.
+    const eventId = String(req.headers['x-razorpay-event-id'] || crypto.createHash('sha256').update(raw).digest('hex')).slice(0, 200);
+    const { rows } = await pool.query(
+      `INSERT INTO payment_gateway_events (gateway, event_id, event_type, hospital_id) VALUES ('razorpay', $1, $2, $3)
+       ON CONFLICT (gateway, event_id) DO NOTHING RETURNING id`,
+      [eventId, event.event, hospitalId]
+    );
+    if (!rows[0]) return res.json({ success: true, duplicate: true });
+    claimed = rows[0].id;
+
+    const result = await hospitalBilling.applyVerifiedPgiCapture(hospitalId, {
+      invoiceId, orderId: payment.order_id, paymentId: payment.id, amountPaise: payment.amount,
+    });
+    await pool.query(`UPDATE payment_gateway_events SET processed_at = NOW(), outcome = $2 WHERE id = $1`, [claimed, result.duplicate ? 'duplicate' : result.unapplied ? 'unapplied' : 'applied']);
+    res.json({ success: true, duplicate: Boolean(result.duplicate) });
   } catch (e) {
     console.error('[PGI webhook]', e.message);
-    res.status(500).json({ success: false, message: e.message });
+    // An event that can never apply (unknown order, another invoice's payment id, bad amount) is acknowledged
+    // and kept as 'rejected' so the gateway stops retrying it; anything else is a real failure.
+    if (claimed && /not found for PGI order|different invoice|amount is not valid|ids are required/i.test(e.message)) {
+      await pool.query(`UPDATE payment_gateway_events SET processed_at = NOW(), outcome = 'rejected' WHERE id = $1`, [claimed]).catch(() => {});
+      return res.json({ success: true, rejected: true });
+    }
+    // Release the claim so the gateway's retry can process this event (5xx -> retry).
+    if (claimed) await pool.query(`DELETE FROM payment_gateway_events WHERE id = $1`, [claimed]).catch(() => {});
+    res.status(500).json({ success: false, message: 'Webhook processing failed' });
   }
 });
 
