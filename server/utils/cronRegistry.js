@@ -76,6 +76,7 @@ export const TASK_DEFINITIONS = [
   { key: 'scm_par_reorder',       name: 'SCM PAR Auto-Reorder Scan',            schedule: 'Every 6 hours',    category: 'scm',        scheduleDesc: '45 */6 * * *' },
   // Parking
   { key: 'parking_overstay',       name: 'Parking Overstay Scan',                schedule: 'Every 10 min',     category: 'parking',    scheduleDesc: '*/10 * * * *' },
+  { key: 'surveillance_purge',     name: 'Surveillance Frame-Log Purge',         schedule: 'Daily 3:20 AM',    category: 'security',   scheduleDesc: '20 3 * * *' },
   // Security
   { key: 'token_purge',           name: 'Expired Refresh Token Purge',           schedule: 'Daily 3:30 AM',    category: 'security',   scheduleDesc: '30 3 * * *' },
   // Infrastructure

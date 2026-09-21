@@ -15,17 +15,19 @@ import {
   Wifi, Bluetooth, Navigation, Signal, Cpu, Zap,
   Activity, CheckCircle2, Clock, AlertOctagon, TrendingUp, BookOpen,
   FlaskConical, ShieldEllipsis, Eye, HardDrive, LocateFixed, RefreshCw,
-  Fingerprint, Badge as BadgeIcon, BookMarked, ListChecks, X, ParkingSquare,
+  Fingerprint, Badge as BadgeIcon, BookMarked, ListChecks, X, ParkingSquare, ScanEye,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useSecurityPortalData } from './useSecurityPortalData';
 import ParkingContent from '@/components/parking/ParkingContent';
+import SurveillanceContent from '@/components/surveillance/SurveillanceContent';
 
 export const securityNavSections: DeptNavSection[] = [
   { title: 'Overview', items: [{ icon: Lock, label: 'Dashboard', href: '/security/dashboard' }] },
   { title: 'Surveillance', items: [
     { icon: Camera, label: 'CCTV Monitor', href: '/security/cctv' },
     { icon: MapPin, label: 'Access Points', href: '/security/access-points' },
+    { icon: ScanEye, label: 'Camera Analytics', href: '/security/camera-analytics' },
     { icon: KeyRound, label: 'Access Logs', href: '/security/access-logs' },
     { icon: ParkingSquare, label: 'Parking', href: '/security/parking' },
   ]},
@@ -1294,6 +1296,21 @@ export const SecurityImplementationPage = () => {
     </HospDeptLayout>
   );
 };
+
+export const SecurityCameraAnalyticsPage = () => (
+  <HospDeptLayout
+    deptKey="security"
+    deptName="Security"
+    badgeLabel="Security"
+    loginPath="/security/login"
+    DeptIcon={Lock}
+    navSections={securityNavSections}
+    title="Camera Analytics"
+    subtitle="Vision analytics per camera, connected to your CCTV DVR/NVR through an on-premises gateway"
+  >
+    <SurveillanceContent />
+  </HospDeptLayout>
+);
 
 export const SecurityParkingPage = () => (
   <HospDeptLayout

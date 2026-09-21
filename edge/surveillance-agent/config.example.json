@@ -1,0 +1,12 @@
+{
+  "cloudUrl": "https://app.mediqzy.com",
+  "gatewayKey": "sgw_paste-the-key-shown-once-in-the-portal",
+  "maxWidth": 1280,
+  "heartbeatSeconds": 60,
+  "recorders": {
+    "Main DVR": { "vendor": "hikvision", "scheme": "http", "host": "192.168.1.10", "port": 80, "username": "viewer", "password": "change-me" },
+    "Parking NVR": { "vendor": "dahua", "scheme": "http", "host": "192.168.1.20", "port": 80, "username": "viewer", "password": "change-me" },
+    "Other brand": { "vendor": "onvif_generic", "host": "192.168.1.30", "rtspUrlTemplate": "rtsp://viewer:change-me@192.168.1.30:554/stream{channel}" }
+  },
+  "alarmListener": { "port": 8099, "host": "0.0.0.0", "token": "long-random-string" }
+}

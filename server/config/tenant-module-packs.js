@@ -104,6 +104,7 @@ export const TENANT_MODULE_PACKS = {
       mod('dms', 'Document Management', '/hospital/dms', { enabled: false, kind: 'ops' }),
       mod('housekeeping', 'Housekeeping', '/hospital/housekeeping', { enabled: false, kind: 'ops' }),
       mod('parking', 'Parking (Security)', '/security/parking', { enabled: false, kind: 'ops' }),
+      mod('surveillance', 'Camera Analytics (Security)', '/security/camera-analytics', { enabled: false, kind: 'ops' }),
       mod('asset_tracking', 'Asset Tracking (RFID/IoT)', '/hospital/asset-tracking', { enabled: false, kind: 'ops' }),
       mod('patient_portal', 'Patient Engagement Portal', '/patient-portal', { enabled: false, kind: 'ops' }),
     ],
