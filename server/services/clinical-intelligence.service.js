@@ -23,6 +23,7 @@ import {
   getLatestVitals,
   acknowledgeAlert,
 } from './vitals-ews.service.js';
+import { computeNews2 } from './news2.service.js';
 import drugInteractionChecker from './ai-drug-interaction.service.js';
 
 const DISCLAIMER =
@@ -61,73 +62,77 @@ const ensureClinicalIntelligenceTables = async () => {
   `);
 };
 
+// WP-1.8: this was the third of three disagreeing NEWS2 implementations, and shared their worst bug — every
+// missing vital defaulted to a value that scored 0 (Number(undefined ?? 0) || null still treats a real 0 the
+// same as "not recorded"; consciousness defaulted to 'alert' outright), so an incomplete vitals set looked
+// exactly like a normal one. numOrNull below keeps a real 0 as 0, distinct from missing; consciousness only
+// defaults to null (missing), never to alert. Scoring itself now delegates to the single shared scorer in
+// news2.service.js instead of this file's own (also independently wrong) band tables.
+const numOrNull = (v) => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Number(v);
+  return Number.isNaN(n) ? null : n;
+};
+
 const normalizeVitals = (vitals = {}) => ({
-  systolic: Number(vitals.systolic ?? vitals.bpSystolic ?? vitals.bp?.split?.('/')?.[0] ?? 0) || null,
-  diastolic: Number(vitals.diastolic ?? vitals.bpDiastolic ?? vitals.bp?.split?.('/')?.[1] ?? 0) || null,
-  temperature: Number(vitals.temperature ?? 0) || null,
-  heartRate: Number(vitals.heartRate ?? vitals.hr ?? 0) || null,
-  respiratoryRate: Number(vitals.respiratoryRate ?? vitals.rr ?? 0) || null,
-  oxygenSaturation: Number(vitals.oxygenSaturation ?? vitals.spo2 ?? 0) || null,
-  consciousness: vitals.consciousness || 'alert',
+  systolic: numOrNull(vitals.systolic ?? vitals.bpSystolic ?? vitals.bp?.split?.('/')?.[0]),
+  diastolic: numOrNull(vitals.diastolic ?? vitals.bpDiastolic ?? vitals.bp?.split?.('/')?.[1]),
+  temperature: numOrNull(vitals.temperature),
+  heartRate: numOrNull(vitals.heartRate ?? vitals.hr),
+  respiratoryRate: numOrNull(vitals.respiratoryRate ?? vitals.rr),
+  oxygenSaturation: numOrNull(vitals.oxygenSaturation ?? vitals.spo2),
+  consciousness: vitals.consciousness ?? null,
 });
 
-const news2Band = (value, bands) => {
-  for (const band of bands) {
-    if (band.test(value)) return band.score;
-  }
-  return 0;
-};
+// This service's callers use plain-English consciousness words (or an AVPU/ACVPU letter already), not
+// necessarily the shared scorer's 'A'|'C'|'V'|'P'|'U'. 'alert' -> A; anything else supplied -> the closest
+// letter, defaulting to C (new confusion) for a free-text description the map doesn't recognise; nothing
+// supplied -> null (missing), never assumed alert.
+const CONSCIOUSNESS_WORD_TO_LETTER = { alert: 'A', confused: 'C', confusion: 'C', voice: 'V', pain: 'P', unresponsive: 'U', a: 'A', c: 'C', v: 'V', p: 'P', u: 'U' };
+function consciousnessLetter(value) {
+  if (value == null) return null;
+  const key = String(value).trim().toLowerCase();
+  if (key in CONSCIOUSNESS_WORD_TO_LETTER) return CONSCIOUSNESS_WORD_TO_LETTER[key];
+  return 'C'; // an unrecognised non-empty value still means "not documented as alert"
+}
 
 export const scoreDeterioration = (rawVitals = {}) => {
   const vitals = normalizeVitals(rawVitals);
+  const result = computeNews2({
+    respiratoryRate: vitals.respiratoryRate,
+    spo2: vitals.oxygenSaturation,
+    spo2Scale: 1,
+    onOxygen: false,
+    systolicBp: vitals.systolic,
+    pulse: vitals.heartRate,
+    consciousness: consciousnessLetter(vitals.consciousness),
+    temperature: vitals.temperature,
+  });
+
   const components = {
-    respiratoryRate: news2Band(vitals.respiratoryRate, [
-      { test: (v) => v !== null && v <= 8, score: 3 },
-      { test: (v) => v >= 9 && v <= 11, score: 1 },
-      { test: (v) => v >= 21 && v <= 24, score: 2 },
-      { test: (v) => v >= 25, score: 3 },
-    ]),
-    oxygenSaturation: news2Band(vitals.oxygenSaturation, [
-      { test: (v) => v !== null && v <= 91, score: 3 },
-      { test: (v) => v >= 92 && v <= 93, score: 2 },
-      { test: (v) => v >= 94 && v <= 95, score: 1 },
-    ]),
-    temperature: news2Band(vitals.temperature, [
-      { test: (v) => v !== null && v <= 35, score: 3 },
-      { test: (v) => v >= 35.1 && v <= 36, score: 1 },
-      { test: (v) => v >= 38.1 && v <= 39, score: 1 },
-      { test: (v) => v >= 39.1, score: 2 },
-    ]),
-    systolic: news2Band(vitals.systolic, [
-      { test: (v) => v !== null && v <= 90, score: 3 },
-      { test: (v) => v >= 91 && v <= 100, score: 2 },
-      { test: (v) => v >= 101 && v <= 110, score: 1 },
-      { test: (v) => v >= 220, score: 3 },
-    ]),
-    heartRate: news2Band(vitals.heartRate, [
-      { test: (v) => v !== null && v <= 40, score: 3 },
-      { test: (v) => v >= 41 && v <= 50, score: 1 },
-      { test: (v) => v >= 91 && v <= 110, score: 1 },
-      { test: (v) => v >= 111 && v <= 130, score: 2 },
-      { test: (v) => v >= 131, score: 3 },
-    ]),
-    consciousness: vitals.consciousness === 'alert' ? 0 : 3,
+    respiratoryRate: result.parameterScores.respiratoryRate ?? 0,
+    oxygenSaturation: result.parameterScores.spo2 ?? 0,
+    temperature: result.parameterScores.temperature ?? 0,
+    systolic: result.parameterScores.systolicBp ?? 0,
+    heartRate: result.parameterScores.pulse ?? 0,
+    consciousness: result.parameterScores.consciousness ?? 0,
   };
 
-  const news2 = Object.values(components).reduce((sum, score) => sum + score, 0);
   const qsofa = [
     vitals.respiratoryRate !== null && vitals.respiratoryRate >= 22,
     vitals.systolic !== null && vitals.systolic <= 100,
-    vitals.consciousness !== 'alert',
+    vitals.consciousness != null && consciousnessLetter(vitals.consciousness) !== 'A',
   ].filter(Boolean).length;
-  const singleExtreme = Object.values(components).some((score) => score === 3);
 
   return {
     vitals,
-    news2,
+    news2: result.score,
     qsofa,
-    singleExtreme,
-    alertRequired: news2 >= 5 || qsofa >= 2 || singleExtreme,
+    singleExtreme: result.singleRed,
+    alertRequired: result.score >= 5 || qsofa >= 2 || result.singleRed,
+    complete: result.complete,
+    missing: result.missing,
+    band: result.band,
     components,
   };
 };
