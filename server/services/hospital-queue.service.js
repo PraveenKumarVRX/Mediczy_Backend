@@ -39,12 +39,20 @@ export const DEFAULT_ZONE_BY_DEPT = {
   pharmacy: 'pharmacy-waiting',
   er: 'er-waiting',
 };
+// WP-1.8: extended to also understand a bare ESI level (1-5, e.g. from er_visits.esi_level) and the legacy
+// three-colour triage (red/yellow/green, e.g. from er_visits.triage_level before a level was assigned). A
+// colour is a lossy, lower-confidence hint — "red" can mean ESI 1 or 2 — so it scores a shade below the
+// colour's most urgent possible level, never above it; computePriorityScore below always prefers a real
+// numeric ESI level over a colour when a row has both.
 const ESI_PRIORITY = {
-  'ESI-1': 100, resuscitation: 100,
-  'ESI-2': 85, emergent: 85,
-  'ESI-3': 70, urgent: 70,
-  'ESI-4': 55, less_urgent: 55,
-  'ESI-5': 40, non_urgent: 40,
+  'ESI-1': 100, resuscitation: 100, 1: 100,
+  'ESI-2': 85, emergent: 85, 2: 85,
+  'ESI-3': 70, urgent: 70, 3: 70,
+  'ESI-4': 55, less_urgent: 55, 4: 55,
+  'ESI-5': 40, non_urgent: 40, 5: 40,
+  red: 90,    // ESI 1 or 2, unconfirmed — ordered just below a confirmed ESI-2
+  yellow: 70, // ESI 3
+  green: 45,  // ESI 4 or 5, unconfirmed — just below a confirmed ESI-4
 };
 
 let _tablesReady = false;
@@ -82,8 +90,11 @@ function todayDateStr() {
 // question per the design doc; this is the backend hook only.
 const CORPORATE_FAST_TRACK_BONUS = 5;
 
-export function computePriorityScore({ triageLevel, queueType, priority, isCorporateFastTrack = false }) {
+export function computePriorityScore({ esiLevel, triageLevel, queueType, priority, isCorporateFastTrack = false }) {
   if (priority != null) return priority;
+  // A real ESI level (1-5, or the ESI-N / named-severity string) always wins over a colour on the same row —
+  // the colour is a lossy hint (WP-1.8: "red can be 1 or 2"), the level is the reviewed, authoritative call.
+  if (esiLevel != null && ESI_PRIORITY[esiLevel] != null) return ESI_PRIORITY[esiLevel];
   if (triageLevel && ESI_PRIORITY[triageLevel] != null) return ESI_PRIORITY[triageLevel];
   const base = (queueType === 'emergency' || queueType === 'urgent') ? 80
     : (queueType === 'scheduled') ? 60

@@ -515,6 +515,32 @@ router.post('/er-triage', async (req, res) => {
       },
     });
 
+    // WP-1.8: an AI-assigned ESI level from a kiosk is a provisional triage, not a reviewed one — it goes into
+    // er_visits (the same table the ER desk and queue screens read) marked triage_reviewed = false, so it is a
+    // queue-ordering hint only until a nurse confirms it via PUT /api/v1/er/triage/:id (which sets
+    // triage_reviewed = true, who, and when). Best-effort: losing this side record must not break the kiosk
+    // check-in the patient is waiting on, so a failure here is logged, not thrown.
+    let erVisitId = null;
+    try {
+      const erResult = await pool.query(
+        `INSERT INTO er_visits (
+           organization_id, patient_name, age, gender, phone, triage_level, esi_level,
+           triage_source, triage_time, triage_reviewed, triage_inputs, chief_complaint,
+           arrival_time, status, created_at, updated_at
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,'kiosk',NOW(),false,$8,$9,NOW(),'active',NOW(),NOW())
+         RETURNING id`,
+        [
+          req.organizationId, patientName || 'ER Walk-in', age != null ? parseInt(age, 10) : null, gender || null,
+          phone || null, triage.esiLevel <= 2 ? 'red' : triage.esiLevel === 3 ? 'yellow' : 'green', triage.esiLevel,
+          JSON.stringify({ symptoms: String(symptoms).slice(0, 1000), painScale, vitals: vitals || {}, category: triage.category, ambulanceNeeded: triage.ambulanceNeeded }),
+          String(symptoms).slice(0, 500),
+        ]
+      );
+      erVisitId = erResult.rows?.[0]?.id ?? null;
+    } catch (e) {
+      console.error('[kiosk] er_visits provisional record failed (queue check-in still succeeded):', e.message);
+    }
+
     let video = null;
     if (startVideo !== false) {
       const roomId = `er-triage-${entry.id}`;
@@ -532,7 +558,7 @@ router.post('/er-triage', async (req, res) => {
       video = { roomId, join };
     }
 
-    res.status(201).json({ success: true, triage, entry, video });
+    res.status(201).json({ success: true, triage, entry, video, erVisitId });
   } catch (e) {
     console.error('[kiosk] er-triage error:', e.message);
     res.status(500).json({ success: false, message: e.message });
