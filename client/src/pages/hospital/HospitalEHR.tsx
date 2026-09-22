@@ -20,6 +20,7 @@ import HospitalLayout from '@/components/hospital/HospitalLayout';
 import api from '@/utils/api';
 import { loadHospitalStore } from '@/utils/hospitalStorage';
 import { downloadReport } from '@/utils/reportActions';
+import { PrescriptionSafetyAlert, isSafetyBlockError, safetyItemsFromError, type SafetyItem } from '@/components/clinical/PrescriptionSafetyAlert';
 import {
   patientService,
   ehrService,
@@ -246,6 +247,9 @@ const HospitalEHR = () => {
   const [showLabTestDialog, setShowLabTestDialog] = useState(false);
   const [showImagingDialog, setShowImagingDialog] = useState(false);
   const [showPrescriptionDialog, setShowPrescriptionDialog] = useState(false);
+  const [prescriptionSafetyBlockers, setPrescriptionSafetyBlockers] = useState<SafetyItem[]>([]);
+  const [prescriptionSafetyWarnings, setPrescriptionSafetyWarnings] = useState<SafetyItem[]>([]);
+  const [prescriptionSaving, setPrescriptionSaving] = useState(false);
   const [showProcedureDialog, setShowProcedureDialog] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>(['vitals', 'encounters', 'medications']);
   const [patientReports, setPatientReports] = useState<PatientReport[]>([]);
@@ -581,6 +585,65 @@ const HospitalEHR = () => {
       saveHospitalStore('ehr-patients', next);
       return next;
     });
+  };
+
+  // POST /api/hospital/practice/prescriptions is a safety-gated issuing path (WP-1.2): in enforce mode it can
+  // 409 SAFETY_BLOCK on a documented allergy/interaction. This used to be a fire-and-forget call alongside an
+  // optimistic local chart update — a prescription now only appears in the chart once the server has actually
+  // accepted it, and a safety block surfaces the real alert with an override flow instead of a swallowed error.
+  const savePrescription = async (override?: { reason: string; acknowledgedCodes: string[] }) => {
+    if (!selectedPatient) return;
+    const med: Medication = {
+      name: prescriptionForm.medication || 'Medication',
+      dosage: prescriptionForm.dosage || '',
+      frequency: prescriptionForm.frequency,
+      duration: prescriptionForm.duration || '',
+      route: prescriptionForm.route,
+      instructions: prescriptionForm.instructions || undefined
+    };
+    setPrescriptionSaving(true);
+    try {
+      await prescriptionService.create({
+        patientId: selectedPatient.id,
+        medications: [med],
+        diagnosis: 'General',
+        notes: prescriptionForm.instructions || undefined,
+        ...(override ? { safetyOverride: override } : {}),
+      });
+
+      const rx: Prescription = {
+        id: `RX-${Date.now()}`,
+        prescribedDate: new Date().toISOString().split('T')[0],
+        prescribedBy: 'Dr. On Call',
+        diagnosis: 'General',
+        medications: [med],
+        instructions: prescriptionForm.instructions || '',
+        validity: '30 days',
+        status: 'Active'
+      };
+      updateSelectedPatient((patient) => ({
+        ...patient,
+        prescriptions: [rx, ...patient.prescriptions],
+        currentMedications: [med, ...patient.currentMedications]
+      }));
+      setPrescriptionSafetyBlockers([]);
+      setPrescriptionSafetyWarnings([]);
+      setPrescriptionForm({ medication: '', dosage: '', frequency: 'bd', duration: '', route: 'oral', instructions: '' });
+      toast({ title: "Prescription Created", description: "New prescription has been added to patient record." });
+      setShowPrescriptionDialog(false);
+    } catch (error: any) {
+      if (isSafetyBlockError(error)) {
+        const { blockers, warnings } = safetyItemsFromError(error);
+        setPrescriptionSafetyBlockers(blockers);
+        setPrescriptionSafetyWarnings(warnings);
+        toast({ title: "Safety check", description: error.response?.data?.message || "Review the safety alerts below before saving.", variant: "destructive" });
+      } else {
+        console.error('Prescription API error', error);
+        toast({ title: "Failed to save prescription", description: error.response?.data?.message || "The prescription was NOT saved.", variant: "destructive" });
+      }
+    } finally {
+      setPrescriptionSaving(false);
+    }
   };
 
   if (loading) {
@@ -2256,7 +2319,7 @@ const HospitalEHR = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImagingDialog(false)}>Cancel</Button>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!selectedPatient) return;
               const studyTypeMap: Record<string, ImagingStudy['studyType']> = {
                 xray: 'X-Ray',
@@ -2266,6 +2329,21 @@ const HospitalEHR = () => {
                 pet: 'PET Scan'
               };
               const studyType = studyTypeMap[imagingForm.type] || 'X-Ray';
+              // A failed order must not be shown as "Imaging Ordered" — the study only reaches the chart once
+              // the server has actually accepted it (previously fire-and-forget with the error only logged).
+              try {
+                await imagingOrderService.create({
+                  patientId: selectedPatient.id,
+                  imagingType: studyType,
+                  bodyPart: imagingForm.bodyPart || 'General',
+                  priority: imagingForm.priority,
+                  contrast: imagingForm.contrast,
+                  clinicalIndication: imagingForm.notes || undefined,
+                });
+              } catch (e: any) {
+                toast({ title: "Failed to order imaging", description: e?.response?.data?.message || "The order was NOT saved.", variant: "destructive" });
+                return;
+              }
               const imaging: ImagingStudy = {
                 id: `I-${Date.now()}`,
                 studyType,
@@ -2276,15 +2354,6 @@ const HospitalEHR = () => {
                 findings: imagingForm.notes || undefined
               };
               updateSelectedPatient((patient) => ({ ...patient, imagingStudies: [imaging, ...patient.imagingStudies] }));
-              // Fire API call alongside local state update
-              imagingOrderService.create({
-                patientId: selectedPatient.id,
-                imagingType: studyType,
-                bodyPart: imagingForm.bodyPart || 'General',
-                priority: imagingForm.priority,
-                contrast: imagingForm.contrast,
-                clinicalIndication: imagingForm.notes || undefined,
-              }).catch((e: unknown) => console.error('Imaging order API error', e));
               setImagingForm({
                 type: 'xray',
                 priority: 'routine',
@@ -2382,54 +2451,22 @@ const HospitalEHR = () => {
               />
             </div>
           </div>
+          {(prescriptionSafetyBlockers.length > 0 || prescriptionSafetyWarnings.length > 0) && (
+            <PrescriptionSafetyAlert
+              blockers={prescriptionSafetyBlockers}
+              warnings={prescriptionSafetyWarnings}
+              onOverride={async (reason, acknowledgedCodes) => {
+                if (!selectedPatient) return;
+                await savePrescription({ reason, acknowledgedCodes });
+              }}
+              overriding={prescriptionSaving}
+            />
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>Cancel</Button>
-            <Button onClick={() => {
-              if (!selectedPatient) return;
-              const med: Medication = {
-                name: prescriptionForm.medication || 'Medication',
-                dosage: prescriptionForm.dosage || '',
-                frequency: prescriptionForm.frequency,
-                duration: prescriptionForm.duration || '',
-                route: prescriptionForm.route,
-                instructions: prescriptionForm.instructions || undefined
-              };
-              const rx: Prescription = {
-                id: `RX-${Date.now()}`,
-                prescribedDate: new Date().toISOString().split('T')[0],
-                prescribedBy: 'Dr. On Call',
-                diagnosis: 'General',
-                medications: [med],
-                instructions: prescriptionForm.instructions || '',
-                validity: '30 days',
-                status: 'Active'
-              };
-              updateSelectedPatient((patient) => ({
-                ...patient,
-                prescriptions: [rx, ...patient.prescriptions],
-                currentMedications: [med, ...patient.currentMedications]
-              }));
-              // Fire API call alongside local state update
-              prescriptionService.create({
-                patientId: selectedPatient.id,
-                medications: [med],
-                diagnosis: 'General',
-                notes: prescriptionForm.instructions || undefined,
-              }).catch((e: unknown) => console.error('Prescription API error', e));
-              setPrescriptionForm({
-                medication: '',
-                dosage: '',
-                frequency: 'bd',
-                duration: '',
-                route: 'oral',
-                instructions: ''
-              });
-              toast({
-                title: "Prescription Created",
-                description: "New prescription has been added to patient record.",
-              });
-              setShowPrescriptionDialog(false);
-            }}>Save Prescription</Button>
+            <Button variant="outline" onClick={() => { setShowPrescriptionDialog(false); setPrescriptionSafetyBlockers([]); setPrescriptionSafetyWarnings([]); }}>Cancel</Button>
+            <Button disabled={prescriptionSaving} onClick={() => selectedPatient && savePrescription()}>
+              {prescriptionSaving ? 'Saving…' : 'Save Prescription'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

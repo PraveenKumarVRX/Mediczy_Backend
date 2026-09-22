@@ -37,6 +37,7 @@ import { downloadPrescriptionPdf } from "@/utils/pdfDownload";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import AIScribe from "@/components/AIScribe";
 import OfflineScribePanel from "@/components/OfflineScribePanel";
+import { PrescriptionSafetyAlert, isSafetyBlockError, safetyItemsFromError, type SafetyItem } from "@/components/clinical/PrescriptionSafetyAlert";
 import {
   Dialog,
   DialogContent,
@@ -168,6 +169,8 @@ const DoctorPrescriptions = () => {
   const queryClient = useQueryClient();
 
   const [selectedPrescription, setSelectedPrescription] = useState<Prescription | null>(null);
+  const [issueSafetyBlockers, setIssueSafetyBlockers] = useState<SafetyItem[]>([]);
+  const [issueSafetyWarnings, setIssueSafetyWarnings] = useState<SafetyItem[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -329,13 +332,17 @@ const DoctorPrescriptions = () => {
     },
   });
 
-  // Issue prescription mutation
+  // Issue prescription mutation. Issuing is the safety-gated write (server/routes/prescription.route.js
+  // safetyOnStatus) — in enforce mode a documented allergy/interaction can come back as a 409 SAFETY_BLOCK,
+  // which the second call below overrides once the doctor has reviewed and acknowledged it.
   const issuePrescriptionMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const response = await api.patch(`/prescriptions/${id}/status`, { status: "issued" });
+    mutationFn: async ({ id, override }: { id: number; override?: { reason: string; acknowledgedCodes: string[] } }) => {
+      const response = await api.patch(`/prescriptions/${id}/status`, { status: "issued", ...(override ? { safetyOverride: override } : {}) });
       return response.data;
     },
     onSuccess: (data) => {
+      setIssueSafetyBlockers([]);
+      setIssueSafetyWarnings([]);
       const pdfUrl = data?.pdfUrl;
       toast({
         title: "✅ Prescription Issued",
@@ -351,6 +358,17 @@ const DoctorPrescriptions = () => {
       setViewDialogOpen(false);
     },
     onError: (error: any) => {
+      if (isSafetyBlockError(error)) {
+        const { blockers, warnings } = safetyItemsFromError(error);
+        setIssueSafetyBlockers(blockers);
+        setIssueSafetyWarnings(warnings);
+        toast({
+          title: "Safety check",
+          description: error.response?.data?.message || "Review the safety alerts below before issuing.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: "Error",
         description: getErrorMessage(error, "Failed to issue prescription"),
@@ -470,7 +488,9 @@ const DoctorPrescriptions = () => {
 
   const handleIssuePrescription = (id: number) => {
     if (window.confirm("Are you sure you want to issue this prescription? Once issued, it cannot be modified.")) {
-      issuePrescriptionMutation.mutate(id);
+      setIssueSafetyBlockers([]);
+      setIssueSafetyWarnings([]);
+      issuePrescriptionMutation.mutate({ id });
     }
   };
 
@@ -1473,6 +1493,19 @@ const DoctorPrescriptions = () => {
                     </p>
                   </Card>
                 )}
+              </div>
+            )}
+
+            {(issueSafetyBlockers.length > 0 || issueSafetyWarnings.length > 0) && (
+              <div className="mt-4">
+                <PrescriptionSafetyAlert
+                  blockers={issueSafetyBlockers}
+                  warnings={issueSafetyWarnings}
+                  onOverride={(reason, acknowledgedCodes) =>
+                    selectedPrescription && issuePrescriptionMutation.mutate({ id: selectedPrescription.id, override: { reason, acknowledgedCodes } })
+                  }
+                  overriding={issuePrescriptionMutation.isPending}
+                />
               </div>
             )}
 

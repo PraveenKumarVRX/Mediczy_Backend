@@ -515,6 +515,9 @@ export const prescriptionService = {
     diagnosis?: string;
     instructions?: string;
     notes?: string;
+    // This endpoint is a safety-gated issuing path (WP-1.2) — a documented allergy/interaction in enforce mode
+    // returns 409 SAFETY_BLOCK unless the caller re-sends with an acknowledged override.
+    safetyOverride?: { reason: string; acknowledgedCodes: string[] };
   }) => {
     const payload = {
       patientId: data.patientId,
@@ -522,6 +525,7 @@ export const prescriptionService = {
       medications: data.medications,
       diagnosis: data.diagnosis,
       notes: data.notes ?? data.instructions,
+      ...(data.safetyOverride ? { safetyOverride: data.safetyOverride } : {}),
     };
     const response = await api.post(`${BASE_URL}/prescriptions`, payload, {
       headers: getHospitalHeaders()
