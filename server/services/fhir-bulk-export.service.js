@@ -28,26 +28,33 @@ const EXPORT_DIR_BASE = '/tmp/fhir-exports';
  * Returns { rows, mapper } where mapper(row) → FHIR resource object.
  */
 async function fetchResourceRows(pool, resourceType, since) {
-  const sinceClause = since ? `AND updated_at >= '${since}'` : '';
+  // `since` (FHIR `_since`) comes straight from a query string (routes/fhir.route.js) — it was previously
+  // string-interpolated directly into SQL (`'${since}'`), a SQL injection hole. Validated to a real timestamp and
+  // passed as a bind parameter everywhere below instead; an invalid value is treated as "no filter" rather than
+  // rejecting the whole export.
+  const sinceDate = since && !Number.isNaN(Date.parse(since)) ? new Date(since).toISOString() : null;
 
   switch (resourceType) {
     case 'Patient': {
       const { rows } = await pool.query(
-        `SELECT * FROM users WHERE role IN ('patient','user') ${sinceClause} ORDER BY id`
+        `SELECT * FROM users WHERE role IN ('patient','user') AND ($1::timestamptz IS NULL OR updated_at >= $1) ORDER BY id`,
+        [sinceDate]
       ).catch(() => ({ rows: [] }));
       return { rows, mapper: (r) => fhirMapper.mapPatient(r) };
     }
 
     case 'Encounter': {
       const { rows } = await pool.query(
-        `SELECT * FROM appointments ${since ? `WHERE updated_at >= '${since}'` : ''} ORDER BY id`
+        `SELECT * FROM appointments WHERE ($1::timestamptz IS NULL OR updated_at >= $1) ORDER BY id`,
+        [sinceDate]
       ).catch(() => ({ rows: [] }));
       return { rows, mapper: (r) => fhirMapper.mapEncounter(r) };
     }
 
     case 'Observation': {
       const { rows } = await pool.query(
-        `SELECT * FROM vitals ${since ? `WHERE recorded_at >= '${since}'` : ''} ORDER BY id`
+        `SELECT * FROM vitals WHERE ($1::timestamptz IS NULL OR recorded_at >= $1) ORDER BY id`,
+        [sinceDate]
       ).catch(() => ({ rows: [] }));
       return { rows, mapper: (r) => fhirMapper.mapObservation(r, String(r.patient_id)) };
     }
@@ -57,8 +64,9 @@ async function fetchResourceRows(pool, resourceType, since) {
       const { rows } = await pool.query(
         `SELECT id, patient_id, assessment AS description, icd10_codes, created_at
          FROM clinical_notes
-         WHERE assessment IS NOT NULL ${sinceClause}
-         ORDER BY id`
+         WHERE assessment IS NOT NULL AND ($1::timestamptz IS NULL OR updated_at >= $1)
+         ORDER BY id`,
+        [sinceDate]
       ).catch(() => ({ rows: [] }));
 
       const conditions = [];
@@ -89,7 +97,8 @@ async function fetchResourceRows(pool, resourceType, since) {
 
     case 'MedicationRequest': {
       const { rows } = await pool.query(
-        `SELECT * FROM prescriptions ${since ? `WHERE updated_at >= '${since}'` : ''} ORDER BY id`
+        `SELECT * FROM prescriptions WHERE ($1::timestamptz IS NULL OR updated_at >= $1) ORDER BY id`,
+        [sinceDate]
       ).catch(() => ({ rows: [] }));
       return { rows, mapper: (r) => fhirMapper.mapMedicationRequest(r, String(r.patient_id)) };
     }

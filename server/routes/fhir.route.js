@@ -18,7 +18,7 @@
  */
 
 import express from 'express';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import fhirMapper from '../services/fhir-mapper.service.js';
 import { connectPostgres } from '../db/postgres.js';
 import redisClient from '../config/redis.js';
@@ -150,7 +150,11 @@ router.get('/metadata', (_req, res) => {
 // ── Patient ───────────────────────────────────────────────────────────────────
 // NOTE: /Patient/$export must be registered BEFORE /Patient/:id so Express does not
 // treat '$export' as a value for the :id parameter.
-router.get('/Patient/\\$export', authUser, async (req, res) => {
+// A system-level $export with no patient/group scope returns every patient across every organization —
+// FHIR Bulk Data spec treats this as a population-level export, and it must stay admin-only. It was
+// previously gated by authUser alone, so any logged-in patient could trigger a full cross-tenant PHI dump
+// and get the jobId to download it back directly in the response.
+router.get('/Patient/\\$export', authUser, requireRole('admin'), async (req, res) => {
   try {
     const params = {
       resourceTypes: (req.query._type || 'Patient,Observation,Condition,MedicationRequest,Encounter').split(',').map(s => s.trim()),
@@ -791,7 +795,7 @@ router.post('/Consent', authUser, async (req, res) => {
 // shadowing — see the Patient section above.
 
 // GET /bulkstatus/:jobId — poll export status
-router.get('/bulkstatus/:jobId', authUser, async (req, res) => {
+router.get('/bulkstatus/:jobId', authUser, requireRole('admin'), async (req, res) => {
   try {
     const status = await getExportStatus(req.params.jobId);
     if (!status) return res.status(404).json(outcome('error', 'not-found', `Export job ${req.params.jobId} not found`));
@@ -809,7 +813,7 @@ router.get('/bulkstatus/:jobId', authUser, async (req, res) => {
 });
 
 // GET /bulkdata/:jobId/:filename — stream NDJSON file
-router.get('/bulkdata/:jobId/:filename', authUser, async (req, res) => {
+router.get('/bulkdata/:jobId/:filename', authUser, requireRole('admin'), async (req, res) => {
   try {
     const { jobId, filename } = req.params;
     // Sanitise filename — only allow alphanumeric, dash, underscore, dot
