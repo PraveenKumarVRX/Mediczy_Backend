@@ -33,15 +33,10 @@ export async function up() {
       console.log('⚠️  vital_records does not exist here — skipped');
     }
 
-    // 'incomplete_vitals' lets triggerAlert() in vitals-ews.service.js flag a genuinely incomplete reading
-    // distinctly from a real deterioration alert, instead of forcing it into an existing, misleading category.
-    // PostgreSQL 12+ allows ALTER TYPE ... ADD VALUE inside a transaction, but the new value can't be used
-    // (inserted/compared) until that transaction commits — fine here, since nothing in this migration inserts
-    // an 'incomplete_vitals' row itself; only later application code (after this COMMIT) does.
-    if ((await client.query(`SELECT to_regclass('public.early_warning_alerts') AS r`)).rows[0].r) {
-      const exists = await client.query(`SELECT 1 FROM pg_enum WHERE enumtypid = 'enum_early_warning_alerts_alert_type'::regtype AND enumlabel = 'incomplete_vitals'`);
-      if (exists.rowCount === 0) await client.query(`ALTER TYPE enum_early_warning_alerts_alert_type ADD VALUE 'incomplete_vitals'`);
-    }
+    // An 'incomplete_vitals' alert_type enum value would need ALTER TYPE, which requires owning the type —
+    // the application role does not own it (it predates this migration and was created by a different role).
+    // Rather than require an out-of-band grant, triggerAlert() in vitals-ews.service.js reuses the existing
+    // 'deterioration' value for an incomplete reading too, and says so in the alert message instead.
 
     // A clinician sets the patient's SpO2 target scale once per admission, not at every reading (per plan).
     if ((await client.query(`SELECT to_regclass('public.ip_admissions') AS r`)).rows[0].r) {

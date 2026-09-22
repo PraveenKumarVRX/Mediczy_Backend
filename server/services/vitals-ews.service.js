@@ -159,7 +159,9 @@ async function triggerAlert(organizationId, admissionId, patientId, vitalRecordI
         'review within 1 hour'
       }`;
 
-  await createAlert(organizationId, admissionId, patientId, vitalRecordId, complete ? 'deterioration' : 'incomplete_vitals', severity, news2, message);
+  // 'incomplete_vitals' would need its own alert_type enum value (ALTER TYPE, which the app role can't run —
+  // it doesn't own that type); 'deterioration' is reused for both, distinguished by the message text above.
+  await createAlert(organizationId, admissionId, patientId, vitalRecordId, 'deterioration', severity, news2, message);
 }
 
 async function createAlert(organizationId, admissionId, patientId, vitalRecordId, alertType, severity, news2, message) {
