@@ -249,6 +249,12 @@ const HospitalDischargeSummary = () => {
     setDischargePlan(response.data.data);
   };
 
+  // WP-0.3: there is no GET endpoint for discharge summaries yet (server/routes/hospital/practice.route.js
+  // only has POST/PUT) and no `attending_doctor` column on discharge_summaries — so this list is seeded from
+  // localStorage (see loadHospitalStore below) rather than the database, and these four names are fabricated
+  // seed data, not real patients. A real save (handleSaveDraft/handleSubmitForApproval below) does write to
+  // the database now; only the LIST shown on this screen is still local-only until that GET endpoint exists.
+  // Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md.
   const initialSummaries: DischargeSummary[] = [
     {
       id: 'DS001',
@@ -308,7 +314,7 @@ const HospitalDischargeSummary = () => {
     () => loadHospitalStore('discharge-summaries', initialSummaries)
   );
 
-  // Mock patients for selection
+  // Fabricated patient list — no admitted-patients endpoint is wired here yet; see the comment above initialSummaries.
   const admittedPatients = [
     { id: 'P10045', name: 'Rajesh Kumar', ward: 'Cardiology', bed: 'ICU-05', admissionDate: '2026-01-02' },
     { id: 'P10052', name: 'Priya Singh', ward: 'Gynecology', bed: 'GYN-12', admissionDate: '2026-01-04' },
@@ -349,6 +355,15 @@ const HospitalDischargeSummary = () => {
   };
 
   const handleSaveDraft = async () => {
+    const patient = admittedPatients.find((item) => item.id === selectedPatient);
+    if (!patient) {
+      toast({ title: "Select Patient", description: "Please select a patient first", variant: "destructive" });
+      return;
+    }
+    if (!formData.attendingDoctor.trim()) {
+      toast({ title: "Attending Doctor Required", description: "Enter the attending doctor's name before saving — this is a clinical record.", variant: "destructive" });
+      return;
+    }
     try {
       const draftData = {
         patientId: selectedPatient,
@@ -359,38 +374,34 @@ const HospitalDischargeSummary = () => {
         status: 'draft'
       };
 
-      try {
-        await api.post(
-          '/hospital/practice/discharge-summaries',
-          draftData,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      // A discharge summary is a clinical record — a failed save must not be shown as a success, and the record
+      // shown afterward must be the one the server actually saved (real id/timestamp), not a locally-fabricated one.
+      const response = await api.post(
+        '/hospital/practice/discharge-summaries',
+        draftData,
+        { headers: hospitalHeaders() }
+      );
+      const saved = response.data?.data;
 
-      const patient = admittedPatients.find((item) => item.id === selectedPatient);
-      if (patient) {
-        const created: DischargeSummary = {
-          id: `DS-${Date.now()}`,
-          patientName: patient.name,
-          patientId: patient.id,
-          admissionDate: patient.admissionDate,
-          dischargeDate: formData.dischargeDate,
-          ward: patient.ward,
-          bed: patient.bed,
-          diagnosis: formData.diagnosis || 'Pending',
-          attendingDoctor: formData.attendingDoctor || 'On Call',
-          status: 'draft',
-          createdAt: new Date().toISOString()
-        };
+      const created: DischargeSummary = {
+        id: saved?.id ? String(saved.id) : `DS-${Date.now()}`,
+        patientName: patient.name,
+        patientId: patient.id,
+        admissionDate: patient.admissionDate,
+        dischargeDate: formData.dischargeDate,
+        ward: patient.ward,
+        bed: patient.bed,
+        diagnosis: formData.diagnosis || 'Pending',
+        attendingDoctor: formData.attendingDoctor,
+        status: 'draft',
+        createdAt: saved?.created_at ? String(saved.created_at) : new Date().toISOString()
+      };
 
-        setSummaries((prev) => {
-          const updated = [created, ...prev];
-          saveHospitalStore('discharge-summaries', updated);
-          return updated;
-        });
-      }
+      setSummaries((prev) => {
+        const updated = [created, ...prev];
+        saveHospitalStore('discharge-summaries', updated);
+        return updated;
+      });
 
       toast({
         title: "Draft Saved",
@@ -399,13 +410,22 @@ const HospitalDischargeSummary = () => {
     } catch (error: any) {
       toast({
         title: 'Failed to save draft',
-        description: error.response?.data?.message || 'An error occurred',
+        description: error.response?.data?.message || 'An error occurred — the draft was NOT saved',
         variant: 'destructive'
       });
     }
   };
 
   const handleSubmitForApproval = async () => {
+    const patient = admittedPatients.find((item) => item.id === selectedPatient);
+    if (!patient) {
+      toast({ title: "Select Patient", description: "Please select a patient first", variant: "destructive" });
+      return;
+    }
+    if (!formData.attendingDoctor.trim()) {
+      toast({ title: "Attending Doctor Required", description: "Enter the attending doctor's name before submitting — this is a clinical record.", variant: "destructive" });
+      return;
+    }
     try {
       const submissionData = {
         patientId: selectedPatient,
@@ -416,38 +436,32 @@ const HospitalDischargeSummary = () => {
         status: 'pending_approval'
       };
 
-      try {
-        await api.post(
-          '/hospital/practice/discharge-summaries/submit',
-          submissionData,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      const response = await api.post(
+        '/hospital/practice/discharge-summaries/submit',
+        submissionData,
+        { headers: hospitalHeaders() }
+      );
+      const saved = response.data?.data;
 
-      const patient = admittedPatients.find((item) => item.id === selectedPatient);
-      if (patient) {
-        const created: DischargeSummary = {
-          id: `DS-${Date.now()}`,
-          patientName: patient.name,
-          patientId: patient.id,
-          admissionDate: patient.admissionDate,
-          dischargeDate: formData.dischargeDate,
-          ward: patient.ward,
-          bed: patient.bed,
-          diagnosis: formData.diagnosis || 'Pending',
-          attendingDoctor: formData.attendingDoctor || 'On Call',
-          status: 'pending_approval',
-          createdAt: new Date().toISOString()
-        };
+      const created: DischargeSummary = {
+        id: saved?.id ? String(saved.id) : `DS-${Date.now()}`,
+        patientName: patient.name,
+        patientId: patient.id,
+        admissionDate: patient.admissionDate,
+        dischargeDate: formData.dischargeDate,
+        ward: patient.ward,
+        bed: patient.bed,
+        diagnosis: formData.diagnosis || 'Pending',
+        attendingDoctor: formData.attendingDoctor,
+        status: 'pending_approval',
+        createdAt: saved?.created_at ? String(saved.created_at) : new Date().toISOString()
+      };
 
-        setSummaries((prev) => {
-          const updated = [created, ...prev];
-          saveHospitalStore('discharge-summaries', updated);
-          return updated;
-        });
-      }
+      setSummaries((prev) => {
+        const updated = [created, ...prev];
+        saveHospitalStore('discharge-summaries', updated);
+        return updated;
+      });
 
       toast({
         title: "Submitted for Approval",
@@ -456,7 +470,7 @@ const HospitalDischargeSummary = () => {
     } catch (error: any) {
       toast({
         title: 'Failed to submit',
-        description: error.response?.data?.message || 'An error occurred',
+        description: error.response?.data?.message || 'An error occurred — nothing was submitted',
         variant: 'destructive'
       });
     }

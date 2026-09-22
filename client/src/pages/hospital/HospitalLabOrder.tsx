@@ -193,8 +193,13 @@ const HospitalLabOrder = () => {
       totalAmount: 200
     }
   ];
+  const [orders, setOrders] = useState<TestOrder[]>(() =>
+    loadHospitalStore<TestOrder[]>('lab-orders', initialOrders)
+  );
 
-  // Sample patients data
+  // WP-0.3: fabricated patient list — no real patient search is wired into this screen yet, so an order placed
+  // here is sent to the backend against one of these fake ids and will likely be rejected once the swallowed-
+  // error fix above makes that visible. Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md.
   const patients = [
     { id: 'P001', name: 'Rajesh Kumar', uhid: 'UHID001234', age: 45, gender: 'Male' },
     { id: 'P002', name: 'Priya Singh', uhid: 'UHID001235', age: 32, gender: 'Female' },
@@ -245,19 +250,17 @@ const HospitalLabOrder = () => {
         totalAmount
       };
 
-      try {
-        await api.post(
-          '/hospital/practice/lab-orders',
-          orderData,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      // A failed order must not be shown as "Lab Test Ordered" — this drives an actual sample-collection workflow.
+      const response = await api.post(
+        '/hospital/practice/lab-orders',
+        orderData,
+        { headers: hospitalHeaders() }
+      );
+      const saved = response.data?.data;
 
       const createdOrder: TestOrder = {
-        id: `ORD-${Date.now()}`,
-        orderNumber: `LAB-${Date.now().toString().slice(-6)}`,
+        id: saved?.id ? String(saved.id) : `ORD-${Date.now()}`,
+        orderNumber: saved?.order_number || `LAB-${Date.now().toString().slice(-6)}`,
         patientId: selectedPatient.id,
         patientName: selectedPatient.name,
         uhid: selectedPatient.uhid,
@@ -266,7 +269,7 @@ const HospitalLabOrder = () => {
         tests: selectedTests,
         priority,
         status: 'Ordered',
-        orderDate: new Date().toISOString().slice(0, 10),
+        orderDate: saved?.created_at ? String(saved.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
         requiredDate: new Date().toISOString().slice(0, 10),
         notes: clinicalNotes,
         totalAmount

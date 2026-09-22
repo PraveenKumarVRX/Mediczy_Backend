@@ -612,30 +612,27 @@ const HospitalPracticeManagement = () => {
         notes: newAppointmentForm.notes,
         createdAt: new Date().toISOString().slice(0, 10),
       };
-      let created: Appointment = fallbackAppointment;
-      try {
-        const { data } = await api.post(
-          '/hospital/practice/appointments',
-          {
-            patientName: newAppointmentForm.patientName,
-            patientPhone: newAppointmentForm.patientPhone,
-            patientEmail: '',
-            doctorId: doctor?.id,
-            doctorName: doctor?.name,
-            appointmentDate: format(selectedDate, 'yyyy-MM-dd'),
-            appointmentTime: newAppointmentForm.time,
-            consultationType: 'in-person',
-            reason: newAppointmentForm.notes,
-            specialization: newAppointmentForm.department || 'General Medicine',
-            priority: newAppointmentForm.priority,
-            notes: newAppointmentForm.notes,
-          },
-          { headers: hospitalHeaders() }
-        );
-        created = data?.data || fallbackAppointment;
-      } catch (error) {
-        console.error('Failed to create appointment via API', error);
-      }
+      // A failed API write must not be shown as "Appointment created" with a fabricated local id — that hides a
+      // real scheduling failure from the front desk.
+      const { data } = await api.post(
+        '/hospital/practice/appointments',
+        {
+          patientName: newAppointmentForm.patientName,
+          patientPhone: newAppointmentForm.patientPhone,
+          patientEmail: '',
+          doctorId: doctor?.id,
+          doctorName: doctor?.name,
+          appointmentDate: format(selectedDate, 'yyyy-MM-dd'),
+          appointmentTime: newAppointmentForm.time,
+          consultationType: 'in-person',
+          reason: newAppointmentForm.notes,
+          specialization: newAppointmentForm.department || 'General Medicine',
+          priority: newAppointmentForm.priority,
+          notes: newAppointmentForm.notes,
+        },
+        { headers: hospitalHeaders() }
+      );
+      const created: Appointment = data?.data || fallbackAppointment;
 
       setAppointments(prev => {
         const next = [created, ...prev];
@@ -646,7 +643,7 @@ const HospitalPracticeManagement = () => {
       setShowNewAppointmentDialog(false);
       setNewAppointmentForm({ patientName: '', patientPhone: '', department: '', doctorId: '', type: 'OPD', priority: 'Normal', time: '', notes: '' });
     } catch (error) {
-      handleApiError(error, 'Failed to create appointment');
+      handleApiError(error, 'Failed to create appointment — nothing was scheduled');
     }
   };
 

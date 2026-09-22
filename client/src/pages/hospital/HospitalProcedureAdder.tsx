@@ -294,18 +294,16 @@ const HospitalProcedureAdder = () => {
         estimatedDuration: selectedProcedure.estimatedDuration
       };
 
-      try {
-        await api.post(
-          '/hospital/procedures/schedule',
-          procedureData,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      // A failed schedule call must not be shown as "Procedure Scheduled" — OT/theatre booking depends on this.
+      const response = await api.post(
+        '/hospital/procedures/schedule',
+        procedureData,
+        { headers: hospitalHeaders() }
+      );
+      const saved = response.data?.data;
 
       const created: ProcedureSchedule = {
-        id: `SCH-${Date.now()}`,
+        id: saved?.id ? String(saved.id) : `SCH-${Date.now()}`,
         procedureId: selectedProcedure.id,
         procedure: selectedProcedure,
         patientId: selectedPatient.id,

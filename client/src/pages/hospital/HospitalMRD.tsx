@@ -329,11 +329,23 @@ const HospitalMRD = () => {
     setShowDigitizationDialog(true);
   };
 
+  // WP-0.3: this handler has no backend call at all — a new MRD record only ever goes into localStorage
+  // (saveHospitalStore below), never the database. It survives this browser only; it is not visible to any other
+  // desk or device, and is lost if site data is cleared. Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md — needs
+  // a real POST endpoint before this screen can be trusted as the department's actual index.
   const handleCreateRecord = () => {
     if (!newRecordForm.patientName.trim() || !newRecordForm.uhid.trim()) {
       toast({
         title: 'Missing details',
         description: 'Patient name and UHID are required.',
+        variant: 'destructive'
+      });
+      return;
+    }
+    if (!newRecordForm.attendingDoctor.trim()) {
+      toast({
+        title: 'Attending doctor required',
+        description: "Enter the attending doctor's name — this is a medical record index entry.",
         variant: 'destructive'
       });
       return;
@@ -349,7 +361,7 @@ const HospitalMRD = () => {
       recordType: newRecordForm.recordType,
       department: newRecordForm.department || 'General Medicine',
       admissionDate: newRecordForm.admissionDate || createdAt,
-      attendingDoctor: newRecordForm.attendingDoctor || 'On Call',
+      attendingDoctor: newRecordForm.attendingDoctor,
       diagnosis: newRecordForm.diagnosis || 'Pending',
       fileLocation: 'Main Archive',
       shelf: newRecordForm.shelf || 'S-01',
@@ -648,15 +660,11 @@ const HospitalMRD = () => {
     if (!selectedRecord) return;
     
     try {
-      try {
-        await api.post(
-          '/hospital/mrd/digitization-queue',
-          { recordId: selectedRecord.id },
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      await api.post(
+        '/hospital/mrd/digitization-queue',
+        { recordId: selectedRecord.id },
+        { headers: hospitalHeaders() }
+      );
 
       toast({
         title: "Added to Digitization Queue",

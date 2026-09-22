@@ -457,17 +457,14 @@ const HospitalInsuranceBilling = () => {
         updatedAt: today,
       };
 
-      let updated = { ...editingClaim, ...updatedClaim } as InsuranceClaim;
-      try {
-        const { data } = await api.patch(
-          `/hospital/insurance/claims/${editingClaim.id}`,
-          updatedClaim,
-          { headers: hospitalHeaders() }
-        );
-        updated = data?.data || updated;
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      // A failed PATCH must not be shown as "Claim updated" — the approved amount and status are money and drive
+      // reconciliation; a locally-fabricated value that was never actually saved is worse than an error message.
+      const { data } = await api.patch(
+        `/hospital/insurance/claims/${editingClaim.id}`,
+        updatedClaim,
+        { headers: hospitalHeaders() }
+      );
+      const updated: InsuranceClaim = data?.data || { ...editingClaim, ...updatedClaim };
 
       setClaims(prev => {
         const next = prev.map(c => c.id === editingClaim.id ? updated : c);

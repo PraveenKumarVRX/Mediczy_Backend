@@ -205,15 +205,12 @@ const HospitalIPSheets = () => {
         timestamp: new Date().toISOString()
       };
 
-      try {
-        await api.post(
-          '/hospital/practice/ip-sheets',
-          sheetData,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      // A failed save must not be reported as "Saved" — the IP sheet note would silently exist only in this browser.
+      await api.post(
+        '/hospital/practice/ip-sheets',
+        sheetData,
+        { headers: hospitalHeaders() }
+      );
 
       if (selectedPatient) {
         const storeKey = `ip-sheets:${selectedPatient.id}`;

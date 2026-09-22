@@ -1833,7 +1833,7 @@ const RemoteHealthMonitoring = () => {
                  'Remote Health Monitoring'}
               </h1>
               <p className="text-muted-foreground text-sm flex items-center gap-2">
-                {dashboardMode === 'icu' ? 'Intensive Care Unit • Real-time ICU monitoring' :
+                {dashboardMode === 'icu' ? 'Intensive Care Unit • Simulated demo monitoring' :
                  dashboardMode === 'er' ? 'Emergency Department • Triage & casualty management' :
                  'Home patients • Remote vital signs monitoring'}
                 {' '}• Last updated: {new Date().toLocaleTimeString()}

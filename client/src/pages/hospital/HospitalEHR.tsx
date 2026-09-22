@@ -1278,13 +1278,17 @@ const HospitalEHR = () => {
                         className="bg-gradient-to-r from-orange-600 to-amber-600"
                         onClick={() => {
                           if (!selectedPatient) return;
+                          if (!encounterForm.doctor.trim()) {
+                            toast({ title: 'Doctor required', description: 'Enter the treating doctor before completing this encounter.', variant: 'destructive' });
+                            return;
+                          }
                           updateSelectedPatient((patient) => {
                             const encounter: Encounter = {
                               id: `E-${Date.now()}`,
                               type: encounterForm.type,
                               date: new Date().toISOString().split('T')[0],
                               department: encounterForm.department || 'General Medicine',
-                              doctor: encounterForm.doctor || 'On Call',
+                              doctor: encounterForm.doctor,
                               chiefComplaint: encounterForm.chiefComplaint || 'General Consultation',
                               presentIllness: encounterForm.presentIllness || '',
                               examination: encounterForm.examination || '',
@@ -2547,14 +2551,18 @@ const HospitalEHR = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowProcedureDialog(false)}>Cancel</Button>
-            <Button onClick={() => {
+            <Button onClick={async () => {
               if (!selectedPatient) return;
+              if (!procedureForm.performedBy.trim()) {
+                toast({ title: 'Performing doctor required', description: 'Enter who performed this procedure before saving.', variant: 'destructive' });
+                return;
+              }
               const procedure: Procedure = {
                 id: `P-${Date.now()}`,
                 name: procedureForm.name || 'Procedure',
                 type: procedureForm.type === 'diagnostic' ? 'Diagnostic' : procedureForm.type === 'therapeutic' ? 'Non-Surgical' : 'Surgical',
                 date: procedureForm.dateTime || new Date().toISOString(),
-                performedBy: procedureForm.performedBy || 'On Call',
+                performedBy: procedureForm.performedBy,
                 anesthesia: procedureForm.anesthesia || undefined,
                 findings: procedureForm.findings || undefined,
                 complications: procedureForm.complications || undefined,
@@ -2562,16 +2570,23 @@ const HospitalEHR = () => {
                 notes: procedureForm.notes || undefined
               };
               updateSelectedPatient((patient) => ({ ...patient, procedures: [procedure, ...patient.procedures] }));
-              // Fire API call alongside local state update
+              // Local chart update above always happens so the doctor sees it immediately; the server-side workflow
+              // trigger below is reported honestly instead of being swallowed behind an unconditional success toast.
               const [schedDate, schedTime] = (procedureForm.dateTime || new Date().toISOString()).split('T');
-              procedureService.schedule({
-                patientId: selectedPatient.id,
-                procedureName: procedureForm.name || 'Procedure',
-                scheduledDate: schedDate || new Date().toISOString().split('T')[0],
-                scheduledTime: schedTime?.slice(0, 5) || '09:00',
-                anesthesiaType: procedureForm.anesthesia || undefined,
-                notes: procedureForm.notes || undefined,
-              }).catch((e: unknown) => console.error('Procedure API error', e));
+              let workflowFailed = false;
+              try {
+                await procedureService.schedule({
+                  patientId: selectedPatient.id,
+                  procedureName: procedureForm.name || 'Procedure',
+                  scheduledDate: schedDate || new Date().toISOString().split('T')[0],
+                  scheduledTime: schedTime?.slice(0, 5) || '09:00',
+                  anesthesiaType: procedureForm.anesthesia || undefined,
+                  notes: procedureForm.notes || undefined,
+                });
+              } catch (e: unknown) {
+                console.error('Procedure API error', e);
+                workflowFailed = true;
+              }
               setProcedureForm({
                 type: 'surgical',
                 name: '',
@@ -2583,10 +2598,18 @@ const HospitalEHR = () => {
                 outcome: 'Successful',
                 notes: ''
               });
-              toast({
-                title: "Procedure Added",
-                description: "Procedure record has been added to patient file.",
-              });
+              if (workflowFailed) {
+                toast({
+                  title: "Procedure recorded locally — server sync failed",
+                  description: "The procedure was added to this patient's chart here, but the billing/scheduling workflow trigger did not reach the server. Refresh and confirm it synced before relying on it elsewhere.",
+                  variant: "destructive",
+                });
+              } else {
+                toast({
+                  title: "Procedure Added",
+                  description: "Procedure record has been added to patient file.",
+                });
+              }
               setShowProcedureDialog(false);
             }}>Save Procedure</Button>
           </DialogFooter>
