@@ -23,9 +23,45 @@ import { getClinicLogoDataUri } from '../services/clinic-branding.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import * as prescriptionRepository from '../repositories/prescription.repository.js';
+import { prescriptionSafetyGate, checkPrescriptionSafety, getSafetyMode, orgOfRequest } from '../services/prescription-safety.service.js';
+import { requirePatientAccess } from '../services/patient-access.service.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 
 const router = express.Router();
+
+// Safety gate extractors (WP-1.2): what is being prescribed, and to whom, on each write path.
+const storedMeds = (p) => { const m = typeof p?.medications === 'string' ? JSON.parse(p.medications) : p?.medications; return Array.isArray(m) ? m : []; };
+const safetyFromAppointment = prescriptionSafetyGate('prescription.from-appointment', async (req) => {
+  const appt = await appointmentRepository.findByIdForDoctor(req, req.params.appointmentId);
+  return appt ? { patientId: appt.userId, medications: req.body?.medications } : null;
+});
+const safetyOnCreate = prescriptionSafetyGate('prescription.create', (req) => ({ patientId: req.body?.patientId || req.body?.userId, medications: req.body?.medications }));
+const safetyOnUpdate = prescriptionSafetyGate('prescription.update', async (req) => {
+  if (!Array.isArray(req.body?.medications)) return null;
+  const p = await prescriptionRepository.findById(req, req.params.id);
+  return p ? { patientId: p.patientId, medications: req.body.medications } : null;
+});
+const safetyOnStatus = prescriptionSafetyGate('prescription.status-issued', async (req) => {
+  if (req.body?.status !== 'issued') return null;
+  const p = await prescriptionRepository.findById(req, req.params.id);
+  return p ? { patientId: p.patientId, medications: storedMeds(p) } : null;
+}, { issuing: true });
+// Dry run for the prescription writer: the same evaluation, nothing saved.
+router.post('/safety-check', authDoctor, requirePatientAccess((req) => req.body?.patientId), async (req, res) => {
+  const { patientId, medications, pregnant } = req.body || {};
+  if (!Array.isArray(medications) || medications.length === 0) return res.status(400).json({ success: false, message: 'medications is required' });
+  try {
+    const result = await checkPrescriptionSafety({ patientId, organizationId: orgOfRequest(req), medications, pregnant });
+    return res.json({ success: true, mode: await getSafetyMode(orgOfRequest(req)), ...result });
+  } catch (e) {
+    console.error('[prescriptions] safety-check failed:', e.message);
+    return res.status(500).json({ success: false, message: 'Safety check unavailable' });
+  }
+});
+const safetyOnIssue = prescriptionSafetyGate('prescription.issue', async (req) => {
+  const p = await prescriptionRepository.findById(req, req.params.id);
+  return p ? { patientId: p.patientId, medications: storedMeds(p) } : null;
+}, { issuing: true });
 // Ensure request bodies are parsed even if app-level parser order changes.
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
@@ -287,7 +323,7 @@ router.get('/', authDoctor, async (req, res) => {
  * @desc    Create prescription from appointment/consultation (Doctor only)
  * @access  Private (Doctor)
  */
-router.post('/from-appointment/:appointmentId', authDoctor, [
+router.post('/from-appointment/:appointmentId', authDoctor, safetyFromAppointment, [
   param('appointmentId').isInt().withMessage('Valid appointment ID is required'),
   body('diagnosis').notEmpty().withMessage('Diagnosis is required'),
   body('medications').isArray({ min: 1 }).withMessage('At least one medication is required')
@@ -464,7 +500,7 @@ router.post('/from-appointment/:appointmentId', authDoctor, [
  * @desc    Create a new prescription (Doctor only)
  * @access  Private (Doctor)
  */
-router.post('/', authDoctor, [
+router.post('/', authDoctor, safetyOnCreate, [
   body('userId').optional(),
   body('patientId').optional(),
   body('diagnosis').notEmpty().withMessage('Diagnosis is required'),
@@ -1068,7 +1104,7 @@ router.get('/doctor/issued', authDoctor, async (req, res) => {
  * @desc    Update prescription (Doctor only, if not dispensed)
  * @access  Private (Doctor)
  */
-router.put('/:id', authDoctor, async (req, res) => {
+router.put('/:id', authDoctor, safetyOnUpdate, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1221,7 +1257,7 @@ router.put('/:id', authDoctor, async (req, res) => {
  * @desc    Update prescription status (creates EHR & health diary when issued)
  * @access  Private (Doctor)
  */
-router.patch('/:id/status', authDoctor, async (req, res) => {
+router.patch('/:id/status', authDoctor, safetyOnStatus, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -1349,7 +1385,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
  * @desc    Issue a prescription (change status from draft to issued)
  * @access  Private (Doctor)
  */
-router.post('/:id/issue', authDoctor, async (req, res) => {
+router.post('/:id/issue', authDoctor, safetyOnIssue, async (req, res) => {
   try {
     const { id } = req.params;
 

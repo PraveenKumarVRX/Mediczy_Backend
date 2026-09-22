@@ -1,3 +1,4 @@
+import { prescriptionSafetyGate } from '../../services/prescription-safety.service.js';
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
@@ -149,6 +150,11 @@ const generateId = (prefix) => {
   return `${prefix}${Date.now().toString(36)}`;
 };
 
+const toNumberOrNull = (value) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
 const verifyHospitalToken = (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
   if (!token) {
@@ -156,8 +162,12 @@ const verifyHospitalToken = (req, res, next) => {
   }
 
   try {
+    const hostTenantId = toNumberOrNull(req.tenant?.id || req.tenantId);
     const decoded = jwt.verify(token, JWT_SECRET);
     const role = decoded.role || decoded.userType;
+    const tokenTenantId = toNumberOrNull(
+      decoded.tenant_id || decoded.organization_id || decoded.hospital_id || decoded.hospitalId
+    );
 
     // Support both old system (role: hospital) and new multitenancy (role: hospital_admin, etc.)
     const validRoles = [
@@ -190,11 +200,21 @@ const verifyHospitalToken = (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
     }
 
+    if (hostTenantId && (!tokenTenantId || hostTenantId !== tokenTenantId)) {
+      return res.status(403).json({
+        success: false,
+        code: 'TENANT_HOST_MISMATCH',
+        message: 'Hospital token does not match the request origin'
+      });
+    }
+
     // Support both old system (decoded.id) and new multitenancy (decoded.tenant_id / decoded.hospital_id)
-    req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
-    req.hospitalOrgId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;  // For DB queries
+    req.hostTenantId = hostTenantId;
+    req.tokenTenantId = tokenTenantId;
+    req.hospitalId = tokenTenantId || decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
+    req.hospitalOrgId = req.hospitalId;  // For DB queries
     req.hospitalName = decoded.hospitalName || decoded.name || 'Hospital';
-    req.tenantId = decoded.tenant_id || decoded.hospital_id || decoded.id;
+    req.tenantId = tokenTenantId || decoded.tenant_id || decoded.hospital_id || decoded.id;
     req.userId = decoded.id;
     req.userRole = role;
     req.capabilities = Array.isArray(decoded.capabilities) ? decoded.capabilities : undefined;
@@ -1671,7 +1691,7 @@ router.patch('/discharge-plans/:id', verifyHospitalToken, async (req, res) => {
  * Create Prescription
  * POST /api/hospital/practice/prescriptions
  */
-router.post('/prescriptions', verifyHospitalToken, async (req, res) => {
+router.post('/prescriptions', verifyHospitalToken, prescriptionSafetyGate('hospital.practice.prescription', (req) => ({ patientId: req.body?.patientId, medications: req.body?.medications }), { issuing: true }), async (req, res) => {
   try {
     const { patientId, medications, diagnosis, notes, doctorId } = req.body;
     const hospitalId = req.hospitalId;

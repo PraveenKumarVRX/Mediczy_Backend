@@ -22,7 +22,7 @@ import qualityGates from './ai-quality-gates.service.js';
 
 // ─── Built-in Critical Drug Interactions Database ───────────
 // Source: WHO Essential Medicines + FDA major interaction alerts
-const CRITICAL_INTERACTIONS = [
+export const CRITICAL_INTERACTIONS = [
   // Anticoagulants
   { drug1: /warfarin/i, drug2: /aspirin|ibuprofen|naproxen|nsaid/i, severity: 'major', effect: 'Increased bleeding risk. Combination significantly raises hemorrhage risk.' },
   { drug1: /warfarin/i, drug2: /metronidazole|fluconazole|amiodarone/i, severity: 'major', effect: 'Enhanced anticoagulant effect — risk of severe bleeding.' },
@@ -69,7 +69,7 @@ const CRITICAL_INTERACTIONS = [
 ];
 
 // Drug-Condition Interactions
-const DRUG_CONDITION_INTERACTIONS = [
+export const DRUG_CONDITION_INTERACTIONS = [
   { drug: /metformin/i, condition: /renal|kidney|ckd/i, severity: 'major', effect: 'Contraindicated in severe renal impairment (eGFR < 30).' },
   { drug: /nsaid|ibuprofen|diclofenac|naproxen/i, condition: /gastric|ulcer|gerd|gi bleed/i, severity: 'major', effect: 'Risk of GI bleeding. Use gastroprotection.' },
   { drug: /nsaid|ibuprofen|diclofenac|naproxen/i, condition: /renal|kidney|ckd/i, severity: 'major', effect: 'NSAIDs can worsen renal function.' },

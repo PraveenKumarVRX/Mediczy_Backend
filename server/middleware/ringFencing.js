@@ -175,6 +175,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   doctor: {
     allowedPaths: [
+      '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)
       '/api/chemotherapy',  // module route (RBAC enforced per route)
@@ -235,6 +236,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   admin: {
     allowedPaths: [
+      '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)
       '/api/chemotherapy',  // module route (RBAC enforced per route)
@@ -364,6 +366,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   nurse: {
     allowedPaths: [
+      '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)
       '/api/chemotherapy',  // module route (RBAC enforced per route)
@@ -434,6 +437,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   hospital: {
     allowedPaths: [
+      '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)
       '/api/chemotherapy',  // module route (RBAC enforced per route)
@@ -488,6 +492,7 @@ const USER_TYPE_PERMISSIONS = {
   },
   clinic: {
     allowedPaths: [
+      '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/clinic',
       '/api/clinic/dashboard',
       '/api/clinic/appointments',

@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { PrescriptionSafetyAlert, isSafetyBlockError, safetyItemsFromError, type SafetyItem } from '@/components/clinical/PrescriptionSafetyAlert';
 import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
@@ -75,6 +76,8 @@ const HospitalPrescriptionCreator = () => {
   const [prescriptionNotes, setPrescriptionNotes] = useState('');
   const [prescriptionItems, setPrescriptionItems] = useState<PrescriptionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [safetyBlockers, setSafetyBlockers] = useState<SafetyItem[]>([]);
+  const [safetyWarnings, setSafetyWarnings] = useState<SafetyItem[]>([]);
 
   // Current prescription being edited
   const [currentItem, setCurrentItem] = useState<Partial<PrescriptionItem>>({
@@ -303,7 +306,7 @@ const HospitalPrescriptionCreator = () => {
     setPrescriptionItems(prescriptionItems.filter(item => item.id !== itemId));
   };
 
-  const handleCreatePrescription = async () => {
+  const handleCreatePrescription = async (override?: { reason: string; acknowledgedCodes: string[] }) => {
     if (!selectedPatient) {
       toast({
         title: "No Patient Selected",
@@ -338,22 +341,22 @@ const HospitalPrescriptionCreator = () => {
         diagnosis,
         medications: prescriptionItems,
         notes: prescriptionNotes,
-        doctorId: localStorage.getItem('doctorId') || 'current_doctor'
+        doctorId: localStorage.getItem('doctorId') || 'current_doctor',
+        ...(override ? { safetyOverride: override } : {})
       };
 
-      try {
-        await api.post(
-          '/hospital/practice/prescriptions',
-          prescriptionData,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
+      // The prescription only counts as created once the server has actually saved it — a failed write (including a
+      // safety block) must never be shown to the user as success or produce a record that exists only in this browser.
+      const response = await api.post(
+        '/hospital/practice/prescriptions',
+        prescriptionData,
+        { headers: hospitalHeaders() }
+      );
+      const saved = response.data?.data;
 
       const created: Prescription = {
-        id: `PRE-${Date.now()}`,
-        prescriptionNumber: `RX-${Date.now().toString().slice(-6)}`,
+        id: String(saved?.id ?? `PRE-${Date.now()}`),
+        prescriptionNumber: saved?.id ? `RX-${String(saved.id).slice(-6)}` : `RX-${Date.now().toString().slice(-6)}`,
         patientId: selectedPatient.id,
         patientName: selectedPatient.name,
         uhid: selectedPatient.uhid,
@@ -363,7 +366,7 @@ const HospitalPrescriptionCreator = () => {
         diagnosis,
         notes: prescriptionNotes,
         status: 'Active',
-        createdDate: new Date().toISOString().slice(0, 10),
+        createdDate: (saved?.created_at ? String(saved.created_at) : new Date().toISOString()).slice(0, 10),
         validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       };
 
@@ -379,6 +382,8 @@ const HospitalPrescriptionCreator = () => {
       });
 
       // Reset form
+      setSafetyBlockers([]);
+      setSafetyWarnings([]);
       setSelectedPatient(null);
       setDiagnosis('');
       setPrescriptionNotes('');
@@ -386,6 +391,17 @@ const HospitalPrescriptionCreator = () => {
       setShowCreateDialog(false);
 
     } catch (error: any) {
+      if (isSafetyBlockError(error)) {
+        const { blockers, warnings } = safetyItemsFromError(error);
+        setSafetyBlockers(blockers);
+        setSafetyWarnings(warnings);
+        toast({
+          title: "Safety check",
+          description: error.response?.data?.message || "Review the safety alerts below before creating this prescription.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
         title: "Creation Failed",
         description: error.response?.data?.message || "Failed to create prescription. Please try again.",
@@ -663,11 +679,20 @@ const HospitalPrescriptionCreator = () => {
                 </Card>
               </div>
 
+              {(safetyBlockers.length > 0 || safetyWarnings.length > 0) && (
+                <PrescriptionSafetyAlert
+                  blockers={safetyBlockers}
+                  warnings={safetyWarnings}
+                  onOverride={(reason, acknowledgedCodes) => handleCreatePrescription({ reason, acknowledgedCodes })}
+                  overriding={loading}
+                />
+              )}
+
               <DialogFooter>
-                <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
+                <Button variant="outline" onClick={() => { setShowCreateDialog(false); setSafetyBlockers([]); setSafetyWarnings([]); }}>
                   Cancel
                 </Button>
-                <Button onClick={handleCreatePrescription} disabled={loading}>
+                <Button onClick={() => handleCreatePrescription()} disabled={loading}>
                   {loading ? 'Creating...' : 'Create Prescription'}
                 </Button>
               </DialogFooter>

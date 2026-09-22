@@ -6,6 +6,7 @@ import {
 } from '../services/emar.service.js';
 import { enforceHighAlertMedConsent } from '../services/consent-enforcement.service.js';
 import { enqueueFromAdministration } from '../services/emar-pharmacy-bridge.service.js';
+import { prescriptionSafetyGate } from '../services/prescription-safety.service.js';
 
 const router = express.Router();
 
@@ -24,8 +25,15 @@ async function afterAdministration(organizationId, body, result) {
   } catch (_) { /* table may not exist on legacy env */ }
 }
 
+// A new inpatient medication order is its own issuing event: the class-aware allergy/interaction/duplicate/pregnancy
+// check (WP-1.2), independent of the name-only allergy check validateAdministration already runs at the bedside.
+const safetyOnOrder = prescriptionSafetyGate('emar.order', (req) => ({
+  patientId: req.body?.patientId,
+  medications: [{ name: req.body?.drugName, dosage: [req.body?.dose, req.body?.doseUnit].filter(Boolean).join(' ') }],
+}), { issuing: true });
+
 // POST /api/v1/emar/orders
-router.post('/orders', authUser, async (req, res) => {
+router.post('/orders', authUser, safetyOnOrder, async (req, res) => {
   try {
     const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
     const order = await createMedicationOrder({ ...req.body, organizationId, prescribedBy: req.user.id });

@@ -70,6 +70,7 @@ import {
 } from "@/utils/prescriptionTranslations";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
+import { PrescriptionSafetyAlert, isSafetyBlockError, safetyItemsFromError, type SafetyItem } from "@/components/clinical/PrescriptionSafetyAlert";
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "react-router-dom";
 
@@ -181,6 +182,8 @@ const PrescriptionWriter = () => {
   
   // Multi-language support
   const [prescriptionLanguage, setPrescriptionLanguage] = useState("en");
+  const [safetyBlockers, setSafetyBlockers] = useState<SafetyItem[]>([]);
+  const [safetyWarnings, setSafetyWarnings] = useState<SafetyItem[]>([]);
   const t = getTranslation(prescriptionLanguage);
 
   const [prescription, setPrescription] = useState<PrescriptionData>({
@@ -456,23 +459,34 @@ const PrescriptionWriter = () => {
     }, 250);
   };
 
-  // Save prescription
+  // Save prescription. A second call, after the safety alert collects an acknowledgement/override, carries
+  // `override` back to the server so the same 409 does not repeat (WP-1.2).
   const savePrescriptionMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (override?: { reason: string; acknowledgedCodes: string[] }) => {
       const response = await api.post('/prescriptions', {
         patientId: prescription.patientInfo.id,
         appointmentId: appointmentIdFromUrl,
         ...prescription,
         doctorId: currentDoctor?.id,
-        language: prescriptionLanguage
+        language: prescriptionLanguage,
+        ...(override ? { safetyOverride: override } : {})
       });
       return response.data;
     },
     onSuccess: () => {
+      setSafetyBlockers([]);
+      setSafetyWarnings([]);
       toast({ title: "Success", description: "Prescription saved successfully" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to save prescription", variant: "destructive" });
+    onError: (err: any) => {
+      if (isSafetyBlockError(err)) {
+        const { blockers, warnings } = safetyItemsFromError(err);
+        setSafetyBlockers(blockers);
+        setSafetyWarnings(warnings);
+        toast({ title: "Safety check", description: err?.response?.data?.message || "Review the safety alerts before saving.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Error", description: err?.response?.data?.message || "Failed to save prescription", variant: "destructive" });
     }
   });
 
@@ -538,12 +552,21 @@ const PrescriptionWriter = () => {
                 <Printer className="h-4 w-4 mr-2" />
                 Print
               </Button>
-              <Button onClick={() => savePrescriptionMutation.mutate()} disabled={savePrescriptionMutation.isPending}>
+              <Button onClick={() => savePrescriptionMutation.mutate(undefined)} disabled={savePrescriptionMutation.isPending}>
                 <Save className="h-4 w-4 mr-2" />
                 Save
               </Button>
             </div>
           </div>
+
+          {(safetyBlockers.length > 0 || safetyWarnings.length > 0) && (
+            <PrescriptionSafetyAlert
+              blockers={safetyBlockers}
+              warnings={safetyWarnings}
+              onOverride={(reason, acknowledgedCodes) => savePrescriptionMutation.mutate({ reason, acknowledgedCodes })}
+              overriding={savePrescriptionMutation.isPending}
+            />
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Left Panel - Form */}

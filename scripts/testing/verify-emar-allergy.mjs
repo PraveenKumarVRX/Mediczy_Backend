@@ -105,11 +105,14 @@ const cleanup = async () => {
 
 let server; let crashed = null; let renamed = false; let wrapped = false;
 try {
+  // Mirrors the production shape after server/migrations/clinical-safety-foundation.migration.js (status/drug_class/
+  // substance_system/entered_by) so this fixture works on a fresh database, not only one the migration already ran on.
   await pool.query(`CREATE TABLE IF NOT EXISTS patient_allergies (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id INTEGER NOT NULL, organization_id INTEGER,
     allergen_name VARCHAR(200) NOT NULL, allergen_code VARCHAR(50), allergen_type VARCHAR(50),
     severity VARCHAR(20) DEFAULT 'UNKNOWN', reaction_type VARCHAR(200), onset_date DATE, notes TEXT,
     verified BOOLEAN DEFAULT FALSE, verified_by INTEGER, verified_at TIMESTAMPTZ, source VARCHAR(50),
+    status VARCHAR(24) NOT NULL DEFAULT 'active', drug_class VARCHAR(80), substance_system VARCHAR(40), entered_by INTEGER,
     created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`).catch(() => {});
   await cleanup();
   await pool.query(`ALTER TABLE patient_allergies RENAME TO patient_allergies_base`); wrapped = true;

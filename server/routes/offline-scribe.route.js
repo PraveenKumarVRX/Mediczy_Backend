@@ -16,6 +16,7 @@ import { File } from 'buffer';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import logger from '../config/logger.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { checkPrescriptionSafety } from '../services/prescription-safety.service.js';
 
 const router = express.Router();
 const ambientSessions = new Map();
@@ -213,7 +214,7 @@ function buildScribeMessages({ documentType, transcript, patientContext = {}, la
     ];
 }
 
-async function generateScribeDocument({ documentType, transcript, patientContext = {}, language = 'auto' }) {
+async function generateScribeDocument({ documentType, transcript, patientContext = {}, language = 'auto', organizationId = null }) {
     const normalizedType = mapDocumentTypeForBackend(documentType);
     const messages = buildScribeMessages({ documentType: normalizedType, transcript, patientContext, language });
     const cascade = [];
@@ -239,6 +240,18 @@ async function generateScribeDocument({ documentType, transcript, patientContext
                 structuredData = derivePrescriptionStructuredData(formattedText, structuredData);
             }
             const safety = validateScribeOutput(normalizedType, transcript, formattedText, structuredData);
+            // Prescription draft: attach an allergy/interaction check as a visible flag, never a block — this route never
+            // saves a prescription itself, the actual write path (routes/prescription.route.js) enforces the real gate.
+            const patientId = patientContext.patientId || patientContext.patient_id;
+            if (normalizedType === 'prescription' && patientId && Array.isArray(structuredData.medications) && structuredData.medications.length) {
+                try {
+                    const check = await checkPrescriptionSafety({ patientId, organizationId, medications: structuredData.medications });
+                    safety.prescriptionSafety = { blockers: check.blockers, warnings: check.warnings, allergyStatus: check.allergyStatus };
+                    if (check.blockers.length) safety.safety_level = 'high_risk';
+                } catch (safetyErr) {
+                    safety.prescriptionSafety = { unavailable: true };
+                }
+            }
             cascade.push({ provider, status: 'success', model: llm.model, latencyMs: llm.latencyMs });
             return {
                 success: true,

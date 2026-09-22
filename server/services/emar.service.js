@@ -12,6 +12,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+import { getAllergyStatus } from './allergy.service.js';
 
 // ── High-alert drug list (generic name / class fragments, lower-cased) ────────
 const HIGH_ALERT_DRUGS = new Set([
@@ -134,29 +135,22 @@ const NON_DRUG_ALLERGEN_TYPES = new Set(['food', 'environmental', 'latex']); // 
 const ALLERGY_MATCH_NOTE = 'Allergies are matched by name only. Drug-class and brand matching arrive with the full allergy module.';
 
 /**
+ * Thin wrapper over allergy.service's getAllergyStatus (WP-1.1's single allergy read/write path) shaped for eMAR's
+ * own return contract: an array of active allergies, or a thrown error for "could not be checked" (never "none").
  * Throws on any database error: callers must treat a failed lookup as "unknown", never as "no allergies".
- * patient_allergies is protected by FORCE ROW LEVEL SECURITY (policy: organization = app.current_org_id OR
- * user = app.current_user_id). A bare query as the application role therefore sees ZERO rows and would read every
- * patient as "no allergy recorded" — so the lookup runs in a transaction that sets that context first.
  */
 export async function lookupPatientAllergies(patientId, organizationId = null) {
-  return sequelize.transaction(async (transaction) => {
-    await setRlsContext(transaction, { orgId: organizationId || 0, userId: patientId, isPlatformAdmin: false });
-    return sequelize.query(
-      `SELECT allergen_name, allergen_type, reaction_type, severity, verified
-         FROM patient_allergies WHERE user_id = :patientId ORDER BY severity, allergen_name`,
-      { replacements: { patientId }, type: QueryTypes.SELECT, transaction }
-    );
-  });
+  const { status, allergies } = await getAllergyStatus(patientId, organizationId);
+  return { status, allergies };
 }
 
 const hasOverrideReason = (r) => typeof r === 'string' && r.trim().length >= 5;
 
 async function evaluateAllergy({ order, drugName, overrideReason, allergyAcknowledged, blocks }) {
   const info = { status: 'unchecked', note: ALLERGY_MATCH_NOTE };
-  let allergies;
+  let status, allergies;
   try {
-    allergies = await lookupPatientAllergies(order.patient_id ?? order.adm_patient_id, order.organization_id);
+    ({ status, allergies } = await lookupPatientAllergies(order.patient_id ?? order.adm_patient_id, order.organization_id));
   } catch (e) {
     console.error('[eMAR] allergy lookup failed:', e.message);
     info.status = 'lookup_failed';
@@ -165,7 +159,8 @@ async function evaluateAllergy({ order, drugName, overrideReason, allergyAcknowl
     return info;
   }
 
-  if (allergies.length === 0) {
+  if (status === 'no_known_allergy') { info.status = 'checked_no_match'; return info; }
+  if (status === 'unknown') {
     // No recorded status is unknown, not "no allergies" — the chart may simply never have been asked.
     info.status = 'unknown';
     info.acknowledged = Boolean(allergyAcknowledged);

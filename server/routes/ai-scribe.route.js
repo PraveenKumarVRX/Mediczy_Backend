@@ -2,6 +2,7 @@ import express from 'express';
 import { authDoctor } from '../middleware/auth.middleware.js';
 import medicalAIService from '../services/medicalAI.service.js';
 import qualityGates from '../services/ai-quality-gates.service.js';
+import { checkPrescriptionSafety, getSafetyMode, logSafetyEvaluation, orgOfRequest } from '../services/prescription-safety.service.js';
 import medicalTerminologyService from '../services/medical-terminology.service.js';
 import cimsService from '../services/cims.service.js';
 import { Appointment, User, Doctor } from '../models/index.js';
@@ -343,8 +344,20 @@ Generate the prescription JSON:`;
     // ── Quality gate: dosage hallucination scan over medications + free text, with
     // mandatory physician review. Fail-safe: a gate exception counts as blocked.
     // Blocked drafts are persisted as status 'draft' (never 'issued') — see below.
-    const { gate: scribeGate, blocked: gateBlocked, gateFailed } =
+    const { gate: scribeGate, blocked: qualityBlocked, gateFailed } =
       await qualityGates.evaluateAiPrescriptionDraft(prescriptionContent);
+
+    // ── Prescription safety (allergy, interaction, duplicate, pregnancy, dose). AI output must never be auto-issued
+    // against a documented allergy, so a safety blocker (or a check that could not run) keeps this a draft in every mode:
+    // the physician still reviews and issues it, with the alert in front of them.
+    let safetyCheck = null; let safetyFailed = false;
+    if (patientId) {
+      try {
+        safetyCheck = await checkPrescriptionSafety({ patientId, organizationId: orgOfRequest(req), medications: prescriptionContent.medications || [] });
+        logSafetyEvaluation({ organizationId: orgOfRequest(req), patientId: Number(patientId), actorId: req.doctor.id, source: 'ai-scribe.generate', mode: await getSafetyMode(orgOfRequest(req)), outcome: safetyCheck.blockers.length ? 'blocked' : safetyCheck.warnings.length ? 'warnings' : 'clean', blockers: safetyCheck.blockers, warnings: safetyCheck.warnings, allergyStatus: safetyCheck.allergyStatus, latencyMs: safetyCheck.latencyMs }).catch(() => {});
+      } catch (safetyErr) { safetyFailed = true; console.error('[Scribe] safety check failed — keeping as draft:', safetyErr.message); }
+    }
+    const gateBlocked = qualityBlocked || safetyFailed || Boolean(safetyCheck?.blockers?.length);
     qualityGates.logGateResult(scribeGate, { patientId: patientId || null, doctorId: req.doctor.id, source: 'ai-scribe/generate-prescription', gateFailed, persistedAs: gateBlocked ? 'draft' : 'issued' }).catch(() => {});
 
     // Save to database if requested
@@ -451,6 +464,7 @@ Generate the prescription JSON:`;
       blocked: gateBlocked, // true => not issued; saved (if requested) as a draft for physician edit/issue
       reviewRequired: true, // AI-generated draft — physician review/signature is mandatory before this is treated as final, per checkScribeOutput's non-negotiable gate
       qualityGate: { severity: scribeGate.severity, warnings: scribeGate.warnings, blockers: scribeGate.blockers },
+      safetyCheck: safetyCheck ? { blockers: safetyCheck.blockers, warnings: safetyCheck.warnings, allergyStatus: safetyCheck.allergyStatus } : { unavailable: safetyFailed || !patientId },
       savedPrescription: savedPrescription ? {
         id: savedPrescription.id,
         prescriptionId: savedPrescription.prescriptionId,
