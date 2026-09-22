@@ -1,0 +1,53 @@
+# Code owners (WP-0.6).
+#
+# IMPORTANT — this file has NO EFFECT until:
+#   1. it (or a copy) is enabled as a required check under branch protection for `main`
+#      ("Require review from Code Owners" — see docs/deployment/BRANCH_PROTECTION.md /
+#      scripts/ops/apply-branch-protection.sh, which turns that on), and
+#   2. every @handle below is replaced with a real GitHub username or team that has
+#      write access to this repository — GitHub silently ignores an owner it can't resolve.
+# The `@mediczy-owner` placeholder throughout is not a real account; edit this file to name
+# actual reviewers (or a GitHub team, e.g. @MySmartHealth/backend) before relying on it.
+#
+# GitHub reads the LAST matching pattern for a given path, so more specific rules stay below
+# more general ones, mirroring .gitignore order.
+
+# Default: anyone with write access may review unless a more specific rule below applies.
+*                                       @mediczy-owner
+
+# ── Anything that runs before code reaches production ───────────────────────────────────────
+/.github/workflows/                    @mediczy-owner
+/scripts/deploy/                       @mediczy-owner
+/scripts/ops/                          @mediczy-owner
+/CODEOWNERS                            @mediczy-owner
+
+# ── Database migrations — additive-only, dependency-ordered, run against production; a bad
+#    one is expensive to undo, so these always want a second pair of eyes. ──────────────────
+/server/migrations/                    @mediczy-owner
+/server/db/migrations/                 @mediczy-owner
+
+# ── Auth, tenant isolation and row-level security — a mistake here is a data-isolation bug ──
+/server/middleware/auth.middleware.js          @mediczy-owner
+/server/middleware/ringFencing.js              @mediczy-owner
+/server/middleware/rls-context.middleware.js   @mediczy-owner
+/server/middleware/multitenancy.middleware.js  @mediczy-owner
+/server/services/tenant-scope.service.js       @mediczy-owner
+/client/src/auth/                              @mediczy-owner
+
+# ── Clinical safety (WP-1.1 / WP-1.2): allergies, prescribing, drug interactions ────────────
+/server/services/allergy.service.js                @mediczy-owner
+/server/services/prescription-safety.service.js    @mediczy-owner
+/server/services/drug-class.service.js             @mediczy-owner
+/server/services/ai-drug-interaction.service.js    @mediczy-owner
+/server/routes/clinical-safety.route.js            @mediczy-owner
+
+# ── Money: payments, billing, payroll ────────────────────────────────────────────────────────
+/server/services/payment-gateway.service.js    @mediczy-owner
+/server/services/hospital-billing.service.js   @mediczy-owner
+/server/routes/payroll.route.js                @mediczy-owner
+
+# ── SaMD / AI governance — model cards, interpretability, change control ────────────────────
+/server/services/ai-model-governance.service.js            @mediczy-owner
+/server/services/ai-interpretability.service.js            @mediczy-owner
+/server/services/ai-quality-gates.service.js               @mediczy-owner
+/docs/ai/                                                  @mediczy-owner

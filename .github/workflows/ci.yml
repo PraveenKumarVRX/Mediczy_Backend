@@ -106,3 +106,17 @@ jobs:
           bash scripts/backup/test-check-offsite-freshness.sh
       # The verify-*.mjs scripts need the application schema (an empty database is not enough). Enable them here once a
       # schema bootstrap exists for CI; they are run locally today as described in each script's header.
+
+  tenant-isolation-statics:
+    name: Tenant isolation static check (advisory)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # WP-0.6: a heuristic trip-wire, not a proof — see the script's own header for exactly what it
+      # can and can't see. Never blocks a PR; it's here so a new raw query against a tenant-scoped
+      # table without an isolation mechanism anywhere in its file gets flagged for a human look.
+      - run: node server/scripts/ci/check-tenant-isolation-statics.mjs

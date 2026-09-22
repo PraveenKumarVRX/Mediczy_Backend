@@ -4,24 +4,76 @@ name: Production Deployment
 # or a push to main whose commit message contains [deploy-prod].
 # Auto-deploy on every push was removed because it overwrites hotfixes applied on-server.
 # Workflow: fix on server → commit → push to main → manually trigger deploy when ready.
+#
+# WP-0.6 changes from the previous version of this workflow:
+#  - The client is built HERE, on a GitHub-hosted runner, not on the production box while it serves
+#    live traffic (scripts/deploy/deploy-full-prod-s3.sh accepts the resulting archive via
+#    CLIENT_DIST_ARCHIVE and skips its own on-host build when one is given).
+#  - deploy-full-prod-s3.sh now has a real, retried health check that gates the deploy and an
+#    automatic revert on any failing step (see that script's header) — this workflow no longer needs
+#    to (and previously did not) roll anything back itself for an in-script failure. A "Rollback on
+#    post-deploy check failure" step below covers the one thing the on-host script can't see: a check
+#    that only runs after it already exited 0 (the public HTTPS health check / CRM contract check).
+#  - secrets.SERVER_HOST is now required — no hardcoded production IP fallback baked into the workflow.
+#  - The lab@mediczy.com QA login reset no longer runs automatically on every production deploy; run it
+#    on demand instead: `cd server && npm run fix:lab-login:ssm` on the host, or wire it into a separate,
+#    manually-triggered workflow if it needs to run from CI.
 on:
   workflow_dispatch:
   push:
     branches: [main]
 
 jobs:
+  build-client:
+    name: Build client (off the production host)
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy-prod]')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci --include=dev
+      - run: npm run build
+      - name: Package the build as an artifact
+        run: tar -czf ../client-dist.tar.gz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: client-dist.tar.gz
+          retention-days: 7
+
   deploy:
     name: Deploy to Production
+    needs: build-client
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy-prod]')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-dist
+
+      - name: Ship the built client to the server
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER || 'ubuntu' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: client-dist.tar.gz
+          target: /tmp/
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST || '13.127.125.93' }}
+          host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER || 'ubuntu' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           command_timeout: 45m
@@ -30,14 +82,13 @@ jobs:
             cd /home/ubuntu/Mediczy
             git fetch origin main
             git pull origin main
-            bash scripts/deploy/deploy-full-prod-s3.sh
+            # deploy-full-prod-s3.sh itself now gates on a real health check and automatically reverts to the
+            # previous commit (code, deps, PM2, S3 index.html) on ANY failing step — see its header comment.
+            CLIENT_DIST_ARCHIVE=/tmp/client-dist.tar.gz bash scripts/deploy/deploy-full-prod-s3.sh
             echo "✓ Full prod + S3 deployment complete"
-            echo "→ Ensuring lab@mediczy.com login account..."
-            cd /home/ubuntu/Mediczy/server
-            npm run fix:lab-login:ssm
-            echo "✓ Lab login account reset complete"
 
-      - name: Post-deployment health check
+      - name: Post-deployment health check (public endpoint)
+        id: post_health
         run: |
           echo "⏳ Waiting for server to start..."
           for i in 1 2 3 4 5; do
@@ -49,6 +100,7 @@ jobs:
           exit 1
 
       - name: Verify CRM API route contract
+        id: crm_contract
         run: |
           for path in \
             /api/crm/v2/funnel \
@@ -62,6 +114,22 @@ jobs:
             fi
             echo "✓ ${path} is mounted"
           done
+
+      # deploy-full-prod-s3.sh's own health check already caught anything visible from localhost on the box; this
+      # step is for the case that check couldn't see — the PUBLIC endpoint (CloudFront/ALB/DNS) unhealthy even
+      # though the on-host deploy reported success. deploy-full-prod-s3.sh recorded the previous good commit in
+      # .deploy/last-good-sha before it made any change, so rollback.sh has something concrete to go back to.
+      - name: Rollback on post-deploy check failure
+        if: failure() && (steps.post_health.outcome == 'failure' || steps.crm_contract.outcome == 'failure')
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER || 'ubuntu' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          command_timeout: 15m
+          script: |
+            cd /home/ubuntu/Mediczy
+            bash scripts/deploy/rollback.sh
 
       - name: Notify on success
         if: success()

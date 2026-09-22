@@ -150,3 +150,6 @@ offline_scribe/__pycache__/
 offline_scribe/**/__pycache__/
 server/__pycache__/
 qa-samples/
+
+# Deploy metadata (WP-0.6 automatic revert): recorded on the production host only, never committed
+.deploy/
