@@ -143,7 +143,7 @@ deploy_body() {
   else
     (
       cd client
-      export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=6144}"
+      export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
       # vite/tailwind/typescript are devDependencies — must install even when NODE_ENV=production
       rm -rf node_modules
       NODE_ENV=development npm ci --include=dev --prefer-offline
@@ -281,7 +281,7 @@ if [ -n "${CLIENT_DIST_ARCHIVE:-}" ]; then
 else
   (
     cd client
-    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=6144}"
+    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
     rm -rf node_modules
     NODE_ENV=development npm ci --include=dev --prefer-offline
     if [ ! -x node_modules/.bin/vite ]; then
