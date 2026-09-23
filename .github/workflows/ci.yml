@@ -120,3 +120,17 @@ jobs:
       # can and can't see. Never blocks a PR; it's here so a new raw query against a tenant-scoped
       # table without an isolation mechanism anywhere in its file gets flagged for a human look.
       - run: node server/scripts/ci/check-tenant-isolation-statics.mjs
+
+  invented-data-statics:
+    name: Invented-data static check (WP-0.3a)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # WP-0.3a: unlike the tenant-isolation check above, this one is a real gate, not advisory — the
+      # plan's own acceptance criterion is "the lint rule fails the build." It only fails on a *new*
+      # file matching the pattern; existing debt is tracked in invented-data-allowlist.json (51 files
+      # as of 2026-09-23, most already mapped to WP-0.3b/c/d in docs/IMPLEMENTATION_STATUS_AND_NEXT_STEPS.md).
+      - run: node client/scripts/ci/check-invented-data-statics.mjs

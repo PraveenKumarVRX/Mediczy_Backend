@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import AmbulanceLayout from "@/components/ambulance/AmbulanceLayout";
+import { PlaceholderBanner } from "@/components/ui/placeholder-banner";
 import api from "@/utils/api";
 
 type Id = string;
@@ -104,20 +105,6 @@ const dialPhone = (phone: string) => {
   if (!phone) return;
   window.location.href = `tel:${phone}`;
 };
-
-/** Honest label for sections that cannot show real data (e.g. live GPS,
- * which has no data source yet). Added 2026-09-18 rather than silently
- * leaving these unlabeled, which was the previous state. */
-function PlaceholderBanner({ reason, title = "Sample data." }: { reason: string; title?: string }) {
-  return (
-    <div className="flex items-start gap-2 text-xs bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-900 rounded-lg p-3 mb-4">
-      <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
-      <span className="text-amber-800 dark:text-amber-200">
-        <strong>{title}</strong> {reason}
-      </span>
-    </div>
-  );
-}
 
 function timeAgo(iso: string | null | undefined) {
   if (!iso) return "";
