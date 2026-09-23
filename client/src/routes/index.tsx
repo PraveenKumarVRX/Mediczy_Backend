@@ -832,6 +832,7 @@ const ITEDPSupportPage  = lazyNamed(_ITEDPModulePages, "ITEDPSupportPage");
 const WardDashboard         = lazy(() => import("@/pages/ward/WardDashboard"));
 const AdmitPatientForm      = lazy(() => import("@/pages/ward/AdmitPatientForm"));
 const ERQueuePage           = lazy(() => import("@/pages/er/ERQueue"));
+const ERRegisterPage        = lazy(() => import("@/pages/er/ERRegister"));
 const SmartCareNavigator    = lazy(() => import("@/pages/patient/SmartCareNavigator"));
 const PatientTimeline       = lazy(() => import("@/pages/hmis/PatientTimeline"));
 const NursingTaskBoard      = lazy(() => import("@/pages/hmis/NursingTaskBoard"));
@@ -1895,6 +1896,7 @@ const AppRoutes = () => {
         <Route path="/hospital/assets"                                  element={<Navigate to="/hospital/asset-tracking" replace />} />
         <Route path="/hospital/corporate-crm"                           element={<HospitalCorporateCRM />} />
         <Route path="/hospital/er/queue"                                element={<ERQueuePage />} />
+        <Route path="/hospital/er/register"                             element={<ERRegisterPage />} />
         <Route path="/patient/care-journey"                             element={<SmartCareNavigator />} />
         {/* Legacy /hmis/* → /hospital/*, /doctor/*, /nurse/*, or /assistant/* */}
         <Route path="/hmis/*" element={<HmisLegacyRedirect />} />
