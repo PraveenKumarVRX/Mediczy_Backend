@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import HomecareSidebar from "./HomecareSidebar";
-import { Bell, HeartPulse, ChevronDown, Heart, Sun, Moon } from "lucide-react";
+import { Bell, HeartPulse, ChevronDown, Heart, Sun, Moon, FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -136,6 +136,15 @@ const HomecareLayout = ({ children, title, subtitle }: HomecareLayoutProps) => {
             </DropdownMenu>
           </div>
         </header>
+
+        {/* WP-0.3: every screen under this layout (care plans, billing, inventory, reports) currently
+            simulates its save/generate actions with a timed delay and no real backend call — see
+            HomecareModulePages.tsx. Rather than silently present that fabricated success as real (the
+            bug this work targets), say so plainly until real endpoints exist. */}
+        <div className="mx-6 mt-4 flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          <FlaskConical className="h-4 w-4 shrink-0" />
+          Demo mode — actions on this screen are simulated and not yet saved to a real backend.
+        </div>
 
         {/* Page Content */}
         <main className="p-6">{children}</main>

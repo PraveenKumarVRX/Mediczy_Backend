@@ -19,6 +19,7 @@ import {
   Sparkles,
   ShieldCheck,
   ArrowRight,
+  FlaskConical,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
@@ -267,6 +268,13 @@ const Ayushman = () => {
 
   return (
       <div className="container py-6 space-y-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
+        {/* WP-0.3: card verification and all balance/hospital/claims data below are simulated — there is
+            no real integration with the National Health Authority / PM-JAY systems yet. This must never
+            look indistinguishable from a real coverage check, since a patient could act on it. */}
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/40 dark:border-amber-800 px-3 py-2 text-xs font-medium text-amber-800 dark:text-amber-300">
+          <FlaskConical className="h-4 w-4 shrink-0" />
+          Demo mode — this screen is not yet connected to the real Ayushman Bharat / PM-JAY system. Card verification and balances shown are simulated, not your real coverage.
+        </div>
         <motion.section
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}

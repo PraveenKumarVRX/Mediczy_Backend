@@ -19,7 +19,8 @@ import {
   Calendar,
   MapPin,
   Phone,
-  Mail
+  Mail,
+  FlaskConical
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -109,6 +110,12 @@ const TeamPharmacyEdit = () => {
   return (
     <MainLayout>
       <div className="max-w-4xl mx-auto space-y-6">
+        {/* WP-0.3: the loaded pharmacy details and the save action below are both simulated — there is
+            no real backend endpoint behind this screen yet. */}
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+          <FlaskConical className="h-4 w-4 shrink-0" />
+          Demo mode — pharmacy details shown are sample data and changes here are not yet saved to a real backend.
+        </div>
         {/* Header */}
         <div className="flex items-center gap-4">
           <Link to="/team/pharmacy-edit">
