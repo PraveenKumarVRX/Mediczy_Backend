@@ -387,7 +387,10 @@ router.post('/labs/ensure-login', authUser, requireRole('admin'), async (req, re
   try {
     const { resetLabQaAccount } = await import('../scripts/qa/reset-lab-qa-account.mjs');
     const email = String(req.body?.email || 'lab@mediczy.com').toLowerCase().trim();
-    const password = String(req.body?.password || 'Lab@123');
+    if (!req.body?.password) {
+      return res.status(400).json({ success: false, message: 'password is required — no default is set' });
+    }
+    const password = String(req.body.password);
     const name = String(req.body?.name || 'Mediczy Diagnostics Lab');
     const phoneNumber = String(req.body?.phoneNumber || '+919999000003');
 

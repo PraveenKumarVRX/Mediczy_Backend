@@ -15,7 +15,8 @@
     "test:doctor-assistant-nav-regression": "npm run test:doctor-assistant-nav-regression --prefix server",
     "test:user-login-security-regression": "npm run test:user-login-security-regression --prefix server",
     "test:index-appointments-fallback-regression": "npm run e2e:index-appointments-fallback --prefix client",
-    "ops:activate-subscription": "npm run ops:activate-subscription --prefix server --"
+    "ops:activate-subscription": "npm run ops:activate-subscription --prefix server --",
+    "prepare": "[ -d .git ] && cp scripts/git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit || true"
   },
   "dependencies": {
     "@google/generative-ai": "^0.22.0",

@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# WP-0.1: local last-line-of-defense secret scan, before CI ever sees the commit.
+# Installed via `npm run prepare` (see root package.json) into .git/hooks/pre-commit, which git never
+# tracks itself — this versioned copy is what actually ships with the repo.
+set -u
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "⚠️  gitleaks not installed — skipping local secret scan (CI still runs it on push)."
+  echo "   Install: https://github.com/gitleaks/gitleaks#installing"
+  exit 0
+fi
+
+gitleaks protect --staged --redact --config .gitleaks.toml
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "❌ gitleaks found a likely secret in your staged changes — commit blocked."
+  echo "   If this is a false positive, add a narrow allowlist entry to .gitleaks.toml (never disable the hook)."
+fi
+
+exit "$status"

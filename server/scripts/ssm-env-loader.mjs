@@ -17,9 +17,14 @@ import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
-const REGION    = process.env.AWS_REGION        || 'ap-south-1';
-const SSM_PATH  = process.env.SSM_PARAM_PATH    || '/mediczy/prod';
-const SKIP_SSM  = process.env.SKIP_SSM_LOADER   === 'true';
+const REGION       = process.env.AWS_REGION        || 'ap-south-1';
+const SSM_PATH     = process.env.SSM_PARAM_PATH    || '/mediczy/prod';
+const SKIP_SSM     = process.env.SKIP_SSM_LOADER   === 'true';
+// WP-0.1: once the parameter store is the only source of secrets in production, a failed fetch must
+// stop the process rather than silently falling back to whatever local env (or nothing) happens to be
+// present — a silent fallback is exactly how a stale or missing secret goes unnoticed. Opt-in only;
+// existing behavior (fall back and warn) is unchanged until this is explicitly turned on.
+const SSM_REQUIRED = process.env.SSM_REQUIRED      === 'true';
 
 function applyProductionSafeFallbacks({ ssmLoaded }) {
   if (process.env.NODE_ENV !== 'production') return;
@@ -92,6 +97,10 @@ async function loadFromSSM() {
     console.log(`[ssm-loader] Loaded parameters from ${SSM_PATH}`);
     return true;
   } catch (err) {
+    if (SSM_REQUIRED) {
+      console.error(`[ssm-loader] SSM load failed and SSM_REQUIRED=true — refusing to start: ${err.message}`);
+      process.exit(1);
+    }
     // Non-fatal: fall back to whatever env is already set (e.g. .env file on EC2)
     console.warn(`[ssm-loader] SSM load failed (falling back to local env): ${err.message}`);
     return false;

@@ -1,11 +1,12 @@
 # Dependencies
 node_modules/
 
-# Environment files
-.env
-.env.local
-.env.production
-.env.development
+# Environment files — WP-0.1: several real-value .env files were committed because this list only
+# matched exact names. Match the whole family instead, with a carve-out only for committed templates.
+.env*
+!.env*.example
+!**/.env*.example
+client/.env.*
 docker/imaging/.env
 infra/imaging/.env
 **/mediczy-orthanc-auth.inc
