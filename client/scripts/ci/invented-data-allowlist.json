@@ -148,14 +148,6 @@
     "reason": "REAL (likely): `recentAdmissions` reads as fabricated patient admission data — re-verify, not yet fixed"
   },
   {
-    "file": "src/pages/ot/OTDashboard.tsx",
-    "reason": "REAL, WP-0.3b: `equipmentStatus` fabricated (separate file from ot/OTModulePages.tsx, same module)"
-  },
-  {
-    "file": "src/pages/ot/OTModulePages.tsx",
-    "reason": "REAL, WP-0.3b: the plan's own named example — 14 static arrays (schedule/preOpPatients/consents/equipment/etc.) plus a fake live tick"
-  },
-  {
     "file": "src/pages/patient/DeviceIntegration.tsx",
     "reason": "false positive: `FITNESS_WATCHES` is a static supported-device catalog, not patient data"
   },
