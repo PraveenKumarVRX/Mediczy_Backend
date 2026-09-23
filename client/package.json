@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "VITE_HMR_HOST=localhost VITE_HMR_PORT=9443 vite --host 0.0.0.0 --port 9443",
     "dev:watch": "VITE_HMR_HOST=localhost VITE_HMR_PORT=9443 vite --host 0.0.0.0 --port 9443 --force",
-    "build": "NODE_OPTIONS='--max-old-space-size=3072' vite build",
+    "build": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" vite build",
     "build:dev": "NODE_OPTIONS='--max-old-space-size=2048' vite build --mode development",
-    "build:prod": "NODE_OPTIONS='--max-old-space-size=3072' vite build --mode production",
+    "build:prod": "NODE_OPTIONS=\"${NODE_OPTIONS:---max-old-space-size=8192}\" vite build --mode production",
     "build:low-mem": "NODE_OPTIONS='--max-old-space-size=2048' vite build",
     "lint": "eslint .",
     "test": "vitest run",
