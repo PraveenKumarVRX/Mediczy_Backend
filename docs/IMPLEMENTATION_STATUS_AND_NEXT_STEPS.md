@@ -13,7 +13,7 @@ whenever picking this project back up after a gap; both the plan and the codebas
 |---|---|---|
 | 0.1 Secrets | **Safe subset only** | `.gitignore` fixed, 10 real-value `.env*` files untracked, a silent default-password endpoint closed, `SSM_REQUIRED` fail-closed option added, local pre-commit gitleaks hook added. **Owner action, not done**: rotate the live DB password and JWT secrets (signs out every user — needs an announced window), rotate third-party keys, reset every test account password, then `git-filter-repo` + force-push to purge history (freezes merges, everyone re-clones). |
 | 0.2 Access-rules deploy | Live | Deployed and verified against real role logins. |
-| 0.3 No invented data | **Far from done — see below** | Only a fraction of the named screens touched. |
+| 0.3 No invented data | **WP-0.3a + WP-0.3b done; c/d remain** | See below. |
 | 0.4 Payments | Live | Migration applied to production. |
 | 0.5 Tenant isolation (SCM/blood bank/CSSD/dietary) | Done | 98-check verification script, non-superuser role. |
 | 0.6 CI gate and release pipeline | Partial | `ci.yml`, gitleaks CI job, `/healthz`, real gating health check + auto-revert all built and now proven across 4 real deploys today. **Not done**: the pipeline itself has never actually run on GitHub Actions (no `gh auth login` access to verify); branch protection not applied; `CODEOWNERS` still has placeholder usernames. |
@@ -24,20 +24,36 @@ whenever picking this project back up after a gap; both the plan and the codebas
 
 The plan splits this into four sub-packages. Status as of 2026-09-23:
 
-- **WP-0.3a — Framework, lint and tests: NOT STARTED until this session.** Needs: a shared
-  `placeholder-banner.tsx` (extracted from the existing pattern in `AmbulanceDashboard.tsx`), a
-  `DataState` wrapper (`{loading, error, data, isEmpty, onRetry, staleSince}` → renders the right of
-  five states so a screen can't forget one — see plan section 8.4), a lint rule / repo test that fails
-  CI when a page under `client/src/pages` declares a top-level array of 5+ person-like object literals
-  (unless allow-listed), and a test helper that mocks the API to fail/empty and asserts no old seed
-  text renders. **This is being started now** — see the commit this file ships with.
-- **WP-0.3b — Clinical screens (not started):** `icu/ICUModulePages.tsx` + `icu/useICUPortalData.ts`
-  (14 seed constants, invented bed/nurse-ratio math, hook always returns an empty live-patient list),
-  `hospital/HospitalEHR.tsx` (a *different* bug than the one already fixed: an empty hospital still
-  shows one seeded fake patient via localStorage), `doctor/PatientEMR.tsx` (hardcoded prescriptions/labs/
-  appointments shown for every patient), `ot/OTModulePages.tsx` (14 static arrays + a fake 3-second
-  live tick), `dept/BloodBankDashboardPage.tsx` (7 arrays + fake refresh), `hospital/HospitalClinicalCDSS.tsx`
-  (fake active patient/suggestions), `hospital/HospitalTeleconsult.tsx` (one hardcoded card).
+- **WP-0.3a — Framework, lint and tests: DONE (2026-09-23).** Shipped: `client/src/components/ui/
+  placeholder-banner.tsx`, `client/src/components/ui/data-state.tsx` (five-states wrapper), the real
+  CI gate `client/scripts/ci/check-invented-data-statics.mjs` (wired into `.github/workflows/ci.yml`),
+  and the test helper `client/src/test-utils/assertNoInventedData.tsx`. Commit `b78d958e`.
+- **WP-0.3b — Clinical screens: DONE (2026-09-23).** All six named screens / seven files fixed and
+  verified (isolated tsc typecheck + vitest + the WP-0.3a static gate) across four commits:
+  - `hospital/HospitalClinicalCDSS.tsx`, `hospital/HospitalTeleconsult.tsx` — fake active patient/
+    suggestions/hardcoded card replaced with `EmptyState`. Commit `c26ceee6`.
+  - `hospital/HospitalEHR.tsx` — removed the seeded fake "Rajesh Kumar" patient and the bug that kept
+    it visible even after a genuinely-empty real API response; added retry-on-error. Commit `c26ceee6`.
+  - `doctor/PatientEMR.tsx` — hardcoded prescriptions/labs/appointments replaced with real API calls.
+    Commit `c26ceee6`.
+  - `dept/BloodBankDashboardPage.tsx` — rewired to the real `server/routes/dept/bloodBank.route.js`
+    endpoints; unbacked widgets (cross-match queue, 7-day trend, cold-chain temps) relabeled or
+    placeholder'd rather than faked. Commit `df6043f9`.
+  - `icu/ICUModulePages.tsx` + `icu/useICUPortalData.ts` — full rewrite; removed invented bed/nurse-
+    ratio math and the dangerous fake-vitals `jitter()` simulation from the live monitor page. Commit
+    `3da69c10`.
+  - `ot/OTModulePages.tsx` + `ot/OTDashboard.tsx` + new `ot/useOTPortalData.ts` — full rewrite; removed
+    the fabricated "live" vitals/HVAC/gas/IoT-registry theatre view (the module's most severe finding —
+    fake vitals shown during "Active Surgery" with a "● live" badge) and a silent double-`/api`-prefix
+    bug that had made the dashboard's own schedule fetch always 404. Commit `82ed5fe8`.
+  
+  Byproduct of this work: discovered `npx tsc --noEmit -p tsconfig.app.json` (the command CI actually
+  runs) silently reports zero diagnostics for the entire program, because a pre-existing syntax error in
+  `src/components/admin/ChatDashboard.tsx` short-circuits type-checking once pulled in transitively —
+  proven with a planted test error. Real verification for this session used a temporary isolated
+  `tsconfig.isolated.json` (`"files"` list, not `"include"`) excluding that file. **Not fixed**: the
+  underlying `ChatDashboard.tsx` syntax error, and therefore CI's own typecheck step, remain broken —
+  see follow-ups below.
 - **WP-0.3c — Executive and finance screens (not started):** `hospital/COODashboard.tsx`,
   `server/routes/hospital/executive-dashboard.route.js` (`/coo/operations` and `/cfo/financials` both
   return hardcoded numbers — throughput, pending discharges, ER wait, payables, DSO, budget utilisation
@@ -87,17 +103,20 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
 
 ## Recommended next steps, in priority order
 
-1. **WP-0.3a** (this session, see commit) — the shared components + CI gate that make the rest of
-   WP-0.3 enforceable instead of an open-ended pile of one-off fixes.
-2. **WP-0.3b** (clinical screens) — highest patient-safety exposure of the remaining invented-data work:
-   ICU, EHR's fake-patient bug, PatientEMR, OT, Blood Bank, Clinical CDSS, Teleconsult.
+1. ~~**WP-0.3a**~~ — done 2026-09-23.
+2. ~~**WP-0.3b**~~ (clinical screens: ICU, EHR's fake-patient bug, PatientEMR, OT, Blood Bank, Clinical
+   CDSS, Teleconsult) — done 2026-09-23. **Not yet deployed to production** — accumulated with WP-0.3a
+   on `main`, pending a deploy run.
 3. **WP-0.3c/d** (executive/finance, department + server-side) — lower clinical risk, real financial-
-   integrity risk (COO/CFO dashboards, Accounts).
-4. **Verify WP-1.1 and WP-1.2's specific unverified acceptance criteria** (the hard admission/discharge
+   integrity risk (COO/CFO dashboards, Accounts). Next up.
+4. **Fix `ChatDashboard.tsx`'s syntax error** (found as a byproduct of WP-0.3b) — CI's real typecheck
+   command currently passes vacuously for the whole client. This is a correctness gap in the safety net
+   itself, not just a code-quality item.
+5. **Verify WP-1.1 and WP-1.2's specific unverified acceptance criteria** (the hard admission/discharge
    gate; the exact eight-server-path count) — likely small fixes if gaps are found, since the
    underlying services already exist.
-5. **WP-0.7's off-host backup IAM fix** — currently zero off-host backup copies exist; this is a real
+6. **WP-0.7's off-host backup IAM fix** — currently zero off-host backup copies exist; this is a real
    disaster-recovery gap, not just a checklist item.
-6. **WP-0.1's owner-action items** — whenever a maintenance window can be scheduled.
-7. Everything else in Phase 1 (1.3–1.7, 1.9, 1.10) — not started, no evidence of urgency beyond the
+7. **WP-0.1's owner-action items** — whenever a maintenance window can be scheduled.
+8. Everything else in Phase 1 (1.3–1.7, 1.9, 1.10) — not started, no evidence of urgency beyond the
    plan's own phase sequencing.
