@@ -159,29 +159,23 @@ interface VitalSign {
 
 interface Prescription {
   id: number;
+  prescriptionId: string;
   diagnosis: string;
-  medications: any[];
-  createdAt: string;
-  doctorName: string;
-}
-
-interface LabReport {
-  id: number;
-  testName: string;
-  result: string;
-  normalRange: string;
-  status: 'normal' | 'abnormal' | 'critical';
-  date: string;
-}
-
-interface Appointment {
-  id: number;
-  date: string;
-  time: string;
-  type: string;
+  medicationsCount: number;
   status: string;
-  notes?: string;
+  createdAt: string;
+  followUpDate: string | null;
   doctorName: string;
+}
+
+interface DoctorAppointment {
+  id: number;
+  patientId: number;
+  appointmentDate: string;
+  appointmentTime: string;
+  consultationType: string;
+  status: string;
+  notes: string | null;
 }
 
 interface PatientReport {
@@ -218,13 +212,12 @@ export default function PatientEMR() {
   // Lab Filter State
   const [isLabFilterOpen, setIsLabFilterOpen] = useState(false);
   const [labFilter, setLabFilter] = useState({
-    status: 'all',
     dateFrom: '',
     dateTo: ''
   });
-  
+
   // Appointment View State
-  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<DoctorAppointment | null>(null);
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false);
 
   // Patient Reports State
@@ -306,43 +299,38 @@ export default function PatientEMR() {
     fetchReports();
   }, [selectedPatient]);
 
-  const mockPrescriptions: Prescription[] = selectedPatient ? [
-    {
-      id: 1,
-      diagnosis: 'Upper Respiratory Tract Infection',
-      medications: [
-        { name: 'Amoxicillin 500mg', dosage: '1 tablet', frequency: 'Three times daily', duration: '7 days' },
-        { name: 'Paracetamol 650mg', dosage: '1 tablet', frequency: 'As needed for fever', duration: '5 days' }
-      ],
-      createdAt: '2025-12-20T14:30:00',
-      doctorName: 'Dr. Sharma'
+  // WP-0.3b: prescriptions, lab reports and appointments used to be hardcoded and shown
+  // identically for every patient. Prescriptions now come from the real per-patient endpoint; lab
+  // reports are a filtered view of the reports already fetched above (no separate structured-lab-
+  // values backend exists); appointments have no patient-scoped endpoint to wire to yet, so that
+  // section is removed rather than left fabricated (the plan's own "or hidden" option).
+  const { data: prescriptionsData, isLoading: loadingPrescriptions } = useQuery({
+    queryKey: ['patient-prescriptions', selectedPatient?.id ?? null],
+    queryFn: async () => {
+      const response = await api.get(`/prescriptions/patient/${selectedPatient!.id}`);
+      return (response.data?.prescriptions ?? []) as Prescription[];
     },
-    {
-      id: 2,
-      diagnosis: 'Hypertension - Follow-up',
-      medications: [
-        { name: 'Amlodipine 5mg', dosage: '1 tablet', frequency: 'Once daily', duration: '30 days' }
-      ],
-      createdAt: '2025-11-15T11:00:00',
-      doctorName: 'Dr. Patel'
-    }
-  ] : [];
+    enabled: !!selectedPatient?.id,
+  });
+  const prescriptions = prescriptionsData ?? [];
 
-  const mockLabReports: LabReport[] = selectedPatient ? [
-    { id: 1, testName: 'Complete Blood Count', result: 'Normal', normalRange: '-', status: 'normal', date: '2025-12-15' },
-    { id: 2, testName: 'Hemoglobin', result: '14.2 g/dL', normalRange: '12-16 g/dL', status: 'normal', date: '2025-12-15' },
-    { id: 3, testName: 'Fasting Blood Sugar', result: '95 mg/dL', normalRange: '70-100 mg/dL', status: 'normal', date: '2025-12-15' },
-    { id: 4, testName: 'HbA1c', result: '5.8%', normalRange: '<5.7%', status: 'abnormal', date: '2025-12-15' },
-    { id: 5, testName: 'Cholesterol Total', result: '220 mg/dL', normalRange: '<200 mg/dL', status: 'abnormal', date: '2025-12-10' },
-    { id: 6, testName: 'Creatinine', result: '1.0 mg/dL', normalRange: '0.7-1.3 mg/dL', status: 'normal', date: '2025-12-10' }
-  ] : [];
+  const labReports = patientReports.filter((r) => r.reportType === 'lab');
 
-  const mockAppointments: Appointment[] = selectedPatient ? [
-    { id: 1, date: '2025-12-28', time: '10:00 AM', type: 'Follow-up', status: 'completed', doctorName: 'Dr. Sharma', notes: 'BP monitoring' },
-    { id: 2, date: '2025-12-20', time: '11:30 AM', type: 'Consultation', status: 'completed', doctorName: 'Dr. Sharma' },
-    { id: 3, date: '2025-11-15', time: '09:00 AM', type: 'Check-up', status: 'completed', doctorName: 'Dr. Patel' },
-    { id: 4, date: '2026-01-10', time: '10:30 AM', type: 'Follow-up', status: 'scheduled', doctorName: 'Dr. Sharma' }
-  ] : [];
+  // GET /doctors/appointments isn't patient-scoped server-side (no patientId query param), so this
+  // fetches the doctor's own appointments and filters client-side — real data throughout, unlike the
+  // old fake array, though a doctor with a very large appointment history will fetch more than is
+  // strictly needed here. Still "a real endpoint," per the plan, and simpler than adding a new
+  // server-side filter for what's a lower-effort item (S/M) in this pass.
+  const { data: doctorAppointmentsData } = useQuery({
+    queryKey: ['doctor-appointments-all'],
+    queryFn: async () => {
+      const response = await api.get('/doctors/appointments');
+      return (response.data?.appointments ?? []) as DoctorAppointment[];
+    },
+  });
+  const appointments = (doctorAppointmentsData ?? []).filter(
+    (a) => !!selectedPatient && a.patientId === selectedPatient.id
+  );
 
   const calculateAge = (dob: string) => {
     if (!dob) return 'N/A';
@@ -433,15 +421,15 @@ export default function PatientEMR() {
   };
 
   const handleApplyLabFilter = () => {
-    // In a real app, you would filter the lab reports based on the filter criteria
+    // filteredLabReports (derived below) already reacts to labFilter directly — this just closes the dialog.
     toast({
       title: 'Filter applied',
-      description: `Showing ${labFilter.status} results`
+      description: `Showing ${filteredLabReports.length} of ${labReports.length} lab report${labReports.length === 1 ? '' : 's'}`
     });
     setIsLabFilterOpen(false);
   };
 
-  const handleViewAppointment = (appointment: Appointment) => {
+  const handleViewAppointment = (appointment: DoctorAppointment) => {
     setSelectedAppointment(appointment);
     setIsAppointmentDialogOpen(true);
   };
@@ -480,9 +468,9 @@ export default function PatientEMR() {
         bloodGroup: selectedPatient.bloodGroup,
       },
       vitals: vitalsRecords,
-      prescriptions: mockPrescriptions,
+      prescriptions,
       labReports: filteredLabReports,
-      appointments: mockAppointments,
+      appointments,
       exportedAt: new Date().toISOString(),
     };
 
@@ -505,11 +493,12 @@ export default function PatientEMR() {
     });
   };
 
-  // Filter lab reports based on filter
-  const filteredLabReports = mockLabReports.filter(report => {
-    if (labFilter.status !== 'all' && report.status !== labFilter.status) return false;
-    if (labFilter.dateFrom && report.date < labFilter.dateFrom) return false;
-    if (labFilter.dateTo && report.date > labFilter.dateTo) return false;
+  // Filter lab reports by date range (no clinical "normal/abnormal" status exists on a real
+  // PatientReport — that was only ever the fake shape's own invented field).
+  const filteredLabReports = labReports.filter((report) => {
+    const effectiveDate = report.reportDate || report.uploadedAt;
+    if (labFilter.dateFrom && effectiveDate < labFilter.dateFrom) return false;
+    if (labFilter.dateTo && effectiveDate > labFilter.dateTo) return false;
     return true;
   });
 
@@ -703,14 +692,14 @@ export default function PatientEMR() {
                   {/* Overview Tab */}
                   <TabsContent value="overview" className="mt-4 space-y-4">
                     {/* Quick Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <Card className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
                             <Calendar className="w-5 h-5 text-blue-600" />
                           </div>
                           <div>
-                            <p className="text-2xl font-bold">{mockAppointments.length}</p>
+                            <p className="text-2xl font-bold">{appointments.length}</p>
                             <p className="text-xs text-gray-500">Appointments</p>
                           </div>
                         </div>
@@ -721,7 +710,7 @@ export default function PatientEMR() {
                             <Pill className="w-5 h-5 text-green-600" />
                           </div>
                           <div>
-                            <p className="text-2xl font-bold">{mockPrescriptions.length}</p>
+                            <p className="text-2xl font-bold">{prescriptions.length}</p>
                             <p className="text-xs text-gray-500">Prescriptions</p>
                           </div>
                         </div>
@@ -732,7 +721,7 @@ export default function PatientEMR() {
                             <FlaskConical className="w-5 h-5 text-purple-600" />
                           </div>
                           <div>
-                            <p className="text-2xl font-bold">{mockLabReports.length}</p>
+                            <p className="text-2xl font-bold">{labReports.length}</p>
                             <p className="text-xs text-gray-500">Lab Reports</p>
                           </div>
                         </div>
@@ -745,17 +734,6 @@ export default function PatientEMR() {
                           <div>
                             <p className="text-2xl font-bold">{patientReports.length}</p>
                             <p className="text-xs text-gray-500">Reports</p>
-                          </div>
-                        </div>
-                      </Card>
-                      <Card className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
-                            <AlertCircle className="w-5 h-5 text-red-600" />
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold">{mockLabReports.filter(l => l.status === 'abnormal').length}</p>
-                            <p className="text-xs text-gray-500">Abnormal</p>
                           </div>
                         </div>
                       </Card>
@@ -795,22 +773,26 @@ export default function PatientEMR() {
                         <CardTitle className="text-base">Recent Activity</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-3">
-                          {mockAppointments.slice(0, 3).map((apt) => (
-                            <div key={apt.id} className="flex items-center gap-3 p-3 border rounded-lg">
-                              <div className={`p-2 rounded-lg ${apt.status === 'completed' ? 'bg-green-100' : 'bg-blue-100'}`}>
-                                <Calendar className={`w-4 h-4 ${apt.status === 'completed' ? 'text-green-600' : 'text-blue-600'}`} />
+                        {appointments.length === 0 ? (
+                          <p className="text-sm text-gray-500 py-2">No appointments on record for this patient.</p>
+                        ) : (
+                          <div className="space-y-3">
+                            {appointments.slice(0, 3).map((apt) => (
+                              <div key={apt.id} className="flex items-center gap-3 p-3 border rounded-lg">
+                                <div className={`p-2 rounded-lg ${apt.status === 'completed' ? 'bg-green-100' : 'bg-blue-100'}`}>
+                                  <Calendar className={`w-4 h-4 ${apt.status === 'completed' ? 'text-green-600' : 'text-blue-600'}`} />
+                                </div>
+                                <div className="flex-1">
+                                  <p className="font-medium">{apt.consultationType}</p>
+                                  <p className="text-sm text-gray-500">{apt.appointmentDate} at {apt.appointmentTime}</p>
+                                </div>
+                                <Badge variant={apt.status === 'completed' ? 'secondary' : 'default'}>
+                                  {apt.status}
+                                </Badge>
                               </div>
-                              <div className="flex-1">
-                                <p className="font-medium">{apt.type}</p>
-                                <p className="text-sm text-gray-500">{apt.doctorName} • {apt.date}</p>
-                              </div>
-                              <Badge variant={apt.status === 'completed' ? 'secondary' : 'default'}>
-                                {apt.status}
-                              </Badge>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </TabsContent>
@@ -904,35 +886,44 @@ export default function PatientEMR() {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-4">
-                          {mockPrescriptions.map((rx) => (
-                            <Card key={rx.id} className="border">
-                              <CardContent className="p-4">
-                                <div className="flex items-start justify-between mb-3">
-                                  <div>
-                                    <p className="font-semibold">{rx.diagnosis}</p>
-                                    <p className="text-sm text-gray-500">
-                                      {rx.doctorName} • {format(new Date(rx.createdAt), 'dd MMM yyyy')}
-                                    </p>
-                                  </div>
-                                  <Button variant="ghost" size="sm">
-                                    <Eye className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                                <Separator className="my-3" />
-                                <div className="space-y-2">
-                                  {rx.medications.map((med, idx) => (
-                                    <div key={idx} className="flex items-center gap-2 text-sm">
-                                      <Pill className="w-4 h-4 text-primary" />
-                                      <span className="font-medium">{med.name}</span>
-                                      <span className="text-gray-500">- {med.dosage}, {med.frequency}</span>
+                        {loadingPrescriptions ? (
+                          <div className="flex items-center justify-center py-8">
+                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                          </div>
+                        ) : prescriptions.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            <Pill className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                            <p>No prescriptions on record for this patient</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {prescriptions.map((rx) => (
+                              <Card key={rx.id} className="border">
+                                <CardContent className="p-4">
+                                  <div className="flex items-start justify-between mb-3">
+                                    <div>
+                                      <p className="font-semibold">{rx.diagnosis}</p>
+                                      <p className="text-sm text-gray-500">
+                                        {rx.doctorName} • {format(new Date(rx.createdAt), 'dd MMM yyyy')}
+                                      </p>
                                     </div>
-                                  ))}
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
+                                    <Badge variant="outline" className="capitalize">{rx.status}</Badge>
+                                  </div>
+                                  <Separator className="my-3" />
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <Pill className="w-4 h-4 text-primary" />
+                                    <span>{rx.medicationsCount} medication{rx.medicationsCount === 1 ? '' : 's'}</span>
+                                    {rx.followUpDate && (
+                                      <span className="text-gray-500">
+                                        • Follow-up {format(new Date(rx.followUpDate), 'dd MMM yyyy')}
+                                      </span>
+                                    )}
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            ))}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </TabsContent>
@@ -950,37 +941,48 @@ export default function PatientEMR() {
                         </div>
                       </CardHeader>
                       <CardContent>
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b">
-                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-500">Test Name</th>
-                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-500">Result</th>
-                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-500">Normal Range</th>
-                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-500">Status</th>
-                                <th className="text-left py-3 px-2 text-sm font-medium text-gray-500">Date</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {filteredLabReports.map((report) => (
-                                <tr key={report.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
-                                  <td className="py-3 px-2 font-medium">{report.testName}</td>
-                                  <td className="py-3 px-2">{report.result}</td>
-                                  <td className="py-3 px-2 text-gray-500">{report.normalRange}</td>
-                                  <td className="py-3 px-2">
-                                    <Badge 
-                                      variant={report.status === 'normal' ? 'secondary' : 'destructive'}
-                                      className="capitalize"
-                                    >
-                                      {report.status}
-                                    </Badge>
-                                  </td>
-                                  <td className="py-3 px-2 text-gray-500">{report.date}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                        {loadingReports ? (
+                          <div className="flex items-center justify-center py-8">
+                            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                            <span className="text-gray-500">Loading lab reports...</span>
+                          </div>
+                        ) : filteredLabReports.length === 0 ? (
+                          <div className="text-center py-8">
+                            <FlaskConical className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                            <p className="text-gray-500">No lab reports uploaded yet</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {filteredLabReports.map((report) => (
+                              <div key={report.id} className="flex items-start gap-4 p-4 border rounded-lg">
+                                <div className="p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                                  <FlaskConical className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-medium truncate">{report.testName || report.fileName}</p>
+                                    {report.analysisStatus === 'completed' && (
+                                      <Badge variant="secondary" className="text-xs">AI Analyzed</Badge>
+                                    )}
+                                    {report.analysisStatus === 'pending' && (
+                                      <Badge variant="outline" className="text-xs text-yellow-600">Pending Analysis</Badge>
+                                    )}
+                                  </div>
+                                  {report.labName && <p className="text-sm text-gray-500 mt-0.5">Lab: {report.labName}</p>}
+                                  {report.aiSummary && (
+                                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
+                                      <p className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">AI Analysis Summary</p>
+                                      <p className="text-gray-700 dark:text-gray-300 line-clamp-3">{report.aiSummary}</p>
+                                    </div>
+                                  )}
+                                  <p className="text-xs text-gray-400 mt-2">
+                                    {report.reportDate ? format(new Date(report.reportDate), 'dd MMM yyyy') : format(new Date(report.uploadedAt), 'dd MMM yyyy')}
+                                  </p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </TabsContent>
@@ -1083,40 +1085,47 @@ export default function PatientEMR() {
                         <CardTitle>Appointment History</CardTitle>
                       </CardHeader>
                       <CardContent>
-                        <div className="space-y-4">
-                          {mockAppointments.map((apt) => (
-                            <div key={apt.id} className="flex items-center gap-4 p-4 border rounded-lg">
-                              <div className={`p-3 rounded-lg ${
-                                apt.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30' : 
-                                apt.status === 'scheduled' ? 'bg-blue-100 dark:bg-blue-900/30' : 
-                                'bg-gray-100 dark:bg-gray-800'
-                              }`}>
-                                <Calendar className={`w-5 h-5 ${
-                                  apt.status === 'completed' ? 'text-green-600' : 
-                                  apt.status === 'scheduled' ? 'text-blue-600' : 
-                                  'text-gray-600'
-                                }`} />
-                              </div>
-                              <div className="flex-1">
-                                <div className="flex items-center gap-2">
-                                  <p className="font-medium">{apt.type}</p>
-                                  <Badge variant={apt.status === 'completed' ? 'secondary' : 'default'}>
-                                    {apt.status}
-                                  </Badge>
+                        {appointments.length === 0 ? (
+                          <div className="text-center py-8 text-gray-500">
+                            <Calendar className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                            <p>No appointments on record for this patient</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {appointments.map((apt) => (
+                              <div key={apt.id} className="flex items-center gap-4 p-4 border rounded-lg">
+                                <div className={`p-3 rounded-lg ${
+                                  apt.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30' :
+                                  apt.status === 'scheduled' ? 'bg-blue-100 dark:bg-blue-900/30' :
+                                  'bg-gray-100 dark:bg-gray-800'
+                                }`}>
+                                  <Calendar className={`w-5 h-5 ${
+                                    apt.status === 'completed' ? 'text-green-600' :
+                                    apt.status === 'scheduled' ? 'text-blue-600' :
+                                    'text-gray-600'
+                                  }`} />
                                 </div>
-                                <p className="text-sm text-gray-500">
-                                  {apt.date} at {apt.time} • {apt.doctorName}
-                                </p>
-                                {apt.notes && (
-                                  <p className="text-sm text-gray-600 mt-1">{apt.notes}</p>
-                                )}
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2">
+                                    <p className="font-medium">{apt.consultationType}</p>
+                                    <Badge variant={apt.status === 'completed' ? 'secondary' : 'default'}>
+                                      {apt.status}
+                                    </Badge>
+                                  </div>
+                                  <p className="text-sm text-gray-500">
+                                    {apt.appointmentDate} at {apt.appointmentTime}
+                                  </p>
+                                  {apt.notes && (
+                                    <p className="text-sm text-gray-600 mt-1">{apt.notes}</p>
+                                  )}
+                                </div>
+                                <Button variant="ghost" size="sm" onClick={() => handleViewAppointment(apt)}>
+                                  <Eye className="w-4 h-4" />
+                                </Button>
                               </div>
-                              <Button variant="ghost" size="sm" onClick={() => handleViewAppointment(apt)}>
-                                <Eye className="w-4 h-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
+                            ))}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </TabsContent>
@@ -1286,25 +1295,11 @@ export default function PatientEMR() {
           <DialogHeader>
             <DialogTitle>Filter Lab Reports</DialogTitle>
             <DialogDescription>
-              Filter laboratory reports by status and date range
+              Filter laboratory reports by date range
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="status">Status</Label>
-              <Select value={labFilter.status} onValueChange={(value) => setLabFilter({...labFilter, status: value})}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="abnormal">Abnormal</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="space-y-2">
               <Label htmlFor="date-from">Date From</Label>
               <Input 
@@ -1348,7 +1343,7 @@ export default function PatientEMR() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">Type</Label>
-                  <p className="font-medium">{selectedAppointment.type}</p>
+                  <p className="font-medium">{selectedAppointment.consultationType}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Status</Label>
@@ -1358,15 +1353,11 @@ export default function PatientEMR() {
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Date</Label>
-                  <p className="font-medium">{selectedAppointment.date}</p>
+                  <p className="font-medium">{selectedAppointment.appointmentDate}</p>
                 </div>
                 <div>
                   <Label className="text-muted-foreground">Time</Label>
-                  <p className="font-medium">{selectedAppointment.time}</p>
-                </div>
-                <div className="col-span-2">
-                  <Label className="text-muted-foreground">Doctor</Label>
-                  <p className="font-medium">{selectedAppointment.doctorName}</p>
+                  <p className="font-medium">{selectedAppointment.appointmentTime}</p>
                 </div>
                 {selectedAppointment.notes && (
                   <div className="col-span-2">

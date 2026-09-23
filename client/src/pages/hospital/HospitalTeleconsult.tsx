@@ -1,12 +1,15 @@
-import { useNavigate } from 'react-router-dom';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Video, Calendar, User } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Video } from 'lucide-react';
 
+/**
+ * WP-0.3b: this screen used to show one hardcoded "scheduled follow-up" card for a patient who
+ * doesn't exist (Priya Singh, a fabricated admission number). No backend lists real post-discharge
+ * teleconsult follow-ups yet, so per the plan this is now an honest empty state rather than inventing
+ * one.
+ */
 export default function HospitalTeleconsult() {
-  const navigate = useNavigate();
-
   return (
     <HospitalLayout>
       <div className="p-6 max-w-3xl mx-auto space-y-6">
@@ -15,15 +18,13 @@ export default function HospitalTeleconsult() {
         </h1>
         <p className="text-slate-500 text-sm">Follow-up video visits for discharged patients — integrated with doctor portal.</p>
 
-        <Card className="border-sky-200 bg-sky-50">
-          <CardHeader><CardTitle className="text-base">Scheduled follow-up — Priya Singh</CardTitle></CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm text-slate-600 flex items-center gap-2"><Calendar className="h-4 w-4" /> Tomorrow 10:00 AM · Surgical OPD follow-up</p>
-            <p className="text-sm text-slate-600 flex items-center gap-2"><User className="h-4 w-4" /> Dr. Patel · Admission IP2026000001</p>
-            <div className="flex gap-2 pt-2">
-              <Button className="bg-sky-600 hover:bg-sky-700" onClick={() => navigate('/doctor/video')}>Start Video Consult</Button>
-              <Button variant="outline" onClick={() => navigate('/hospital/patient/1/follow-up')}>Follow-up Plan</Button>
-            </div>
+        <Card>
+          <CardContent className="pt-6">
+            <EmptyState
+              icon={Video}
+              title="No scheduled follow-ups"
+              description="Post-discharge teleconsultation follow-ups will appear here once this screen is connected to a real scheduling endpoint — it isn't yet."
+            />
           </CardContent>
         </Card>
       </div>

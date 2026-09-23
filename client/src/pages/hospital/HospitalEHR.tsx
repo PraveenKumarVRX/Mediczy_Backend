@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/empty-state';
+import { InlineError } from '@/components/ui/inline-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
@@ -18,7 +20,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import api from '@/utils/api';
-import { loadHospitalStore } from '@/utils/hospitalStorage';
+import { saveHospitalStore } from '@/utils/hospitalStorage';
 import { downloadReport } from '@/utils/reportActions';
 import { PrescriptionSafetyAlert, isSafetyBlockError, safetyItemsFromError, type SafetyItem } from '@/components/clinical/PrescriptionSafetyAlert';
 import {
@@ -326,94 +328,64 @@ const HospitalEHR = () => {
     notes: ''
   });
 
-  // Sample data - defined before useEffect that depends on patients
-  const initialPatients: PatientEHR[] = [
-    {
-      id: 'P001',
-      uhid: 'UHID001234',
-      name: 'Rajesh Kumar',
-      age: 45,
-      gender: 'Male',
-      bloodGroup: 'B+',
-      phone: '9876543210',
-      email: 'rajesh@email.com',
-      address: '123 MG Road, Delhi',
-      emergencyContact: { name: 'Sunita Kumar', relation: 'Wife', phone: '9876543211' },
-      allergies: ['Penicillin', 'Sulfa drugs'],
-      chronicConditions: ['Hypertension', 'Type 2 Diabetes'],
-      currentMedications: [
-        { name: 'Metformin', dosage: '500mg', frequency: 'Twice daily', duration: 'Ongoing', route: 'Oral' },
-        { name: 'Amlodipine', dosage: '5mg', frequency: 'Once daily', duration: 'Ongoing', route: 'Oral' },
-        { name: 'Aspirin', dosage: '75mg', frequency: 'Once daily', duration: 'Ongoing', route: 'Oral' },
-      ],
-      vitals: [
-        { id: 'V001', recordedAt: '2024-12-04 09:30', recordedBy: 'Nurse Sunita', bloodPressure: { systolic: 138, diastolic: 88 }, heartRate: 78, temperature: 98.4, respiratoryRate: 16, oxygenSaturation: 98, weight: 78, height: 172, bmi: 26.4 },
-        { id: 'V002', recordedAt: '2024-12-03 14:00', recordedBy: 'Nurse Priya', bloodPressure: { systolic: 142, diastolic: 92 }, heartRate: 82, temperature: 98.6, respiratoryRate: 18, oxygenSaturation: 97, weight: 78, height: 172, bmi: 26.4 },
-        { id: 'V003', recordedAt: '2024-12-02 08:00', recordedBy: 'Nurse Sunita', bloodPressure: { systolic: 148, diastolic: 94 }, heartRate: 88, temperature: 99.2, respiratoryRate: 20, oxygenSaturation: 96, weight: 78, height: 172, bmi: 26.4, painLevel: 4, notes: 'Patient complained of chest discomfort' },
-      ],
-      encounters: [
-        { id: 'E001', type: 'IPD', date: '2024-12-01', department: 'Cardiology', doctor: 'Dr. Rajiv Sharma', chiefComplaint: 'Chest pain and shortness of breath', presentIllness: 'Patient presented with sudden onset chest pain radiating to left arm, associated with sweating and breathlessness.', examination: 'BP: 160/100, HR: 92, Chest - bilateral clear, CVS - S1S2 heard, no murmurs', diagnosis: ['Acute Myocardial Infarction', 'Hypertension'], treatmentPlan: 'Primary PCI performed, Dual antiplatelet therapy started, Statin, ACE inhibitor', followUp: '2 weeks', status: 'Completed' },
-        { id: 'E002', type: 'OPD', date: '2024-11-15', department: 'Cardiology', doctor: 'Dr. Rajiv Sharma', chiefComplaint: 'Routine follow-up for hypertension', presentIllness: 'Patient on regular antihypertensive medication, no new complaints', examination: 'BP: 134/86, HR: 76', diagnosis: ['Hypertension - controlled'], treatmentPlan: 'Continue current medications', followUp: '3 months', status: 'Completed' },
-      ],
-      labResults: [
-        { id: 'L001', testName: 'Cardiac Markers', category: 'Biochemistry', orderedBy: 'Dr. Sharma', orderedDate: '2024-12-01', resultDate: '2024-12-01', results: [
-          { parameter: 'Troponin I', value: '2.8', unit: 'ng/mL', referenceRange: '<0.04', flag: 'Critical' },
-          { parameter: 'CK-MB', value: '45', unit: 'U/L', referenceRange: '<25', flag: 'High' },
-        ], status: 'Completed' },
-        { id: 'L002', testName: 'Lipid Profile', category: 'Biochemistry', orderedBy: 'Dr. Sharma', orderedDate: '2024-12-02', resultDate: '2024-12-02', results: [
-          { parameter: 'Total Cholesterol', value: '245', unit: 'mg/dL', referenceRange: '<200', flag: 'High' },
-          { parameter: 'LDL', value: '165', unit: 'mg/dL', referenceRange: '<100', flag: 'High' },
-          { parameter: 'HDL', value: '38', unit: 'mg/dL', referenceRange: '>40', flag: 'Low' },
-          { parameter: 'Triglycerides', value: '180', unit: 'mg/dL', referenceRange: '<150', flag: 'High' },
-        ], status: 'Completed' },
-        { id: 'L003', testName: 'HbA1c', category: 'Biochemistry', orderedBy: 'Dr. Sharma', orderedDate: '2024-12-02', resultDate: '2024-12-02', results: [
-          { parameter: 'HbA1c', value: '7.8', unit: '%', referenceRange: '<6.5', flag: 'High' },
-        ], status: 'Completed' },
-      ],
-      imagingStudies: [
-        { id: 'I001', studyType: 'ECG', bodyPart: 'Heart', orderedBy: 'Dr. Sharma', orderedDate: '2024-12-01', performedDate: '2024-12-01', findings: 'ST elevation in leads V1-V4, Q waves in V1-V3', impression: 'Anterior wall STEMI', radiologist: 'Dr. Singh', status: 'Completed' },
-        { id: 'I002', studyType: 'Echo', bodyPart: 'Heart', orderedBy: 'Dr. Sharma', orderedDate: '2024-12-02', performedDate: '2024-12-02', findings: 'LVEF 45%, Regional wall motion abnormality in LAD territory', impression: 'Moderate LV systolic dysfunction', radiologist: 'Dr. Gupta', status: 'Completed' },
-      ],
-      prescriptions: [
-        { id: 'RX001', prescribedDate: '2024-12-04', prescribedBy: 'Dr. Rajiv Sharma', diagnosis: 'Post-MI, Hypertension, Diabetes', medications: [
-          { name: 'Aspirin', dosage: '75mg', frequency: 'Once daily', duration: 'Lifelong', route: 'Oral', instructions: 'After breakfast' },
-          { name: 'Clopidogrel', dosage: '75mg', frequency: 'Once daily', duration: '1 year', route: 'Oral', instructions: 'After lunch' },
-          { name: 'Atorvastatin', dosage: '40mg', frequency: 'Once daily', duration: 'Lifelong', route: 'Oral', instructions: 'At bedtime' },
-          { name: 'Ramipril', dosage: '5mg', frequency: 'Once daily', duration: 'Ongoing', route: 'Oral', instructions: 'Morning' },
-          { name: 'Metoprolol', dosage: '25mg', frequency: 'Twice daily', duration: 'Ongoing', route: 'Oral' },
-          { name: 'Metformin', dosage: '500mg', frequency: 'Twice daily', duration: 'Ongoing', route: 'Oral', instructions: 'With meals' },
-        ], instructions: 'Regular follow-up, Cardiac rehabilitation recommended, Low salt and low fat diet', validity: '3 months', status: 'Active' },
-      ],
-      procedures: [
-        { id: 'PR001', name: 'Primary Percutaneous Coronary Intervention (PCI)', type: 'Surgical', date: '2024-12-01', performedBy: 'Dr. Rajiv Sharma', anesthesia: 'Local', findings: 'Complete occlusion of LAD, successful stent placement', outcome: 'Successful', notes: 'Drug-eluting stent deployed' },
-      ],
-      immunizations: [
-        { id: 'IM001', vaccineName: 'Influenza', dose: 'Annual', administeredDate: '2024-10-15', administeredBy: 'Nurse Priya', batchNumber: 'FLU2024-A1', nextDueDate: '2025-10-15', site: 'Left deltoid' },
-        { id: 'IM002', vaccineName: 'Pneumococcal', dose: 'Single', administeredDate: '2024-10-15', administeredBy: 'Nurse Priya', batchNumber: 'PCV2024-B2', site: 'Right deltoid' },
-      ],
-      familyHistory: [
-        { relation: 'Father', condition: 'Coronary Artery Disease', ageOfOnset: '55', status: 'Deceased', notes: 'MI at age 55' },
-        { relation: 'Mother', condition: 'Type 2 Diabetes', ageOfOnset: '50', status: 'Alive' },
-        { relation: 'Brother', condition: 'Hypertension', ageOfOnset: '40', status: 'Alive' },
-      ],
-      socialHistory: {
-        occupation: 'Business owner',
-        smokingStatus: 'Former',
-        alcoholUse: 'Occasional',
-        exerciseFrequency: 'Rarely',
-        diet: 'High fat, high salt',
-        stressLevel: 'High',
-        sleepHours: 5,
-      },
-      notes: [],
-      createdAt: '2020-05-15',
-      updatedAt: '2024-12-04',
-    },
-  ];
+  // WP-0.3b: this used to seed from a hardcoded fake patient (Rajesh Kumar) via localStorage, so an
+  // empty hospital with zero real patients still showed one. Starts empty; the real API load below is
+  // the only thing that ever populates this.
+  const [patients, setPatients] = useState<PatientEHR[]>([]);
+  const [patientsError, setPatientsError] = useState<string | null>(null);
 
-  const [patients, setPatients] = useState<PatientEHR[]>(
-    () => loadHospitalStore('ehr-patients', initialPatients)
-  );
+  const loadPatients = () => {
+    setLoading(true);
+    patientService.getAll()
+      .then((res: any) => {
+        const apiPatients: any[] = Array.isArray(res) ? res : (res?.data ?? res?.patients ?? []);
+        const mapped: PatientEHR[] = apiPatients.map((p: any) => ({
+          id: String(p.id),
+          uhid: p.uhid || `UHID-${p.id}`,
+          name: p.name || p.patientName || 'Unknown',
+          age: p.age ?? (p.dateOfBirth ? Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0),
+          gender: p.gender || 'Unknown',
+          dateOfBirth: p.dateOfBirth || '',
+          phone: p.phone || p.contactNumber || '',
+          email: p.email || '',
+          bloodGroup: p.bloodGroup || p.bloodType || 'Unknown',
+          address: p.address || '',
+          chronicConditions: Array.isArray(p.chronicConditions) ? p.chronicConditions : (Array.isArray(p.chronicDiseases) ? p.chronicDiseases : []),
+          allergies: Array.isArray(p.allergies) ? p.allergies : [],
+          currentMedications: Array.isArray(p.currentMedications) ? p.currentMedications : (Array.isArray(p.medications) ? p.medications : []),
+          vitals: [],
+          encounters: [],
+          labResults: [],
+          imagingStudies: [],
+          prescriptions: [],
+          procedures: [],
+          immunizations: [],
+          familyHistory: [],
+          socialHistory: {
+            occupation: p.occupation || '',
+            smokingStatus: 'Never' as const,
+            alcoholUse: 'None' as const,
+            exerciseFrequency: '',
+            diet: '',
+            stressLevel: 'Low' as const,
+            sleepHours: 8,
+          },
+          notes: [],
+          createdAt: p.createdAt || new Date().toISOString(),
+          updatedAt: p.updatedAt || new Date().toISOString(),
+        }));
+        // Always set, even when empty — a hospital with zero real patients must show the empty state,
+        // not silently keep whatever (possibly fake) data was there before.
+        setPatients(mapped);
+        setPatientsError(null);
+      })
+      .catch(() => {
+        setPatientsError('Could not load the patient list. Check your connection and try again.');
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
 
   // Auth check + initial patient load from API
   useEffect(() => {
@@ -422,56 +394,8 @@ const HospitalEHR = () => {
       navigate('/hospital/login');
       return;
     }
-    // Try to load real patients from API; fall back to sample data on error
-    patientService.getAll()
-      .then((res: any) => {
-        const apiPatients: any[] = Array.isArray(res) ? res : (res?.data ?? res?.patients ?? []);
-        if (apiPatients.length > 0) {
-          const mapped: PatientEHR[] = apiPatients.map((p: any) => ({
-            id: String(p.id),
-            uhid: p.uhid || `UHID-${p.id}`,
-            name: p.name || p.patientName || 'Unknown',
-            age: p.age ?? (p.dateOfBirth ? Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0),
-            gender: p.gender || 'Unknown',
-            dateOfBirth: p.dateOfBirth || '',
-            phone: p.phone || p.contactNumber || '',
-            email: p.email || '',
-            bloodGroup: p.bloodGroup || p.bloodType || 'Unknown',
-            address: p.address || '',
-            chronicConditions: Array.isArray(p.chronicConditions) ? p.chronicConditions : (Array.isArray(p.chronicDiseases) ? p.chronicDiseases : []),
-            allergies: Array.isArray(p.allergies) ? p.allergies : [],
-            currentMedications: Array.isArray(p.currentMedications) ? p.currentMedications : (Array.isArray(p.medications) ? p.medications : []),
-            vitals: [],
-            encounters: [],
-            labResults: [],
-            imagingStudies: [],
-            prescriptions: [],
-            procedures: [],
-            immunizations: [],
-            familyHistory: [],
-            socialHistory: {
-              occupation: p.occupation || '',
-              smokingStatus: 'Never' as const,
-              alcoholUse: 'None' as const,
-              exerciseFrequency: '',
-              diet: '',
-              stressLevel: 'Low' as const,
-              sleepHours: 8,
-            },
-            notes: [],
-            createdAt: p.createdAt || new Date().toISOString(),
-            updatedAt: p.updatedAt || new Date().toISOString(),
-          }));
-          setPatients(mapped);
-          saveHospitalStore('ehr-patients', mapped);
-        }
-      })
-      .catch(() => {
-        // Keep sample / localStorage data on API error
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    loadPatients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   // Auto-select first patient
@@ -658,6 +582,19 @@ const HospitalEHR = () => {
 
   return (
     <HospitalLayout title="Electronic Health Records" subtitle="Patient Charts & Clinical Documentation">
+      {!patient && (
+        <div className="p-6 max-w-xl mx-auto">
+          {patientsError ? (
+            <InlineError message={patientsError} onRetry={loadPatients} />
+          ) : (
+            <EmptyState
+              icon={User}
+              title="No patients yet"
+              description="Patients will appear here once they're registered — this hospital currently has none on record."
+            />
+          )}
+        </div>
+      )}
       {patient && (
         <div className="space-y-6">
           {/* Patient Banner */}
