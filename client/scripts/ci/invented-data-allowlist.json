@@ -68,10 +68,6 @@
     "reason": "REAL, WP-0.3d: `devices` fabricated; same as BiomedicalModulePages.tsx"
   },
   {
-    "file": "src/pages/dept/BloodBankDashboardPage.tsx",
-    "reason": "REAL, WP-0.3b: components/crossMatchQueue/donorsToday fabricated; plan lists the real endpoints to wire to"
-  },
-  {
     "file": "src/pages/dept/ConsentDashboardPage.tsx",
     "reason": "REAL, WP-0.3d: `recentActivity` fabricated consent-log data"
   },
