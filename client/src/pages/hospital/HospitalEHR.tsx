@@ -339,10 +339,23 @@ const HospitalEHR = () => {
     patientService.getAll()
       .then((res: any) => {
         const apiPatients: any[] = Array.isArray(res) ? res : (res?.data ?? res?.patients ?? []);
-        const mapped: PatientEHR[] = apiPatients.map((p: any) => ({
+        const mapped: PatientEHR[] = apiPatients.map((p: any) => {
+          // p.emergencyContact may already be an object, a JSON string, or absent depending on which
+          // backend route populated it — normalize rather than assume, and never fabricate a name.
+          let emergencyContact = { name: '', relation: '', phone: '' };
+          if (p.emergencyContact) {
+            const raw = typeof p.emergencyContact === 'string'
+              ? (() => { try { return JSON.parse(p.emergencyContact); } catch { return null; } })()
+              : p.emergencyContact;
+            if (raw && typeof raw === 'object') {
+              emergencyContact = { name: raw.name || '', relation: raw.relation || '', phone: raw.phone || '' };
+            }
+          }
+          return {
           id: String(p.id),
           uhid: p.uhid || `UHID-${p.id}`,
           name: p.name || p.patientName || 'Unknown',
+          emergencyContact,
           age: p.age ?? (p.dateOfBirth ? Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0),
           gender: p.gender || 'Unknown',
           dateOfBirth: p.dateOfBirth || '',
@@ -373,7 +386,8 @@ const HospitalEHR = () => {
           notes: [],
           createdAt: p.createdAt || new Date().toISOString(),
           updatedAt: p.updatedAt || new Date().toISOString(),
-        }));
+          };
+        });
         // Always set, even when empty — a hospital with zero real patients must show the empty state,
         // not silently keep whatever (possibly fake) data was there before.
         setPatients(mapped);

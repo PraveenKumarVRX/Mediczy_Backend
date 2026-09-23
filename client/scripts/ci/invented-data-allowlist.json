@@ -140,14 +140,6 @@
     "reason": "REAL (likely): `appraisals` reads as fabricated employee appraisal data — re-verify, not yet fixed"
   },
   {
-    "file": "src/pages/icu/ICUDashboard.tsx",
-    "reason": "REAL, WP-0.3b: `bedStatus` fabricated (separate file from icu/ICUModulePages.tsx, same module)"
-  },
-  {
-    "file": "src/pages/icu/ICUModulePages.tsx",
-    "reason": "REAL, WP-0.3b: the plan's own named example — 14 seed constants total (patients/beds/medicationOrders/vitalsRows/fluidRows/ventilators/devices/etc.)"
-  },
-  {
     "file": "src/pages/lab/LabDashboard.tsx",
     "reason": "false positive: `testCategories` is a static lab-test catalog, not patient data"
   },
