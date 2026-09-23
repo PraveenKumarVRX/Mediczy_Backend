@@ -41,9 +41,8 @@ if (OTLP_ENDPOINT) {
 
   sdk.start();
   console.log(`[telemetry] OpenTelemetry started — exporting to ${OTLP_ENDPOINT}`);
-
-  process.on('SIGTERM', () => sdk.shutdown().catch(console.error));
-  process.on('SIGINT',  () => sdk.shutdown().catch(console.error));
+  // sdk.shutdown() is called by controllers/shutdown.controller.js as part of the single
+  // coordinated shutdown sequence — not registered as its own signal handler here.
 } else {
   console.log('[telemetry] OTEL_EXPORTER_OTLP_ENDPOINT not set — tracing disabled');
 }
@@ -63,6 +62,10 @@ export function correlationMiddleware(req, res, next) {
     res.setHeader('X-Request-Id', req.traceId);
   }
   next();
+}
+
+export async function shutdownTelemetry() {
+  if (sdk) await sdk.shutdown();
 }
 
 export { trace, context };

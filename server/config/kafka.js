@@ -272,7 +272,7 @@ export async function disconnectKafka() {
   }
 }
 
-process.on('SIGTERM', disconnectKafka);
-process.on('SIGINT',  disconnectKafka);
+// Called by controllers/shutdown.controller.js as part of the single coordinated shutdown sequence
+// — not registered as its own signal handler here, to avoid racing other independent close paths.
 
 export default { KAFKA_TOPICS, publishEvent, connectKafkaProducer, connectKafkaConsumer, ensureTopics };

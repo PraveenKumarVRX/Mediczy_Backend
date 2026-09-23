@@ -501,16 +501,8 @@ export async function getVectorStats() {
   }
 }
 
-// Graceful shutdown handlers
-process.on('SIGINT', async () => {
-  await closeVectorDB();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await closeVectorDB();
-  process.exit(0);
-});
-
+// Graceful shutdown: closeVectorDB() is called by controllers/shutdown.controller.js as part of the
+// single coordinated shutdown sequence, not from a handler registered here — see db/postgres.js for
+// why a second, independent process.exit()-calling handler is dangerous.
 export { vectorStore };
 export default { connectVectorDB, closeVectorDB, addVectors, searchVectors, getVectorStats };

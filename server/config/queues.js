@@ -154,27 +154,18 @@ export const getAllQueuesStats = async () => {
   return stats;
 };
 
-// Graceful shutdown
-const shutdown = async () => {
+// Graceful shutdown — called by controllers/shutdown.controller.js as part of the single coordinated
+// shutdown sequence, not from its own signal handler (a second, independent SIGTERM listener here
+// previously raced the app's main shutdown path).
+export const shutdownQueues = async () => {
   console.log('Closing BullMQ queues and schedulers...');
-  
-  // Close all queues
+
+  // Close all queues. `connection` (from createRedisConnection()) is a plain ioredis options object,
+  // not a client — BullMQ creates and owns its own real client per Queue from those options, and
+  // already closes it as part of q.close(); there is nothing else here to quit().
   await Promise.all(Object.values(queues).map(q => q.close()));
-  
-  // Close connection
-  if (connection) {
-    await connection.quit();
-  }
-  
+
   console.log('✅ BullMQ closed');
 };
-
-process.on('SIGINT', async () => {
-  await shutdown();
-});
-
-process.on('SIGTERM', async () => {
-  await shutdown();
-});
 
 export default queues;

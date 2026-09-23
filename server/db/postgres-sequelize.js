@@ -107,17 +107,10 @@ async function connectToPostgresDB() {
   }
 }
 
-// Handle process termination
-process.on('SIGINT', async () => {
-  try {
-    await postgresSequelize.close();
-    console.log('PostgreSQL Sequelize connection closed through app termination');
-    process.exit(0);
-  } catch (err) {
-    console.error('Error closing PostgreSQL connection:', err);
-    process.exit(1);
-  }
-});
+// Graceful shutdown: postgresSequelize.close() is already called by db/orchestrator.js's closeAll()
+// (invoked from controllers/shutdown.controller.js) — a second, independent SIGINT-only handler here
+// (which also only listened for SIGINT, never SIGTERM — the signal PM2/containers actually send) used
+// to race it with its own process.exit() call; see db/postgres.js for why that's dangerous.
 
 export { postgresSequelize, connectToPostgresDB };
 export default postgresSequelize;

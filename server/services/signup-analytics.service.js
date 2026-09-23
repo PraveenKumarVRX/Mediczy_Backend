@@ -101,16 +101,21 @@ async function flushEvents() {
   }
 }
 
-// Flush remaining events on process exit
+// Flush remaining events when the event loop naturally drains (not signal-triggered, so this never
+// races the coordinated shutdown sequence in controllers/shutdown.controller.js).
 const exitHandler = () => {
   if (eventQueue.length) {
     // Best-effort synchronous-style drain — fire and forget
     flushEvents().catch(() => {});
   }
 };
-process.on('SIGINT', exitHandler);
-process.on('SIGTERM', exitHandler);
 process.on('beforeExit', exitHandler);
+
+// Called (awaited) by controllers/shutdown.controller.js as part of the single coordinated shutdown
+// sequence, so a SIGTERM drains the queue for real instead of relying on the fire-and-forget handler above.
+export async function flushOnShutdown() {
+  if (eventQueue.length) await flushEvents().catch(() => {});
+}
 
 // ── Core enqueue helper ──────────────────────────────────────────────────────
 

@@ -38,10 +38,12 @@ console.log(`[DB] Pool Size: ${dbConfig.max} connections`);
 // Create connection pool
 const pool = new Pool(dbConfig);
 
-// Handle pool errors
-pool.on('error', (err, client) => {
+// Handle pool errors — this fires for an idle client that dropped its connection (a network blip),
+// which the pool already recovers from by discarding that client; it is not a reason to crash the
+// whole process (this previously called process.exit(-1) on any such blip, ungracefully killing
+// everything the process was doing, unrelated to whatever tripped this specific idle connection).
+pool.on('error', (err) => {
   console.error('[DB Pool Error]', err);
-  process.exit(-1);
 });
 
 // Log connection events
@@ -128,18 +130,10 @@ function getPoolStats() {
   };
 }
 
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('[DB] SIGINT received, closing connection pool...');
-  await closePool();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  console.log('[DB] SIGTERM received, closing connection pool...');
-  await closePool();
-  process.exit(0);
-});
+// Graceful shutdown: closePool() is called by controllers/shutdown.controller.js as part of the
+// single coordinated shutdown sequence (this pool is a separate connection pool from db/postgres.js
+// and is not covered by db/orchestrator.js's closeAll(), so it needs its own explicit close call
+// there) — not from a handler registered here, to avoid a process.exit() race against that sequence.
 
 export {
   pool,

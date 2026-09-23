@@ -279,8 +279,12 @@ export const getEmailSyncWorker = () => emailSyncWorker;
 
 console.log('✅ All workers initialized');
 
-// Graceful shutdown
-const shutdown = async () => {
+// Graceful shutdown — called by controllers/shutdown.controller.js as part of the single coordinated
+// shutdown sequence, not from its own signal handler. This is more complete than a bare
+// `Object.values(workers).map(w => w.close())` (it also stops the Kafka/email-sync sub-workers and
+// closes the shared Redis connection those BullMQ workers use), so shutdown.controller.js calls this
+// function directly rather than closing `workers` itself.
+export const shutdownWorkers = async () => {
   console.log('Closing workers...');
   await Promise.all(Object.values(workers).filter(w => w && typeof w.close === 'function').map(w => w.close()));
   if (kafkaN8NWorker) {
@@ -289,18 +293,10 @@ const shutdown = async () => {
   if (emailSyncWorker) {
     await emailSyncWorker.stop();
   }
-  await connection.quit();
+  // `connection` (from createRedisConnection()) is a plain ioredis options object, not a client —
+  // BullMQ creates and owns its own real client per Worker from those options, and already closes it
+  // as part of w.close() above; there is nothing else here to quit().
   console.log('✅ Workers closed');
 };
-
-process.on('SIGINT', async () => {
-  await shutdown();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await shutdown();
-  process.exit(0);
-});
 
 export default workers;

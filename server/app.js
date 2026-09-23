@@ -366,62 +366,20 @@ const app = express();
 
 // SECURITY: Enhanced error handling for unhandled rejections and uncaught exceptions
 import logger from './config/logger.js';  // Default export
-
-let isShuttingDown = false;
-
-// Graceful shutdown function
-async function gracefulShutdown(signal, exitCode = 0) {
-  if (isShuttingDown) {
-    logger.warn('Shutdown already in progress, forcing exit');
-    process.exit(1);
-  }
-  
-  isShuttingDown = true;
-  logger.info(`${signal} received, starting graceful shutdown...`);
-  
-  const shutdownTimeout = setTimeout(() => {
-    logger.error('Graceful shutdown timeout (30s), forcing exit');
-    process.exit(1);
-  }, 30000);
-  
-  try {
-    // Stop accepting new requests
-    if (global.httpServer) {
-      await new Promise((resolve) => {
-        global.httpServer.close(() => {
-          logger.info('HTTP server closed');
-          resolve();
-        });
-      });
-    }
-    
-    // Close database connections
-    if (global.sequelize) {
-      await global.sequelize.close();
-      logger.info('Database connections closed');
-    }
-    
-    // Close Redis
-    if (global.redisClient) {
-      await global.redisClient.quit();
-      logger.info('Redis connection closed');
-    }
-    
-    // Close Kafka
-    if (global.kafkaProducer) {
-      await global.kafkaProducer.disconnect();
-      logger.info('Kafka producer disconnected');
-    }
-    
-    clearTimeout(shutdownTimeout);
-    logger.info('Graceful shutdown complete');
-    process.exit(exitCode);
-    
-  } catch (error) {
-    logger.error('Error during graceful shutdown:', { error: error.message, stack: error.stack });
-    process.exit(1);
-  }
-}
+// The actual graceful-shutdown implementation (HTTP drain, workers, queues, DB/Redis/Kafka/vector/
+// telemetry close, all timeout-bounded) lives in controllers/shutdown.controller.js and is the ONLY
+// place allowed to call process.exit() during shutdown. This module used to have its own second,
+// independent gracefulShutdown() that raced it on every SIGTERM/SIGINT — and since that duplicate
+// checked four `global.*` variables (global.httpServer, global.sequelize, global.redisClient,
+// global.kafkaProducer) that are never actually assigned anywhere in the codebase, every one of its
+// "close" branches was silently skipped and it fell straight through to process.exit() with no real
+// cleanup at all. Because this module is imported before shutdownController.registerHandlers() runs
+// (see index.js), this broken handler's listener was registered FIRST — meaning on a real production
+// SIGTERM, it consistently won the race and killed the process before shutdown.controller.js's real,
+// careful sequence ever got to run. This was the primary cause behind the leaked/orphaned-connection
+// pattern found during the 2026-09-22 OOM investigation. Fixed by deleting the duplicate entirely and
+// routing through the one real implementation below.
+import shutdownController from './controllers/shutdown.controller.js';
 
 // Determine if error is critical and requires shutdown
 function isCriticalError(error) {
@@ -469,7 +427,7 @@ process.on('unhandledRejection', async (reason, promise) => {
   // Graceful shutdown for critical errors
   if (isCriticalError(reason)) {
     logger.error('Critical error detected in promise rejection, initiating shutdown');
-    await gracefulShutdown('UNHANDLED_REJECTION', 1);
+    await shutdownController.gracefulShutdown('UNHANDLED_REJECTION', 1);
   }
 });
 
@@ -490,20 +448,12 @@ process.on('uncaughtException', async (error) => {
   
   // Always exit on uncaught exceptions (process is in unknown state)
   logger.error('Uncaught exception detected, initiating emergency shutdown');
-  await gracefulShutdown('UNCAUGHT_EXCEPTION', 1);
+  await shutdownController.gracefulShutdown('UNCAUGHT_EXCEPTION', 1);
 });
 
-// Handle SIGTERM (container orchestration, PM2)
-process.on('SIGTERM', async () => {
-  logger.info('SIGTERM signal received');
-  await gracefulShutdown('SIGTERM', 0);
-});
-
-// Handle SIGINT (Ctrl+C)
-process.on('SIGINT', async () => {
-  logger.info('SIGINT signal received');
-  await gracefulShutdown('SIGINT', 0);
-});
+// SIGTERM/SIGINT (container orchestration, PM2, Ctrl+C) are handled exclusively by
+// shutdownController.registerHandlers(), called once from index.js after startup completes — see the
+// comment above this file's shutdownController import for why a second registration here is unsafe.
 
 // Handle warning events (deprecations, MaxListenersExceeded)
 process.on('warning', (warning) => {

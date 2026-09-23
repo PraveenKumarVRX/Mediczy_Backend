@@ -217,7 +217,7 @@ export async function closeAllRedisClients() {
   console.log('✅ All Redis clients closed');
 }
 
-process.on('SIGTERM', closeAllRedisClients);
-process.on('SIGINT',  closeAllRedisClients);
+// Called by controllers/shutdown.controller.js as part of the single coordinated shutdown sequence
+// — not registered as its own signal handler here, to avoid racing other independent close paths.
 
 export default { getRedisClient, acquireLock, releaseLock, cacheGet, cacheSet, cacheDel, REDIS_DBS };

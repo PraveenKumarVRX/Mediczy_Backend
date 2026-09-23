@@ -240,14 +240,7 @@ export const cache = {
   },
 };
 
-process.on('SIGINT', async () => {
-  await closeRedis();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await closeRedis();
-  process.exit(0);
-});
-
+// SIGINT/SIGTERM handling lives solely in controllers/shutdown.controller.js, which closes this
+// client via db/orchestrator.js's closeAll() — see db/postgres.js for why a second handler here is
+// dangerous (a process.exit() race against the coordinated shutdown sequence).
 export default redisClient;

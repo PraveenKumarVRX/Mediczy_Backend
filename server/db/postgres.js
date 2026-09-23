@@ -452,14 +452,9 @@ export async function testPostgres() {
   }
 }
 
-process.on('SIGINT', async () => {
-  await closePostgres();
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  await closePostgres();
-  process.exit(0);
-});
-
+// SIGINT/SIGTERM handling lives solely in controllers/shutdown.controller.js, which closes this
+// pool via db/orchestrator.js's closeAll(). A second handler here previously raced it — whichever
+// resolved first called process.exit(0) and killed the process out from under the other's in-flight
+// close calls, sometimes leaving orphaned connections/zombie processes (root cause of a 2026-09-22
+// OOM incident).
 export default connectPostgres;
