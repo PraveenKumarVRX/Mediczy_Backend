@@ -13,7 +13,7 @@ whenever picking this project back up after a gap; both the plan and the codebas
 |---|---|---|
 | 0.1 Secrets | **Safe subset only** | `.gitignore` fixed, 10 real-value `.env*` files untracked, a silent default-password endpoint closed, `SSM_REQUIRED` fail-closed option added, local pre-commit gitleaks hook added. **Owner action, not done**: rotate the live DB password and JWT secrets (signs out every user — needs an announced window), rotate third-party keys, reset every test account password, then `git-filter-repo` + force-push to purge history (freezes merges, everyone re-clones). |
 | 0.2 Access-rules deploy | Live | Deployed and verified against real role logins. |
-| 0.3 No invented data | **WP-0.3a + WP-0.3b done; c/d remain** | See below. |
+| 0.3 No invented data | **WP-0.3a + WP-0.3b done; WP-0.3c partial; WP-0.3d remains** | See below. |
 | 0.4 Payments | Live | Migration applied to production. |
 | 0.5 Tenant isolation (SCM/blood bank/CSSD/dietary) | Done | 98-check verification script, non-superuser role. |
 | 0.6 CI gate and release pipeline | Partial | `ci.yml`, gitleaks CI job, `/healthz`, real gating health check + auto-revert all built and now proven across 4 real deploys today. **Not done**: the pipeline itself has never actually run on GitHub Actions (no `gh auth login` access to verify); branch protection not applied; `CODEOWNERS` still has placeholder usernames. |
@@ -54,12 +54,24 @@ The plan splits this into four sub-packages. Status as of 2026-09-23:
   `tsconfig.isolated.json` (`"files"` list, not `"include"`) excluding that file. **Not fixed**: the
   underlying `ChatDashboard.tsx` syntax error, and therefore CI's own typecheck step, remain broken —
   see follow-ups below.
-- **WP-0.3c — Executive and finance screens (not started):** `hospital/COODashboard.tsx`,
-  `server/routes/hospital/executive-dashboard.route.js` (`/coo/operations` and `/cfo/financials` both
-  return hardcoded numbers — throughput, pending discharges, ER wait, payables, DSO, budget utilisation
-  — instead of real values or `null` + a `dataAvailable` map, the pattern the CEO endpoint already
-  uses), `hospital/CEODashboard.tsx`, `hospital/CFODashboard.tsx`, `accounts/AccountsDashboard.tsx` and
-  `AccountsModulePages.tsx`.
+- **WP-0.3c — Executive and finance screens: DONE (2026-09-24).**
+  - `server/routes/hospital/executive-dashboard.route.js`: `/coo/operations` now real (beds by ward, hourly
+    admissions/discharges/ER arrivals, ALOS by ward, pending discharges, ER wait); `/cfo/financials` returns
+    honest `null` + `dataAvailable` for AP/DSO/budget/cash-flow/dept-margin (no expense ledger exists) and
+    real day-bucketed AR aging; new `/accounts/today` backs the Accounts dashboard.
+    `hospital-billing.service.js`'s `getCeoDashboard` gained a real 12-month OPD/IPD/ER volume series and MTD surgeries.
+  - Also fixed a latent bug found on the way: `liveStats()` filtered `beds.is_active`, a column that doesn't
+    exist, so every exec dashboard silently reported 0 beds (the `.catch` swallowed it).
+  - `COODashboard`, `CFODashboard`, `CEODashboard`, `AccountsDashboard` rewritten with loading/error/empty
+    states. Removed fabricated NABH/JCI/AERB/CDSCO/Fire-NOC compliance scores, a fake insurance-settlement alert,
+    strategic-initiative progress, and named fake patients/payers.
+  - `AccountsModulePages`: Patient Accounts is real (aggregated from invoices, by patient ID); Insurance Billing,
+    Expenses, Vendors, Payroll, Budget, Ledger, Journal, Chart of Accounts, Reports, Tax, Analytics and Settings
+    (which pre-filled a fake GSTIN/PAN) are honest "not connected" pages. Bills and Payments were already real.
+  - **Still placeholder (need real features, not just wiring):** COO staffing (HRMS attendance exists but needs
+    aggregating), supply alerts (no reorder levels in SCM), maintenance/equipment (WP-1.7), per-payer settlements,
+    department revenue (invoices carry no department), all Accounts finance-ledger pages.
+  - Not touched: `AccountsSupportPage` (static help text; its helpdesk phone/email look invented — confirm or remove).
 - **WP-0.3d — Department screens + server-side fabrication (not started):**
   `server/controller/quality-portal.controller.js` (defines and returns fallback constants when data is
   missing — delete them, return real data only), `quality/QualityModulePages.tsx` (14 seed arrays),
@@ -105,10 +117,10 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
 
 1. ~~**WP-0.3a**~~ — done 2026-09-23.
 2. ~~**WP-0.3b**~~ (clinical screens: ICU, EHR's fake-patient bug, PatientEMR, OT, Blood Bank, Clinical
-   CDSS, Teleconsult) — done 2026-09-23. **Not yet deployed to production** — accumulated with WP-0.3a
-   on `main`, pending a deploy run.
-3. **WP-0.3c/d** (executive/finance, department + server-side) — lower clinical risk, real financial-
-   integrity risk (COO/CFO dashboards, Accounts). Next up.
+   CDSS, Teleconsult) — done 2026-09-23, **deployed to production 2026-09-24** together with WP-0.3a and
+   the executive/finance pass of WP-0.3c.
+3. **WP-0.3c remainder + WP-0.3d** (accounts screens; department screens + `quality-portal.controller.js`
+   server-side fabrication) — lower clinical risk, real financial-integrity risk. Next up.
 4. **Fix `ChatDashboard.tsx`'s syntax error** (found as a byproduct of WP-0.3b) — CI's real typecheck
    command currently passes vacuously for the whole client. This is a correctness gap in the safety net
    itself, not just a code-quality item.

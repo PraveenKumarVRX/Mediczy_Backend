@@ -6,44 +6,69 @@ import {
   DollarSign, Receipt, CreditCard, FileText,
   TrendingUp, Users, BarChart3, PlusCircle,
   ArrowUpRight, ArrowDownRight, Clock, CheckCircle2, AlertCircle,
-  Banknote, Wallet, ShieldCheck, ClipboardList, Download,
+  Banknote, Wallet, ShieldCheck, ClipboardList, Download, Loader2,
   Building2, Target, BookOpen, FileCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import api from '@/utils/api';
+import { PlaceholderBanner } from '@/components/ui/placeholder-banner';
+import { EmptyState } from '@/components/ui/empty-state';
 import { accountsNavSections } from './AccountsModulePages';
 
 const navSections = accountsNavSections;
 
-const kpis = [
-  { label: "Today's Collection", value: '₹1,24,500', sub: '+8.2% vs yesterday', icon: DollarSign, up: true, color: 'text-emerald-600' },
-  { label: 'Pending Bills',      value: '38',         sub: '12 urgent (>7 days)', icon: Receipt,    up: false, color: 'text-amber-600' },
-  { label: 'Monthly Revenue',    value: '₹38,20,000', sub: '₹42L target',         icon: TrendingUp, up: true,  color: 'text-teal-600' },
-  { label: 'Outstanding Amount', value: '₹5,68,000',  sub: '24 accounts',          icon: AlertCircle,up: false, color: 'text-red-500' },
-];
+interface RecentInvoice { id: number; billNumber: string; patientId: number | null; billType: string | null; totalAmount: number; status: string; createdAt: string }
+interface AccountsToday {
+  todaysCollection: number;
+  collectionByMethod: { method: string; total: number; count: number }[];
+  billsGeneratedToday: number;
+  pendingBills: number;
+  pendingBillsOlderThan7d: number;
+  outstandingAmount: number;
+  monthCollection: number;
+  refundsToday: number;
+  recentInvoices: RecentInvoice[];
+}
 
-const recentTransactions = [
-  { id: 'INV-2451', patient: 'Ramesh Kumar',    dept: 'Cardiology',  amount: '₹12,400', status: 'Paid',    date: 'Today 10:23' },
-  { id: 'INV-2450', patient: 'Sunita Sharma',   dept: 'Orthopaedics',amount: '₹8,200',  status: 'Pending', date: 'Today 09:45' },
-  { id: 'INV-2449', patient: 'Ajay Verma',      dept: 'General OPD', amount: '₹1,800',  status: 'Paid',    date: 'Today 09:12' },
-  { id: 'INV-2448', patient: 'Priya Nair',      dept: 'Gynaecology', amount: '₹22,000', status: 'Partial', date: 'Yesterday' },
-  { id: 'INV-2447', patient: 'Deepak Mishra',   dept: 'Neurology',   amount: '₹35,600', status: 'Pending', date: 'Yesterday' },
-];
-
-const pendingPayments = [
-  { payer: 'Medi Assist TPA',  amount: '₹1,82,000', bills: 14, daysOld: 18 },
-  { payer: 'Star Health',      amount: '₹98,500',   bills: 8,  daysOld: 12 },
-  { payer: 'CGHS',             amount: '₹74,200',   bills: 11, daysOld: 25 },
-  { payer: 'Patients (OOP)',   amount: '₹2,13,800', bills: 31, daysOld: 7  },
-];
+// WP-0.3c: KPIs, recent transactions (named patients), "pending from payers" (named TPAs) and today's
+// summary were all hardcoded. Now backed by GET /hospital/accounts/today. Named-payer breakdown has no
+// data source (invoices carry no payer name), so it is shown as an honest placeholder.
+const inr = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`;
 
 const statusColor: Record<string, string> = {
-  Paid:    'bg-emerald-100 text-emerald-700',
-  Pending: 'bg-amber-100 text-amber-700',
-  Partial: 'bg-blue-100 text-blue-700',
+  paid:    'bg-emerald-100 text-emerald-700',
+  issued:  'bg-amber-100 text-amber-700',
+  overdue: 'bg-red-100 text-red-700',
+  partial: 'bg-blue-100 text-blue-700',
 };
 
 const AccountsDashboard = () => {
   const navigate = useNavigate();
+  const [data, setData] = useState<AccountsToday | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/hospital/accounts/today');
+      setData(res.data?.data ?? null);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.response?.data?.message ?? err?.message ?? 'Failed to load accounts data');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const kpis = [
+    { label: "Today's Collection", value: data ? inr(data.todaysCollection) : '—', sub: 'Completed payments today', icon: DollarSign, up: true, color: 'text-emerald-600' },
+    { label: 'Pending Bills', value: data ? String(data.pendingBills) : '—', sub: data ? `${data.pendingBillsOlderThan7d} older than 7 days` : '', icon: Receipt, up: false, color: 'text-amber-600' },
+    { label: 'Month Collection', value: data ? inr(data.monthCollection) : '—', sub: 'Month to date', icon: TrendingUp, up: true, color: 'text-teal-600' },
+    { label: 'Outstanding Amount', value: data ? inr(data.outstandingAmount) : '—', sub: data ? `${data.pendingBills} open invoices` : '', icon: AlertCircle, up: false, color: 'text-red-500' },
+  ];
   return (
     <HospDeptLayout
       deptKey="accounts"
@@ -55,6 +80,13 @@ const AccountsDashboard = () => {
       title="Accounts Dashboard"
       subtitle="Finance & billing overview"
     >
+      {loading && !data ? (
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-teal-600" /></div>
+      ) : error ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 mb-6">
+          <span>{error}</span><Button size="sm" variant="outline" onClick={load}>Retry</Button>
+        </div>
+      ) : null}
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
         {kpis.map((k) => (
@@ -92,32 +124,36 @@ const AccountsDashboard = () => {
               </div>
             </CardHeader>
             <CardContent>
+              {!data || data.recentInvoices.length === 0 ? (
+                <EmptyState icon={Receipt} title="No invoices yet" description="Generated bills appear here." size="sm" />
+              ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b text-muted-foreground">
                       <th className="pb-2 text-left font-medium">Invoice</th>
                       <th className="pb-2 text-left font-medium">Patient</th>
-                      <th className="pb-2 text-left font-medium hidden md:table-cell">Dept</th>
+                      <th className="pb-2 text-left font-medium hidden md:table-cell">Type</th>
                       <th className="pb-2 text-right font-medium">Amount</th>
                       <th className="pb-2 text-center font-medium">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {recentTransactions.map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer">
-                        <td className="py-2.5 font-medium text-teal-700">{t.id}</td>
-                        <td className="py-2.5">{t.patient}</td>
-                        <td className="py-2.5 text-muted-foreground hidden md:table-cell">{t.dept}</td>
-                        <td className="py-2.5 text-right font-semibold">{t.amount}</td>
+                    {data.recentInvoices.map((t) => (
+                      <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer" onClick={() => navigate('/accounts/bills')}>
+                        <td className="py-2.5 font-medium text-teal-700">{t.billNumber}</td>
+                        <td className="py-2.5">{t.patientId != null ? `Patient #${t.patientId}` : '—'}</td>
+                        <td className="py-2.5 text-muted-foreground hidden md:table-cell capitalize">{t.billType ?? '—'}</td>
+                        <td className="py-2.5 text-right font-semibold">{inr(t.totalAmount)}</td>
                         <td className="py-2.5 text-center">
-                          <Badge className={`${statusColor[t.status]} border-0 text-xs`}>{t.status}</Badge>
+                          <Badge className={`${statusColor[t.status] ?? 'bg-slate-100 text-slate-600'} border-0 text-xs capitalize`}>{t.status}</Badge>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
+              )}
               <Button variant="ghost" size="sm" className="mt-3 w-full text-teal-600" onClick={() => navigate('/accounts/bills')}>
                 View all transactions →
               </Button>
@@ -160,15 +196,10 @@ const AccountsDashboard = () => {
               <Clock className="h-4 w-4 text-amber-500" /> Pending from Payers
             </CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              {pendingPayments.map((p) => (
-                <div key={p.payer} className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{p.payer}</p>
-                    <p className="text-xs text-muted-foreground">{p.bills} bills · {p.daysOld}d old</p>
-                  </div>
-                  <span className="text-sm font-bold text-red-600">{p.amount}</span>
-                </div>
-              ))}
+              <PlaceholderBanner
+                title="Per-payer pending isn't tracked yet"
+                reason={`Invoices carry no payer name, so a TPA/insurer breakdown can't be derived. Total outstanding: ${data ? inr(data.outstandingAmount) : '—'}.`}
+              />
               <Button variant="ghost" size="sm" className="w-full text-teal-600 mt-1" onClick={() => navigate('/accounts/insurance-billing')}>
                 Manage all →
               </Button>
@@ -182,11 +213,9 @@ const AccountsDashboard = () => {
             </CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               {[
-                { label: 'Bills Generated', value: '47' },
-                { label: 'Cash Collected',  value: '₹68,200' },
-                { label: 'Online Payments', value: '₹43,100' },
-                { label: 'Insurance Paid',  value: '₹13,200' },
-                { label: 'Refunds Issued',  value: '₹3,800' },
+                { label: 'Bills Generated', value: data ? String(data.billsGeneratedToday) : '—' },
+                ...(data?.collectionByMethod ?? []).map((m) => ({ label: `Collected — ${m.method}`, value: inr(m.total) })),
+                { label: 'Refunds Issued', value: data ? inr(data.refundsToday) : '—' },
               ].map((s) => (
                 <div key={s.label} className="flex justify-between">
                   <span className="text-muted-foreground">{s.label}</span>

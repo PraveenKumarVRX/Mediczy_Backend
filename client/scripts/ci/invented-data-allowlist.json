@@ -16,14 +16,6 @@
     "reason": "false positive: `hospitalData` is a static nearby-hospitals directory (name/address), not patient data"
   },
   {
-    "file": "src/pages/accounts/AccountsDashboard.tsx",
-    "reason": "REAL, WP-0.3c: `recentTransactions` is fabricated financial data on a money screen"
-  },
-  {
-    "file": "src/pages/accounts/AccountsModulePages.tsx",
-    "reason": "REAL, WP-0.3c: patientAccts/insuranceClaims/vendors/payrollData/coa all fabricated; plan says wire to the already-existing invoice/payment/ledger reads"
-  },
-  {
     "file": "src/pages/admin/AccountingManagement.tsx",
     "reason": "REAL: `sampleCategories` (name admits it) is fabricated accounting category data"
   },
@@ -98,10 +90,6 @@
   {
     "file": "src/pages/hmis/ClinicalCalculators.tsx",
     "reason": "false positive: `CALCS` is a static list of calculator definitions, not patient data"
-  },
-  {
-    "file": "src/pages/hospital/CEODashboard.tsx",
-    "reason": "REAL, WP-0.3c: `seedInitiatives` (name admits it); plan says replace with the mapped control-tower source"
   },
   {
     "file": "src/pages/hospital/HospitalCommunicationHub.tsx",

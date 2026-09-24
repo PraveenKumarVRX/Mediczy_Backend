@@ -1287,8 +1287,12 @@ export async function getCfoDashboard(hospitalId, { from, to } = {}) {
 export async function getCeoDashboard(hospitalId, { months = 5 } = {}) {
   const since = new Date();
   since.setMonth(since.getMonth() - months);
+  // WP-0.3c: volume trend added 2026-09-23 to replace the client's own
+  // 12-month hardcoded OPD/IPD/ER seed array (seedVolume in CEODashboard.tsx).
+  const volumeMonths = new Date();
+  volumeMonths.setMonth(volumeMonths.getMonth() - 11);
 
-  const [revenueTrend, alos] = await Promise.all([
+  const [revenueTrend, alos, opdByMonth, ipdByMonth, erByMonth, surgeriesMtdRes] = await Promise.all([
     pool.query(
       `SELECT to_char(date_trunc('month', created_at), 'Mon') AS month,
               date_trunc('month', created_at) AS month_start,
@@ -1304,7 +1308,42 @@ export async function getCeoDashboard(hospitalId, { months = 5 } = {}) {
        FROM ip_admissions WHERE organization_id = $1 AND discharge_datetime IS NOT NULL AND admission_datetime >= $2`,
       [hospitalId, since.toISOString()]
     ).catch(() => ({ rows: [{ alos: null }] })),
+    pool.query(
+      `SELECT to_char(date_trunc('month', check_in_at), 'Mon') AS month, date_trunc('month', check_in_at) AS month_start, COUNT(*)::int AS cnt
+       FROM hospital_queue_entries WHERE organization_id = $1 AND department = 'opd' AND check_in_at >= $2
+       GROUP BY date_trunc('month', check_in_at) ORDER BY month_start`,
+      [hospitalId, volumeMonths.toISOString()]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT to_char(date_trunc('month', admission_datetime), 'Mon') AS month, date_trunc('month', admission_datetime) AS month_start, COUNT(*)::int AS cnt
+       FROM ip_admissions WHERE organization_id = $1 AND admission_datetime >= $2
+       GROUP BY date_trunc('month', admission_datetime) ORDER BY month_start`,
+      [hospitalId, volumeMonths.toISOString()]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT to_char(date_trunc('month', check_in_at), 'Mon') AS month, date_trunc('month', check_in_at) AS month_start, COUNT(*)::int AS cnt
+       FROM hospital_queue_entries WHERE organization_id = $1 AND department = 'er' AND check_in_at >= $2
+       GROUP BY date_trunc('month', check_in_at) ORDER BY month_start`,
+      [hospitalId, volumeMonths.toISOString()]
+    ).catch(() => ({ rows: [] })),
+    pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM ot_bookings
+       WHERE organization_id = $1 AND ot_status = 'completed' AND scheduled_start >= date_trunc('month', CURRENT_DATE)`,
+      [hospitalId]
+    ).catch(() => ({ rows: [{ cnt: 0 }] })),
   ]);
+
+  const monthKey = (d) => new Date(d).toISOString().slice(0, 7);
+  const opdMap = new Map(opdByMonth.rows.map((r) => [monthKey(r.month_start), r.cnt]));
+  const ipdMap = new Map(ipdByMonth.rows.map((r) => [monthKey(r.month_start), r.cnt]));
+  const erMap = new Map(erByMonth.rows.map((r) => [monthKey(r.month_start), r.cnt]));
+  const allMonthKeys = new Set([...opdMap.keys(), ...ipdMap.keys(), ...erMap.keys()]);
+  const volume = [...allMonthKeys].sort().map((key) => ({
+    month: new Date(`${key}-01`).toLocaleString('en-US', { month: 'short' }),
+    opd: opdMap.get(key) || 0,
+    ipd: ipdMap.get(key) || 0,
+    er: erMap.get(key) || 0,
+  }));
 
   // UNITS: the CEO frontend's seed values, chart axis and labels ("₹4780L",
   // "Revenue ... (₹ Lakhs)") are all in Rs LAKHS, so monthlyRevenue and the
@@ -1324,11 +1363,14 @@ export async function getCeoDashboard(hospitalId, { months = 5 } = {}) {
     // Payment-method mix must NOT be returned under a payer-mix name.
     payerMix: null,
     alos: alos.rows[0]?.alos != null ? Number(alos.rows[0].alos) : null,
+    volume,
+    surgeriesMtd: surgeriesMtdRes.rows[0]?.cnt ?? 0,
     // Not computable from current schema — no expense ledger exists yet.
     revenueTarget: null,
     ebitdaMargin: null,
     arpob: null,
-    dataAvailable: { revenueTrend: true, payerMix: false, alos: true, ebitdaMargin: false, revenueTarget: false, arpob: false },
+    deptRevenue: null,
+    dataAvailable: { revenueTrend: true, payerMix: false, alos: true, volume: true, ebitdaMargin: false, revenueTarget: false, arpob: false, deptRevenue: false },
   };
 }
 
