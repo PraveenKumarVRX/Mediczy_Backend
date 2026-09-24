@@ -2,7 +2,7 @@
  * BiomedicalModulePages — full-featured sub-pages for the Biomedical Engineering portal.
  * Equipment Inventory, Work Orders, Calibration Tracking, Reports — all world-class.
  */
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import api from "@/utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,7 +44,7 @@ const biomedLayout = (title: string, subtitle: string, children: React.ReactNode
 
 // ─── EQUIPMENT DATA ────────────────────────────────────────────────────────────
 
-type DeviceStatus = "online" | "warning" | "offline" | "maintenance" | "cal-due" | "retired";
+type DeviceStatus = "online" | "warning" | "offline" | "maintenance" | "cal-due" | "retired" | "untracked";
 
 interface Device {
   id: string; assetId: string; name: string; type: string; manufacturer: string; model: string;
@@ -54,20 +54,30 @@ interface Device {
   engineer: string; serialNo: string; notes: string;
 }
 
-const devicesData: Device[] = [
-  { id: "D001", assetId: "BME-1001", name: "Patient Monitor", type: "Monitoring", manufacturer: "Philips", model: "IntelliVue MX450", department: "ICU-1", location: "Bed 4", status: "online",      lastService: "2026-04-10", nextCalibration: "2026-07-10", nextPPM: "2026-05-20", yearOfPurchase: 2021, warrantyExpiry: "2026-12-31", age: 5, engineer: "Rajan K.",  serialNo: "MX45023411", notes: "Annual calibration due Q3" },
-  { id: "D002", assetId: "BME-1002", name: "Ventilator",      type: "Respiratory", manufacturer: "Drager", model: "V500",          department: "ICU-2", location: "Bay 2",  status: "offline",     lastService: "2026-05-01", nextCalibration: "2026-08-01", nextPPM: "2026-06-01", yearOfPurchase: 2020, warrantyExpiry: "2025-06-30", age: 6, engineer: "Priya M.", serialNo: "V500DE1942", notes: "Low-pressure alarm — WO-3841 open" },
-  { id: "D003", assetId: "BME-1003", name: "ECG Machine",     type: "Cardiac",     manufacturer: "GE",     model: "MAC 5500",      department: "Cardio", location: "Room 2", status: "maintenance", lastService: "2026-05-10", nextCalibration: "2026-06-15", nextPPM: "2026-05-25", yearOfPurchase: 2022, warrantyExpiry: "2027-03-31", age: 4, engineer: "Rajan K.",  serialNo: "GE55004322", notes: "Calibration in progress" },
-  { id: "D004", assetId: "BME-1004", name: "Infusion Pump",   type: "Infusion",    manufacturer: "BD",     model: "Alaris GP",     department: "General-3", location: "Nurses Station", status: "online",   lastService: "2026-03-15", nextCalibration: "2026-09-15", nextPPM: "2026-06-15", yearOfPurchase: 2023, warrantyExpiry: "2028-01-31", age: 3, engineer: "Meena S.", serialNo: "BD04412891", notes: "" },
-  { id: "D005", assetId: "BME-1005", name: "Defibrillator",   type: "Cardiac",     manufacturer: "ZOLL",   model: "R Series",      department: "Emergency", location: "Bay 1", status: "warning",    lastService: "2026-04-01", nextCalibration: "2026-05-20", nextPPM: "2026-05-20", yearOfPurchase: 2021, warrantyExpiry: "2026-07-31", age: 5, engineer: "Anil R.",  serialNo: "ZR001928341", notes: "Battery low — replace next PPM" },
-  { id: "D006", assetId: "BME-1006", name: "Blood Gas Analyser", type: "Laboratory", manufacturer: "Radiometer", model: "ABL90 FLEX", department: "Lab",   location: "Main Lab", status: "cal-due",  lastService: "2025-11-15", nextCalibration: "2026-05-18", nextPPM: "2026-06-15", yearOfPurchase: 2019, warrantyExpiry: "2024-12-31", age: 7, engineer: "Suresh P.", serialNo: "RAD9012834", notes: "Calibration overdue — NABL requirement" },
-  { id: "D007", assetId: "BME-1007", name: "Autoclave",        type: "Sterilisation", manufacturer: "Tuttnauer", model: "3870EHP",  department: "CSSD",  location: "Main CSSD", status: "offline",  lastService: "2026-04-20", nextCalibration: "2026-10-20", nextPPM: "2026-06-20", yearOfPurchase: 2020, warrantyExpiry: "2025-12-31", age: 6, engineer: "Anil R.",  serialNo: "TUT38702011", notes: "Heating element failure — critical WO open" },
-  { id: "D008", assetId: "BME-1008", name: "SpO2 Monitor",     type: "Monitoring",  manufacturer: "Nellcor", model: "OxiMax N-600", department: "OT-3",  location: "OT Bay", status: "online",     lastService: "2026-02-28", nextCalibration: "2026-08-28", nextPPM: "2026-05-28", yearOfPurchase: 2022, warrantyExpiry: "2027-02-28", age: 4, engineer: "Meena S.", serialNo: "NC60019021", notes: "" },
-  { id: "D009", assetId: "BME-1009", name: "Anesthesia Machine", type: "Anaesthesia", manufacturer: "Drager", model: "Fabius Tiro",  department: "OT-1",  location: "Main OT", status: "online",    lastService: "2026-04-05", nextCalibration: "2026-07-05", nextPPM: "2026-06-05", yearOfPurchase: 2021, warrantyExpiry: "2026-06-30", age: 5, engineer: "Rajan K.", serialNo: "FT210390244", notes: "" },
-  { id: "D010", assetId: "BME-1010", name: "C-Arm X-Ray",      type: "Imaging",     manufacturer: "Siemens", model: "Cios Spin",   department: "OT-2",  location: "OT 2",   status: "online",     lastService: "2026-03-01", nextCalibration: "2026-09-01", nextPPM: "2026-06-01", yearOfPurchase: 2020, warrantyExpiry: "2025-09-30", age: 6, engineer: "Suresh P.", serialNo: "SCS20019012", notes: "Warranty expired — parts procurement pending" },
-  { id: "D011", assetId: "BME-1011", name: "Ultrasound Machine","type": "Imaging",  manufacturer: "GE",     model: "LOGIQ E10",   department: "Radiology", location: "Room 3", status: "online",   lastService: "2026-01-20", nextCalibration: "2026-07-20", nextPPM: "2026-06-20", yearOfPurchase: 2023, warrantyExpiry: "2028-03-31", age: 3, engineer: "Priya M.", serialNo: "GEL10019023", notes: "" },
-  { id: "D012", assetId: "BME-1012", name: "Centrifuge",        type: "Laboratory", manufacturer: "Eppendorf", model: "5810R",    department: "Lab",   location: "Lab 2",  status: "online",     lastService: "2026-02-15", nextCalibration: "2026-08-15", nextPPM: "2026-05-15", yearOfPurchase: 2022, warrantyExpiry: "2027-05-31", age: 4, engineer: "Suresh P.", serialNo: "EP58102091", notes: "" },
-];
+
+// Maps a live hg_equipment_inventory row to the UI Device shape. Operational
+// status and service/warranty dates have no recorded source yet, so they render
+// as "untracked"/"—" instead of fabricated values (WP-0.3d).
+const mapEquipmentRow = (r: any): Device => ({
+  id: String(r.id),
+  assetId: `#${r.id}`,
+  name: r.device_name || "Unnamed device",
+  type: r.equipment_class || "—",
+  manufacturer: r.manufacturer || "—",
+  model: r.model || "—",
+  department: r.department || r.owner_department || "—",
+  location: r.location || "—",
+  status: "untracked",
+  lastService: "—",
+  nextCalibration: "—",
+  nextPPM: "—",
+  yearOfPurchase: 0,
+  warrantyExpiry: "—",
+  age: 0,
+  engineer: "—",
+  serialNo: r.serial_number || "—",
+  notes: r.notes || "",
+});
 
 const statusCfg: Record<DeviceStatus, { label: string; cls: string; dot: string }> = {
   online:      { label: "Online",      cls: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400",   dot: "bg-green-500" },
@@ -75,6 +85,7 @@ const statusCfg: Record<DeviceStatus, { label: string; cls: string; dot: string 
   offline:     { label: "Offline",     cls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400",           dot: "bg-red-500" },
   maintenance: { label: "Maintenance", cls: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400",       dot: "bg-blue-500" },
   "cal-due":   { label: "Cal Due",     cls: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400", dot: "bg-purple-500" },
+  untracked:   { label: "Not Tracked", cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",   dot: "bg-slate-400" },
   retired:     { label: "Retired",     cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",   dot: "bg-slate-400" },
 };
 
@@ -87,8 +98,24 @@ const BiomedicalEquipmentContent = () => {
   const [selected, setSelected] = useState<Device | null>(null);
   const [aiKey, setAiKey] = useState(0);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [devicesLoaded, setDevicesLoaded] = useState(false);
 
-  const types = ["all", ...Array.from(new Set(devicesData.map(d => d.type)))];
+  useEffect(() => {
+    api.get('/biomedical/equipment', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('biomedicalToken') || ''}` },
+    })
+      .then(({ data }) => {
+        setDevices(((data.data || []) as any[]).map(mapEquipmentRow));
+        setDevicesLoaded(true);
+      })
+      .catch((err) => {
+        console.error('[Biomedical] failed to load equipment:', err?.message);
+        setDevicesLoaded(true);
+      });
+  }, []);
+
+  const types = ["all", ...Array.from(new Set(devices.map(d => d.type)))];
 
   const syncToHyperGrid = async (device: Device) => {
     setSyncingId(device.id);
@@ -110,7 +137,7 @@ const BiomedicalEquipmentContent = () => {
     }
   };
 
-  const filtered = useMemo(() => devicesData.filter(d => {
+  const filtered = useMemo(() => devices.filter(d => {
     const matchSearch = d.name.toLowerCase().includes(search.toLowerCase()) ||
       d.assetId.toLowerCase().includes(search.toLowerCase()) ||
       d.department.toLowerCase().includes(search.toLowerCase()) ||
@@ -118,7 +145,7 @@ const BiomedicalEquipmentContent = () => {
     const matchStatus = statusFilter === "all" || d.status === statusFilter;
     const matchType   = typeFilter   === "all" || d.type    === typeFilter;
     return matchSearch && matchStatus && matchType;
-  }), [search, statusFilter, typeFilter]);
+  }), [search, statusFilter, typeFilter, devices]);
 
   return (
     <>
@@ -126,7 +153,7 @@ const BiomedicalEquipmentContent = () => {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">Equipment Inventory</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} of {devicesData.length} devices</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} of {devices.length} devices</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" className="gap-2 border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400"
@@ -146,7 +173,7 @@ const BiomedicalEquipmentContent = () => {
           {search && <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><X className="h-3.5 w-3.5" /></button>}
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {(["all","online","warning","offline","maintenance","cal-due"] as const).map(s => (
+          {(["all","untracked","online","warning","offline","maintenance","cal-due"] as const).map(s => (
             <button key={s} onClick={() => setStatusFilter(s)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${statusFilter === s ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"}`}>
               {s === "all" ? "All" : statusCfg[s as DeviceStatus]?.label || s}
@@ -158,7 +185,7 @@ const BiomedicalEquipmentContent = () => {
       {/* Quick stats strip */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
         {Object.entries(statusCfg).filter(([k]) => k !== "retired").map(([key, cfg]) => {
-          const count = devicesData.filter(d => d.status === key).length;
+          const count = devices.filter(d => d.status === key).length;
           return (
             <Card key={key} className="py-3 px-4">
               <div className="flex items-center gap-1.5 mb-0.5">
@@ -170,6 +197,11 @@ const BiomedicalEquipmentContent = () => {
           );
         })}
       </div>
+
+      {/* Operational statuses populate once devices report via HyperGrid live sync — not connected yet (WP-0.3d) */}
+      <p className="text-xs text-slate-500 dark:text-slate-400 -mt-2">
+        Devices are listed from the live equipment registry. Operational status (online / warning / offline) shows “Not Tracked” until live telemetry is connected.
+      </p>
 
       {/* Table */}
       <Card className="overflow-hidden">
@@ -184,6 +216,12 @@ const BiomedicalEquipmentContent = () => {
             </thead>
             <tbody>
               <AnimatePresence>
+                {!devicesLoaded && (
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">Loading equipment…</td></tr>
+                )}
+                {devicesLoaded && filtered.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">No equipment registered yet.</td></tr>
+                )}
                 {filtered.map((d, i) => {
                   const cfg = statusCfg[d.status];
                   return (
@@ -267,7 +305,7 @@ const BiomedicalEquipmentContent = () => {
                     { label: "Location",           value: selected.location },
                     { label: "Manufacturer",       value: selected.manufacturer },
                     { label: "Model",              value: selected.model },
-                    { label: "Year of Purchase",   value: selected.yearOfPurchase.toString() },
+                    { label: "Year of Purchase",   value: selected.yearOfPurchase ? String(selected.yearOfPurchase) : "—" },
                     { label: "Warranty Expiry",    value: selected.warrantyExpiry },
                     { label: "Last Service",       value: selected.lastService },
                     { label: "Next Calibration",   value: selected.nextCalibration },
@@ -305,22 +343,35 @@ const BiomedicalEquipmentContent = () => {
 
 interface WorkOrder {
   id: string; device: string; assetId: string; dept: string;
-  type: "Breakdown" | "PPM" | "Calibration" | "Installation" | "Inspection";
+  type: "Breakdown" | "PPM" | "Calibration" | "Installation" | "Inspection" | "Issue";
   priority: "critical" | "high" | "normal"; status: "open" | "in-progress" | "completed" | "cancelled" | "overdue";
   engineer: string; raisedBy: string; raisedDate: string; dueDate: string;
   description: string; resolution: string;
 }
 
-const workOrdersData: WorkOrder[] = [
-  { id: "WO-3841", device: "Ventilator — Drager V500",     assetId: "BME-1002", dept: "ICU-2",      type: "Breakdown",   priority: "critical", status: "open",        engineer: "Rajan K.",  raisedBy: "Sr. Nurse Seema",  raisedDate: "2026-05-15 08:32", dueDate: "2026-05-15", description: "Low-pressure alarm continuously triggered. Patient circuit suspected.", resolution: "" },
-  { id: "WO-3840", device: "ECG Machine — GE MAC 5500",    assetId: "BME-1003", dept: "Cardio",     type: "Calibration", priority: "high",     status: "in-progress", engineer: "Priya M.",  raisedBy: "Dr. Mehta",        raisedDate: "2026-05-14 07:55", dueDate: "2026-05-16", description: "Annual calibration due. NABH compliance requirement.", resolution: "" },
-  { id: "WO-3839", device: "Infusion Pump — BD Alaris",    assetId: "BME-1004", dept: "General-3",  type: "PPM",         priority: "normal",   status: "completed",   engineer: "Suresh P.", raisedBy: "Scheduled",        raisedDate: "2026-05-14 07:30", dueDate: "2026-05-15", description: "Quarterly PPM as per schedule.", resolution: "Completed all PPM checks. Flow rate calibrated, filters cleaned." },
-  { id: "WO-3838", device: "Patient Monitor — Philips MX", assetId: "BME-1001", dept: "ICU-1",      type: "Breakdown",   priority: "high",     status: "open",        engineer: "Rajan K.",  raisedBy: "ICU Head Nurse",   raisedDate: "2026-05-14 06:48", dueDate: "2026-05-15", description: "SpO2 waveform intermittent on Channel 2.", resolution: "" },
-  { id: "WO-3837", device: "Defibrillator — ZOLL R Series",assetId: "BME-1005", dept: "Emergency",  type: "PPM",         priority: "normal",   status: "completed",   engineer: "Meena S.",  raisedBy: "Scheduled",        raisedDate: "2026-05-13 06:20", dueDate: "2026-05-14", description: "Monthly PPM. Battery check included.", resolution: "Battery at 78%. Pads replaced. Shock delivery test passed at 360J." },
-  { id: "WO-3836", device: "SpO2 Monitor — Nellcor",       assetId: "BME-1008", dept: "OT-3",       type: "Installation",priority: "normal",   status: "in-progress", engineer: "Priya M.",  raisedBy: "OT In-Charge",     raisedDate: "2026-05-13 06:00", dueDate: "2026-05-16", description: "New unit installation and commissioning.", resolution: "" },
-  { id: "WO-3835", device: "Autoclave — Tuttnauer 3870E",  assetId: "BME-1007", dept: "CSSD",       type: "Breakdown",   priority: "high",     status: "open",        engineer: "Anil R.",   raisedBy: "CSSD Manager",     raisedDate: "2026-05-13 05:30", dueDate: "2026-05-14", description: "Heating element failure. Cycle aborting at 121°C. OEM parts ordered.", resolution: "" },
-  { id: "WO-3834", device: "C-Arm X-Ray — Siemens",        assetId: "BME-1010", dept: "OT-2",       type: "Inspection",  priority: "normal",   status: "overdue",     engineer: "Suresh P.", raisedBy: "Radiology HOD",    raisedDate: "2026-05-10 09:00", dueDate: "2026-05-12", description: "Radiation output verification. AERB requirement.", resolution: "" },
-];
+// Work orders load from GET /biomedical/maintenance-tickets (WP-0.3d).
+
+// Maps a live biomedical_maintenance_ticket row (+ its equipment) to the UI
+// WorkOrder shape. Due dates are not tracked in the schema, so dueDate renders
+// "—" and no overdue state is invented (WP-0.3d).
+const mapTicketRow = (t: any, equipById: Map<string, any>): WorkOrder => ({
+  id: `WO-${t.id}`,
+  device: t.equipment_id
+    ? (equipById.get(String(t.equipment_id))?.device_name || `Equipment #${t.equipment_id}`)
+    : "Unlinked equipment",
+  assetId: t.equipment_id ? `#${t.equipment_id}` : "—",
+  dept: (t.equipment_id && equipById.get(String(t.equipment_id))?.department) || "—",
+  type: "Issue",
+  priority: t.priority === "critical" ? "critical" : t.priority === "urgent" ? "high" : "normal",
+  status: t.status === "resolved" ? "completed"
+    : (["open", "in-progress", "completed", "cancelled", "overdue"].includes(t.status) ? t.status : "open"),
+  engineer: t.assigned_to || "—",
+  raisedBy: t.reported_by || "—",
+  raisedDate: String(t.opened_at || "").slice(0, 16),
+  dueDate: "—",
+  description: t.issue_description || "",
+  resolution: t.resolution_notes || "",
+});
 
 const woCfg: Record<string, { label: string; cls: string }> = {
   open:        { label: "Open",        cls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400" },
@@ -339,15 +390,35 @@ const BiomedicalWorkOrdersContent = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState<WorkOrder | null>(null);
+  const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
+  const [workOrdersLoaded, setWorkOrdersLoaded] = useState(false);
 
-  const filtered = useMemo(() => workOrdersData.filter(w => {
+  useEffect(() => {
+    const headers = { Authorization: `Bearer ${localStorage.getItem('biomedicalToken') || ''}` };
+    Promise.all([
+      api.get('/biomedical/equipment', { headers }),
+      api.get('/biomedical/maintenance-tickets', { headers }),
+    ])
+      .then(([eqRes, tkRes]) => {
+        const equipment = (eqRes.data?.data || []) as any[];
+        const equipById = new Map(equipment.map((e: any) => [String(e.id), e]));
+        setWorkOrders(((tkRes.data?.data || []) as any[]).map((t) => mapTicketRow(t, equipById)));
+        setWorkOrdersLoaded(true);
+      })
+      .catch((err) => {
+        console.error('[Biomedical] failed to load work orders:', err?.message);
+        setWorkOrdersLoaded(true);
+      });
+  }, []);
+
+  const filtered = useMemo(() => workOrders.filter(w => {
     const matchSearch = w.id.toLowerCase().includes(search.toLowerCase()) ||
       w.device.toLowerCase().includes(search.toLowerCase()) ||
       w.dept.toLowerCase().includes(search.toLowerCase()) ||
       w.engineer.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || w.status === statusFilter;
     return matchSearch && matchStatus;
-  }), [search, statusFilter]);
+  }), [search, statusFilter, workOrders]);
 
   return (
     <>
@@ -355,7 +426,7 @@ const BiomedicalWorkOrdersContent = () => {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">Work Orders</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} orders shown</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} orders shown · due dates aren’t tracked yet (WP-0.3d)</p>
         </div>
         <div className="flex items-center gap-2">
           <Button size="sm" className="gap-2 bg-blue-600 hover:bg-blue-700 text-white"><Plus className="h-4 w-4" /> New Work Order</Button>
@@ -381,10 +452,10 @@ const BiomedicalWorkOrdersContent = () => {
 
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Open",        value: workOrdersData.filter(w=>w.status==="open").length,        color: "text-red-600" },
-          { label: "In Progress", value: workOrdersData.filter(w=>w.status==="in-progress").length, color: "text-blue-600" },
-          { label: "Overdue",     value: workOrdersData.filter(w=>w.status==="overdue").length,     color: "text-amber-600" },
-          { label: "Completed",   value: workOrdersData.filter(w=>w.status==="completed").length,   color: "text-green-600" },
+          { label: "Open",       value: workOrders.filter(w=>w.status==="open").length,       color: "text-red-600" },
+          { label: "Completed",  value: workOrders.filter(w=>w.status==="completed").length,  color: "text-green-600" },
+          { label: "Cancelled",  value: workOrders.filter(w=>w.status==="cancelled").length,  color: "text-slate-500" },
+          { label: "Total",      value: workOrders.length,                                   color: "text-blue-600" },
         ].map(({ label, value, color }) => (
           <Card key={label} className="py-3 px-4">
             <p className="text-xs text-slate-500 dark:text-slate-400">{label}</p>
@@ -405,6 +476,12 @@ const BiomedicalWorkOrdersContent = () => {
             </thead>
             <tbody>
               <AnimatePresence>
+                {!workOrdersLoaded && (
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">Loading work orders…</td></tr>
+                )}
+                {workOrdersLoaded && filtered.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">No maintenance tickets yet.</td></tr>
+                )}
                 {filtered.map((wo, i) => (
                   <motion.tr key={wo.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ delay: i * 0.02 }}
                     className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
@@ -500,16 +577,27 @@ const BiomedicalWorkOrdersContent = () => {
 
 // ─── CALIBRATION PAGE ──────────────────────────────────────────────────────────
 
-const calibrationData = [
-  { id: "CAL-821", device: "Blood Gas Analyser — Radiometer ABL90", assetId: "BME-1006", dept: "Lab",       dueDate: "2026-05-18", daysLeft: 3,  lastDone: "2025-11-18", standard: "NABL", status: "overdue",  frequency: "6-monthly" },
-  { id: "CAL-822", device: "Patient Monitor — Nihon Kohden",        assetId: "BME-7012", dept: "ICU-3",     dueDate: "2026-05-20", daysLeft: 5,  lastDone: "2025-11-20", standard: "NABH", status: "due-soon", frequency: "6-monthly" },
-  { id: "CAL-823", device: "Infusion Pump — Baxter Sigma",          assetId: "BME-2034", dept: "Oncology",  dueDate: "2026-05-22", daysLeft: 7,  lastDone: "2025-11-22", standard: "IEC",  status: "due-soon", frequency: "6-monthly" },
-  { id: "CAL-824", device: "Defibrillator — Philips HeartStart",   assetId: "BME-3011", dept: "Emergency", dueDate: "2026-05-25", daysLeft: 10, lastDone: "2025-11-25", standard: "NABH", status: "upcoming", frequency: "6-monthly" },
-  { id: "CAL-825", device: "ECG Machine — BPL Cardiart 9108",      assetId: "BME-4022", dept: "Cardio-2",  dueDate: "2026-05-30", daysLeft: 15, lastDone: "2025-11-30", standard: "NABH", status: "upcoming", frequency: "6-monthly" },
-  { id: "CAL-826", device: "Ventilator — Hamilton G5",             assetId: "BME-1019", dept: "ICU-1",     dueDate: "2026-06-10", daysLeft: 26, lastDone: "2025-12-10", standard: "IEC",  status: "scheduled", frequency: "6-monthly" },
-  { id: "CAL-827", device: "Autoclave — Tuttnauer 3870",           assetId: "BME-1007", dept: "CSSD",      dueDate: "2026-10-20", daysLeft: 158,lastDone: "2026-04-20", standard: "BIS",  status: "compliant", frequency: "6-monthly" },
-  { id: "CAL-828", device: "Patient Monitor — Philips MX450",      assetId: "BME-1001", dept: "ICU-1",     dueDate: "2026-07-10", daysLeft: 56, lastDone: "2026-01-10", standard: "NABH", status: "compliant", frequency: "6-monthly" },
-];
+// Calibration rows load from GET /biomedical/calibration-due (WP-0.3d).
+
+// Maps a live biomedical_calibration_schedule row to the UI calibration shape.
+// Status is derived from the real next_due_at date (no fabricated compliance) — WP-0.3d.
+const mapCalibration = (c: any) => {
+  const due = c.next_due_at ? new Date(c.next_due_at) : null;
+  const daysLeft = due ? Math.ceil((due.getTime() - Date.now()) / 86400000) : 9999;
+  const status = daysLeft < 0 ? "overdue" : daysLeft <= 14 ? "due-soon" : "scheduled";
+  return {
+    id: `CAL-${c.id}`,
+    device: c.device_name || `Equipment #${c.equipment_id}`,
+    assetId: c.equipment_id ? `#${c.equipment_id}` : "—",
+    dept: c.department || "—",
+    dueDate: due ? String(due.toISOString()).slice(0, 10) : "—",
+    daysLeft,
+    lastDone: c.last_calibrated_at ? String(c.last_calibrated_at).slice(0, 10) : "—",
+    standard: c.calibration_type || "—",
+    status,
+    frequency: c.frequency_days ? `${c.frequency_days}-day` : "—",
+  };
+};
 
 const calStatusCfg: Record<string, { label: string; cls: string }> = {
   overdue:   { label: "Overdue",   cls: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400" },
@@ -519,24 +607,37 @@ const calStatusCfg: Record<string, { label: string; cls: string }> = {
   compliant: { label: "Compliant", cls: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400" },
 };
 
-const calComplianceTrend = [
-  { month: "Nov", compliance: 82 }, { month: "Dec", compliance: 85 },
-  { month: "Jan", compliance: 87 }, { month: "Feb", compliance: 86 },
-  { month: "Mar", compliance: 90 }, { month: "Apr", compliance: 92 },
-  { month: "May", compliance: 94 },
-];
+// Historical compliance trend has no source — chart shows an unavailable state (WP-0.3d).
 
 const BiomedicalCalibrationContent = () => {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [calRows, setCalRows] = useState<any[]>([]);
+  const [calLoaded, setCalLoaded] = useState(false);
 
-  const filtered = useMemo(() => calibrationData.filter(c => {
+  useEffect(() => {
+    api.get('/biomedical/calibration-due?withinDays=3650', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('biomedicalToken') || ''}` },
+    })
+      .then(({ data }) => {
+        setCalRows(((data.data || []) as any[]).map(mapCalibration));
+        setCalLoaded(true);
+      })
+      .catch((err) => {
+        console.error('[Biomedical] failed to load calibration schedule:', err?.message);
+        setCalLoaded(true);
+      });
+  }, []);
+
+  const filtered = useMemo(() => calRows.filter(c => {
     const matchSearch = c.device.toLowerCase().includes(search.toLowerCase()) || c.dept.toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === "all" || c.status === filter;
     return matchSearch && matchFilter;
-  }), [search, filter]);
+  }), [search, filter, calRows]);
 
-  const compliancePct = Math.round((calibrationData.filter(c => c.status === "compliant").length / calibrationData.length) * 100);
+  const compliancePct = calRows.length
+    ? Math.round((calRows.filter(c => c.status !== "overdue").length / calRows.length) * 100)
+    : null;
 
   return (
     <div className="space-y-5">
@@ -553,14 +654,14 @@ const BiomedicalCalibrationContent = () => {
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card className="py-4 px-5 col-span-2 sm:col-span-1">
-          <p className="text-xs text-slate-500">Compliance Rate</p>
-          <p className={`text-3xl font-bold mt-1 ${compliancePct >= 85 ? "text-green-600" : "text-red-600"}`}>{compliancePct}%</p>
-          <p className="text-[10px] text-slate-400">NABH target: 95%</p>
+          <p className="text-xs text-slate-500">On-time Rate</p>
+          <p className={`text-3xl font-bold mt-1 ${compliancePct === null ? "text-slate-400" : compliancePct >= 85 ? "text-green-600" : "text-red-600"}`}>{compliancePct !== null ? `${compliancePct}%` : "—"}</p>
+          <p className="text-[10px] text-slate-400">Scheduled calibrations not overdue</p>
         </Card>
         {[
-          { label: "Overdue",  value: calibrationData.filter(c=>c.status==="overdue").length,   color: "text-red-600" },
-          { label: "Due Soon", value: calibrationData.filter(c=>c.status==="due-soon").length,  color: "text-amber-600" },
-          { label: "Compliant",value: calibrationData.filter(c=>c.status==="compliant").length, color: "text-green-600" },
+          { label: "Overdue",   value: calRows.filter(c=>c.status==="overdue").length,   color: "text-red-600" },
+          { label: "Due Soon",  value: calRows.filter(c=>c.status==="due-soon").length,  color: "text-amber-600" },
+          { label: "Scheduled", value: calRows.filter(c=>c.status==="scheduled").length, color: "text-green-600" },
         ].map(({ label, value, color }) => (
           <Card key={label} className="py-4 px-5">
             <p className="text-xs text-slate-500">{label}</p>
@@ -574,20 +675,9 @@ const BiomedicalCalibrationContent = () => {
           <CardTitle className="text-sm flex items-center gap-2"><TrendingUp className="h-4 w-4 text-blue-600" />Calibration Compliance Trend</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={140}>
-            <AreaChart data={calComplianceTrend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="calGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} /><stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-              <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <YAxis domain={[70, 100]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-              <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} formatter={v => [`${v}%`, "Compliance"]} />
-              <Area type="monotone" dataKey="compliance" stroke="#3b82f6" strokeWidth={2.5} fill="url(#calGrad)" dot={{ r: 3, fill: "#3b82f6" }} />
-            </AreaChart>
-          </ResponsiveContainer>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Not available yet — calibration compliance isn’t recorded over time (dataAvailable: false).
+          </p>
         </CardContent>
       </Card>
 
@@ -597,7 +687,7 @@ const BiomedicalCalibrationContent = () => {
           <Input placeholder="Search device, department..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-sm" />
         </div>
         <div className="flex gap-1.5 flex-wrap">
-          {(["all","overdue","due-soon","upcoming","scheduled","compliant"] as const).map(s => (
+          {(["all","overdue","due-soon","scheduled"] as const).map(s => (
             <button key={s} onClick={() => setFilter(s)}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filter === s ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"}`}>
               {s === "all" ? "All" : calStatusCfg[s]?.label || s}
@@ -611,12 +701,18 @@ const BiomedicalCalibrationContent = () => {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr className="border-b border-slate-200 dark:border-slate-700">
-                {["Cal ID / Device", "Department", "Standard", "Last Done", "Due Date", "Days Left", "Status", "Actions"].map(h => (
+                {["Cal ID / Device", "Department", "Type", "Last Done", "Due Date", "Days Left", "Status", "Actions"].map(h => (
                   <th key={h} className="text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wide px-4 py-3">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
+              {!calLoaded && (
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">Loading calibration schedule…</td></tr>
+              )}
+              {calLoaded && filtered.length === 0 && (
+                <tr><td colSpan={8} className="px-4 py-6 text-center text-xs text-slate-400">No calibration schedules recorded yet.</td></tr>
+              )}
               {filtered.map((c, i) => (
                 <tr key={c.id} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                   <td className="px-4 py-3">
@@ -651,26 +747,40 @@ const BiomedicalCalibrationContent = () => {
 
 // ─── REPORTS PAGE ──────────────────────────────────────────────────────────────
 
-const uptimeTrend = [
-  { month: "Nov", uptime: 91.2, mttr: 4.8 }, { month: "Dec", uptime: 92.1, mttr: 4.2 },
-  { month: "Jan", uptime: 91.8, mttr: 4.5 }, { month: "Feb", uptime: 93.2, mttr: 3.9 },
-  { month: "Mar", uptime: 94.1, mttr: 3.4 }, { month: "Apr", uptime: 94.8, mttr: 3.1 },
-  { month: "May", uptime: 93.0, mttr: 3.3 },
-];
+// Uptime/MTTR trend has no source — reports show an unavailable state (WP-0.3d).
 
-const woByType = [
-  { type: "Breakdown", jan: 18, feb: 14, mar: 16, apr: 12, may: 9 },
-  { type: "PPM",       jan: 38, feb: 41, mar: 44, apr: 47, may: 52 },
-  { type: "Calibration",jan:12,feb: 14, mar: 15, apr: 16, may: 14 },
-  { type: "Installation",jan:4, feb: 3,  mar: 5,  apr: 4,  may: 6  },
-];
+// WO-by-type monthly history has no source — reports show an unavailable state (WP-0.3d).
 
 const BiomedicalReportsContent = () => {
+  const [equipment, setEquipment] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [calDue, setCalDue] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const headers = { Authorization: `Bearer ${localStorage.getItem('biomedicalToken') || ''}` };
+    Promise.all([
+      api.get('/biomedical/equipment', { headers }),
+      api.get('/biomedical/maintenance-tickets', { headers }),
+      api.get('/biomedical/calibration-due?withinDays=30', { headers }),
+    ])
+      .then(([eq, tk, cal]) => {
+        setEquipment(eq.data?.data || []);
+        setTickets(tk.data?.data || []);
+        setCalDue(cal.data?.data || []);
+        setLoaded(true);
+      })
+      .catch((err) => {
+        console.error('[Biomedical] failed to load report stats:', err?.message);
+        setLoaded(true);
+      });
+  }, []);
+
   const kpis = [
-    { label: "Fleet Uptime",     value: "93.0%", trend: "+3%",  icon: Activity,      color: "text-green-600",  bg: "bg-green-100 dark:bg-green-950" },
-    { label: "MTTR",             value: "3.3h",  trend: "-31%", icon: Clock,         color: "text-blue-600",   bg: "bg-blue-100 dark:bg-blue-950" },
-    { label: "PPM Compliance",   value: "94%",   trend: "+7%",  icon: ShieldCheck,   color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-950" },
-    { label: "WOs Closed/Month", value: "61",    trend: "+45%", icon: CheckCircle2,  color: "text-emerald-600",bg: "bg-emerald-100 dark:bg-emerald-950" },
+    { label: "Registered Devices",   value: loaded ? String(equipment.length) : "—", icon: Activity,      color: "text-green-600",  bg: "bg-green-100 dark:bg-green-950" },
+    { label: "Open Work Orders",     value: loaded ? String(tickets.filter((t: any) => t.status === "open").length) : "—", icon: Clock, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-950" },
+    { label: "Resolved Work Orders", value: loaded ? String(tickets.filter((t: any) => t.status === "resolved").length) : "—", icon: ShieldCheck, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-950" },
+    { label: "Calibration Due (30d)", value: loaded ? String(calDue.length) : "—", icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-950" },
   ];
 
   return (
@@ -681,7 +791,7 @@ const BiomedicalReportsContent = () => {
       </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(({ label, value, trend, icon: Icon, color, bg }) => (
+        {kpis.map(({ label, value, icon: Icon, color, bg }) => (
           <Card key={label}>
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
@@ -692,10 +802,6 @@ const BiomedicalReportsContent = () => {
                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${bg}`}>
                   <Icon className={`h-5 w-5 ${color}`} />
                 </div>
-              </div>
-              <div className="mt-3 flex items-center gap-1.5">
-                <TrendingUp className="h-3.5 w-3.5 text-green-500" />
-                <span className="text-xs font-medium text-green-600">{trend} vs 6 months ago</span>
               </div>
             </CardContent>
           </Card>
@@ -708,18 +814,9 @@ const BiomedicalReportsContent = () => {
             <CardTitle className="text-base flex items-center gap-2"><Activity className="h-4 w-4 text-blue-600" />Fleet Uptime & MTTR Trend</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={uptimeTrend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="left" domain={[88, 97]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis yAxisId="right" orientation="right" domain={[0, 7]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Line yAxisId="left"  type="monotone" dataKey="uptime" name="Uptime %" stroke="#22c55e" strokeWidth={2.5} dot={{ r: 3 }} />
-                <Line yAxisId="right" type="monotone" dataKey="mttr"   name="MTTR (h)" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3 }} strokeDasharray="5 5" />
-              </LineChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Not available yet — uptime and MTTR aren’t recorded by any connected system (dataAvailable: false).
+            </p>
           </CardContent>
         </Card>
 
@@ -728,25 +825,9 @@ const BiomedicalReportsContent = () => {
             <CardTitle className="text-base flex items-center gap-2"><BarChart3 className="h-4 w-4 text-blue-600" />Work Orders by Type — Monthly</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={[
-                { month: "Jan", Breakdown: 18, PPM: 38, Calibration: 12, Installation: 4 },
-                { month: "Feb", Breakdown: 14, PPM: 41, Calibration: 14, Installation: 3 },
-                { month: "Mar", Breakdown: 16, PPM: 44, Calibration: 15, Installation: 5 },
-                { month: "Apr", Breakdown: 12, PPM: 47, Calibration: 16, Installation: 4 },
-                { month: "May", Breakdown: 9,  PPM: 52, Calibration: 14, Installation: 6 },
-              ]} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Breakdown"   fill="#ef4444" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="PPM"         fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Calibration" fill="#a855f7" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Installation"fill="#22c55e" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Not available yet — work orders aren’t categorized or tracked by month (dataAvailable: false).
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -766,32 +847,11 @@ const BiomedicalReportsContent = () => {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { month:"November", wos:72, ppm:38, breakdowns:18, calComp:82, uptime:91.2, mttr:4.8 },
-                  { month:"December", wos:78, ppm:41, breakdowns:14, calComp:85, uptime:92.1, mttr:4.2 },
-                  { month:"January",  wos:75, ppm:44, breakdowns:16, calComp:87, uptime:91.8, mttr:4.5 },
-                  { month:"February", wos:71, ppm:47, breakdowns:12, calComp:86, uptime:93.2, mttr:3.9 },
-                  { month:"March",    wos:80, ppm:50, breakdowns: 9, calComp:90, uptime:94.1, mttr:3.4 },
-                  { month:"April",    wos:79, ppm:52, breakdowns:12, calComp:92, uptime:94.8, mttr:3.1 },
-                  { month:"May",      wos:30, ppm:22, breakdowns: 9, calComp:94, uptime:93.0, mttr:3.3 },
-                ].map((r, i) => (
-                  <tr key={r.month} className={`border-b border-slate-50 dark:border-slate-800/50 ${i%2===0?"":"bg-slate-50/50 dark:bg-slate-800/20"}`}>
-                    <td className="px-5 py-3 font-medium text-slate-800 dark:text-white">{r.month}</td>
-                    <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{r.wos}</td>
-                    <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{r.ppm}</td>
-                    <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{r.breakdowns}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${r.calComp>=90?"bg-green-500":"bg-amber-500"}`} style={{width:`${r.calComp}%`}} />
-                        </div>
-                        <span className={`text-xs font-semibold ${r.calComp>=90?"text-green-600":"text-amber-600"}`}>{r.calComp}%</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3"><span className={`text-xs font-semibold ${r.uptime>=93?"text-green-600":"text-amber-600"}`}>{r.uptime}%</span></td>
-                    <td className="px-5 py-3 text-slate-600 dark:text-slate-400">{r.mttr}h</td>
-                  </tr>
-                ))}
+                <tr>
+                  <td colSpan={7} className="px-5 py-6 text-center text-xs text-slate-400">
+                    Monthly history isn’t recorded yet — no maintenance analytics source is connected (dataAvailable: false).
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>

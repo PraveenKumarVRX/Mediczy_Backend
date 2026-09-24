@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import api from "@/utils/api";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Activity, AlertTriangle, CheckCircle2, Clock, Cpu, Filter,
@@ -15,7 +16,7 @@ import BiomedicalAIAssistant from "@/components/biomedical/BiomedicalAIAssistant
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type DeviceStatus = "online" | "warning" | "offline" | "maintenance" | "cal-due";
+type DeviceStatus = "online" | "warning" | "offline" | "maintenance" | "cal-due" | "untracked";
 
 interface Device {
   id: string;
@@ -43,113 +44,30 @@ interface Device {
   history: { time: string; value: number }[];
 }
 
-// ─── Sample Data ──────────────────────────────────────────────────────────────
 
-const generateHistory = (base: number, variance: number) =>
-  ["00:00","02:00","04:00","06:00","08:00","10:00","12:00","14:00","16:00","18:00","20:00","22:00"].map(
-    time => ({ time, value: Math.round((base + (Math.random() - 0.5) * variance) * 10) / 10 })
-  );
-
-const devices: Device[] = [
-  {
-    id: "BM-001", name: "Ventilator A", type: "Ventilator", ward: "ICU", bedNo: "Bed 3",
-    status: "online", uptime: 99.7, lastReading: "10:42 AM", readingValue: "14", readingUnit: "breaths/min",
-    battery: undefined, temperature: 38, errorCode: undefined, nextService: "2026-06-10",
-    engineer: "Rajesh Kumar", manufacturer: "Draeger", model: "Evita V800", serialNo: "DV-22910",
-    installDate: "2022-03-15", lastCalibration: "2026-03-01", alerts: [],
-    trend: "stable", history: generateHistory(14, 2),
-  },
-  {
-    id: "BM-002", name: "Patient Monitor B", type: "Patient Monitor", ward: "ICU", bedNo: "Bed 5",
-    status: "warning", uptime: 94.1, lastReading: "10:41 AM", readingValue: "SpO₂ 91%", readingUnit: "",
-    battery: 78, temperature: 37, errorCode: "ERR-SPO2-LOW", nextService: "2026-05-28",
-    engineer: "Suresh Nair", manufacturer: "Philips", model: "IntelliVue MX500", serialNo: "PH-MX5-0341",
-    installDate: "2021-08-20", lastCalibration: "2026-01-15", alerts: ["SpO₂ below threshold", "Sensor contact check required"],
-    trend: "down", history: generateHistory(96, 4),
-  },
-  {
-    id: "BM-003", name: "Infusion Pump C", type: "Infusion Pump", ward: "ICU", bedNo: "Bed 7",
-    status: "online", uptime: 99.2, lastReading: "10:40 AM", readingValue: "25", readingUnit: "ml/hr",
-    battery: 92, temperature: 36, errorCode: undefined, nextService: "2026-07-15",
-    engineer: "Rajesh Kumar", manufacturer: "BD Alaris", model: "8015 PC Unit", serialNo: "BD-8015-99231",
-    installDate: "2023-01-10", lastCalibration: "2026-02-20", alerts: [],
-    trend: "stable", history: generateHistory(25, 3),
-  },
-  {
-    id: "BM-004", name: "Defibrillator D", type: "Defibrillator", ward: "Emergency", bedNo: undefined,
-    status: "cal-due", uptime: 98.5, lastReading: "Yesterday", readingValue: "Ready", readingUnit: "",
-    battery: 85, temperature: 36, errorCode: "CAL-DUE", nextService: "2026-05-18",
-    engineer: "Priya Menon", manufacturer: "Zoll", model: "R Series Plus", serialNo: "ZO-RS-44521",
-    installDate: "2020-05-12", lastCalibration: "2025-11-18", alerts: ["Calibration overdue by 12 days"],
-    trend: "stable", history: generateHistory(100, 0),
-  },
-  {
-    id: "BM-005", name: "ECG Machine E", type: "ECG", ward: "Cardiology", bedNo: undefined,
-    status: "online", uptime: 99.9, lastReading: "10:38 AM", readingValue: "72", readingUnit: "bpm",
-    battery: undefined, temperature: 37, errorCode: undefined, nextService: "2026-09-01",
-    engineer: "Deepak Singh", manufacturer: "Schiller", model: "AT-102 Plus", serialNo: "SC-AT102-87231",
-    installDate: "2019-11-03", lastCalibration: "2026-04-10", alerts: [],
-    trend: "stable", history: generateHistory(72, 8),
-  },
-  {
-    id: "BM-006", name: "Anaesthesia Unit F", type: "Anaesthesia Machine", ward: "OT", bedNo: "OT-2",
-    status: "maintenance", uptime: 0, lastReading: "Offline since 08:00", readingValue: "—", readingUnit: "",
-    battery: undefined, temperature: undefined, errorCode: "MAINT-PPM", nextService: "2026-05-15",
-    engineer: "Rajesh Kumar", manufacturer: "GE Healthcare", model: "Avance CS2", serialNo: "GE-AV-33109",
-    installDate: "2018-03-22", lastCalibration: "2025-12-05", alerts: ["Scheduled PPM in progress"],
-    trend: "stable", history: generateHistory(0, 0),
-  },
-  {
-    id: "BM-007", name: "Syringe Pump G", type: "Syringe Pump", ward: "NICU", bedNo: "Bed 2",
-    status: "online", uptime: 99.8, lastReading: "10:42 AM", readingValue: "5", readingUnit: "ml/hr",
-    battery: 65, temperature: 36, errorCode: undefined, nextService: "2026-08-20",
-    engineer: "Suresh Nair", manufacturer: "Fresenius Kabi", model: "Agilia SP", serialNo: "FK-AG-22819",
-    installDate: "2023-06-05", lastCalibration: "2026-03-15", alerts: [],
-    trend: "up", history: generateHistory(5, 0.5),
-  },
-  {
-    id: "BM-008", name: "Pulse Oximeter H", type: "Pulse Oximeter", ward: "General Ward", bedNo: "Bed 14",
-    status: "offline", uptime: 0, lastReading: "08:22 AM", readingValue: "—", readingUnit: "",
-    battery: 12, temperature: undefined, errorCode: "LOW-BATT", nextService: "2026-06-30",
-    engineer: "Priya Menon", manufacturer: "Nonin", model: "9560", serialNo: "NN-9560-61023",
-    installDate: "2020-09-14", lastCalibration: "2025-10-30", alerts: ["Battery critically low", "Device offline"],
-    trend: "down", history: generateHistory(98, 3),
-  },
-  {
-    id: "BM-009", name: "C-Arm Imager I", type: "Imaging", ward: "OT", bedNo: "OT-1",
-    status: "online", uptime: 97.3, lastReading: "09:15 AM", readingValue: "Standby", readingUnit: "",
-    battery: undefined, temperature: 42, errorCode: undefined, nextService: "2026-10-12",
-    engineer: "Deepak Singh", manufacturer: "Siemens Healthineers", model: "Cios Select", serialNo: "SI-CS-99001",
-    installDate: "2021-04-08", lastCalibration: "2026-01-20", alerts: [],
-    trend: "stable", history: generateHistory(100, 0),
-  },
-  {
-    id: "BM-010", name: "Suction Apparatus J", type: "Suction Machine", ward: "General Ward", bedNo: "Bed 22",
-    status: "warning", uptime: 82.4, lastReading: "10:30 AM", readingValue: "450", readingUnit: "mmHg",
-    battery: undefined, temperature: 38, errorCode: "PRESS-WARN", nextService: "2026-06-05",
-    engineer: "Suresh Nair", manufacturer: "Medela", model: "Vario 18", serialNo: "MD-V18-55012",
-    installDate: "2019-07-19", lastCalibration: "2025-09-10", alerts: ["Pressure fluctuation detected"],
-    trend: "down", history: generateHistory(450, 30),
-  },
-  {
-    id: "BM-011", name: "Blood Gas Analyser K", type: "Analyser", ward: "Lab", bedNo: undefined,
-    status: "online", uptime: 99.5, lastReading: "10:35 AM", readingValue: "pH 7.42", readingUnit: "",
-    battery: undefined, temperature: 37, errorCode: undefined, nextService: "2026-07-01",
-    engineer: "Deepak Singh", manufacturer: "Radiometer", model: "ABL90 FLEX", serialNo: "RA-ABL-10234",
-    installDate: "2022-09-01", lastCalibration: "2026-04-01", alerts: [],
-    trend: "stable", history: generateHistory(7.42, 0.05),
-  },
-  {
-    id: "BM-012", name: "Phototherapy Unit L", type: "Phototherapy", ward: "NICU", bedNo: "Bed 4",
-    status: "online", uptime: 99.1, lastReading: "10:40 AM", readingValue: "12", readingUnit: "μW/cm²",
-    battery: undefined, temperature: 39, errorCode: undefined, nextService: "2026-08-15",
-    engineer: "Priya Menon", manufacturer: "GE Healthcare", model: "BiliSoft", serialNo: "GE-BS-77310",
-    installDate: "2023-02-28", lastCalibration: "2026-02-28", alerts: [],
-    trend: "stable", history: generateHistory(12, 1),
-  },
-];
-
-const wards = ["All Wards", "ICU", "Emergency", "OT", "Cardiology", "NICU", "General Ward", "Lab"];
+// Maps a live hg_equipment_inventory row to the UI Device shape. Telemetry
+// (readings, uptime, battery, alerts, trends, history) has no source yet — those
+// fields stay empty/zero so the UI renders explicit unavailable states (WP-0.3d).
+const mapDevice = (r: any): Device => ({
+  id: String(r.id),
+  name: r.device_name || "Unnamed device",
+  type: r.equipment_class || "—",
+  ward: r.department || r.owner_department || "—",
+  status: "untracked",
+  uptime: 0,
+  lastReading: "",
+  readingValue: "",
+  readingUnit: "",
+  nextService: "—",
+  manufacturer: r.manufacturer || "—",
+  model: r.model || "—",
+  serialNo: r.serial_number || "—",
+  installDate: "—",
+  lastCalibration: "—",
+  alerts: [],
+  trend: "stable",
+  history: [],
+});
 
 const statusCfg: Record<DeviceStatus, { label: string; color: string; dot: string; bg: string }> = {
   online:      { label: "Online",      color: "text-emerald-700", dot: "bg-emerald-500", bg: "bg-emerald-50 dark:bg-emerald-950" },
@@ -157,6 +75,7 @@ const statusCfg: Record<DeviceStatus, { label: string; color: string; dot: strin
   offline:     { label: "Offline",     color: "text-red-700",     dot: "bg-red-500",     bg: "bg-red-50 dark:bg-red-950" },
   maintenance: { label: "Maintenance", color: "text-blue-700",    dot: "bg-blue-500",    bg: "bg-blue-50 dark:bg-blue-950" },
   "cal-due":   { label: "Cal Due",     color: "text-orange-700",  dot: "bg-orange-500",  bg: "bg-orange-50 dark:bg-orange-950" },
+  untracked:   { label: "Not Tracked", color: "text-slate-600",   dot: "bg-slate-400",   bg: "bg-slate-100 dark:bg-slate-800" },
 };
 
 const trendIcon = { up: TrendingUp, down: TrendingDown, stable: Minus };
@@ -219,7 +138,6 @@ function WardSummaryCard({ ward, devices }: { ward: string; devices: Device[] })
 
 function DeviceCard({ device, onClick, view }: { device: Device; onClick: () => void; view: "grid" | "list" }) {
   const cfg = statusCfg[device.status];
-  const TrendIcon = trendIcon[device.trend];
 
   if (view === "list") {
     return (
@@ -234,12 +152,10 @@ function DeviceCard({ device, onClick, view }: { device: Device; onClick: () => 
           <p className="text-xs text-slate-500">{device.type} · {device.ward}{device.bedNo ? ` · ${device.bedNo}` : ""}</p>
         </div>
         <div className="text-right hidden sm:block">
-          <p className="text-sm font-mono font-semibold text-slate-700 dark:text-slate-200">{device.readingValue} <span className="text-xs text-slate-400">{device.readingUnit}</span></p>
-          <p className="text-xs text-slate-400">{device.lastReading}</p>
+          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{device.model}</p>
+          <p className="text-xs text-slate-400">S/N {device.serialNo}</p>
         </div>
         <span className={`text-xs px-2 py-1 rounded-full font-medium ${cfg.bg} ${cfg.color} hidden md:inline`}>{cfg.label}</span>
-        {device.alerts.length > 0 && <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />}
-        <TrendIcon className={`w-4 h-4 ${trendColor[device.trend]} flex-shrink-0`} />
         <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-blue-500 flex-shrink-0" />
       </motion.div>
     );
@@ -261,15 +177,14 @@ function DeviceCard({ device, onClick, view }: { device: Device; onClick: () => 
           <StatusDot status={device.status} pulse={device.status === "online"} />
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cfg.bg} ${cfg.color}`}>{cfg.label}</span>
         </div>
-        <TrendIcon className={`w-4 h-4 ${trendColor[device.trend]}`} />
       </div>
       <p className="font-semibold text-slate-800 dark:text-slate-100 text-sm mb-0.5 leading-tight">{device.name}</p>
       <p className="text-xs text-slate-400 mb-3">{device.type}</p>
       <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-2 mb-3">
-        <p className="text-lg font-bold font-mono text-slate-900 dark:text-white">
-          {device.readingValue} <span className="text-xs text-slate-400 font-normal">{device.readingUnit}</span>
+        <p className="text-sm font-semibold text-slate-900 dark:text-white">
+          {device.manufacturer} {device.model}
         </p>
-        <p className="text-xs text-slate-400">{device.lastReading}</p>
+        <p className="text-xs text-slate-400">S/N {device.serialNo}</p>
       </div>
       <div className="text-xs text-slate-500 space-y-1">
         <div className="flex items-center gap-1.5"><Cpu className="w-3 h-3" />{device.ward}{device.bedNo ? ` · ${device.bedNo}` : ""}</div>
@@ -296,7 +211,6 @@ function DeviceCard({ device, onClick, view }: { device: Device; onClick: () => 
 
 function DeviceDrawer({ device, onClose }: { device: Device; onClose: () => void }) {
   const cfg = statusCfg[device.status];
-  const TrendIcon = trendIcon[device.trend];
 
   return (
     <AnimatePresence>
@@ -332,14 +246,12 @@ function DeviceDrawer({ device, onClose }: { device: Device; onClose: () => void
                 <p className="text-xs text-blue-200">Uptime</p>
               </div>
               <div className="bg-white/10 rounded-lg p-2 text-center">
-                <p className="text-lg font-bold">{device.readingValue || "—"}</p>
-                <p className="text-xs text-blue-200">{device.readingUnit || "Status"}</p>
+                <p className="text-lg font-bold">—</p>
+                <p className="text-xs text-blue-200">Telemetry</p>
               </div>
               <div className="bg-white/10 rounded-lg p-2 text-center">
-                <div className="flex items-center justify-center gap-1">
-                  <TrendIcon className={`w-5 h-5 ${trendColor[device.trend]}`} />
-                </div>
-                <p className="text-xs text-blue-200 mt-0.5">Trend</p>
+                <p className="text-lg font-bold">—</p>
+                <p className="text-xs text-blue-200">Trend</p>
               </div>
             </div>
           </div>
@@ -361,27 +273,15 @@ function DeviceDrawer({ device, onClose }: { device: Device; onClose: () => void
               ))}
             </div>
 
-            {/* 12h Trend Chart */}
+            {/* 24h trend — no telemetry source yet */}
             <div>
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                 <Activity className="w-4 h-4 text-blue-500" /> 24h Parameter Trend
               </p>
-              <div className="h-36 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-800 p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={device.history} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                    <defs>
-                      <linearGradient id="drawerGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="time" tick={{ fontSize: 9 }} />
-                    <YAxis tick={{ fontSize: 9 }} />
-                    <Tooltip contentStyle={{ fontSize: 11 }} />
-                    <Area type="monotone" dataKey="value" stroke="#3b82f6" fill="url(#drawerGrad)" strokeWidth={2} dot={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Not available yet — device telemetry isn’t streamed (dataAvailable: false).
+                </p>
               </div>
             </div>
 
@@ -397,7 +297,7 @@ function DeviceDrawer({ device, onClose }: { device: Device; onClose: () => void
                   ["Install Date", device.installDate],
                   ["Last Calibration", device.lastCalibration],
                   ["Next Service", device.nextService],
-                  ["Engineer", device.engineer || "Unassigned"],
+                  ["Engineer", device.engineer || "—"],
                   ...(device.battery !== undefined ? [["Battery", `${device.battery}%`]] : []),
                   ...(device.temperature !== undefined ? [["Temp (°C)", `${device.temperature}°C`]] : []),
                 ].map(([label, value]) => (
@@ -414,18 +314,11 @@ function DeviceDrawer({ device, onClose }: { device: Device; onClose: () => void
               <p className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-blue-500" /> Compliance Status
               </p>
-              {[
-                { std: "IEC 60601-1", ok: device.status !== "cal-due" && device.status !== "offline" },
-                { std: "NABH Equipment Protocol", ok: device.status === "online" || device.status === "maintenance" },
-                { std: "Calibration Current", ok: device.status !== "cal-due" },
-                { std: "PPM On Schedule", ok: device.status !== "offline" && device.status !== "cal-due" },
-              ].map(({ std, ok }) => (
-                <div key={std} className="flex items-center gap-2 py-1.5 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                  {ok ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" /> : <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />}
-                  <span className="text-xs text-slate-600 dark:text-slate-300 flex-1">{std}</span>
-                  <span className={`text-xs font-medium ${ok ? "text-emerald-600" : "text-red-600"}`}>{ok ? "✓ OK" : "⚠ Review"}</span>
-                </div>
-              ))}
+              <div className="rounded-xl bg-slate-50 dark:bg-slate-800 p-4">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Not available yet — equipment compliance isn’t evaluated by any connected system (dataAvailable: false).
+                </p>
+              </div>
             </div>
           </div>
         </motion.div>
@@ -444,13 +337,28 @@ function BiomedicalMonitoringContent() {
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [devicesLoaded, setDevicesLoaded] = useState(false);
 
   const refresh = useCallback(() => {
     setRefreshing(true);
-    setTimeout(() => { setRefreshing(false); setLastRefresh(new Date()); }, 1200);
+    api.get('/biomedical/equipment', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('biomedicalToken') || ''}` },
+    })
+      .then(({ data }) => {
+        setDevices(((data.data || []) as any[]).map(mapDevice));
+        setLastRefresh(new Date());
+        setDevicesLoaded(true);
+      })
+      .catch((err) => {
+        console.error('[Biomedical] failed to load devices:', err?.message);
+        setDevicesLoaded(true);
+      })
+      .finally(() => setRefreshing(false));
   }, []);
 
   useEffect(() => {
+    refresh();
     const interval = setInterval(refresh, 60000);
     return () => clearInterval(interval);
   }, [refresh]);
@@ -470,17 +378,16 @@ function BiomedicalMonitoringContent() {
     offline:     devices.filter(d => d.status === "offline").length,
     maintenance: devices.filter(d => d.status === "maintenance").length,
     "cal-due":   devices.filter(d => d.status === "cal-due").length,
+    untracked:   devices.filter(d => d.status === "untracked").length,
   };
 
   const alertDevices = devices.filter(d => d.alerts.length > 0 || d.status === "offline" || d.status === "warning");
 
-  const wardNames = wards.filter(w => w !== "All Wards");
+  const wardNames = Array.from(new Set(devices.map(d => d.ward))).sort();
   const wardData = wardNames.map(w => ({
     ward: w,
-    online:  devices.filter(d => d.ward === w && d.status === "online").length,
-    warning: devices.filter(d => d.ward === w && d.status === "warning").length,
-    offline: devices.filter(d => d.ward === w && (d.status === "offline" || d.status === "maintenance" || d.status === "cal-due")).length,
-  })).filter(w => w.online + w.warning + w.offline > 0);
+    count: devices.filter(d => d.ward === w).length,
+  }));
 
   return (
     <div className="space-y-6 pb-20">
@@ -492,7 +399,7 @@ function BiomedicalMonitoringContent() {
             <Monitor className="w-6 h-6 text-blue-600" /> Device Monitoring
           </h1>
           <p className="text-slate-500 text-sm mt-0.5">
-            Real-time status for {devices.length} devices · Last refresh: {lastRefresh.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+            Equipment registry: {devices.length} devices · live telemetry not connected · refreshed {lastRefresh.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
           </p>
         </div>
         <button
@@ -530,6 +437,7 @@ function BiomedicalMonitoringContent() {
           { status: "offline"     as DeviceStatus, icon: XCircle,      label: "Offline"     },
           { status: "maintenance" as DeviceStatus, icon: Wrench,       label: "Maintenance" },
           { status: "cal-due"     as DeviceStatus, icon: Gauge,        label: "Cal Due"     },
+          { status: "untracked"   as DeviceStatus, icon: Info,         label: "Not Tracked" },
         ] as const).map(({ status, icon: Icon, label }) => {
           const cfg = statusCfg[status];
           const active = selectedStatus === status;
@@ -551,18 +459,16 @@ function BiomedicalMonitoringContent() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
           <h3 className="font-semibold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-blue-500" /> Device Status by Ward
+            <BarChart3 className="w-4 h-4 text-blue-500" /> Devices by Ward
           </h3>
           <div className="h-44">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={wardData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                 <XAxis dataKey="ward" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
                 <Tooltip contentStyle={{ fontSize: 11 }} />
-                <Bar dataKey="online"  name="Online"  fill="#10b981" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="warning" name="Warning" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                <Bar dataKey="offline" name="Issue"   fill="#ef4444" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="count" name="Devices" fill="#3b82f6" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -591,7 +497,7 @@ function BiomedicalMonitoringContent() {
             value={selectedWard} onChange={e => setSelectedWard(e.target.value)}
             className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            {wards.map(w => <option key={w}>{w}</option>)}
+            {["All Wards", ...wardNames].map(w => <option key={w}>{w}</option>)}
           </select>
           <button
             onClick={() => setView(v => v === "grid" ? "list" : "grid")}
@@ -627,7 +533,7 @@ function BiomedicalMonitoringContent() {
         {filtered.length === 0 && (
           <div className={`${view === "grid" ? "col-span-full" : ""} text-center py-16 text-slate-400`}>
             <Monitor className="w-10 h-10 mx-auto mb-3 opacity-30" />
-            <p className="font-medium">No devices match your filters</p>
+            <p className="font-medium">{devicesLoaded ? "No devices match your filters" : "Loading devices…"}</p>
           </div>
         )}
       </div>

@@ -16,14 +16,13 @@ import api from "@/utils/api";
 import {
   Utensils, Users, AlertTriangle, CalendarDays, ClipboardList,
   CheckCircle2, Clock, Search, Plus, Filter, Download, ArrowRight,
-  Zap, BarChart3, TrendingUp, TrendingDown, Leaf, Apple, Droplets,
+  Zap, BarChart3, TrendingUp, Leaf, Apple, Droplets,
   ChevronRight, ChevronLeft, Eye, Edit2, Trash2, X, Bell, Info,
   Salad, Heart, ShieldCheck, RefreshCw, Star, FileText, Soup, Flame,
 } from "lucide-react";
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer,
 } from "recharts";
 
 // ─── Shared nav config ─────────────────────────────────────────────────────────
@@ -46,20 +45,7 @@ const dietLayout = (title: string, subtitle: string, children: React.ReactNode) 
 
 // ─── DIET ORDERS DATA ──────────────────────────────────────────────────────────
 
-const ordersData = [
-  { id: "DO-4821", patient: "Ramesh Kumar",    ward: "ICU-3",       bed: "B4",  age: 62, dietType: "Cardiac",       status: "delivered", priority: "high",   allergy: null,           calories: 1800, time: "08:12", physician: "Dr. Kapoor",   restrictions: "Low-sodium, low-fat" },
-  { id: "DO-4820", patient: "Priya Sharma",    ward: "Maternity",   bed: "A7",  age: 28, dietType: "Regular",       status: "pending",   priority: "normal", allergy: null,           calories: 2200, time: "08:05", physician: "Dr. Menon",    restrictions: "Iron-rich foods" },
-  { id: "DO-4819", patient: "Vikram Singh",    ward: "General-2",   bed: "C12", age: 45, dietType: "Diabetic",      status: "preparing", priority: "high",   allergy: "Peanuts",      calories: 1600, time: "07:58", physician: "Dr. Agarwal",  restrictions: "No sugar, low GI" },
-  { id: "DO-4818", patient: "Anita Patel",     ward: "Ortho",       bed: "D3",  age: 55, dietType: "Low-Sodium",    status: "delivered", priority: "normal", allergy: null,           calories: 1900, time: "07:45", physician: "Dr. Reddy",    restrictions: "Low-sodium, high-calcium" },
-  { id: "DO-4817", patient: "Suresh Reddy",    ward: "Cardio-1",    bed: "B8",  age: 70, dietType: "Renal",         status: "delivered", priority: "high",   allergy: "Dairy",        calories: 1500, time: "07:30", physician: "Dr. Sharma",   restrictions: "Low potassium, low phosphorus" },
-  { id: "DO-4816", patient: "Meena Joshi",     ward: "Neuro",       bed: "E2",  age: 40, dietType: "Soft Diet",     status: "cancelled", priority: "normal", allergy: null,           calories: 1700, time: "07:20", physician: "Dr. Iyer",     restrictions: "Texture modified" },
-  { id: "DO-4815", patient: "Arun Nair",       ward: "Pediatric",   bed: "P5",  age: 8,  dietType: "Regular",       status: "delivered", priority: "normal", allergy: "Eggs",         calories: 1400, time: "07:15", physician: "Dr. Pillai",   restrictions: "Egg-free, child portion" },
-  { id: "DO-4814", patient: "Kavya Menon",     ward: "General-1",   bed: "A3",  age: 32, dietType: "Vegan",         status: "pending",   priority: "normal", allergy: "Gluten",       calories: 1800, time: "07:00", physician: "Dr. Nair",     restrictions: "Gluten-free, vegan" },
-  { id: "DO-4813", patient: "Ravi Prasad",     ward: "ICU-1",       bed: "I2",  age: 68, dietType: "Liquid",        status: "delivered", priority: "high",   allergy: "Soy",          calories: 1200, time: "06:45", physician: "Dr. Gupta",    restrictions: "Liquid only, tube feeding" },
-  { id: "DO-4812", patient: "Sunita Verma",    ward: "Oncology",    bed: "O4",  age: 51, dietType: "High-Protein",  status: "preparing", priority: "high",   allergy: null,           calories: 2400, time: "06:30", physician: "Dr. Mehta",    restrictions: "High protein, anti-nausea" },
-  { id: "DO-4811", patient: "Deepak Chandra",  ward: "General-3",   bed: "F7",  age: 38, dietType: "Regular",       status: "pending",   priority: "normal", allergy: null,           calories: 2000, time: "06:15", physician: "Dr. Rao",      restrictions: "None" },
-  { id: "DO-4810", patient: "Lalitha Rao",     ward: "Maternity",   bed: "A12", age: 24, dietType: "Lactation",     status: "delivered", priority: "normal", allergy: null,           calories: 2600, time: "06:00", physician: "Dr. Menon",    restrictions: "High calcium, folic acid" },
-];
+// Orders start empty and fill from GET /dietary/orders (WP-0.3d — no seed data).
 
 const statusConfig: Record<string, { label: string; cls: string }> = {
   delivered: { label: "Delivered",  cls: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400" },
@@ -70,16 +56,23 @@ const statusConfig: Record<string, { label: string; cls: string }> = {
 
 // ─── PATIENTS DATA ─────────────────────────────────────────────────────────────
 
-const patientsData = [
-  { id: "P-1001", name: "Ramesh Kumar",   age: 62, ward: "ICU-3",      bed: "B4",  gender: "Male",   dietType: "Cardiac",      allergies: [],         conditions: ["Hypertension","CHF"],       bmi: 26.2, weight: 72, height: 166, admitDate: "2026-05-10", physician: "Dr. Kapoor",  compliance: 94 },
-  { id: "P-1002", name: "Priya Sharma",   age: 28, ward: "Maternity",  bed: "A7",  gender: "Female", dietType: "Regular",      allergies: [],         conditions: ["Pregnancy - 32 weeks"],     bmi: 24.1, weight: 68, height: 168, admitDate: "2026-05-12", physician: "Dr. Menon",   compliance: 98 },
-  { id: "P-1003", name: "Vikram Singh",   age: 45, ward: "General-2",  bed: "C12", gender: "Male",   dietType: "Diabetic",     allergies: ["Peanuts"], conditions: ["T2DM","Hypertension"],     bmi: 29.5, weight: 88, height: 173, admitDate: "2026-05-08", physician: "Dr. Agarwal", compliance: 82 },
-  { id: "P-1004", name: "Anita Patel",    age: 55, ward: "Ortho",      bed: "D3",  gender: "Female", dietType: "Low-Sodium",   allergies: [],         conditions: ["Osteoporosis","HTN"],       bmi: 27.3, weight: 71, height: 161, admitDate: "2026-05-11", physician: "Dr. Reddy",   compliance: 91 },
-  { id: "P-1005", name: "Suresh Reddy",   age: 70, ward: "Cardio-1",   bed: "B8",  gender: "Male",   dietType: "Renal",        allergies: ["Dairy"],  conditions: ["CKD Stage 3","CAD"],        bmi: 23.8, weight: 69, height: 170, admitDate: "2026-05-07", physician: "Dr. Sharma",  compliance: 88 },
-  { id: "P-1006", name: "Kavya Menon",    age: 32, ward: "General-1",  bed: "A3",  gender: "Female", dietType: "Vegan",        allergies: ["Gluten"], conditions: ["Celiac Disease"],           bmi: 21.5, weight: 58, height: 164, admitDate: "2026-05-13", physician: "Dr. Nair",    compliance: 96 },
-  { id: "P-1007", name: "Ravi Prasad",    age: 68, ward: "ICU-1",      bed: "I2",  gender: "Male",   dietType: "Liquid",       allergies: ["Soy"],    conditions: ["Post-op bowel surgery"],    bmi: 22.1, weight: 65, height: 172, admitDate: "2026-05-09", physician: "Dr. Gupta",   compliance: 100 },
-  { id: "P-1008", name: "Sunita Verma",   age: 51, ward: "Oncology",   bed: "O4",  gender: "Female", dietType: "High-Protein", allergies: [],         conditions: ["Breast Cancer","Chemo"],    bmi: 20.3, weight: 57, height: 167, admitDate: "2026-05-06", physician: "Dr. Mehta",   compliance: 78 },
-];
+// Patient profiles are derived from GET /dietary/stats (latest diet order per
+// patient). Fields with no recorded source (age, BMI, conditions, compliance)
+// are intentionally absent — WP-0.3d.
+interface PatientProfile {
+  id: string;
+  name: string;
+  ward: string;
+  bed: string;
+  dietType: string;
+  allergies: string[];
+  physician: string;
+  calories: number | null;
+  restrictions: string | null;
+  status: string;
+  priority: string;
+  updatedAt: string;
+}
 
 // ─── MEAL PLAN DATA ────────────────────────────────────────────────────────────
 
@@ -140,37 +133,19 @@ const mealPlanData: Record<string, Record<string, { items: string; calories: num
 
 // ─── REPORTS DATA ──────────────────────────────────────────────────────────────
 
-const complianceTrendData = [
-  { month: "Nov", compliance: 87 }, { month: "Dec", compliance: 89 },
-  { month: "Jan", compliance: 91 }, { month: "Feb", compliance: 90 },
-  { month: "Mar", compliance: 93 }, { month: "Apr", compliance: 95 },
-  { month: "May", compliance: 96 },
-];
+// Historical trend/waste series have no recorded source — the Reports page
+// renders explicit unavailable states instead of fabricated numbers (WP-0.3d).
 
-const dietTypeMonthly = [
-  { diet: "Regular",    jan: 148, feb: 152, mar: 155, apr: 158, may: 142 },
-  { diet: "Diabetic",   jan: 42,  feb: 44,  mar: 46,  apr: 47,  may: 48  },
-  { diet: "Low-Sodium", jan: 28,  feb: 30,  mar: 32,  apr: 34,  may: 35  },
-  { diet: "Soft Diet",  jan: 22,  feb: 24,  mar: 26,  apr: 27,  may: 28  },
-  { diet: "Renal",      jan: 12,  feb: 13,  mar: 14,  apr: 15,  may: 16  },
-];
-
-const wasteData = [
-  { week: "W1", waste: 22, target: 15 }, { week: "W2", waste: 18, target: 15 },
-  { week: "W3", waste: 16, target: 15 }, { week: "W4", waste: 14, target: 15 },
-  { week: "W5", waste: 12, target: 15 }, { week: "W6", waste: 11, target: 15 },
-  { week: "W7", waste: 9,  target: 15 }, { week: "W8", waste: 8,  target: 15 },
-];
-
-const dietPieColors = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#ef4444"];
+// (diet-pie palette removed — charts use server-provided colors / defaults, WP-0.3d)
 
 // ─── DIET ORDERS PAGE ──────────────────────────────────────────────────────────
 
 const DietaryOrdersContent = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [orders, setOrders] = useState<any[]>(ordersData);
-  const [selectedOrder, setSelectedOrder] = useState<typeof ordersData[0] | null>(null);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
+  const [ordersError, setOrdersError] = useState(false);
   const [aiKey, setAiKey] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [newOrder, setNewOrder] = useState({ patientName: '', patientId: '', ward: '', bed: '', dietType: 'Regular', allergies: '', restrictions: '', calories: '1800', physician: '' });
@@ -178,14 +153,16 @@ const DietaryOrdersContent = () => {
 
   useEffect(() => {
     api.get('/dietary/orders', { headers: headers() }).then(({ data }) => {
-      if (data.data?.length) {
-        setOrders(data.data.map((o: any) => ({
-          id: o.order_number, patient: o.patient_name, ward: o.ward, bed: o.bed, age: 0,
-          dietType: o.diet_type, status: o.status, priority: o.priority, allergy: o.allergies?.join(', ') || null,
-          calories: o.calories, time: String(o.created_at || '').slice(11, 16), physician: o.physician, restrictions: o.restrictions,
-        })));
-      }
-    }).catch(() => undefined);
+      setOrders((data.data || []).map((o: any) => ({
+        id: o.order_number, patient: o.patient_name, ward: o.ward, bed: o.bed,
+        dietType: o.diet_type, status: o.status, priority: o.priority, allergy: o.allergies?.join(', ') || null,
+        calories: o.calories, time: String(o.created_at || '').slice(11, 16), physician: o.physician, restrictions: o.restrictions,
+      })));
+      setOrdersError(false);
+    }).catch((err) => {
+      console.error('[Dietary] failed to load orders:', err?.message);
+      setOrdersError(true);
+    });
   }, []);
 
   const createAdmissionOrder = async () => {
@@ -649,25 +626,47 @@ const DietaryPlansContent = () => {
 
 const DietaryPatientsContent = () => {
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<typeof patientsData[0] | null>(null);
+  const [patients, setPatients] = useState<PatientProfile[]>([]);
+  const [patientsLoaded, setPatientsLoaded] = useState(false);
+  const [selected, setSelected] = useState<PatientProfile | null>(null);
 
-  const filtered = patientsData.filter(p =>
+  useEffect(() => {
+    api.get('/dietary/stats', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('dietaryToken') || ''}` },
+    }).then(({ data }) => {
+      setPatients(((data.data?.patients || []) as any[]).map((p) => ({
+        id: p.patient_id || p.order_number,
+        name: p.patient_name,
+        ward: p.ward || '—',
+        bed: p.bed || '—',
+        dietType: p.diet_type,
+        allergies: p.allergies || [],
+        physician: p.physician || '—',
+        calories: p.calories ?? null,
+        restrictions: p.restrictions ?? null,
+        status: p.status,
+        priority: p.priority,
+        updatedAt: String(p.updated_at || '').slice(0, 10),
+      })));
+      setPatientsLoaded(true);
+    }).catch((err) => {
+      console.error('[Dietary] failed to load patient profiles:', err?.message);
+      setPatientsLoaded(true);
+    });
+  }, []);
+
+  const filtered = patients.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase()) ||
     p.ward.toLowerCase().includes(search.toLowerCase()) ||
     p.dietType.toLowerCase().includes(search.toLowerCase())
   );
-
-  const getBMIColor = (bmi: number) =>
-    bmi < 18.5 ? "text-blue-600" : bmi < 25 ? "text-green-600" : bmi < 30 ? "text-amber-600" : "text-red-600";
-  const getBMILabel = (bmi: number) =>
-    bmi < 18.5 ? "Underweight" : bmi < 25 ? "Normal" : bmi < 30 ? "Overweight" : "Obese";
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">Patient Dietary Profiles</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} active inpatients with dietary requirements</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">{filtered.length} patients with current diet orders</p>
         </div>
         <Button size="sm" variant="outline" className="gap-2"><Download className="h-4 w-4" /> Export Profiles</Button>
       </div>
@@ -682,8 +681,12 @@ const DietaryPatientsContent = () => {
       <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-950/30 rounded-xl border border-red-100 dark:border-red-900">
         <Bell className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0" />
         <p className="text-sm text-red-700 dark:text-red-300">
-          <strong>{patientsData.filter(p => p.allergies.length > 0).length} patients</strong> have active allergy flags.
-          Always verify meal contents before delivery.
+          {patientsLoaded ? (
+            <>
+              <strong>{patients.filter(p => p.allergies.length > 0).length} patients</strong> have active allergy flags.
+              Always verify meal contents before delivery.
+            </>
+          ) : "Loading allergy flags…"}
         </p>
       </div>
 
@@ -704,7 +707,7 @@ const DietaryPatientsContent = () => {
                     <div className="flex items-start justify-between gap-1">
                       <div>
                         <p className="font-semibold text-slate-800 dark:text-white text-sm truncate">{p.name}</p>
-                        <p className="text-xs text-slate-500">{p.id} · {p.age}y · {p.gender}</p>
+                        <p className="text-xs text-slate-500">{p.id} · {p.ward}</p>
                       </div>
                       {p.allergies.length > 0 && (
                         <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
@@ -718,16 +721,16 @@ const DietaryPatientsContent = () => {
 
                     <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                       <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                        <p className="text-[10px] text-slate-500">BMI</p>
-                        <p className={`text-sm font-bold mt-0.5 ${getBMIColor(p.bmi)}`}>{p.bmi}</p>
+                        <p className="text-[10px] text-slate-500">Target kcal</p>
+                        <p className="text-sm font-bold mt-0.5 text-slate-700 dark:text-slate-300">{p.calories ?? "—"}</p>
                       </div>
                       <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                        <p className="text-[10px] text-slate-500">Weight</p>
-                        <p className="text-sm font-bold mt-0.5 text-slate-700 dark:text-slate-300">{p.weight}kg</p>
+                        <p className="text-[10px] text-slate-500">Status</p>
+                        <p className="text-sm font-bold mt-0.5 text-slate-700 dark:text-slate-300">{(statusConfig[p.status] || statusConfig.pending).label}</p>
                       </div>
                       <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg col-span-1">
-                        <p className="text-[10px] text-slate-500">Compliance</p>
-                        <p className={`text-sm font-bold mt-0.5 ${p.compliance >= 90 ? "text-green-600" : p.compliance >= 75 ? "text-amber-600" : "text-red-600"}`}>{p.compliance}%</p>
+                        <p className="text-[10px] text-slate-500">Priority</p>
+                        <p className="text-sm font-bold mt-0.5 text-slate-700 dark:text-slate-300">{p.priority}</p>
                       </div>
                     </div>
 
@@ -744,6 +747,12 @@ const DietaryPatientsContent = () => {
             </Card>
           </motion.div>
         ))}
+        {!patientsLoaded && (
+          <p className="col-span-full text-sm text-slate-400">Loading patient profiles…</p>
+        )}
+        {patientsLoaded && filtered.length === 0 && (
+          <p className="col-span-full text-sm text-slate-400">No patients with diet orders yet.</p>
+        )}
       </div>
 
       {/* Detail panel */}
@@ -764,7 +773,7 @@ const DietaryPatientsContent = () => {
                   </div>
                   <div>
                     <h3 className="font-bold text-slate-900 dark:text-white">{selected.name}</h3>
-                    <p className="text-xs text-slate-500">{selected.id} · {selected.age}y · {selected.gender}</p>
+                    <p className="text-xs text-slate-500">{selected.id} · {selected.ward} · Bed {selected.bed}</p>
                   </div>
                 </div>
                 <button onClick={() => setSelected(null)} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -778,8 +787,8 @@ const DietaryPatientsContent = () => {
                     { label: "Bed", value: selected.bed },
                     { label: "Diet Type", value: selected.dietType },
                     { label: "Physician", value: selected.physician },
-                    { label: "Admitted", value: selected.admitDate },
-                    { label: "Height", value: `${selected.height} cm` },
+                    { label: "Target kcal", value: selected.calories ? `${selected.calories} kcal` : "—" },
+                    { label: "Last Updated", value: selected.updatedAt || "—" },
                   ].map(({ label, value }) => (
                     <div key={label} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-xl">
                       <p className="text-[10px] text-slate-500 uppercase tracking-wide">{label}</p>
@@ -788,34 +797,33 @@ const DietaryPatientsContent = () => {
                   ))}
                 </div>
 
-                {/* BMI / Weight */}
+                {/* Current diet order snapshot */}
                 <div className="p-4 bg-green-50 dark:bg-green-950/40 rounded-xl border border-green-100 dark:border-green-800">
-                  <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2">Body Metrics</p>
+                  <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-2">Current Diet Order</p>
                   <div className="flex items-center gap-6">
                     <div>
-                      <p className="text-[10px] text-slate-500">BMI</p>
-                      <p className={`text-2xl font-bold ${getBMIColor(selected.bmi)}`}>{selected.bmi}</p>
-                      <p className="text-[10px] text-slate-500">{getBMILabel(selected.bmi)}</p>
+                      <p className="text-[10px] text-slate-500">Status</p>
+                      <p className="text-2xl font-bold text-slate-800 dark:text-white">{(statusConfig[selected.status] || statusConfig.pending).label}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-500">Weight</p>
-                      <p className="text-2xl font-bold text-slate-800 dark:text-white">{selected.weight} kg</p>
+                      <p className="text-[10px] text-slate-500">Priority</p>
+                      <p className="text-2xl font-bold text-slate-800 dark:text-white">{selected.priority}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] text-slate-500">Compliance</p>
-                      <p className={`text-2xl font-bold ${selected.compliance >= 90 ? "text-green-600" : selected.compliance >= 75 ? "text-amber-600" : "text-red-600"}`}>{selected.compliance}%</p>
+                      <p className="text-[10px] text-slate-500">Target</p>
+                      <p className="text-2xl font-bold text-slate-800 dark:text-white">{selected.calories ? `${selected.calories} kcal` : "—"}</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Conditions */}
+                {/* Restrictions */}
                 <div>
-                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Medical Conditions</p>
-                  <div className="flex flex-wrap gap-2">
-                    {selected.conditions.map(c => (
-                      <Badge key={c} className="bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400 border-0">{c}</Badge>
-                    ))}
-                  </div>
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">Dietary Restrictions</p>
+                  {selected.restrictions ? (
+                    <p className="text-sm text-slate-600 dark:text-slate-400">{selected.restrictions}</p>
+                  ) : (
+                    <p className="text-sm text-slate-400">No restrictions recorded on the current order.</p>
+                  )}
                 </div>
 
                 <Card className="border-green-200 bg-green-50/70">
@@ -823,11 +831,15 @@ const DietaryPatientsContent = () => {
                     <p className="text-xs font-semibold text-green-700">Discharge counselling</p>
                     <p className="mt-1 text-sm text-slate-600">Record dietitian advice and handoff output before discharge.</p>
                     <Button className="mt-3" size="sm" onClick={async () => {
-                      await api.post('/dietary/counselling', {
-                        patientId: selected.id,
-                        summary: `${selected.dietType} diet counselling completed`,
-                        instructions: selected.conditions.join(', '),
-                      }, { headers: { Authorization: `Bearer ${localStorage.getItem('dietaryToken') || ''}` } });
+                      try {
+                        await api.post('/dietary/counselling', {
+                          patientId: selected.id,
+                          summary: `${selected.dietType} diet counselling completed`,
+                          instructions: selected.restrictions || selected.dietType,
+                        }, { headers: { Authorization: `Bearer ${localStorage.getItem('dietaryToken') || ''}` } });
+                      } catch (err: any) {
+                        console.error('[Dietary] failed to save counselling note:', err?.message);
+                      }
                     }}>Save counselling output</Button>
                   </CardContent>
                 </Card>
@@ -863,11 +875,27 @@ const DietaryPatientsContent = () => {
 // ─── REPORTS PAGE ──────────────────────────────────────────────────────────────
 
 const DietaryReportsContent = () => {
+  const [stats, setStats] = useState<{
+    totals: { total: number; active: number; delivered: number; npo: number; special: number; wards: number };
+    dietTypes: { name: string; value: number }[];
+    allergyAlerts: unknown[];
+  } | null>(null);
+
+  useEffect(() => {
+    api.get('/dietary/stats', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('dietaryToken') || ''}` },
+    }).then(({ data }) => setStats(data.data)).catch((err) => {
+      console.error('[Dietary] failed to load report stats:', err?.message);
+    });
+  }, []);
+
+  const totals = stats?.totals;
+  const deliveryPct = totals && totals.total > 0 ? Math.round((totals.delivered / totals.total) * 100) : null;
   const reportStats = [
-    { label: "Overall Compliance", value: "96%", trend: "+3%", icon: ShieldCheck, color: "text-green-600", bg: "bg-green-100 dark:bg-green-950" },
-    { label: "Avg Meals/Day",      value: "421",  trend: "+8%", icon: Utensils,    color: "text-blue-600",  bg: "bg-blue-100 dark:bg-blue-950" },
-    { label: "Allergy Incidents",  value: "0",    trend: "0",   icon: AlertTriangle, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-950" },
-    { label: "Food Waste (kg)",    value: "8.2",  trend: "-45%",icon: Leaf,        color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-950" },
+    { label: "Delivery Rate",         value: deliveryPct !== null ? `${deliveryPct}%` : "—",  icon: ShieldCheck, color: "text-green-600", bg: "bg-green-100 dark:bg-green-950" },
+    { label: "Total Diet Orders",     value: totals ? totals.total.toLocaleString() : "—",    icon: Utensils,    color: "text-blue-600",  bg: "bg-blue-100 dark:bg-blue-950" },
+    { label: "Active Allergy Alerts", value: stats ? String(stats.allergyAlerts.length) : "—", icon: AlertTriangle, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-950" },
+    { label: "Special Diets",         value: totals ? String(totals.special) : "—",           icon: Leaf,        color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-950" },
   ];
 
   return (
@@ -875,7 +903,7 @@ const DietaryReportsContent = () => {
       <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900 dark:text-white">Dietary Reports & Analytics</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Jan – May 2026 · Cumulative performance metrics</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Live aggregates from current dietary orders</p>
         </div>
         <div className="flex gap-2">
           <Button size="sm" variant="outline" className="gap-2"><RefreshCw className="h-4 w-4" /> Refresh</Button>
@@ -885,17 +913,13 @@ const DietaryReportsContent = () => {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {reportStats.map(({ label, value, trend, icon: Icon, color, bg }) => (
+        {reportStats.map(({ label, value, icon: Icon, color, bg }) => (
           <Card key={label}>
             <CardContent className="p-5">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">{label}</p>
                   <p className="text-3xl font-bold text-slate-900 dark:text-white mt-1">{value}</p>
-                  <div className="flex items-center gap-1 mt-1.5">
-                    {trend.startsWith("+") ? <TrendingUp className="h-3 w-3 text-green-500" /> : trend.startsWith("-") ? <TrendingDown className="h-3 w-3 text-red-500" /> : null}
-                    <span className={`text-xs font-medium ${trend.startsWith("+") ? "text-green-600" : trend.startsWith("-") ? "text-red-600" : "text-slate-400"}`}>{trend} vs last month</span>
-                  </div>
                 </div>
                 <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${bg}`}>
                   <Icon className={`h-5 w-5 ${color}`} />
@@ -908,7 +932,7 @@ const DietaryReportsContent = () => {
 
       {/* Charts */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* Compliance trend */}
+        {/* Compliance trend — no historical source yet */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -917,25 +941,13 @@ const DietaryReportsContent = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={complianceTrendData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="compGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="month" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis domain={[80, 100]} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} formatter={(v) => [`${v}%`, "Compliance"]} />
-                <Area type="monotone" dataKey="compliance" stroke="#22c55e" strokeWidth={2.5} fill="url(#compGrad)" dot={{ r: 4, fill: "#22c55e" }} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Not available yet — compliance isn’t recorded over time, so no trend can be shown (dataAvailable: false).
+            </p>
           </CardContent>
         </Card>
 
-        {/* Food waste reduction */}
+        {/* Food waste — no measurement source yet */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
@@ -944,41 +956,36 @@ const DietaryReportsContent = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={wasteData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="week" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Line type="monotone" dataKey="waste" name="Actual Waste (portions)" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="target" name="Target" stroke="#22c55e" strokeDasharray="5 5" strokeWidth={1.5} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Not available yet — food waste isn’t measured in any connected system (dataAvailable: false).
+            </p>
           </CardContent>
         </Card>
 
-        {/* Diet type monthly */}
+        {/* Current diet distribution (real, from /dietary/stats) */}
         <Card className="xl:col-span-2">
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-green-600" />
-              Diet Type Distribution — Monthly Trend
+              Current Diet Type Distribution
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={dietTypeMonthly} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="diet" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                {["jan","feb","mar","apr","may"].map((m, i) => (
-                  <Bar key={m} dataKey={m} name={m.charAt(0).toUpperCase() + m.slice(1)} fill={dietPieColors[i]} radius={[4, 4, 0, 0]} />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+            {!stats && <p className="text-sm text-slate-400">Loading diet distribution…</p>}
+            {stats && (stats.dietTypes || []).length === 0 && (
+              <p className="text-sm text-slate-400">No diet orders recorded yet.</p>
+            )}
+            {stats && (stats.dietTypes || []).length > 0 && (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={(stats.dietTypes || []).map((d) => ({ diet: d.name, count: d.value }))} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
+                  <XAxis dataKey="diet" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
+                  <Bar dataKey="count" name="Orders" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -1002,38 +1009,11 @@ const DietaryReportsContent = () => {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  { month: "January",  meals: 12420, compliance: 87, special: 145, incidents: 0, waste: 22 },
-                  { month: "February", meals: 11760, compliance: 89, special: 152, incidents: 0, waste: 18 },
-                  { month: "March",    meals: 13020, compliance: 91, special: 158, incidents: 0, waste: 16 },
-                  { month: "April",    meals: 12660, compliance: 93, special: 163, incidents: 0, waste: 13 },
-                  { month: "May",      meals:  5890, compliance: 96, special: 158, incidents: 0, waste:  8 },
-                ].map((row, i) => (
-                  <tr key={row.month} className={`border-b border-slate-50 dark:border-slate-800/50 ${i % 2 === 0 ? "" : "bg-slate-50/50 dark:bg-slate-800/20"}`}>
-                    <td className="px-5 py-3 font-medium text-slate-800 dark:text-white">{row.month}</td>
-                    <td className="px-5 py-3 text-slate-700 dark:text-slate-300">{row.meals.toLocaleString()}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${row.compliance >= 92 ? "bg-green-500" : "bg-amber-500"}`} style={{ width: `${row.compliance}%` }} />
-                        </div>
-                        <span className={`text-xs font-semibold ${row.compliance >= 92 ? "text-green-600" : "text-amber-600"}`}>{row.compliance}%</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 text-slate-700 dark:text-slate-300">{row.special}</td>
-                    <td className="px-5 py-3">
-                      <Badge className={`border-0 text-xs ${row.incidents === 0 ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400" : "bg-red-100 text-red-700"}`}>
-                        {row.incidents === 0 ? "Zero" : row.incidents}
-                      </Badge>
-                    </td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <TrendingDown className="h-3.5 w-3.5 text-green-500" />
-                        <span className="text-slate-700 dark:text-slate-300 text-xs">{row.waste}</span>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                <tr>
+                  <td colSpan={6} className="px-5 py-6 text-center text-xs text-slate-400">
+                    Monthly history isn’t recorded yet — no trend source connected (dataAvailable: false).
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>

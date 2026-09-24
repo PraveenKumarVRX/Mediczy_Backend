@@ -440,6 +440,88 @@ router.get('/orders', authDietary, async (req, res) => {
   }
 });
 
+// ─── Dashboard statistics (WP-0.3d) ───────────────────────────────────────────
+// Real aggregates over dietary_orders for the dietary dashboard, monitoring and
+// reports pages. No fabricated fallbacks: on failure the endpoint returns 500 and
+// the client flags dataAvailable=false instead of inventing numbers.
+
+router.get('/stats', authDietary, async (req, res) => {
+  try {
+    const db = await ensureDietaryTables(req, res);
+    const run = async (sql, params = []) => (await db.query(sql, params)).rows;
+
+    const [totals, dietTypes, wards, timeline, weekly, recentOrders, allergyAlerts, patients] = await Promise.all([
+      run(`SELECT
+             COUNT(*)::int AS total,
+             COUNT(*) FILTER (WHERE status NOT IN ('delivered','cancelled'))::int AS active,
+             COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
+             COUNT(*) FILTER (WHERE upper(diet_type) LIKE '%NPO%')::int AS npo,
+             COUNT(*) FILTER (WHERE diet_type <> 'Regular')::int AS special,
+             COUNT(DISTINCT ward) FILTER (WHERE ward IS NOT NULL)::int AS wards
+           FROM dietary_orders`),
+      run(`SELECT diet_type AS name, COUNT(*)::int AS value
+           FROM dietary_orders
+           GROUP BY diet_type
+           ORDER BY value DESC`),
+      run(`SELECT
+             COALESCE(ward, 'Unassigned') AS ward,
+             COUNT(*)::int AS meals,
+             COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered,
+             CASE WHEN COUNT(*) = 0 THEN 0
+                  ELSE ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'delivered') / COUNT(*)) END::int AS rate
+           FROM dietary_orders
+           GROUP BY COALESCE(ward, 'Unassigned')
+           ORDER BY meals DESC`),
+      run(`SELECT EXTRACT(HOUR FROM created_at)::int AS hour,
+                  COUNT(*)::int AS ordered,
+                  COUNT(*) FILTER (WHERE status = 'delivered')::int AS delivered
+           FROM dietary_orders
+           WHERE created_at >= date_trunc('day', NOW())
+           GROUP BY 1
+           ORDER BY 1`),
+      run(`SELECT EXTRACT(DOW FROM created_at)::int AS dow,
+                  COUNT(*)::int AS meals
+           FROM dietary_orders
+           WHERE created_at >= date_trunc('day', NOW()) - INTERVAL '6 days'
+           GROUP BY 1
+           ORDER BY 1`),
+      run(`SELECT order_number, patient_name, ward, bed, diet_type, status, priority, allergies, created_at
+           FROM dietary_orders
+           ORDER BY created_at DESC
+           LIMIT 10`),
+      run(`SELECT order_number, patient_name, ward, bed, diet_type, allergies, priority, status, created_at
+           FROM dietary_orders
+           WHERE array_length(allergies, 1) >= 1 AND status <> 'cancelled'
+           ORDER BY created_at DESC
+           LIMIT 20`),
+      run(`SELECT DISTINCT ON (COALESCE(patient_id, lower(patient_name) || '|' || COALESCE(ward,'') || '|' || COALESCE(bed,'')))
+             order_number, patient_id, patient_name, ward, bed, diet_type, allergies, calories,
+             physician, priority, status, restrictions, created_at, updated_at
+           FROM dietary_orders
+           ORDER BY COALESCE(patient_id, lower(patient_name) || '|' || COALESCE(ward,'') || '|' || COALESCE(bed,'')), created_at DESC
+           LIMIT 500`),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totals: totals[0] || { total: 0, active: 0, delivered: 0, npo: 0, special: 0, wards: 0 },
+        dietTypes,
+        wards,
+        timeline,
+        weekly,
+        recentOrders,
+        allergyAlerts,
+        patients,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('[Dietary] stats failed:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to load dietary statistics' });
+  }
+});
+
 router.post('/orders/from-admission', authDietary, async (req, res) => {
   try {
     const { admissionId, patientId, patientName, ward, bed, dietType, allergies = [], restrictions, calories, priority = 'normal', physician } = req.body;

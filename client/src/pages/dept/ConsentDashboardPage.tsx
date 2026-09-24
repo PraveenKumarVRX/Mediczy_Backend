@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "@/utils/api";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,52 +8,30 @@ import { Button } from "@/components/ui/button";
 import DeptStaffLayout from "@/components/hosp-dept/DeptStaffLayout";
 import { consentNav } from "./DepartmentDashboards";
 import {
-  Clock, FileCheck, AlertTriangle, BookOpen, Shield, CheckCircle2,
+  Clock, FileCheck, AlertTriangle, BookOpen, Shield,
   TrendingUp, TrendingDown, ArrowRight, BarChart3, ClipboardCheck,
-  User, Calendar, RefreshCw, Scale, Sparkles, FilePlus,
+  User, RefreshCw, Sparkles, FilePlus,
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
-// ─── Static mock data ──────────────────────────────────────────────────────────
+// ─── Live data only (WP-0.3d) ───────────────────────────────────────────────────
+// Every number, chart point and row below comes from GET /consent/stats over the
+// live `consents` table. Nothing is seeded: sections render honest empty states
+// until real rows exist. The `byType` breakdown groups by consentType because the
+// consents table has no department column (dataAvailable: false for dept split).
 
-const signingTrend = [
-  { date: "09 May", obtained: 38, pending: 9, refused: 1 },
-  { date: "10 May", obtained: 42, pending: 7, refused: 2 },
-  { date: "11 May", obtained: 45, pending: 6, refused: 0 },
-  { date: "12 May", obtained: 40, pending: 11, refused: 1 },
-  { date: "13 May", obtained: 48, pending: 5, refused: 1 },
-  { date: "14 May", obtained: 51, pending: 4, refused: 2 },
-  { date: "15 May", obtained: 47, pending: 8, refused: 0 },
-];
-
-const deptBreakdown = [
-  { dept: "Surgery",       consents: 58, pending: 12, refused: 2 },
-  { dept: "Cardiology",    consents: 34, pending: 5,  refused: 1 },
-  { dept: "Orthopaedics",  consents: 27, pending: 4,  refused: 0 },
-  { dept: "OB/GYN",        consents: 22, pending: 3,  refused: 0 },
-  { dept: "Oncology",      consents: 18, pending: 6,  refused: 3 },
-  { dept: "Neurology",     consents: 15, pending: 2,  refused: 1 },
-];
-
-const recentActivity = [
-  { id: "C-2041", patient: "Mr. Arjun Sharma",  procedure: "Laparoscopic Cholecystectomy", dept: "Surgery",    status: "signed",   time: "09:14 AM" },
-  { id: "C-2040", patient: "Ms. Priya Iyer",    procedure: "Cataract Surgery (R)",          dept: "Ophthalmology", status: "pending", time: "09:02 AM" },
-  { id: "C-2039", patient: "Mr. Ramesh Nair",   procedure: "Coronary Angioplasty",          dept: "Cardiology", status: "signed",   time: "08:47 AM" },
-  { id: "C-2038", patient: "Ms. Sunita Verma",  procedure: "LSCS (Emergency)",              dept: "OB/GYN",     status: "signed",   time: "08:31 AM" },
-  { id: "C-2037", patient: "Mr. Deepak Gupta",  procedure: "Total Knee Replacement",        dept: "Ortho",      status: "expiring", time: "08:15 AM" },
-  { id: "C-2036", patient: "Ms. Kavitha Reddy", procedure: "Mastectomy",                    dept: "Oncology",   status: "pending",  time: "Yesterday" },
-  { id: "C-2035", patient: "Mr. Suresh Kumar",  procedure: "Lumbar Discectomy",             dept: "Neurosurgery", status: "signed", time: "Yesterday" },
-];
-
-const expiringConsents = [
-  { id: "C-1987", patient: "Mr. Deepak Gupta",    procedure: "Total Knee Replacement", expiresIn: "4 hrs",  dept: "Ortho" },
-  { id: "C-1942", patient: "Ms. Ananya Singh",    procedure: "Hysteroscopy",           expiresIn: "1 day",  dept: "OB/GYN" },
-  { id: "C-1918", patient: "Mr. Sunil Patil",     procedure: "TURP",                   expiresIn: "1 day",  dept: "Urology" },
-  { id: "C-1876", patient: "Ms. Meera Krishnan",  procedure: "Thyroidectomy",          expiresIn: "2 days", dept: "Surgery" },
-];
+interface ConsentStats {
+  totals: { total: number; pending: number; signed: number; revoked: number; expiringSoon: number; refused: number };
+  byStatus: { status: string; count: number }[];
+  byType: { type: string; count: number }[];
+  trend: { date: string; obtained: number; pending: number; refused: number }[];
+  recent: { id: number; consentType: string | null; procedureName: string | null; patientId: number | string | null; status: string | null; expirationDate: string | null; createdAt: string | null; updatedAt: string | null }[];
+  expiring: { id: number; consentType: string | null; procedureName: string | null; patientId: number | string | null; status: string | null; expirationDate: string | null; createdAt: string | null; updatedAt: string | null }[];
+  generatedAt: string;
+}
 
 // ─── Stat card ─────────────────────────────────────────────────────────────────
 
@@ -121,40 +100,88 @@ export function ConsentDashboard() {
   const navigate = useNavigate();
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState<ConsentStats | null>(null);
+  const [loadError, setLoadError] = useState(false);
 
-  const refresh = () => {
+  const loadStats = () => {
     setRefreshing(true);
-    setTimeout(() => { setRefreshing(false); setLastRefresh(new Date()); }, 900);
+    api.get("/consent/stats", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("consentToken") || ""}` },
+    })
+      .then(({ data }) => {
+        if (data?.success && data?.data) {
+          setStats(data.data);
+          setLoadError(false);
+          setLastRefresh(new Date());
+        } else {
+          setLoadError(true);
+        }
+      })
+      .catch(() => setLoadError(true))
+      .finally(() => setRefreshing(false));
   };
 
   useEffect(() => {
-    const t = setInterval(refresh, 120_000);
+    loadStats();
+    const t = setInterval(loadStats, 120_000);
     return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const stats: StatCardProps[] = [
+  const refresh = () => loadStats();
+
+  const totals = stats?.totals;
+  const signingTrend = stats?.trend ?? [];
+  const typeBreakdown = (stats?.byType ?? []).map((t) => ({
+    dept: t.type.length > 14 ? `${t.type.slice(0, 13)}…` : t.type,
+    full: t.type,
+    consents: t.count,
+    pending: 0,
+  }));
+  const statusOf = (s: string | null) => (s || "pending").toLowerCase();
+  const recentActivity = (stats?.recent ?? []).map((r) => ({
+    id: `C-${r.id}`,
+    patient: r.patientId != null ? `Patient #${r.patientId}` : "—",
+    procedure: r.procedureName || r.consentType || "—",
+    dept: r.consentType || "—",
+    status: statusOf(r.status) === "signed" ? "signed" : statusOf(r.status) === "pending" ? "pending" : statusOf(r.status),
+    time: r.updatedAt ? new Date(r.updatedAt).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—",
+  }));
+  const expiringConsents = (stats?.expiring ?? []).map((r) => {
+    const due = r.expirationDate ? new Date(r.expirationDate).getTime() - Date.now() : NaN;
+    const expiresIn = Number.isFinite(due)
+      ? due <= 0 ? "overdue"
+        : due < 86400000 ? `${Math.max(1, Math.round(due / 3600000))} hrs`
+        : `${Math.max(1, Math.round(due / 86400000))} day(s)`
+      : "—";
+    return {
+      id: `C-${r.id}`,
+      patient: r.patientId != null ? `Patient #${r.patientId}` : "—",
+      procedure: r.procedureName || r.consentType || "—",
+      dept: r.consentType || "—",
+      expiresIn,
+    };
+  });
+
+  const cards: StatCardProps[] = [
     {
-      icon: Clock, label: "Pending Consents", value: "23",
+      icon: Clock, label: "Pending Consents", value: stats ? String(totals?.pending ?? 0) : "—",
       sub: "Awaiting patient signature",
-      trend: "down", trendValue: "↓ 4 from yesterday",
       color: "text-amber-600", iconBg: "bg-amber-100",
     },
     {
-      icon: FileCheck, label: "Signed Today", value: "47",
-      sub: "Completed by 15:00",
-      trend: "up", trendValue: "↑ 12% vs last week",
+      icon: FileCheck, label: "Signed Consents", value: stats ? String(totals?.signed ?? 0) : "—",
+      sub: "Across all consent records",
       color: "text-green-600", iconBg: "bg-green-100",
     },
     {
-      icon: AlertTriangle, label: "Expiring Soon", value: "4",
+      icon: AlertTriangle, label: "Expiring Soon", value: stats ? String(totals?.expiringSoon ?? 0) : "—",
       sub: "Within the next 48 hours",
-      trend: "neutral", trendValue: "Action needed",
       color: "text-red-600", iconBg: "bg-red-100",
     },
     {
-      icon: BookOpen, label: "Active Templates", value: "18",
-      sub: "NABH-compliant forms",
-      trend: "up", trendValue: "2 updated this week",
+      icon: BookOpen, label: "Total Consents", value: stats ? String(totals?.total ?? 0) : "—",
+      sub: "All consent records",
       color: "text-purple-600", iconBg: "bg-purple-100",
     },
   ];
@@ -212,15 +239,15 @@ export function ConsentDashboard() {
             <Shield className="h-4 w-4 text-purple-600" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-purple-900">NABH Compliance: 94.2%</p>
-            <p className="text-xs text-purple-600 truncate">2 consents pending witness signature · 1 template due for annual review</p>
+            <p className="text-sm font-semibold text-slate-700">NABH compliance — not tracked yet</p>
+              <p className="text-xs text-slate-500 truncate">No compliance feed is connected, so no rate is shown (dataAvailable: false).</p>
           </div>
-          <Badge className="bg-purple-100 text-purple-700 border-purple-200 text-[10px] shrink-0">Audit Ready</Badge>
+          <Badge variant="outline" className="text-[10px] shrink-0">No data</Badge>
         </motion.div>
 
-        {/* Stats grid */}
+        {/* Stats grid — live totals; “—” until GET /consent/stats answers */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {stats.map((s, i) => (
+          {cards.map((s, i) => (
             <motion.div key={s.label} transition={{ delay: i * 0.06 }}>
               <StatCard {...s} />
             </motion.div>
@@ -241,6 +268,11 @@ export function ConsentDashboard() {
               </div>
             </CardHeader>
             <CardContent className="px-5 pb-4">
+              {signingTrend.length === 0 ? (
+                <p className="text-xs text-slate-400 px-1 py-8">
+                  {stats ? "No consent records in the last 7 days yet." : "Loading consent trend…"}
+                </p>
+              ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={signingTrend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                   <defs>
@@ -264,18 +296,25 @@ export function ConsentDashboard() {
                   <Area type="monotone" dataKey="pending"  name="Pending" stroke="#f59e0b" strokeWidth={2} fill="url(#cgPending)" />
                 </AreaChart>
               </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
-          {/* Expiring soon */}
+          {/* Expiring soon — live rows; honest empty state, never seeded */}
           <Card className="border-0 shadow-sm">
             <CardHeader className="pb-2 px-5 pt-5">
               <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-red-500" />
-                Expiring Consents
+                Expiring Consents{stats ? ` (${expiringConsents.length})` : ""}
               </CardTitle>
             </CardHeader>
             <CardContent className="px-5 pb-4 space-y-3">
+              {!stats && (
+                <p className="text-xs text-slate-400 px-1 py-2">Loading expiring consents…</p>
+              )}
+              {stats && expiringConsents.length === 0 && (
+                <p className="text-xs text-slate-400 px-1 py-2">No consents expiring soon.</p>
+              )}
               {expiringConsents.map((c) => (
                 <div key={c.id} className="flex items-start gap-3 p-2.5 rounded-lg bg-red-50 border border-red-100">
                   <div className="w-7 h-7 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -305,37 +344,44 @@ export function ConsentDashboard() {
 
         {/* Department breakdown + Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          {/* Department bar chart */}
+          {/* Breakdown by consent type — the consents table has no department
+              column, so a dept split would be invented (dataAvailable: false) */}
           <Card className="lg:col-span-2 border-0 shadow-sm">
             <CardHeader className="pb-2 px-5 pt-5">
               <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-indigo-500" />
-                Consents by Department
+                Consents by Type
               </CardTitle>
             </CardHeader>
             <CardContent className="px-5 pb-4">
+              {typeBreakdown.length === 0 ? (
+                <p className="text-xs text-slate-400 px-1 py-8">
+                  {stats ? "No consent records yet." : "Loading consent breakdown…"}
+                </p>
+              ) : (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={deptBreakdown} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} layout="vertical">
+                <BarChart data={typeBreakdown} margin={{ top: 4, right: 8, left: -20, bottom: 0 }} layout="vertical">
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 10, fill: "#94a3b8" }} axisLine={false} tickLine={false} />
                   <YAxis dataKey="dept" type="category" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} width={70} />
                   <Tooltip
                     contentStyle={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 11 }}
                   />
-                  <Bar dataKey="consents" name="Signed" fill="#9333ea" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="pending"  name="Pending" fill="#f59e0b" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="consents" name="Consents" fill="#9333ea" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
 
-          {/* Recent activity */}
+          {/* Recent activity — live consent rows; patient names are never shown
+              (the API exposes only a patient reference, dataAvailable: false) */}
           <Card className="lg:col-span-3 border-0 shadow-sm">
             <CardHeader className="pb-2 px-5 pt-5">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                   <ClipboardCheck className="h-4 w-4 text-purple-500" />
-                  Recent Activity
+                  Recent Activity{stats ? ` (${recentActivity.length})` : ""}
                 </CardTitle>
                 <Button
                   variant="ghost"
@@ -349,7 +395,9 @@ export function ConsentDashboard() {
             </CardHeader>
             <CardContent className="px-5 pb-4">
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                {!stats && (<p className="text-xs text-slate-400 px-1 py-6">Loading recent consents…</p>)}
+                {stats && recentActivity.length === 0 && (<p className="text-xs text-slate-400 px-1 py-6">No consent records yet.</p>)}
+                {recentActivity.length > 0 && (<table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-100">
                       <th className="text-left pb-2 font-semibold text-slate-500 pr-3">ID</th>
@@ -378,13 +426,13 @@ export function ConsentDashboard() {
                       </motion.tr>
                     ))}
                   </tbody>
-                </table>
+                </table>)}
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Quick actions */}
+        {/* Quick actions — live counts only; template count untracked (dataAvailable: false) */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2 px-5 pt-5">
             <CardTitle className="text-sm font-semibold text-slate-800 flex items-center gap-2">
@@ -395,9 +443,9 @@ export function ConsentDashboard() {
           <CardContent className="px-5 pb-5">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { icon: Clock,         label: "Pending Consents",  sub: "23 awaiting",    path: "/consent/pending",   color: "text-amber-600",  bg: "bg-amber-50 hover:bg-amber-100" },
-                { icon: FileCheck,     label: "Signed Archive",    sub: "View history",   path: "/consent/signed",    color: "text-green-600",  bg: "bg-green-50 hover:bg-green-100" },
-                { icon: BookOpen,      label: "Templates",         sub: "18 active",      path: "/consent/templates", color: "text-purple-600", bg: "bg-purple-50 hover:bg-purple-100" },
+                { icon: Clock,         label: "Pending Consents",  sub: stats ? `${totals?.pending ?? 0} awaiting` : "…",    path: "/consent/pending",   color: "text-amber-600",  bg: "bg-amber-50 hover:bg-amber-100" },
+                { icon: FileCheck,     label: "Signed Archive",    sub: stats ? `${totals?.signed ?? 0} signed` : "…",   path: "/consent/signed",    color: "text-green-600",  bg: "bg-green-50 hover:bg-green-100" },
+                { icon: BookOpen,      label: "Templates",         sub: "Not tracked",      path: "/consent/templates", color: "text-purple-600", bg: "bg-purple-50 hover:bg-purple-100" },
                 { icon: BarChart3,     label: "Reports",           sub: "Analytics",      path: "/consent/reports",   color: "text-indigo-600", bg: "bg-indigo-50 hover:bg-indigo-100" },
               ].map(({ icon: Icon, label, sub, path, color, bg }) => (
                 <button
@@ -416,28 +464,15 @@ export function ConsentDashboard() {
           </CardContent>
         </Card>
 
-        {/* Compliance summary */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {[
-            { icon: CheckCircle2, label: "Consent Rate",     value: "97.8%", sub: "Consents obtained vs required",  color: "text-green-600",  bg: "bg-green-100", detail: "2 refused this month" },
-            { icon: Scale,        label: "Legal Validity",   value: "99.1%", sub: "Consents meeting all criteria",  color: "text-purple-600", bg: "bg-purple-100", detail: "3 pending witness sign" },
-            { icon: Calendar,     label: "Avg. Turnaround",  value: "18 min", sub: "From request to signed form",   color: "text-blue-600",   bg: "bg-blue-100", detail: "↓ 3 min vs last month" },
-          ].map(({ icon: Icon, label, value, sub, color, bg, detail }) => (
-            <Card key={label} className="border-0 shadow-sm">
-              <CardContent className="p-5 flex items-center gap-4">
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${bg}`}>
-                  <Icon className={`h-6 w-6 ${color}`} />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-slate-900">{value}</p>
-                  <p className="text-sm font-medium text-slate-700 leading-tight">{label}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{sub}</p>
-                  <p className={`text-[11px] font-medium mt-1 ${color}`}>{detail}</p>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+        {/* Compliance summary — no compliance feed exists, so no rates are shown (dataAvailable: false) */}
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-5">
+            <p className="text-sm font-semibold text-slate-700">Compliance summary — not tracked yet</p>
+            <p className="text-xs text-slate-500 mt-1">
+              Consent rate, legal validity and turnaround time aren’t recorded by any connected system (dataAvailable: false).
+            </p>
+          </CardContent>
+        </Card>
 
       </div>
     </DeptStaffLayout>

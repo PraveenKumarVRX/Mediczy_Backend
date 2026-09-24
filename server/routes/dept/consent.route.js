@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { loginConsent } from '../../controllers/dept/consent.controller.js';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import llmProvider from '../../services/ai-brain/llm-provider.js';
+import { connectPostgres } from '../../db/postgres.js';
 
 const router = express.Router();
 
@@ -24,6 +25,119 @@ const authConsent = (req, res, next) => {
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 router.post('/login', (req, res, next) => { req.skipAuth = true; next(); }, loginConsent);
+
+// ─── Dashboard statistics (WP-0.3d) ───────────────────────────────────────────
+// Real aggregates over the live `consents` table (the only clinical consent
+// store wired in this repo: consent.model.js / consent-management.route.js).
+// No fabricated fallbacks: the client shows an honest empty state until rows
+// exist. Schema-defensive: probes information_schema first so the endpoint
+// answers 200 with real aggregates regardless of which consents-table variant
+// (clinical vs legacy) is actually deployed.
+
+router.get('/stats', authConsent, async (req, res) => {
+  try {
+    const db = await connectPostgres();
+    const { rows: tableRows } = await db.query(`SELECT to_regclass('public.consents') AS reg`);
+    if (!tableRows[0]?.reg) {
+      return res.json({
+        success: true,
+        data: {
+          totals: { total: 0, pending: 0, signed: 0, revoked: 0, expiringSoon: 0, refused: 0 },
+          byStatus: [], byType: [], trend: [], recent: [], expiring: [],
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    }
+    const { rows: colRows } = await db.query(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'consents'`
+    );
+    const cols = new Set(colRows.map((r) => r.column_name));
+    const has = (...names) => names.find((n) => cols.has(n)) || null;
+    const createdCol = has('createdAt', 'created_at') || 'id';
+    const updatedCol = has('updatedAt', 'updated_at', 'createdAt', 'created_at') || 'id';
+    const statusCol = has('status', 'isGranted');
+    const expiresCol = has('expirationDate', 'expiresAt', 'expires_at', 'expiration_date');
+    const typeCol = has('consentType', 'consent_type');
+    const procCol = has('procedureName', 'procedure_name', 'purpose');
+    const patientCol = has('patientId', 'patient_id', 'userId');
+
+    const run = async (sql, params = []) => (await db.query(sql, params)).rows;
+    const statusExpr = !statusCol
+      ? `'unknown'`
+      : statusCol === 'status'
+        ? `COALESCE(NULLIF(LOWER(status::text), ''), 'pending')`
+        : `CASE WHEN "isGranted" IS TRUE AND "revokedAt" IS NULL THEN 'signed'
+                WHEN "isGranted" IS TRUE AND "revokedAt" IS NOT NULL THEN 'revoked'
+                ELSE 'pending' END`;
+
+    const totals = await run(`
+      SELECT COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE ${statusExpr} = 'pending')::int AS pending,
+        COUNT(*) FILTER (WHERE ${statusExpr} IN ('signed','granted','completed','obtained'))::int AS signed,
+        COUNT(*) FILTER (WHERE ${statusExpr} IN ('revoked','refused','declined','rejected','cancelled'))::int AS revoked
+      FROM consents`);
+    let expiringSoon = 0;
+    if (expiresCol) {
+      const r = await run(
+        `SELECT COUNT(*)::int AS n FROM consents
+         WHERE "${expiresCol}" IS NOT NULL AND "${expiresCol}" > NOW()
+           AND "${expiresCol}" <= NOW() + INTERVAL '48 hours'`
+      );
+      expiringSoon = r[0]?.n ?? 0;
+    }
+    const byStatus = await run(
+      `SELECT ${statusExpr} AS status, COUNT(*)::int AS count FROM consents GROUP BY 1 ORDER BY 2 DESC`
+    );
+    const byType = typeCol
+      ? await run(
+          `SELECT COALESCE(NULLIF("${typeCol}"::text, ''), 'Unspecified') AS type, COUNT(*)::int AS count
+           FROM consents GROUP BY 1 ORDER BY 2 DESC LIMIT 8`
+        )
+      : [];
+    const trend = createdCol === 'id' ? [] : await run(
+      `SELECT to_char(date_trunc('day', "${createdCol}"), 'DD Mon') AS date,
+              COUNT(*)::int AS obtained,
+              COUNT(*) FILTER (WHERE ${statusExpr} = 'pending')::int AS pending,
+              COUNT(*) FILTER (WHERE ${statusExpr} IN ('revoked','refused','declined','rejected','cancelled'))::int AS refused
+       FROM consents
+       WHERE "${createdCol}" >= date_trunc('day', NOW()) - INTERVAL '6 days'
+       GROUP BY 1, date_trunc('day', "${createdCol}")
+       ORDER BY date_trunc('day', "${createdCol}")`
+    );
+    const selectList = [
+      `id`,
+      typeCol ? `"${typeCol}" AS "consentType"` : `NULL AS "consentType"`,
+      procCol ? `"${procCol}" AS "procedureName"` : `NULL AS "procedureName"`,
+      patientCol ? `"${patientCol}" AS "patientId"` : `NULL AS "patientId"`,
+      statusCol === 'status' ? `status::text AS status`
+        : statusCol === 'isGranted' ? `(${statusExpr}) AS status`
+        : `NULL AS status`,
+      expiresCol ? `"${expiresCol}" AS "expirationDate"` : `NULL AS "expirationDate"`,
+      `"${createdCol}" AS "createdAt"`,
+      `"${updatedCol}" AS "updatedAt"`,
+    ].join(', ');
+    const recent = await run(`SELECT ${selectList} FROM consents ORDER BY "${updatedCol}" DESC NULLS LAST LIMIT 8`);
+    const expiring = expiresCol
+      ? await run(
+          `SELECT ${selectList} FROM consents
+           WHERE "${expiresCol}" IS NOT NULL AND "${expiresCol}" > NOW()
+           ORDER BY "${expiresCol}" ASC LIMIT 6`
+        )
+      : [];
+
+    res.json({
+      success: true,
+      data: {
+        totals: { ...(totals[0] || { total: 0, pending: 0, signed: 0, revoked: 0 }), expiringSoon, refused: 0 },
+        byStatus, byType, trend, recent, expiring,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('[Consent] stats failed:', err.message);
+    res.status(500).json({ success: false, message: 'Failed to load consent statistics' });
+  }
+});
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 

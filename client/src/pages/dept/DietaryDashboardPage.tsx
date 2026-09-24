@@ -5,6 +5,7 @@
  */
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "@/utils/api";
 import { motion } from "framer-motion";
 import {
   Card, CardContent, CardHeader, CardTitle,
@@ -26,84 +27,49 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
-// ─── Static demo data ──────────────────────────────────────────────────────────
+// ─── Types & static configuration ─────────────────────────────────────────────
+// All chart/list datasets are derived from GET /dietary/stats inside the
+// component below — nothing on this page is fabricated (WP-0.3d).
 
-const mealTimelineData = [
-  { time: "06:00", ordered: 0,  delivered: 0  },
-  { time: "07:00", ordered: 38, delivered: 35 },
-  { time: "08:00", ordered: 72, delivered: 68 },
-  { time: "09:00", ordered: 85, delivered: 82 },
-  { time: "10:00", ordered: 92, delivered: 90 },
-  { time: "11:00", ordered: 88, delivered: 85 },
-  { time: "12:00", ordered: 95, delivered: 91 },
-  { time: "13:00", ordered: 89, delivered: 86 },
-  { time: "14:00", ordered: 42, delivered: 40 },
-  { time: "15:00", ordered: 38, delivered: 36 },
-  { time: "16:00", ordered: 65, delivered: 62 },
-  { time: "17:00", ordered: 90, delivered: 87 },
-  { time: "18:00", ordered: 94, delivered: 91 },
-  { time: "19:00", ordered: 96, delivered: 93 },
-  { time: "20:00", ordered: 60, delivered: 58 },
-];
+interface DietTotals {
+  total: number;
+  active: number;
+  delivered: number;
+  npo: number;
+  special: number;
+  wards: number;
+}
 
-const dietTypeData = [
-  { name: "Regular", value: 142, color: "#22c55e" },
-  { name: "Diabetic", value: 48, color: "#3b82f6" },
-  { name: "Low-Sodium", value: 35, color: "#f59e0b" },
-  { name: "Soft Diet", value: 28, color: "#8b5cf6" },
-  { name: "Liquid", value: 19, color: "#06b6d4" },
-  { name: "Renal", value: 16, color: "#ef4444" },
-  { name: "Cardiac", value: 12, color: "#ec4899" },
-  { name: "NPO", value: 8, color: "#64748b" },
-];
+interface DietStats {
+  totals: DietTotals;
+  dietTypes: { name: string; value: number }[];
+  wards: { ward: string; meals: number; delivered: number; rate: number }[];
+  timeline: { hour: number; ordered: number; delivered: number }[];
+  weekly: { dow: number; meals: number }[];
+  recentOrders: {
+    order_number: string; patient_name: string; ward: string | null; bed: string | null;
+    diet_type: string; status: string; priority: string; allergies: string[]; created_at: string;
+  }[];
+  allergyAlerts: {
+    order_number: string; patient_name: string; ward: string | null; bed: string | null;
+    diet_type: string; allergies: string[]; priority: string; status: string; created_at: string;
+  }[];
+}
 
-const wardComplianceData = [
-  { ward: "ICU",     compliance: 98, meals: 24 },
-  { ward: "Cardio",  compliance: 96, meals: 42 },
-  { ward: "Ortho",   compliance: 94, meals: 58 },
-  { ward: "General", compliance: 91, meals: 112 },
-  { ward: "Maternity", compliance: 97, meals: 36 },
-  { ward: "Pediatric", compliance: 99, meals: 28 },
-  { ward: "Neuro",   compliance: 93, meals: 34 },
-  { ward: "Onco",    compliance: 88, meals: 22 },
-];
+const DIET_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#06b6d4", "#ef4444", "#ec4899", "#64748b", "#84cc16", "#f97316"];
+const WEEK_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-const weeklyTrendData = [
-  { day: "Mon", meals: 410, waste: 18 },
-  { day: "Tue", meals: 425, waste: 15 },
-  { day: "Wed", meals: 398, waste: 22 },
-  { day: "Thu", meals: 442, waste: 12 },
-  { day: "Fri", meals: 456, waste: 14 },
-  { day: "Sat", meals: 380, waste: 20 },
-  { day: "Sun", meals: 362, waste: 24 },
-];
-
-const recentOrders = [
-  { id: "DO-4821", patient: "Ramesh Kumar",   ward: "ICU-3",      bed: "B4",  dietType: "Cardiac",    status: "delivered", time: "08:12", allergy: null,    priority: "high" },
-  { id: "DO-4820", patient: "Priya Sharma",   ward: "Maternity",  bed: "A7",  dietType: "Regular",    status: "pending",   time: "08:05", allergy: null,    priority: "normal" },
-  { id: "DO-4819", patient: "Vikram Singh",   ward: "General-2",  bed: "C12", dietType: "Diabetic",   status: "preparing", time: "07:58", allergy: "Peanuts", priority: "high" },
-  { id: "DO-4818", patient: "Anita Patel",    ward: "Ortho",      bed: "D3",  dietType: "Low-Sodium", status: "delivered", time: "07:45", allergy: null,    priority: "normal" },
-  { id: "DO-4817", patient: "Suresh Reddy",   ward: "Cardio-1",   bed: "B8",  dietType: "Renal",      status: "delivered", time: "07:30", allergy: "Dairy", priority: "high" },
-  { id: "DO-4816", patient: "Meena Joshi",    ward: "Neuro",      bed: "E2",  dietType: "Soft Diet",  status: "cancelled", time: "07:20", allergy: null,    priority: "normal" },
-  { id: "DO-4815", patient: "Arun Nair",      ward: "Pediatric",  bed: "P5",  dietType: "Regular",    status: "delivered", time: "07:15", allergy: "Eggs",  priority: "normal" },
-];
-
-const allergyAlerts = [
-  { patient: "Vikram Singh",  ward: "General-2", allergy: "Peanuts", severity: "severe",   bed: "C12" },
-  { patient: "Suresh Reddy",  ward: "Cardio-1",  allergy: "Dairy",   severity: "moderate", bed: "B8" },
-  { patient: "Arun Nair",     ward: "Pediatric", allergy: "Eggs",    severity: "moderate", bed: "P5" },
-  { patient: "Kavya Menon",   ward: "General-1", allergy: "Gluten",  severity: "severe",   bed: "A3" },
-  { patient: "Ravi Prasad",   ward: "ICU-1",     allergy: "Soy",     severity: "mild",     bed: "I2" },
-];
+// Static meal-slot schedule: fixed times/menu items (config only). Per-slot
+// progress is absent on purpose — no meal-intake source exists yet (WP-0.3d).
 
 const todayMealSchedule = [
-  { meal: "Early Morning",  time: "06:00", icon: Droplets, items: "Warm water, herbal tea", count: 32,  done: 32,  color: "blue" },
-  { meal: "Breakfast",      time: "08:00", icon: Egg,      items: "Idli, upma, dal, fruit", count: 308, done: 295, color: "amber" },
-  { meal: "Mid-Morning",    time: "10:30", icon: Apple,    items: "Fruits, nuts, juice",    count: 180, done: 176, color: "green" },
-  { meal: "Lunch",          time: "13:00", icon: Soup,     items: "Rice/roti, dal, sabzi",  count: 308, done: 289, color: "orange" },
-  { meal: "Evening Snack",  time: "16:30", icon: Wheat,    items: "Biscuits, tea, fruit",   count: 200, done: 192, color: "purple" },
-  { meal: "Dinner",         time: "19:00", icon: Fish,     items: "Chapati, curry, curd",   count: 308, done: 0,   color: "indigo" },
-  { meal: "Night Snack",    time: "21:00", icon: Leaf,     items: "Warm milk, light snack", count: 85,  done: 0,   color: "slate" },
+  { meal: "Early Morning",  time: "06:00", icon: Droplets, items: "Warm water, herbal tea", color: "blue" },
+  { meal: "Breakfast",      time: "08:00", icon: Egg,      items: "Idli, upma, dal, fruit", color: "amber" },
+  { meal: "Mid-Morning",    time: "10:30", icon: Apple,    items: "Fruits, nuts, juice", color: "green" },
+  { meal: "Lunch",          time: "13:00", icon: Soup,     items: "Rice/roti, dal, sabzi", color: "orange" },
+  { meal: "Evening Snack",  time: "16:30", icon: Wheat,    items: "Biscuits, tea, fruit", color: "purple" },
+  { meal: "Dinner",         time: "19:00", icon: Fish,     items: "Chapati, curry, curd", color: "indigo" },
+  { meal: "Night Snack",    time: "21:00", icon: Leaf,     items: "Warm milk, light snack", color: "slate" },
 ];
 
 const colorMap: Record<string, string> = {
@@ -123,10 +89,11 @@ const statusConfig: Record<string, { label: string; className: string }> = {
   cancelled: { label: "Cancelled",  className: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400" },
 };
 
-const severityConfig: Record<string, string> = {
-  severe:   "bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800",
-  moderate: "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800",
-  mild:     "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800",
+const priorityConfig: Record<string, string> = {
+  urgent:  "bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800",
+  high:    "bg-red-100 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800",
+  normal:  "bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800",
+  low:     "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-800",
 };
 
 // ─── Stat cards ────────────────────────────────────────────────────────────────
@@ -178,6 +145,28 @@ const DietaryDashboardContent = () => {
   const navigate = useNavigate();
   const [clock, setClock] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState<DietStats | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  const loadStats = () => {
+    api.get("/dietary/stats", {
+      headers: { Authorization: `Bearer ${localStorage.getItem("dietaryToken") || ""}` },
+    })
+      .then(({ data }) => {
+        if (data.success && data.data) {
+          setStats(data.data);
+          setLoadError(false);
+        } else {
+          setLoadError(true);
+        }
+      })
+      .catch(() => setLoadError(true));
+  };
+
+  useEffect(() => {
+    loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
@@ -186,14 +175,51 @@ const DietaryDashboardContent = () => {
 
   const handleRefresh = () => {
     setRefreshing(true);
+    loadStats();
     setTimeout(() => setRefreshing(false), 1200);
   };
 
   const nowHour = clock.getHours();
   const shift = nowHour < 8 ? "Night" : nowHour < 14 ? "Morning" : nowHour < 20 ? "Afternoon" : "Night";
-  const totalMeals = 308;
-  const deliveredMeals = 295;
-  const compliancePct = Math.round((deliveredMeals / totalMeals) * 100);
+  const totals = stats?.totals;
+  const totalMeals = totals?.total ?? null;
+  const deliveredMeals = totals?.delivered ?? null;
+  const deliveryPct = totals && totals.total > 0 ? Math.round((totals.delivered / totals.total) * 100) : null;
+
+  // All datasets below come from GET /dietary/stats (real rows); empty until loaded.
+  const mealTimelineData = (stats?.timeline ?? []).map((t) => ({
+    time: `${String(t.hour).padStart(2, "0")}:00`,
+    ordered: t.ordered,
+    delivered: t.delivered,
+  }));
+  const dietTypeData = (stats?.dietTypes ?? []).map((d, i) => ({
+    name: d.name,
+    value: d.value,
+    color: DIET_COLORS[i % DIET_COLORS.length],
+  }));
+  const wardData = stats?.wards ?? [];
+  const weeklyTrendData = WEEK_DAYS.map((day, idx) => ({
+    day,
+    meals: stats?.weekly?.find((w) => (w.dow + 6) % 7 === idx)?.meals ?? 0,
+  }));
+  const recentOrders = (stats?.recentOrders ?? []).map((o) => ({
+    id: o.order_number,
+    patient: o.patient_name,
+    ward: o.ward || "—",
+    bed: o.bed || "—",
+    dietType: o.diet_type,
+    status: o.status,
+    priority: o.priority,
+    allergy: o.allergies?.length ? o.allergies.join(", ") : null,
+    time: String(o.created_at || "").slice(11, 16),
+  }));
+  const allergyAlerts = (stats?.allergyAlerts ?? []).map((a) => ({
+    patient: a.patient_name,
+    ward: a.ward || "—",
+    bed: a.bed || "—",
+    allergy: a.allergies.join(", "),
+    priority: a.priority,
+  }));
 
   return (
     <div className="space-y-6">
@@ -253,10 +279,10 @@ const DietaryDashboardContent = () => {
         {/* Mini KPIs */}
         <div className="relative z-10 mt-5 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { icon: Utensils,     label: "Total Patients",     value: "308" },
-            { icon: CheckCircle2, label: "Meals Delivered",    value: deliveredMeals.toString() },
-            { icon: ShieldCheck,  label: "Diet Compliance",    value: `${compliancePct}%` },
-            { icon: AlertTriangle,label: "Allergy Alerts",     value: allergyAlerts.length.toString() },
+            { icon: Utensils,     label: "Diet Orders",        value: totalMeals !== null ? String(totalMeals) : "—" },
+            { icon: CheckCircle2, label: "Meals Delivered",    value: deliveredMeals !== null ? String(deliveredMeals) : "—" },
+            { icon: ShieldCheck,  label: "Delivery Rate",      value: deliveryPct !== null ? `${deliveryPct}%` : "—" },
+            { icon: AlertTriangle,label: "Allergy Alerts",     value: stats ? String(allergyAlerts.length) : "—" },
           ].map(({ icon: Ic, label, value }) => (
             <div key={label} className="flex items-center gap-3">
               <Ic className="h-5 w-5 text-green-300 shrink-0" />
@@ -270,7 +296,7 @@ const DietaryDashboardContent = () => {
       </motion.div>
 
       {/* ── Allergy Alert Strip ── */}
-      {allergyAlerts.filter(a => a.severity === "severe").length > 0 && (
+      {stats && allergyAlerts.length > 0 && (
         <motion.div
           initial={{ opacity: 0, x: -12 }}
           animate={{ opacity: 1, x: 0 }}
@@ -281,10 +307,10 @@ const DietaryDashboardContent = () => {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-bold text-red-700 dark:text-red-300">
-              {allergyAlerts.filter(a => a.severity === "severe").length} Severe Allergy Alerts Active
+              {allergyAlerts.length} Allergy Alert{allergyAlerts.length === 1 ? "" : "s"} Active
             </p>
             <p className="text-xs text-red-600/70 dark:text-red-400/70 truncate">
-              {allergyAlerts.filter(a => a.severity === "severe").map(a => `${a.patient} (${a.allergy})`).join(" • ")}
+              {allergyAlerts.map((a) => `${a.patient} (${a.allergy})`).join(" • ")}
             </p>
           </div>
           <Button
@@ -298,12 +324,18 @@ const DietaryDashboardContent = () => {
         </motion.div>
       )}
 
+      {loadError && (
+        <div className="p-3 rounded-xl border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 text-sm text-red-700 dark:text-red-300">
+          Couldn’t load dietary data from the server — figures show “—” until the connection recovers.
+        </div>
+      )}
+
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={ClipboardList} label="Active Diet Orders" value="308" sub="6 wards" trend="up" trendValue="+12 since yesterday" iconBg="bg-green-100 dark:bg-green-950" iconColor="text-green-600 dark:text-green-400" />
-        <StatCard icon={CheckCircle2} label="Meals Delivered" value={deliveredMeals} sub={`${compliancePct}% compliance`} trend="up" trendValue="+3% vs last week" iconBg="bg-emerald-100 dark:bg-emerald-950" iconColor="text-emerald-600 dark:text-emerald-400" />
-        <StatCard icon={AlertTriangle} label="NPO Patients" value="8" sub="Nil by mouth" trend="neutral" trendValue="Same as yesterday" iconBg="bg-red-100 dark:bg-red-950" iconColor="text-red-600 dark:text-red-400" urgent />
-        <StatCard icon={Salad} label="Special Diets" value="158" sub="Therapeutic diets" trend="up" trendValue="+5 new today" iconBg="bg-amber-100 dark:bg-amber-950" iconColor="text-amber-600 dark:text-amber-400" />
+        <StatCard icon={ClipboardList} label="Active Diet Orders" value={totals ? totals.active : "—"} sub={totals ? `${totals.wards} ward${totals.wards === 1 ? "" : "s"}` : "Awaiting server data"} iconBg="bg-green-100 dark:bg-green-950" iconColor="text-green-600 dark:text-green-400" />
+        <StatCard icon={CheckCircle2} label="Meals Delivered" value={deliveredMeals !== null ? deliveredMeals : "—"} sub={deliveryPct !== null ? `${deliveryPct}% delivery rate` : "Awaiting server data"} iconBg="bg-emerald-100 dark:bg-emerald-950" iconColor="text-emerald-600 dark:text-emerald-400" />
+        <StatCard icon={AlertTriangle} label="NPO Patients" value={totals ? totals.npo : "—"} sub="Nil by mouth" iconBg="bg-red-100 dark:bg-red-950" iconColor="text-red-600 dark:text-red-400" urgent />
+        <StatCard icon={Salad} label="Special Diets" value={totals ? totals.special : "—"} sub="Non-regular diets" iconBg="bg-amber-100 dark:bg-amber-950" iconColor="text-amber-600 dark:text-amber-400" />
       </div>
 
       {/* ── Charts Row 1 ── */}
@@ -319,7 +351,7 @@ const DietaryDashboardContent = () => {
               </CardTitle>
               <Badge variant="outline" className="text-xs">Today</Badge>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Ordered vs delivered across all meal slots</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Orders placed vs currently delivered, by hour (today)</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={220}>
@@ -388,23 +420,23 @@ const DietaryDashboardContent = () => {
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-green-600" />
-                Ward-wise Diet Compliance
+                Ward-wise Delivery Rate
               </CardTitle>
               <Badge className="bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400 text-xs border-0">
-                Avg {Math.round(wardComplianceData.reduce((s, w) => s + w.compliance, 0) / wardComplianceData.length)}%
+                {deliveryPct !== null ? `${deliveryPct}% delivered` : "—"}
               </Badge>
             </div>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={wardComplianceData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <BarChart data={wardData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
                 <XAxis dataKey="ward" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis domain={[80, 100]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} formatter={(v) => [`${v}%`, "Compliance"]} />
-                <Bar dataKey="compliance" name="Compliance %" radius={[6, 6, 0, 0]}>
-                  {wardComplianceData.map((entry, index) => (
-                    <Cell key={index} fill={entry.compliance >= 96 ? "#22c55e" : entry.compliance >= 92 ? "#3b82f6" : "#f59e0b"} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} formatter={(v) => [`${v}%`, "Delivered"]} />
+                <Bar dataKey="rate" name="Delivered %" radius={[6, 6, 0, 0]}>
+                  {wardData.map((entry, index) => (
+                    <Cell key={index} fill={entry.rate >= 90 ? "#22c55e" : entry.rate >= 70 ? "#3b82f6" : "#f59e0b"} />
                   ))}
                 </Bar>
               </BarChart>
@@ -417,9 +449,9 @@ const DietaryDashboardContent = () => {
           <CardHeader className="pb-2">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-green-600" />
-              Weekly Meals & Waste
+              Orders by Weekday
             </CardTitle>
-            <p className="text-xs text-slate-500 dark:text-slate-400">This week's meal output and food waste</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Diet orders created over the last 7 days</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
@@ -429,8 +461,7 @@ const DietaryDashboardContent = () => {
                 <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
                 <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="meals" name="Meals Served" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="waste"  name="Waste (portions)" fill="#fca5a5" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="meals" name="Orders Created" fill="#22c55e" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -452,42 +483,19 @@ const DietaryDashboardContent = () => {
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-7 gap-3">
-            {todayMealSchedule.map((slot) => {
-              const pct = slot.count > 0 ? Math.round((slot.done / slot.count) * 100) : 0;
-              const isNext = slot.done === 0 && slot.count > 0;
-              return (
-                <div
-                  key={slot.meal}
-                  className={`relative p-3 rounded-xl border transition-all ${isNext ? "border-green-300 bg-green-50 dark:bg-green-950/30 dark:border-green-700 ring-1 ring-green-300 dark:ring-green-700" : "border-slate-200 dark:border-slate-700"}`}
-                >
-                  {isNext && (
-                    <span className="absolute -top-2 left-1/2 -translate-x-1/2 text-[9px] font-bold bg-green-500 text-white px-2 py-0.5 rounded-full uppercase tracking-wide">
-                      Next
-                    </span>
-                  )}
-                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${colorMap[slot.color]}`}>
-                    <slot.icon className="h-4.5 w-4.5" />
-                  </div>
-                  <p className="text-xs font-semibold text-slate-800 dark:text-white truncate">{slot.meal}</p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{slot.time}</p>
-                  <div className="mt-2">
-                    <div className="flex items-center justify-between text-[10px] mb-1">
-                      <span className="text-slate-500">{slot.done}/{slot.count}</span>
-                      <span className={`font-bold ${pct === 100 ? "text-green-600" : pct > 0 ? "text-blue-600" : "text-slate-400"}`}>
-                        {slot.done === 0 && slot.count > 0 ? "—" : `${pct}%`}
-                      </span>
-                    </div>
-                    <div className="h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${pct === 100 ? "bg-green-500" : pct > 0 ? "bg-blue-500" : "bg-slate-200"}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                  <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1.5 truncate" title={slot.items}>{slot.items}</p>
+            {todayMealSchedule.map((slot) => (
+              <div
+                key={slot.meal}
+                className="relative p-3 rounded-xl border border-slate-200 dark:border-slate-700"
+              >
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center mb-2 ${colorMap[slot.color]}`}>
+                  <slot.icon className="h-4.5 w-4.5" />
                 </div>
-              );
-            })}
+                <p className="text-xs font-semibold text-slate-800 dark:text-white truncate">{slot.meal}</p>
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">{slot.time}</p>
+                <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1.5 truncate" title={slot.items}>{slot.items}</p>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -521,6 +529,12 @@ const DietaryDashboardContent = () => {
                   </tr>
                 </thead>
                 <tbody>
+                  {!stats && (
+                    <tr><td colSpan={5} className="px-6 py-6 text-center text-xs text-slate-400">Loading orders…</td></tr>
+                  )}
+                  {stats && recentOrders.length === 0 && (
+                    <tr><td colSpan={5} className="px-6 py-6 text-center text-xs text-slate-400">No diet orders yet.</td></tr>
+                  )}
                   {recentOrders.map((order) => (
                     <tr key={order.id} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-3">
@@ -547,8 +561,8 @@ const DietaryDashboardContent = () => {
                         </div>
                       </td>
                       <td className="px-4 py-3">
-                        <Badge className={`text-[10px] border-0 font-medium ${statusConfig[order.status].className}`}>
-                          {statusConfig[order.status].label}
+                        <Badge className={`text-[10px] border-0 font-medium ${(statusConfig[order.status] || statusConfig.pending).className}`}>
+                          {(statusConfig[order.status] || statusConfig.pending).label}
                         </Badge>
                       </td>
                       <td className="px-4 py-3">
@@ -574,7 +588,7 @@ const DietaryDashboardContent = () => {
                 Allergy Alerts
               </CardTitle>
               <Badge className="bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400 border-0 text-xs">
-                {allergyAlerts.length} active
+                {stats ? `${allergyAlerts.length} active` : "…"}
               </Badge>
             </div>
           </CardHeader>
@@ -582,19 +596,23 @@ const DietaryDashboardContent = () => {
             {allergyAlerts.map((alert) => (
               <div
                 key={`${alert.patient}-${alert.allergy}`}
-                className={`flex items-start gap-3 p-3 rounded-xl border ${severityConfig[alert.severity]}`}
+                className={`flex items-start gap-3 p-3 rounded-xl border ${priorityConfig[alert.priority] || priorityConfig.normal}`}
               >
                 <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold truncate">{alert.patient}</p>
                   <p className="text-[10px] mt-0.5 opacity-80">{alert.ward} · Bed {alert.bed}</p>
                   <div className="flex items-center gap-1.5 mt-1">
-                    <span className="text-[9px] font-bold uppercase tracking-wide opacity-70">{alert.severity}</span>
+                    <span className="text-[9px] font-bold uppercase tracking-wide opacity-70">{alert.priority}</span>
                     <span className="text-[10px] font-semibold">Allergy: {alert.allergy}</span>
                   </div>
                 </div>
               </div>
             ))}
+            {!stats && <p className="text-xs text-slate-400">Loading allergy alerts…</p>}
+            {stats && allergyAlerts.length === 0 && (
+              <p className="text-xs text-slate-400">No active allergy alerts on current diet orders.</p>
+            )}
             <Button
               variant="outline"
               size="sm"

@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "@/utils/api";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,73 +23,6 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from "recharts";
 
-// ─── Static data ───────────────────────────────────────────────────────────────
-
-const uptimeData = [
-  { time: "00:00", online: 318, warning: 10, offline: 8 },
-  { time: "02:00", online: 316, warning: 12, offline: 8 },
-  { time: "04:00", online: 315, warning: 13, offline: 8 },
-  { time: "06:00", online: 317, warning: 11, offline: 8 },
-  { time: "08:00", online: 320, warning:  9, offline: 7 },
-  { time: "10:00", online: 322, warning:  8, offline: 6 },
-  { time: "12:00", online: 321, warning:  9, offline: 6 },
-  { time: "14:00", online: 319, warning: 11, offline: 6 },
-  { time: "16:00", online: 318, warning: 12, offline: 6 },
-  { time: "18:00", online: 317, warning: 12, offline: 7 },
-  { time: "20:00", online: 318, warning: 12, offline: 8 },
-  { time: "22:00", online: 318, warning: 12, offline: 8 },
-];
-
-const deviceStatusData = [
-  { name: "Online",        value: 318, color: "#22c55e" },
-  { name: "Warning",       value: 12,  color: "#f59e0b" },
-  { name: "Offline",       value: 8,   color: "#ef4444" },
-  { name: "Maintenance",   value: 4,   color: "#3b82f6" },
-];
-
-const workOrdersByDept = [
-  { dept: "ICU",       open: 3, overdue: 1, completed: 8  },
-  { dept: "OT",        open: 2, overdue: 0, completed: 12 },
-  { dept: "Cardio",    open: 4, overdue: 2, completed: 6  },
-  { dept: "Emergency", open: 5, overdue: 1, completed: 9  },
-  { dept: "Radiology", open: 1, overdue: 0, completed: 15 },
-  { dept: "Lab",       open: 2, overdue: 0, completed: 11 },
-  { dept: "General",   open: 6, overdue: 3, completed: 7  },
-];
-
-const maintenanceTrend = [
-  { month: "Dec", completed: 42, overdue: 8 },
-  { month: "Jan", completed: 48, overdue: 6 },
-  { month: "Feb", completed: 51, overdue: 5 },
-  { month: "Mar", completed: 55, overdue: 4 },
-  { month: "Apr", completed: 58, overdue: 3 },
-  { month: "May", completed: 61, overdue: 2 },
-];
-
-const recentWorkOrders = [
-  { id: "WO-3841", device: "Ventilator — Drager V500",  dept: "ICU-2",      type: "Breakdown",    status: "open",      priority: "critical", engineer: "Rajan K.",  time: "08:32" },
-  { id: "WO-3840", device: "ECG Machine — GE MAC 5500", dept: "Cardio",      type: "Calibration",  status: "in-progress",priority: "high",     engineer: "Priya M.", time: "07:55" },
-  { id: "WO-3839", device: "Infusion Pump — BD Alaris", dept: "General-3",   type: "PPM",          status: "completed",  priority: "normal",   engineer: "Suresh P.",time: "07:30" },
-  { id: "WO-3838", device: "Patient Monitor — Philips", dept: "ICU-1",       type: "Breakdown",    status: "open",      priority: "high",     engineer: "Rajan K.", time: "06:48" },
-  { id: "WO-3837", device: "Defibrillator — Zoll R",   dept: "Emergency",   type: "PPM",          status: "completed",  priority: "normal",   engineer: "Meena S.", time: "06:20" },
-  { id: "WO-3836", device: "SpO2 Monitor — Nellcor",   dept: "OT-3",        type: "Installation", status: "in-progress",priority: "normal",   engineer: "Priya M.", time: "06:00" },
-  { id: "WO-3835", device: "Autoclave — Tuttnauer",    dept: "CSSD",        type: "Breakdown",    status: "open",      priority: "high",     engineer: "Anil R.",  time: "05:30" },
-];
-
-const upcomingCalibrations = [
-  { device: "Blood Gas Analyser — Radiometer",   dept: "Lab",        dueDate: "2026-05-18", daysLeft: 3,  cert: "NABL-12043" },
-  { device: "Patient Monitor — Nihon Kohden",    dept: "ICU-3",      dueDate: "2026-05-20", daysLeft: 5,  cert: "BME-CAL-221" },
-  { device: "Infusion Pump — Baxter",            dept: "Oncology",   dueDate: "2026-05-22", daysLeft: 7,  cert: "BME-CAL-198" },
-  { device: "Defibrillator — Philips HeartStart",dept: "Emergency",  dueDate: "2026-05-25", daysLeft: 10, cert: "BME-CAL-205" },
-  { device: "ECG Machine — BPL Cardiart",        dept: "Cardio-2",   dueDate: "2026-05-30", daysLeft: 15, cert: "BME-CAL-187" },
-];
-
-const criticalAlerts = [
-  { device: "Ventilator — Drager V500",     dept: "ICU-2",   issue: "Low-pressure alarm, circuit suspected",   severity: "critical" },
-  { device: "Autoclave — Tuttnauer 3870E",  dept: "CSSD",    issue: "Heating element failure — cycle aborting", severity: "critical" },
-  { device: "Defibrillator — ZOLL AED Pro", dept: "Gen-1",   issue: "Battery charge below 20%",                severity: "warning"  },
-  { device: "Patient Monitor — Mindray",    dept: "Neuro",   issue: "SpO2 probe connection intermittent",       severity: "warning"  },
-];
 
 // ─── Stat card ─────────────────────────────────────────────────────────────────
 
@@ -148,15 +82,95 @@ const BiomedicalDashboardContent = () => {
   const navigate = useNavigate();
   const [clock, setClock] = useState(new Date());
   const [refreshing, setRefreshing] = useState(false);
+  const [equipment, setEquipment] = useState<any[]>([]);
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [calDue, setCalDue] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const totalDevices = 342;
-  const onlineDevices = 318;
-  const uptimePct = Math.round((onlineDevices / totalDevices) * 100);
+  const loadAll = () => {
+    setRefreshing(true);
+    const headers = { Authorization: `Bearer ${localStorage.getItem('biomedicalToken') || ''}` };
+    Promise.all([
+      api.get('/biomedical/equipment', { headers }),
+      api.get('/biomedical/maintenance-tickets', { headers }),
+      api.get('/biomedical/calibration-due?withinDays=30', { headers }),
+    ])
+      .then(([eq, tk, cal]) => {
+        setEquipment(eq.data?.data || []);
+        setTickets(tk.data?.data || []);
+        setCalDue(cal.data?.data || []);
+        setLoaded(true);
+      })
+      .catch((err) => {
+        console.error('[Biomedical] dashboard load failed:', err?.message);
+        setLoaded(true);
+      })
+      .finally(() => setRefreshing(false));
+  };
+
+  useEffect(() => { loadAll(); }, []);
+
+  // ── Derived, all from live endpoints (no fabricated numbers — WP-0.3d) ──
+  const equipById = new Map(equipment.map((e: any) => [String(e.id), e]));
+  const totalDevices = loaded ? equipment.length : null;
+  const openTickets = tickets.filter((t: any) => t.status === "open");
+  const resolvedTickets = tickets.filter((t: any) => t.status === "resolved");
+  const calDue7 = calDue.filter((c: any) =>
+    c.next_due_at && new Date(c.next_due_at).getTime() <= Date.now() + 7 * 86400000);
+
+  const recentWorkOrders = tickets.slice(0, 7).map((t: any) => {
+    const eq = t.equipment_id ? equipById.get(String(t.equipment_id)) : null;
+    return {
+      id: `WO-${t.id}`,
+      device: eq ? `${eq.device_name} — ${eq.model || eq.equipment_class || ""}` : "Unlinked equipment",
+      dept: eq?.department || "—",
+      type: "Issue",
+      status: t.status === "resolved" ? "completed" : t.status === "open" ? "open" : String(t.status),
+      priority: t.priority === "critical" ? "critical" : t.priority === "urgent" ? "high" : "normal",
+      engineer: t.assigned_to || "—",
+      time: String(t.opened_at || "").slice(11, 16),
+    };
+  });
+
+  const upcomingCalibrations = calDue.map((c: any) => {
+    const due = c.next_due_at ? new Date(c.next_due_at) : null;
+    const daysLeft = due ? Math.ceil((due.getTime() - Date.now()) / 86400000) : 9999;
+    return {
+      device: c.device_name || `Equipment #${c.equipment_id}`,
+      dept: c.department || "—",
+      dueDate: due ? String(due.toISOString()).slice(0, 10) : "—",
+      daysLeft,
+      cert: `CAL-${c.id}`,
+    };
+  });
+
+  const workOrdersByDept = (() => {
+    const m = new Map<string, { dept: string; open: number; completed: number }>();
+    tickets.forEach((t: any) => {
+      const eq = t.equipment_id ? equipById.get(String(t.equipment_id)) : null;
+      const dept = eq?.department || "Unassigned";
+      const row = m.get(dept) || { dept, open: 0, completed: 0 };
+      if (t.status === "open") row.open += 1;
+      if (t.status === "resolved") row.completed += 1;
+      m.set(dept, row);
+    });
+    return Array.from(m.values());
+  })();
+
+  const classCounts = (() => {
+    const m = new Map<string, number>();
+    equipment.forEach((e: any) => {
+      const k = e.equipment_class || "Unclassified";
+      m.set(k, (m.get(k) || 0) + 1);
+    });
+    const colors = ["#22c55e", "#3b82f6", "#f59e0b", "#8b5cf6", "#06b6d4", "#ef4444", "#ec4899", "#64748b"];
+    return Array.from(m.entries()).map(([name, value], i) => ({ name, value, color: colors[i % colors.length] }));
+  })();
 
   return (
     <div className="space-y-6">
@@ -196,7 +210,7 @@ const BiomedicalDashboardContent = () => {
               </p>
               <p className="text-white/50 text-xs mt-1">IST — Indian Standard Time</p>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 1200); }}
+            <Button variant="ghost" size="icon" onClick={loadAll}
               className="text-white/70 hover:text-white hover:bg-white/10 rounded-xl">
               <RefreshCw className={`h-5 w-5 ${refreshing ? "animate-spin" : ""}`} />
             </Button>
@@ -205,10 +219,10 @@ const BiomedicalDashboardContent = () => {
 
         <div className="relative z-10 mt-5 pt-5 border-t border-white/10 grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
-            { icon: Cpu,         label: "Total Devices",   value: totalDevices.toString() },
-            { icon: Wifi,        label: "Online Devices",  value: `${onlineDevices} (${uptimePct}%)` },
-            { icon: AlertTriangle,label: "Critical Alerts",value: criticalAlerts.filter(a => a.severity === "critical").length.toString() },
-            { icon: ListChecks,  label: "Open Work Orders",value: recentWorkOrders.filter(o => o.status === "open").length.toString() },
+            { icon: Cpu,         label: "Total Devices",   value: totalDevices !== null ? String(totalDevices) : "—" },
+            { icon: ListChecks,  label: "Open Work Orders",value: loaded ? String(openTickets.length) : "—" },
+            { icon: CalendarClock,label: "Calibration Due",value: loaded ? String(calDue.length) : "—" },
+            { icon: ShieldCheck, label: "Resolved WOs",    value: loaded ? String(resolvedTickets.length) : "—" },
           ].map(({ icon: Ic, label, value }) => (
             <div key={label} className="flex items-center gap-3">
               <Ic className="h-5 w-5 text-blue-300 shrink-0" />
@@ -221,34 +235,14 @@ const BiomedicalDashboardContent = () => {
         </div>
       </motion.div>
 
-      {/* ── Critical Alert Strip ── */}
-      {criticalAlerts.filter(a => a.severity === "critical").length > 0 && (
-        <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
-          className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl">
-          <div className="w-9 h-9 bg-red-100 dark:bg-red-900 rounded-xl flex items-center justify-center shrink-0 border border-red-200 dark:border-red-700">
-            <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 animate-pulse" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-red-700 dark:text-red-300">
-              {criticalAlerts.filter(a => a.severity === "critical").length} Critical Device Failures
-            </p>
-            <p className="text-xs text-red-600/70 dark:text-red-400/70 truncate">
-              {criticalAlerts.filter(a => a.severity === "critical").map(a => a.device.split(" — ")[0]).join(" • ")}
-            </p>
-          </div>
-          <Button size="sm" variant="outline" onClick={() => navigate("/biomedical/monitoring")}
-            className="shrink-0 border-red-200 text-red-700 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-950">
-            View Monitoring
-          </Button>
-        </motion.div>
-      )}
+      {/* No critical-alert source exists yet — strip intentionally removed (WP-0.3d) */}
 
       {/* ── Stat Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard icon={Cpu}         label="Total Equipment"      value={totalDevices}  sub="Across all departments" trend="up"      trendValue="+8 new this month" iconBg="bg-blue-100 dark:bg-blue-950"   iconColor="text-blue-600 dark:text-blue-400" />
-        <StatCard icon={ListChecks}  label="Open Work Orders"     value={recentWorkOrders.filter(o=>o.status==="open").length}  sub="3 critical priority" trend="down" trendValue="-2 vs yesterday" iconBg="bg-red-100 dark:bg-red-950" iconColor="text-red-600 dark:text-red-400" urgent />
-        <StatCard icon={CalendarClock}label="Calibration Due"     value={upcomingCalibrations.filter(c=>c.daysLeft<=7).length} sub="Within 7 days" trend="neutral" trendValue="Same as last week"  iconBg="bg-amber-100 dark:bg-amber-950" iconColor="text-amber-600 dark:text-amber-400" />
-        <StatCard icon={ShieldCheck} label="PPM Compliance"       value="94%"           sub="NABH target: 95%"      trend="up"      trendValue="+3% vs last month" iconBg="bg-green-100 dark:bg-green-950" iconColor="text-green-600 dark:text-green-400" />
+        <StatCard icon={Cpu}         label="Total Equipment"      value={totalDevices !== null ? totalDevices : "—"} sub="Live equipment registry" iconBg="bg-blue-100 dark:bg-blue-950"   iconColor="text-blue-600 dark:text-blue-400" />
+        <StatCard icon={ListChecks}  label="Open Work Orders"     value={loaded ? openTickets.length : "—"}  sub="Maintenance tickets open" iconBg="bg-red-100 dark:bg-red-950" iconColor="text-red-600 dark:text-red-400" urgent />
+        <StatCard icon={CalendarClock}label="Calibration Due"     value={loaded ? calDue7.length : "—"} sub="Within 7 days" iconBg="bg-amber-100 dark:bg-amber-950" iconColor="text-amber-600 dark:text-amber-400" />
+        <StatCard icon={ShieldCheck} label="Resolved Tickets"     value={loaded ? resolvedTickets.length : "—"} sub="All time" iconBg="bg-green-100 dark:bg-green-950" iconColor="text-green-600 dark:text-green-400" />
       </div>
 
       {/* ── Charts Row 1 ── */}
@@ -260,61 +254,48 @@ const BiomedicalDashboardContent = () => {
               <CardTitle className="text-base flex items-center gap-2">
                 <Activity className="h-4 w-4 text-blue-600" /> Device Uptime — 24h
               </CardTitle>
-              <Badge variant="outline" className="text-xs">Live</Badge>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Online vs warning vs offline count across the day</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Not available yet — live device status isn’t streamed (dataAvailable: false)</p>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={uptimeData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="onlineGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.15} /><stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="warnGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.15} /><stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                  </linearGradient>
-                  <linearGradient id="offGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.15} /><stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="time" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Area type="monotone" dataKey="online"  name="Online"  stroke="#22c55e" strokeWidth={2} fill="url(#onlineGrad)" dot={false} />
-                <Area type="monotone" dataKey="warning" name="Warning" stroke="#f59e0b" strokeWidth={2} fill="url(#warnGrad)"  dot={false} />
-                <Area type="monotone" dataKey="offline" name="Offline" stroke="#ef4444" strokeWidth={2} fill="url(#offGrad)"   dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              No uptime telemetry source is connected, so this chart intentionally shows no data (WP-0.3d).
+            </p>
           </CardContent>
         </Card>
 
         {/* Device Status Breakdown */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2"><Cpu className="h-4 w-4 text-blue-600" />Device Status</CardTitle>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Current fleet health snapshot</p>
+            <CardTitle className="text-base flex items-center gap-2"><Cpu className="h-4 w-4 text-blue-600" />Equipment by Class</CardTitle>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Live registry breakdown by equipment class</p>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie data={deviceStatusData} cx="50%" cy="50%" outerRadius={65} innerRadius={38} dataKey="value" paddingAngle={2}>
-                  {deviceStatusData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="mt-2 grid grid-cols-2 gap-1.5">
-              {deviceStatusData.map(({ name, value, color }) => (
-                <div key={name} className="flex items-center gap-1.5 text-xs">
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
-                  <span className="text-slate-600 dark:text-slate-400 truncate">{name}</span>
-                  <span className="ml-auto font-semibold text-slate-700 dark:text-slate-300">{value}</span>
+            {!loaded && <p className="text-sm text-slate-400">Loading…</p>}
+            {loaded && classCounts.length === 0 && (
+              <p className="text-sm text-slate-400">No equipment registered yet.</p>
+            )}
+            {loaded && classCounts.length > 0 && (
+              <>
+                <ResponsiveContainer width="100%" height={160}>
+                  <PieChart>
+                    <Pie data={classCounts} cx="50%" cy="50%" outerRadius={65} innerRadius={38} dataKey="value" paddingAngle={2}>
+                      {classCounts.map((e, i) => <Cell key={i} fill={e.color} />)}
+                    </Pie>
+                    <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  {classCounts.map(({ name, value, color }) => (
+                    <div key={name} className="flex items-center gap-1.5 text-xs">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                      <span className="text-slate-600 dark:text-slate-400 truncate">{name}</span>
+                      <span className="ml-auto font-semibold text-slate-700 dark:text-slate-300">{value}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -334,7 +315,6 @@ const BiomedicalDashboardContent = () => {
                 <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
                 <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
                 <Bar dataKey="open"      name="Open"      fill="#ef4444" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="overdue"   name="Overdue"   fill="#f59e0b" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="completed" name="Completed" fill="#22c55e" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -346,17 +326,9 @@ const BiomedicalDashboardContent = () => {
             <CardTitle className="text-base flex items-center gap-2"><TrendingUp className="h-4 w-4 text-blue-600" />Maintenance Completion Trend</CardTitle>
           </CardHeader>
           <CardContent>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={maintenanceTrend} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.05)" />
-                <XAxis dataKey="month" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={{ borderRadius: "10px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.12)", fontSize: 12 }} />
-                <Legend iconSize={8} wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="completed" name="Completed" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="overdue"   name="Overdue"   fill="#fca5a5" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Not available yet — maintenance history isn’t recorded over time (dataAvailable: false).
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -383,6 +355,12 @@ const BiomedicalDashboardContent = () => {
                   </tr>
                 </thead>
                 <tbody>
+                  {!loaded && (
+                    <tr><td colSpan={6} className="px-5 py-6 text-center text-xs text-slate-400">Loading work orders…</td></tr>
+                  )}
+                  {loaded && recentWorkOrders.length === 0 && (
+                    <tr><td colSpan={6} className="px-5 py-6 text-center text-xs text-slate-400">No maintenance tickets yet.</td></tr>
+                  )}
                   {recentWorkOrders.map(wo => (
                     <tr key={wo.id} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
                       <td className="px-5 py-3">
@@ -397,7 +375,7 @@ const BiomedicalDashboardContent = () => {
                         <Badge className={`text-[10px] border-0 font-medium ${priorityConfig[wo.priority]}`}>{wo.priority}</Badge>
                       </td>
                       <td className="px-5 py-3">
-                        <Badge className={`text-[10px] border-0 font-medium ${woStatusConfig[wo.status].cls}`}>{woStatusConfig[wo.status].label}</Badge>
+                        <Badge className={`text-[10px] border-0 font-medium ${(woStatusConfig[wo.status] || woStatusConfig.open).cls}`}>{(woStatusConfig[wo.status] || woStatusConfig.open).label}</Badge>
                       </td>
                       <td className="px-5 py-3"><span className="text-xs text-slate-600 dark:text-slate-400">{wo.engineer}</span></td>
                     </tr>
@@ -431,6 +409,9 @@ const BiomedicalDashboardContent = () => {
                 </div>
               </div>
             ))}
+            {loaded && upcomingCalibrations.length === 0 && (
+              <p className="text-xs text-slate-400">No calibrations due in the next 30 days.</p>
+            )}
             <Button variant="outline" size="sm" className="w-full text-xs border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-950 mt-1"
               onClick={() => navigate("/biomedical/calibration")}>
               View All Calibrations
