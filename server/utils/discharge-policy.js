@@ -21,10 +21,22 @@ export const DISCHARGE_OVERRIDE_ROLES = parse(
   'ms,medical_superintendent,cmo,chief_medical_officer,medical_director,hospital_admin,discharge_officer,admin,system_admin,super_admin'
 );
 
-/** Middleware: the caller's own (raw) session role must be in `allowed`. */
+// Who may write discharge summaries (clinical + discharge/records staff). Overridable: DISCHARGE_DOC_ROLES.
+export const DISCHARGE_DOC_ROLES = parse(
+  'DISCHARGE_DOC_ROLES',
+  'doctor,nurse,ms,medical_superintendent,cmo,chief_medical_officer,medical_director,hospital_admin,discharge_officer,mrd_staff,admin,system_admin,super_admin'
+);
+
+// Who may create/queue MRD records (records department + senior clinical/admin). Overridable: MRD_WRITE_ROLES.
+export const MRD_WRITE_ROLES = parse(
+  'MRD_WRITE_ROLES',
+  'mrd_staff,ms,medical_superintendent,cmo,chief_medical_officer,medical_director,hospital_admin,admin,system_admin,super_admin'
+);
+
+/** Middleware: the caller's own (raw) session role must be in `allowed`. Works for hospital-token routes too (req.userRole). */
 export function requireSessionRole(allowed) {
   return (req, res, next) => {
-    const role = req.user?.role;
+    const role = req.user?.role || req.userRole;
     if (!role) return res.status(401).json({ success: false, message: 'Unauthorized' });
     if (!allowed.has(role)) {
       return res.status(403).json({ success: false, code: 'ROLE_NOT_PERMITTED', message: 'Your role is not permitted to perform this action' });
@@ -49,27 +61,6 @@ export function sessionOverride(user, requested, allowed = DISCHARGE_OVERRIDE_RO
   return { reasonCode: reason, reason, approverId: user.id, approverRole: user.role };
 }
 
-// SQLSTATEs that have a caller-meaningful shape; the raw database message (table/constraint names) never reaches the client.
-const PG_ERRORS = {
-  '23505': [409, 'DUPLICATE', 'That record already exists'],
-  '23503': [409, 'REFERENCE_NOT_FOUND', 'A referenced record does not exist'],
-  '23514': [422, 'BUSINESS_RULE_VIOLATION', 'The values violate a business rule'],
-  '23502': [400, 'REQUIRED_VALUE_MISSING', 'A required value is missing'],
-  '22P02': [400, 'INVALID_VALUE', 'A value has the wrong format'],
-};
+export { sendRouteError } from './route-errors.js';
 
-/** Uniform error reply: coded/known errors keep their status and message; database errors never leak. */
-export function sendRouteError(res, err, fallbackStatus = 400) {
-  const isPg = typeof err?.code === 'string' && /^[0-9A-Z]{5}$/.test(err.code) && (err.severity || err.routine);
-  if (isPg && PG_ERRORS[err.code]) {
-    const [status, code, message] = PG_ERRORS[err.code];
-    return res.status(status).json({ success: false, code, message });
-  }
-  if (isPg || err?.name?.startsWith('Sequelize') || err?.parent || err?.original) {
-    console.error('[route] database error:', err.message);
-    return res.status(500).json({ success: false, message: 'The request could not be completed' });
-  }
-  return res.status(err?.status || fallbackStatus).json({ success: false, code: err?.code, message: err?.message || 'Request failed' });
-}
-
-export default { DISCHARGE_SIGN_ROLES, DISCHARGE_OVERRIDE_ROLES, requireSessionRole, sessionOverride, sendRouteError };
+export default { DISCHARGE_SIGN_ROLES, DISCHARGE_OVERRIDE_ROLES, DISCHARGE_DOC_ROLES, MRD_WRITE_ROLES, requireSessionRole, sessionOverride };

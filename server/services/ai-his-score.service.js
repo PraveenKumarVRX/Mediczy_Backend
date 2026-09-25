@@ -26,7 +26,7 @@
 
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import cron from 'node-cron';
 
 const ALGORITHM_VERSION = 'his-v1';
@@ -115,7 +115,7 @@ class HisScoreService {
    */
   async computeAll() {
     const startTime = Date.now();
-    tickStart('ai_his_score');
+    if (!(await beginJob('ai_his_score'))) return { skipped: true };
     console.log('🧬 [HIS] Computing Health Intelligence Scores...');
 
     try {

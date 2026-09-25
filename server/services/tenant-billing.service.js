@@ -8,7 +8,7 @@
 import { connectPostgres } from '../db/postgres.js';
 import tenantRegistry from './tenant-registry.service.js';
 import cron from 'node-cron';
-import { tick, tickStart, tickError } from '../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../utils/cronRegistry.js';
 
 const BILLING_TIERS = {
   free: { name: 'Free', pricePerSeat: 0, aiCallsIncluded: 100, storageGB: 1 },
@@ -196,7 +196,7 @@ class TenantBillingService {
   }
 
   async generateAllInvoices() {
-    tickStart('tenant_billing_cron');
+    if (!(await beginJob('tenant_billing_cron'))) return { skipped: true };
     const { tenants } = await tenantRegistry.listTenants({ status: 'active' });
     const period = new Date().toISOString().slice(0, 7);
     let generated = 0;

@@ -57,6 +57,8 @@ try {
     // Minimal copies of the billing / audit tables the reconciliation and audit paths read (production already has them).
     await admin.query(`
       CREATE TABLE IF NOT EXISTS operations_audit_log (id SERIAL PRIMARY KEY, module TEXT, entity_type TEXT, entity_id TEXT, action TEXT, actor TEXT, details JSONB, created_at TIMESTAMPTZ DEFAULT NOW(), organization_id BIGINT);
+      CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, organization_id BIGINT);
+      CREATE TABLE IF NOT EXISTS patients (id SERIAL PRIMARY KEY, "userId" INT, mrn TEXT, unique_id TEXT, "updatedAt" TIMESTAMPTZ);
       CREATE TABLE IF NOT EXISTS hospital_invoices (id SERIAL PRIMARY KEY, hospital_id BIGINT, bill_number TEXT, total_amount NUMERIC, tax_amount NUMERIC DEFAULT 0, insurance_amount NUMERIC DEFAULT 0, voided_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW());
       CREATE TABLE IF NOT EXISTS hospital_payments (id SERIAL PRIMARY KEY, hospital_id BIGINT, payment_method TEXT, amount NUMERIC, insurance_claim_id BIGINT, status TEXT DEFAULT 'completed', voided_at TIMESTAMPTZ, created_at TIMESTAMPTZ DEFAULT NOW());
       CREATE TABLE IF NOT EXISTS hospital_payment_refunds (id SERIAL PRIMARY KEY, hospital_id BIGINT, payment_id BIGINT, amount NUMERIC, status TEXT DEFAULT 'completed', created_at TIMESTAMPTZ DEFAULT NOW());
@@ -220,6 +222,39 @@ try {
   const missing = await rejects(() => ent.revokeEntitlement(ORG, 'nope', 'accounts_finance', 42));
   check('revoking something that does not exist is a 404', missing?.status === 404);
   check('entitlement still effective for the tenant (seeded package untouched)', (await ent.hasModuleEntitlement(ORG, 'accounts_finance', 'view')) === true);
+
+  // ── OPS-01: cron lease semantics on a real database ─────────────────────────────────────
+  const lease = await import('../../services/cron-lease.service.js');
+  const l1 = await lease.acquireCronLease('audit-job', { ttlSeconds: 60 });
+  const l2 = await lease.acquireCronLease('audit-job', { ttlSeconds: 60 });
+  check('OPS-01: a second process is refused while the lease is held', l1.acquired === true && l2.acquired === false, `first=${l1.acquired} second=${l2.acquired}`);
+  check('OPS-01: only the owner can heartbeat', (await lease.heartbeatCronLease('audit-job', l1.owner_id)) === true && (await lease.heartbeatCronLease('audit-job', 'someone-else')) === false);
+  await lease.releaseCronLease('audit-job', 'someone-else');
+  check('OPS-01: a non-owner cannot release it', (await lease.acquireCronLease('audit-job', { ttlSeconds: 60 })).acquired === false);
+  await lease.releaseCronLease('audit-job', l1.owner_id);
+  const l3 = await lease.acquireCronLease('audit-job', { ttlSeconds: 1 });
+  check('OPS-01: after release the next run can start', l3.acquired === true);
+  await new Promise((r) => setTimeout(r, 1300));
+  const l4 = await lease.acquireCronLease('audit-job', { ttlSeconds: 60 });
+  check('OPS-01: a crashed holder\'s lease expires and is taken over', l4.acquired === true && l4.owner_id !== l3.owner_id);
+  const leaseRace = await Promise.all(Array.from({ length: 5 }, () => lease.acquireCronLease('race-job', { ttlSeconds: 60 })));
+  check('OPS-01: five simultaneous acquirers — exactly one wins', leaseRace.filter((r) => r.acquired).length === 1, `winners=${leaseRace.filter((r) => r.acquired).length}`);
+  await lease.releaseCronLease('audit-job', l4.owner_id);
+
+  // ── OPS-03: UHID assignment ─────────────────────────────────────────────────────────────
+  const mrdSvc = await import('../../services/hospital-mrd.service.js');
+  const u = await ins(`INSERT INTO users (organization_id) VALUES ($1),($1),($1) RETURNING id`, [ORG]);
+  for (const r of u.rows) await ins(`INSERT INTO patients ("userId") VALUES ($1)`, [r.id]);
+  const pts = (await ins(`SELECT id FROM patients WHERE mrn IS NULL ORDER BY id`)).rows;
+  const one = await mrdSvc.assignUhid(ORG, pts[0].id);
+  check('OPS-03: assigning gives a UH<org>-<7 digits> UHID', one.assigned === true && new RegExp(`^UH${ORG}-\\d{7}$`).test(one.uhid), one.uhid);
+  const oneAgain = await mrdSvc.assignUhid(ORG, pts[0].id);
+  check('OPS-03: assigning again is idempotent (same UHID, not reassigned)', oneAgain.assigned === false && oneAgain.uhid === one.uhid);
+  const concurrent = await Promise.all([1, 2, 3, 4].map(() => mrdSvc.assignUhid(ORG, pts[1].id)));
+  check('OPS-03: concurrent assigners give the patient exactly ONE UHID', new Set(concurrent.map((r) => r.uhid)).size === 1 && concurrent.filter((r) => r.assigned).length === 1, `assigned=${concurrent.filter((r) => r.assigned).length}`);
+  const bulk = await mrdSvc.assignMissingUhids(ORG, { limit: 10 });
+  const all = (await ins(`SELECT mrn FROM patients`)).rows.map((r) => r.mrn);
+  check('OPS-03: bulk assigns only the patients that had none; all UHIDs unique', bulk.assigned === 1 && all.every(Boolean) && new Set(all).size === all.length, `bulk assigned=${bulk.assigned}`);
 
   // ── Isolation still holds ───────────────────────────────────────────────────────────────
   const noCtx = await pool.query('SELECT COUNT(*)::int c FROM finance_journal_entries');

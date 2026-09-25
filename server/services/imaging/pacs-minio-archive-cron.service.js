@@ -4,7 +4,7 @@
  * See pacs-minio-archive.service.js for the full architecture rationale.
  */
 import cron from 'node-cron';
-import { tick, tickStart, tickError } from '../../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../../utils/cronRegistry.js';
 import { archivePacsBucketToMinio, isPacsArchiveMinioConfigured } from './pacs-minio-archive.service.js';
 import logger from '../../config/logger.js';
 
@@ -24,7 +24,7 @@ export function startPacsMinioArchiveCron() {
   }
 
   cron.schedule(SCHEDULE, async () => {
-    tickStart('pacs_minio_archive');
+    if (!(await beginJob('pacs_minio_archive'))) return { skipped: true };
     try {
       const result = await archivePacsBucketToMinio();
       tick('pacs_minio_archive', {

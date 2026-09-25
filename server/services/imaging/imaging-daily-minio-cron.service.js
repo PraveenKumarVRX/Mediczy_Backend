@@ -3,7 +3,7 @@
  * Schedule: 02:30 server local time.
  */
 import cron from 'node-cron';
-import { tick, tickStart, tickError } from '../../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../../utils/cronRegistry.js';
 import { transferImagingDailyToMinio } from './imaging-daily-minio-transfer.service.js';
 import { isMinioConfigured, isWasabiConfigured } from './imaging-archive-client.service.js';
 import logger from '../../config/logger.js';
@@ -24,7 +24,7 @@ export function startImagingDailyMinioCron() {
   }
 
   cron.schedule(SCHEDULE, async () => {
-    tickStart('imaging_daily_minio_transfer');
+    if (!(await beginJob('imaging_daily_minio_transfer'))) return { skipped: true };
     try {
       const result = await transferImagingDailyToMinio();
       tick('imaging_daily_minio_transfer', {

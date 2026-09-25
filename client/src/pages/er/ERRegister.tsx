@@ -13,7 +13,7 @@ import {
 import { Siren, UserPlus, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
-import { EMPTY_GUIDED_TRIAGE, deriveGuidedEsi, type GuidedTriage } from '@/utils/erGuidedTriage';
+import { EMPTY_GUIDED_TRIAGE, assessGuidedTriage, type GuidedTriage } from '@/utils/erGuidedTriage';
 
 // ESI levels are never inferred from a legacy colour and vice versa (see server/routes/er-workflow.route.js) —
 // a nurse picks exactly one triage mode at registration time, or none if triage will happen at the bedside.
@@ -61,7 +61,16 @@ export default function ERRegister() {
   const [esiLevel, setEsiLevel] = useState('');
   const [triageLevel, setTriageLevel] = useState('');
   const [guidedTriage, setGuidedTriage] = useState<GuidedTriage>(EMPTY_GUIDED_TRIAGE);
-  const guidedEsiLevel = deriveGuidedEsi(guidedTriage);
+  const [vitals, setVitals] = useState({ heartRate: '', respiratoryRate: '', spo2: '' });
+  const [upTriage, setUpTriage] = useState<{ decision: '' | 'accepted' | 'declined'; reason: string }>({ decision: '', reason: '' });
+  const [triageConfirmed, setTriageConfirmed] = useState(false);
+  const toNum = (v: string) => (v.trim() === '' || Number.isNaN(Number(v)) ? null : Number(v));
+  const parsedVitals = { heartRate: toNum(vitals.heartRate), respiratoryRate: toNum(vitals.respiratoryRate), spo2: toNum(vitals.spo2) };
+  const ageYears = age ? Number(age) : null;
+  // Audit CLN-04: the guided result now includes ESI's danger-zone-vitals step. The server re-derives all of this and
+  // is authoritative; this only drives the form. An accepted up-triage becomes ESI-2, otherwise the tree's level stands.
+  const assessment = assessGuidedTriage(guidedTriage, parsedVitals, ageYears);
+  const guidedEsiLevel = assessment.upTriageSuggested && upTriage.decision === 'accepted' ? 2 : assessment.base;
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -74,6 +83,18 @@ export default function ERRegister() {
       const answered = Object.values(guidedTriage).some(Boolean);
       if (!answered) {
         toast({ title: 'Answer the guided triage questions', variant: 'destructive' });
+        return;
+      }
+      if (assessment.upTriageSuggested && !upTriage.decision) {
+        toast({ title: 'Danger-zone vitals', description: 'Accept ESI-2 or keep ESI-3 with a reason before registering.', variant: 'destructive' });
+        return;
+      }
+      if (assessment.upTriageSuggested && upTriage.decision === 'declined' && upTriage.reason.trim().length < 3) {
+        toast({ title: 'Reason required', description: 'Record why ESI-2 was not assigned.', variant: 'destructive' });
+        return;
+      }
+      if (!triageConfirmed) {
+        toast({ title: 'Confirm the triage', description: 'A nurse must confirm the guided ESI level before registration.', variant: 'destructive' });
         return;
       }
     }
@@ -97,7 +118,11 @@ export default function ERRegister() {
         familyPhone: familyPhone || undefined,
         esiLevel: triageMode === 'esi' ? Number(esiLevel) : triageMode === 'guided' ? guidedEsiLevel : undefined,
         triageLevel: triageMode === 'colour' ? triageLevel : undefined,
-        triageInputs: triageMode === 'guided' ? guidedTriage : undefined,
+        triageInputs: triageMode === 'guided'
+          ? { answers: guidedTriage, vitals: parsedVitals, ageYears, ...(assessment.upTriageSuggested ? { upTriage } : {}) }
+          : undefined,
+        // Picking an ESI level directly IS the clinician's decision; the guided path needs the explicit confirmation above.
+        triageConfirmed: triageMode === 'esi' ? true : triageMode === 'guided' ? triageConfirmed : undefined,
       });
       const json = res.data;
       if (!json.success) {
@@ -235,7 +260,45 @@ export default function ERRegister() {
                 {guidedQuestion('highRiskDistress', 'Is there high-risk severe distress or altered mental status?', guidedTriage.highRiskDistress, (value) => setGuidedTriage((prev) => ({ ...prev, highRiskDistress: value })))}
                 {guidedQuestion('multipleResources', 'Will the patient need two or more ED resources?', guidedTriage.multipleResources, (value) => setGuidedTriage((prev) => ({ ...prev, multipleResources: value })))}
                 {guidedQuestion('oneResource', 'Will the patient need one ED resource?', guidedTriage.oneResource, (value) => setGuidedTriage((prev) => ({ ...prev, oneResource: value })))}
-                <p className="text-xs text-slate-500">Guided result: ESI-{guidedEsiLevel}. A nurse must review the result before registration.</p>
+                <div className="grid grid-cols-3 gap-2 pt-1">
+                  <div>
+                    <Label htmlFor="g-hr" className="text-xs">Heart rate (/min)</Label>
+                    <Input id="g-hr" type="number" inputMode="numeric" value={vitals.heartRate} onChange={(e) => setVitals((v) => ({ ...v, heartRate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="g-rr" className="text-xs">Resp. rate (/min)</Label>
+                    <Input id="g-rr" type="number" inputMode="numeric" value={vitals.respiratoryRate} onChange={(e) => setVitals((v) => ({ ...v, respiratoryRate: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label htmlFor="g-spo2" className="text-xs">SpO₂ (%)</Label>
+                    <Input id="g-spo2" type="number" inputMode="numeric" value={vitals.spo2} onChange={(e) => setVitals((v) => ({ ...v, spo2: e.target.value }))} />
+                  </div>
+                </div>
+                {assessment.ageAssumedAdult && (
+                  <p className="text-xs text-amber-700">Age not entered — adult (strictest) vital-sign limits are being used. Enter the patient's age above.</p>
+                )}
+                {assessment.vitalsMissingForEsi3 && (
+                  <p className="text-xs text-amber-700">ESI-3: record vital signs so danger-zone values are not missed.</p>
+                )}
+                {assessment.upTriageSuggested && (
+                  <div className="rounded-lg border border-red-300 bg-red-50 p-3 space-y-2" role="alert">
+                    <p className="text-sm font-semibold text-red-800">Danger-zone vitals — consider ESI-2</p>
+                    <ul className="text-xs text-red-700 list-disc pl-4">{assessment.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
+                    <div className="flex gap-2">
+                      <Button type="button" size="sm" variant={upTriage.decision === 'accepted' ? 'default' : 'outline'} onClick={() => setUpTriage({ decision: 'accepted', reason: '' })}>Assign ESI-2</Button>
+                      <Button type="button" size="sm" variant={upTriage.decision === 'declined' ? 'default' : 'outline'} onClick={() => setUpTriage((u) => ({ ...u, decision: 'declined' }))}>Keep ESI-3</Button>
+                    </div>
+                    {upTriage.decision === 'declined' && (
+                      <Input placeholder="Reason for keeping ESI-3 (required)" value={upTriage.reason} onChange={(e) => setUpTriage((u) => ({ ...u, reason: e.target.value }))} />
+                    )}
+                  </div>
+                )}
+                <p className="text-sm font-medium text-slate-700">Guided result: ESI-{guidedEsiLevel}</p>
+                <div className="flex items-start gap-3 rounded-lg border p-3">
+                  <Checkbox id="guided-confirm" checked={triageConfirmed} onCheckedChange={(v) => setTriageConfirmed(v === true)} />
+                  <Label htmlFor="guided-confirm" className="cursor-pointer text-sm">I have reviewed this triage and confirm ESI-{guidedEsiLevel}.</Label>
+                </div>
+                <p className="text-xs text-slate-500">Decision support only — pending medical-director approval. The clinician's judgement always prevails.</p>
               </div>
             )}
 

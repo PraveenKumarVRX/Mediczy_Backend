@@ -18,6 +18,11 @@ stash_local_changes() {
   fi
   local msg="deploy-sync-$(date +%Y%m%d%H%M%S)"
   echo "Local changes detected — stashing tracked + untracked files ($msg)..."
+  # Audit OPS-04: another person or agent may be editing this same working tree. Say exactly what is being moved aside
+  # (and how to get it back) instead of doing it silently.
+  echo "  Files being stashed (first 25):"
+  git status --short | head -25 | sed 's/^/    /'
+  echo "  Restore later with: git stash apply \$(git stash list --format='%H %gs' | grep '$msg' | cut -d' ' -f1)   # never a bare pop"
   git stash push -u -m "$msg"
   echo "✓ Stashed. Recover later: git stash list"
 }

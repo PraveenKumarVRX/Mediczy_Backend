@@ -22,7 +22,7 @@ import llmProvider from './ai-brain/llm-provider.js';
 import { triggerOptimization } from './ai-brain/evaluation-engine.js';
 import governanceService from './ai-model-governance.service.js';
 import { v4 as uuidv4 } from 'uuid';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 
 class SelfLearningPipeline {
   constructor() {
@@ -66,7 +66,7 @@ class SelfLearningPipeline {
    */
   async runPipeline() {
     const startTime = Date.now();
-    tickStart('ai_self_learning');
+    if (!(await beginJob('ai_self_learning'))) return { skipped: true };
     console.log('🧠 [SelfLearn] Starting learning pipeline...');
 
     try {

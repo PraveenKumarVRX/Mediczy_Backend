@@ -3,12 +3,12 @@
  */
 import pool from '../db/pgPool.js';
 import { runBedDayCharging } from './ip-bed-day-charging.service.js';
-import { tick, tickStart, tickError } from '../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../utils/cronRegistry.js';
 
 const JOB_NAME = 'hospital-billing-nightly';
 
 export async function runNightlyBilling() {
-  tickStart(JOB_NAME);
+  if (!(await beginJob(JOB_NAME))) return { skipped: true };
   try {
     const hospitals = await pool.query(`SELECT id FROM hospitals WHERE is_active IS NOT FALSE LIMIT 200`);
     let bedDaysPosted = 0;

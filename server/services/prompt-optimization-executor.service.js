@@ -21,7 +21,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import governanceService from './ai-model-governance.service.js';
 
@@ -310,7 +310,7 @@ class PromptOptimizationExecutorService {
   }
 
   async run() {
-    tickStart('prompt_optimizer');
+    if (!(await beginJob('prompt_optimizer'))) return { skipped: true };
     let generated = 0;
     let promoted  = 0;
 

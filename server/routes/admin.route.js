@@ -17,6 +17,7 @@ import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
 import { normalizeFlexibleDate } from '../utils/flexibleDate.js';
+import { auditAction } from '../utils/action-audit.js';
 import {
   CORPORATE_EMPLOYEE_ASSOCIATION_SQL,
   CORPORATE_EMPLOYEE_ROSTER_SQL,
@@ -5263,6 +5264,7 @@ router.patch('/corporate-health-packages/:corporateId/:packageId/status', authUs
       });
     }
 
+    await auditAction({ module: 'corporate', entityType: 'health_package', entityId: packageId, action: `status_${status}`, actor: req.user?.id, details: { corporateId: numericCorporateId, updatedAssignments: updatedAssignments.length, role: req.user?.role } });
     return res.json({
       success: true,
       message: `Package marked ${status}.`,
@@ -5346,6 +5348,7 @@ router.delete('/corporate-health-packages/:corporateId/:packageId', authUser, re
       cleanedPlanCount++;
     }
 
+    await auditAction({ module: 'corporate', entityType: 'health_package', entityId: packageId, action: 'delete', actor: req.user?.id, details: { corporateId: numericCorporateId, deletedAssignments: deletedAssignments.length, cleanedPlanCount, deletedUserIds: deletedAssignments.map((r) => r.userId), role: req.user?.role } });
     return res.json({
       success: true,
       message: `Deleted package from ${deletedAssignments.length} employee${deletedAssignments.length !== 1 ? 's' : ''}.`,
@@ -6068,6 +6071,17 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
       assignedCount = employeeIds.length;
     }
 
+    // COR-03: the upsert REPLACES a partner's stored employee list. Keep the previous value in the audit row so an
+    // overwrite is recoverable.
+    let previousAssignments = [];
+    try {
+      const prev = await postgresSequelize.query(
+        'SELECT partner_id, partner_type, employee_ids FROM corporate_network_assignments WHERE corporate_id = :corporateId',
+        { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
+      const wanted = new Set(normalizedPartners.map((p) => `${p.partnerType}:${p.partnerId}`));
+      previousAssignments = prev.filter((r) => wanted.has(`${r.partner_type}:${r.partner_id}`));
+    } catch { /* table may not exist yet on first use */ }
+
     // Upsert the assignment record — graceful if table doesn't exist
     try {
       // Ensure table exists
@@ -6106,6 +6120,7 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
       console.warn('corporate_network_assignments persistence failed (non-fatal):', dbErr.message);
     }
 
+    await auditAction({ module: 'corporate', entityType: 'network_assignment', entityId: corporateId, action: 'assign_partners', actor: req.user?.id, details: { partners: normalizedPartners, employeeScope: employeeIds || 'all', previous: previousAssignments, role: req.user?.role } });
     return res.json({
       success: true,
       message: `${normalizedPartners.length} partner${normalizedPartners.length !== 1 ? 's' : ''} assigned to ${assignedCount} employee${assignedCount !== 1 ? 's' : ''} successfully`,

@@ -14,7 +14,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import socketService from './socket.service.js';
 
 class SlaTrackerService {
@@ -49,7 +49,7 @@ class SlaTrackerService {
   }
 
   async run() {
-    tickStart('sla_breach_checker');
+    if (!(await beginJob('sla_breach_checker'))) return { skipped: true };
     const t0 = Date.now();
     let breached = 0;
 

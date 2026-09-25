@@ -3,7 +3,7 @@
  * for the scheduling/idempotency model.
  */
 import cron from 'node-cron';
-import { tick, tickStart, tickError } from '../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../utils/cronRegistry.js';
 import { runAutomationTick } from './crm-automations.service.js';
 import logger from '../config/logger.js';
 
@@ -16,7 +16,7 @@ export function startCrmAutomationCron() {
     return;
   }
   cron.schedule(SCHEDULE, async () => {
-    tickStart('crm_automation_tick');
+    if (!(await beginJob('crm_automation_tick'))) return { skipped: true };
     try {
       const result = await runAutomationTick();
       tick('crm_automation_tick', result);

@@ -133,10 +133,64 @@ setInterval(saveToDisk, 60_000).unref(); // persist every minute, don't block sh
 /**
  * Mark a task as currently executing (call at start of cron function)
  */
+// A "running" flag older than this is treated as stale (a job that exited without calling tick/tickError), so a
+// guard that actually blocks re-entry can never silently stop a job for good. Override: CRON_STALE_MINUTES.
+const STALE_MS = (Number(process.env.CRON_STALE_MINUTES) || 30) * 60_000;
+
 export function tickStart(key) {
   const existing = running.get(key);
-  if (existing) return false;
+  if (existing) {
+    const age = Date.now() - Date.parse(existing.startedAt);
+    if (Number.isFinite(age) && age < STALE_MS) return false;
+    console.warn(`[cron] ${key}: previous run flag is ${Math.round(age / 60000)} min old — treating it as stale and starting`);
+  }
   running.set(key, { startedAt: new Date().toISOString(), pid: process.pid });
+  return true;
+}
+
+// ── Cross-process lease (audit OPS-01) ──────────────────────────────────────────────────────────
+// Two PM2 processes (API server + worker) can both schedule the same job. The single-flight flag above is per
+// process, so a DB lease decides which process runs a given tick. FAILS OPEN: if the lease store is unreachable the
+// job still runs (as it did before the lease existed) — a lease problem must never stop a scheduled job.
+const leases = new Map(); // key -> { owner, timer }
+const LEASE_HEARTBEAT_MS = 30_000;
+
+async function leaseModule() {
+  return import('../services/cron-lease.service.js');
+}
+
+function releaseLease(key) {
+  const held = leases.get(key);
+  if (!held) return;
+  clearInterval(held.timer);
+  leases.delete(key);
+  leaseModule().then((m) => m.releaseCronLease(key, held.owner)).catch(() => {});
+}
+
+/**
+ * Start a job if — and only if — no other run holds it, in this process or any other.
+ * Returns true when the caller should run; false when it must skip. The lease is released automatically by
+ * tick() / tickError() / tickEnd().
+ */
+export async function beginJob(key, { ttlSeconds } = {}) {
+  if (!tickStart(key)) {
+    console.warn(`[cron] skipping ${key}: already running in this process`);
+    return false;
+  }
+  try {
+    const m = await leaseModule();
+    const lease = await m.acquireCronLease(key, { ttlSeconds });
+    if (!lease.acquired) {
+      running.delete(key);
+      console.warn(`[cron] skipping ${key}: another process holds the lease`);
+      return false;
+    }
+    const timer = setInterval(() => { m.heartbeatCronLease(key, lease.owner_id, { ttlSeconds }).catch(() => {}); }, LEASE_HEARTBEAT_MS);
+    timer.unref?.();
+    leases.set(key, { owner: lease.owner_id, timer });
+  } catch (e) {
+    console.warn(`[cron] lease unavailable for ${key} (${e.message}) — running without the cross-process guard`);
+  }
   return true;
 }
 
@@ -145,6 +199,7 @@ export function tickStart(key) {
  */
 export function tickEnd(key) {
   running.delete(key);
+  releaseLease(key);
 }
 
 /**
@@ -157,6 +212,7 @@ export function tick(key, details = {}) {
     console.warn(`⚠️  cronRegistry.tick: unknown key "${key}"`);
   }
   running.delete(key); // clear running state
+  releaseLease(key);
   const existing = registry.get(key) || { runCount: 0, errorCount: 0, recentLogs: [] };
   const entry = {
     lastRun: new Date().toISOString(),
@@ -184,6 +240,7 @@ export function tickError(key, errorMessage, details = {}) {
     console.warn(`⚠️  cronRegistry.tickError: unknown key "${key}"`);
   }
   running.delete(key); // clear running state
+  releaseLease(key);
   const existing = registry.get(key) || { runCount: 0, errorCount: 0, recentLogs: [] };
   const entry = {
     lastRun: new Date().toISOString(),
@@ -206,10 +263,8 @@ export function tickError(key, errorMessage, details = {}) {
  * @param {function} fn - async cron function, should return details object
  */
 export async function withCron(key, fn) {
-  if (!tickStart(key)) {
-    console.warn(`[cron] skipping ${key}: already running in this process`);
-    return { skipped: true, reason: 'already_running' };
-  }
+  const inProcess = running.has(key);
+  if (!(await beginJob(key))) return { skipped: true, reason: inProcess ? 'already_running' : 'lease_held' };
   try {
     const details = await fn();
     tick(key, details || {});

@@ -2,7 +2,7 @@
  * PAR-level auto-reorder — scans scm_locations par levels vs on-hand stock.
  */
 import cron from 'node-cron';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import { getScmDb, getScopedScmDb, poStatusAfterReceipt } from './scm-unified.service.js';
 import { requestOperationsApproval } from './operations-governance.service.js';
 
@@ -93,7 +93,7 @@ async function scanOrganization(db, { autoCreatePo }) {
 export function startScmParReorderCron() {
   // Every 6 hours at :45
   cron.schedule('45 */6 * * *', async () => {
-    tickStart('scm_par_reorder');
+    if (!(await beginJob('scm_par_reorder'))) return { skipped: true };
     try {
       const result = await runParReorderScan({ autoCreatePo: process.env.SCM_PAR_AUTO_PO === 'true' });
       tick('scm_par_reorder', result);

@@ -6,7 +6,7 @@ import finance from '../../services/finance-ledger.service.js';
 import financeReports from '../../services/finance-reports.service.js';
 import reconciliation from '../../services/finance-reconciliation.service.js';
 import glPosting from '../../services/finance-gl-posting.service.js';
-import { sendRouteError } from '../../utils/discharge-policy.js';
+import { sendRouteError } from '../../utils/route-errors.js';
 
 const router = express.Router();
 router.use(verifyHospitalToken);
