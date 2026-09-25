@@ -172,3 +172,55 @@
 - **Checked and found fine:** the finance client calls `/api/hospital/finance/...`; the shared client strips a doubled `/api`, so paths resolve.
 - **Contradicts a status report from the other working session:** it stated the phase-1 migration "has never touched a live database". It was applied to production on 2026-09-25 (11 tables, 9 policies, verified by query), and the code shipped in `3941b30d`. The `reset: moving to HEAD` entries in the reflog come from the deploy script stashing and restoring that session's uncommitted files; nothing was lost.
 - **Newest fixes are not live:** `179abb9d` (taxSummary column fix, race-safe journal replay, reconciliation gate at signing) is on `main` but production still runs `3941b30d`.
+
+---
+
+## 9. Remediation status (2026-09-26)
+
+**Merged to `main` (`99f1b6ef`) and pushed. NOT yet deployed to production** — see the rollout runbook
+(`docs/deployment/AUDIT_ROLLOUT_RUNBOOK.md`) for what is still needed and why.
+
+Evidence: 944 server tests (67 new) with **zero regressions** against `main` (the same 8 environment-dependent
+failures exist on both; one pre-existing failure, `adt-beds`, is fixed); 34 client tests; client type-check unchanged
+at 934; **61/61 real-database regression checks** on a disposable non-superuser database
+(`npm run test:phase1-audit-regression`); 69 changed server modules import cleanly; the client production build
+succeeds and contains the new screens.
+
+| ID | Status | What was done / what remains |
+|---|---|---|
+| CLN-01/02/03 | **Fixed** | Sign routes need a permitted role; override approver = the authenticated caller (body approver ignored); packet lookup/update/send are organization-scoped; consent uses the packet's own patient; ADT discharge override likewise. Role lists are configurable (`DISCHARGE_SIGN_ROLES`, `DISCHARGE_OVERRIDE_ROLES`) — **the policy itself is still leadership's decision (§7.2).** |
+| SEC-01/02 | **Fixed** | One resolver (`utils/tenant-identity.js`) reads `organization_id`/`tenant_id`/`hospital_id`; `id` counts only for the legacy `hospital` account; a token with no tenant gets 403. Applied to both hospital middlewares and all 106 `req.user.…\|\| req.user.id` call sites in 23 route files. |
+| FIN-01/02 | **Fixed, proven on a real DB** | Reports keep both an entry and its reversal (net zero); reversal is atomic; `reversal_of` sits on the reversal; a reversal cannot be reversed; 3 concurrent reversals produce one. |
+| FIN-03 | **Fixed** | Closed periods and periods with entries cannot change dates; overlaps refused; posting needs a covering period. |
+| FIN-04/05 | **Fixed** | Fiscal year from the IST date; 12 monthly periods; all entry dates are IST. |
+| FIN-06 | **Fixed** | GST split on invoices; refund reinstates A/R and is keyed on the refund row; positive adjustment reduces A/R; per-remittance settlement keys; input-GST account; impossible source documents rejected. |
+| FIN-07 | **Fixed in code; migration 3 must be applied** | Deferred DB trigger enforces balance at COMMIT. Per-organisation gapless numbering was **not** changed (gaps in journal numbers are permitted; stated limitation). |
+| FIN-08/09 | **Fixed** | Structured errors (no DB text); `GET /finance/reconciliation` + idempotent `POST /finance/reconciliation/repost`; expense approval endpoint added (recorded expenses could never reach the ledger before). |
+| FIN-10 | **Script ready; needs a privileged run** | `server/scripts/ops/force-rls-phase1.mjs` (isolation proven safe). The permission system blocked applying it from the automation. |
+| CLN-04/05 | **Fixed; needs clinical sign-off** | ESI danger-zone vitals with age bands; required up-triage decision; explicit nurse confirmation; role-gated; server authoritative. **Decision support only until the medical director approves the thresholds (§7.3).** |
+| CLN-06 | **Fixed** | Patient/admission verified; one open summary per admission (no duplicates, one survey invitation); `approved` can no longer be written through the edit route; role gate. The 2 duplicate rows already in production are left untouched. **No approve route exists in this router — approval still lives elsewhere (unverified).** |
+| CLN-07 | **Fixed** | Override rows are written in the same transaction as the signature. |
+| OPS-01 | **Fixed — and it was worse than reported** | *No* job was protected: none of the 22 jobs checked `tickStart`'s result and `withCron` was unused. `beginJob` (in-process flag with stale expiry + DB lease, fails open, auto-released) now guards those 22. **16 more schedule callbacks in 12 notification/maintenance services are guarded on the feature branch (`229ce542`) but NOT merged — unverified because Jest could not run (see §10).** 2 services have a different shape and remain unguarded. |
+| OPS-02/03 | **Fixed** | Role gate + audit rows on MRD writes (indexer id is now recorded — it was always null); explicit idempotent UHID assignment `POST /mrd/uhid/assign` (`UH<org>-<seq>`); nothing is auto-assigned — **numbering policy is leadership's (§7.5).** |
+| SEC-03 | **Fixed in code; migration 3 must be applied** | Audit rows for grant/revoke/bootstrap; revoke records who/when. |
+| COR-01 | **By design, unchanged** | Bad fields are blanked with a warning in the upload report; review the report. |
+| COR-02/03 | **Fixed** | Audit rows for package delete/toggle and partner assignment (previous list recorded, so an overwrite is recoverable). |
+| COR-04 | **Resolved — not a finding** | AI analysis of a report is only run at the employee's own request; no worker scans for pending reports. |
+| OPS-04 | **Partly** | The deploy now lists exactly which files it stashes and how to restore. A clean release directory is still a leadership decision (§7.4). |
+| OPS-05 | **Not possible from here** | GitHub Actions cannot be run or read from this host. |
+| OPS-06 | **Tool added** | `scripts/ops/prune-client-assets.mjs` (dry-run by default; keeps anything reachable plus a grace window). Merge old assets with `cp -np` so the grace window works. |
+
+### Found while fixing
+- `grantEntitlement` **failed** whenever `packageName` was omitted (SQL type-inference error) — the grant endpoint was broken. Fixed.
+- `tickStart` guarded nothing (see OPS-01). The lease design also had a deadlock class (a run that never completes would hold its lease forever); fixed on the feature branch.
+- The older dry-run's "reversal nets the original out" check asserted only that the trial balance was *balanced*, so it passed while revenue read −1,000. The new harness asserts amounts.
+
+## 10. Incident during this remediation
+
+`git add -A` in a helper worktree committed a **symlink named `node_modules`** (the `node_modules/` ignore rule matches
+directories only). Merging it replaced the real `server/node_modules` in the shared checkout with a self-referential
+symlink. Production kept running (modules were already loaded) but **any restart, and every server-side script and test,
+would have failed.** `99f1b6ef` untracks the symlink and ignores `**/node_modules`. Re-creating the directory
+(`rm node_modules && npm ci --omit=dev`) was blocked by the permission system and is the first step in the runbook.
+Lesson: never `git add -A` in a worktree that holds symlinked dependencies.
+
