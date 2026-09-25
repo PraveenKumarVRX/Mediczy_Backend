@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 
 /**
@@ -32,6 +32,7 @@ class AppointmentReminderService {
 
     // Run every 30 minutes to check for reminders
     cron.schedule('*/30 * * * *', async () => {
+      if (!(await beginJob('appt_reminder'))) return;
       await this.checkAndSendReminders();
     });
 

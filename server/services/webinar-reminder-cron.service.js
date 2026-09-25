@@ -10,7 +10,7 @@
 
 import cron from 'node-cron';
 import webinarNotificationService from './webinar-notification.service.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 import postgresSequelize from '../db/postgres-sequelize.js';
 
@@ -34,6 +34,7 @@ class WebinarReminderService {
 
     // Run every 30 minutes to check for webinar reminders
     cron.schedule('*/30 * * * *', async () => {
+      if (!(await beginJob('webinar_reminder'))) return;
       await this.checkAndSendReminders();
     });
 

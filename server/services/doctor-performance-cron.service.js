@@ -5,7 +5,7 @@ import { Prescription } from '../models/index.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 
 /**
@@ -39,6 +39,7 @@ class DoctorPerformanceReportService {
 
     // Run every Monday at 9:00 AM
     cron.schedule('0 9 * * 1', async () => {
+      if (!(await beginJob('doctor_performance'))) return;
       await this.generateAndSendReports();
     });
 

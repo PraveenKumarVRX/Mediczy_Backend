@@ -75,3 +75,21 @@ describe('a stale running flag can never stop a job for good', () => {
     tickEnd('system_health');
   });
 });
+
+describe('a run that never completes cannot deadlock its own job', () => {
+  it('clears the stale predecessor\'s lease before acquiring, so a process cannot block itself', async () => {
+    const realNow = Date.now;
+    acquireCronLease.mockResolvedValueOnce({ acquired: true, owner_id: 'first-run' });
+    expect(await beginJob('system_health')).toBe(true);           // ...and this run never calls tick()/tickError()
+    Date.now = () => realNow() + 31 * 60_000;                       // stale window passes
+    try {
+      acquireCronLease.mockResolvedValueOnce({ acquired: true, owner_id: 'second-run' });
+      expect(await beginJob('system_health')).toBe(true);
+      expect(releaseCronLease).toHaveBeenCalledWith('system_health', 'first-run');
+      // ordering: the predecessor was released before the new acquire
+      expect(releaseCronLease.mock.invocationCallOrder[0]).toBeLessThan(acquireCronLease.mock.invocationCallOrder[1]);
+    } finally { Date.now = realNow; }
+    tickEnd('system_health');
+  });
+});
+

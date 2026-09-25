@@ -15,7 +15,7 @@ import Tenant from '../models/postgres/tenant.model.postgres.js';
 import saasBillingService from './saas-billing.service.js';
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 
 // Configuration
 const CONFIG = {
@@ -60,6 +60,7 @@ class AutoSuspensionService {
     }
 
     this.cronJob = cron.schedule(CONFIG.CHECK_INTERVAL, async () => {
+      if (!(await beginJob('auto_suspension'))) return;
       console.log('[AutoSuspension] Running scheduled check...');
       await this.runSuspensionCheck();
     });

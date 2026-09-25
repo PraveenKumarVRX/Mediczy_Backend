@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { Invoice, Payment } from '../models/billing.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 
 /**
@@ -35,6 +35,7 @@ class PaymentReminderService {
 
     // Run daily at 9:00 AM
     cron.schedule('0 9 * * *', async () => {
+      if (!(await beginJob('payment_reminders'))) return;
       await this.checkAndSendPaymentReminders();
     });
 

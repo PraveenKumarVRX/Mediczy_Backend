@@ -17,7 +17,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import sharedPool from '../db/pgPool.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_DIR  = path.join(__dirname, '../tmp/price-sync');
@@ -306,6 +306,7 @@ class DrugPriceSyncService {
 
     // Run daily at 2:30 AM (stagger from other 2 AM crons)
     this._job = cron.schedule('30 2 * * *', async () => {
+      if (!(await beginJob('drug_price_sync'))) return;
       console.log('💊 [drug-price-sync] Starting daily price sync...');
       try {
         tick('drug_price_sync');

@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { Prescription } from '../models/index.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 
 /**
@@ -33,6 +33,7 @@ class PrescriptionExpiryService {
 
     // Run daily at 9:30 AM
     cron.schedule('30 9 * * *', async () => {
+      if (!(await beginJob('prescription_expiry'))) return;
       await this.checkExpiringPrescriptions();
     });
 
