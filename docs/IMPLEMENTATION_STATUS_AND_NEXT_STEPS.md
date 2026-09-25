@@ -22,7 +22,7 @@ whenever picking this project back up after a gap; both the plan and the codebas
 
 ### WP-0.3 in full — what the plan actually asks for
 
-The plan splits this into four sub-packages. Status as of 2026-09-23:
+The plan splits this into four sub-packages. Status as of 2026-09-25:
 
 - **WP-0.3a — Framework, lint and tests: DONE (2026-09-23).** Shipped: `client/src/components/ui/
   placeholder-banner.tsx`, `client/src/components/ui/data-state.tsx` (five-states wrapper), the real
@@ -108,10 +108,8 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
 2. ~~**WP-0.3b**~~ (clinical screens: ICU, EHR's fake-patient bug, PatientEMR, OT, Blood Bank, Clinical
    CDSS, Teleconsult) — done 2026-09-23, **deployed to production 2026-09-24** together with WP-0.3a and
    the executive/finance pass of WP-0.3c.
-3. **WP-0.3c remainder + WP-0.3d** (accounts screens; department screens + `quality-portal.controller.js`
-   server-side fabrication) — lower clinical risk, real financial-integrity risk. Next up.
-4. **Clear the remaining client TypeScript backlog** — the JSX syntax blockers are fixed, so `tsc` now
-   reaches the broader app-wide errors. Keep the CI step advisory until the backlog is resolved.
+3. ~~**WP-0.3c remainder + WP-0.3d**~~ — implemented; WP-0.3c/0.3d production build and static fabrication checks pass. Remaining package acceptance work is allow-list cleanup plus the clinical walkthrough below.
+4. **Complete the remaining whole-package acceptance work** — clear the 37-entry invented-data allow-list (or document legitimate demo/test-only exceptions), clear the app-wide client TypeScript backlog, and complete the clinical walkthrough. Production build is green; the CI typecheck remains advisory until its backlog is resolved.
 5. **Verify WP-1.1 and WP-1.2's specific unverified acceptance criteria** (the hard admission/discharge
    gate; the exact eight-server-path count) — likely small fixes if gaps are found, since the
    underlying services already exist.
