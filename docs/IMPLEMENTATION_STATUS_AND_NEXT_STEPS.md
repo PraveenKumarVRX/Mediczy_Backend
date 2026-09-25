@@ -13,7 +13,7 @@ whenever picking this project back up after a gap; both the plan and the codebas
 |---|---|---|
 | 0.1 Secrets | **Safe subset only** | `.gitignore` fixed, 10 real-value `.env*` files untracked, a silent default-password endpoint closed, `SSM_REQUIRED` fail-closed option added, local pre-commit gitleaks hook added. **Owner action, not done**: rotate the live DB password and JWT secrets (signs out every user — needs an announced window), rotate third-party keys, reset every test account password, then `git-filter-repo` + force-push to purge history (freezes merges, everyone re-clones). |
 | 0.2 Access-rules deploy | Live | Deployed and verified against real role logins. |
-| 0.3 No invented data | **WP-0.3a + WP-0.3b done; WP-0.3c partial; WP-0.3d remains** | See below. |
+| 0.3 No invented data | **WP-0.3a–d implementation complete; walkthrough and allow-list cleanup remain** | See below. |
 | 0.4 Payments | Live | Migration applied to production. |
 | 0.5 Tenant isolation (SCM/blood bank/CSSD/dietary) | Done | 98-check verification script, non-superuser role. |
 | 0.6 CI gate and release pipeline | Partial | `ci.yml`, gitleaks CI job, `/healthz`, real gating health check + auto-revert all built and now proven across 4 real deploys today. **Not done**: the pipeline itself has never actually run on GitHub Actions (no `gh auth login` access to verify); branch protection not applied; `CODEOWNERS` still has placeholder usernames. |
@@ -48,12 +48,9 @@ The plan splits this into four sub-packages. Status as of 2026-09-23:
     bug that had made the dashboard's own schedule fetch always 404. Commit `82ed5fe8`.
   
   Byproduct of this work: discovered `npx tsc --noEmit -p tsconfig.app.json` (the command CI actually
-  runs) silently reports zero diagnostics for the entire program, because a pre-existing syntax error in
-  `src/components/admin/ChatDashboard.tsx` short-circuits type-checking once pulled in transitively —
-  proven with a planted test error. Real verification for this session used a temporary isolated
-  `tsconfig.isolated.json` (`"files"` list, not `"include"`) excluding that file. **Not fixed**: the
-  underlying `ChatDashboard.tsx` syntax error, and therefore CI's own typecheck step, remain broken —
-  see follow-ups below.
+  runs) had been blocked by pre-existing JSX syntax errors in `src/components/admin/ChatDashboard.tsx`
+  and `src/pages/chat/VideoChatdoctor.tsx`. Those syntax blockers are now fixed, but full client
+  typecheck still reports an app-wide backlog, so CI typecheck remains advisory.
 - **WP-0.3c — Executive and finance screens: DONE (2026-09-24).**
   - `server/routes/hospital/executive-dashboard.route.js`: `/coo/operations` now real (beds by ward, hourly
     admissions/discharges/ER arrivals, ALOS by ward, pending discharges, ER wait); `/cfo/financials` returns
@@ -72,23 +69,15 @@ The plan splits this into four sub-packages. Status as of 2026-09-23:
     aggregating), supply alerts (no reorder levels in SCM), maintenance/equipment (WP-1.7), per-payer settlements,
     department revenue (invoices carry no department), all Accounts finance-ledger pages.
   - Not touched: `AccountsSupportPage` (static help text; its helpdesk phone/email look invented — confirm or remove).
-- **WP-0.3d — Department screens + server-side fabrication (not started):**
-  `server/controller/quality-portal.controller.js` (defines and returns fallback constants when data is
-  missing — delete them, return real data only), `quality/QualityModulePages.tsx` (14 seed arrays),
-  `dept/DietaryDashboardPage.tsx`/`DietaryMonitoringPage.tsx`/`DietaryModulePages.tsx`,
-  `dept/BiomedicalDashboardPage.tsx`/`BiomedicalMonitoringPage.tsx`/`BiomedicalModulePages.tsx`,
-  `dept/ConsentDashboardPage.tsx`, random-number vitals in `doctor/DoctorTriage.tsx` **and**
-  `RemoteHealthMonitoring.tsx` (the plan wants these *deleted*, not just labeled — a stricter bar than
-  the "already-labeled demo mode is fine" allowance an earlier pass applied to
-  `RemoteHealthMonitoring.tsx`'s ICU/ER modes; reconcile this before touching that file again),
-  `display/ICUBoardDisplay.tsx` (swallows errors silently — needs a visible "data may be stale, last
-  updated at" marker).
-- **Whole-package acceptance criteria** (from the plan, verbatim): with every API mocked to fail, no
+- **WP-0.3d — Department screens + server-side fabrication: IMPLEMENTED (2026-09-25).** The committed department pass (`03dc1eac`) rewired dietary, biomedical, and consent screens to live endpoints and removed fabricated records. The follow-up pass in the current worktree removes quality-portal fallback datasets, replaces quality empty/error states with database-backed or explicit unavailable states, removes random triage/remote-monitoring clinical fallbacks, and surfaces ICU-board load/SSE failures with retry/last-updated status. `node scripts/ci/check-invented-data-statics.mjs` passes with 37 known allow-listed files; the remaining allow-list is tracked debt outside the completed named implementation. The documented client JSX blockers were fixed in `ChatDashboard.tsx` and `VideoChatdoctor.tsx`; full client typecheck still has unrelated backlog and remains advisory.
+- **Whole-package acceptance criteria (from the plan, verbatim):** with every API mocked to fail, no
   page shows a person name/count/trend that didn't come from the API; with every API returning empty,
   every page shows an explicit empty state; the lint rule passes with an **empty allow-list**; server
   responses never contain fabricated fallback objects (`null` + `dataAvailable: false` instead); the
   clinical lead signs off a walkthrough of ICU, EHR, theatre and blood-bank screens on a hospital with
-  no data.
+  no data. **Remaining acceptance work:** remove the remaining 37 known allow-listed files (or explicitly
+  document why each is legitimately labeled demo/test data), clear the full client typecheck backlog, and
+  complete the clinical walkthrough.
 
 Separately fixed this session, outside the plan's own WP-0.3 file list (found via a narrower, more
 precise search than the plan's heuristic): `Ayushman.tsx` (fabricated government health-scheme coverage
@@ -121,9 +110,8 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
    the executive/finance pass of WP-0.3c.
 3. **WP-0.3c remainder + WP-0.3d** (accounts screens; department screens + `quality-portal.controller.js`
    server-side fabrication) — lower clinical risk, real financial-integrity risk. Next up.
-4. **Fix `ChatDashboard.tsx`'s syntax error** (found as a byproduct of WP-0.3b) — CI's real typecheck
-   command currently passes vacuously for the whole client. This is a correctness gap in the safety net
-   itself, not just a code-quality item.
+4. **Clear the remaining client TypeScript backlog** — the JSX syntax blockers are fixed, so `tsc` now
+   reaches the broader app-wide errors. Keep the CI step advisory until the backlog is resolved.
 5. **Verify WP-1.1 and WP-1.2's specific unverified acceptance criteria** (the hard admission/discharge
    gate; the exact eight-server-path count) — likely small fixes if gaps are found, since the
    underlying services already exist.

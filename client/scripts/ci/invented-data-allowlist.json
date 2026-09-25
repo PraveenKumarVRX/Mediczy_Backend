@@ -52,30 +52,6 @@
     "reason": "false positive: `WELLNESS_THEMES` is static calendar-theme configuration, not person data"
   },
   {
-    "file": "src/pages/dept/BiomedicalModulePages.tsx",
-    "reason": "REAL, WP-0.3d: `devicesData` fabricated; plan says wire to WP-1.7's real endpoints, honest state until then"
-  },
-  {
-    "file": "src/pages/dept/BiomedicalMonitoringPage.tsx",
-    "reason": "REAL, WP-0.3d: `devices` fabricated; same as BiomedicalModulePages.tsx"
-  },
-  {
-    "file": "src/pages/dept/ConsentDashboardPage.tsx",
-    "reason": "REAL, WP-0.3d: `recentActivity` fabricated consent-log data"
-  },
-  {
-    "file": "src/pages/dept/DietaryDashboardPage.tsx",
-    "reason": "REAL, WP-0.3d: dietTypeData/recentOrders/allergyAlerts fabricated — allergyAlerts on fake data is clinically risky, prioritize"
-  },
-  {
-    "file": "src/pages/dept/DietaryModulePages.tsx",
-    "reason": "REAL, WP-0.3d: ordersData/patientsData fabricated patient-linked data"
-  },
-  {
-    "file": "src/pages/dept/DietaryMonitoringPage.tsx",
-    "reason": "REAL, WP-0.3d: `patientsData` fabricated"
-  },
-  {
     "file": "src/pages/doctor/DoctorAssist.tsx",
     "reason": "false positive: MEDICAL_SPECIALTIES/MEDICAL_SOURCES/QUERY_CATEGORIES are static reference lists, not person data"
   },

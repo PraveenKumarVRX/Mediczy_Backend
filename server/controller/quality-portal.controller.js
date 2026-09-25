@@ -4,138 +4,6 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import Ticket from '../models/ticket.model.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 
-const FALLBACK_CHAPTERS = [
-  { chapter: 'AAC', title: 'Access, Assessment and Continuity of Care', owner: 'Clinical Ops', score: 93, gap: 2, status: 'Compliant' },
-  { chapter: 'COP', title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 6, status: 'Watchlist' },
-  { chapter: 'MOM', title: 'Management of Medication', owner: 'Pharmacy', score: 84, gap: 9, status: 'Action' },
-  { chapter: 'HIC', title: 'Hospital Infection Control', owner: 'Infection Control', score: 96, gap: 1, status: 'Compliant' },
-  { chapter: 'FMS', title: 'Facility Management & Safety', owner: 'Admin', score: 82, gap: 11, status: 'Action' },
-  { chapter: 'IMS', title: 'Information Management System', owner: 'IT/EDP', score: 79, gap: 13, status: 'Action' },
-];
-
-const FALLBACK_INCIDENTS = [
-  { id: 'INC-2407', category: 'Patient Safety', location: 'ICU', severity: 'High', aging: '2 days', owner: 'Dr. Rekha', status: 'RCA Pending' },
-  { id: 'INC-2406', category: 'Medication Error', location: 'Pharmacy', severity: 'Medium', aging: '1 day', owner: 'Pharm QA', status: 'CAPA Open' },
-  { id: 'INC-2405', category: 'Near Miss', location: 'OT', severity: 'Low', aging: '6 hrs', owner: 'OT Manager', status: 'Under Review' },
-  { id: 'INC-2404', category: 'Falls', location: 'Ward 5A', severity: 'Medium', aging: '4 days', owner: 'Nursing Lead', status: 'Closed' },
-  { id: 'INC-2403', category: 'Equipment', location: 'NICU', severity: 'High', aging: '3 days', owner: 'Bio-Med', status: 'CAPA Open' },
-];
-
-const FALLBACK_ASSESSMENTS = [
-  { name: 'Mock NABH Round 1', scope: 'All Depts', date: '26 Mar 2026', auditor: 'QA Core Team', status: 'Scheduled' },
-  { name: 'Medication Safety Audit', scope: 'Pharmacy + ICU', date: '24 Mar 2026', auditor: 'Dr. Menon', status: 'In Progress' },
-  { name: 'Fire & Safety Drill', scope: 'Campus', date: '30 Mar 2026', auditor: 'Safety Officer', status: 'Planned' },
-  { name: 'Consent Documentation Review', scope: 'OT + Wards', date: '02 Apr 2026', auditor: 'Legal & Quality', status: 'Planned' },
-];
-
-const FALLBACK_POLICIES = [
-  { title: 'Medication Error Disclosure', version: 'v3.2', owner: 'Quality Office', review: '15 Apr 2026', status: 'Approved' },
-  { title: 'Sentinel Event RCA Workflow', version: 'v2.8', owner: 'Clinical Governance', review: '30 Mar 2026', status: 'Review Due' },
-  { title: 'Hand Hygiene Observation SOP', version: 'v4.1', owner: 'HIC Team', review: '09 May 2026', status: 'Approved' },
-  { title: 'Document Control Matrix', version: 'v1.9', owner: 'Accreditation Cell', review: '22 Mar 2026', status: 'Review Due' },
-];
-
-const FALLBACK_NABH_TEMPLATES = [
-  { code: 'AAC-01', title: 'Initial Assessment Checklist', version: 'v1.0', owner: 'Clinical Ops', format: 'Checklist', status: 'Approved' },
-  { code: 'COP-03', title: 'Discharge Planning Record', version: 'v1.0', owner: 'Nursing', format: 'Form', status: 'Approved' },
-  { code: 'MOM-02', title: 'Medication Reconciliation Audit', version: 'v1.0', owner: 'Pharmacy QA', format: 'Audit', status: 'Approved' },
-  { code: 'HIC-04', title: 'Hand Hygiene Observation', version: 'v1.0', owner: 'HIC Team', format: 'Tracer', status: 'Approved' },
-];
-
-const FALLBACK_FEEDBACK = [
-  { channel: 'IP Survey', responses: 186, nps: 71, complaints: 4, owner: 'Patient Relations' },
-  { channel: 'OPD Kiosk', responses: 322, nps: 64, complaints: 11, owner: 'Front Office' },
-  { channel: 'WhatsApp Follow-up', responses: 140, nps: 74, complaints: 3, owner: 'CRM Team' },
-  { channel: 'Discharge Callback', responses: 92, nps: 69, complaints: 2, owner: 'Nursing Audit' },
-];
-
-const FALLBACK_REPORTS = [
-  { name: 'Board Quality Pack', cadence: 'Monthly', audience: 'Leadership', status: 'Ready' },
-  { name: 'NABH Gap Tracker', cadence: 'Weekly', audience: 'NABH Cell', status: 'Live' },
-  { name: 'Incident Aging Dashboard', cadence: 'Daily', audience: 'Dept Heads', status: 'Live' },
-  { name: 'Patient Feedback Digest', cadence: 'Weekly', audience: 'Patient Experience', status: 'Draft' },
-];
-
-const FALLBACK_AUDIT_REPORTS = [
-  { report: 'RCA Summary - ICU Event', type: 'Adverse Event', findings: 5, closed: 3, owner: 'Quality Lead', status: 'Open' },
-  { report: 'NABH Documentation Audit', type: 'Internal Audit', findings: 12, closed: 10, owner: 'NABH Coordinator', status: 'Review' },
-  { report: 'Medication Reconciliation Audit', type: 'Clinical Audit', findings: 8, closed: 8, owner: 'Pharmacy QA', status: 'Closed' },
-  { report: 'Biomedical Calibration Audit', type: 'Compliance Audit', findings: 4, closed: 2, owner: 'Bio-Med', status: 'Open' },
-];
-
-const FALLBACK_INDICATORS = [
-  { metric: 'Hand Hygiene Compliance', target: '95%', actual: '92%', trend: '+3%', owner: 'HIC Team' },
-  { metric: 'Patient Identification Accuracy', target: '100%', actual: '99.4%', trend: '+0.4%', owner: 'Nursing' },
-  { metric: 'Medication Turnaround', target: '< 15 min', actual: '18 min', trend: '-2 min', owner: 'Pharmacy' },
-  { metric: 'Discharge Summary TAT', target: '< 2 hrs', actual: '1.6 hrs', trend: '+0.3 hrs', owner: 'MRD' },
-  { metric: 'Incident Closure SLA', target: '90%', actual: '86%', trend: '+5%', owner: 'Quality' },
-];
-
-const FALLBACK_ACCREDITATION = [
-  { milestone: 'Gap Closure Submission', due: '28 Mar 2026', owner: 'NABH Coordinator', completion: 72 },
-  { milestone: 'Policy Harmonization', due: '04 Apr 2026', owner: 'Quality Secretariat', completion: 64 },
-  { milestone: 'Departmental Mock Survey', due: '12 Apr 2026', owner: 'Dept Champions', completion: 41 },
-  { milestone: 'Board Readiness Review', due: '18 Apr 2026', owner: 'Leadership', completion: 22 },
-];
-
-const FALLBACK_SETTINGS = [
-  { title: 'Escalation Matrix', text: 'Severity-based incident routing to quality lead, medical superintendent, and unit heads.' },
-  { title: 'Document Control', text: 'Versioning, archival retention, review reminders, and approval authority mapping.' },
-  { title: 'Audit Templates', text: 'Reusable mock survey checklists, tracer tools, and departmental scorecards.' },
-];
-
-const FALLBACK_SUPPORT = [
-  { title: 'NABH Command Desk', text: 'Daily war-room for standards interpretation, gap tracking, and survey readiness.' },
-  { title: 'Quality Training Library', text: 'Orientation decks, CAPA guides, RCA templates, and mock audit playbooks.' },
-  { title: 'Escalation Help', text: 'Critical event support for sentinel events, patient safety incidents, and compliance breaches.' },
-];
-
-const FALLBACK_JCI_CHAPTERS = [
-  { chapter: 'IPSG', title: 'International Patient Safety Goals', owner: 'Patient Safety', score: 85, gap: 6, status: 'Watchlist' },
-  { chapter: 'ACC',  title: 'Access to Care and Continuity of Care', owner: 'Clinical Ops', score: 90, gap: 3, status: 'Compliant' },
-  { chapter: 'PCC',  title: 'Patient and Family Rights', owner: 'Patient Relations', score: 82, gap: 8, status: 'Action' },
-  { chapter: 'AOP',  title: 'Assessment of Patients', owner: 'Nursing', score: 87, gap: 5, status: 'Watchlist' },
-  { chapter: 'COP',  title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 5, status: 'Watchlist' },
-  { chapter: 'ASC',  title: 'Anesthesia and Surgical Care', owner: 'OT Manager', score: 91, gap: 2, status: 'Compliant' },
-  { chapter: 'MMU',  title: 'Medication Management and Use', owner: 'Pharmacy', score: 83, gap: 9, status: 'Action' },
-  { chapter: 'QPS',  title: 'Quality Improvement and Patient Safety', owner: 'Quality', score: 86, gap: 5, status: 'Watchlist' },
-  { chapter: 'PCI',  title: 'Prevention and Control of Infections', owner: 'Infection Control', score: 94, gap: 2, status: 'Compliant' },
-  { chapter: 'GLD',  title: 'Governance, Leadership, and Direction', owner: 'Leadership', score: 89, gap: 4, status: 'Watchlist' },
-  { chapter: 'FMS',  title: 'Facility Management and Safety', owner: 'Admin', score: 80, gap: 11, status: 'Action' },
-  { chapter: 'SQE',  title: 'Staff Qualifications and Education', owner: 'HR', score: 84, gap: 7, status: 'Watchlist' },
-  { chapter: 'MCI',  title: 'Management of Communication and Information', owner: 'IT/EDP', score: 78, gap: 14, status: 'Action' },
-];
-
-const FALLBACK_JCI_TEMPLATES = [
-  { code: 'IPSG-01', title: 'Patient Identification Protocol', version: 'v1.0', owner: 'Patient Safety', format: 'Checklist', status: 'Approved' },
-  { code: 'ACC-02',  title: 'Transfer of Care Summary', version: 'v1.0', owner: 'Clinical Ops', format: 'Form', status: 'Approved' },
-  { code: 'AOP-03',  title: 'Patient Assessment Framework', version: 'v1.0', owner: 'Nursing', format: 'Form', status: 'Draft' },
-  { code: 'COP-04',  title: 'Individualized Care Plan', version: 'v1.0', owner: 'Nursing', format: 'Template', status: 'Approved' },
-  { code: 'QPS-05',  title: 'QI Project Charter', version: 'v1.0', owner: 'Quality', format: 'Audit', status: 'Approved' },
-  { code: 'PCI-06',  title: 'Infection Surveillance Log', version: 'v1.0', owner: 'Infection Control', format: 'Tracer', status: 'Approved' },
-];
-
-const FALLBACK_WORK_QUEUES = [
-  { label: 'CAPAs Due This Week', value: '9', detail: '3 overdue, 6 on schedule', tone: 'text-red-600' },
-  { label: 'Policies Up For Review', value: '12', detail: '4 high-priority governance docs', tone: 'text-amber-600' },
-  { label: 'Patient Experience Flags', value: '7', detail: '4 service, 3 communication issues', tone: 'text-blue-600' },
-  { label: 'Leadership Reports Ready', value: '5', detail: 'Board pack, NABH tracker, RCA digest', tone: 'text-emerald-600' },
-];
-
-const FALLBACK_LEADERSHIP = [
-  ['Survey Readiness', '72% overall closure evidence uploaded'],
-  ['High-Risk Departments', 'ICU, Pharmacy, IT/EDP'],
-  ['Open Sentinel Reviews', '2 active executive follow-ups'],
-  ['Document Control', '12 policies due this week'],
-];
-
-const FALLBACK_AUDITS = [
-  ['Internal Audit', 'ICU', '18 Mar', 'Dr. Mehta', 'Scheduled'],
-  ['NABH Mock', 'Pharmacy', '22 Mar', 'QA Team', 'Scheduled'],
-  ['Infection Control', 'OT', '25 Mar', 'Dr. Verma', 'Confirmed'],
-  ['Fire Safety', 'All Depts', '30 Mar', 'Safety Ofcr', 'Pending'],
-];
-
 const getOrgId = (req) => Number(req.user?.organization_id || req.user?.tenant_id || req.user?.hospital_id || 0) || null;
 
 const tableExists = async (tableName) => {
@@ -146,13 +14,9 @@ const tableExists = async (tableName) => {
   return Boolean(rows[0]?.table_name);
 };
 
-const safeQuery = async (sql, replacements = {}) => {
-  try {
-    return await postgresSequelize.query(sql, { replacements, type: QueryTypes.SELECT });
-  } catch {
-    return [];
-  }
-};
+const query = async (sql, replacements = {}) => (
+  postgresSequelize.query(sql, { replacements, type: QueryTypes.SELECT })
+);
 
 const parseJson = (value) => {
   if (!value) return {};
@@ -175,7 +39,7 @@ const formatDateLabel = (value, fallback = 'TBD') => {
 
 const getFeedbackSnapshot = async (organizationId) => {
   if (await tableExists('prems_responses')) {
-    const premsRows = await safeQuery(
+    const premsRows = await query(
       `SELECT
          visit_type,
          COUNT(*) AS responses,
@@ -199,11 +63,9 @@ const getFeedbackSnapshot = async (organizationId) => {
     }
   }
 
-  if (!(await tableExists('appointments'))) {
-    return FALLBACK_FEEDBACK;
-  }
+  if (!(await tableExists('appointments'))) return [];
 
-  const feedbackRows = await safeQuery(
+  const feedbackRows = await query(
     `SELECT
        COUNT(*) FILTER (WHERE COALESCE("patientRating", 0) > 0) AS responses,
        ROUND(COALESCE(AVG(NULLIF("patientRating", 0)), 0), 1) AS avg_rating,
@@ -215,9 +77,7 @@ const getFeedbackSnapshot = async (organizationId) => {
 
   const row = feedbackRows[0] || {};
   const responses = Number(row.responses || 0);
-  if (!responses) {
-    return FALLBACK_FEEDBACK;
-  }
+  if (!responses) return [];
 
   const avgRating = Number(row.avg_rating || 0);
   const nps = Math.max(0, Math.min(100, Math.round(avgRating * 20)));
@@ -227,11 +87,9 @@ const getFeedbackSnapshot = async (organizationId) => {
 };
 
 const getIncidentSnapshot = async (organizationId) => {
-  if (!(await tableExists('tickets'))) {
-    return FALLBACK_INCIDENTS;
-  }
+  if (!(await tableExists('tickets'))) return [];
 
-  const rows = await safeQuery(
+  const rows = await query(
     `SELECT
        COALESCE("ticketNumber", CONCAT('TKT-', id)) AS id,
        COALESCE(category, 'general') AS category,
@@ -256,9 +114,7 @@ const getIncidentSnapshot = async (organizationId) => {
     { organizationId }
   );
 
-  if (!rows.length) {
-    return FALLBACK_INCIDENTS;
-  }
+  if (!rows.length) return [];
 
   return rows.map((row) => ({
     id: row.id,
@@ -272,11 +128,9 @@ const getIncidentSnapshot = async (organizationId) => {
 };
 
 const getQualityPoliciesRecords = async () => {
-  if (!(await tableExists('audit_logs'))) {
-    return FALLBACK_POLICIES;
-  }
+  if (!(await tableExists('audit_logs'))) return [];
 
-  const rows = await safeQuery(
+  const rows = await query(
     `SELECT resource_id, data_fields, changes_after, COALESCE(timestamp, created_at) AS happened_at
      FROM audit_logs
      WHERE resource_type = 'quality_policy'
@@ -284,9 +138,7 @@ const getQualityPoliciesRecords = async () => {
      LIMIT 50`
   );
 
-  if (!rows.length) {
-    return FALLBACK_POLICIES;
-  }
+  if (!rows.length) return [];
 
   const seen = new Set();
   const policies = [];
@@ -308,7 +160,7 @@ const getQualityPoliciesRecords = async () => {
     });
   }
 
-  return policies.length ? policies : FALLBACK_POLICIES;
+  return policies;
 };
 
 const ageLabel = (dateValue) => {
@@ -377,13 +229,13 @@ const buildQualityKpis = (incidents, feedback) => {
   const openIncidents = incidents.filter((item) => item.status !== 'Closed').length;
   const critical = incidents.filter((item) => item.severity === 'High').length;
   const closed = incidents.filter((item) => item.status === 'Closed').length;
-  const jciAvg = Math.round(FALLBACK_JCI_CHAPTERS.reduce((s, c) => s + c.score, 0) / FALLBACK_JCI_CHAPTERS.length);
+  const responses = feedback.reduce((sum, item) => sum + item.responses, 0);
+  const complaints = feedback.reduce((sum, item) => sum + item.complaints, 0);
   return [
-    { label: 'NABH Score', value: '87%', sub: '+2% this quarter' },
-    { label: 'JCI Score', value: `${jciAvg}%`, sub: `Across ${FALLBACK_JCI_CHAPTERS.length} chapters` },
-    { label: 'Open NCRs', value: String(openIncidents || 14), sub: `${critical || 4} critical` },
-    { label: 'Closed NCRs', value: String(closed || 38), sub: 'This month' },
-    { label: 'Patient Experience', value: `${feedback[0]?.nps ?? 71}`, sub: 'Current quality sentiment' },
+    { label: 'Open Incidents', value: String(openIncidents), sub: `${critical} high severity` },
+    { label: 'Closed Incidents', value: String(closed), sub: 'From the incident register' },
+    { label: 'Feedback Responses', value: String(responses), sub: 'From captured PREMS responses' },
+    { label: 'Feedback Complaints', value: String(complaints), sub: 'Responses requiring follow-up' },
   ];
 };
 
@@ -400,24 +252,24 @@ const buildPortalData = async (req) => {
     source: 'quality-portal-api',
     organizationId,
     kpis,
-    chapters: FALLBACK_CHAPTERS,
     incidents,
-    workQueues: FALLBACK_WORK_QUEUES,
-    audits: FALLBACK_AUDITS,
-    leadership: FALLBACK_LEADERSHIP,
-    assessments: FALLBACK_ASSESSMENTS,
-    auditReports: FALLBACK_AUDIT_REPORTS,
-    accreditation: FALLBACK_ACCREDITATION,
-    indicators: FALLBACK_INDICATORS,
     policies,
-    nabhTemplates: FALLBACK_NABH_TEMPLATES,
-    jciChapters: FALLBACK_JCI_CHAPTERS,
-    jciTemplates: FALLBACK_JCI_TEMPLATES,
-    reports: FALLBACK_REPORTS,
     feedback,
-    settings: FALLBACK_SETTINGS,
-    support: FALLBACK_SUPPORT,
-    activeFrameworks: ['nabh', 'jci'],
+    chapters: [],
+    workQueues: [],
+    audits: [],
+    leadership: [],
+    assessments: [],
+    auditReports: [],
+    accreditation: [],
+    indicators: [],
+    nabhTemplates: [],
+    jciChapters: [],
+    jciTemplates: [],
+    reports: [],
+    settings: [],
+    support: [],
+    activeFrameworks: [],
   };
 };
 
@@ -440,23 +292,23 @@ export const getQualityIncidents = async (req, res) => {
 };
 
 export const getQualityAssessments = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_ASSESSMENTS });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualityAuditReports = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_AUDIT_REPORTS });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualityAccreditation = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_ACCREDITATION });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualityKpis = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_INDICATORS });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualityNabhTemplates = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_NABH_TEMPLATES });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualityPolicies = async (_req, res) => {
@@ -478,19 +330,19 @@ export const getQualityFeedback = async (req, res) => {
 };
 
 export const getQualityReports = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_REPORTS });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualitySettings = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_SETTINGS });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualitySupport = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_SUPPORT });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const getQualityNabhCompliance = async (_req, res) => {
-  return res.status(200).json({ success: true, data: FALLBACK_CHAPTERS });
+  return res.status(200).json({ success: true, data: [] });
 };
 
 export const createQualityIncident = async (req, res) => {

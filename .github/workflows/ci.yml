@@ -58,8 +58,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
-      # Advisory until the existing findings are cleaned up: tsc currently reports syntax errors in two unrelated
-      # files (ChatDashboard.tsx, VideoChatdoctor.tsx) and eslint has a backlog. Flip these to required once green.
+      # Advisory until the existing TypeScript backlog is cleaned up: production build is green,
+      # but full tsc still reports unrelated app-wide type errors.
       - name: Type-check (advisory)
         continue-on-error: true
         run: npx tsc --noEmit -p tsconfig.app.json

@@ -853,7 +853,7 @@ const Chat = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </MainLayout>
+    </Layout>
   );
 };
 

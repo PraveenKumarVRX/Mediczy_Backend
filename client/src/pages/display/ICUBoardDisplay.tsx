@@ -46,35 +46,51 @@ function Vital({ label, value, unit = '' }: { label: string; value: string | num
 export default function ICUBoardDisplay() {
   const [beds, setBeds] = useState<ICUBed[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [liveError, setLiveError] = useState<string | null>(null);
   const [teleOpen, setTeleOpen] = useState(false);
   const [teleSession, setTeleSession] = useState<{ serverUrl: string; token: string } | null>(null);
 
   const startTeleIcu = async () => {
-    const res = await fetch('/api/display/kiosk/video-session', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ purpose: 'tele-icu', roomName: `tele-icu-${Date.now()}` }),
-    });
-    const json = await res.json();
-    if (json.serverUrl && json.token) {
+    setError(null);
+    try {
+      const res = await fetch('/api/display/kiosk/video-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ purpose: 'tele-icu', roomName: `tele-icu-${Date.now()}` }),
+      });
+      if (!res.ok) throw new Error(`Video session request failed (${res.status})`);
+      const json = await res.json();
+      if (!json.serverUrl || !json.token) throw new Error('Video session response was incomplete');
       setTeleSession({ serverUrl: json.serverUrl, token: json.token });
       setTeleOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start tele-consultation');
     }
   };
 
   const fetchICU = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     try {
       const res = await fetch('/api/display/icu-board');
+      if (!res.ok) throw new Error(`ICU board request failed (${res.status})`);
       const json = await res.json();
-      if (json.success) {
-        setBeds(json.beds);
-        setLastUpdated(new Date());
-      }
-    } catch (_) {}
+      if (!json.success || !Array.isArray(json.beds)) throw new Error('ICU board response was invalid');
+      setBeds(json.beds);
+      setLastUpdated(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load ICU board');
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
 
   useEffect(() => {
     const es = new EventSource('/api/display/events?zone=icu');
+    es.onerror = () => setLiveError('Live vitals connection lost. Retrying automatically.');
+    es.addEventListener('open', () => setLiveError(null));
     es.addEventListener('vitals_update', (e) => {
       try {
         const { bedId, vitals } = JSON.parse((e as MessageEvent).data);
@@ -101,7 +117,9 @@ export default function ICUBoardDisplay() {
           };
         }));
         setLastUpdated(new Date());
-      } catch (_) {}
+      } catch (err) {
+        setLiveError('Received an invalid live vitals update.');
+      }
     });
     es.addEventListener('ambient_deterioration', (e) => {
       try {
@@ -111,7 +129,9 @@ export default function ICUBoardDisplay() {
           if (bed.bed_number !== bedId) return bed;
           return { ...bed, alert_level: alert.severity === 'critical' ? 'red' : 'orange' };
         }));
-      } catch (_) {}
+      } catch (err) {
+        setLiveError('Received an invalid deterioration alert.');
+      }
     });
     return () => es.close();
   }, []);
@@ -129,6 +149,19 @@ export default function ICUBoardDisplay() {
   return (
     <DisplayShell zone="icu" zoneName="ICU Nursing Station" fullscreen>
       <div className="h-full flex flex-col p-4 gap-4">
+
+        {isLoading && beds.length === 0 && (
+          <div className="rounded-lg border border-gray-600 bg-gray-800/60 px-3 py-2 text-sm text-gray-300">Loading ICU board…</div>
+        )}
+        {error && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-500 bg-red-950/50 px-3 py-2 text-sm text-red-200">
+            <span>{error}</span>
+            <button type="button" onClick={fetchICU} className="shrink-0 rounded border border-red-400 px-2 py-1 text-xs">Retry</button>
+          </div>
+        )}
+        {liveError && (
+          <div className="rounded-lg border border-amber-500 bg-amber-950/40 px-3 py-2 text-sm text-amber-200">{liveError}</div>
+        )}
 
         {/* Summary strip */}
         <div className="flex justify-end shrink-0">
@@ -152,6 +185,11 @@ export default function ICUBoardDisplay() {
 
         {/* Bed grid */}
         <div className="flex-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 overflow-auto">
+          {!isLoading && !error && beds.length === 0 && (
+            <div className="col-span-full flex items-center justify-center py-16 text-gray-400">
+              No ICU beds returned by the live board.
+            </div>
+          )}
           {beds.map(bed => (
             <div
               key={bed.bed_number}

@@ -14,11 +14,10 @@ import { qualityNavSections } from './QualityModulePages';
 import { useQualityPortalData } from './useQualityPortalData';
 
 const kpiDecorators: Record<string, { icon: typeof Star; color: string; iconColor: string }> = {
-  'NABH Score': { icon: Star, color: 'bg-amber-50 dark:bg-amber-950', iconColor: 'text-amber-600' },
-  'JCI Score':  { icon: Globe, color: 'bg-blue-50 dark:bg-blue-950', iconColor: 'text-blue-600' },
-  'Open NCRs': { icon: AlertTriangle, color: 'bg-red-50 dark:bg-red-950', iconColor: 'text-red-600' },
-  'Closed NCRs': { icon: CheckCircle2, color: 'bg-teal-50 dark:bg-teal-950', iconColor: 'text-teal-600' },
-  'Patient Experience': { icon: TrendingUp, color: 'bg-indigo-50 dark:bg-indigo-950', iconColor: 'text-indigo-600' },
+  'Open Incidents': { icon: AlertTriangle, color: 'bg-red-50 dark:bg-red-950', iconColor: 'text-red-600' },
+  'Closed Incidents': { icon: CheckCircle2, color: 'bg-teal-50 dark:bg-teal-950', iconColor: 'text-teal-600' },
+  'Feedback Responses': { icon: MessageSquare, color: 'bg-blue-50 dark:bg-blue-950', iconColor: 'text-blue-600' },
+  'Feedback Complaints': { icon: TrendingUp, color: 'bg-amber-50 dark:bg-amber-950', iconColor: 'text-amber-600' },
 };
 
 const severityBadge = (s: string) => {
@@ -37,14 +36,11 @@ const complianceBadge = (s: string) => s === 'Compliant'
   ? <span className="flex items-center gap-1 text-teal-600 text-xs font-medium"><CheckCircle2 className="h-3 w-3" />Compliant</span>
   : <span className="flex items-center gap-1 text-amber-600 text-xs font-medium"><AlertTriangle className="h-3 w-3" />Partial</span>;
 
-const jciComplianceFallback = [
-  { chapter: 'IPSG', title: 'International Patient Safety Goals', owner: 'Patient Safety', score: 85, gap: 6, status: 'Watchlist' },
-  { chapter: 'ACC',  title: 'Access to Care and Continuity', owner: 'Clinical Ops', score: 90, gap: 3, status: 'Compliant' },
-  { chapter: 'COP',  title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 5, status: 'Watchlist' },
-  { chapter: 'ASC',  title: 'Anesthesia and Surgical Care', owner: 'OT Manager', score: 91, gap: 2, status: 'Compliant' },
-  { chapter: 'MMU',  title: 'Medication Management and Use', owner: 'Pharmacy', score: 83, gap: 9, status: 'Action' },
-  { chapter: 'PCI',  title: 'Prevention and Control of Infections', owner: 'Infection Control', score: 94, gap: 2, status: 'Compliant' },
-];
+const EmptyState = ({ children }: { children: React.ReactNode }) => (
+  <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+    {children}
+  </p>
+);
 
 type Framework = 'nabh' | 'jci' | 'both';
 
@@ -57,7 +53,7 @@ export default function QualityDashboard() {
   const kpis = data?.kpis ?? [];
   const workQueues = data?.workQueues ?? [];
   const nabhChapters = data?.chapters ?? [];
-  const jciChapters = data?.jciChapters ?? jciComplianceFallback;
+  const jciChapters = data?.jciChapters ?? [];
   const incidents = data?.incidents ?? [];
   const audits = data?.audits ?? [];
   const leadership = data?.leadership ?? [];
@@ -130,7 +126,7 @@ export default function QualityDashboard() {
             <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => navigate('/quality/nabh-standards')}>View Matrix</Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {nabhChapters.map(c => (
+            {nabhChapters.length ? nabhChapters.map(c => (
               <div key={c.chapter} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium">{c.chapter} <span className="text-muted-foreground">{c.title}</span></span>
@@ -141,7 +137,7 @@ export default function QualityDashboard() {
                 </div>
                 <Progress value={c.score} className="h-1.5" />
               </div>
-            ))}
+            )) : <EmptyState>No NABH chapter assessments are connected yet.</EmptyState>}
           </CardContent>
         </Card>
         )}
@@ -156,7 +152,7 @@ export default function QualityDashboard() {
             <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => navigate('/quality/jci-standards')}>View Matrix</Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {jciChapters.map(c => (
+            {jciChapters.length ? jciChapters.map(c => (
               <div key={c.chapter} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-medium">{c.chapter} <span className="text-muted-foreground">{c.title}</span></span>
@@ -167,7 +163,7 @@ export default function QualityDashboard() {
                 </div>
                 <Progress value={c.score} className="h-1.5" />
               </div>
-            ))}
+            )) : <EmptyState>No JCI chapter assessments are connected yet.</EmptyState>}
           </CardContent>
         </Card>
         )}
@@ -184,7 +180,7 @@ export default function QualityDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {incidents.map(i => (
+              {incidents.length ? incidents.map(i => (
                 <div key={i.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/40 hover:bg-muted/70 transition-colors">
                   <div>
                     <p className="text-xs font-medium">{i.id} — {i.category}</p>
@@ -195,12 +191,13 @@ export default function QualityDashboard() {
                     {statusBadge(i.status)}
                   </div>
                 </div>
-              ))}
+              )) : <EmptyState>No quality incidents are recorded.</EmptyState>}
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {workQueues.length > 0 && (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mt-4">
         {workQueues.map((queue) => (
           <Card key={queue.label}>
@@ -212,6 +209,7 @@ export default function QualityDashboard() {
           </Card>
         ))}
       </div>
+      )}
 
       {/* Quick Actions + Upcoming Audits */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
@@ -239,16 +237,18 @@ export default function QualityDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Upcoming Audits</CardTitle></CardHeader>
           <CardContent>
-            <table className="w-full text-xs">
-              <thead><tr className="text-muted-foreground border-b">{['Audit','Department','Date','Auditor','Status'].map(h => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr></thead>
-              <tbody>
-                {audits.map((r, i) => (
-                  <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
-                    {r.map((c, j) => <td key={j} className="py-2 pr-3">{j === 4 ? <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">{c}</span> : c}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {audits.length ? (
+              <table className="w-full text-xs">
+                <thead><tr className="text-muted-foreground border-b">{['Audit','Department','Date','Auditor','Status'].map(h => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr></thead>
+                <tbody>
+                  {audits.map((r, i) => (
+                    <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
+                      {r.map((c, j) => <td key={j} className="py-2 pr-3">{j === 4 ? <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">{c}</span> : c}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : <EmptyState>No audit schedule is connected yet.</EmptyState>}
           </CardContent>
         </Card>
       </div>
@@ -269,17 +269,9 @@ export default function QualityDashboard() {
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Escalation Queue</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm">
-            {[
-              ['ICU adverse event RCA', 'Due in 12 hours'],
-              ['Medication variance review', 'Awaiting CAPA owner'],
-              ['OT consent deviation', 'Committee review tomorrow'],
-              ['Fire drill closure memo', 'Pending sign-off'],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg bg-muted/40 p-3">
-                <p className="font-medium">{label}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{value}</p>
-              </div>
-            ))}
+            <p className="rounded-lg border border-dashed p-4 text-muted-foreground">
+              No recorded quality escalations are available.
+            </p>
           </CardContent>
         </Card>
       </div>

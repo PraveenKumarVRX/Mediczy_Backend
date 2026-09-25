@@ -168,65 +168,6 @@ const urgencyConfig = {
   }
 };
 
-// Generate sample data for demonstration
-const generateSampleTriageCases = (): TriageCase[] => {
-  return [
-    {
-      id: '1',
-      patientId: 101,
-      patientName: 'Rahul Sharma',
-      patientAge: 45,
-      patientGender: 'Male',
-      patientPhone: '+91 98765 43210',
-      patientLocation: 'Connaught Place, Delhi',
-      symptoms: 'Severe chest pain, shortness of breath',
-      description: 'Patient experiencing crushing chest pain radiating to left arm for past 30 minutes. History of hypertension.',
-      urgencyLevel: 'IMMEDIATE',
-      aiAssessment: 'High probability of acute coronary syndrome. ECG and troponin recommended immediately.',
-      aiRecommendation: 'Immediate cardiology consultation. Consider aspirin administration if no contraindications.',
-      vitalSigns: { heartRate: 110, bloodPressure: '160/100', temperature: 37.2, oxygenSaturation: 94, respiratoryRate: 22 },
-      status: 'pending',
-      createdAt: new Date(Date.now() - 5 * 60000).toISOString(),
-      videoRoomId: 'triage-room-001'
-    },
-    {
-      id: '2',
-      patientId: 102,
-      patientName: 'Priya Patel',
-      patientAge: 32,
-      patientGender: 'Female',
-      patientPhone: '+91 87654 32109',
-      patientLocation: 'Andheri West, Mumbai',
-      symptoms: 'High fever, severe headache, neck stiffness',
-      description: 'Fever of 103°F for 2 days with worsening headache and neck pain. Unable to touch chin to chest.',
-      urgencyLevel: 'URGENT',
-      aiAssessment: 'Symptoms suggestive of meningitis. Requires urgent evaluation and possible lumbar puncture.',
-      aiRecommendation: 'Start empirical antibiotics if bacterial meningitis suspected. CT head before LP if focal signs.',
-      vitalSigns: { heartRate: 98, bloodPressure: '130/85', temperature: 39.4, oxygenSaturation: 97, respiratoryRate: 18 },
-      status: 'pending',
-      createdAt: new Date(Date.now() - 15 * 60000).toISOString(),
-      videoRoomId: 'triage-room-002'
-    },
-    {
-      id: '3',
-      patientId: 103,
-      patientName: 'Amit Kumar',
-      patientAge: 28,
-      patientGender: 'Male',
-      patientPhone: '+91 76543 21098',
-      symptoms: 'Persistent cough, mild fever',
-      description: 'Dry cough for 1 week with low-grade fever. No breathing difficulty.',
-      urgencyLevel: 'LESS_URGENT',
-      aiAssessment: 'Likely viral upper respiratory infection. Monitor for progression.',
-      aiRecommendation: 'Symptomatic treatment. COVID test if not done. Return if dyspnea develops.',
-      vitalSigns: { heartRate: 82, bloodPressure: '120/78', temperature: 37.8, oxygenSaturation: 98, respiratoryRate: 16 },
-      status: 'in_review',
-      createdAt: new Date(Date.now() - 45 * 60000).toISOString(),
-      videoRoomId: 'triage-room-003'
-    }
-  ];
-};
-
 const DoctorTriage = () => {
   const { currentDoctor } = useAuth();
   const { toast } = useToast();
@@ -305,17 +246,13 @@ const DoctorTriage = () => {
     .replace(/\/rooms?$/, '');
 
   // Fetch triage cases
-  const { data: triageCases, isLoading, refetch } = useQuery({
+  const { data: triageCases, isLoading, isError, error: triageError, refetch } = useQuery({
     queryKey: ['doctor-triage-cases', activeTab],
     queryFn: async () => {
-      try {
-        const response = await api.get('/doctors/triage/cases', {
-          params: { status: activeTab === 'all' ? undefined : activeTab }
-        });
-        return response.data.cases || [];
-      } catch (err) {
-        return generateSampleTriageCases();
-      }
+      const response = await api.get('/doctors/triage/cases', {
+        params: { status: activeTab === 'all' ? undefined : activeTab }
+      });
+      return response.data.cases || [];
     },
     refetchInterval: 30000,
     staleTime: 10000,
@@ -329,15 +266,7 @@ const DoctorTriage = () => {
         const response = await api.get('/doctors/triage/stats');
         return response.data.stats;
       } catch (err) {
-        const cases = triageCases || [];
-        return {
-          total: cases.length,
-          pending: cases.filter((c: TriageCase) => c.status === 'pending').length,
-          inProgress: cases.filter((c: TriageCase) => ['in_review', 'in_consultation'].includes(c.status)).length,
-          resolved: cases.filter((c: TriageCase) => c.status === 'resolved').length,
-          immediate: cases.filter((c: TriageCase) => c.urgencyLevel === 'IMMEDIATE').length,
-          urgent: cases.filter((c: TriageCase) => c.urgencyLevel === 'URGENT').length,
-        };
+        return null;
       }
     },
     staleTime: 30000,
@@ -690,7 +619,7 @@ const DoctorTriage = () => {
             
             // Update vital signs from vision analysis
             setVitalSigns({
-              pulse: `${70 + Math.floor(Math.random() * 20)} BPM (AI estimate)`,
+              pulse: 'Not available from vision analysis',
               breathing: analysis.vitalEstimates?.respiratoryRate || 'Normal',
               consciousness: analysis.vitalEstimates?.consciousnessLevel || 'Alert'
             });
@@ -2003,6 +1932,15 @@ const DoctorTriage = () => {
                   {isLoading ? (
                     <div className="flex items-center justify-center py-10">
                       <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
+                    </div>
+                  ) : isError ? (
+                    <div className="text-center py-10 text-muted-foreground">
+                      <AlertTriangle className="h-12 w-12 mx-auto mb-3 text-red-500" />
+                      <p className="font-medium">Unable to load triage cases</p>
+                      <p className="text-xs mt-1">{triageError instanceof Error ? triageError.message : 'Check the connection and try again.'}</p>
+                      <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+                        <RefreshCw className="h-4 w-4 mr-2" />Retry
+                      </Button>
                     </div>
                   ) : filteredCases.length === 0 ? (
                     <div className="text-center py-10 text-muted-foreground">

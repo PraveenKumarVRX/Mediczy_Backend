@@ -13,7 +13,11 @@ import {
   BellRing, CalendarDays, Award, BookOpen, Target, ArrowUpRight, Loader2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useQualityPortalData } from './useQualityPortalData';
+import {
+  useQualityPortalData,
+  type QualityPortalAccreditation,
+  type QualityPortalChapter,
+} from './useQualityPortalData';
 import api from '@/utils/api';
 
 export const qualityNavSections: DeptNavSection[] = [
@@ -48,118 +52,6 @@ export const qualityNavSections: DeptNavSection[] = [
       { icon: HelpCircle, label: 'Support', href: '/quality/support' },
     ],
   },
-];
-
-const complianceRows = [
-  { chapter: 'AAC', title: 'Access, Assessment and Continuity of Care', owner: 'Clinical Ops', score: 93, gap: 2, status: 'Compliant' },
-  { chapter: 'COP', title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 6, status: 'Watchlist' },
-  { chapter: 'MOM', title: 'Management of Medication', owner: 'Pharmacy', score: 84, gap: 9, status: 'Action' },
-  { chapter: 'HIC', title: 'Hospital Infection Control', owner: 'Infection Control', score: 96, gap: 1, status: 'Compliant' },
-  { chapter: 'FMS', title: 'Facility Management & Safety', owner: 'Admin', score: 82, gap: 11, status: 'Action' },
-  { chapter: 'IMS', title: 'Information Management System', owner: 'IT/EDP', score: 79, gap: 13, status: 'Action' },
-];
-
-const assessmentRows = [
-  { name: 'Mock NABH Round 1', scope: 'All Depts', date: '26 Mar 2026', auditor: 'QA Core Team', status: 'Scheduled' },
-  { name: 'Medication Safety Audit', scope: 'Pharmacy + ICU', date: '24 Mar 2026', auditor: 'Dr. Menon', status: 'In Progress' },
-  { name: 'Fire & Safety Drill', scope: 'Campus', date: '30 Mar 2026', auditor: 'Safety Officer', status: 'Planned' },
-  { name: 'Consent Documentation Review', scope: 'OT + Wards', date: '02 Apr 2026', auditor: 'Legal & Quality', status: 'Planned' },
-];
-
-const auditRows = [
-  { report: 'RCA Summary - ICU Event', type: 'Adverse Event', findings: 5, closed: 3, owner: 'Quality Lead', status: 'Open' },
-  { report: 'NABH Documentation Audit', type: 'Internal Audit', findings: 12, closed: 10, owner: 'NABH Coordinator', status: 'Review' },
-  { report: 'Medication Reconciliation Audit', type: 'Clinical Audit', findings: 8, closed: 8, owner: 'Pharmacy QA', status: 'Closed' },
-  { report: 'Biomedical Calibration Audit', type: 'Compliance Audit', findings: 4, closed: 2, owner: 'Bio-Med', status: 'Open' },
-];
-
-const accreditationMilestones = [
-  { milestone: 'Gap Closure Submission', due: '28 Mar 2026', owner: 'NABH Coordinator', completion: 72 },
-  { milestone: 'Policy Harmonization', due: '04 Apr 2026', owner: 'Quality Secretariat', completion: 64 },
-  { milestone: 'Departmental Mock Survey', due: '12 Apr 2026', owner: 'Dept Champions', completion: 41 },
-  { milestone: 'Board Readiness Review', due: '18 Apr 2026', owner: 'Leadership', completion: 22 },
-];
-
-const incidentRows = [
-  { id: 'INC-2407', category: 'Patient Safety', location: 'ICU', severity: 'High', aging: '2 days', owner: 'Dr. Rekha', status: 'RCA Pending' },
-  { id: 'INC-2406', category: 'Medication Error', location: 'Pharmacy', severity: 'Medium', aging: '1 day', owner: 'Pharm QA', status: 'CAPA Open' },
-  { id: 'INC-2405', category: 'Near Miss', location: 'OT', severity: 'Low', aging: '6 hrs', owner: 'OT Manager', status: 'Under Review' },
-  { id: 'INC-2404', category: 'Falls', location: 'Ward 5A', severity: 'Medium', aging: '4 days', owner: 'Nursing Lead', status: 'Closed' },
-  { id: 'INC-2403', category: 'Equipment', location: 'NICU', severity: 'High', aging: '3 days', owner: 'Bio-Med', status: 'CAPA Open' },
-];
-
-const indicatorRows = [
-  { metric: 'Hand Hygiene Compliance', target: '95%', actual: '92%', trend: '+3%', owner: 'HIC Team' },
-  { metric: 'Patient Identification Accuracy', target: '100%', actual: '99.4%', trend: '+0.4%', owner: 'Nursing' },
-  { metric: 'Medication Turnaround', target: '< 15 min', actual: '18 min', trend: '-2 min', owner: 'Pharmacy' },
-  { metric: 'Discharge Summary TAT', target: '< 2 hrs', actual: '1.6 hrs', trend: '+0.3 hrs', owner: 'MRD' },
-  { metric: 'Incident Closure SLA', target: '90%', actual: '86%', trend: '+5%', owner: 'Quality' },
-];
-
-const sopRows = [
-  { title: 'Medication Error Disclosure', version: 'v3.2', owner: 'Quality Office', review: '15 Apr 2026', status: 'Approved' },
-  { title: 'Sentinel Event RCA Workflow', version: 'v2.8', owner: 'Clinical Governance', review: '30 Mar 2026', status: 'Review Due' },
-  { title: 'Hand Hygiene Observation SOP', version: 'v4.1', owner: 'HIC Team', review: '09 May 2026', status: 'Approved' },
-  { title: 'Document Control Matrix', version: 'v1.9', owner: 'Accreditation Cell', review: '22 Mar 2026', status: 'Review Due' },
-];
-
-const feedbackRows = [
-  { channel: 'IP Survey', responses: 186, nps: 71, complaints: 4, owner: 'Patient Relations' },
-  { channel: 'OPD Kiosk', responses: 322, nps: 64, complaints: 11, owner: 'Front Office' },
-  { channel: 'WhatsApp Follow-up', responses: 140, nps: 74, complaints: 3, owner: 'CRM Team' },
-  { channel: 'Discharge Callback', responses: 92, nps: 69, complaints: 2, owner: 'Nursing Audit' },
-];
-
-const reportRows = [
-  { name: 'Board Quality Pack', cadence: 'Monthly', audience: 'Leadership', status: 'Ready' },
-  { name: 'NABH Gap Tracker', cadence: 'Weekly', audience: 'NABH Cell', status: 'Live' },
-  { name: 'Incident Aging Dashboard', cadence: 'Daily', audience: 'Dept Heads', status: 'Live' },
-  { name: 'Patient Feedback Digest', cadence: 'Weekly', audience: 'Patient Experience', status: 'Draft' },
-];
-
-const settingRows = [
-  { title: 'Escalation Matrix', text: 'Severity-based incident routing to quality lead, medical superintendent, and unit heads.' },
-  { title: 'Document Control', text: 'Versioning, archival retention, review reminders, and approval authority mapping.' },
-  { title: 'Audit Templates', text: 'Reusable mock survey checklists, tracer tools, and departmental scorecards.' },
-];
-
-const supportRows = [
-  { title: 'NABH Command Desk', text: 'Daily war-room for standards interpretation, gap tracking, and survey readiness.' },
-  { title: 'JCI Survey Operations', text: 'JCI chapter interpretation, measurable element support, and surveyor readiness coaching.' },
-  { title: 'Quality Training Library', text: 'Orientation decks, CAPA guides, RCA templates, and mock audit playbooks.' },
-  { title: 'Escalation Help', text: 'Critical event support for sentinel events, patient safety incidents, and compliance breaches.' },
-];
-
-const jciComplianceRows = [
-  { chapter: 'IPSG', title: 'International Patient Safety Goals', owner: 'Patient Safety', score: 85, gap: 6, status: 'Watchlist' },
-  { chapter: 'ACC',  title: 'Access to Care and Continuity of Care', owner: 'Clinical Ops', score: 90, gap: 3, status: 'Compliant' },
-  { chapter: 'PCC',  title: 'Patient and Family Rights', owner: 'Patient Relations', score: 82, gap: 8, status: 'Action' },
-  { chapter: 'AOP',  title: 'Assessment of Patients', owner: 'Nursing', score: 87, gap: 5, status: 'Watchlist' },
-  { chapter: 'COP',  title: 'Care of Patients', owner: 'Nursing', score: 88, gap: 5, status: 'Watchlist' },
-  { chapter: 'ASC',  title: 'Anesthesia and Surgical Care', owner: 'OT Manager', score: 91, gap: 2, status: 'Compliant' },
-  { chapter: 'MMU',  title: 'Medication Management and Use', owner: 'Pharmacy', score: 83, gap: 9, status: 'Action' },
-  { chapter: 'QPS',  title: 'Quality Improvement and Patient Safety', owner: 'Quality', score: 86, gap: 5, status: 'Watchlist' },
-  { chapter: 'PCI',  title: 'Prevention and Control of Infections', owner: 'Infection Control', score: 94, gap: 2, status: 'Compliant' },
-  { chapter: 'GLD',  title: 'Governance, Leadership, and Direction', owner: 'Leadership', score: 89, gap: 4, status: 'Watchlist' },
-  { chapter: 'FMS',  title: 'Facility Management and Safety', owner: 'Admin', score: 80, gap: 11, status: 'Action' },
-  { chapter: 'SQE',  title: 'Staff Qualifications and Education', owner: 'HR', score: 84, gap: 7, status: 'Watchlist' },
-  { chapter: 'MCI',  title: 'Management of Communication and Information', owner: 'IT/EDP', score: 78, gap: 14, status: 'Action' },
-];
-
-const jciAccreditationMilestones = [
-  { milestone: 'JCI Self-Assessment Completion', due: '15 May 2026', owner: 'JCI Coordinator', completion: 58 },
-  { milestone: 'IPSG Implementation Audit', due: '30 May 2026', owner: 'Patient Safety Officer', completion: 44 },
-  { milestone: 'Staff Education Plan Sign-off', due: '10 Jun 2026', owner: 'HR + SQE Lead', completion: 31 },
-  { milestone: 'Pre-survey Mock — All Chapters', due: '25 Jun 2026', owner: 'Dept Champions', completion: 14 },
-];
-
-const jciTemplateRows = [
-  { code: 'IPSG-01', title: 'Patient Identification Protocol', version: 'v1.0', owner: 'Patient Safety', format: 'Checklist', status: 'Approved' },
-  { code: 'ACC-02',  title: 'Transfer of Care Summary', version: 'v1.0', owner: 'Clinical Ops', format: 'Form', status: 'Approved' },
-  { code: 'AOP-03',  title: 'Patient Assessment Framework', version: 'v1.0', owner: 'Nursing', format: 'Form', status: 'Draft' },
-  { code: 'COP-04',  title: 'Individualized Care Plan', version: 'v1.0', owner: 'Nursing', format: 'Template', status: 'Approved' },
-  { code: 'QPS-05',  title: 'QI Project Charter', version: 'v1.0', owner: 'Quality', format: 'Audit', status: 'Approved' },
-  { code: 'PCI-06',  title: 'Infection Surveillance Log', version: 'v1.0', owner: 'Infection Control', format: 'Tracer', status: 'Approved' },
 ];
 
 const statusTone: Record<string, string> = {
@@ -242,21 +134,33 @@ const StatCard = ({ label, value, sub, icon: Icon, color }: {
   </Card>
 );
 
-const SectionTable = ({ headers, rows }: { headers: string[]; rows: React.ReactNode[][] }) => (
-  <table className="w-full text-sm">
-    <thead>
-      <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
-        {headers.map((header) => <th key={header} className="py-2 pr-3 font-medium">{header}</th>)}
-      </tr>
-    </thead>
-    <tbody>
-      {rows.map((row, index) => (
-        <tr key={index} className="border-b last:border-0 hover:bg-muted/30">
-          {row.map((cell, cellIndex) => <td key={cellIndex} className="py-3 pr-3 align-top">{cell}</td>)}
+const EmptyMessage = ({ children }: { children: React.ReactNode }) => (
+  <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+    {children}
+  </p>
+);
+
+const SectionTable = ({ headers, rows, emptyMessage = 'No records are available yet.' }: {
+  headers: string[];
+  rows: React.ReactNode[][];
+  emptyMessage?: React.ReactNode;
+}) => (
+  rows.length ? (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+          {headers.map((header) => <th key={header} className="py-2 pr-3 font-medium">{header}</th>)}
         </tr>
-      ))}
-    </tbody>
-  </table>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={index} className="border-b last:border-0 hover:bg-muted/30">
+            {row.map((cell, cellIndex) => <td key={cellIndex} className="py-3 pr-3 align-top">{cell}</td>)}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  ) : <EmptyMessage>{emptyMessage}</EmptyMessage>
 );
 
 const QualityDataState = ({ loading, error, refresh }: { loading: boolean; error: string | null; refresh: () => void }) => {
@@ -277,29 +181,34 @@ const QualityDataState = ({ loading, error, refresh }: { loading: boolean; error
   );
 };
 
-const ChapterComplianceMatrix = ({ chapters, accentColor = 'text-teal-700' }: { chapters: typeof complianceRows; accentColor?: string }) => (
-  <div className="space-y-4">
-    {chapters.map((row) => (
-      <div key={row.chapter} className="space-y-1.5">
-        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="font-medium">{row.chapter} <span className="text-muted-foreground">{row.title}</span></p>
-            <p className="text-xs text-muted-foreground">Owner: {row.owner} • Gaps open: {row.gap}</p>
+const ChapterComplianceMatrix = ({ chapters, accentColor = 'text-teal-700' }: {
+  chapters: QualityPortalChapter[];
+  accentColor?: string;
+}) => (
+  chapters.length ? (
+    <div className="space-y-4">
+      {chapters.map((row) => (
+        <div key={row.chapter} className="space-y-1.5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="font-medium">{row.chapter} <span className="text-muted-foreground">{row.title}</span></p>
+              <p className="text-xs text-muted-foreground">Owner: {row.owner} • Gaps open: {row.gap}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <ToneBadge value={row.status} />
+              <span className={`text-sm font-semibold ${accentColor}`}>{row.score}%</span>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <ToneBadge value={row.status} />
-            <span className={`text-sm font-semibold ${accentColor}`}>{row.score}%</span>
-          </div>
+          <Progress value={row.score} className="h-2" />
         </div>
-        <Progress value={row.score} className="h-2" />
-      </div>
-    ))}
-  </div>
+      ))}
+    </div>
+  ) : <EmptyMessage>No accreditation chapter assessments are connected yet.</EmptyMessage>
 );
 
 export const QualityNABHStandardsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const chapters = data?.chapters ?? complianceRows;
+  const chapters = data?.chapters ?? [];
 
   return (
     <PageShell
@@ -309,10 +218,10 @@ export const QualityNABHStandardsPage = () => {
     >
       <QualityDataState loading={loading} error={error} refresh={refresh} />
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Average Compliance" value={`${Math.round(chapters.reduce((sum, row) => sum + row.score, 0) / Math.max(chapters.length, 1))}%`} sub={`Across ${chapters.length} key chapters`} icon={Star} color="text-amber-600" />
-        <StatCard label="Critical Gaps" value={String(chapters.reduce((sum, row) => sum + row.gap, 0))} sub="Need leadership action" icon={AlertTriangle} color="text-red-600" />
-        <StatCard label="Department Champions" value={String(new Set(chapters.map((row) => row.owner)).size)} sub="Mapped to chapters" icon={Users} color="text-blue-600" />
-        <StatCard label="Policies Synced" value={String((data?.policies ?? sopRows).length)} sub="Controlled documents" icon={BookOpen} color="text-emerald-600" />
+        <StatCard label="Average Compliance" value={chapters.length ? `${Math.round(chapters.reduce((sum, row) => sum + row.score, 0) / chapters.length)}%` : '—'} sub={chapters.length ? `Across ${chapters.length} recorded chapters` : 'No chapter assessments'} icon={Star} color="text-amber-600" />
+        <StatCard label="Critical Gaps" value={chapters.length ? String(chapters.reduce((sum, row) => sum + row.gap, 0)) : '—'} sub={chapters.length ? 'Recorded against chapters' : 'No chapter assessments'} icon={AlertTriangle} color="text-red-600" />
+        <StatCard label="Department Champions" value={chapters.length ? String(new Set(chapters.map((row) => row.owner)).size) : '—'} sub="Mapped to recorded chapters" icon={Users} color="text-blue-600" />
+        <StatCard label="Policies Synced" value={String((data?.policies ?? []).length)} sub="Controlled documents" icon={BookOpen} color="text-emerald-600" />
       </div>
       <Card>
         <CardHeader><CardTitle className="text-base">NABH Standards Compliance Matrix</CardTitle></CardHeader>
@@ -324,8 +233,8 @@ export const QualityNABHStandardsPage = () => {
 
 export const QualityJCIStandardsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const chapters = data?.jciChapters ?? jciComplianceRows;
-  const templates = data?.jciTemplates ?? jciTemplateRows;
+  const chapters = data?.jciChapters ?? [];
+  const templates = data?.jciTemplates ?? [];
 
   return (
     <PageShell
@@ -335,9 +244,9 @@ export const QualityJCIStandardsPage = () => {
     >
       <QualityDataState loading={loading} error={error} refresh={refresh} />
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="JCI Score" value={`${Math.round(chapters.reduce((sum, r) => sum + r.score, 0) / Math.max(chapters.length, 1))}%`} sub={`Across ${chapters.length} chapters`} icon={Globe} color="text-blue-600" />
-        <StatCard label="Open Gaps" value={String(chapters.reduce((sum, r) => sum + r.gap, 0))} sub="Measurable elements pending" icon={AlertTriangle} color="text-red-600" />
-        <StatCard label="Chapter Owners" value={String(new Set(chapters.map((r) => r.owner)).size)} sub="Assigned leads" icon={Users} color="text-indigo-600" />
+        <StatCard label="JCI Score" value={chapters.length ? `${Math.round(chapters.reduce((sum, r) => sum + r.score, 0) / chapters.length)}%` : '—'} sub={chapters.length ? `Across ${chapters.length} recorded chapters` : 'No chapter assessments'} icon={Globe} color="text-blue-600" />
+        <StatCard label="Open Gaps" value={chapters.length ? String(chapters.reduce((sum, r) => sum + r.gap, 0)) : '—'} sub="Recorded against chapters" icon={AlertTriangle} color="text-red-600" />
+        <StatCard label="Chapter Owners" value={chapters.length ? String(new Set(chapters.map((r) => r.owner)).size) : '—'} sub="Assigned leads" icon={Users} color="text-indigo-600" />
         <StatCard label="JCI Templates" value={String(templates.length)} sub="Survey-ready documents" icon={FileText} color="text-teal-600" />
       </div>
       <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
@@ -358,17 +267,7 @@ export const QualityJCIStandardsPage = () => {
       <Card>
         <CardHeader><CardTitle className="text-base">IPSG — International Patient Safety Goals</CardTitle></CardHeader>
         <CardContent>
-          <SectionTable
-            headers={['Goal', 'Description', 'Status']}
-            rows={[
-              ['IPSG.1', 'Identify Patients Correctly', <ToneBadge value="Compliant" />],
-              ['IPSG.2', 'Improve Effective Communication', <ToneBadge value="Watchlist" />],
-              ['IPSG.3', 'Improve Safety of High-Alert Medications', <ToneBadge value="Watchlist" />],
-              ['IPSG.4', 'Ensure Safe Surgery', <ToneBadge value="Compliant" />],
-              ['IPSG.5', 'Reduce Risk of Healthcare-Associated Infections', <ToneBadge value="Compliant" />],
-              ['IPSG.6', 'Reduce Risk of Patient Harm Resulting from Falls', <ToneBadge value="Action" />],
-            ]}
-          />
+          <EmptyMessage>International Patient Safety Goal readiness has not been assessed yet.</EmptyMessage>
         </CardContent>
       </Card>
     </PageShell>
@@ -377,7 +276,7 @@ export const QualityJCIStandardsPage = () => {
 
 export const QualityAssessmentsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const assessments = data?.assessments ?? assessmentRows;
+  const assessments = data?.assessments ?? [];
 
   return (
   <PageShell
@@ -401,7 +300,7 @@ export const QualityAssessmentsPage = () => {
 
 export const QualityAuditReportsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const reports = data?.auditReports ?? auditRows;
+  const reports = data?.auditReports ?? [];
 
   return (
   <PageShell
@@ -423,28 +322,34 @@ export const QualityAuditReportsPage = () => {
   );
 };
 
-const MilestoneTimeline = ({ milestones, accentColor = 'text-teal-700' }: { milestones: typeof accreditationMilestones; accentColor?: string }) => (
-  <div className="space-y-4">
-    {milestones.map((item) => (
-      <div key={item.milestone} className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="font-medium">{item.milestone}</p>
-            <p className="text-xs text-muted-foreground">Due {item.due} • {item.owner}</p>
+const MilestoneTimeline = ({ milestones, accentColor = 'text-teal-700', emptyMessage = 'No accreditation milestones are connected yet.' }: {
+  milestones: QualityPortalAccreditation[];
+  accentColor?: string;
+  emptyMessage?: React.ReactNode;
+}) => (
+  milestones.length ? (
+    <div className="space-y-4">
+      {milestones.map((item) => (
+        <div key={item.milestone} className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">{item.milestone}</p>
+              <p className="text-xs text-muted-foreground">Due {item.due} • {item.owner}</p>
+            </div>
+            <span className={`text-sm font-semibold ${accentColor}`}>{item.completion}%</span>
           </div>
-          <span className={`text-sm font-semibold ${accentColor}`}>{item.completion}%</span>
+          <Progress value={item.completion} className="h-2" />
         </div>
-        <Progress value={item.completion} className="h-2" />
-      </div>
-    ))}
-  </div>
+      ))}
+    </div>
+  ) : <EmptyMessage>{emptyMessage}</EmptyMessage>
 );
 
 export const QualityAccreditationPage = () => {
   const [framework, setFramework] = useState<'nabh' | 'jci' | 'both'>('both');
   const { data, loading, error, refresh } = useQualityPortalData();
-  const nabhMilestones = data?.accreditation ?? accreditationMilestones;
-  const jciMilestones = jciAccreditationMilestones;
+  const nabhMilestones = data?.accreditation ?? [];
+  const jciMilestones: QualityPortalAccreditation[] = [];
 
   return (
   <PageShell
@@ -489,23 +394,9 @@ export const QualityAccreditationPage = () => {
 
     <Card>
       <CardHeader><CardTitle className="text-base">Readiness Summary</CardTitle></CardHeader>
-      <CardContent className="grid grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
-        {[
-          ['NABH Document Approval', '91%'],
-          ['NABH Mock Completion', '63%'],
-          ['JCI Self-Assessment', '58%'],
-          ['JCI IPSG Audit', '44%'],
-          ['Closure Evidence Uploaded', '74%'],
-          ['JCI Templates Ready', '83%'],
-          ['Leadership Review Frequency', 'Weekly'],
-          ['Survey Window', 'Q2–Q3 FY26'],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border p-3">
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 font-semibold">{value}</p>
-          </div>
-        ))}
-      </CardContent>
+          <CardContent className="grid grid-cols-2 xl:grid-cols-4 gap-4 text-sm">
+            <EmptyMessage>Readiness metrics are not yet connected to a source. Use the timeline above for recorded milestones.</EmptyMessage>
+          </CardContent>
     </Card>
   </PageShell>
   );
@@ -513,7 +404,7 @@ export const QualityAccreditationPage = () => {
 
 export const QualityIncidentsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const incidents = data?.incidents ?? incidentRows;
+  const incidents = data?.incidents ?? [];
 
   return (
   <PageShell
@@ -537,7 +428,7 @@ export const QualityIncidentsPage = () => {
 
 export const QualityKPIsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const indicators = data?.indicators ?? indicatorRows;
+  const indicators = data?.indicators ?? [];
   const [antibiogram, setAntibiogram] = useState<any[]>([]);
   const [infectionAlerts, setInfectionAlerts] = useState<any[]>([]);
 
@@ -614,9 +505,9 @@ export const QualityKPIsPage = () => {
 
 export const QualitySOPsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const policies = data?.policies ?? sopRows;
+  const policies = data?.policies ?? [];
   const nabhTemplates = data?.nabhTemplates ?? [];
-  const jciTemplates = data?.jciTemplates ?? jciTemplateRows;
+  const jciTemplates = data?.jciTemplates ?? [];
 
   return (
   <PageShell
@@ -666,7 +557,7 @@ export const QualitySOPsPage = () => {
 
 export const QualityFeedbackPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const feedback = data?.feedback ?? feedbackRows;
+  const feedback = data?.feedback ?? [];
   const [form, setForm] = useState({ patientId: '', visitType: 'opd', rating: '5', communicationScore: '5', cleanlinessScore: '5', waitTimeScore: '5', comment: '' });
   const qualityHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('qualityToken') || ''}` });
 
@@ -721,7 +612,7 @@ export const QualityFeedbackPage = () => {
 
 export const QualityReportsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const reports = data?.reports ?? reportRows;
+  const reports = data?.reports ?? [];
 
   return (
   <PageShell
@@ -745,8 +636,8 @@ export const QualityReportsPage = () => {
 
 export const QualitySettingsPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const settings = data?.settings ?? settingRows;
-  const activeFrameworks = data?.activeFrameworks ?? ['nabh', 'jci'];
+  const settings = data?.settings ?? [];
+  const activeFrameworks = data?.activeFrameworks ?? [];
 
   return (
   <PageShell
@@ -771,12 +662,12 @@ export const QualitySettingsPage = () => {
           ))}
         </CardContent>
       </Card>
-      {settings.map((row) => (
+      {settings.length ? settings.map((row) => (
         <Card key={row.title}>
           <CardHeader><CardTitle className="text-base">{row.title}</CardTitle></CardHeader>
           <CardContent className="text-sm text-muted-foreground">{row.text}</CardContent>
         </Card>
-      ))}
+      )) : <EmptyMessage>No governance settings have been configured.</EmptyMessage>}
     </div>
   </PageShell>
   );
@@ -784,7 +675,7 @@ export const QualitySettingsPage = () => {
 
 export const QualitySupportPage = () => {
   const { data, loading, error, refresh } = useQualityPortalData();
-  const support = data?.support ?? supportRows;
+  const support = data?.support ?? [];
 
   return (
   <PageShell
@@ -794,32 +685,18 @@ export const QualitySupportPage = () => {
   >
     <QualityDataState loading={loading} error={error} refresh={refresh} />
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-      {support.map((row) => (
+      {support.length ? support.map((row) => (
         <Card key={row.title}>
           <CardHeader><CardTitle className="text-base">{row.title}</CardTitle></CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
             <p>{row.text}</p>
-            <div className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800/70">
-              <p className="font-medium text-slate-900 dark:text-white">Response SLA</p>
-              <p className="mt-1">Business critical requests: 30 minutes. Governance requests: same working day.</p>
-            </div>
           </CardContent>
         </Card>
-      ))}
+      )) : <EmptyMessage>No support channels have been configured.</EmptyMessage>}
       <Card className="xl:col-span-3">
         <CardHeader><CardTitle className="text-base">Key Contacts</CardTitle></CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          {[
-            ['Quality Secretariat', 'quality@mediczy.com'],
-            ['NABH Coordinator', 'nabh@mediczy.com'],
-            ['JCI Coordinator', 'jci@mediczy.com'],
-            ['Patient Safety Escalation', 'safety@mediczy.com'],
-          ].map(([name, mail]) => (
-            <div key={name} className="rounded-xl border p-4">
-              <p className="font-semibold">{name}</p>
-              <p className="mt-1 text-muted-foreground">{mail}</p>
-            </div>
-          ))}
+        <CardContent>
+          <EmptyMessage>No quality office contacts have been configured.</EmptyMessage>
         </CardContent>
       </Card>
     </div>
