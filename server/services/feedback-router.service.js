@@ -22,7 +22,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import governanceService from './ai-model-governance.service.js';
 import socketService from './socket.service.js';
 
@@ -58,7 +58,7 @@ class FeedbackRouterService {
   }
 
   async run() {
-    tickStart('feedback_router');
+    if (!(await beginJob('feedback_router'))) return { skipped: true };
     let proposed = 0;
 
     try {

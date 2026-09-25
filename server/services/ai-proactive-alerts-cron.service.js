@@ -13,7 +13,7 @@
 import { connectPostgres } from '../db/postgres.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import cron from 'node-cron';
-import { tick, tickStart, tickError } from '../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../utils/cronRegistry.js';
 
 class ProactiveAlertsService {
   constructor() {
@@ -31,7 +31,7 @@ class ProactiveAlertsService {
   async runAlertScan() {
     if (this.running) return;
     this.running = true;
-    tickStart('ai_proactive_alerts');
+    if (!(await beginJob('ai_proactive_alerts'))) return { skipped: true };
     const alerts = [];
 
     try {

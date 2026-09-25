@@ -3,12 +3,12 @@
  * limit in security-enabled lots. Idempotent, so overlapping runs are harmless.
  */
 import cron from 'node-cron';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import parkingService from './parking.service.js';
 
 export function startParkingOverstayCron() {
   cron.schedule('*/10 * * * *', async () => {
-    tickStart('parking_overstay');
+    if (!(await beginJob('parking_overstay'))) return { skipped: true };
     try {
       tick('parking_overstay', await parkingService.scanOverstay());
     } catch (err) {

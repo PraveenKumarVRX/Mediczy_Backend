@@ -15,10 +15,11 @@ import {
   runPreAuthBundling, runFollowUpScheduler, runEMARComplianceCheck,
   getJobQueue, getJobHistory, getAutomationStats, scheduleJob
 } from '../services/hmis-automation.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
-const orgId = req => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = req => resolveTenantId(req.user);
 
 // POST /api/v1/automation/run-all
 router.post('/run-all', authUser, async (req, res) => {

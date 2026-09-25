@@ -16,9 +16,10 @@ import {
   getSmartBedAllocation,
   getDischargeSummaryData,
 } from '../services/ai-hmis-ops.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
-const orgId = req => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = req => resolveTenantId(req.user);
 
 // GET /api/v1/ai-ops/capacity-forecast?hours=24
 router.get('/capacity-forecast', authUser, async (req, res) => {

@@ -3,7 +3,7 @@
  * See crm-segments.service.js for the filter/membership model.
  */
 import cron from 'node-cron';
-import { tick, tickStart, tickError } from '../utils/cronRegistry.js';
+import { tick, tickStart, tickError, beginJob } from '../utils/cronRegistry.js';
 import { refreshAllActiveSegments } from './crm-segments.service.js';
 import logger from '../config/logger.js';
 
@@ -16,7 +16,7 @@ export function startCrmSegmentRefreshCron() {
     return;
   }
   cron.schedule(SCHEDULE, async () => {
-    tickStart('crm_segment_refresh');
+    if (!(await beginJob('crm_segment_refresh'))) return { skipped: true };
     try {
       const result = await refreshAllActiveSegments();
       tick('crm_segment_refresh', result);

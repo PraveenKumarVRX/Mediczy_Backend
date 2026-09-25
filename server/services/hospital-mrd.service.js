@@ -119,3 +119,38 @@ export async function queueForDigitization(orgId, recordId) {
   );
   return rows[0];
 }
+
+// ── UHID assignment (audit OPS-03) ────────────────────────────────────────────────────────────────
+// No patient had a UHID, so MRD create-by-UHID could never succeed. Assignment is EXPLICIT and idempotent — nothing
+// is assigned automatically (numbering policy is a leadership decision). Format: UH<org>-<7-digit global sequence>,
+// e.g. UH11-0000042. The sequence is global, so a UHID is unique across hospitals.
+export async function assignUhid(orgId, patientId) {
+  const pid = Number(patientId);
+  if (!Number.isInteger(pid) || pid <= 0) throw Object.assign(new Error('patientId is required'), { status: 400 });
+  return scoped(orgId, async (client) => {
+    const p = (await client.query(
+      `SELECT p.id, p.mrn, p.unique_id FROM patients p JOIN users u ON u.id = p."userId" WHERE p.id = $1`, [pid])).rows[0];
+    if (!p) throw Object.assign(new Error('Patient not found in this hospital'), { status: 404, code: 'PATIENT_NOT_FOUND' });
+    if (p.mrn || p.unique_id) return { patientId: p.id, uhid: p.mrn || p.unique_id, assigned: false };
+    const r = await client.query(
+      `UPDATE patients SET mrn = 'UH' || $2::text || '-' || LPAD(nextval('patient_uhid_seq')::text, 7, '0'), "updatedAt" = NOW()
+        WHERE id = $1 AND mrn IS NULL AND unique_id IS NULL RETURNING id, mrn`, [pid, orgId]);
+    // A concurrent assigner won the race: report what it assigned instead of failing or double-assigning.
+    if (!r.rows[0]) {
+      const again = (await client.query('SELECT mrn, unique_id FROM patients WHERE id = $1', [pid])).rows[0];
+      return { patientId: pid, uhid: again.mrn || again.unique_id, assigned: false };
+    }
+    return { patientId: r.rows[0].id, uhid: r.rows[0].mrn, assigned: true };
+  });
+}
+
+/** Assigns UHIDs to this hospital's patients that have none (bounded). Returns what it did. */
+export async function assignMissingUhids(orgId, { limit = 100 } = {}) {
+  const cap = Math.min(Math.max(Number.parseInt(limit, 10) || 100, 1), 500);
+  const ids = await scoped(orgId, async (client) => (await client.query(
+    `SELECT p.id FROM patients p JOIN users u ON u.id = p."userId"
+      WHERE u.organization_id = $1 AND p.mrn IS NULL AND p.unique_id IS NULL ORDER BY p.id LIMIT $2`, [orgId, cap])).rows.map((r) => r.id));
+  const results = [];
+  for (const id of ids) results.push(await assignUhid(orgId, id));
+  return { requested: cap, assigned: results.filter((r) => r.assigned).length, results };
+}

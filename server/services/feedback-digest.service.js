@@ -10,7 +10,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 
 const FROM_EMAIL   = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'support@mediqzy.com';
 const DIRECTOR_EMAIL = process.env.MEDICAL_DIRECTOR_EMAIL || process.env.ADMIN_EMAIL;
@@ -161,7 +161,7 @@ class FeedbackDigestService {
   }
 
   async sendWeeklyDigest() {
-    tickStart('feedback_digest');
+    if (!(await beginJob('feedback_digest'))) return { skipped: true };
 
     try {
       const weekOf = new Date().toLocaleDateString('en-IN', {

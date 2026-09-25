@@ -1,13 +1,14 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import { recordNavigationEvent, getPatientTimeline } from '../services/patient-navigation.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
 // POST /api/v1/navigation/start — document §8 Phase 1: journey kick-off event
 router.post('/start', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const event = await recordNavigationEvent({
       ...req.body,
       category: req.body.category || 'registration',
@@ -24,7 +25,7 @@ router.post('/start', authUser, async (req, res) => {
 // POST /api/v1/navigation/event
 router.post('/event', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const event = await recordNavigationEvent({
       ...req.body,
       organizationId,
@@ -39,7 +40,7 @@ router.post('/event', authUser, async (req, res) => {
 // GET /api/v1/navigation/patient/:patientId/timeline
 router.get('/patient/:patientId/timeline', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { limit, offset, since } = req.query;
     const timeline = await getPatientTimeline(
       parseInt(req.params.patientId),

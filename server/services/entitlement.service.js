@@ -1,5 +1,6 @@
 import pool from '../db/pgPool.js';
 import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
+import { todayIST, fiscalYearOf, fiscalMonths } from '../utils/ist-date.js';
 
 const ACTION_COLUMN = { view: 'can_view', create: 'can_create', edit: 'can_edit', delete: 'can_delete', export: 'can_export' };
 const orgIdOf = (v) => parseInt(v, 10) || 0;
@@ -44,6 +45,16 @@ export function requireModuleEntitlement(moduleId, action = 'view') {
 
 const platformAdmin = (work) => withRlsTransaction(pool, { orgId: 0, userId: 0, isPlatformAdmin: true }, work);
 
+/** Append-only audit row, written on the SAME client so it commits or rolls back with the change it describes. */
+async function auditEntitlement(client, { action, organizationId, packageCode, moduleId, actorId, detail = {} }) {
+  await client.query(
+    `INSERT INTO operations_audit_log (module, entity_type, entity_id, action, actor, details, organization_id)
+     VALUES ('entitlements', 'tenant_entitlement', $1, $2, $3, $4::jsonb, $5)`,
+    [`${organizationId}:${packageCode || '-'}:${moduleId || '-'}`, action, actorId == null ? 'system' : String(actorId),
+      JSON.stringify({ packageCode, moduleId, ...detail }), organizationId]
+  );
+}
+
 export async function listEntitlements({ organizationId } = {}) {
   return platformAdmin(async (client) => (await client.query(
     `SELECT e.*, p.package_code, p.package_name,
@@ -60,35 +71,42 @@ export async function grantEntitlement(input, actorId) {
   if (!orgId || !input.packageCode || !input.moduleId) throw new Error('organizationId, packageCode and moduleId are required');
   return platformAdmin(async (client) => {
     const pkg = (await client.query(
-      `INSERT INTO entitlement_packages (package_code, package_name) VALUES ($1, COALESCE($2, $1))
+      `INSERT INTO entitlement_packages (package_code, package_name) VALUES ($1::varchar, COALESCE($2::varchar, $1::varchar))
        ON CONFLICT (package_code) DO UPDATE SET package_name = COALESCE(entitlement_packages.package_name, EXCLUDED.package_name) RETURNING id`,
       [input.packageCode, input.packageName || null]
     )).rows[0];
-    return (await client.query(
+    const granted = (await client.query(
       `INSERT INTO tenant_entitlements (organization_id, package_id, module_id, can_view, can_create, can_edit, can_delete, can_export, starts_at, ends_at, is_active, granted_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11)
        ON CONFLICT (organization_id, package_id, module_id) DO UPDATE SET
          can_view = EXCLUDED.can_view, can_create = EXCLUDED.can_create, can_edit = EXCLUDED.can_edit,
          can_delete = EXCLUDED.can_delete, can_export = EXCLUDED.can_export, starts_at = EXCLUDED.starts_at,
-         ends_at = EXCLUDED.ends_at, is_active = TRUE, granted_by = EXCLUDED.granted_by
+         ends_at = EXCLUDED.ends_at, is_active = TRUE, granted_by = EXCLUDED.granted_by,
+         revoked_by = NULL, revoked_at = NULL
        RETURNING *`,
       [orgId, pkg.id, input.moduleId,
         input.canView !== false, !!input.canCreate, !!input.canEdit, !!input.canDelete, !!input.canExport,
         input.startsAt || null, input.endsAt || null, actorId || null]
     )).rows[0];
+    await auditEntitlement(client, {
+      action: 'grant', organizationId: orgId, packageCode: input.packageCode, moduleId: input.moduleId, actorId,
+      detail: { canView: granted.can_view, canCreate: granted.can_create, canEdit: granted.can_edit, canDelete: granted.can_delete, canExport: granted.can_export, startsAt: granted.starts_at, endsAt: granted.ends_at },
+    });
+    return granted;
   });
 }
 
-export async function revokeEntitlement(organizationId, packageCode, moduleId) {
+export async function revokeEntitlement(organizationId, packageCode, moduleId, actorId = null) {
   return platformAdmin(async (client) => {
     const { rows } = await client.query(
-      `UPDATE tenant_entitlements e SET is_active = FALSE
+      `UPDATE tenant_entitlements e SET is_active = FALSE, revoked_by = $4, revoked_at = NOW()
        FROM entitlement_packages p
        WHERE p.id = e.package_id AND e.organization_id = $1 AND p.package_code = $2 AND e.module_id = $3
        RETURNING e.*`,
-      [orgIdOf(organizationId), packageCode, moduleId]
+      [orgIdOf(organizationId), packageCode, moduleId, actorId]
     );
     if (!rows[0]) { const err = new Error('Entitlement not found'); err.status = 404; throw err; }
+    await auditEntitlement(client, { action: 'revoke', organizationId: orgIdOf(organizationId), packageCode, moduleId, actorId });
     return rows[0];
   });
 }
@@ -100,6 +118,7 @@ export async function revokeEntitlement(organizationId, packageCode, moduleId) {
 export const DEFAULT_CHART_OF_ACCOUNTS = [
   ['1000', 'Cash', 'asset'], ['1010', 'Bank', 'asset'],
   ['1200', 'Accounts Receivable - Patient', 'asset'], ['1210', 'Accounts Receivable - Insurance', 'asset'],
+  ['1300', 'GST Input Credit', 'asset'],
   ['1500', 'Inventory', 'asset'], ['1800', 'Fixed Assets', 'asset'],
   ['2000', 'Accounts Payable', 'liability'], ['2100', 'Refunds Payable', 'liability'],
   ['2200', 'Accrued Expenses', 'liability'], ['2500', 'GST Payable', 'liability'],
@@ -116,13 +135,15 @@ export const DEFAULT_TAX_CODES = [
   ['GST28', 'GST 28%', 'gst', 28],
 ];
 
-export async function seedDefaultFinanceSetup(organizationId, { periodCode, grantedBy } = {}) {
+export async function seedDefaultFinanceSetup(organizationId, { grantedBy } = {}) {
   const orgId = orgIdOf(organizationId);
   if (!orgId) throw new Error('organizationId is required');
-  const year = new Date().getUTCFullYear();
-  const code = periodCode || `${year}-04`; // Indian fiscal year starts in April
-  const start = code.endsWith('-04') ? `${year}-04-01` : `${year}-01-01`;
-  const end = code.endsWith('-04') ? `${year + 1}-03-31` : `${year}-12-31`;
+  // Audit FIN-04: the year used to come from the calendar year, so Jan–Mar created a FUTURE fiscal year and the
+  // current date had no period. The Indian FY (1 Apr – 31 Mar) is derived from today's IST date, and is created as
+  // twelve monthly periods so a month can be closed without locking the whole year.
+  const fy = fiscalYearOf(todayIST());
+  const months = fiscalMonths(fy.startYear);
+  const currentMonth = todayIST().slice(0, 7);
 
   return platformAdmin(async (client) => {
     for (const [accountCode, name, type] of DEFAULT_CHART_OF_ACCOUNTS) {
@@ -139,11 +160,16 @@ export async function seedDefaultFinanceSetup(organizationId, { periodCode, gran
         [orgId, taxCode, name, taxType, rate]
       );
     }
-    const period = (await client.query(
-      `INSERT INTO finance_fiscal_periods (organization_id, period_code, start_date, end_date)
-       VALUES ($1,$2,$3,$4) ON CONFLICT (organization_id, period_code) DO NOTHING RETURNING *`,
-      [orgId, code, start, end]
-    )).rows[0];
+    let period = null;
+    let periodsCreated = 0;
+    for (const m of months) {
+      const created = (await client.query(
+        `INSERT INTO finance_fiscal_periods (organization_id, period_code, start_date, end_date)
+         VALUES ($1,$2,$3,$4) ON CONFLICT (organization_id, period_code) DO NOTHING RETURNING *`,
+        [orgId, m.code, m.start, m.end]
+      )).rows[0];
+      if (created) { periodsCreated += 1; if (m.code === currentMonth) period = created; }
+    }
     const pkg = (await client.query(
       `INSERT INTO entitlement_packages (package_code, package_name, description)
        VALUES ('essentials_finance','Essentials Finance','Core accounts module')
@@ -155,7 +181,8 @@ export async function seedDefaultFinanceSetup(organizationId, { periodCode, gran
        ON CONFLICT (organization_id, package_id, module_id) DO NOTHING RETURNING *`,
       [orgId, pkg.id, grantedBy || null]
     )).rows[0];
-    return { organizationId: orgId, accounts: DEFAULT_CHART_OF_ACCOUNTS.length, taxCodes: DEFAULT_TAX_CODES.length, period, grant };
+    await auditEntitlement(client, { action: 'bootstrap-finance', organizationId: orgId, packageCode: 'essentials_finance', moduleId: 'accounts_finance', actorId: grantedBy, detail: { fiscalYear: fy.label, periodsCreated, grantCreated: Boolean(grant) } });
+    return { organizationId: orgId, accounts: DEFAULT_CHART_OF_ACCOUNTS.length, taxCodes: DEFAULT_TAX_CODES.length, fiscalYear: fy.label, periodsCreated, period, grant };
   });
 }
 

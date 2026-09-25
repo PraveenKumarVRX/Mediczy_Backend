@@ -24,6 +24,9 @@ import { QueryTypes } from 'sequelize';
 import { convertErToIp } from '../services/adt.service.js';
 import { emergencyActivateOT } from '../services/ot-scheduling.service.js';
 import { notifyERArrival } from '../services/family-notification.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
+import { ER_TRIAGE_ROLES, verifyGuidedSubmission } from '../utils/esi-triage.js';
+import { sendRouteError } from '../utils/route-errors.js';
 
 const router = express.Router();
 
@@ -34,10 +37,10 @@ const validEsiLevel = (v) => Number.isInteger(v) && v >= 1 && v <= 5;
 // Rapid registration — works with unknown/unconscious patients
 router.post('/register', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const {
       patientId, patientName, age, gender, phone,
-      triageLevel, esiLevel, triageInputs,
+      triageLevel, esiLevel, triageInputs, triageConfirmed,
       chiefComplaint,
       mlcCase = false, injuryType, broughtBy,
       familyPhone
@@ -51,6 +54,21 @@ router.post('/register', authUser, async (req, res) => {
     }
     const hasTriageDecision = esiLevel != null || triageLevel != null;
 
+    // Audit CLN-04/05: assigning an ESI level is a clinical act. Only triage roles may do it, the level must follow
+    // from the guided answers (incl. danger-zone vitals — a suggested up-triage needs an explicit, recorded decision),
+    // and it counts as "reviewed" only when the clinician explicitly confirmed it.
+    let assessment = null;
+    if (esiLevel != null) {
+      if (!ER_TRIAGE_ROLES.has(req.user.role)) {
+        return res.status(403).json({ success: false, code: 'TRIAGE_ROLE_REQUIRED', message: 'Only a nurse or doctor can assign an ESI level' });
+      }
+      try {
+        assessment = verifyGuidedSubmission({ esiLevel: Number(esiLevel), triageInputs, ageYears: age != null && age !== '' ? Number(age) : null });
+      } catch (e) {
+        return res.status(e.status || 400).json({ success: false, code: e.code, message: e.message, assessment: e.assessment });
+      }
+    }
+
     // Generate temp ER ID if no patient ID
     const tempId = patientId ? null : `ER${Date.now().toString().slice(-8)}`;
 
@@ -62,7 +80,7 @@ router.post('/register', authUser, async (req, res) => {
     // A colour-only decision (no ESI level) is a queue-ordering hint only, not a reviewed assessment — a nurse
     // still needs to confirm it with a real level (WP-1.8 plan: "a colour-only write ... is treated as a
     // queue-ordering hint only until confirmed"). No triage decision at all is trivially "not reviewed" too.
-    const reviewed = esiLevel != null;
+    const reviewed = esiLevel != null && triageConfirmed === true;
     const [[erRecord]] = await sequelize.query(
       `INSERT INTO er_visits (
         organization_id, patient_id, temp_id, patient_name, age, gender, phone,
@@ -90,7 +108,7 @@ router.post('/register', authUser, async (req, res) => {
           reviewed,
           confirmedBy: reviewed ? req.user.id : null,
           confirmedAt: reviewed ? new Date() : null,
-          triageInputs: triageInputs ? JSON.stringify(triageInputs) : null,
+          triageInputs: triageInputs ? JSON.stringify(assessment ? { ...triageInputs, serverAssessment: assessment } : triageInputs) : null,
           complaint: chiefComplaint || null, mlc: mlcCase,
           injType: injuryType || null, broughtBy: broughtBy || null
         },
@@ -109,7 +127,7 @@ router.post('/register', authUser, async (req, res) => {
     res.status(201).json({ success: true, data: erRecord, tempId });
   } catch (err) {
     console.error('[er-workflow] register failed:', err.message);
-    res.status(400).json({ success: false, message: err.message });
+    sendRouteError(res, err);
   }
 });
 
@@ -117,7 +135,7 @@ router.post('/register', authUser, async (req, res) => {
 // One-click emergency OT activation from ER queue
 router.post('/emergency-ot', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { patientId, admissionId, surgeonId, procedureName, anesthesiaType, notes } = req.body;
 
     const booking = await emergencyActivateOT({
@@ -127,18 +145,18 @@ router.post('/emergency-ot', authUser, async (req, res) => {
 
     res.status(201).json({ success: true, data: booking, message: 'Emergency OT activated — nearest available OT room booked' });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    sendRouteError(res, err);
   }
 });
 
 // POST /api/v1/er/convert-to-ip
 router.post('/convert-to-ip', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const admission = await convertErToIp({ ...req.body, organizationId, performedBy: req.user.id });
     res.status(201).json({ success: true, data: admission });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    sendRouteError(res, err);
   }
 });
 
@@ -148,7 +166,7 @@ router.post('/convert-to-ip', authUser, async (req, res) => {
 // yet moved to five ESI lanes) and the new way (esi1..esi5 + unclassified).
 router.get('/queue', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const queue = await sequelize.query(
       `SELECT * FROM er_visits WHERE organization_id = :orgId AND status = 'active' ORDER BY
        CASE
@@ -174,7 +192,7 @@ router.get('/queue', authUser, async (req, res) => {
 
     res.json({ success: true, data: grouped, byEsi, total: queue.length, unreviewed });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    sendRouteError(res, err, 500);
   }
 });
 
@@ -185,7 +203,7 @@ router.get('/queue', authUser, async (req, res) => {
 // confirmed". Every real update sets triage_time — the field the old route declared but never actually wrote.
 router.put('/triage/:id', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { triageLevel, esiLevel, triageInputs, chiefComplaint, mlcCase } = req.body;
 
     if (esiLevel == null && triageLevel == null) {
@@ -199,6 +217,17 @@ router.put('/triage/:id', authUser, async (req, res) => {
     }
 
     const esiGiven = esiLevel != null;
+    let assessment = null;
+    if (esiGiven) {
+      if (!ER_TRIAGE_ROLES.has(req.user.role)) {
+        return res.status(403).json({ success: false, code: 'TRIAGE_ROLE_REQUIRED', message: 'Only a nurse or doctor can assign an ESI level' });
+      }
+      try {
+        assessment = verifyGuidedSubmission({ esiLevel: Number(esiLevel), triageInputs });
+      } catch (e) {
+        return res.status(e.status || 400).json({ success: false, code: e.code, message: e.message, assessment: e.assessment });
+      }
+    }
     const [rows] = await sequelize.query(
       `UPDATE er_visits SET
          triage_level = COALESCE(:triage, triage_level),
@@ -217,7 +246,7 @@ router.put('/triage/:id', authUser, async (req, res) => {
       {
         replacements: {
           triage: triageLevel || null, esiLevel: esiGiven ? Number(esiLevel) : null, esiGiven,
-          confirmedBy: req.user.id, triageInputs: triageInputs ? JSON.stringify(triageInputs) : null,
+          confirmedBy: req.user.id, triageInputs: triageInputs ? JSON.stringify(assessment ? { ...triageInputs, serverAssessment: assessment } : triageInputs) : null,
           complaint: chiefComplaint || null, mlc: mlcCase != null ? mlcCase : null,
           id: req.params.id, orgId: organizationId
         },
@@ -228,7 +257,7 @@ router.put('/triage/:id', authUser, async (req, res) => {
     res.json({ success: true, data: rows[0] });
   } catch (err) {
     console.error('[er-workflow] triage update failed:', err.message);
-    res.status(400).json({ success: false, message: err.message });
+    sendRouteError(res, err);
   }
 });
 

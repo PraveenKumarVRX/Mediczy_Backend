@@ -18,7 +18,7 @@ import cron from 'node-cron';
 import { getCronPool } from '../db/pgPool.js';
 const pool = getCronPool();
 import llmProvider from './ai-brain/llm-provider.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import interpretabilityService from './ai-interpretability.service.js';
 import qualityGates from './ai-quality-gates.service.js';
 import { processBatchesDirect } from './patient-risk-queue.service.js';
@@ -63,7 +63,7 @@ class HealthRiskScoreCron {
    */
   async computeAllScores() {
     const startTime = Date.now();
-    tickStart('ai_health_risk');
+    if (!(await beginJob('ai_health_risk'))) return { skipped: true };
     console.log('🏥 [HealthRisk] Starting health risk score computation...');
 
     try {

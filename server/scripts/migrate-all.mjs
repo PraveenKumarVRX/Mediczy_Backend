@@ -22,6 +22,7 @@ const MANIFEST = [
   { id: 'hospital-crm-specialty-diagnostic-digital', cmd: 'node', args: ['migrations/20260909000000-hospital-crm-specialty-diagnostic-digital.migration.js'], cwd: SERVER },
   { id: 'hospital-crm-communication-hub', cmd: 'node', args: ['migrations/20260909000002-hospital-crm-communication-hub.migration.js'], cwd: SERVER },
   { id: 'phase1-foundations', cmd: 'node', args: ['migrations/20260926000002-phase1-foundations.migration.js'], cwd: SERVER },
+  { id: 'audit-remediation', cmd: 'node', args: ['migrations/20260926000003-audit-remediation.migration.js'], cwd: SERVER },
 ];
 
 function runStep(step) {

@@ -10,6 +10,7 @@ import {
   logICUEvent, getICUEvents,
   getICUSummary
 } from '../services/icu.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -18,7 +19,7 @@ const router = express.Router();
 // POST /api/v1/icu/admit
 router.post('/admit', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await admitToICU({ ...req.body, organizationId, admittingDoctorId: req.body.admittingDoctorId || req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -54,7 +55,7 @@ router.get('/admission/:admissionId', authUser, requireModule('icu'), async (req
 // GET /api/v1/icu/census
 router.get('/census', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const data = await getICUCensus(organizationId, req.query.unit);
     res.json({ success: true, count: data.length, data });
   } catch (err) {
@@ -77,7 +78,7 @@ router.get('/:icuAdmissionId/summary', authUser, requireModule('icu'), async (re
 // POST /api/v1/icu/:icuAdmissionId/ventilator
 router.post('/:icuAdmissionId/ventilator', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await chartVentilator({ ...req.body, icuAdmissionId: parseInt(req.params.icuAdmissionId), organizationId, chartedBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -102,7 +103,7 @@ router.get('/:icuAdmissionId/ventilator', authUser, requireModule('icu'), async 
 // POST /api/v1/icu/:icuAdmissionId/drips
 router.post('/:icuAdmissionId/drips', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await recordDrip({ ...req.body, icuAdmissionId: parseInt(req.params.icuAdmissionId), organizationId, recordedBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -125,7 +126,7 @@ router.get('/:icuAdmissionId/drips', authUser, requireModule('icu'), async (req,
 // POST /api/v1/icu/:icuAdmissionId/goals
 router.post('/:icuAdmissionId/goals', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await setDailyGoals({ ...req.body, icuAdmissionId: parseInt(req.params.icuAdmissionId), organizationId, setBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -148,7 +149,7 @@ router.get('/:icuAdmissionId/goals', authUser, requireModule('icu'), async (req,
 // POST /api/v1/icu/:icuAdmissionId/score
 router.post('/:icuAdmissionId/score', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await recordSeverityScore({ ...req.body, icuAdmissionId: parseInt(req.params.icuAdmissionId), organizationId, scoredBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -171,7 +172,7 @@ router.get('/:icuAdmissionId/score', authUser, requireModule('icu'), async (req,
 // POST /api/v1/icu/:icuAdmissionId/events
 router.post('/:icuAdmissionId/events', authUser, requireModule('icu'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await logICUEvent({ ...req.body, icuAdmissionId: parseInt(req.params.icuAdmissionId), organizationId, reportedBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {

@@ -16,7 +16,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import rocketChatService from './rocketchat.service.js';
 
 const APP_URL   = process.env.APP_URL || 'https://app.mediqzy.com';
@@ -152,7 +152,7 @@ class ClosedLoopNotifierService {
   }
 
   async run() {
-    tickStart('closed_loop_notifier');
+    if (!(await beginJob('closed_loop_notifier'))) return { skipped: true };
     let sent = 0;
 
     try {

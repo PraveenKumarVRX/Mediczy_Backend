@@ -7,6 +7,7 @@ import {
   submitPatientFeedback,
   recordOutcome, getOutcomesByPatient
 } from '../services/follow-up-hmis.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -15,7 +16,7 @@ const router = express.Router();
 // POST /api/v1/follow-up/schedule
 router.post('/schedule', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await scheduleFollowUp({ ...req.body, organizationId, scheduledBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -48,7 +49,7 @@ router.patch('/:planId/status', authUser, async (req, res) => {
 // POST /api/v1/recovery/check-in
 router.post('/check-in', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await recordRecoveryCheckin({ ...req.body, organizationId });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -72,7 +73,7 @@ router.get('/patient/:patientId/checkins', authUser, async (req, res) => {
 // GET /api/v1/recovery/alerts
 router.get('/alerts', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { patientId, severity } = req.query;
     const data = await getActiveAlerts(organizationId, {
       patientId: patientId ? parseInt(patientId) : undefined,
@@ -107,7 +108,7 @@ router.put('/alerts/:alertId/resolve', authUser, async (req, res) => {
 // POST /api/v1/recovery/alerts
 router.post('/alerts', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await raiseMonitoringAlert({ ...req.body, organizationId, triggeredBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -120,7 +121,7 @@ router.post('/alerts', authUser, async (req, res) => {
 // POST /api/v1/follow-up/feedback
 router.post('/feedback', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await submitPatientFeedback({ ...req.body, organizationId });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -133,7 +134,7 @@ router.post('/feedback', authUser, async (req, res) => {
 // POST /api/v1/follow-up/outcome
 router.post('/outcome', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await recordOutcome({ ...req.body, organizationId, recordedBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {

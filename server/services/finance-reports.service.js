@@ -1,6 +1,9 @@
 /**
  * Finance reports (WP-1.3). Read-only projections over the tenant-scoped ledger.
- * Reversed entries are excluded from every report, so a reversal nets its original out.
+ * Both an entry and its reversal are reported, each in its own period, so they net to zero over any range that
+ * contains both and a closed period's numbers never change retroactively. Only drafts are excluded.
+ * (Audit FIN-01: excluding the reversed ORIGINAL but keeping its reversal double-counted — a reversed 1,000 sale
+ * showed revenue -1,000.)
  */
 import pool from '../db/pgPool.js';
 import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
@@ -24,7 +27,7 @@ const NET_BALANCE = `
   FROM finance_accounts a
   LEFT JOIN finance_journal_lines l ON l.account_id = a.id
   LEFT JOIN finance_journal_entries e ON e.id = l.journal_entry_id
-  WHERE a.organization_id = $3 AND (e.id IS NULL OR (e.status <> 'reversed' AND %FROM% AND %TO%))
+  WHERE a.organization_id = $3 AND (e.id IS NULL OR (e.status IN ('posted','reversed') AND %FROM% AND %TO%))
   GROUP BY a.id, a.account_code, a.account_name, a.account_type
   ORDER BY a.account_code`;
 

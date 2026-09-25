@@ -27,7 +27,7 @@ import cron from 'node-cron';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { getCronPool } from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 import { checkQuota, recordSent } from '../utils/emailQuota.js';
 import {
   generateSecurePassword,
@@ -553,7 +553,7 @@ class CorporateEmployeeQcService {
 
     // Daily 03:00 server-local time
     this.cronJob = cron.schedule('0 3 * * *', async () => {
-      tickStart('corp_employee_qc');
+      if (!(await beginJob('corp_employee_qc'))) return { skipped: true };
       try {
         const details = await runQcSweep();
         tick('corp_employee_qc', details);

@@ -1,5 +1,9 @@
 import { prescriptionSafetyGate } from '../../services/prescription-safety.service.js';
 import * as hospitalMrd from '../../services/hospital-mrd.service.js';
+import * as dischargeSummaries from '../../services/discharge-summary.service.js';
+import { requireSessionRole, DISCHARGE_DOC_ROLES, MRD_WRITE_ROLES } from '../../utils/discharge-policy.js';
+import { sendRouteError } from '../../utils/route-errors.js';
+import { auditAction } from '../../utils/action-audit.js';
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
@@ -1466,14 +1470,33 @@ router.patch('/insurance/claims/:id', verifyHospitalToken, async (req, res) => {
 });
 
 /**
+ * Assign a UHID to a patient (or to every patient of this hospital that has none). Explicit, idempotent, audited.
+ * POST /api/hospital/practice/mrd/uhid/assign   body: { patientId } | { all: true, limit? }
+ */
+router.post('/mrd/uhid/assign', verifyHospitalToken, requireSessionRole(MRD_WRITE_ROLES), async (req, res) => {
+  try {
+    const hospitalId = Number(req.hospitalId);
+    const body = req.body || {};
+    const data = body.all === true
+      ? await hospitalMrd.assignMissingUhids(hospitalId, { limit: body.limit })
+      : await hospitalMrd.assignUhid(hospitalId, body.patientId);
+    await auditAction({ module: 'mrd', entityType: 'patient_uhid', entityId: body.patientId ?? 'bulk', action: body.all === true ? 'uhid_assigned_bulk' : 'uhid_assigned', actor: req.userId, organizationId: hospitalId, details: body.all === true ? { assigned: data.assigned } : data });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendRouteError(res, error);
+  }
+});
+
+/**
  * Add Record to Digitization Queue
  * POST /api/hospital/practice/mrd/digitization-queue
  */
-router.post('/mrd/digitization-queue', verifyHospitalToken, async (req, res) => {
+router.post('/mrd/digitization-queue', verifyHospitalToken, requireSessionRole(MRD_WRITE_ROLES), async (req, res) => {
   const { recordId } = req.body || {};
   if (!recordId) return res.status(400).json({ success: false, message: 'Record ID is required' });
   try {
     const entry = await hospitalMrd.queueForDigitization(Number(req.hospitalId), Number(recordId));
+    await auditAction({ module: 'mrd', entityType: 'mrd_record', entityId: recordId, action: 'digitization_queued', actor: req.userId, organizationId: Number(req.hospitalId), details: { role: req.userRole } });
     res.status(201).json({ success: true, message: 'Record added to digitization queue', data: entry });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
@@ -1510,9 +1533,11 @@ router.get('/mrd/records', verifyHospitalToken, async (req, res) => {
   }
 });
 
-router.post('/mrd/records', verifyHospitalToken, async (req, res) => {
+router.post('/mrd/records', verifyHospitalToken, requireSessionRole(MRD_WRITE_ROLES), async (req, res) => {
   try {
-    const record = await hospitalMrd.createMrdRecord(Number(req.hospitalId), req.body || {}, req.user?.id || null);
+    // verifyHospitalToken sets req.userId (not req.user), so the record is attributed to the real indexer.
+    const record = await hospitalMrd.createMrdRecord(Number(req.hospitalId), req.body || {}, req.userId || null);
+    await auditAction({ module: 'mrd', entityType: 'mrd_record', entityId: record.id, action: 'index', actor: req.userId, organizationId: Number(req.hospitalId), details: { mrdNumber: record.mrdNumber, patientId: record.patientId, recordType: record.recordType, role: req.userRole } });
     res.status(201).json({ success: true, data: record });
   } catch (error) {
     if (error.status) return res.status(error.status).json({ success: false, message: error.message });
@@ -1525,45 +1550,12 @@ router.post('/mrd/records', verifyHospitalToken, async (req, res) => {
  * Save Discharge Summary (Draft)
  * POST /api/hospital/practice/discharge-summaries
  */
-router.post('/discharge-summaries', verifyHospitalToken, async (req, res) => {
+router.post('/discharge-summaries', verifyHospitalToken, requireSessionRole(DISCHARGE_DOC_ROLES), async (req, res) => {
   try {
-    const { patientId, admissionId, diagnosis, procedures, medications, followUp, status } = req.body;
-    const hospitalId = req.hospitalId;
-
-    if (!patientId) {
-      return res.status(400).json({ success: false, message: 'Patient ID is required' });
-    }
-
-    const [summary] = await sequelize.query(
-      `INSERT INTO discharge_summaries 
-       (patient_id, admission_id, diagnosis, procedures, medications, follow_up, 
-        status, hospital_id, attending_doctor, admission_date, ward, bed, created_at, updated_at)
-       VALUES (:patientId, :admissionId, :diagnosis, :procedures, :medications, :followUp,
-               :status, :hospitalId, :attendingDoctor, :admissionDate, :ward, :bed, NOW(), NOW())
-       RETURNING *`,
-      {
-        replacements: {
-          patientId,
-          admissionId,
-          diagnosis: JSON.stringify(diagnosis || []),
-          procedures: JSON.stringify(procedures || []),
-          medications: JSON.stringify(medications || []),
-          followUp,
-          status: status || 'draft',
-          hospitalId,
-          attendingDoctor: req.body.attendingDoctor || null,
-          admissionDate: req.body.admissionDate || null,
-          ward: req.body.ward || null,
-          bed: req.body.bed || null
-        },
-        type: QueryTypes.INSERT
-      }
-    );
-
-    res.status(201).json({ success: true, message: 'Discharge summary saved', data: summary[0] });
+    const { summary, updatedExisting } = await dischargeSummaries.saveSummary(Number(req.hospitalId), req.body || {});
+    res.status(updatedExisting ? 200 : 201).json({ success: true, message: 'Discharge summary saved', data: summary });
   } catch (error) {
-    console.error('Error saving discharge summary:', error);
-    res.status(500).json({ success: false, message: 'Failed to save discharge summary', error: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -1571,46 +1563,28 @@ router.post('/discharge-summaries', verifyHospitalToken, async (req, res) => {
  * Submit Discharge Summary for Approval
  * POST /api/hospital/practice/discharge-summaries/submit
  */
-router.post('/discharge-summaries/submit', verifyHospitalToken, async (req, res) => {
+router.post('/discharge-summaries/submit', verifyHospitalToken, requireSessionRole(DISCHARGE_DOC_ROLES), async (req, res) => {
   try {
-    const { patientId, admissionId, diagnosis, procedures, medications, followUp } = req.body;
-    const hospitalId = req.hospitalId;
+    const hospitalId = Number(req.hospitalId);
+    const { summary, submittedNow, alreadySubmitted } = await dischargeSummaries.saveSummary(hospitalId, req.body || {}, { submit: true });
 
-    const [summary] = await sequelize.query(
-      `INSERT INTO discharge_summaries 
-       (patient_id, admission_id, diagnosis, procedures, medications, follow_up, 
-        status, hospital_id, attending_doctor, admission_date, ward, bed, submitted_at, created_at, updated_at)
-       VALUES (:patientId, :admissionId, :diagnosis, :procedures, :medications, :followUp,
-               'pending_approval', :hospitalId, :attendingDoctor, :admissionDate, :ward, :bed, NOW(), NOW(), NOW())
-       RETURNING *`,
-      {
-        replacements: {
-          patientId,
-          admissionId,
-          diagnosis: JSON.stringify(diagnosis || []),
-          procedures: JSON.stringify(procedures || []),
-          medications: JSON.stringify(medications || []),
-          followUp,
-          hospitalId,
-          attendingDoctor: req.body.attendingDoctor || null,
-          admissionDate: req.body.admissionDate || null,
-          ward: req.body.ward || null,
-          bed: req.body.bed || null
-        },
-        type: QueryTypes.INSERT
+    // The patient survey invitation goes out ONCE, on the transition into pending_approval — not on every save/retry.
+    if (submittedNow) {
+      await ensurePremsTables();
+      const existing = await sequelize.query(
+        'SELECT 1 FROM prems_survey_invitations WHERE hospital_id = :hospitalId AND discharge_summary_id = :summaryId LIMIT 1',
+        { replacements: { hospitalId, summaryId: summary.id }, type: QueryTypes.SELECT });
+      if (!existing.length) {
+        await sequelize.query(`
+          INSERT INTO prems_survey_invitations (hospital_id, patient_id, discharge_summary_id, visit_type, channel)
+          VALUES (:hospitalId, :patientId, :summaryId, 'ipd', 'whatsapp')
+        `, { replacements: { hospitalId, patientId: summary.patient_id, summaryId: summary.id } });
       }
-    );
-
-    await ensurePremsTables();
-    await sequelize.query(`
-      INSERT INTO prems_survey_invitations (hospital_id, patient_id, discharge_summary_id, visit_type, channel)
-      VALUES (:hospitalId, :patientId, :summaryId, 'ipd', 'whatsapp')
-    `, { replacements: { hospitalId, patientId, summaryId: summary[0].id } });
-
-    res.status(201).json({ success: true, message: 'Discharge summary submitted for approval', data: summary[0] });
+      await auditAction({ module: 'discharge', entityType: 'discharge_summary', entityId: summary.id, action: 'submit', actor: req.userId, organizationId: hospitalId, details: { admissionId: summary.admission_id, role: req.userRole } });
+    }
+    res.status(alreadySubmitted ? 200 : 201).json({ success: true, message: alreadySubmitted ? 'Discharge summary was already submitted for approval' : 'Discharge summary submitted for approval', data: summary, alreadySubmitted: Boolean(alreadySubmitted) });
   } catch (error) {
-    console.error('Error submitting discharge summary:', error);
-    res.status(500).json({ success: false, message: 'Failed to submit discharge summary', error: error.message });
+    sendRouteError(res, error);
   }
 });
 
@@ -1618,48 +1592,12 @@ router.post('/discharge-summaries/submit', verifyHospitalToken, async (req, res)
  * Update Discharge Summary (Edit)
  * PUT /api/hospital/practice/discharge-summaries/:id
  */
-router.put('/discharge-summaries/:id', verifyHospitalToken, async (req, res) => {
+router.put('/discharge-summaries/:id', verifyHospitalToken, requireSessionRole(DISCHARGE_DOC_ROLES), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { diagnosis, procedures, medications, followUp, status } = req.body;
-    const hospitalId = req.hospitalId;
-
-    if (!id) {
-      return res.status(400).json({ success: false, message: 'Summary ID is required' });
-    }
-
-    const [updated] = await sequelize.query(
-      `UPDATE discharge_summaries 
-       SET diagnosis = :diagnosis,
-           procedures = :procedures,
-           medications = :medications,
-           follow_up = :followUp,
-           status = COALESCE(:status, status),
-           updated_at = NOW()
-       WHERE id = :id AND hospital_id = :hospitalId
-       RETURNING *`,
-      {
-        replacements: {
-          id,
-          diagnosis: JSON.stringify(diagnosis || []),
-          procedures: JSON.stringify(procedures || []),
-          medications: JSON.stringify(medications || []),
-          followUp,
-          status: status || null,
-          hospitalId
-        },
-        type: QueryTypes.UPDATE
-      }
-    );
-
-    if (!updated || updated.length === 0) {
-      return res.status(404).json({ success: false, message: 'Discharge summary not found or access denied' });
-    }
-
-    res.json({ success: true, message: 'Discharge summary updated successfully', data: updated[0] });
+    const data = await dischargeSummaries.updateSummary(Number(req.hospitalId), req.params.id, req.body || {});
+    res.json({ success: true, message: 'Discharge summary updated successfully', data });
   } catch (error) {
-    console.error('Error updating discharge summary:', error);
-    res.status(500).json({ success: false, message: 'Failed to update discharge summary', error: error.message });
+    sendRouteError(res, error);
   }
 });
 

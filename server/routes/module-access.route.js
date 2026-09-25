@@ -381,7 +381,7 @@ router.post('/entitlements/revoke', authUser, requireRole('admin'), async (req, 
   const { organizationId, packageCode, moduleId } = req.body || {};
   if (!organizationId || !packageCode || !moduleId) return res.status(400).json({ success: false, message: 'organizationId, packageCode and moduleId are required' });
   try {
-    const data = await revokeEntitlement(organizationId, packageCode, moduleId);
+    const data = await revokeEntitlement(organizationId, packageCode, moduleId, req.user.id);
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(error.status || 400).json({ success: false, message: error.message });

@@ -15,9 +15,10 @@ import {
   getDailyCensusData, getOTUtilizationReport, getEMARComplianceReport,
   getReadmissionRiskReport, getExecutiveDailyDigest, getPreAuthStatusReport
 } from '../services/clinical-reports.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
-const orgId = req => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = req => resolveTenantId(req.user);
 
 // GET /api/v1/reports/catalog
 router.get('/catalog', authUser, (_req, res) => {

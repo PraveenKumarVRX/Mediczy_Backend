@@ -5,13 +5,14 @@ import {
   createNursingTask, getNursingTaskBoard, completeNursingTask, autoGenerateAdmissionTasks
 } from '../services/nursing-ipd.service.js';
 import { saveVitals } from '../services/vitals-ews.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
 // POST /api/v1/nursing/assessment
 router.post('/assessment', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await createNursingAssessment({ ...req.body, organizationId });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -33,7 +34,7 @@ router.get('/assessment/:admissionId', authUser, async (req, res) => {
 // POST /api/v1/nursing/tasks
 router.post('/tasks', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const task = await createNursingTask({ ...req.body, organizationId });
     res.status(201).json({ success: true, data: task });
   } catch (err) {
@@ -44,7 +45,7 @@ router.post('/tasks', authUser, async (req, res) => {
 // GET /api/v1/nursing/tasks
 router.get('/tasks', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { wardId, assignedTo, status, windowHours } = req.query;
     const tasks = await getNursingTaskBoard(organizationId, {
       wardId:      wardId      ? parseInt(wardId) : undefined,
@@ -61,7 +62,7 @@ router.get('/tasks', authUser, async (req, res) => {
 // PUT /api/v1/nursing/tasks/:id/complete
 router.put('/tasks/:id/complete', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await completeNursingTask(parseInt(req.params.id), organizationId, {
       completedBy: req.user.id,
       notes: req.body.notes
@@ -75,7 +76,7 @@ router.put('/tasks/:id/complete', authUser, async (req, res) => {
 // POST /api/v1/nursing/vitals — document §8 Phase 2
 router.post('/vitals', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const record = await saveVitals({ ...req.body, organizationId, recordedBy: req.user.id });
     res.status(201).json({ success: true, data: record });
   } catch (err) {
@@ -86,7 +87,7 @@ router.post('/vitals', authUser, async (req, res) => {
 // POST /api/v1/nursing/tasks/auto-generate
 router.post('/tasks/auto-generate', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { admissionId, patientId, wardId } = req.body;
     const tasks = await autoGenerateAdmissionTasks(admissionId, organizationId, { patientId, wardId });
     res.status(201).json({ success: true, data: tasks });

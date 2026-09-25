@@ -21,7 +21,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
 
 // ─── AI component routing ─────────────────────────────────────────────────────
 // Maps ticket categories and CDSS feedback types to the responsible AI component.
@@ -103,7 +103,7 @@ class FeedbackAggregatorService {
    * Can also be called directly (e.g. from autoTicketService after a new complaint).
    */
   async run() {
-    tickStart('feedback_aggregator');
+    if (!(await beginJob('feedback_aggregator'))) return { skipped: true };
     const t0 = Date.now();
     let total = 0;
 
