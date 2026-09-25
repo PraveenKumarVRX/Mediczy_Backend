@@ -32,11 +32,19 @@ show() {
   done
 }
 
+descendants() { # pid... -> the pids and every process below them
+  ps -eo pid=,ppid= | awk -v roots="$*" '
+    { kids[$2] = kids[$2] " " $1 }
+    END { n = split(roots, r, " "); for (i = 1; i <= n; i++) walk(r[i]) }
+    function walk(p,   k, c, m) { print p; m = split(kids[p], c, " "); for (k = 1; k <= m; k++) walk(c[k]) }'
+}
+
 prod_pids() {
-  # PM2 God daemon + every app it manages, nginx, redis, pgbouncer, prometheus, Orthanc
-  pgrep -f "PM2 v[0-9.]*: God Daemon" || true
-  command -v pm2 >/dev/null && pm2 jlist 2>/dev/null | python3 -c \
-    "import sys,json; [print(p['pid']) for p in json.load(sys.stdin) if p.get('pid')]" 2>/dev/null || true
+  # Every PM2 God daemon (a plain `sudo pm2 jlist` would read root's PM2, not the one running prod, so walk the
+  # process tree instead) and all apps below it, plus nginx, redis, pgbouncer.
+  local daemons
+  daemons="$(pgrep -f "PM2 v[0-9.]*: God Daemon" | tr '\n' ' ')"
+  [ -n "$daemons" ] && descendants $daemons || true
   pgrep -x nginx || true
   pgrep -x redis-server || true
   pgrep -x pgbouncer || true

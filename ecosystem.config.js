@@ -1,4 +1,14 @@
 /**
+ * !! NOT THE LIVE DEFINITION FOR mediczy-server (checked 2026-09-25) !!
+ * Production's `mediczy-server` is defined in PM2's saved process list (~/.pm2/dump.pm2) and is what
+ * `pm2 restart mediczy-server --update-env` (scripts/deploy/deploy-full-prod-s3.sh) reuses:
+ *   script scripts/ssm-env-loader.mjs, args [index.js]  (loads secrets from AWS SSM, not .env)
+ *   exec_mode cluster, node_args --experimental-vm-modules, NO --max-old-space-size,
+ *   max_memory_restart 3G, max_restarts 15, kill_timeout 10s.
+ * This file describes a different (fork, .env-driven, 1.5GB-heap) setup. Do NOT `pm2 start` prod from it
+ * without reconciling the two — it would drop the SSM secret loading. See docs/deployment/MEMORY_AND_OOM.md.
+ */
+/**
  * PM2 Ecosystem Configuration
  * ============================
  * 
