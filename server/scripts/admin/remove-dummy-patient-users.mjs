@@ -38,6 +38,29 @@ const TARGET_PHONES = [
   '7337650428',
 ];
 
+/** Patient-app roles in prod (legacy `user` + current `patient`). */
+const PURGEABLE_ROLES = new Set(['user', 'patient', null, '']);
+
+/** Staff / clinical roles — never purge even if phone collides with a test number. */
+const BLOCKED_ROLES = new Set([
+  'team',
+  'team_member',
+  'team_lead',
+  'doctor',
+  'nurse',
+  'admin',
+  'system_admin',
+]);
+
+function isTargetEmail(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  return TARGET_EMAILS.some((target) => target.toLowerCase() === normalized);
+}
+
+function isOrgEmail(email) {
+  return String(email || '').trim().toLowerCase().endsWith('@mysmarthealth.in');
+}
+
 function parseArgs(argv) {
   const execute = argv.includes('--execute');
   const dryRun = argv.includes('--dry-run') || !execute;
@@ -136,7 +159,7 @@ async function revokeTokens(client, userId) {
   ).catch(() => {});
 }
 
-async function purgePatientUser(client, user, { dryRun }) {
+async function purgePatientUser(client, user, { dryRun, matchedBy = [] }) {
   const userId = user.id;
   const patientRowId = await getPatientRowId(client, userId);
   const footprint = await getUserFootprint(client, userId, patientRowId);
@@ -152,13 +175,37 @@ async function purgePatientUser(client, user, { dryRun }) {
     };
   }
 
-  if (user.role && user.role !== 'user') {
+  const role = user.role || null;
+  if (BLOCKED_ROLES.has(role)) {
     return {
       userId,
       email: user.email,
       phone: user.phoneNumber,
       skipped: true,
-      reason: `non_patient_role:${user.role}`,
+      reason: `staff_role:${role}`,
+      footprint,
+    };
+  }
+
+  if (!PURGEABLE_ROLES.has(role)) {
+    return {
+      userId,
+      email: user.email,
+      phone: user.phoneNumber,
+      skipped: true,
+      reason: `non_patient_role:${role}`,
+      footprint,
+    };
+  }
+
+  const phoneOnlyMatch = matchedBy.length > 0 && matchedBy.every((m) => m.startsWith('phone:'));
+  if (isOrgEmail(user.email) && !isTargetEmail(user.email) && phoneOnlyMatch) {
+    return {
+      userId,
+      email: user.email,
+      phone: user.phoneNumber,
+      skipped: true,
+      reason: 'org_email_phone_collateral',
       footprint,
     };
   }
@@ -323,7 +370,7 @@ async function main() {
     const results = [];
     for (const { user, matchedBy } of resolved.values()) {
       console.log(`\n--- User #${user.id} (${user.email}) matched by: ${matchedBy.join(', ')} ---`);
-      const result = await purgePatientUser(client, user, { dryRun });
+      const result = await purgePatientUser(client, user, { dryRun, matchedBy });
       results.push({ ...result, matchedBy });
       console.log(JSON.stringify(result, null, 2));
     }
