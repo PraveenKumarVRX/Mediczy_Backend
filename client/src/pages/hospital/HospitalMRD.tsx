@@ -103,6 +103,19 @@ interface DigitizationTask {
   priority: 'Normal' | 'High';
 }
 
+// MRD (mrd_record_index) records WHERE a file is and who has it — not clinical content — so department, doctor,
+// diagnosis and admission dates are deliberately left blank here instead of being invented.
+const MRD_STATUS: Record<string, MedicalRecord['status']> = {
+  in_mrd: 'Active', checked_out: 'Checked-Out', archived: 'Archived', destroyed: 'Archived',
+};
+const mapMrdRecord = (r: any): MedicalRecord => ({
+  id: String(r.id), mrdNumber: r.mrdNumber, patientId: String(r.patientId), patientName: r.patientName || '',
+  uhid: r.uhid || '', recordType: (r.recordType || 'IPD') as MedicalRecord['recordType'],
+  department: '', admissionDate: '', attendingDoctor: '', diagnosis: '',
+  fileLocation: r.location || '', shelf: '', rack: '',
+  status: MRD_STATUS[r.status] || 'Active', documents: [], auditTrail: [], createdAt: r.createdAt, updatedAt: r.updatedAt,
+});
+
 const HospitalMRD = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -147,14 +160,7 @@ const HospitalMRD = () => {
     api.get('/hospital/practice/mrd/records', { headers: hospitalHeaders(), params: { limit: 100 } })
       .then((response) => {
         if (cancelled) return;
-        setRecords((response.data?.data || []).map((r: any) => ({
-          id: String(r.id), mrdNumber: r.mrdNumber, patientId: String(r.patientId), patientName: r.patientName,
-          uhid: r.uhid, recordType: r.recordType === 'physical' ? 'IPD' : (r.recordType || 'IPD'),
-          department: r.department || 'General Medicine', admissionDate: r.admissionDate || '', dischargeDate: r.dischargeDate,
-          attendingDoctor: r.attendingDoctor || '', diagnosis: r.diagnosis || '',
-          fileLocation: r.location || 'Main Archive', shelf: '', rack: '',
-          status: r.status === 'archived' ? 'Archived' : 'Active', documents: [], auditTrail: [], createdAt: r.createdAt, updatedAt: r.updatedAt,
-        })));
+        setRecords((response.data?.data || []).map(mapMrdRecord));
       })
       .catch((error) => { if (!cancelled) toast({ title: 'MRD unavailable', description: error.response?.data?.message || 'The live MRD service is unavailable.', variant: 'destructive' }); });
     setLoading(false);
@@ -164,15 +170,10 @@ const HospitalMRD = () => {
   const [records, setRecords] = useState<MedicalRecord[]>([]);
 
   const [newRecordForm, setNewRecordForm] = useState({
-    patientName: '',
     uhid: '',
+    patientId: '',
     recordType: 'IPD' as MedicalRecord['recordType'],
-    department: '',
-    attendingDoctor: '',
-    admissionDate: '',
-    diagnosis: '',
-    shelf: '',
-    rack: ''
+    location: '',
   });
 
   // These operational queues are still local-only screens; keep them empty rather than
@@ -242,23 +243,13 @@ const HospitalMRD = () => {
     setShowDigitizationDialog(true);
   };
 
-  // WP-0.3: this handler has no backend call at all — a new MRD record only ever goes into localStorage
-  // (saveHospitalStore below), never the database. It survives this browser only; it is not visible to any other
-  // desk or device, and is lost if site data is cleared. Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md — needs
-  // a real POST endpoint before this screen can be trusted as the department's actual index.
   const handleCreateRecord = async () => {
-    if (!newRecordForm.patientName.trim() || !newRecordForm.uhid.trim()) {
+    const uhid = newRecordForm.uhid.trim();
+    const patientId = newRecordForm.patientId.trim();
+    if (!uhid && !patientId) {
       toast({
-        title: 'Missing details',
-        description: 'Patient name and UHID are required.',
-        variant: 'destructive'
-      });
-      return;
-    }
-    if (!newRecordForm.attendingDoctor.trim()) {
-      toast({
-        title: 'Attending doctor required',
-        description: "Enter the attending doctor's name — this is a medical record index entry.",
+        title: 'Patient required',
+        description: 'Enter the patient UHID, or the patient ID if no UHID has been assigned yet.',
         variant: 'destructive'
       });
       return;
@@ -266,32 +257,18 @@ const HospitalMRD = () => {
 
     try {
       const response = await api.post('/hospital/practice/mrd/records', {
-        patientId: newRecordForm.uhid,
-        patientName: newRecordForm.patientName.trim(),
-        uhid: newRecordForm.uhid.trim(),
+        ...(uhid ? { uhid } : { patientId }),
         recordType: newRecordForm.recordType,
-        department: newRecordForm.department,
-        admissionDate: newRecordForm.admissionDate,
-        attendingDoctor: newRecordForm.attendingDoctor.trim(),
-        location: 'Main Archive',
+        location: newRecordForm.location.trim() || undefined,
       }, { headers: hospitalHeaders() });
       const saved = response.data?.data;
       if (!saved) throw new Error('MRD service returned no record');
-      const created: MedicalRecord = {
-        id: String(saved.id), mrdNumber: saved.mrdNumber, patientId: String(saved.patientId), patientName: saved.patientName,
-        uhid: saved.uhid, recordType: newRecordForm.recordType, department: saved.department || 'General Medicine',
-        admissionDate: saved.admissionDate || new Date().toISOString().slice(0, 10), attendingDoctor: newRecordForm.attendingDoctor.trim(),
-        diagnosis: newRecordForm.diagnosis || 'Pending', fileLocation: saved.location || 'Main Archive', shelf: newRecordForm.shelf || 'S-01', rack: newRecordForm.rack || 'R-01',
-        status: 'Active', documents: [], auditTrail: [], createdAt: saved.createdAt || new Date().toISOString().slice(0, 10), updatedAt: saved.updatedAt || new Date().toISOString().slice(0, 10),
-      };
-      setRecords((prev) => [created, ...prev]);
-      setNewRecordForm({
-        patientName: '', uhid: '', recordType: 'IPD', department: '', attendingDoctor: '', admissionDate: '', diagnosis: '', shelf: '', rack: ''
-      });
+      setRecords((prev) => [mapMrdRecord(saved), ...prev]);
+      setNewRecordForm({ uhid: '', patientId: '', recordType: 'IPD', location: '' });
       setShowNewRecordDialog(false);
-      toast({ title: 'Record created', description: `${created.patientName}'s record was saved to MRD.` });
+      toast({ title: 'Record created', description: `${saved.mrdNumber} indexed for ${saved.patientName || 'the patient'}.` });
     } catch (error: any) {
-      toast({ title: 'Record not created', description: error.response?.data?.message || 'The MRD service rejected the write; nothing was saved locally.', variant: 'destructive' });
+      toast({ title: 'Record not created', description: error.response?.data?.message || 'The MRD service rejected the write; nothing was saved.', variant: 'destructive' });
     }
   };
 
@@ -732,19 +709,20 @@ const HospitalMRD = () => {
                     </DialogHeader>
                     <div className="grid grid-cols-2 gap-4 py-4">
                       <div className="space-y-2">
-                        <Label>Patient Name</Label>
-                        <Input
-                          placeholder="Patient name"
-                          value={newRecordForm.patientName}
-                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, patientName: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
                         <Label>Patient UHID</Label>
                         <Input
                           placeholder="Enter UHID"
                           value={newRecordForm.uhid}
                           onChange={(e) => setNewRecordForm(prev => ({ ...prev, uhid: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>or Patient ID (if no UHID yet)</Label>
+                        <Input
+                          placeholder="e.g., 17"
+                          inputMode="numeric"
+                          value={newRecordForm.patientId}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, patientId: e.target.value }))}
                         />
                       </div>
                       <div className="space-y-2">
@@ -766,61 +744,16 @@ const HospitalMRD = () => {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Department</Label>
-                        <Select
-                          value={newRecordForm.department}
-                          onValueChange={(value) => setNewRecordForm(prev => ({ ...prev, department: value }))}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select department" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {departments.map(dept => (
-                              <SelectItem key={dept} value={dept}>{dept}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Attending Doctor</Label>
+                        <Label>File Location</Label>
                         <Input
-                          placeholder="Doctor name"
-                          value={newRecordForm.attendingDoctor}
-                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, attendingDoctor: e.target.value }))}
+                          placeholder="e.g., Main Archive, Shelf S-12"
+                          value={newRecordForm.location}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, location: e.target.value }))}
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label>Admission Date</Label>
-                        <Input
-                          type="date"
-                          value={newRecordForm.admissionDate}
-                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, admissionDate: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Diagnosis</Label>
-                        <Input
-                          placeholder="Primary diagnosis"
-                          value={newRecordForm.diagnosis}
-                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, diagnosis: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Shelf Location</Label>
-                        <Input
-                          placeholder="e.g., S-12"
-                          value={newRecordForm.shelf}
-                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, shelf: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Rack Location</Label>
-                        <Input
-                          placeholder="e.g., R-05"
-                          value={newRecordForm.rack}
-                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, rack: e.target.value }))}
-                        />
-                      </div>
+                      <p className="col-span-2 text-xs text-muted-foreground">
+                        The patient's name is read from their registration. MRD tracks where the file is and who has it; clinical details stay in the clinical record.
+                      </p>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowNewRecordDialog(false)}>Cancel</Button>

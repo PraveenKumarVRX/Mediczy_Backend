@@ -99,6 +99,16 @@ deploy_body() {
 
   # ── automatic revert setup (WP-0.6) ─────────────────────────────────────────
   PREV_SHA="$(git rev-parse HEAD)"
+  # The revert target must be the commit that is LIVE (recorded in .deploy/current-live-sha after its own health
+  # check passed), not HEAD: by this point HEAD is usually already the new code, so reverting to it would just
+  # restart the same broken commit. Falls back to HEAD only when nothing has been recorded yet.
+  if [ -f "$PROD_PATH/.deploy/current-live-sha" ]; then
+    LIVE_SHA="$(tr -d '[:space:]' < "$PROD_PATH/.deploy/current-live-sha")"
+    if [ -n "$LIVE_SHA" ] && git cat-file -e "${LIVE_SHA}^{commit}" 2>/dev/null; then
+      PREV_SHA="$LIVE_SHA"
+    fi
+  fi
+  [ "$PREV_SHA" != "$(git rev-parse HEAD)" ] && echo -e "${BLUE}ℹ Auto-revert target is the live commit ${PREV_SHA:0:8} (checkout HEAD is $(git rev-parse --short HEAD))${NC}"
   # Recorded so a separate check that only runs AFTER this script exits successfully (e.g. the GitHub Actions
   # workflow's public-endpoint check, which this box's own localhost health check above can't see) still has
   # something to roll back to — see scripts/deploy/rollback.sh.
@@ -258,6 +268,14 @@ fi
 
 # ── automatic revert setup (WP-0.6), mirrors deploy_body() above ────────────
 PREV_SHA="$(git rev-parse HEAD)"
+# Revert target = the commit that is LIVE (.deploy/current-live-sha, written after its health check passed), not
+# HEAD — see deploy_body() above.
+if [ -f "$PROD_PATH/.deploy/current-live-sha" ]; then
+  LIVE_SHA="$(tr -d '[:space:]' < "$PROD_PATH/.deploy/current-live-sha")"
+  if [ -n "$LIVE_SHA" ] && git cat-file -e "${LIVE_SHA}^{commit}" 2>/dev/null; then
+    PREV_SHA="$LIVE_SHA"
+  fi
+fi
 mkdir -p "$PROD_PATH/.deploy" 2>/dev/null || true
 echo "$PREV_SHA" > "$PROD_PATH/.deploy/last-good-sha" 2>/dev/null || true
 PREV_INDEX_BACKUP=""

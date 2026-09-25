@@ -1,4 +1,5 @@
 import { prescriptionSafetyGate } from '../../services/prescription-safety.service.js';
+import * as hospitalMrd from '../../services/hospital-mrd.service.js';
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
@@ -1469,46 +1470,15 @@ router.patch('/insurance/claims/:id', verifyHospitalToken, async (req, res) => {
  * POST /api/hospital/practice/mrd/digitization-queue
  */
 router.post('/mrd/digitization-queue', verifyHospitalToken, async (req, res) => {
+  const { recordId } = req.body || {};
+  if (!recordId) return res.status(400).json({ success: false, message: 'Record ID is required' });
   try {
-    const { recordId } = req.body;
-    const hospitalId = req.hospitalId;
-
-    if (!recordId) {
-      return res.status(400).json({ success: false, message: 'Record ID is required' });
-    }
-
-    const [record] = await sequelize.query(
-      `SELECT id, mrd_number, patient_name, total_pages 
-       FROM medical_records 
-       WHERE id = :recordId AND hospital_id = :hospitalId`,
-      { replacements: { recordId, hospitalId }, type: QueryTypes.SELECT }
-    );
-
-    if (!record) {
-      return res.status(404).json({ success: false, message: 'Medical record not found' });
-    }
-
-    const [queueEntry] = await sequelize.query(
-      `INSERT INTO digitization_queue 
-       (record_id, mrd_number, patient_name, total_pages, status, priority, hospital_id, created_at, updated_at)
-       VALUES (:recordId, :mrdNumber, :patientName, :totalPages, 'pending', 'normal', :hospitalId, NOW(), NOW())
-       RETURNING *`,
-      {
-        replacements: {
-          recordId: record.id,
-          mrdNumber: record.mrd_number,
-          patientName: record.patient_name,
-          totalPages: record.total_pages || 0,
-          hospitalId
-        },
-        type: QueryTypes.INSERT
-      }
-    );
-
-    res.status(201).json({ success: true, message: 'Record added to digitization queue', data: queueEntry[0] });
+    const entry = await hospitalMrd.queueForDigitization(Number(req.hospitalId), Number(recordId));
+    res.status(201).json({ success: true, message: 'Record added to digitization queue', data: entry });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     console.error('Error adding to digitization queue:', error);
-    res.status(500).json({ success: false, message: 'Failed to add record to queue', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to add record to queue' });
   }
 });
 
@@ -1532,19 +1502,7 @@ router.get('/discharge-summaries', verifyHospitalToken, async (req, res) => {
 
 router.get('/mrd/records', verifyHospitalToken, async (req, res) => {
   try {
-    const { search, limit = '50' } = req.query;
-    const params = { hospitalId: req.hospitalId, limit: Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200) };
-    let where = 'hospital_id = :hospitalId';
-    if (search) { where += ' AND (mrd_number ILIKE :search OR patient_name ILIKE :search OR uhid ILIKE :search)'; params.search = `%${String(search).trim()}%`; }
-    const [rows] = await sequelize.query(
-      `SELECT id, mrd_number AS "mrdNumber", patient_id AS "patientId", patient_name AS "patientName",
-              uhid, record_type AS "recordType", department, admission_date AS "admissionDate",
-              attending_doctor AS "attendingDoctor", diagnosis,
-              discharge_date AS "dischargeDate", total_pages AS "totalPages", location, status,
-              created_at AS "createdAt", updated_at AS "updatedAt"
-         FROM medical_records WHERE ${where} ORDER BY updated_at DESC LIMIT :limit`,
-      { replacements: params, type: QueryTypes.SELECT }
-    );
+    const rows = await hospitalMrd.listMrdRecords(Number(req.hospitalId), { search: req.query.search, limit: req.query.limit });
     res.json({ success: true, data: rows, total: rows.length });
   } catch (error) {
     console.error('Error listing MRD records:', error);
@@ -1553,27 +1511,13 @@ router.get('/mrd/records', verifyHospitalToken, async (req, res) => {
 });
 
 router.post('/mrd/records', verifyHospitalToken, async (req, res) => {
-  const { patientId, patientName, uhid, recordType, department, admissionDate, attendingDoctor, diagnosis, location } = req.body || {};
-  if (!patientId || !patientName || !uhid || !attendingDoctor) {
-    return res.status(400).json({ success: false, message: 'patientId, patientName, uhid and attendingDoctor are required' });
-  }
   try {
-    const [rows] = await sequelize.query(
-      `INSERT INTO medical_records
-         (mrd_number, patient_id, patient_name, uhid, hospital_id, record_type, department,
-          admission_date, attending_doctor, diagnosis, location, status, created_at, updated_at)
-       VALUES (('MRD-' || TO_CHAR(NOW(), 'YYYY') || '-' || LPAD(nextval('mrd_number_seq')::TEXT, 6, '0')),
-               :patientId, :patientName, :uhid, :hospitalId, :recordType, :department,
-               COALESCE(:admissionDate, CURRENT_DATE), :attendingDoctor, :diagnosis, :location, 'active', NOW(), NOW())
-       RETURNING id, mrd_number AS "mrdNumber", patient_id AS "patientId", patient_name AS "patientName",
-                 uhid, record_type AS "recordType", department, admission_date AS "admissionDate",
-                 attending_doctor AS "attendingDoctor", diagnosis, location, status, created_at AS "createdAt", updated_at AS "updatedAt"`,
-      { replacements: { patientId, patientName, uhid, hospitalId: req.hospitalId, recordType: recordType || 'physical', department: department || null, admissionDate: admissionDate || null, attendingDoctor: attendingDoctor || null, diagnosis: diagnosis || null, location: location || 'Main Archive' }, type: QueryTypes.INSERT }
-    );
-    res.status(201).json({ success: true, data: rows[0] });
+    const record = await hospitalMrd.createMrdRecord(Number(req.hospitalId), req.body || {}, req.user?.id || null);
+    res.status(201).json({ success: true, data: record });
   } catch (error) {
+    if (error.status) return res.status(error.status).json({ success: false, message: error.message });
     console.error('Error creating MRD record:', error);
-    res.status(500).json({ success: false, message: 'Failed to create MRD record', error: error.message });
+    res.status(500).json({ success: false, message: 'Failed to create MRD record' });
   }
 });
 

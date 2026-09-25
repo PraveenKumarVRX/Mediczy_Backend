@@ -181,6 +181,9 @@ BEGIN
     'finance_expenses', 'finance_budgets', 'finance_journal_entries', 'finance_tax_codes'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    -- The app role OWNS these tables; without FORCE an owner bypasses its own policies. Every access path
+    -- (services/finance-*.js, entitlement.service.js) runs inside withRlsTransaction, which sets the org context.
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format('DROP POLICY IF EXISTS %I ON %I', t || '_tenant_isolation', t);
     EXECUTE format(
       'CREATE POLICY %I ON %I USING (organization_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::bigint OR current_setting(''app.is_platform_admin'', true) = ''true'') WITH CHECK (organization_id = NULLIF(current_setting(''app.current_org_id'', true), '''')::bigint OR current_setting(''app.is_platform_admin'', true) = ''true'')',
@@ -188,6 +191,7 @@ BEGIN
     );
   END LOOP;
   ALTER TABLE finance_journal_lines ENABLE ROW LEVEL SECURITY;
+  ALTER TABLE finance_journal_lines FORCE ROW LEVEL SECURITY;
   DROP POLICY IF EXISTS finance_journal_lines_tenant_isolation ON finance_journal_lines;
   CREATE POLICY finance_journal_lines_tenant_isolation ON finance_journal_lines
     USING (EXISTS (SELECT 1 FROM finance_journal_entries e WHERE e.id = journal_entry_id AND (e.organization_id = NULLIF(current_setting('app.current_org_id', true), '')::bigint OR current_setting('app.is_platform_admin', true) = 'true')))
