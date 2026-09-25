@@ -61,6 +61,28 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# ── memory preflight (on-host client build only) ─────────────────────────────
+# Measured 2026-09-25 (main @ 31a4db9b, vite 5, 7784 modules): a client build peaks at ~4.6GB RSS (~5GB
+# with child processes) and takes ~1m45s. On this box the VS Code remote server alone routinely holds 5-7GB,
+# and earlyoom starts killing at 8% free (~1.3GB), so a build started with too little headroom gets a process
+# killed mid-deploy. Check BEFORE any change is made, so a low-memory box aborts cleanly instead of reverting.
+# Skipped for off-host builds (CLIENT_DIST_ARCHIVE). Override: MIN_BUILD_MEM_MB=<n>, or SKIP_MEM_CHECK=true.
+check_build_memory() {
+  [ -n "${CLIENT_DIST_ARCHIVE:-}" ] && return 0
+  [ "${SKIP_MEM_CHECK:-false}" = true ] && return 0
+  local need="${MIN_BUILD_MEM_MB:-5500}"
+  local avail
+  avail="$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+  if [ "${avail:-0}" -lt "$need" ]; then
+    echo "❌ Only ${avail}MB memory available; an on-host client build needs ~${need}MB. Nothing was changed." >&2
+    echo "   Free memory first (top consumers: ps -eo rss,args --sort=-rss | head), e.g. close the VS Code remote" >&2
+    echo "   window / language servers, then retry. Or build off-host and pass CLIENT_DIST_ARCHIVE=<tarball>." >&2
+    echo "   Override (not recommended): SKIP_MEM_CHECK=true or MIN_BUILD_MEM_MB=<n>." >&2
+    return 1
+  fi
+  echo "✓ Memory preflight: ${avail}MB available (need ~${need}MB for the client build)"
+}
+
 ssh_exec() {
   local ssh_args=(-o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=no)
   if [ -f "$SSH_KEY" ]; then
@@ -72,6 +94,8 @@ ssh_exec() {
 deploy_body() {
   set -euo pipefail
   cd "$PROD_PATH"
+
+  check_build_memory || exit 1
 
   # ── automatic revert setup (WP-0.6) ─────────────────────────────────────────
   PREV_SHA="$(git rev-parse HEAD)"
@@ -221,6 +245,16 @@ PROD_PATH="${PROD_PATH:-/home/ubuntu/Mediczy}"
 SKIP_S3="${SKIP_S3:-false}"
 RESET_TO_ORIGIN_MAIN="${RESET_TO_ORIGIN_MAIN:-false}"
 cd "$PROD_PATH"
+
+# memory preflight, mirrors check_build_memory() above (runs before any change is made)
+if [ -z "${CLIENT_DIST_ARCHIVE:-}" ] && [ "${SKIP_MEM_CHECK:-false}" != true ]; then
+  NEED="${MIN_BUILD_MEM_MB:-5500}"
+  AVAIL="$(awk '/^MemAvailable:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+  if [ "${AVAIL:-0}" -lt "$NEED" ]; then
+    echo "❌ Only ${AVAIL}MB memory available; an on-host client build needs ~${NEED}MB. Nothing was changed." >&2
+    exit 1
+  fi
+fi
 
 # ── automatic revert setup (WP-0.6), mirrors deploy_body() above ────────────
 PREV_SHA="$(git rev-parse HEAD)"
