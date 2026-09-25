@@ -101,7 +101,8 @@ export async function postJournalEntry(organizationId, input, actorId) {
   const debit = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
   const credit = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
   if (debit <= 0 || credit <= 0 || money(debit) !== money(credit)) throw new Error('Journal entry must balance with positive debit and credit totals');
-  return scoped(organizationId, actorId, async (client) => {
+  try {
+    return await scoped(organizationId, actorId, async (client) => {
     const entryDate = input.entry_date || new Date().toISOString().slice(0, 10);
     await assertPeriodOpen(client, organizationId, entryDate);
 
@@ -124,13 +125,12 @@ export async function postJournalEntry(organizationId, input, actorId) {
         [organizationId, entryDate, input.description, sourceType, input.source_id || null, actorId || null]
       );
     } catch (err) {
-      // 23505 = lost the race against a concurrent writer for the same source.
+      // 23505 = lost the race against a concurrent writer for the same source. The transaction
+      // is now aborted, so the replay lookup MUST run on a fresh connection/transaction —
+      // querying here would fail with 25P02 "current transaction is aborted".
       if (err.code === '23505' && input.source_id) {
-        const prior = await client.query(
-          `SELECT * FROM finance_journal_entries WHERE organization_id = $1 AND source_type = $2 AND source_id = $3`,
-          [organizationId, sourceType, input.source_id]
-        );
-        if (prior.rows[0]) return { ...prior.rows[0], idempotentReplay: true };
+        const lostRace = { __lostIdempotencyRace: true, organizationId, sourceType, sourceId: input.source_id };
+        throw Object.assign(err, lostRace);
       }
       throw err;
     }
@@ -140,7 +140,20 @@ export async function postJournalEntry(organizationId, input, actorId) {
       await client.query('INSERT INTO finance_journal_lines (journal_entry_id, account_id, debit, credit, narration) VALUES ($1,$2,$3,$4,$5)', [entry.rows[0].id, line.accountId, Number(line.debit || 0), Number(line.credit || 0), line.narration || null]);
     }
     return entry.rows[0];
-  });
+    });
+  } catch (err) {
+    // A concurrent writer already committed this source document. The winner's entry is the
+    // authoritative one, so read it back on a clean transaction and treat this as a replay.
+    if (err.__lostIdempotencyRace) {
+      const prior = await scoped(organizationId, actorId, (client) => client.query(
+        `SELECT * FROM finance_journal_entries WHERE organization_id = $1 AND source_type = $2 AND source_id = $3`,
+        [organizationId, err.sourceType, err.sourceId]
+      ));
+      if (prior.rows[0]) return { ...prior.rows[0], idempotentReplay: true };
+      throw new Error('Conflicting journal entry for this source could not be resolved');
+    }
+    throw err;
+  }
 }
 
 // ── Fiscal periods ───────────────────────────────────────────────────────────

@@ -286,6 +286,8 @@ export async function updateDraftContent(packetId, { draftContent, diagnosisSumm
 
 export async function signDischargePacket(packetId, { signedBy, finalContent, organizationId, override = null }) {
   const { getDischargeReadiness } = await import('./adt.service.js');
+  const { hasSignedReconciliation } = await import('./med-reconciliation.service.js');
+  const { reconciliationRequired } = await import('./prescription-safety.service.js');
   const [packetRows] = await sequelize.query(
     `SELECT admission_id AS "admissionId" FROM discharge_packets WHERE id = :id LIMIT 1`,
     { replacements: { id: packetId }, type: QueryTypes.SELECT }
@@ -297,6 +299,32 @@ export async function signDischargePacket(packetId, { signedBy, finalContent, or
     error.status = 404;
     throw error;
   }
+
+  // Signing the packet is the last clinical gate before a patient receives medication
+  // instructions, so a signed discharge reconciliation is required here too — a readiness
+  // checklist item must not be able to stand in for the actual signed record.
+  if (await reconciliationRequired(organizationId)) {
+    const [admission] = await sequelize.query(
+      `SELECT patient_id FROM ip_admissions WHERE id = :admId AND organization_id = :orgId`,
+      { replacements: { admId: admissionId, orgId: organizationId }, type: QueryTypes.SELECT }
+    );
+    const reconciled = admission && await hasSignedReconciliation({ organizationId, patientId: admission.patient_id, admissionId, type: 'discharge' });
+    if (!reconciled) {
+      const authorised = override?.reasonCode && override?.approverId && ['admin', 'super_admin', 'medical_director', 'discharge_officer'].includes(override.approverRole);
+      if (!authorised) {
+        const error = new Error('Discharge packet cannot be signed until medication reconciliation is signed');
+        error.code = 'RECONCILIATION_REQUIRED';
+        error.status = 409;
+        throw error;
+      }
+      await sequelize.query(
+        `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
+         VALUES (:admissionId, :orgId, :items::jsonb, :reason, :approver, :role)`,
+        { replacements: { admissionId, orgId: organizationId || null, items: JSON.stringify([{ dimension: 'medication_reconciliation' }]), reason: override.reasonCode, approver: override.approverId, role: override.approverRole }, type: QueryTypes.INSERT }
+      );
+    }
+  }
+
   const readiness = await getDischargeReadiness(admissionId, organizationId);
   if (!readiness.ready) {
     const pending = readiness.mandatoryPending || [];

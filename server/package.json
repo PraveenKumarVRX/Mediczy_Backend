@@ -6,6 +6,7 @@
   "scripts": {
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "migrate:all": "node scripts/migrate-all.mjs up",
+    "test:phase1-finance-dryrun": "DRYRUN_PHASE=migrate node scripts/qa/phase1-finance-dryrun.mjs && DRYRUN_PHASE=verify node scripts/qa/phase1-finance-dryrun.mjs",
     "migrate:status": "node scripts/migrate-all.mjs status",
     "migrate:crm": "node scripts/migrate-crm-all.mjs",
     "process:crm:growth": "node scripts/process-crm-growth.mjs",

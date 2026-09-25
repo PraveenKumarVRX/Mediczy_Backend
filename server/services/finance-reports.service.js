@@ -74,13 +74,15 @@ export async function balanceSheet(organizationId, asOf) {
 
 export async function taxSummary(organizationId, range = {}) {
   const r = rangeArgs(range);
+  // finance_expenses has no entry_date; the range must be applied to expense_date.
+  const from = r.from.replace('e.entry_date', 'e.expense_date');
+  const to = r.to.replace('e.entry_date', 'e.expense_date');
   const rows = await scoped(organizationId, (client) => client.query(
     `SELECT e.tax_code, COALESCE(SUM(e.amount),0)::NUMERIC AS taxable_value,
             COALESCE(SUM(e.tax_amount),0)::NUMERIC AS tax_amount, COUNT(*)::int AS entries
      FROM finance_expenses e
-     WHERE e.organization_id = $3 AND e.status <> 'void' AND e.tax_code IS NOT NULL AND %FROM% AND %TO%
-     GROUP BY e.tax_code ORDER BY e.tax_code`
-      .replace('%FROM%', `(${r.from.replace('e.', 'e.')})`).replace('%TO%', r.to),
+     WHERE e.organization_id = $3 AND e.status <> 'void' AND e.tax_code IS NOT NULL AND ${from} AND ${to}
+     GROUP BY e.tax_code ORDER BY e.tax_code`,
     [...r.params, organizationId]
   ));
   return {
