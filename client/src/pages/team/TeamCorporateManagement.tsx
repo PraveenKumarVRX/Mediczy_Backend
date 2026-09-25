@@ -337,16 +337,29 @@ const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
   email: 'email',
   'email id': 'email',
   emailid: 'email',
+  'e mail': 'email',
+  'e mail id': 'email',
   'email address': 'email',
+  'mail id': 'email',
   'work email': 'email',
   'official email': 'email',
+  'official mail': 'email',
+  'official mail id': 'email',
   'corporate email': 'email',
+  'employee email': 'email',
+  'employee mail id': 'email',
   phone: 'phoneNumber',
+  phoneno: 'phoneNumber',
+  'phone no': 'phoneNumber',
   phonenumber: 'phoneNumber',
   'phone number': 'phoneNumber',
   mobile: 'phoneNumber',
+  mobileno: 'phoneNumber',
+  'mobile no': 'phoneNumber',
   'mobile number': 'phoneNumber',
   contact: 'phoneNumber',
+  contactno: 'phoneNumber',
+  'contact no': 'phoneNumber',
   'contact number': 'phoneNumber',
   employeeid: 'employeeId',
   'employee id': 'employeeId',
@@ -363,13 +376,17 @@ const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
   'employee number': 'employeeId',
   'emp no': 'employeeId',
   'personnel number': 'employeeId',
+  'company id': 'employeeId',
+  'member id': 'employeeId',
   department: 'department',
+  'department name': 'department',
   dept: 'department',
   function: 'department',
   'business unit': 'department',
   vertical: 'department',
   designation: 'designation',
   role: 'designation',
+  'job role': 'designation',
   'job title': 'designation',
   title: 'designation',
   position: 'designation',
@@ -381,9 +398,11 @@ const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
   gender: 'gender',
   sex: 'gender',
   city: 'city',
+  'city name': 'city',
   'work city': 'city',
   'base city': 'city',
   state: 'state',
+  'state name': 'state',
   'work state': 'state',
   pincode: 'pinCode',
   'pin code': 'pinCode',
@@ -392,7 +411,9 @@ const BULK_EMPLOYEE_HEADER_ALIASES: Record<string, BulkEmployeeField> = {
   'zip code': 'pinCode',
   'postal code': 'pinCode',
   location: 'location',
+  'location name': 'location',
   branch: 'location',
+  'branch name': 'location',
   'work location': 'location',
   'office location': 'location',
   hub: 'location',
@@ -418,6 +439,47 @@ const resolveBulkHeaderField = (header: string): BulkEmployeeField | '' => {
   const normalized = normalizeBulkHeaderKey(header);
   if (!normalized) return '';
   return BULK_EMPLOYEE_HEADER_ALIASES[normalized] || BULK_EMPLOYEE_HEADER_ALIASES[normalized.replace(/\s+/g, '')] || '';
+};
+
+const resolveBulkHeaderFieldWithMap = (header: string, aiColumnMap: Record<string, string> = {}): BulkEmployeeField | '' => {
+  const deterministicField = resolveBulkHeaderField(header);
+  if (deterministicField) return deterministicField;
+  const aiMapped = aiColumnMap[header] || aiColumnMap[normalizeBulkHeaderKey(header)];
+  return isBulkEmployeeField(aiMapped) ? aiMapped : '';
+};
+
+const scoreBulkHeaderRow = (row: string[], aiColumnMap: Record<string, string> = {}) => {
+  const fields = row.map((header) => resolveBulkHeaderFieldWithMap(header, aiColumnMap));
+  const uniqueFields = new Set(fields.filter(Boolean));
+  let score = uniqueFields.size;
+
+  if (uniqueFields.has('firstName')) score += 2;
+  if (uniqueFields.has('employeeId')) score += 2;
+  if (uniqueFields.has('email')) score += 1;
+  if (uniqueFields.has('phoneNumber')) score += 1;
+
+  return { fields, score };
+};
+
+const findBulkHeaderRowIndex = (rows: string[][], aiColumnMap: Record<string, string> = {}) => {
+  let bestIndex = -1;
+  let bestScore = 0;
+  let bestWidth = 0;
+  const scanLimit = Math.min(rows.length, 25);
+
+  for (let index = 0; index < scanLimit; index += 1) {
+    const row = rows[index] || [];
+    const { score } = scoreBulkHeaderRow(row, aiColumnMap);
+    const width = row.filter((cell) => String(cell || '').trim()).length;
+
+    if (score > bestScore || (score === bestScore && score > 0 && width > bestWidth)) {
+      bestIndex = index;
+      bestScore = score;
+      bestWidth = width;
+    }
+  }
+
+  return bestIndex >= 0 ? bestIndex : 0;
 };
 
 interface CommunicationTemplate {
@@ -4477,17 +4539,13 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
     if (nonEmptyRows.length < 2) return [];
 
-    const sourceHeaders = nonEmptyRows[0].map(h => String(h || '').trim());
-    const headers = sourceHeaders.map((header) => {
-      const deterministicField = resolveBulkHeaderField(header);
-      if (deterministicField) return deterministicField;
-      const aiMapped = aiColumnMap[header] || aiColumnMap[normalizeBulkHeaderKey(header)];
-      if (isBulkEmployeeField(aiMapped)) return aiMapped;
-      return '';
-    });
+    const headerRowIndex = findBulkHeaderRowIndex(nonEmptyRows, aiColumnMap);
+    const sourceHeaders = (nonEmptyRows[headerRowIndex] || []).map(h => String(h || '').trim());
+    const { fields: headers, score } = scoreBulkHeaderRow(sourceHeaders, aiColumnMap);
+    if (score === 0) return [];
     const employees = [];
 
-    for (let i = 1; i < nonEmptyRows.length; i++) {
+    for (let i = headerRowIndex + 1; i < nonEmptyRows.length; i++) {
       const values = nonEmptyRows[i].map(v => String(v || '').trim());
       const rawEmployee: any = {};
 
@@ -4566,19 +4624,34 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   const readExcelRows = async (file: File) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(await file.arrayBuffer());
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) return [];
+    let fallbackRows: string[][] = [];
+    let bestRows: string[][] = [];
+    let bestScore = 0;
 
-    const rows: string[][] = [];
-    worksheet.eachRow({ includeEmpty: false }, (row) => {
-      const rowValues: string[] = [];
-      for (let col = 1; col <= row.cellCount; col++) {
-        rowValues.push(getExcelCellText(row.getCell(col).value).trim());
+    workbook.worksheets.forEach((worksheet) => {
+      const rows: string[][] = [];
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        const rowValues: string[] = [];
+        for (let col = 1; col <= row.cellCount; col++) {
+          rowValues.push(getExcelCellText(row.getCell(col).value).trim());
+        }
+        rows.push(rowValues);
+      });
+
+      const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
+      if (!fallbackRows.length && nonEmptyRows.length > 0) fallbackRows = rows;
+      if (nonEmptyRows.length < 2) return;
+
+      const headerRowIndex = findBulkHeaderRowIndex(nonEmptyRows);
+      const headerRow = nonEmptyRows[headerRowIndex] || [];
+      const { score } = scoreBulkHeaderRow(headerRow);
+      if (score > bestScore) {
+        bestRows = rows;
+        bestScore = score;
       }
-      rows.push(rowValues);
     });
 
-    return rows;
+    return bestScore > 0 ? bestRows : fallbackRows;
   };
 
   const parseExcel = async (file: File) => parseBulkEmployeeRows(await readExcelRows(file));
@@ -4597,10 +4670,11 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     const nonEmptyRows = rows.filter(row => row.some(cell => String(cell || '').trim()));
     if (nonEmptyRows.length < 2) return {};
 
-    const headers = nonEmptyRows[0].map(h => String(h || '').trim()).filter(Boolean);
+    const headerRowIndex = findBulkHeaderRowIndex(nonEmptyRows);
+    const headers = (nonEmptyRows[headerRowIndex] || []).map(h => String(h || '').trim()).filter(Boolean);
     if (!headers.length) return {};
 
-    const sampleRows = nonEmptyRows.slice(1, 4).map((row) => {
+    const sampleRows = nonEmptyRows.slice(headerRowIndex + 1, headerRowIndex + 4).map((row) => {
       const record: Record<string, string> = {};
       headers.forEach((header, idx) => {
         record[header] = maskBulkSampleValue(row[idx] || '');
@@ -4738,6 +4812,15 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       setBulkUploadResults(null);
       setBulkAiColumnSummary(null);
       
+      if (/\.xls$/i.test(bulkUploadFile.name) && !/\.xlsx$/i.test(bulkUploadFile.name)) {
+        toast({
+          variant: 'destructive',
+          title: 'Unsupported Excel format',
+          description: 'Please save the workbook as .xlsx or CSV, then upload again.'
+        });
+        return;
+      }
+
       const isExcelFile = /\.xlsx$/i.test(bulkUploadFile.name);
       const uploadRows = isExcelFile
         ? await readExcelRows(bulkUploadFile)
