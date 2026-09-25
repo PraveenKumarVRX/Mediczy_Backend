@@ -43,7 +43,10 @@ router.post('/discharge', authUser, async (req, res) => {
     const result = await dischargePatient({ ...req.body, organizationId, performedBy: req.user.id, override });
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(err.status || 400).json({ success: false, code: err.code, message: err.message });
+    // A discharge blocked by a precondition (readiness, billing, reconciliation) is a conflict with the record's
+    // current state — 409, consistent with the discharge-packet sign route — not a generic 400.
+    const status = err.status || (/^Discharge blocked/.test(err.message || '') ? 409 : 400);
+    res.status(status).json({ success: false, code: err.code, message: err.message });
   }
 });
 
