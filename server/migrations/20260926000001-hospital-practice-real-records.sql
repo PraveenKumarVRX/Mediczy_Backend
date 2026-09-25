@@ -17,8 +17,10 @@ CREATE INDEX IF NOT EXISTS idx_discharge_summaries_hospital_updated
 -- Sequence for MRD numbers, avoiding a COUNT(*) race between concurrent creators.
 CREATE SEQUENCE IF NOT EXISTS mrd_number_seq START 1;
 
-CREATE INDEX IF NOT EXISTS idx_medical_records_hospital_updated
-  ON medical_records(hospital_id, updated_at DESC);
+-- NOTE: on this database medical_records is tenant-scoped by organization_id (it has no hospital_id column);
+-- discharge_summaries is the table that carries hospital_id.
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_updated
+  ON medical_records(organization_id, updated_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_medical_records_patient
-  ON medical_records(hospital_id, patient_id);
+CREATE INDEX IF NOT EXISTS idx_medical_records_org_patient
+  ON medical_records(organization_id, patient_id);
