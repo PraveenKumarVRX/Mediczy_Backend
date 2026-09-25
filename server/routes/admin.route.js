@@ -6026,15 +6026,34 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
 router.post('/corporate-network-assignments', authUser, requireRole(['admin', 'team']), async (req, res) => {
   try {
     const { corporateId, partnerId, partnerType, employeeIds } = req.body;
-
-    if (!corporateId || !partnerId || !partnerType) {
-      return res.status(400).json({ success: false, message: 'corporateId, partnerId and partnerType are required' });
-    }
-
     const validTypes = ['lab', 'hospital', 'clinic'];
-    if (!validTypes.includes(partnerType)) {
-      return res.status(400).json({ success: false, message: 'partnerType must be lab, hospital or clinic' });
+    const requestedPartners = Array.isArray(req.body.partners)
+      ? req.body.partners
+      : (partnerId && partnerType ? [{ partnerId, partnerType }] : []);
+
+    if (!corporateId || requestedPartners.length === 0) {
+      return res.status(400).json({ success: false, message: 'corporateId and at least one partner are required' });
     }
+
+    const partnerMap = new Map();
+    for (const partner of requestedPartners) {
+      const normalizedPartnerId = parseInt(partner.partnerId, 10);
+      const normalizedPartnerType = partner.partnerType;
+
+      if (!normalizedPartnerId || Number.isNaN(normalizedPartnerId)) {
+        return res.status(400).json({ success: false, message: 'partnerId must be a valid number' });
+      }
+
+      if (!validTypes.includes(normalizedPartnerType)) {
+        return res.status(400).json({ success: false, message: 'partnerType must be lab, hospital or clinic' });
+      }
+
+      partnerMap.set(`${normalizedPartnerType}:${normalizedPartnerId}`, {
+        partnerId: normalizedPartnerId,
+        partnerType: normalizedPartnerType,
+      });
+    }
+    const normalizedPartners = Array.from(partnerMap.values());
 
     // Resolve employee count for the response
     let assignedCount = 0;
@@ -6063,34 +6082,37 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
           UNIQUE (corporate_id, partner_id, partner_type)
         )
       `);
-      await postgresSequelize.query(`
-        INSERT INTO corporate_network_assignments (corporate_id, partner_id, partner_type, employee_ids, assigned_by, assigned_at)
-        VALUES (:corporateId, :partnerId, :partnerType, :employeeIds, :assignedBy, NOW())
-        ON CONFLICT (corporate_id, partner_id, partner_type) DO UPDATE
-          SET employee_ids = EXCLUDED.employee_ids,
-              assigned_by = EXCLUDED.assigned_by,
-              assigned_at = NOW()
-      `, {
-        replacements: {
-          corporateId,
-          partnerId,
-          partnerType,
-          employeeIds: JSON.stringify(employeeIds || 'all'),
-          assignedBy: req.user?.id || null,
-        },
-        type: postgresSequelize.QueryTypes.INSERT
-      });
+      for (const partner of normalizedPartners) {
+        await postgresSequelize.query(`
+          INSERT INTO corporate_network_assignments (corporate_id, partner_id, partner_type, employee_ids, assigned_by, assigned_at)
+          VALUES (:corporateId, :partnerId, :partnerType, :employeeIds, :assignedBy, NOW())
+          ON CONFLICT (corporate_id, partner_id, partner_type) DO UPDATE
+            SET employee_ids = EXCLUDED.employee_ids,
+                assigned_by = EXCLUDED.assigned_by,
+                assigned_at = NOW()
+        `, {
+          replacements: {
+            corporateId,
+            partnerId: partner.partnerId,
+            partnerType: partner.partnerType,
+            employeeIds: JSON.stringify(employeeIds || 'all'),
+            assignedBy: req.user?.id || null,
+          },
+          type: postgresSequelize.QueryTypes.INSERT
+        });
+      }
     } catch (dbErr) {
       console.warn('corporate_network_assignments persistence failed (non-fatal):', dbErr.message);
     }
 
     return res.json({
       success: true,
-      message: `${partnerType} assigned to ${assignedCount} employee${assignedCount !== 1 ? 's' : ''} successfully`,
+      message: `${normalizedPartners.length} partner${normalizedPartners.length !== 1 ? 's' : ''} assigned to ${assignedCount} employee${assignedCount !== 1 ? 's' : ''} successfully`,
       assignedCount,
       corporateId,
-      partnerId,
-      partnerType,
+      partnerId: normalizedPartners[0]?.partnerId,
+      partnerType: normalizedPartners[0]?.partnerType,
+      assignedPartners: normalizedPartners,
     });
   } catch (error) {
     console.error('Failed to assign network partner:', error);

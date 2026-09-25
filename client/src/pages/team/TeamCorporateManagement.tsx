@@ -178,6 +178,30 @@ interface ClinicPartner {
   status: string;
 }
 
+type AddNetworkPartnerType = 'lab' | 'hospital' | 'clinic';
+type SearchableNetworkPartner = {
+  name?: string | null;
+  city?: string | null;
+  address?: string | null;
+  pincode?: string | null;
+  type?: string | null;
+  specialities?: string | null;
+};
+
+const networkPartnerMatchesSearch = (partner: SearchableNetworkPartner, search: string) => {
+  const normalizedSearch = search.trim().toLowerCase();
+  if (!normalizedSearch) return true;
+
+  return [
+    partner.name,
+    partner.city,
+    partner.address,
+    partner.pincode,
+    partner.type,
+    partner.specialities,
+  ].some((value) => value?.toLowerCase().includes(normalizedSearch));
+};
+
 type HealthPackageType = 'pre_employment' | 'annual' | 'other';
 
 interface HealthPackage {
@@ -2373,9 +2397,28 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
   const [availHospitalSearch, setAvailHospitalSearch] = useState('');
   const [totalHospitals, setTotalHospitals] = useState(0);
   const [availLoading, setAvailLoading] = useState(false);
-  const [selectedAddPartners, setSelectedAddPartners] = useState<{id: number; type: 'lab' | 'hospital' | 'clinic'}[]>([]);
+  const [selectedAddPartners, setSelectedAddPartners] = useState<{id: number; type: AddNetworkPartnerType}[]>([]);
   const [addNetworkSearch, setAddNetworkSearch] = useState('');
   const [addingNetwork, setAddingNetwork] = useState(false);
+
+  const isAddPartnerSelected = (type: AddNetworkPartnerType, id: number) =>
+    selectedAddPartners.some((partner) => partner.type === type && partner.id === id);
+
+  const toggleAddPartner = (type: AddNetworkPartnerType, id: number, selected: boolean) => {
+    setSelectedAddPartners((prev) => {
+      const remaining = prev.filter((partner) => !(partner.type === type && partner.id === id));
+      return selected ? [...remaining, { id, type }] : remaining;
+    });
+  };
+
+  const setAddPartnersForType = (type: AddNetworkPartnerType, ids: number[], selected: boolean) => {
+    setSelectedAddPartners((prev) => {
+      const idSet = new Set(ids);
+      const remaining = prev.filter((partner) => !(partner.type === type && idSet.has(partner.id)));
+      if (!selected) return remaining;
+      return [...remaining, ...ids.map((id) => ({ id, type }))];
+    });
+  };
 
   // Fetch corporates
   useEffect(() => {
@@ -3651,14 +3694,14 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     setAddingNetwork(true);
     try {
       const token = localStorage.getItem('teamToken');
-      for (const partner of selectedAddPartners) {
-        await api.post('/admin/corporate-network-assignments', {
-          corporateId: selectedCorporate.id,
+      await api.post('/admin/corporate-network-assignments', {
+        corporateId: selectedCorporate.id,
+        partners: selectedAddPartners.map((partner) => ({
           partnerId: partner.id,
           partnerType: partner.type,
-          employeeIds: []
-        }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
-      }
+        })),
+        employeeIds: []
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       toast({ title: 'Network Updated', description: `${selectedAddPartners.length} partner(s) added to corporate network.` });
       setShowNetworkDialog(false);
       setSelectedAddPartners([]);
@@ -8907,7 +8950,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
         {/* Network Dialog */}
         <Dialog open={showNetworkDialog} onOpenChange={setShowNetworkDialog}>
-          <DialogContent className="max-w-3xl">
+          <DialogContent className="max-w-4xl">
             <DialogHeader>
               <DialogTitle>Add to Corporate Network</DialogTitle>
             </DialogHeader>
@@ -8923,143 +8966,230 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
               ) : (
                 <>
                   <TabsContent value="labs" className="mt-4">
-                    <div className="space-y-4">
-                      <Input
-                        placeholder="Search labs..."
-                        value={addNetworkSearch}
-                        onChange={(e) => setAddNetworkSearch(e.target.value)}
-                      />
-                      <ScrollArea className="h-[300px]">
-                        <div className="space-y-2">
-                          {availLabs.filter(l => l.name?.toLowerCase().includes(addNetworkSearch.toLowerCase())).length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-8">No available labs found</p>
-                          ) : availLabs
-                              .filter(l => l.name?.toLowerCase().includes(addNetworkSearch.toLowerCase()))
-                              .map(lab => {
-                                const checked = selectedAddPartners.some(p => p.id === lab.id && p.type === 'lab');
-                                return (
-                                  <div key={lab.id} className="flex items-center justify-between p-3 border rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                      <Checkbox
-                                        id={`lab-${lab.id}`}
-                                        checked={checked}
-                                        onCheckedChange={(v) => setSelectedAddPartners(prev =>
-                                          v ? [...prev, { id: lab.id, type: 'lab' }]
-                                            : prev.filter(p => !(p.id === lab.id && p.type === 'lab'))
-                                        )}
-                                      />
-                                      <Label htmlFor={`lab-${lab.id}`} className="font-medium cursor-pointer">
-                                        {lab.name}
-                                        {lab.city && lab.city !== 'N/A' && (
-                                          <span className="text-xs text-muted-foreground ml-2">{lab.city}</span>
-                                        )}
-                                      </Label>
+                    {(() => {
+                      const filteredLabs = availLabs.filter((lab) => networkPartnerMatchesSearch(lab, addNetworkSearch));
+                      const visibleLabIds = filteredLabs.map((lab) => lab.id);
+                      const selectedVisibleLabCount = filteredLabs.filter((lab) => isAddPartnerSelected('lab', lab.id)).length;
+
+                      return (
+                        <div className="space-y-4">
+                          <Input
+                            placeholder="Search labs by name, city, address or pincode..."
+                            value={addNetworkSearch}
+                            onChange={(e) => setAddNetworkSearch(e.target.value)}
+                          />
+                          {filteredLabs.length > 0 && (
+                            <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-sm text-muted-foreground">
+                                {selectedVisibleLabCount} of {filteredLabs.length} visible labs selected
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setAddPartnersForType('lab', visibleLabIds, true)}
+                                >
+                                  Select visible labs
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={selectedVisibleLabCount === 0}
+                                  onClick={() => setAddPartnersForType('lab', visibleLabIds, false)}
+                                >
+                                  Clear visible
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                          <ScrollArea className="h-[300px]">
+                            <div className="space-y-2">
+                              {filteredLabs.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-8">No available labs found</p>
+                              ) : filteredLabs.map((lab) => {
+                                  const checked = isAddPartnerSelected('lab', lab.id);
+                                  return (
+                                    <div key={lab.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                      <div className="flex items-center gap-3">
+                                        <Checkbox
+                                          id={`lab-${lab.id}`}
+                                          checked={checked}
+                                          onCheckedChange={(v) => toggleAddPartner('lab', lab.id, Boolean(v))}
+                                        />
+                                        <Label htmlFor={`lab-${lab.id}`} className="font-medium cursor-pointer">
+                                          {lab.name}
+                                          {lab.city && lab.city !== 'N/A' && (
+                                            <span className="text-xs text-muted-foreground ml-2">{lab.city}</span>
+                                          )}
+                                        </Label>
+                                      </div>
+                                      <Badge variant="outline">{lab.testsAvailable > 0 ? `${lab.testsAvailable} tests` : 'Lab'}</Badge>
                                     </div>
-                                    <Badge variant="outline">{lab.testsAvailable > 0 ? `${lab.testsAvailable} tests` : 'Lab'}</Badge>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                            </div>
+                          </ScrollArea>
                         </div>
-                      </ScrollArea>
-                    </div>
+                      );
+                    })()}
                   </TabsContent>
 
                   <TabsContent value="hospitals" className="mt-4">
-                    <div className="space-y-4">
-                      <div className="flex gap-2">
-                        <Input
-                          placeholder="Search by name, city or pincode..."
-                          value={availHospitalSearch}
-                          onChange={(e) => setAvailHospitalSearch(e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' && selectedCorporate?.id) fetchAvailablePartners(selectedCorporate.id, availHospitalSearch); }}
-                        />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => selectedCorporate?.id && fetchAvailablePartners(selectedCorporate.id, availHospitalSearch)}
-                        >
-                          <Search className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      {totalHospitals > availHospitals.length && (
-                        <p className="text-xs text-muted-foreground">
-                          Showing {availHospitals.length} of {totalHospitals} hospitals — search by name, city or pincode to narrow results
-                        </p>
-                      )}
-                      <ScrollArea className="h-[280px]">
-                        <div className="space-y-2">
-                          {availHospitals.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-8">No available hospitals found</p>
-                          ) : availHospitals
-                              .map(hosp => {
-                                const checked = selectedAddPartners.some(p => p.id === hosp.id && p.type === 'hospital');
-                                return (
-                                  <div key={hosp.id} className="flex items-center justify-between p-3 border rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                      <Checkbox
-                                        id={`hospital-${hosp.id}`}
-                                        checked={checked}
-                                        onCheckedChange={(v) => setSelectedAddPartners(prev =>
-                                          v ? [...prev, { id: hosp.id, type: 'hospital' }]
-                                            : prev.filter(p => !(p.id === hosp.id && p.type === 'hospital'))
-                                        )}
-                                      />
-                                      <Label htmlFor={`hospital-${hosp.id}`} className="font-medium cursor-pointer">
-                                        {hosp.name}
-                                        {(hosp.city && hosp.city !== 'N/A') && (
-                                          <span className="text-xs text-muted-foreground ml-2">{hosp.city}{hosp.pincode ? ` – ${hosp.pincode}` : ''}</span>
-                                        )}
-                                      </Label>
+                    {(() => {
+                      const visibleHospitalIds = availHospitals.map((hospital) => hospital.id);
+                      const selectedVisibleHospitalCount = availHospitals.filter((hospital) => isAddPartnerSelected('hospital', hospital.id)).length;
+
+                      return (
+                        <div className="space-y-4">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Search by name, city or pincode..."
+                              value={availHospitalSearch}
+                              onChange={(e) => setAvailHospitalSearch(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' && selectedCorporate?.id) fetchAvailablePartners(selectedCorporate.id, availHospitalSearch); }}
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => selectedCorporate?.id && fetchAvailablePartners(selectedCorporate.id, availHospitalSearch)}
+                            >
+                              <Search className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {totalHospitals > availHospitals.length && (
+                            <p className="text-xs text-muted-foreground">
+                              Showing {availHospitals.length} of {totalHospitals} hospitals. Bulk select applies to the visible results; search by name, city or pincode to narrow results.
+                            </p>
+                          )}
+                          {availHospitals.length > 0 && (
+                            <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-sm text-muted-foreground">
+                                {selectedVisibleHospitalCount} of {availHospitals.length} visible hospitals selected
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setAddPartnersForType('hospital', visibleHospitalIds, true)}
+                                >
+                                  Select visible hospitals
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={selectedVisibleHospitalCount === 0}
+                                  onClick={() => setAddPartnersForType('hospital', visibleHospitalIds, false)}
+                                >
+                                  Clear visible
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                          <ScrollArea className="h-[280px]">
+                            <div className="space-y-2">
+                              {availHospitals.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-8">No available hospitals found</p>
+                              ) : availHospitals.map((hosp) => {
+                                  const checked = isAddPartnerSelected('hospital', hosp.id);
+                                  return (
+                                    <div key={hosp.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                      <div className="flex items-center gap-3">
+                                        <Checkbox
+                                          id={`hospital-${hosp.id}`}
+                                          checked={checked}
+                                          onCheckedChange={(v) => toggleAddPartner('hospital', hosp.id, Boolean(v))}
+                                        />
+                                        <Label htmlFor={`hospital-${hosp.id}`} className="font-medium cursor-pointer">
+                                          {hosp.name}
+                                          {(hosp.city && hosp.city !== 'N/A') && (
+                                            <span className="text-xs text-muted-foreground ml-2">{hosp.city}{hosp.pincode ? ` - ${hosp.pincode}` : ''}</span>
+                                          )}
+                                        </Label>
+                                      </div>
+                                      <Badge variant="outline">{hosp.specialities ? 'Multi-specialty' : 'Hospital'}</Badge>
                                     </div>
-                                    <Badge variant="outline">{hosp.specialities ? 'Multi-specialty' : 'Hospital'}</Badge>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                            </div>
+                          </ScrollArea>
                         </div>
-                      </ScrollArea>
-                    </div>
+                      );
+                    })()}
                   </TabsContent>
 
                   <TabsContent value="clinics" className="mt-4">
-                    <div className="space-y-4">
-                      <Input
-                        placeholder="Search clinics..."
-                        value={addNetworkSearch}
-                        onChange={(e) => setAddNetworkSearch(e.target.value)}
-                      />
-                      <ScrollArea className="h-[300px]">
-                        <div className="space-y-2">
-                          {availClinics.filter(c => c.name?.toLowerCase().includes(addNetworkSearch.toLowerCase())).length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-8">No available clinics found</p>
-                          ) : availClinics
-                              .filter(c => c.name?.toLowerCase().includes(addNetworkSearch.toLowerCase()))
-                              .map(clinic => {
-                                const checked = selectedAddPartners.some(p => p.id === clinic.id && p.type === 'clinic');
-                                return (
-                                  <div key={clinic.id} className="flex items-center justify-between p-3 border rounded-lg">
-                                    <div className="flex items-center gap-3">
-                                      <Checkbox
-                                        id={`clinic-${clinic.id}`}
-                                        checked={checked}
-                                        onCheckedChange={(v) => setSelectedAddPartners(prev =>
-                                          v ? [...prev, { id: clinic.id, type: 'clinic' }]
-                                            : prev.filter(p => !(p.id === clinic.id && p.type === 'clinic'))
-                                        )}
-                                      />
-                                      <Label htmlFor={`clinic-${clinic.id}`} className="font-medium cursor-pointer">
-                                        {clinic.name}
-                                        {(clinic.city && clinic.city !== 'N/A') && (
-                                          <span className="text-xs text-muted-foreground ml-2">{clinic.city}{clinic.pincode ? ` – ${clinic.pincode}` : ''}</span>
-                                        )}
-                                      </Label>
+                    {(() => {
+                      const filteredClinics = availClinics.filter((clinic) => networkPartnerMatchesSearch(clinic, addNetworkSearch));
+                      const visibleClinicIds = filteredClinics.map((clinic) => clinic.id);
+                      const selectedVisibleClinicCount = filteredClinics.filter((clinic) => isAddPartnerSelected('clinic', clinic.id)).length;
+
+                      return (
+                        <div className="space-y-4">
+                          <Input
+                            placeholder="Search clinics by name, city, address or pincode..."
+                            value={addNetworkSearch}
+                            onChange={(e) => setAddNetworkSearch(e.target.value)}
+                          />
+                          {filteredClinics.length > 0 && (
+                            <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3 sm:flex-row sm:items-center sm:justify-between">
+                              <p className="text-sm text-muted-foreground">
+                                {selectedVisibleClinicCount} of {filteredClinics.length} visible clinics selected
+                              </p>
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => setAddPartnersForType('clinic', visibleClinicIds, true)}
+                                >
+                                  Select visible clinics
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={selectedVisibleClinicCount === 0}
+                                  onClick={() => setAddPartnersForType('clinic', visibleClinicIds, false)}
+                                >
+                                  Clear visible
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                          <ScrollArea className="h-[300px]">
+                            <div className="space-y-2">
+                              {filteredClinics.length === 0 ? (
+                                <p className="text-sm text-muted-foreground text-center py-8">No available clinics found</p>
+                              ) : filteredClinics.map((clinic) => {
+                                  const checked = isAddPartnerSelected('clinic', clinic.id);
+                                  return (
+                                    <div key={clinic.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                      <div className="flex items-center gap-3">
+                                        <Checkbox
+                                          id={`clinic-${clinic.id}`}
+                                          checked={checked}
+                                          onCheckedChange={(v) => toggleAddPartner('clinic', clinic.id, Boolean(v))}
+                                        />
+                                        <Label htmlFor={`clinic-${clinic.id}`} className="font-medium cursor-pointer">
+                                          {clinic.name}
+                                          {(clinic.city && clinic.city !== 'N/A') && (
+                                            <span className="text-xs text-muted-foreground ml-2">{clinic.city}{clinic.pincode ? ` - ${clinic.pincode}` : ''}</span>
+                                          )}
+                                        </Label>
+                                      </div>
+                                      <Badge variant="outline">{clinic.type || 'Clinic'}</Badge>
                                     </div>
-                                    <Badge variant="outline">{clinic.type || 'Clinic'}</Badge>
-                                  </div>
-                                );
-                              })}
+                                  );
+                                })}
+                            </div>
+                          </ScrollArea>
                         </div>
-                      </ScrollArea>
-                    </div>
+                      );
+                    })()}
                   </TabsContent>
                 </>
               )}
