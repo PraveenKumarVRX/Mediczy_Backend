@@ -154,3 +154,7 @@ qa-samples/
 
 # Deploy metadata (WP-0.6 automatic revert): recorded on the production host only, never committed
 .deploy/
+
+# A symlink named node_modules is NOT matched by "node_modules/" (trailing slash = directories only).
+# A worktree symlink to a shared node_modules was committed once and overwrote the real directory on merge.
+**/node_modules
