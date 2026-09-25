@@ -94,10 +94,10 @@ try {
 
   // ── 2. Tenant provisioning + entitlements ────────────────────────────────────
   const seed = await entitlements.seedDefaultFinanceSetup(ORG, { grantedBy: 1 });
-  check('seedDefaultFinanceSetup', !!seed.period && seed.accounts === 19,
+  check('seedDefaultFinanceSetup', !!seed.period && seed.accounts === 20,
     `accounts=${seed.accounts} taxCodes=${seed.taxCodes} period=${seed.period?.period_code}`);
   const again = await entitlements.seedDefaultFinanceSetup(ORG, { grantedBy: 1 });
-  check('seed is idempotent (re-run safe)', again.accounts === 19 && !again.period,
+  check('seed is idempotent (re-run safe)', again.accounts === 20 && !again.period,
     `second run created period=${!!again.period} (expected false)`);
 
   const has = await entitlements.hasModuleEntitlement(ORG, 'accounts_finance', 'view');

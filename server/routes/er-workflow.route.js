@@ -24,6 +24,7 @@ import { QueryTypes } from 'sequelize';
 import { convertErToIp } from '../services/adt.service.js';
 import { emergencyActivateOT } from '../services/ot-scheduling.service.js';
 import { notifyERArrival } from '../services/family-notification.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -34,7 +35,7 @@ const validEsiLevel = (v) => Number.isInteger(v) && v >= 1 && v <= 5;
 // Rapid registration — works with unknown/unconscious patients
 router.post('/register', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const {
       patientId, patientName, age, gender, phone,
       triageLevel, esiLevel, triageInputs,
@@ -117,7 +118,7 @@ router.post('/register', authUser, async (req, res) => {
 // One-click emergency OT activation from ER queue
 router.post('/emergency-ot', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { patientId, admissionId, surgeonId, procedureName, anesthesiaType, notes } = req.body;
 
     const booking = await emergencyActivateOT({
@@ -134,7 +135,7 @@ router.post('/emergency-ot', authUser, async (req, res) => {
 // POST /api/v1/er/convert-to-ip
 router.post('/convert-to-ip', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const admission = await convertErToIp({ ...req.body, organizationId, performedBy: req.user.id });
     res.status(201).json({ success: true, data: admission });
   } catch (err) {
@@ -148,7 +149,7 @@ router.post('/convert-to-ip', authUser, async (req, res) => {
 // yet moved to five ESI lanes) and the new way (esi1..esi5 + unclassified).
 router.get('/queue', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const queue = await sequelize.query(
       `SELECT * FROM er_visits WHERE organization_id = :orgId AND status = 'active' ORDER BY
        CASE
@@ -185,7 +186,7 @@ router.get('/queue', authUser, async (req, res) => {
 // confirmed". Every real update sets triage_time — the field the old route declared but never actually wrote.
 router.put('/triage/:id', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { triageLevel, esiLevel, triageInputs, chiefComplaint, mlcCase } = req.body;
 
     if (esiLevel == null && triageLevel == null) {

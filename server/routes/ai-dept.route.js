@@ -21,9 +21,10 @@ import {
   getERAI, getOPDAI, getSurveillanceAI, getInsuranceAI,
   getAccountsAI, getHRMSAI,
 } from '../services/ai-dept.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
-const orgId = req => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = req => resolveTenantId(req.user);
 
 const dept = (fn) => async (req, res) => {
   try {

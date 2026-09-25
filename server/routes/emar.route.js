@@ -7,6 +7,7 @@ import {
 import { enforceHighAlertMedConsent } from '../services/consent-enforcement.service.js';
 import { enqueueFromAdministration } from '../services/emar-pharmacy-bridge.service.js';
 import { prescriptionSafetyGate } from '../services/prescription-safety.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -35,7 +36,7 @@ const safetyOnOrder = prescriptionSafetyGate('emar.order', (req) => ({
 // POST /api/v1/emar/orders
 router.post('/orders', authUser, safetyOnOrder, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const order = await createMedicationOrder({ ...req.body, organizationId, prescribedBy: req.user.id });
     res.status(201).json({ success: true, data: order });
   } catch (err) {
@@ -46,7 +47,7 @@ router.post('/orders', authUser, safetyOnOrder, async (req, res) => {
 // GET /api/v1/emar/orders/:admissionId
 router.get('/orders/:admissionId', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const orders = await getActiveOrders(parseInt(req.params.admissionId), organizationId);
     res.json({ success: true, data: orders });
   } catch (err) {
@@ -67,7 +68,7 @@ router.post('/validate-administration', authUser, async (req, res) => {
 // POST /api/v1/emar/administer  — B3 + B7: 5-rights + consent enforcement
 router.post('/administer', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
 
     // B7: pre-validate to check if high-alert, then enforce consent
     const preCheck = await validateAdministration(req.body).catch(() => ({ blocked: false, highAlert: false }));
@@ -97,7 +98,7 @@ router.post('/administer', authUser, async (req, res) => {
 // GET /api/v1/emar/due
 router.get('/due', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { wardId, windowMinutes } = req.query;
     const due = await getDueMedications(organizationId, {
       wardId: wardId ? parseInt(wardId) : undefined,
@@ -112,7 +113,7 @@ router.get('/due', authUser, async (req, res) => {
 // GET /api/v1/emar/due/:admissionId  (admission-scoped alias)
 router.get('/due/:admissionId', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const due = await getDueMedications(organizationId, { admissionId: parseInt(req.params.admissionId) });
     res.json({ success: true, count: due.length, data: due });
   } catch (err) {
@@ -123,7 +124,7 @@ router.get('/due/:admissionId', authUser, async (req, res) => {
 // GET /api/v1/emar/history/:admissionId
 router.get('/history/:admissionId', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const orders = await getActiveOrders(parseInt(req.params.admissionId), organizationId);
     res.json({ success: true, data: orders });
   } catch (err) {
@@ -134,7 +135,7 @@ router.get('/history/:admissionId', authUser, async (req, res) => {
 // POST /api/v1/emar/:orderId/administer  (order-scoped alias)
 router.post('/:orderId/administer', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const preCheck = await validateAdministration({ ...req.body, orderId: parseInt(req.params.orderId) }).catch(() => ({ blocked: false, highAlert: false }));
     if (preCheck.highAlert) {
       const consentOverride = req.body.consentOverride
@@ -154,7 +155,7 @@ router.post('/:orderId/administer', authUser, async (req, res) => {
 // POST /api/v1/emar/:orderId/hold  (order-scoped alias)
 router.post('/:orderId/hold', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await updateOrderStatus(organizationId, parseInt(req.params.orderId), 'on_hold', req.body.holdReason);
     res.json({ success: true, data: result });
   } catch (err) {
@@ -165,7 +166,7 @@ router.post('/:orderId/hold', authUser, async (req, res) => {
 // PUT /api/v1/emar/orders/:id/hold
 router.put('/orders/:id/hold', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await updateOrderStatus(organizationId, parseInt(req.params.id), 'on_hold', req.body.reason);
     res.json(result);
   } catch (err) {
@@ -176,7 +177,7 @@ router.put('/orders/:id/hold', authUser, async (req, res) => {
 // PUT /api/v1/emar/orders/:id/discontinue
 router.put('/orders/:id/discontinue', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await updateOrderStatus(organizationId, parseInt(req.params.id), 'discontinued', req.body.reason);
     res.json(result);
   } catch (err) {

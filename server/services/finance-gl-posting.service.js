@@ -1,25 +1,167 @@
 /**
  * Source-document → general ledger posting adapters (WP-1.3).
  *
- * Each adapter is idempotent on the source document id, so a retried payment webhook or a
- * replayed invoice cannot double-post. Posting is best-effort by design: the finance ledger is a
- * separate subsystem from clinical billing, and a ledger outage must not roll back a paid invoice.
- * Failures are logged and surfaced as `ledger: { posted: false, error }` on the billing response.
+ * Each adapter is idempotent on the source document id, so a retried payment webhook or a replayed invoice cannot
+ * double-post. Posting is best-effort by design: the finance ledger is a separate subsystem from clinical billing,
+ * and a ledger outage must not roll back a paid invoice. Failures are logged and surfaced as
+ * `ledger: { posted: false, error }` on the billing response — and `finance-reconciliation.service.js` finds and
+ * re-posts anything that failed, so a failure is never permanent or invisible.
+ *
+ * Accounting conventions (audit FIN-06):
+ *   invoice     Dr Patient A/R (total − insurance) · Dr Insurance A/R (insurance)  |  Cr Revenue (total − GST) · Cr GST Payable
+ *   payment     Dr Cash/Bank                        |  Cr Patient A/R (or Insurance A/R when it settles an insurer claim)
+ *   refund      Dr Patient A/R (reinstated)         |  Cr Cash/Bank (by the original payment method)
+ *   adjustment  Dr Contractual Adj. (contra-revenue)|  Cr Patient A/R          — a NEGATIVE amount posts the mirror image
+ *   settlement  Dr Bank                             |  Cr Insurance A/R        — one entry per remittance, not per claim
+ *   expense     Dr Expense · Dr GST Input (if the account exists)  |  Cr Accounts Payable
+ * Amounts are computed in integer paise so every entry balances by construction.
  */
 import pool from '../db/pgPool.js';
 import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
 import { postJournalEntry } from './finance-ledger.service.js';
+import { istDate, todayIST } from '../utils/ist-date.js';
 
 export const DEFAULT_ACCOUNTS = {
   cash: '1000',
   bank: '1010',
   patientReceivable: '1200',
   insuranceReceivable: '1210',
+  inputTax: '1300',
   revenue: '4000',
   contractualAdjustment: '4010',
   refundsPayable: '2100',
   expense: '5000',
   accountsPayable: '2000',
+  gstPayable: '2500',
+};
+
+const BANK_METHODS = new Set(['card', 'upi', 'netbanking', 'bank', 'cheque', 'neft', 'rtgs', 'imps']);
+const toPaise = (v) => Math.round(Number(v || 0) * 100);
+const fromPaise = (p) => p / 100;
+const bad = (message) => Object.assign(new Error(message), { code: 'INVALID_SOURCE_DOCUMENT', status: 422 });
+
+/** A document's business date in IST: its own timestamp when it has one, otherwise now. */
+const docDate = (doc, ...fields) => {
+  for (const f of fields) {
+    const v = doc?.[f];
+    if (!v) continue;
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v) && v.length === 10) return v;
+    const d = v instanceof Date ? v : new Date(v);
+    if (!Number.isNaN(d.getTime())) return istDate(d);
+  }
+  return todayIST();
+};
+
+const cashOrBank = (pick, method) => (BANK_METHODS.has(String(method || 'cash').toLowerCase()) ? pick('bank') : pick('cash'));
+
+/**
+ * Pure builders: source document → { source_type, source_id, description, entry_date, lines(pick) }.
+ * Exported so the accounting can be unit-tested without a database.
+ */
+export const specs = {
+  invoice(invoice) {
+    const total = toPaise(invoice.total_amount);
+    const tax = toPaise(invoice.tax_amount);
+    const insurance = toPaise(invoice.insurance_amount);
+    if (total <= 0) throw bad('Invoice total must be positive to post');
+    if (tax < 0 || tax > total) throw bad('Invoice tax must be between 0 and the total');
+    if (insurance < 0 || insurance > total) throw bad('Insurance share must be between 0 and the total');
+    return {
+      source_type: 'invoice', source_id: String(invoice.id),
+      description: `Invoice ${invoice.bill_number} issued`,
+      entry_date: docDate(invoice, 'created_at'),
+      lines: (a) => [
+        { accountId: a('patientReceivable'), debit: fromPaise(total - insurance), narration: 'Patient receivable' },
+        { accountId: a('insuranceReceivable'), debit: fromPaise(insurance), narration: 'Insurance receivable' },
+        { accountId: a('revenue'), credit: fromPaise(total - tax), narration: 'Patient revenue' },
+        { accountId: a('gstPayable'), credit: fromPaise(tax), narration: 'GST collected' },
+      ].filter((l) => (l.debit || 0) > 0 || (l.credit || 0) > 0),
+    };
+  },
+
+  payment(payment) {
+    const amount = toPaise(payment.amount);
+    if (amount <= 0) throw bad('Payment amount must be positive to post');
+    const method = String(payment.payment_method || 'cash').toLowerCase();
+    // A payment that settles an insurer's claim extinguishes the insurance receivable, not the patient's.
+    const settlesInsurer = Boolean(payment.insurance_claim_id);
+    return {
+      source_type: 'payment', source_id: String(payment.id),
+      description: `Payment ${payment.id} received (${method})`,
+      entry_date: docDate(payment, 'created_at'),
+      lines: (a) => [
+        { accountId: cashOrBank(a, method), debit: fromPaise(amount), narration: `Received via ${method}` },
+        { accountId: a(settlesInsurer ? 'insuranceReceivable' : 'patientReceivable'), credit: fromPaise(amount), narration: settlesInsurer ? 'Insurance receivable' : 'Patient receivable' },
+      ],
+    };
+  },
+
+  insuranceSettlement(remittance) {
+    const paid = toPaise(remittance.paidAmount);
+    if (paid <= 0) throw bad('Settlement amount must be positive to post');
+    // One entry per REMITTANCE. Keying on the claim alone dropped every partial payment after the first.
+    const key = remittance.id ?? `${remittance.claimId}:${remittance.checkNumber || ''}:${paid}`;
+    return {
+      source_type: 'insurance_settlement', source_id: String(key),
+      description: `Insurance settlement ${remittance.checkNumber || key}`,
+      entry_date: docDate(remittance, 'receivedAt', 'created_at'),
+      lines: (a) => [
+        { accountId: a('bank'), debit: fromPaise(paid), narration: 'Insurance remittance' },
+        { accountId: a('insuranceReceivable'), credit: fromPaise(paid), narration: 'Insurance receivable' },
+      ],
+    };
+  },
+
+  refund(refund) {
+    const amount = toPaise(refund.amount ?? refund.refundAmount);
+    if (amount <= 0) throw bad('Refund amount must be positive to post');
+    // Keyed on the refund row, never payment+amount: two equal partial refunds on one payment are two events.
+    const key = refund.refundId ?? `${refund.paymentId}:${amount}:${refund.refundedAt || ''}`;
+    const method = refund.paymentMethod || refund.payment_method || 'cash';
+    return {
+      source_type: 'refund', source_id: String(key),
+      description: `Refund on payment ${refund.paymentId}`,
+      entry_date: docDate(refund, 'refundedAt'),
+      lines: (a) => [
+        { accountId: a('patientReceivable'), debit: fromPaise(amount), narration: 'Receivable reinstated by refund' },
+        { accountId: cashOrBank(a, method), credit: fromPaise(amount), narration: 'Refunded to patient' },
+      ],
+    };
+  },
+
+  adjustment(adjustment) {
+    const raw = toPaise(adjustment.amount);
+    if (raw === 0) throw bad('Adjustment amount must be non-zero to post');
+    const amount = Math.abs(raw);
+    // A POSITIVE amount reduces the invoice (discount / write-off / contractual allowance); negative increases it.
+    return {
+      source_type: 'adjustment', source_id: String(adjustment.id),
+      description: `${adjustment.adjustmentType || 'contractual'} adjustment on invoice ${adjustment.invoiceId}`,
+      entry_date: docDate(adjustment, 'created_at'),
+      lines: (a) => (raw > 0
+        ? [{ accountId: a('contractualAdjustment'), debit: fromPaise(amount), narration: 'Adjustment / write-off' },
+           { accountId: a('patientReceivable'), credit: fromPaise(amount), narration: 'Receivable reduced' }]
+        : [{ accountId: a('patientReceivable'), debit: fromPaise(amount), narration: 'Receivable increased' },
+           { accountId: a('contractualAdjustment'), credit: fromPaise(amount), narration: 'Adjustment reversed' }]),
+    };
+  },
+
+  expense(expense) {
+    const amount = toPaise(expense.amount);
+    const tax = toPaise(expense.tax_amount);
+    if (amount <= 0 || tax < 0) throw bad('Expense amount must be positive to post');
+    return {
+      source_type: 'expense', source_id: String(expense.id),
+      description: `Expense ${expense.category}${expense.description ? `: ${expense.description}` : ''}`,
+      entry_date: docDate(expense, 'expense_date'),
+      lines: (a, has) => [
+        { accountId: a('expense'), debit: fromPaise(amount), narration: 'Expense' },
+        // Input GST goes to its own asset account when the chart has one; otherwise it is expensed (exempt supplies).
+        ...(tax > 0 ? [{ accountId: has('inputTax') ? a('inputTax') : a('expense'), debit: fromPaise(tax), narration: 'Input tax' }] : []),
+        { accountId: a('accountsPayable'), credit: fromPaise(amount + tax), narration: 'Vendor payable' },
+      ],
+    };
+  },
 };
 
 async function accountMap(organizationId) {
@@ -32,17 +174,20 @@ async function accountMap(organizationId) {
     if (!id) missing.push(DEFAULT_ACCOUNTS[role]);
     return id;
   };
-  return { byCode, pick, missing };
+  const has = (role) => Boolean(byCode[DEFAULT_ACCOUNTS[role]]);
+  return { byCode, pick, has, missing };
 }
 
-async function post(organizationId, spec) {
-  const { pick, missing } = await accountMap(organizationId);
+async function post(organizationId, spec, actorId) {
+  const { pick, has, missing } = await accountMap(organizationId);
+  const lines = spec.lines(pick, has);
   if (missing.length) {
-    const err = new Error(`Chart of accounts is missing required codes: ${missing.join(', ')}`);
+    const err = new Error(`Chart of accounts is missing required codes: ${[...new Set(missing)].join(', ')}`);
     err.code = 'CHART_OF_ACCOUNTS_INCOMPLETE';
     throw err;
   }
-  return postJournalEntry(organizationId, { ...spec, lines: spec.lines(pick) }, spec.actorId);
+  const { lines: _lines, ...rest } = spec;
+  return postJournalEntry(organizationId, { ...rest, lines }, actorId);
 }
 
 const attempt = async (organizationId, fn) => {
@@ -55,92 +200,15 @@ const attempt = async (organizationId, fn) => {
   }
 };
 
-const today = () => new Date().toISOString().slice(0, 10);
-
-// Invoice issued: recognise revenue, establish the patient/insurance receivable.
-export const postInvoice = (organizationId, invoice, actorId) => attempt(organizationId, () =>
-  post(organizationId, {
-    entry_date: today(), actorId,
-    source_type: 'invoice', source_id: String(invoice.id),
-    description: `Invoice ${invoice.bill_number} issued`,
-    lines: (a) => {
-      const total = Number(invoice.total_amount);
-      const insurance = Number(invoice.insurance_amount || 0);
-      const out = [{ accountId: a('patientReceivable'), debit: Number(invoice.patient_liability), narration: 'Patient receivable' }];
-      if (insurance > 0) out.push({ accountId: a('insuranceReceivable'), debit: insurance, narration: 'Insurance receivable' });
-      out.push({ accountId: a('revenue'), credit: total, narration: 'Patient revenue' });
-      return out.filter((l) => l.debit > 0 || l.credit > 0);
-    },
-  }));
-
-// Payment received: move cash/bank in, extinguish the receivable it settles.
-export const postPayment = (organizationId, payment, actorId) => attempt(organizationId, () =>
-  post(organizationId, {
-    entry_date: today(), actorId,
-    source_type: 'payment', source_id: String(payment.id),
-    description: `Payment ${payment.id} received (${payment.payment_method})`,
-    lines: (a) => {
-      const method = String(payment.payment_method || 'cash').toLowerCase();
-      const cashAccount = ['card', 'upi', 'netbanking', 'bank'].includes(method) ? a('bank') : a('cash');
-      return [
-        { accountId: cashAccount, debit: Number(payment.amount), narration: `Received via ${method}` },
-        { accountId: a('patientReceivable'), credit: Number(payment.amount), narration: 'Patient receivable' },
-      ];
-    },
-  }));
-
-// Insurance remittance settles the insurer receivable rather than patient cash.
-export const postInsuranceSettlement = (organizationId, remittance, actorId) => attempt(organizationId, () =>
-  post(organizationId, {
-    entry_date: today(), actorId,
-    source_type: 'insurance_settlement', source_id: String(remittance.claimId || remittance.id),
-    description: `Insurance settlement ${remittance.checkNumber || remittance.id}`,
-    lines: (a) => [
-      { accountId: a('bank'), debit: Number(remittance.paidAmount), narration: 'Insurance remittance' },
-      { accountId: a('insuranceReceivable'), credit: Number(remittance.paidAmount), narration: 'Insurance receivable' },
-    ],
-  }));
-
-// Refund: recognise a refund payable and reduce cash.
-export const postRefund = (organizationId, refund, actorId) => attempt(organizationId, () =>
-  post(organizationId, {
-    entry_date: today(), actorId,
-    source_type: 'refund', source_id: String(refund.refundId || `${refund.paymentId}-${refund.amount}`),
-    description: `Refund on payment ${refund.paymentId}`,
-    lines: (a) => [
-      { accountId: a('refundsPayable'), debit: Number(refund.amount), narration: 'Refund payable' },
-      { accountId: a('cash'), credit: Number(refund.amount), narration: 'Cash refunded' },
-    ],
-  }));
-
-// Contractual/write-off adjustment moves revenue between revenue and adjustment.
-export const postAdjustment = (organizationId, adjustment, actorId) => attempt(organizationId, () => {
-  const amount = Math.abs(Number(adjustment.amount));
-  const sign = Number(adjustment.amount) < 0 ? -1 : 1;
-  return post(organizationId, {
-    entry_date: today(), actorId,
-    source_type: 'adjustment', source_id: String(adjustment.id),
-    description: `${adjustment.adjustmentType || 'contractual'} adjustment on invoice ${adjustment.invoiceId}`,
-    lines: (a) => (sign < 0
-      ? [{ accountId: a('revenue'), debit: amount, narration: 'Revenue reversal' },
-         { accountId: a('contractualAdjustment'), credit: amount, narration: 'Contractual adjustment' }]
-      : [{ accountId: a('contractualAdjustment'), debit: amount, narration: 'Contractual adjustment' },
-         { accountId: a('revenue'), credit: amount, narration: 'Revenue restored' }]),
-  });
-});
+export const postInvoice = (organizationId, invoice, actorId) => attempt(organizationId, () => post(organizationId, specs.invoice(invoice), actorId));
+export const postPayment = (organizationId, payment, actorId) => attempt(organizationId, () => post(organizationId, specs.payment(payment), actorId));
+export const postInsuranceSettlement = (organizationId, remittance, actorId) => attempt(organizationId, () => post(organizationId, specs.insuranceSettlement(remittance), actorId));
+export const postRefund = (organizationId, refund, actorId) => attempt(organizationId, () => post(organizationId, specs.refund(refund), actorId));
+export const postAdjustment = (organizationId, adjustment, actorId) => attempt(organizationId, () => post(organizationId, specs.adjustment(adjustment), actorId));
 
 // Expense approval posts the spend and links the journal back to the expense row.
 export const postExpense = (organizationId, expense, actorId) => attempt(organizationId, async () => {
-  const entry = await post(organizationId, {
-    entry_date: expense.expense_date, actorId,
-    source_type: 'expense', source_id: String(expense.id),
-    description: `Expense ${expense.category}${expense.description ? `: ${expense.description}` : ''}`,
-    lines: (a) => [
-      { accountId: a('expense'), debit: Number(expense.amount), narration: 'Expense' },
-      ...(Number(expense.tax_amount) > 0 ? [{ accountId: a('expense'), debit: Number(expense.tax_amount), narration: 'Input tax' }] : []),
-      { accountId: a('accountsPayable'), credit: Number(expense.amount) + Number(expense.tax_amount || 0), narration: 'Vendor payable' },
-    ],
-  });
+  const entry = await post(organizationId, specs.expense(expense), actorId);
   await withRlsTransaction(pool, { orgId: organizationId, userId: actorId || 0, isPlatformAdmin: false },
     (client) => client.query(
       `UPDATE finance_expenses SET journal_entry_id = $3, status = 'approved' WHERE id = $1 AND organization_id = $2`,
@@ -149,4 +217,15 @@ export const postExpense = (organizationId, expense, actorId) => attempt(organiz
   return entry;
 });
 
-export default { postInvoice, postPayment, postInsuranceSettlement, postRefund, postAdjustment, postExpense };
+/** Approves a recorded expense: posts it to the ledger and marks it approved. A posting failure is surfaced, not hidden. */
+export async function approveExpense(organizationId, expenseId, actorId) {
+  const expense = await withRlsTransaction(pool, { orgId: organizationId, userId: actorId || 0, isPlatformAdmin: false },
+    async (client) => (await client.query('SELECT * FROM finance_expenses WHERE id = $1 AND organization_id = $2', [expenseId, organizationId])).rows[0]);
+  if (!expense) throw Object.assign(new Error('Expense not found'), { status: 404, code: 'EXPENSE_NOT_FOUND' });
+  if (expense.status !== 'recorded') throw Object.assign(new Error(`Only recorded expenses can be approved (this one is ${expense.status})`), { status: 409, code: 'EXPENSE_NOT_APPROVABLE' });
+  const result = await postExpense(organizationId, expense, actorId);
+  if (!result.posted) throw Object.assign(new Error(result.error), { status: 409, code: result.code });
+  return { expenseId: expense.id, ...result };
+}
+
+export default { postInvoice, postPayment, postInsuranceSettlement, postRefund, postAdjustment, postExpense, approveExpense, specs };

@@ -11,6 +11,7 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { consumeReservation } from './bed-allocation.service.js';
 import { hasSignedReconciliation } from './med-reconciliation.service.js';
+import { DISCHARGE_OVERRIDE_ROLES } from '../utils/discharge-policy.js';
 import { reconciliationRequired } from './prescription-safety.service.js';
 
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
@@ -58,7 +59,6 @@ const MANDATORY_DISCHARGE_DIMENSIONS = [
   'discharge_summary',
 ];
 
-const DISCHARGE_OVERRIDE_ROLES = new Set(['admin', 'super_admin', 'medical_director', 'discharge_officer']);
 
 // ── Discharge readiness helpers ───────────────────────────────────────────────
 

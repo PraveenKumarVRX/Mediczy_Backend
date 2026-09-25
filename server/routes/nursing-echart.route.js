@@ -3,13 +3,14 @@ import { authUser } from '../middleware/auth.middleware.js';
 import {
   recordEntry, getFlowsheet, getLatestVitals, getIOSummary, getVitalsTrend
 } from '../services/nursing-echart.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
 // POST /api/v1/echart/entry
 router.post('/entry', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await recordEntry({ ...req.body, organizationId, recordedBy: req.user.id });
     res.status(201).json({ success: true, data: result });
   } catch (err) {

@@ -3,6 +3,7 @@ import { authUser } from '../middleware/auth.middleware.js';
 import { getActiveAlerts } from '../services/vitals-ews.service.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -10,7 +11,7 @@ const router = express.Router();
 // Unified clinical alert feed: vitals EWS + lab CDSS rule alerts
 router.get('/clinical', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { patientId, admissionId, severity, limit = 50 } = req.query;
 
     const [vitalsAlerts, labAlerts] = await Promise.all([

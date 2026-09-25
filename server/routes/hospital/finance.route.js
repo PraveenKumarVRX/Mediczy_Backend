@@ -4,12 +4,16 @@ import { requireBillingRead, requireBillingWrite } from '../../middleware/billin
 import { requireModuleEntitlement } from '../../services/entitlement.service.js';
 import finance from '../../services/finance-ledger.service.js';
 import financeReports from '../../services/finance-reports.service.js';
+import reconciliation from '../../services/finance-reconciliation.service.js';
+import glPosting from '../../services/finance-gl-posting.service.js';
+import { sendRouteError } from '../../utils/discharge-policy.js';
 
 const router = express.Router();
 router.use(verifyHospitalToken);
 
 const org = (req) => Number(req.hospitalId);
-const send = (res, fn) => fn().catch((err) => res.status(400).json({ success: false, message: err.message }));
+// Audit FIN-08: every error used to become HTTP 400 with the raw message, losing 409/404/422 and leaking database text.
+const send = (res, fn) => fn().catch((err) => sendRouteError(res, err));
 const range = (req) => ({ from: req.query.from, to: req.query.to });
 
 router.get('/accounts', requireModuleEntitlement('accounts_finance', 'view'), requireBillingRead, (req, res) => send(res, async () => res.json({ success: true, data: await finance.listAccounts(org(req)) })));
@@ -17,6 +21,7 @@ router.get('/vendors', requireModuleEntitlement('accounts_finance', 'view'), req
 router.post('/vendors', requireModuleEntitlement('accounts_finance', 'create'), requireBillingWrite, (req, res) => send(res, async () => res.status(201).json({ success: true, data: await finance.createVendor(org(req), req.body, req.userId) })));
 router.get('/expenses', requireModuleEntitlement('accounts_finance', 'view'), requireBillingRead, (req, res) => send(res, async () => res.json({ success: true, data: await finance.listExpenses(org(req), req.query) })));
 router.post('/expenses', requireModuleEntitlement('accounts_finance', 'create'), requireBillingWrite, (req, res) => send(res, async () => res.status(201).json({ success: true, data: await finance.createExpense(org(req), req.body, req.userId) })));
+router.post('/expenses/:id/approve', requireModuleEntitlement('accounts_finance', 'edit'), requireBillingWrite, (req, res) => send(res, async () => res.json({ success: true, data: await glPosting.approveExpense(org(req), Number(req.params.id), req.userId) })));
 router.get('/budgets', requireModuleEntitlement('accounts_finance', 'view'), requireBillingRead, (req, res) => send(res, async () => res.json({ success: true, data: await finance.listBudgets(org(req)) })));
 router.get('/tax-codes', requireModuleEntitlement('accounts_finance', 'view'), requireBillingRead, (req, res) => send(res, async () => res.json({ success: true, data: await finance.listTaxCodes(org(req)) })));
 router.get('/journal-entries', requireModuleEntitlement('accounts_finance', 'view'), requireBillingRead, (req, res) => send(res, async () => res.json({ success: true, data: await finance.listJournalEntries(org(req), req.query) })));
@@ -37,5 +42,11 @@ router.get('/reports/ledger.csv', requireModuleEntitlement('accounts_finance', '
   res.setHeader('Content-Disposition', `attachment; filename="${csv.filename}"`);
   return res.send(csv.content);
 }));
+
+// Ledger reconciliation (audit FIN-09): billing documents with no journal entry, and a safe idempotent re-post.
+router.get('/reconciliation', requireModuleEntitlement('accounts_finance', 'view'), requireBillingRead,
+  (req, res) => send(res, async () => res.json({ success: true, data: await reconciliation.reconcile(org(req), { limit: req.query.limit }) })));
+router.post('/reconciliation/repost', requireModuleEntitlement('accounts_finance', 'edit'), requireBillingWrite,
+  (req, res) => send(res, async () => res.json({ success: true, data: await reconciliation.repostMissing(org(req), req.userId || null, { limit: req.body?.limit }) })));
 
 export default router;

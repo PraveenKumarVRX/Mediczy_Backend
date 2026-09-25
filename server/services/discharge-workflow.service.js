@@ -250,16 +250,26 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
   return result[0];
 }
 
-export async function getDraftByAdmission(admissionId) {
+export async function getDraftByAdmission(admissionId, organizationId) {
   const [row] = await sequelize.query(
-    `SELECT * FROM discharge_packets WHERE admission_id = :admId ORDER BY created_at DESC LIMIT 1`,
-    { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
+    `SELECT * FROM discharge_packets WHERE admission_id = :admId AND organization_id = :orgId ORDER BY created_at DESC LIMIT 1`,
+    { replacements: { admId: admissionId, orgId: organizationId }, type: QueryTypes.SELECT }
   );
   return row || null;
 }
 
-export async function updateDraftContent(packetId, { draftContent, diagnosisSummary, procedureSummary, medicationSummary, followUpSummary, dietInstructions, activityNotes }) {
-  await sequelize.query(
+/** The admission and patient a packet belongs to, only if it belongs to this organization. */
+export async function getPacketScope(packetId, organizationId) {
+  const [row] = await sequelize.query(
+    `SELECT admission_id AS "admissionId", patient_id AS "patientId", status
+       FROM discharge_packets WHERE id = :id AND organization_id = :orgId LIMIT 1`,
+    { replacements: { id: packetId, orgId: organizationId }, type: QueryTypes.SELECT }
+  );
+  return row || null;
+}
+
+export async function updateDraftContent(packetId, { draftContent, diagnosisSummary, procedureSummary, medicationSummary, followUpSummary, dietInstructions, activityNotes }, organizationId) {
+  const [, meta] = await sequelize.query(
     `UPDATE discharge_packets
      SET draft_content       = COALESCE(:draft, draft_content),
          diagnosis_summary   = COALESCE(:dx, diagnosis_summary),
@@ -269,100 +279,107 @@ export async function updateDraftContent(packetId, { draftContent, diagnosisSumm
          diet_instructions   = COALESCE(:diet, diet_instructions),
          activity_notes      = COALESCE(:activity, activity_notes),
          updated_at = NOW()
-     WHERE id = :id AND status = 'draft'`,
+     WHERE id = :id AND organization_id = :orgId AND status = 'draft'`,
     {
       replacements: {
-        id: packetId, draft: draftContent || null, dx: diagnosisSummary || null,
+        id: packetId, orgId: organizationId, draft: draftContent || null, dx: diagnosisSummary || null,
         proc: procedureSummary || null, meds: medicationSummary || null,
         fu: followUpSummary || null, diet: dietInstructions || null, activity: activityNotes || null
       },
       type: QueryTypes.UPDATE
     }
   );
+  if (!(meta?.rowCount ?? meta)) {
+    throw Object.assign(new Error('Discharge draft not found or already signed'), { status: 404, code: 'DISCHARGE_DRAFT_NOT_FOUND' });
+  }
   return { success: true };
 }
 
-// ── Sign ──────────────────────────────────────────────────────────────────────
+// ── Sign ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Signs a discharge packet.
+ *
+ * `override` is built by the ROUTE from the authenticated caller (see utils/discharge-policy.js) — it is never
+ * taken from the request body, so `approverId`/`approverRole` are trustworthy here. The packet is looked up and
+ * updated only within `organizationId`. Override rows are written in the SAME transaction as the signature, so
+ * a failed sign leaves no override behind.
+ */
 export async function signDischargePacket(packetId, { signedBy, finalContent, organizationId, override = null }) {
   const { getDischargeReadiness } = await import('./adt.service.js');
   const { hasSignedReconciliation } = await import('./med-reconciliation.service.js');
   const { reconciliationRequired } = await import('./prescription-safety.service.js');
-  const [packetRows] = await sequelize.query(
-    `SELECT admission_id AS "admissionId" FROM discharge_packets WHERE id = :id LIMIT 1`,
-    { replacements: { id: packetId }, type: QueryTypes.SELECT }
-  );
-  const admissionId = packetRows[0]?.admissionId;
-  if (!admissionId) {
-    const error = new Error('Discharge draft not found');
-    error.code = 'DISCHARGE_DRAFT_NOT_FOUND';
-    error.status = 404;
-    throw error;
-  }
+  const { DISCHARGE_OVERRIDE_ROLES } = await import('../utils/discharge-policy.js');
 
-  // Signing the packet is the last clinical gate before a patient receives medication
-  // instructions, so a signed discharge reconciliation is required here too — a readiness
-  // checklist item must not be able to stand in for the actual signed record.
+  const scope = await getPacketScope(packetId, organizationId);
+  if (!scope) {
+    throw Object.assign(new Error('Discharge draft not found'), { status: 404, code: 'DISCHARGE_DRAFT_NOT_FOUND' });
+  }
+  const { admissionId, patientId } = scope;
+  const overrideAllowed = Boolean(override?.reasonCode && override?.approverId && DISCHARGE_OVERRIDE_ROLES.has(override.approverRole));
+  const overridesToRecord = [];
+
+  // Signing the packet is the last clinical gate before a patient receives medication instructions, so a signed
+  // discharge reconciliation is required here too — a readiness checklist item must not stand in for it.
   if (await reconciliationRequired(organizationId)) {
-    const [admission] = await sequelize.query(
-      `SELECT patient_id FROM ip_admissions WHERE id = :admId AND organization_id = :orgId`,
-      { replacements: { admId: admissionId, orgId: organizationId }, type: QueryTypes.SELECT }
-    );
-    const reconciled = admission && await hasSignedReconciliation({ organizationId, patientId: admission.patient_id, admissionId, type: 'discharge' });
+    const reconciled = await hasSignedReconciliation({ organizationId, patientId, admissionId, type: 'discharge' });
     if (!reconciled) {
-      const authorised = override?.reasonCode && override?.approverId && ['admin', 'super_admin', 'medical_director', 'discharge_officer'].includes(override.approverRole);
-      if (!authorised) {
-        const error = new Error('Discharge packet cannot be signed until medication reconciliation is signed');
-        error.code = 'RECONCILIATION_REQUIRED';
-        error.status = 409;
-        throw error;
+      if (!overrideAllowed) {
+        throw Object.assign(new Error('Discharge packet cannot be signed until medication reconciliation is signed'), { code: 'RECONCILIATION_REQUIRED', status: 409 });
       }
-      await sequelize.query(
-        `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
-         VALUES (:admissionId, :orgId, :items::jsonb, :reason, :approver, :role)`,
-        { replacements: { admissionId, orgId: organizationId || null, items: JSON.stringify([{ dimension: 'medication_reconciliation' }]), reason: override.reasonCode, approver: override.approverId, role: override.approverRole }, type: QueryTypes.INSERT }
-      );
+      overridesToRecord.push([{ dimension: 'medication_reconciliation' }]);
     }
   }
 
   const readiness = await getDischargeReadiness(admissionId, organizationId);
   if (!readiness.ready) {
     const pending = readiness.mandatoryPending || [];
-    if (!override?.reasonCode || !override?.approverId || !['admin', 'super_admin', 'medical_director', 'discharge_officer'].includes(override.approverRole)) {
+    if (!overrideAllowed) {
       const error = new Error(`Discharge packet cannot be signed until mandatory readiness items are complete: ${pending.map(i => i.label).join('; ')}`);
       error.code = 'DISCHARGE_READINESS_BLOCKED';
       error.status = 409;
       error.mandatoryPending = pending;
       throw error;
     }
-    await sequelize.query(
-      `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
-       VALUES (:admissionId, :orgId, :items::jsonb, :reason, :approver, :role)`,
-      { replacements: { admissionId, orgId: organizationId || null, items: JSON.stringify(pending), reason: override.reasonCode, approver: override.approverId, role: override.approverRole }, type: QueryTypes.INSERT }
-    );
+    overridesToRecord.push(pending);
   }
 
-  const [rows] = await sequelize.query(
-    `UPDATE discharge_packets
-     SET status = 'signed', signed_by = :by, signed_at = NOW(),
-         final_content = COALESCE(:final, draft_content), updated_at = NOW()
-     WHERE id = :id AND status = 'draft'
-     RETURNING id, admission_id AS "admissionId", status, signed_by AS "signedBy", signed_at AS "signedAt"`,
-    { replacements: { id: packetId, by: signedBy, final: finalContent || null }, type: QueryTypes.UPDATE }
-  );
-  if (!rows.length) throw new Error('Discharge draft not found or already signed');
-  return { success: true, data: rows[0] };
+  return sequelize.transaction(async (transaction) => {
+    const [rows] = await sequelize.query(
+      `UPDATE discharge_packets
+       SET status = 'signed', signed_by = :by, signed_at = NOW(),
+           final_content = COALESCE(:final, draft_content), updated_at = NOW()
+       WHERE id = :id AND organization_id = :orgId AND status = 'draft'
+       RETURNING id, admission_id AS "admissionId", status, signed_by AS "signedBy", signed_at AS "signedAt"`,
+      { replacements: { id: packetId, orgId: organizationId, by: signedBy, final: finalContent || null }, type: QueryTypes.UPDATE, transaction }
+    );
+    if (!rows.length) {
+      throw Object.assign(new Error('Discharge draft not found or already signed'), { status: 409, code: 'DISCHARGE_ALREADY_SIGNED' });
+    }
+    for (const items of overridesToRecord) {
+      await sequelize.query(
+        `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
+         VALUES (:admissionId, :orgId, :items::jsonb, :reason, :approver, :role)`,
+        { replacements: { admissionId, orgId: organizationId, items: JSON.stringify(items), reason: override.reasonCode, approver: override.approverId, role: override.approverRole }, type: QueryTypes.INSERT, transaction }
+      );
+    }
+    return { success: true, data: rows[0] };
+  });
 }
 
-// ── Send ──────────────────────────────────────────────────────────────────────
+// ── Send ─────────────────────────────────────────────────────────────────────
 
-export async function sendDischargePacket(packetId, { channel, deliveryAddress, sentBy }) {
-  await sequelize.query(
+export async function sendDischargePacket(packetId, { channel, deliveryAddress, sentBy, organizationId }) {
+  const [rows] = await sequelize.query(
     `UPDATE discharge_packets
      SET status = 'sent', sent_at = NOW(), delivery_channel = :channel,
          delivery_address = :address, updated_at = NOW()
-     WHERE id = :id AND status = 'signed'`,
-    { replacements: { id: packetId, channel, address: deliveryAddress || null }, type: QueryTypes.UPDATE }
+     WHERE id = :id AND organization_id = :orgId AND status = 'signed'
+     RETURNING id`,
+    { replacements: { id: packetId, orgId: organizationId, channel, address: deliveryAddress || null }, type: QueryTypes.UPDATE }
   );
+  if (!rows?.length) {
+    throw Object.assign(new Error('No signed discharge packet found to send'), { status: 404, code: 'DISCHARGE_PACKET_NOT_SENDABLE' });
+  }
   return { success: true, channel, sentAt: new Date() };
 }

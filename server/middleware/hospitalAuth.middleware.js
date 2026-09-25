@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -25,10 +26,20 @@ export const verifyHospitalToken = (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
     }
 
-    req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
-    req.hospitalOrgId = req.hospitalId;
+    // Tenant comes from the token's tenant claims (incl. organization_id, which department logins mint);
+    // `id` counts only for the legacy hospital account. No tenant => not attached to a hospital.
+    const tenantId = resolveTenantId(decoded);
+    if (!tenantId) {
+      return res.status(403).json({
+        success: false,
+        code: 'TENANT_CONTEXT_REQUIRED',
+        message: 'This account is not attached to a hospital. Ask an administrator to attach it.',
+      });
+    }
+    req.hospitalId = tenantId;
+    req.hospitalOrgId = tenantId;
     req.hospitalName = decoded.hospitalName || decoded.name || 'Hospital';
-    req.tenantId = decoded.tenant_id || decoded.hospital_id || decoded.id;
+    req.tenantId = tenantId;
     req.userId = decoded.id;
     req.userRole = role;
     req.hospitalUser = decoded;

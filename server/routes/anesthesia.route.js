@@ -6,13 +6,14 @@ import {
   createRecord, getRecordByBooking, updateRecord
 } from '../services/anesthesia.service.js';
 import { enforceAnesthesiaConsent } from '../services/consent-enforcement.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
 // POST /api/v1/anesthesia/assessment
 router.post('/assessment', authUser, requireModule('ot'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await createAssessment({ ...req.body, organizationId });
     res.status(201).json({ success: true, data: result });
   } catch (err) {
@@ -34,7 +35,7 @@ router.get('/assessment/booking/:otBookingId', authUser, requireModule('ot'), as
 // POST /api/v1/anesthesia/record — B7: enforces anesthesia consent before creating intra-op record
 router.post('/record', authUser, requireModule('ot'), async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     await enforceAnesthesiaConsent({
       organizationId,
       patientId: req.body.patientId,

@@ -938,9 +938,9 @@ export async function refundPayment(hospitalId, paymentId, refundAmount, ctx = {
     if (amt > refundable + 0.005) throw new Error(`Refund exceeds the refundable balance (${refundable.toFixed(2)})`);
 
     const viaGateway = Boolean(payment.gateway_payment_id);
-    await client.query(
+    const refundRow = await client.query(
       `INSERT INTO hospital_payment_refunds (hospital_id, payment_id, invoice_id, amount, reason, approved_by, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
       [hospitalId, paymentId, payment.invoice_id, amt, reason || null, ctx.actorId || null, viaGateway ? 'pending_gateway' : 'completed']
     );
     const totalRefunded = round2(prior + amt);
@@ -960,7 +960,7 @@ export async function refundPayment(hospitalId, paymentId, refundAmount, ctx = {
       }
     }
     await client.query('COMMIT');
-    result = { success: true, paymentId, refundAmount: amt, remainingRefundable: round2(refundable - amt), gatewayRefundRequired: viaGateway };
+    result = { success: true, paymentId, refundId: refundRow.rows[0].id, paymentMethod: payment.payment_method, refundAmount: amt, remainingRefundable: round2(refundable - amt), gatewayRefundRequired: viaGateway };
   } catch (e) {
     await client.query('ROLLBACK').catch(() => {});
     throw e;

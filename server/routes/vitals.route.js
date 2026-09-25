@@ -7,6 +7,7 @@ import {
 } from '../services/vitals-ews.service.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -44,7 +45,7 @@ router.post('/', authUser, auditHealthAccess('VITALS_WRITE', { resourceType: 'Vi
     if (rangeErrors.length) {
       return res.status(400).json({ success: false, message: 'Vital sign validation failed', errors: rangeErrors });
     }
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const record = await saveVitals({ ...req.body, organizationId, recordedBy: req.user.id });
     res.status(201).json({ success: true, data: record });
   } catch (err) {
@@ -55,7 +56,7 @@ router.post('/', authUser, auditHealthAccess('VITALS_WRITE', { resourceType: 'Vi
 // GET /api/v1/vitals/:admissionId/trend
 router.get('/:admissionId/trend', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { hours } = req.query;
     const trend = await getVitalsTrend(parseInt(req.params.admissionId), organizationId, { hours: hours ? parseInt(hours) : 24 });
     res.json({ success: true, data: trend });
@@ -67,7 +68,7 @@ router.get('/:admissionId/trend', authUser, async (req, res) => {
 // GET /api/v1/vitals/:admissionId/latest
 router.get('/:admissionId/latest', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const latest = await getLatestVitals(parseInt(req.params.admissionId), organizationId);
     res.json({ success: true, data: latest });
   } catch (err) {
@@ -78,7 +79,7 @@ router.get('/:admissionId/latest', authUser, async (req, res) => {
 // GET /api/v1/vitals/alerts
 router.get('/alerts', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { admissionId, wardId, severity } = req.query;
     const alerts = await getActiveAlerts(organizationId, {
       admissionId: admissionId ? parseInt(admissionId) : undefined,
@@ -94,7 +95,7 @@ router.get('/alerts', authUser, async (req, res) => {
 // POST /api/v1/vitals/alerts/:id/acknowledge
 router.post('/alerts/:id/acknowledge', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await acknowledgeAlert(parseInt(req.params.id), organizationId, req.user.id);
     res.json(result);
   } catch (err) {
@@ -105,7 +106,7 @@ router.post('/alerts/:id/acknowledge', authUser, async (req, res) => {
 // POST /api/v1/vitals/alerts/:id/resolve
 router.post('/alerts/:id/resolve', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const result = await resolveAlert(parseInt(req.params.id), organizationId);
     res.json(result);
   } catch (err) {
@@ -117,7 +118,7 @@ router.post('/alerts/:id/resolve', authUser, async (req, res) => {
 // Merges vitals EWS alerts + lab CDSS rule alerts into one feed
 router.get('/clinical-alerts', authUser, async (req, res) => {
   try {
-    const organizationId = req.user.organization_id || req.user.tenant_id || req.user.id;
+    const organizationId = resolveTenantId(req.user);
     const { patientId, admissionId, severity, limit = 50 } = req.query;
 
     const [vitalsAlerts, labAlerts] = await Promise.all([

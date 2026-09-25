@@ -15,9 +15,10 @@ import {
   getDenialRiskScoring,
   runClaimScrubShadow,
 } from '../services/ai-revenue-intelligence.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
-const orgId = req => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = req => resolveTenantId(req.user);
 
 // GET /api/v1/ai-revenue/billing-gaps
 router.get('/billing-gaps', authUser, async (req, res) => {

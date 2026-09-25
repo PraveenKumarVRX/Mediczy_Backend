@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authUser } from './auth.middleware.js';
 import { verifyHospitalToken } from './hospitalAuth.middleware.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const HOSPITAL_ROLES = new Set([
   'hospital', 'hospital_admin', 'ceo', 'coo', 'cfo', 'ms', 'medical_superintendent',
@@ -15,7 +16,7 @@ const HOSPITAL_ROLES = new Set([
 export function resolveHospitalIdFromRequest(req) {
   if (req.hospitalId) return Number(req.hospitalId);
   const u = req.user || req.hospitalUser || {};
-  return Number(u.hospital_id || u.tenant_id || u.organization_id || u.hospitalId || u.id) || null;
+  return Number(resolveTenantId(u)) || null;
 }
 
 export function hospitalContextFromToken(req, res, next) {
@@ -26,8 +27,12 @@ export function hospitalContextFromToken(req, res, next) {
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     const role = decoded.role || decoded.userType;
     if (HOSPITAL_ROLES.has(role)) {
-      req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
-      req.hospitalOrgId = req.hospitalId;
+      const tenantId = resolveTenantId(decoded);
+      if (!tenantId) {
+        return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
+      }
+      req.hospitalId = tenantId;
+      req.hospitalOrgId = tenantId;
       req.userId = decoded.id;
       req.userRole = role;
       req.hospitalUser = decoded;
@@ -45,6 +50,9 @@ function attachContext(req, res, next) {
   req.userId = req.user?.id || req.userId;
   if (!req.hospitalId && !req.user?.id) {
     return res.status(401).json({ success: false, message: 'Hospital organization context required' });
+  }
+  if (!req.hospitalId) {
+    return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
   }
   next();
 }

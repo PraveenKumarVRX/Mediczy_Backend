@@ -4,9 +4,10 @@ import { authUser } from '../middleware/auth.middleware.js';
 import { requireModule } from '../middleware/moduleEntitlement.middleware.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
-const orgId = (req) => req.user.organization_id || req.user.tenant_id || req.user.id;
+const orgId = (req) => resolveTenantId(req.user);
 
 router.get('/', authUser, requireModule('ot'), async (req, res) => {
   const rows = await sequelize.query(
