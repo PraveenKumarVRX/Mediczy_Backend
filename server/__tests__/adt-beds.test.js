@@ -146,7 +146,7 @@ describe('POST /api/v1/adt/discharge', () => {
   test('blocks discharge when readiness criteria missing (no override)', async () => {
     mockDischargePatient.mockRejectedValue(new Error('Discharge blocked: billing not cleared'));
     const res = await request(app).post('/api/v1/adt/discharge').send({ admissionId: 42 });
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(409); // a blocked discharge is a conflict with current state, like the packet sign route
     expect(res.body.success).toBe(false);
     expect(res.body.message).toMatch(/blocked/i);
   });

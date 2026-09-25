@@ -18,7 +18,7 @@ describe('finance journal invariants', () => {
   });
 
   it('rejects a line with both debit and credit', async () => {
-    await expect(finance.postJournalEntry(7, { description: 'bad', lines: [{ accountId: 1, debit: 100, credit: 100 }, { accountId: 2, credit: 100 }] })).rejects.toThrow(/exactly one debit or credit/i);
+    await expect(finance.postJournalEntry(7, { description: 'bad', lines: [{ accountId: 1, debit: 100, credit: 100 }, { accountId: 2, credit: 100 }] })).rejects.toThrow(/exactly one positive debit or credit/i);
     expect(connect).not.toHaveBeenCalled();
   });
 
