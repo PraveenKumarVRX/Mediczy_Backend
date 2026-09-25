@@ -1,5 +1,9 @@
 # Implementation status and next steps
 
+Canonical merged plan: `docs/MEDIQZY_COMPREHENSIVE_IMPLEMENTATION_PLAN.md`. This file remains a
+historical status tracker for the audit-remediation plan, but the comprehensive plan is now the
+single execution document for backend, frontend, UI, validation, deployment, and phase exit gates.
+
 Cross-checked 2026-09-23 against the full audit remediation plan (Claude Docs
 `f13b5222-7b0f-448a-bafb-1429af842699`, "MediQzy Audit Remediation — Detailed Implementation Plan").
 This file exists because that check found real gaps between what prior sessions reported as "done"
@@ -7,13 +11,72 @@ and what the plan actually specifies — most notably WP-0.3, which turned out t
 covering ~20 specific screens, of which only a handful had been touched. Re-run this cross-check
 whenever picking this project back up after a gap; both the plan and the codebase move.
 
+## Verified implementation tranche — 2026-09-26
+
+The following local, testable gaps were implemented and verified in this pass; this is not a claim that
+Phase 0/1 is complete:
+
+- **Discharge signing is fail-closed.** `POST /api/v1/discharge/sign` now checks the admission's
+  mandatory discharge-readiness items, including `medication_reconciliation`. Incomplete readiness
+  returns HTTP 409 with the pending dimensions. An authorised, audited override remains available to
+  `admin`, `super_admin`, `medical_director`, and `discharge_officer`.
+- **Hospital discharge/MRD records are database-backed.** Added live list endpoints, a real MRD create
+  endpoint, sequence-backed MRD numbers, and idempotent migration
+  `server/migrations/20260926000001-hospital-practice-real-records.sql`. The MRD, lab, imaging, and
+  discharge screens no longer seed or persist fabricated patient/order/queue records; lab and imaging
+  patient selection now calls the live `/hospital/practice/patients?search=` endpoint.
+- **ER registration has a guided four-question ESI path.** The deterministic decision tree is in
+  `client/src/utils/erGuidedTriage.ts`; the selected level and answers are posted as
+  `esiLevel`/`triageInputs` to the existing ER registration route. Manual ESI and colour-hint modes
+  remain available and are still never inferred from one another.
+- **Cron tasks are single-flight per process.** `withCron()` refuses a second overlapping execution of
+  the same task and returns `{ skipped: true, reason: 'already_running' }`.
+- **Regression coverage added:** `server/__tests__/discharge-signing-gate.test.js`,
+  `server/__tests__/cron-single-flight.test.js`, and
+  `client/src/utils/erGuidedTriage.test.ts`.
+
+Known follow-up: `client` full `tsc` still reports the existing app-wide backlog. The touched MRD file
+had a pre-existing `BrowserMultiFormatReader.reset()` typing mismatch; the reference is now narrowed
+locally, but the full check must not be described as green until the backlog is cleared. Cloud backup
+IAM, GitHub branch protection, MFA, broader RLS work, and clinical sign-off remain external or
+separately scoped work.
+
+## Verified implementation tranche — Phase 1 shared foundations
+
+The following local, testable foundation work was added and verified on 2026-09-26. The new finance
+endpoints are intentionally fail-closed until the migration is applied and an administrator grants the
+`accounts_finance` entitlement to a tenant.
+
+- **Migration-backed Phase 1 foundation** —
+  `server/migrations/20260926000002-phase1-foundations.migration.js` and the migration manifest now
+  include tenant entitlements, finance accounts, fiscal periods, vendors, expenses, budgets, tax
+  codes, balanced journal entries/lines, and durable cron leases.
+- **Server-side entitlements** — `server/services/entitlement.service.js` provides fail-closed
+  module checks. `server/routes/module-access.route.js` adds admin list/grant APIs and an authenticated
+  check endpoint. The finance route is mounted at `/api/hospital/finance` and requires both the
+  appropriate billing role and the `accounts_finance` entitlement.
+- **Real Accounts data surfaces** — expenses, vendors, budgets, chart of accounts, journal entries, and
+  tax codes now use `client/src/services/hospital-finance.service.ts` and live API responses. The
+  remaining Accounts placeholders were not converted without a real source.
+- **Durable cron lease** — `server/services/cron-lease.service.js` provides acquire, heartbeat, release,
+  and admin lease status. It is available for job-by-job migration; existing jobs still use their
+  current schedulers until that migration is deliberately performed.
+- **Validation** — finance, entitlement, cron lease, discharge gate, and in-process cron tests pass:
+  5 suites / 13 tests. Server syntax and `git diff --check` pass. Client production build passed in
+  1m36s. The full client TypeScript backlog remains unrelated to this tranche.
+
+Remaining Phase 1 work is substantial: seed/assign the first real package data, migrate each cron
+caller to the durable lease, broaden RLS coverage, complete prescribing-path coverage, and build the
+finance invoice/payment posting adapters and department acceptance workflows. No migration was
+applied to a live database in this session, and no deployment or production sign-off is claimed.
+
 ## Phase 0 (weeks 0–3)
 
 | WP | Status | Evidence / what's left |
 |---|---|---|
 | 0.1 Secrets | **Safe subset only** | `.gitignore` fixed, 10 real-value `.env*` files untracked, a silent default-password endpoint closed, `SSM_REQUIRED` fail-closed option added, local pre-commit gitleaks hook added. **Owner action, not done**: rotate the live DB password and JWT secrets (signs out every user — needs an announced window), rotate third-party keys, reset every test account password, then `git-filter-repo` + force-push to purge history (freezes merges, everyone re-clones). |
 | 0.2 Access-rules deploy | Live | Deployed and verified against real role logins. |
-| 0.3 No invented data | **WP-0.3a–d implementation complete; walkthrough and allow-list cleanup remain** | See below. |
+| 0.3 No invented data | **WP-0.3a–d implementation complete; walkthrough and TypeScript backlog remain** | See below. |
 | 0.4 Payments | Live | Migration applied to production. |
 | 0.5 Tenant isolation (SCM/blood bank/CSSD/dietary) | Done | 98-check verification script, non-superuser role. |
 | 0.6 CI gate and release pipeline | Partial | `ci.yml`, gitleaks CI job, `/healthz`, real gating health check + auto-revert all built and now proven across 4 real deploys today. **Not done**: the pipeline itself has never actually run on GitHub Actions (no `gh auth login` access to verify); branch protection not applied; `CODEOWNERS` still has placeholder usernames. |
@@ -100,7 +163,71 @@ wired to real endpoints (none exist yet for any of them).
 | 1.9 Auth consolidation / MFA | Not started | |
 | 1.10 Essentials pack | Not started | |
 
-Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and were not checked in detail.
+## Phase 2 (months 4–9) — detailed implementation plan
+
+This audit-remediation phase has not been re-cross-checked against the original Claude plan yet. The
+v2 architecture docs (`MEDIQZY_V2_PHASE2_3_IMPLEMENTATION_STATUS.md` and
+`MEDIQZY_V2_ALL_PHASES_IMPLEMENTATION_STATUS.md`) say a clinical-intelligence baseline exists, but
+the remaining work below is what must be implemented or verified before Phase 2 can be called
+production-complete under the stricter remediation-plan standard.
+
+| Workstream | Current state | Pending implementation / verification | Acceptance gate |
+|---|---|---|---|
+| 2.1 Normalized clinical data foundation | Vitals-driven intelligence exists; cohort search intentionally supports a safe structured subset. | Normalize lab results into a dependable queryable model; map lab observations to stable units/ranges; backfill representative historical rows; make unsupported lab-query language explicit in UI/API. | HbA1c-style and similar lab-threshold queries either return verified results or a clear unsupported response; no cohort result is inferred from free text alone. |
+| 2.2 Deterioration scoring and alert operations | NEWS2/qSOFA alerting is documented as implemented. | Verify `/hospital/practice/vitals` emits `intelligence.score`; verify alert creation for NEWS2 `>= 5`, qSOFA `>= 2`, and any single extreme parameter; add/confirm alert acknowledgement, owner, escalation, snooze, resolution, and audit trail. | A clinical SME can create test vitals, see the alert, acknowledge/escalate/resolve it, and export the audit trail. |
+| 2.3 Clinical-alert governance | Alerts exist, but escalation ownership is not formalized. | Define alert routing by ward/department/role; document daily review responsibility; add stale-alert dashboard or report; define notification fallbacks when push/WhatsApp/email fail. | No critical alert can remain ownerless; unresolved alert aging is visible to an accountable role. |
+| 2.4 Coding suggestions | Signed notes generate reviewable coding suggestions; suggestions are not auto-finalized. | Verify ICD/CPT suggestions never bypass clinician/coder approval; add precision sampling queue; log accepted/rejected suggestions and reasons; prevent billing finalization from unreviewed AI codes. | A signed note produces suggestions, a reviewer approves/rejects them, and only approved codes flow into billing. |
+| 2.5 Doctor cohort search | Doctor-scoped cohort endpoint and dashboard UI exist. | Validate natural-language queries against known patient lists; restrict export/outreach actions until validation; add clear limitations for unsupported filters; log cohort-query provenance. | At least 10 representative queries have known expected cohorts and match within agreed tolerance; unsupported queries fail closed. |
+| 2.6 Ambient scribe productionization | Ambient scribe MVP uses progressive HTTP chunk capture over the offline-scribe pipeline. | Build or verify production WebSocket streaming; add explicit patient/doctor consent capture; define audio retention/deletion policy; add pause/resume/delete controls; add transcript correction audit. | Controlled pilot can complete start, pause, resume, finalize, review, sign, and delete/retain flows with consent recorded. |
+| 2.7 Clinical pilot and sign-off | Software paths exist but are not signed off as production clinical workflows here. | Run controlled pilots for deterioration alerts, coding suggestions, cohort search, and ambient scribe; collect false-positive/false-negative notes and usability defects. | Clinical lead signs off pilot results, limitations, and go/no-go criteria before broad rollout. |
+| 2.8 Observability and rollback | Not documented for this phase. | Add metrics for alert volume, suggestion acceptance, cohort query failure rate, scribe finalization failures, and notification delivery; add feature flags for each clinical-intelligence feature. | Each Phase 2 feature can be disabled independently without redeploying and has dashboard/log evidence. |
+
+Suggested Phase 2 build order:
+
+1. Re-cross-check original Phase 2 plan against code and update this table with exact WP numbers if the source plan names them.
+2. Close the normalized lab-result foundation first, because cohort search and future clinical analytics depend on it.
+3. Harden deterioration alerts: owner/escalation/audit before any high-severity clinical rollout.
+4. Lock down coding-suggestion governance so AI cannot silently become billing truth.
+5. Productionize ambient scribe only after consent, retention, and transport decisions are signed off.
+6. Run clinical pilot and sign-off as the exit gate.
+
+## Phase 3 (months 10–18) — detailed implementation plan
+
+The v2 docs say a department-operations baseline exists for CSSD, procurement/GRN, discharge planning,
+central-store posting, payroll, and cross-department audit. There is one internal doc conflict: the
+Phase 2/3 status file says GRN-to-stock posting is complete, while the implementation runbook says not
+to treat GRN completion as central-store posting yet. Phase 3 should start with verification rather
+than new scope.
+
+| Workstream | Current state | Pending implementation / verification | Acceptance gate |
+|---|---|---|---|
+| 3.1 CSSD end-to-end workflow | CSSD API/pages are documented as implemented. | Verify create instrument set, raise job, run sterilization cycle, release cycle, release job, and return set to `available`; verify failed/held cycle behavior. | CSSD department champion signs off one clean workflow and one exception workflow with audit trail. |
+| 3.2 Procurement and GRN workflow | Vendor, PO, approval, GRN, and metrics are documented as implemented. | Verify add vendor, create PO, approve PO, create GRN, and confirm PO moves to `received`; verify partial GRN, rejected approval, and duplicate invoice/GRN protections. | Procurement lead signs off full and partial receiving flows with audit/export evidence. |
+| 3.3 Central-store stock ledger | Status docs disagree on whether GRN completion posts stock. | Inspect actual code/data path; if missing, implement GRN-to-stock posting with ledger entries, item/batch/expiry/location, reversal/correction workflow, and stock valuation hooks. | Completing a GRN posts auditable stock ledger rows exactly once; rollback/correction is controlled and audited. |
+| 3.4 Payroll structures and runs | Payroll structures/run processing are documented as implemented. | Verify salary structures, allowances/deductions, payroll run creation, approval, payslip generation, and integration boundary with finance ledger/GST work. | HR/payroll owner can run a test payroll, approve it, export payslips, and reconcile totals; no payroll data is fabricated. |
+| 3.5 Payroll-finance integration cleanup | Phase 1 `WP-1.3 Ledger/GST` is not started, so finance integration is necessarily incomplete. | Define interim accounting export if full ledger is unavailable; later connect payroll liabilities, payments, and statutory deductions to the real ledger. | Payroll can either export a signed accounting file or post to ledger; the limitation is visible and documented. |
+| 3.6 Discharge planning | Owner, target date, blockers, and multidisciplinary tasks are documented as implemented. | Verify admission-linked discharge plans, blockers, task ownership, target date changes, escalation, completion, and handoff to discharge summary/counselling/PREMS. | A real inpatient can move from discharge-planning start to completed discharge with every blocker/task audited. |
+| 3.7 Cross-department approvals and audit | Audit expansion across CSSD, procurement, dietary, and stores is documented as complete. | Verify approval policy, role checks, event log completeness, exportability, and immutable fields for each department workflow. | For each department, an approver and auditor can reconstruct who changed what, when, and why. |
+| 3.8 Department dashboards and empty/error states | Baseline pages exist. | Ensure every Phase 3 page has loading, empty, error, retry, and permission-denied states; remove any operational fallback data that escaped WP-0.3. | With APIs failing or empty, no Phase 3 page presents invented counts, trends, or records. |
+| 3.9 Training, SOPs, and go-live readiness | Not documented as completed. | Write SOPs and quick-start scripts for CSSD, procurement/stores, payroll, and discharge planning; assign department champions; prepare migration/import templates. | Implementation owner can run a go-live rehearsal with named owners and rollback path. |
+
+Suggested Phase 3 build order:
+
+1. Resolve the GRN-to-stock document conflict by reading code and running a controlled test transaction.
+2. Run CSSD and procurement acceptance tests, including exception paths.
+3. Verify discharge planning against a real inpatient journey and connect it to discharge summary/counselling/PREMS.
+4. Verify payroll independently, then define the interim finance export until `WP-1.3 Ledger/GST` is complete.
+5. Audit all Phase 3 pages for WP-0.3-style empty/error honesty.
+6. Complete SOPs, owner training, and department sign-off as the exit gate.
+
+Phase 2/3 shared exit criteria:
+
+- Original phase plan has been re-cross-checked against code, not only against status docs.
+- Every high-risk workflow has backend, frontend, permissions, audit trail, empty/error states, and focused tests.
+- Every clinical workflow has named clinical owner sign-off.
+- Every operational workflow has named department champion sign-off.
+- No workflow depends on fabricated fallback data.
+- Production deployment includes rollback plan, feature flags where appropriate, and post-deploy smoke tests.
 
 ## Recommended next steps, in priority order
 
@@ -108,7 +235,7 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
 2. ~~**WP-0.3b**~~ (clinical screens: ICU, EHR's fake-patient bug, PatientEMR, OT, Blood Bank, Clinical
    CDSS, Teleconsult) — done 2026-09-23, **deployed to production 2026-09-24** together with WP-0.3a and
    the executive/finance pass of WP-0.3c.
-3. ~~**WP-0.3c remainder + WP-0.3d**~~ — implemented; WP-0.3c/0.3d production build and static fabrication checks pass. Remaining package acceptance work is allow-list cleanup plus the clinical walkthrough below.
+3. ~~**WP-0.3c remainder + WP-0.3d**~~ — implemented; WP-0.3c/0.3d production build and static fabrication checks pass. Remaining package acceptance work is the app-wide TypeScript backlog plus the clinical walkthrough below.
 4. **Complete the remaining whole-package acceptance work** — clear the app-wide client TypeScript backlog and complete the clinical walkthrough. The static fabrication gate and allow-list are now clean; production build is green.
 5. **Verify WP-1.1 and WP-1.2's specific unverified acceptance criteria** (the hard admission/discharge
    gate; the exact eight-server-path count) — likely small fixes if gaps are found, since the
@@ -118,3 +245,7 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
 7. **WP-0.1's owner-action items** — whenever a maintenance window can be scheduled.
 8. Everything else in Phase 1 (1.3–1.7, 1.9, 1.10) — not started, no evidence of urgency beyond the
    plan's own phase sequencing.
+9. **Phase 2 planning gate** — re-cross-check the original Phase 2 plan, then execute the clinical-intelligence
+   hardening plan above.
+10. **Phase 3 planning gate** — after Phase 2 and the critical Phase 1 gaps are closed, resolve the
+   GRN-to-stock conflict and execute the department-operations acceptance plan above.
