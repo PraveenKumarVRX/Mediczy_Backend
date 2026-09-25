@@ -4826,16 +4826,18 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         ? await readExcelRows(bulkUploadFile)
         : readCSVRows(await bulkUploadFile.text());
       let aiColumnMap: Record<string, string> = {};
-      if (bulkUseAiColumnDetection) {
+      const nonEmptyUploadRows = uploadRows.filter(row => row.some(cell => String(cell || '').trim()));
+      const deterministicHeaderIndex = findBulkHeaderRowIndex(nonEmptyUploadRows);
+      const deterministicHeaderRow = nonEmptyUploadRows[deterministicHeaderIndex] || [];
+      const deterministicHeaderScore = scoreBulkHeaderRow(deterministicHeaderRow).score;
+      if (bulkUseAiColumnDetection && deterministicHeaderScore < 2) {
         try {
           aiColumnMap = await inferBulkColumnMapWithAI(uploadRows);
         } catch (aiError: any) {
           setBulkAiColumnSummary('AI column detection failed; used standard parser fallback.');
-          toast({
-            title: 'AI column detection skipped',
-            description: aiError?.response?.data?.message || aiError?.message || 'Standard parser fallback was used.',
-          });
         }
+      } else if (bulkUseAiColumnDetection) {
+        setBulkAiColumnSummary('Standard parser mapped the employee columns; AI detection was not needed.');
       }
       const employeeList = parseBulkEmployeeRows(uploadRows, aiColumnMap);
       

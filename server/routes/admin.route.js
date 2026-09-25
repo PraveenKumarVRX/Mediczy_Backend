@@ -3268,16 +3268,29 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
     const VALID_GENDERS = new Set(['male', 'female', 'other']);
     const seenEmails = new Map(); // email -> rowIndex
     const seenEmployeeIds = new Map(); // employeeId -> rowIndex
-    const qcIssuesByRow = new Map(); // row -> string[]
+    const qcIssuesByRow = new Map(); // row -> fatal string[]
 
     employees.forEach((emp, idx) => {
       const row = idx + 2; // 1-indexed with header
       const rowIssues = [];
+      const rowWarnings = [];
 
       if (!emp.firstName || String(emp.firstName).trim() === '') rowIssues.push('Missing First Name');
       if (emp.email && !EMAIL_RE.test(emp.email)) rowIssues.push(`Invalid email format: ${emp.email}`);
-      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, ''))) rowIssues.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
-      if (emp.gender && !VALID_GENDERS.has(String(emp.gender).toLowerCase())) rowIssues.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
+      if (emp.phoneNumber && !PHONE_RE.test(String(emp.phoneNumber).replace(/[\s\-]/g, ''))) {
+        rowWarnings.push(`Phone should be 10 digits: ${emp.phoneNumber}`);
+      }
+      if (emp.gender && !VALID_GENDERS.has(String(emp.gender).toLowerCase())) {
+        const normalizedGender = String(emp.gender).trim().toLowerCase();
+        if (normalizedGender === 'm') {
+          emp.gender = 'male';
+        } else if (normalizedGender === 'f') {
+          emp.gender = 'female';
+        } else {
+          rowWarnings.push(`Invalid gender (use Male/Female/Other): ${emp.gender}`);
+          emp.gender = '';
+        }
+      }
       // Excel round-trip fix: a CSV template's date columns get reformatted
       // by Excel into a locale short-date (D/M/YYYY, M/D/YYYY, 2-digit
       // year) the instant a user opens and re-saves it — there's no date
@@ -3295,9 +3308,11 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         if (resolved && !resolved.ambiguous) {
           emp.dateOfBirth = resolved.iso;
         } else if (resolved?.ambiguous) {
-          rowIssues.push(`Date of Birth "${emp.dateOfBirth}" is ambiguous (could be ${resolved.iso} or a day/month-swapped date) — please enter as YYYY-MM-DD`);
+          rowWarnings.push(`Date of Birth "${emp.dateOfBirth}" is ambiguous (could be ${resolved.iso} or a day/month-swapped date) — left blank; enter as YYYY-MM-DD to store it`);
+          emp.dateOfBirth = '';
         } else {
-          rowIssues.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+          rowWarnings.push(`Date of Birth must be YYYY-MM-DD: ${emp.dateOfBirth}`);
+          emp.dateOfBirth = '';
         }
       }
       if (emp.joiningDate && !DATE_RE.test(emp.joiningDate)) {
@@ -3305,12 +3320,17 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         if (resolved && !resolved.ambiguous) {
           emp.joiningDate = resolved.iso;
         } else if (resolved?.ambiguous) {
-          rowIssues.push(`Joining Date "${emp.joiningDate}" is ambiguous (could be ${resolved.iso} or a day/month-swapped date) — please enter as YYYY-MM-DD`);
+          rowWarnings.push(`Joining Date "${emp.joiningDate}" is ambiguous (could be ${resolved.iso} or a day/month-swapped date) — left blank; enter as YYYY-MM-DD to store it`);
+          emp.joiningDate = '';
         } else {
-          rowIssues.push(`Joining Date must be YYYY-MM-DD: ${emp.joiningDate}`);
+          rowWarnings.push(`Joining Date must be YYYY-MM-DD: ${emp.joiningDate}`);
+          emp.joiningDate = '';
         }
       }
-      if (emp.pinCode && !PIN_RE.test(String(emp.pinCode))) rowIssues.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
+      if (emp.pinCode && !PIN_RE.test(String(emp.pinCode))) {
+        rowWarnings.push(`Pin Code must be 6 digits: ${emp.pinCode}`);
+        emp.pinCode = '';
+      }
 
       const lowerEmail = (emp.email || '').toLowerCase();
       if (lowerEmail && seenEmails.has(lowerEmail)) {
@@ -3328,12 +3348,14 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
 
       if (rowIssues.length > 0) {
         qcIssuesByRow.set(row, rowIssues);
+      }
+      if (rowIssues.length > 0 || rowWarnings.length > 0) {
         results.qcLog.push({
           row,
           employeeId: emp.employeeId || '',
           name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
           email: emp.email || '',
-          issues: rowIssues
+          issues: [...rowIssues, ...rowWarnings]
         });
       }
     });
@@ -8046,4 +8068,3 @@ router.get('/corporate-employee-qc/logs', authUser, requireRole(['admin', 'team'
 });
 
 export default router;
-
