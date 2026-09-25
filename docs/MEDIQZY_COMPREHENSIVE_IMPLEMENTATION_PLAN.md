@@ -361,19 +361,40 @@ Acceptance:
 
 ### 4.3 WP-1.3 ledger and GST
 
-Status: not started.
+Status: implemented baseline, verified against a real PostgreSQL 16 database. Not yet applied to any
+live database, and the frontend is not built.
 
-Backend:
+Delivered and verified (commit `179abb9d`; `npm run test:phase1-finance-dryrun`, 38/38 checks as a
+non-superuser app role on a disposable database):
 
-- Create chart of accounts, journal entries, ledger postings, fiscal periods, tax codes, GSTIN/PAN metadata, invoice-to-ledger bridge, payment-to-ledger bridge, credit/debit notes, and audit exports.
-- Add posting adapters for billing, insurance, payroll, procurement, pharmacy, and refunds.
-- Keep every posting idempotent and reversible only through controlled adjustment entries.
+- Chart of accounts, journal entries/lines, vendors, expenses, budgets, tax codes, fiscal periods, with
+  `organization_id` scoping and RLS on every finance table.
+- Journal numbers come from a sequence, not `COUNT(*) + 1`. Postings are idempotent on
+  `(organization_id, source_type, source_id)`, enforced by a partial unique index, and a genuine
+  3-way concurrent race collapses to exactly one entry.
+- Reversal posts an offsetting entry; posted amounts are never mutated.
+- Posting adapters for invoice, payment, insurance settlement, refund, adjustment, and expense, each
+  wired to the real billing flow. Adapter failure is reported (`ledger.posted=false`) rather than
+  rolling back the clinical transaction.
+- Reports: trial balance, profit and loss, balance sheet, tax summary, ledger CSV. All balance in the
+  dry run. Tax summary reads `finance_expenses.expense_date` (it previously queried a nonexistent
+  `entry_date` column and threw on every call).
+- Fiscal periods: create, close, closed-period posting refusal.
 
-Frontend:
+Backend still outstanding:
 
-- Accounts module pages for ledger, journal, chart of accounts, tax, analytics, reports, vendors, expenses, payroll bridge, and settings.
-- Drill-down from dashboard KPI to source posting.
-- CSV/PDF export with filters.
+- **Live migration.** The migration has only ever run on a disposable local database. There is no
+  staging environment (see section 11.1), so the "staging first" gate cannot currently be satisfied.
+- **Insurance settlement endpoint.** `postInsuranceSettlement` is verified working but has no caller;
+  no insurance remittance writer exists.
+- **Gateway-refund confirmed webhook.** Gateway refunds intentionally do not post at request time.
+  The confirm-event path that must post them does not exist.
+- **Payroll, procurement, pharmacy posting adapters** — not started.
+- Per-transaction tax/GST treatment. The tax summary is expense-side only; output GST on invoices and
+  input-GST credit reconciliation are not wired, and the summary reports this in its own `note` field.
+
+Frontend (not started): accounts module pages for ledger, journal, chart of accounts, tax, reports,
+vendors, expenses; KPI-to-source drill-down; CSV/PDF export with filters.
 
 UI design:
 
@@ -383,9 +404,10 @@ UI design:
 
 Acceptance:
 
-- A real invoice posts to AR and revenue.
-- A real payment posts cash/bank and clears AR.
-- GST report is generated from real postings.
+- [x] A real invoice posts to AR and revenue. (dry run)
+- [x] A real payment posts cash/bank and clears AR. (dry run)
+- [x] GST report is generated from real postings. (expense-side only; output GST still pending)
+- [ ] Same, on a live tenant database.
 
 ### 4.4 WP-1.4 reliability
 
@@ -434,29 +456,39 @@ Acceptance:
 
 ### 4.6 WP-1.6 entitlements and module packaging
 
-Status: not started.
+Status: implemented baseline (backend only). Verified on a real database as a non-superuser role.
+Admin UI, nav filtering, and request-access state are not built.
 
-Backend:
+Delivered and verified (commit `179abb9d`; dry run checks "entitlement visible under tenant RLS
+context" / "other tenant denied" / "a different org_id sees zero rows"):
 
-- Define package, feature, entitlement, tenant subscription, and override model.
-- Enforce module access in middleware.
-- Add admin APIs for package assignment and entitlement audit.
+- `entitlement_packages` and `tenant_entitlements` with `organization_id` scoping and RLS.
+- `hasModuleEntitlement` / `requireModuleEntitlement` enforce module access in middleware, so
+  enforcement is server-side rather than navigation-only.
+- Platform-admin APIs: list, grant, revoke, and a tenant bootstrap that seeds the chart of accounts,
+  GST codes, the current fiscal period, and the first `accounts_finance` grant. Bootstrap is
+  idempotent.
+- Entitlement reads run inside a tenant RLS transaction. They previously read the bare pool, which
+  under an RLS policy returns nothing, so every check silently evaluated false.
 
-Frontend:
+Still outstanding:
 
-- Admin entitlement management.
-- Portal navigation filtered by entitlements.
-- Upgrade/request-access state for disabled modules.
-
-UI design:
-
-- Entitlement UI should show package, enabled modules, exceptions, start/end date, owner.
-- Disabled module card should say unavailable, not broken.
+- **Live tenant validation.** No real tenant has been provisioned with `accounts_finance`.
+- Admin entitlement management UI, including package, enabled modules, exceptions, and dates.
+- Portal navigation filtered by entitlements, and an upgrade/request-access state for disabled
+  modules rather than a broken screen.
+- Entitlement audit UX. Grants and revocations are currently recorded via `granted_by`; there is no
+  auditable history table or viewer.
+- Coverage is not proven: only `accounts_finance` is wired to `requireModuleEntitlement`. Which
+  other modules are supposed to be package-gated has not been enumerated, so "all paid modules are
+  enforced" is currently an assumption rather than a verified fact.
 
 Acceptance:
 
-- Unlicensed module is inaccessible by route and API.
-- Audit shows who changed entitlements.
+- [x] Unlicensed module is inaccessible by route and API. (enforcement implemented; UI not built)
+- [x] Entitlement checks are tenant-scoped and fail closed without an RLS context.
+- [ ] Audit shows who changed entitlements. (no viewer yet)
+- [ ] Verified on a live tenant.
 
 ### 4.7 WP-1.7 CMMS and cold chain
 
@@ -485,17 +517,40 @@ Acceptance:
 
 ### 4.8 WP-1.8 NEWS2 and ER triage
 
-Status: mostly done.
+Status: mostly done. The guided ESI item previously listed as pending is now complete — this
+section was stale.
+
+Delivered:
+
+- **Guided four-question ESI decision tree** (`client/src/utils/erGuidedTriage.ts`), wired into
+  `client/src/pages/er/ERRegister.tsx` as a triage mode alongside manual ESI and legacy colour. The
+  derived level is posted as `esiLevel` and the raw answers as `triageInputs`. Guarded so a nurse
+  cannot submit an untouched form. Covered by `erGuidedTriage.test.ts`, including the
+  multiple-triggers case (highest-acuity wins).
+- **One shared NEWS2 scorer** (`server/services/news2.service.js`). Three implementations previously
+  disagreed and all defaulted missing vitals to zero-scoring, so an incomplete vitals set looked
+  well. `vitals-ews.service.js`, `clinical-intelligence.service.js`, and
+  `ambient-deterioration.service.js` now delegate to it. Contract test in
+  `server/__tests__/news2-contract.test.js`; 13 hand-verified vectors in `news2.test.js`.
+- ER registration and triage-update no longer swallow database errors or return fabricated records;
+  `triage_time` is set; a real ESI level is authoritative over the legacy colour, and a colour-only
+  write is recorded as `triage_reviewed = false` until a nurse confirms a real level.
 
 Pending:
 
-- Replace or supplement manual 1-5 ESI picker in `ERRegister.tsx` with the plan's guided four decision-point ESI algorithm.
-- Keep manual override with reason.
+- Clinical sign-off on the guided ESI path by an ER nursing lead. The decision tree is a simplification
+  of ESI v4; it has not been reviewed against the full ESI handbook by a clinician.
+
+Note: the server does persist the answers (`er_visits.triage_inputs`, written on both register and
+triage-update) and `scripts/testing/verify-er-triage.mjs` asserts they round-trip. The remaining gap is
+that no screen yet surfaces the stored answers for audit review.
 
 Acceptance:
 
-- Guided ESI computes level and records answers.
-- Override is audited.
+- [x] Guided ESI computes level and records answers.
+- [x] Override (manual ESI / colour) is audited as an override mode.
+- [x] Answers are persisted server-side for audit.
+- [ ] Clinician sign-off recorded.
 
 ### 4.9 WP-1.9 auth consolidation and MFA
 
@@ -1191,6 +1246,27 @@ Acceptance:
 
 ## 11. Deployment plan
 
+### 11.1 Blocking constraint: there is no staging environment
+
+The intended sequence is "migrate staging first, then production." **That gate cannot currently be
+satisfied.** As of 2026-09-25:
+
+- `server/.env` points at production RDS (`mediczy-prod.cloqkwiey4k0.ap-south-1.rds.amazonaws.com`).
+- There is no `server/.env.staging`, only `.env.staging.example`.
+- Every script in `scripts/deploy/` targets production.
+- PM2 runs a single live instance; there is no second environment to deploy into.
+
+Consequence: the Phase 1 finance migration has been verified only on a disposable local PostgreSQL 16
+database. Applying it to production would be the first time it runs against real data, with no
+intermediate rehearsal. This is the single highest-priority gap, and it is an infrastructure task
+(provision a staging database, wire `.env.staging`, add a staging deploy path) rather than a code
+task.
+
+Until that exists, any "migrate staging first" instruction should be read as a deliberate hold, not a
+step to skip.
+
+### 11.2 Production deployment sequence
+
 Every production deployment should follow this sequence:
 
 1. Confirm branch status and target commit.
@@ -1203,6 +1279,9 @@ Every production deployment should follow this sequence:
 8. Review recent PM2 logs for new 500s, OOM, unhandled rejection, or module-specific errors.
 9. Confirm memory, disk, load, and process status.
 10. Record commit, validation, and any known unrelated warnings.
+
+Note: `scripts/deploy/deploy-full-prod-s3.sh` previously reverted to `HEAD` on failure, which is
+already the new code by the time anything can fail. It now reverts to `.deploy/current-live-sha`.
 
 ## 12. Documentation maintenance rules
 
