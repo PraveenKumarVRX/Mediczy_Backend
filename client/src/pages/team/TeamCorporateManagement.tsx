@@ -189,6 +189,8 @@ interface HealthPackage {
   type?: HealthPackageType;
   employeeCount?: number;
   canDelete?: boolean;
+  canToggleStatus?: boolean;
+  status?: 'active' | 'inactive';
   source?: 'user_health_packages' | 'subscription_plans';
 }
 
@@ -892,6 +894,7 @@ const TeamCorporateManagement = () => {
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [assigningPackage, setAssigningPackage] = useState<any>(null);
   const [deletingPackageId, setDeletingPackageId] = useState<string | null>(null);
+  const [updatingPackageStatusId, setUpdatingPackageStatusId] = useState<string | null>(null);
   const [selectedEmployeesForAssign, setSelectedEmployeesForAssign] = useState<string[]>([]);
   
   // Bulk upload state
@@ -2882,7 +2885,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
         setHealthPackages([]);
         return;
       }
-      const response = await api.get(`/admin/corporate-health-packages/${numericId}`, {
+      const response = await api.get(`/admin/corporate-health-packages/${numericId}?includeInactive=true`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
 
@@ -2904,6 +2907,8 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             type: details.type as HealthPackageType | undefined,
             employeeCount: typeof pkg.employeeCount === 'number' ? pkg.employeeCount : undefined,
             canDelete: Boolean(pkg.canDelete),
+            canToggleStatus: Boolean(pkg.canToggleStatus),
+            status: pkg.status === 'inactive' ? 'inactive' : 'active',
             source: pkg.source,
           } as HealthPackage;
         });
@@ -2914,6 +2919,40 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     } catch (error) {
       console.error('Failed to fetch health packages:', error);
       setHealthPackages([]);
+    }
+  };
+
+  const handleTogglePackageStatus = async (pkg: HealthPackage, checked: boolean) => {
+    if (!selectedCorporate?.id) return;
+    const nextStatus: 'active' | 'inactive' = checked ? 'active' : 'inactive';
+
+    try {
+      setUpdatingPackageStatusId(String(pkg.id));
+      const token = localStorage.getItem('teamToken');
+      const response = await api.patch(
+        `/admin/corporate-health-packages/${selectedCorporate.id}/${encodeURIComponent(String(pkg.id))}/status`,
+        { status: nextStatus },
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+      );
+
+      await Promise.all([
+        fetchHealthPackages(selectedCorporate.id),
+        fetchCorporatePlans(selectedCorporate.id),
+        fetchEmployees(selectedCorporate.id),
+      ]);
+
+      toast({
+        title: nextStatus === 'active' ? 'Package Activated' : 'Package Inactivated',
+        description: response.data?.message || `${pkg.name} is now ${nextStatus}.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Status Update Failed',
+        description: error?.response?.data?.message || 'Failed to update health package status',
+      });
+    } finally {
+      setUpdatingPackageStatusId(null);
     }
   };
 
@@ -7636,8 +7675,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         </CardContent>
                       </Card>
                     ) : (
-                      healthPackages.map((pkg, index) => (
-                        <Card key={pkg.id}>
+                      healthPackages.map((pkg, index) => {
+                        const isPackageActive = pkg.status !== 'inactive';
+                        return (
+                        <Card key={pkg.id} className={!isPackageActive ? 'opacity-75' : undefined}>
                           <CardHeader className="pb-2">
                             <div className="flex items-center justify-between">
                               <CardTitle className="text-lg flex items-center gap-2">
@@ -7646,11 +7687,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                  <Activity className="h-5 w-5 text-green-500" />}
                                 {pkg.name}
                               </CardTitle>
-                              {pkg.type && (
-                                <Badge variant="outline" className="text-xs shrink-0">
-                                  {pkg.type === 'pre_employment' ? 'Pre-Employment' : pkg.type === 'annual' ? 'Annual' : 'Other'}
+                              <div className="flex items-center gap-2">
+                                {pkg.type && (
+                                  <Badge variant="outline" className="text-xs shrink-0">
+                                    {pkg.type === 'pre_employment' ? 'Pre-Employment' : pkg.type === 'annual' ? 'Annual' : 'Other'}
+                                  </Badge>
+                                )}
+                                <Badge variant={isPackageActive ? 'default' : 'secondary'} className="text-xs shrink-0">
+                                  {isPackageActive ? 'Active' : 'Inactive'}
                                 </Badge>
-                              )}
+                              </div>
                             </div>
                           </CardHeader>
                           <CardContent>
@@ -7670,12 +7716,26 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                 <p className="text-xs text-muted-foreground">+{pkg.tests.length - 3} more tests</p>
                               )}
                             </div>
+                            <div className="mt-4 flex items-center justify-between rounded-md border px-3 py-2">
+                              <div>
+                                <p className="text-sm font-medium">Package Status</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {isPackageActive ? 'Available for assignment and bookings' : 'Hidden from new assignments and bookings'}
+                                </p>
+                              </div>
+                              <Switch
+                                checked={isPackageActive}
+                                onCheckedChange={(checked) => handleTogglePackageStatus(pkg, checked)}
+                                disabled={!pkg.canToggleStatus || updatingPackageStatusId === String(pkg.id)}
+                                aria-label={`Set ${pkg.name} active status`}
+                              />
+                            </div>
                             <div className="mt-4 flex gap-2">
                               <Button size="sm" variant="outline" className="flex-1" onClick={() => handleEditPackage(pkg)}>
                                 <Edit className="h-3 w-3 mr-1" />
                                 Edit
                               </Button>
-                              <Button size="sm" className="flex-1" onClick={() => handleAssignPackage(pkg)}>
+                              <Button size="sm" className="flex-1" onClick={() => handleAssignPackage(pkg)} disabled={!isPackageActive}>
                                 <Users className="h-3 w-3 mr-1" />
                                 Assign
                               </Button>
@@ -7692,7 +7752,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                             </div>
                           </CardContent>
                         </Card>
-                      ))
+                      );
+                      })
                     )}
 
                     <Card className="border-dashed cursor-pointer hover:bg-muted/50" onClick={() => setShowAddPackageDialog(true)}>
@@ -9750,10 +9811,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     New Package
                   </Button>
                 </div>
-                {healthPackages.length === 0 ? (
+                {healthPackages.filter(pkg => pkg.status !== 'inactive').length === 0 ? (
                   <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg text-center gap-2">
                     <FlaskConical className="h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">No health packages yet for this corporate</p>
+                    <p className="text-sm text-muted-foreground">No active health packages yet for this corporate</p>
                     <Button variant="outline" size="sm" onClick={() => setShowAddPackageDialog(true)}>
                       <Plus className="h-3 w-3 mr-1" />
                       Create First Package
@@ -9761,7 +9822,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {healthPackages.map(pkg => {
+                    {healthPackages.filter(pkg => pkg.status !== 'inactive').map(pkg => {
                       const selected = newPlan.healthPackageIds.includes(String(pkg.id));
                       return (
                         <div
@@ -10064,11 +10125,11 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 <div className="flex items-center justify-between">
                   <Label className="text-base font-semibold">Health Packages</Label>
                 </div>
-                {healthPackages.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No health packages available for this corporate.</p>
+                {healthPackages.filter(pkg => pkg.status !== 'inactive').length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No active health packages available for this corporate.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {healthPackages.map(pkg => {
+                    {healthPackages.filter(pkg => pkg.status !== 'inactive').map(pkg => {
                       const selected = editPlanForm.healthPackageIds.includes(String(pkg.id));
                       return (
                         <div key={pkg.id}

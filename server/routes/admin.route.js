@@ -5155,19 +5155,27 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
 router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), requireCorporateAccess, async (req, res) => {
   try {
     const numericCorporateId = req.resolvedCorporate.id;
+    const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
 
     // Fetch from user_health_packages (explicit per-corporate packages)
     const uhpPackages = await postgresSequelize.query(`
       SELECT "packageId", "packageName", "packageDetails",
              MIN("validFrom") AS "validFrom",
              MAX("validTo") AS "validTo",
-             COUNT(*)::int AS "employeeCount"
+             COUNT(*)::int AS "employeeCount",
+             COUNT(*) FILTER (WHERE LOWER(COALESCE(status, 'active')) = 'active')::int AS "activeEmployeeCount",
+             COUNT(*) FILTER (WHERE LOWER(COALESCE(status, 'active')) <> 'active')::int AS "inactiveEmployeeCount",
+             CASE
+               WHEN COUNT(*) FILTER (WHERE LOWER(COALESCE(status, 'active')) = 'active') > 0 THEN 'active'
+               ELSE 'inactive'
+             END AS status
       FROM user_health_packages
       WHERE corporate_id = :corporateId
+        AND (:includeInactive = true OR LOWER(COALESCE(status, 'active')) = 'active')
       GROUP BY "packageId", "packageName", "packageDetails"
       ORDER BY "packageName" ASC
     `, {
-      replacements: { corporateId: numericCorporateId },
+      replacements: { corporateId: numericCorporateId, includeInactive },
       type: postgresSequelize.QueryTypes.SELECT
     });
 
@@ -5201,6 +5209,8 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
         ...pkg,
         source: uhpIds.has(String(pkg.packageId)) ? 'user_health_packages' : 'subscription_plans',
         canDelete: uhpIds.has(String(pkg.packageId)),
+        canToggleStatus: uhpIds.has(String(pkg.packageId)),
+        status: pkg.status || 'active',
         packageDetails: typeof pkg.packageDetails === 'string'
           ? JSON.parse(pkg.packageDetails)
           : (pkg.packageDetails || {})
@@ -5211,6 +5221,58 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
     return res.status(500).json({
       success: false,
       message: 'Failed to get corporate health packages',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Update a team-created corporate health package status for all assignments.
+ * PATCH /api/admin/corporate-health-packages/:corporateId/:packageId/status
+ */
+router.patch('/corporate-health-packages/:corporateId/:packageId/status', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
+  try {
+    const numericCorporateId = req.resolvedCorporate.id;
+    const packageId = String(req.params.packageId || '').trim();
+    const status = String(req.body?.status || '').trim().toLowerCase();
+
+    if (!packageId) {
+      return res.status(400).json({ success: false, message: 'packageId is required' });
+    }
+    if (!['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ success: false, message: 'status must be active or inactive' });
+    }
+
+    const updatedAssignments = await postgresSequelize.query(`
+      UPDATE user_health_packages
+      SET status = :status,
+          "updatedAt" = NOW()
+      WHERE corporate_id = :corporateId
+        AND "packageId" = :packageId
+      RETURNING "userId"
+    `, {
+      replacements: { corporateId: numericCorporateId, packageId, status },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    if (updatedAssignments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Package not found for this corporate, or it is a subscription plan package that must be edited from Plans.'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Package marked ${status}.`,
+      status,
+      updatedAssignments: updatedAssignments.length,
+    });
+  } catch (error) {
+    console.error('Failed to update corporate health package status:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update health package status',
       error: error.message
     });
   }

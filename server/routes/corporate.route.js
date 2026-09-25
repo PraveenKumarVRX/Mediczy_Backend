@@ -930,6 +930,7 @@ router.get('/health-packages', authCorporate, async (req, res) => {
               COUNT(*)::int AS "employeeCount"
        FROM user_health_packages
        WHERE corporate_id = :corporateId
+         AND LOWER(COALESCE(status, 'active')) = 'active'
        GROUP BY "packageId", "packageName", "packageDetails"
        ORDER BY "packageName" ASC`,
       { replacements: { corporateId } }
