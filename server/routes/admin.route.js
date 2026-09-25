@@ -5199,6 +5199,8 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
       success: true,
       packages: merged.map(pkg => ({
         ...pkg,
+        source: uhpIds.has(String(pkg.packageId)) ? 'user_health_packages' : 'subscription_plans',
+        canDelete: uhpIds.has(String(pkg.packageId)),
         packageDetails: typeof pkg.packageDetails === 'string'
           ? JSON.parse(pkg.packageDetails)
           : (pkg.packageDetails || {})
@@ -5209,6 +5211,89 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
     return res.status(500).json({
       success: false,
       message: 'Failed to get corporate health packages',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Delete a team-created corporate health package.
+ * DELETE /api/admin/corporate-health-packages/:corporateId/:packageId
+ */
+router.delete('/corporate-health-packages/:corporateId/:packageId', authUser, requireRole(['admin', 'team']), requireCorporateAccess, async (req, res) => {
+  try {
+    const numericCorporateId = req.resolvedCorporate.id;
+    const packageId = String(req.params.packageId || '').trim();
+
+    if (!packageId) {
+      return res.status(400).json({ success: false, message: 'packageId is required' });
+    }
+
+    const deletedAssignments = await postgresSequelize.query(`
+      DELETE FROM user_health_packages
+      WHERE corporate_id = :corporateId
+        AND "packageId" = :packageId
+      RETURNING "userId"
+    `, {
+      replacements: { corporateId: numericCorporateId, packageId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    if (deletedAssignments.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Package not found for this corporate, or it is a subscription plan package that must be edited from Plans.'
+      });
+    }
+
+    const linkedPlans = await postgresSequelize.query(`
+      SELECT id, metadata
+      FROM subscription_plans
+      WHERE type = 'CORPORATE'
+        AND (metadata->>'corporateId')::int = :corporateId
+        AND is_active = true
+    `, {
+      replacements: { corporateId: numericCorporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    let cleanedPlanCount = 0;
+    for (const plan of linkedPlans) {
+      const metadata = typeof plan.metadata === 'string'
+        ? JSON.parse(plan.metadata || '{}')
+        : (plan.metadata || {});
+      const healthPackageIds = Array.isArray(metadata.healthPackageIds)
+        ? metadata.healthPackageIds.map(String)
+        : [];
+      if (!healthPackageIds.includes(packageId)) continue;
+
+      const nextMetadata = {
+        ...metadata,
+        healthPackageIds: healthPackageIds.filter(id => id !== packageId),
+      };
+      await postgresSequelize.query(`
+        UPDATE subscription_plans
+        SET metadata = :metadata,
+            updated_at = NOW()
+        WHERE id = :planId
+      `, {
+        replacements: { planId: plan.id, metadata: JSON.stringify(nextMetadata) },
+        type: postgresSequelize.QueryTypes.UPDATE
+      });
+      cleanedPlanCount++;
+    }
+
+    return res.json({
+      success: true,
+      message: `Deleted package from ${deletedAssignments.length} employee${deletedAssignments.length !== 1 ? 's' : ''}.`,
+      deletedAssignments: deletedAssignments.length,
+      cleanedPlanCount,
+    });
+  } catch (error) {
+    console.error('Failed to delete corporate health package:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete health package',
       error: error.message
     });
   }

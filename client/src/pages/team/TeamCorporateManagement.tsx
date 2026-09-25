@@ -188,6 +188,8 @@ interface HealthPackage {
   validityDays: number;
   type?: HealthPackageType;
   employeeCount?: number;
+  canDelete?: boolean;
+  source?: 'user_health_packages' | 'subscription_plans';
 }
 
 interface WellnessEvent {
@@ -889,6 +891,7 @@ const TeamCorporateManagement = () => {
   const [selectedDepartmentsForAssign, setSelectedDepartmentsForAssign] = useState<string[]>([]);
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [assigningPackage, setAssigningPackage] = useState<any>(null);
+  const [deletingPackageId, setDeletingPackageId] = useState<string | null>(null);
   const [selectedEmployeesForAssign, setSelectedEmployeesForAssign] = useState<string[]>([]);
   
   // Bulk upload state
@@ -2899,7 +2902,9 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             price: Number(details.cost || details.price || 0),
             validityDays,
             type: details.type as HealthPackageType | undefined,
-            employeeCount: typeof pkg.employeeCount === 'number' ? pkg.employeeCount : undefined
+            employeeCount: typeof pkg.employeeCount === 'number' ? pkg.employeeCount : undefined,
+            canDelete: Boolean(pkg.canDelete),
+            source: pkg.source,
           } as HealthPackage;
         });
         setHealthPackages(packages);
@@ -2909,6 +2914,42 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     } catch (error) {
       console.error('Failed to fetch health packages:', error);
       setHealthPackages([]);
+    }
+  };
+
+  const handleDeletePackage = async (pkg: HealthPackage) => {
+    if (!selectedCorporate?.id) return;
+    const employeeText = typeof pkg.employeeCount === 'number'
+      ? ` This removes it from ${pkg.employeeCount} assigned employee${pkg.employeeCount !== 1 ? 's' : ''}.`
+      : '';
+    if (!window.confirm(`Delete health package "${pkg.name}"?${employeeText} This cannot be undone.`)) return;
+
+    try {
+      setDeletingPackageId(String(pkg.id));
+      const token = localStorage.getItem('teamToken');
+      const response = await api.delete(
+        `/admin/corporate-health-packages/${selectedCorporate.id}/${encodeURIComponent(String(pkg.id))}`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
+      );
+
+      await Promise.all([
+        fetchHealthPackages(selectedCorporate.id),
+        fetchCorporatePlans(selectedCorporate.id),
+        fetchEmployees(selectedCorporate.id),
+      ]);
+
+      toast({
+        title: 'Package Deleted',
+        description: response.data?.message || `${pkg.name} has been removed from this corporate.`,
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Delete Failed',
+        description: error?.response?.data?.message || 'Failed to delete health package',
+      });
+    } finally {
+      setDeletingPackageId(null);
     }
   };
 
@@ -7637,6 +7678,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                               <Button size="sm" className="flex-1" onClick={() => handleAssignPackage(pkg)}>
                                 <Users className="h-3 w-3 mr-1" />
                                 Assign
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="px-2 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                title={pkg.canDelete ? 'Delete package' : 'Delete is only available for team-created packages'}
+                                onClick={() => handleDeletePackage(pkg)}
+                                disabled={!pkg.canDelete || deletingPackageId === String(pkg.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
                               </Button>
                             </div>
                           </CardContent>
