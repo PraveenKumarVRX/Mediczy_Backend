@@ -1817,21 +1817,15 @@ export const HRPerformancePage = () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 12. APPRAISALS (NEW)
 // ═══════════════════════════════════════════════════════════════════════════════
-const appraisals = [
-  { name: 'Dr. Kavita Joshi',  dept: 'Cardiology',  current: 180000, increment: 18000, revised: 198000, effectiveFrom: 'Apr-2026', status: 'Approved' },
-  { name: 'Sanjay Kumar',      dept: 'Nursing',     current: 45000,  increment: 3600,  revised: 48600,  effectiveFrom: 'Apr-2026', status: 'Approved' },
-  { name: 'Pooja Verma',       dept: 'Accounts',    current: 38000,  increment: 2660,  revised: 40660,  effectiveFrom: 'Apr-2026', status: 'Pending' },
-  { name: 'Mohammed Iqbal',    dept: 'Housekeeping',current: 22000,  increment: 1100,  revised: 23100,  effectiveFrom: 'Apr-2026', status: 'Pending' },
-  { name: 'Dr. Ramesh Pillai', dept: 'Orthopaedics',current: 220000, increment: 33000, revised: 253000, effectiveFrom: 'Apr-2026', status: 'Approved' },
-];
+const appraisals: any[] = [];
 
 export const HRAppraisalsPage = () => (
   <Wrap title="Appraisals & Increments" subtitle="Annual salary revision and increment tracking">
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-      <KPI label="Appraisal Cycle"   value="Apr-2026" sub="Effective date"          icon={Calendar}    color="text-teal-600" />
-      <KPI label="Total Employees"   value="466"      sub="Eligible for appraisal"  icon={Users}       color="text-blue-600" />
-      <KPI label="Approved"          value="312"      sub="Letters issued"           icon={CheckCircle2} color="text-emerald-600" />
-      <KPI label="Pending"           value="154"      sub="Awaiting manager sign-off" icon={AlertCircle} color="text-amber-600" />
+      <KPI label="Appraisal Cycle"   value="—" sub="No live appraisal cycle"          icon={Calendar}    color="text-teal-600" />
+      <KPI label="Total Employees"   value="—"        sub="Live data unavailable"  icon={Users}       color="text-blue-600" />
+      <KPI label="Approved"          value="—"        sub="Live data unavailable"           icon={CheckCircle2} color="text-emerald-600" />
+      <KPI label="Pending"           value="—"        sub="Live data unavailable" icon={AlertCircle} color="text-amber-600" />
     </div>
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-3">

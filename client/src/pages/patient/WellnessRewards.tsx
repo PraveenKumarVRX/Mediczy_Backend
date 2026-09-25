@@ -75,6 +75,7 @@ interface RewardItem {
 }
 
 // ─── Level Data ──────────────────────────────────────────────────────────────
+// invented-data-check: static-reference -- gamification tier configuration, not user records.
 const levels = [
   { level: 1, name: 'Health Starter', xpNeeded: 0, icon: '🌱' },
   { level: 2, name: 'Wellness Seeker', xpNeeded: 500, icon: '💪' },

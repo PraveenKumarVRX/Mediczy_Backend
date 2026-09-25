@@ -249,79 +249,8 @@ const HospitalDischargeSummary = () => {
     setDischargePlan(response.data.data);
   };
 
-  // WP-0.3: there is no GET endpoint for discharge summaries yet (server/routes/hospital/practice.route.js
-  // only has POST/PUT) and no `attending_doctor` column on discharge_summaries — so this list is seeded from
-  // localStorage (see loadHospitalStore below) rather than the database, and these four names are fabricated
-  // seed data, not real patients. A real save (handleSaveDraft/handleSubmitForApproval below) does write to
-  // the database now; only the LIST shown on this screen is still local-only until that GET endpoint exists.
-  // Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md.
-  const initialSummaries: DischargeSummary[] = [
-    {
-      id: 'DS001',
-      patientName: 'Rajesh Kumar',
-      patientId: 'P10045',
-      admissionDate: '2026-01-02',
-      dischargeDate: '2026-01-07',
-      ward: 'Cardiology',
-      bed: 'ICU-05',
-      diagnosis: 'Acute Myocardial Infarction',
-      attendingDoctor: 'Dr. Sharma',
-      status: 'approved',
-      createdAt: '2026-01-07T10:30:00'
-    },
-    {
-      id: 'DS002',
-      patientName: 'Priya Singh',
-      patientId: 'P10052',
-      admissionDate: '2026-01-04',
-      dischargeDate: '2026-01-07',
-      ward: 'Gynecology',
-      bed: 'GYN-12',
-      diagnosis: 'Normal Vaginal Delivery',
-      attendingDoctor: 'Dr. Patel',
-      status: 'pending_approval',
-      createdAt: '2026-01-07T09:15:00'
-    },
-    {
-      id: 'DS003',
-      patientName: 'Amit Verma',
-      patientId: 'P10038',
-      admissionDate: '2026-01-01',
-      dischargeDate: '2026-01-07',
-      ward: 'Neurology',
-      bed: 'NEURO-03',
-      diagnosis: 'Ischemic Stroke',
-      attendingDoctor: 'Dr. Mehta',
-      status: 'draft',
-      createdAt: '2026-01-07T11:45:00'
-    },
-    {
-      id: 'DS004',
-      patientName: 'Neha Gupta',
-      patientId: 'P10061',
-      admissionDate: '2026-01-05',
-      dischargeDate: '2026-01-07',
-      ward: 'Orthopedics',
-      bed: 'ORTHO-08',
-      diagnosis: 'Fracture Right Femur',
-      attendingDoctor: 'Dr. Joshi',
-      status: 'sent',
-      createdAt: '2026-01-06T16:20:00'
-    }
-  ];
-
-  const [summaries, setSummaries] = useState<DischargeSummary[]>(
-    () => loadHospitalStore('discharge-summaries', initialSummaries)
-  );
-
-  // Fabricated patient list — no admitted-patients endpoint is wired here yet; see the comment above initialSummaries.
-  const admittedPatients = [
-    { id: 'P10045', name: 'Rajesh Kumar', ward: 'Cardiology', bed: 'ICU-05', admissionDate: '2026-01-02' },
-    { id: 'P10052', name: 'Priya Singh', ward: 'Gynecology', bed: 'GYN-12', admissionDate: '2026-01-04' },
-    { id: 'P10038', name: 'Amit Verma', ward: 'Neurology', bed: 'NEURO-03', admissionDate: '2026-01-01' },
-    { id: 'P10061', name: 'Neha Gupta', ward: 'Orthopedics', bed: 'ORTHO-08', admissionDate: '2026-01-05' },
-    { id: 'P10078', name: 'Vikram Reddy', ward: 'General Medicine', bed: 'GM-22', admissionDate: '2026-01-06' },
-  ];
+  const [summaries, setSummaries] = useState<DischargeSummary[]>([]);
+  const admittedPatients: Array<{ id: string; name: string; ward: string; bed: string; admissionDate: string }> = [];
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {

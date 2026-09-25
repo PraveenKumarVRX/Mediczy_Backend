@@ -282,51 +282,10 @@ const HospitalPracticeManagement = () => {
     fetchPracticeData(true);
   }, [navigate]);
 
-  // Sample data
-  const initialAppointments: Appointment[] = [
-    { id: 'APT001', patientId: 'P001', patientName: 'Rajesh Kumar', patientPhone: '9876543210', doctorId: 'D001', doctorName: 'Dr. Sharma', department: 'Cardiology', date: '2024-12-04', time: '09:00', type: 'OPD', status: 'Scheduled', priority: 'Normal', createdAt: '2024-12-03' },
-    { id: 'APT002', patientId: 'P002', patientName: 'Priya Singh', patientPhone: '9876543211', doctorId: 'D002', doctorName: 'Dr. Patel', department: 'Gynecology', date: '2024-12-04', time: '09:30', type: 'Follow-up', status: 'Checked-in', priority: 'Normal', createdAt: '2024-12-02' },
-    { id: 'APT003', patientId: 'P003', patientName: 'Amit Verma', patientPhone: '9876543212', doctorId: 'D003', doctorName: 'Dr. Mehta', department: 'Neurology', date: '2024-12-04', time: '10:00', type: 'Emergency', status: 'In-Progress', priority: 'Emergency', createdAt: '2024-12-04' },
-    { id: 'APT004', patientId: 'P004', patientName: 'Neha Gupta', patientPhone: '9876543213', doctorId: 'D004', doctorName: 'Dr. Joshi', department: 'Orthopedics', date: '2024-12-04', time: '10:30', type: 'Procedure', status: 'Scheduled', priority: 'Urgent', createdAt: '2024-12-01' },
-    { id: 'APT005', patientId: 'P005', patientName: 'Sanjay Reddy', patientPhone: '9876543214', doctorId: 'D001', doctorName: 'Dr. Sharma', department: 'Cardiology', date: '2024-12-04', time: '11:00', type: 'OPD', status: 'Completed', priority: 'Normal', createdAt: '2024-12-03' },
-  ];
-
-  const [appointments, setAppointments] = useState<Appointment[]>(
-    () => loadHospitalStore(STORAGE_KEYS.appointments, initialAppointments)
-  );
-
-  const initialPatients: Patient[] = [
-    { id: 'P001', uhid: 'UHID001234', name: 'Rajesh Kumar', age: 45, gender: 'Male', phone: '9876543210', email: 'rajesh@email.com', address: 'Delhi', bloodGroup: 'B+', admissionStatus: 'IPD', admissionDate: '2024-12-01', assignedDoctor: 'Dr. Sharma', department: 'Cardiology', bed: 'ICU-05', ward: 'ICU' },
-    { id: 'P002', uhid: 'UHID001235', name: 'Priya Singh', age: 32, gender: 'Female', phone: '9876543211', email: 'priya@email.com', address: 'Mumbai', bloodGroup: 'A+', admissionStatus: 'OPD', assignedDoctor: 'Dr. Patel', department: 'Gynecology' },
-    { id: 'P003', uhid: 'UHID001236', name: 'Amit Verma', age: 58, gender: 'Male', phone: '9876543212', address: 'Bangalore', bloodGroup: 'O+', admissionStatus: 'IPD', admissionDate: '2024-12-03', assignedDoctor: 'Dr. Mehta', department: 'Neurology', bed: 'NEURO-03', ward: 'Neurology' },
-    { id: 'P004', uhid: 'UHID001237', name: 'Neha Gupta', age: 28, gender: 'Female', phone: '9876543213', email: 'neha@email.com', address: 'Chennai', bloodGroup: 'AB+', admissionStatus: 'IPD', admissionDate: '2024-12-02', assignedDoctor: 'Dr. Joshi', department: 'Orthopedics', bed: 'ORTHO-08', ward: 'Orthopedics', insurance: { provider: 'Star Health', policyNumber: 'SH123456', validity: '2025-06-30' } },
-  ];
-
-  const [patients, setPatients] = useState<Patient[]>(
-    () => loadHospitalStore(STORAGE_KEYS.patients, initialPatients)
-  );
-
-  const initialStaff: Staff[] = [
-    { id: 'D001', name: 'Dr. Rajiv Sharma', role: 'Doctor', department: 'Cardiology', specialization: 'Interventional Cardiology', phone: '9876543220', email: 'dr.sharma@hospital.com', shift: 'Morning', status: 'On-Duty', joiningDate: '2020-03-15' },
-    { id: 'D002', name: 'Dr. Anjali Patel', role: 'Doctor', department: 'Gynecology', specialization: 'Obstetrics', phone: '9876543221', email: 'dr.patel@hospital.com', shift: 'Morning', status: 'On-Duty', joiningDate: '2019-07-20' },
-    { id: 'N001', name: 'Nurse Sunita', role: 'Nurse', department: 'ICU', phone: '9876543230', email: 'sunita@hospital.com', shift: 'Night', status: 'On-Duty', joiningDate: '2021-01-10' },
-    { id: 'T001', name: 'Ramesh Kumar', role: 'Technician', department: 'Radiology', phone: '9876543240', email: 'ramesh@hospital.com', shift: 'Rotating', status: 'Available', joiningDate: '2022-05-05' },
-  ];
-
-  const [staff, setStaff] = useState<Staff[]>(
-    () => loadHospitalStore(STORAGE_KEYS.staff, initialStaff)
-  );
-
-  const initialResources: Resource[] = [
-    { id: 'R001', name: 'MRI Scanner', type: 'Equipment', department: 'Radiology', status: 'In-Use', location: 'Block A, Floor 2', lastMaintenance: '2024-11-15', nextMaintenance: '2025-02-15' },
-    { id: 'R002', name: 'ICU Bed 01', type: 'Bed', department: 'ICU', status: 'Available', location: 'ICU Wing' },
-    { id: 'R003', name: 'Operation Theatre 1', type: 'Room', department: 'Surgery', status: 'Reserved', location: 'OT Block' },
-    { id: 'R004', name: 'Ambulance A1', type: 'Vehicle', department: 'Emergency', status: 'Available', location: 'Parking' },
-  ];
-
-  const [resources, setResources] = useState<Resource[]>(
-    () => loadHospitalStore(STORAGE_KEYS.resources, initialResources)
-  );
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
 
   const departments = ['Cardiology', 'Neurology', 'Orthopedics', 'Gynecology', 'Pediatrics', 'Emergency', 'General Medicine', 'Surgery'];
 

@@ -66,49 +66,9 @@ interface EquipmentInventoryItem {
   integration_status: string;
 }
 
-// ── Fake data (used until real API responds) ────────────────────────────────
-const fakeDevices: MQTTDevice[] = [
-  { id: "dev-001", name: "ECG Monitor Bed-3A",   type: "ecg_monitor",     status: "online",      facilityId: "hosp-01", lastSeen: "2s ago",    topic: "devices/ecg/hosp-01/bed-3a" },
-  { id: "dev-002", name: "Pulse Ox ICU-2",        type: "pulse_oximeter",  status: "online",      facilityId: "hosp-01", lastSeen: "4s ago",    topic: "devices/pulseox/hosp-01/icu-2" },
-  { id: "dev-003", name: "Ventilator ICU-1",      type: "ventilator",      status: "online",      facilityId: "hosp-01", lastSeen: "8s ago",    topic: "devices/ventilator/hosp-01/icu-1" },
-  { id: "dev-004", name: "Smart Glucometer W-4",  type: "glucometer",      status: "online",      facilityId: "hosp-02", lastSeen: "15s ago",   topic: "devices/glucose/hosp-02/ward-4" },
-  { id: "dev-005", name: "Infusion Pump B-7",     type: "infusion_pump",   status: "maintenance", facilityId: "hosp-02", lastSeen: "2 min ago", topic: "devices/infusion/hosp-02/bed-7" },
-  { id: "dev-006", name: "CT Scanner Radiology",  type: "ct_scanner",      status: "online",      facilityId: "hosp-01", lastSeen: "1 min ago", topic: "devices/ct/hosp-01/radiology" },
-  { id: "dev-007", name: "Wearable Band P-102",   type: "wearable",        status: "online",      facilityId: "clinic-01",lastSeen: "30s ago",  topic: "devices/wearable/clinic-01/p102" },
-  { id: "dev-008", name: "BP Monitor OPD-1",      type: "bp_monitor",      status: "offline",     facilityId: "clinic-01",lastSeen: "12 min ago",topic: "devices/bp/clinic-01/opd-1" },
-];
-
-const fakeGateways: EdgeGateway[] = [
-  { id: "gw-hosp-01",   facilityId: "City General Hospital",    status: "online",      deviceCount: 24, pendingSync: 0,  lastHeartbeat: "8s ago",   version: "1.3.2" },
-  { id: "gw-hosp-02",   facilityId: "Sunrise Medical Centre",   status: "online",      deviceCount: 18, pendingSync: 3,  lastHeartbeat: "12s ago",  version: "1.3.1" },
-  { id: "gw-clinic-01", facilityId: "Sharma Clinic",            status: "online",      deviceCount: 6,  pendingSync: 0,  lastHeartbeat: "1 min ago",version: "1.2.8" },
-  { id: "gw-amb-01",    facilityId: "Ambulance Fleet (North)",  status: "degraded",    deviceCount: 4,  pendingSync: 7,  lastHeartbeat: "3 min ago",version: "1.3.0" },
-  { id: "gw-diag-01",   facilityId: "PathLab Diagnostics",      status: "offline",     deviceCount: 0,  pendingSync: 0,  lastHeartbeat: "1 h ago",  version: "1.2.5" },
-];
-
-const fakeConnectors = [
-  { name: "HL7 v2 Inbound",   type: "hl7v2",   status: "active",      pack: "Hospital Core v2", mappings: 12 },
-  { name: "FHIR R4 REST",     type: "fhir_r4", status: "active",      pack: "FHIR R4 Full",     mappings: 28 },
-  { name: "ABHA Bridge",      type: "abha",    status: "certified",   pack: "India ABHA v1",    mappings: 5 },
-  { name: "IHX Claims API",   type: "ihx",     status: "configured",  pack: "Claims Pro",       mappings: 9 },
-  { name: "Lab (LIS)",        type: "lis",     status: "active",      pack: "Lab Suite v1",     mappings: 7 },
-  { name: "NHA Claims",       type: "nha",     status: "draft",       pack: "Custom",           mappings: 0 },
-];
-
-const fakeReadingsTrend = Array.from({ length: 20 }, (_, i) => ({
-  t: `${i}:00`,
-  heartRate: Math.round(68 + Math.random() * 20),
-  spo2:      Math.round(95 + Math.random() * 4),
-  temp:      parseFloat((36.5 + Math.random() * 1.5).toFixed(1)),
-}));
-
-const fakeDicomWorklist = [
-  { accession: "ACC-2024-9011", patient: "Ramesh K.",    modality: "CT",  status: "pending",    submitted: "Today 08:30" },
-  { accession: "ACC-2024-9012", patient: "Priya S.",     modality: "MRI", status: "processing", submitted: "Today 09:15" },
-  { accession: "ACC-2024-9013", patient: "Mohan V.",     modality: "X-Ray",status:"completed",  submitted: "Yesterday"   },
-  { accession: "ACC-2024-9014", patient: "Asha T.",      modality: "USG", status: "pending",    submitted: "Today 10:00" },
-  { accession: "ACC-2024-9015", patient: "Sunita G.",    modality: "PET", status: "pending",    submitted: "Today 10:45" },
-];
+const readingsTrend: any[] = [];
+const connectors: any[] = [];
+const dicomWorklist: any[] = [];
 
 // ── Small helpers ────────────────────────────────────────────────────────────
 function StatusBadge({ status }: { status: string }) {
@@ -165,12 +125,12 @@ export default function HyperGridIoTView() {
       if (devRes.status === "fulfilled" && devRes.value.data.devices?.length) {
         setDevices(devRes.value.data.devices);
       } else {
-        setDevices(fakeDevices);
+        setDevices([]);
       }
       if (gwRes.status === "fulfilled" && gwRes.value.data.gateways?.length) {
         setGateways(gwRes.value.data.gateways);
       } else {
-        setGateways(fakeGateways);
+        setGateways([]);
       }
       if (brokerRes.status === "fulfilled") {
         setBrokerStats(brokerRes.value.data);
@@ -182,8 +142,8 @@ export default function HyperGridIoTView() {
       if (inventoryRes.status === "fulfilled") setEquipmentInventory(inventoryRes.value.data.equipment || []);
       if (rolloutRes.status === "fulfilled") setRolloutSummary(rolloutRes.value.data.data || null);
     } catch (_) {
-      setDevices(fakeDevices);
-      setGateways(fakeGateways);
+      setDevices([]);
+      setGateways([]);
     }
     setLoading(false);
     setRefreshedAt(new Date());
@@ -385,7 +345,7 @@ export default function HyperGridIoTView() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={fakeReadingsTrend}>
+                  <LineChart data={readingsTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="t" tick={{ fontSize: 10 }} interval={3} />
                     <YAxis yAxisId="left"  tick={{ fontSize: 10 }} domain={[60, 110]} />
@@ -404,7 +364,7 @@ export default function HyperGridIoTView() {
           {/* ── CONNECTORS ── */}
           <TabsContent value="connectors" className="mt-4">
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {fakeConnectors.map(conn => (
+              {connectors.map(conn => (
                 <Card key={conn.name}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
@@ -542,7 +502,7 @@ export default function HyperGridIoTView() {
                   </CardTitle>
                   <div className="flex gap-2">
                     <Badge className="text-xs bg-yellow-100 text-yellow-700">
-                      {fakeDicomWorklist.filter(d => d.status === "pending").length} pending
+                      {dicomWorklist.filter(d => d.status === "pending").length} pending
                     </Badge>
                     <Button size="sm" variant="outline" className="h-7 text-xs">STOW-RS Upload</Button>
                   </div>
@@ -561,7 +521,7 @@ export default function HyperGridIoTView() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {fakeDicomWorklist.map(item => (
+                      {dicomWorklist.map(item => (
                         <tr key={item.accession} className="hover:bg-muted/30 transition-colors">
                           <td className="py-2 pr-4 font-mono text-xs">{item.accession}</td>
                           <td className="py-2 pr-4 font-medium">{item.patient}</td>

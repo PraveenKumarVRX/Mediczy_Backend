@@ -21,6 +21,7 @@ interface CalcDef {
 
 // ── Calculator definitions ────────────────────────────────────────────────────
 
+// invented-data-check: static-reference -- calculator definition catalog, not patient records.
 const CALCS: CalcDef[] = [
   // Cardiology
   {

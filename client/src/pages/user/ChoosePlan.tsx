@@ -42,6 +42,7 @@ type PlanVariant = 'base' | 'plus' | 'pro';
 
 // ── Static plan definitions ──────────────────────────────────────────────────
 // base = healthcare only | plus = + insurance | pro = + insurance + VitalTrack (bundled)
+// invented-data-check: static-reference -- subscription-plan catalog, not customer records.
 const STATIC_PLANS = [
   {
     tier: 0, slug: "smart-basic", name: "Smart Basic", price: 0, billingLabel: "3 months free",

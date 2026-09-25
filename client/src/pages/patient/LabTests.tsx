@@ -74,6 +74,7 @@ interface AvailableTest {
 }
 
 // Comprehensive list of available lab tests
+// invented-data-check: static-reference -- lab-test booking catalog, not patient records.
 const availableTests: AvailableTest[] = [
   // Hematology
   { id: 'cbc', name: 'Complete Blood Count (CBC)', category: 'Hematology', description: 'Measures red blood cells, white blood cells, hemoglobin, and platelets', price: '₹300', preparationRequired: false, turnaroundTime: '24 hours' },

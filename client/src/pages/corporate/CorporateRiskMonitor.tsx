@@ -60,83 +60,8 @@ const CorporateRiskMonitor: React.FC = () => {
     thresholds: { critical: 80, high: 70, medium: 55 },
   });
 
-  const riskCategories: RiskCategory[] = [
-    { name: 'Cardiovascular Disease', count: 18, trend: 'increasing', severity: 'critical' },
-    { name: 'Diabetes Risk', count: 25, trend: 'stable', severity: 'high' },
-    { name: 'Hypertension', count: 32, trend: 'decreasing', severity: 'high' },
-    { name: 'Mental Health', count: 28, trend: 'increasing', severity: 'high' },
-    { name: 'Obesity', count: 42, trend: 'stable', severity: 'medium' },
-    { name: 'Chronic Pain', count: 15, trend: 'decreasing', severity: 'medium' }
-  ];
-
-  const riskEmployees: RiskEmployee[] = [
-    {
-      id: '1',
-      name: 'John Anderson',
-      employeeId: 'EMP1245',
-      department: 'Engineering',
-      riskLevel: 'critical',
-      riskFactors: ['High Blood Pressure', 'Elevated Cholesterol', 'Sedentary Lifestyle'],
-      lastCheckup: '2024-01-10',
-      nextAction: 'Immediate cardiologist consultation scheduled',
-      healthScore: 45
-    },
-    {
-      id: '2',
-      name: 'Sarah Martinez',
-      employeeId: 'EMP0892',
-      department: 'Sales',
-      riskLevel: 'critical',
-      riskFactors: ['Pre-diabetic', 'High BMI', 'Family History of Diabetes'],
-      lastCheckup: '2024-01-08',
-      nextAction: 'Dietitian consultation and glucose monitoring',
-      healthScore: 48
-    },
-    {
-      id: '3',
-      name: 'Michael Chen',
-      employeeId: 'EMP1556',
-      department: 'Finance',
-      riskLevel: 'high',
-      riskFactors: ['Anxiety Disorder', 'High Stress Levels', 'Sleep Deprivation'],
-      lastCheckup: '2024-01-12',
-      nextAction: 'Mental health counseling sessions recommended',
-      healthScore: 58
-    },
-    {
-      id: '4',
-      name: 'Emily Thompson',
-      employeeId: 'EMP0734',
-      department: 'Marketing',
-      riskLevel: 'high',
-      riskFactors: ['Chronic Back Pain', 'Poor Posture', 'Musculoskeletal Issues'],
-      lastCheckup: '2024-01-05',
-      nextAction: 'Physiotherapy sessions and ergonomic assessment',
-      healthScore: 62
-    },
-    {
-      id: '5',
-      name: 'David Wilson',
-      employeeId: 'EMP1890',
-      department: 'Operations',
-      riskLevel: 'medium',
-      riskFactors: ['Borderline Hypertension', 'Overweight', 'Low Physical Activity'],
-      lastCheckup: '2024-01-15',
-      nextAction: 'Wellness program enrollment and follow-up in 3 months',
-      healthScore: 68
-    },
-    {
-      id: '6',
-      name: 'Lisa Rodriguez',
-      employeeId: 'EMP2103',
-      department: 'HR',
-      riskLevel: 'medium',
-      riskFactors: ['Vitamin D Deficiency', 'Irregular Sleep Pattern', 'Mild Anemia'],
-      lastCheckup: '2024-01-11',
-      nextAction: 'Nutritional supplementation and lifestyle counseling',
-      healthScore: 70
-    }
-  ];
+  const riskCategories: RiskCategory[] = [];
+  const riskEmployees: RiskEmployee[] = [];
 
   const stats = {
     criticalRisk: riskEmployees.filter(e => e.riskLevel === 'critical').length,
@@ -156,7 +81,7 @@ const CorporateRiskMonitor: React.FC = () => {
 
       return matchesSearch && matchesRisk;
     });
-  }, [riskFilter, searchQuery]);
+  }, [riskFilter, searchQuery, riskEmployees]);
 
   const loadAlertsConfig = async () => {
     try {

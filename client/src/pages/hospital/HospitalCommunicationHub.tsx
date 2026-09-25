@@ -133,6 +133,7 @@ const HospitalCommunicationHub = () => {
   );
 
   // Templates
+  // invented-data-check: static-reference -- default communication-template presets, not patient records.
   const initialTemplates: MessageTemplate[] = [
     {
       id: '1',

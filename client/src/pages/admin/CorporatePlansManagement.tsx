@@ -90,6 +90,7 @@ interface Corporate {
 const planTypes = ['Basic', 'Standard', 'Premium', 'Elite', 'Custom'];
 const statusOptions = ['Active', 'Inactive', 'Pending', 'Expired', 'Suspended'];
 
+// invented-data-check: static-reference -- default plan-benefit template, not employee records.
 const defaultBenefits: BenefitItem[] = [
   { id: 'b1', name: 'Hospitalization', category: 'IPD', description: 'Inpatient treatment coverage', isIncluded: true, coverage: '100%' },
   { id: 'b2', name: 'Pre-Hospitalization', category: 'IPD', description: 'Pre-admission expenses', isIncluded: true, limit: '30 days' },

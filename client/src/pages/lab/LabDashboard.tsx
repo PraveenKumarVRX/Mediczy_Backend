@@ -1236,6 +1236,7 @@ const LabDashboard = () => {
   };
 
   // Master Test Catalog Data
+  // invented-data-check: static-reference -- static lab-test catalog, not patient records.
   const testCategories = [
     {
       id: 'blood',

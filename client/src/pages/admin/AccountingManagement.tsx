@@ -63,97 +63,11 @@ interface FinancialSummary {
   monthlyExpenses: number;
 }
 
-const sampleCategories: AccountCategory[] = [
-  { id: 'cat_001', name: 'Subscription Revenue', type: 'income', code: 'REV001', isActive: true },
-  { id: 'cat_002', name: 'Consultation Fees', type: 'income', code: 'REV002', isActive: true },
-  { id: 'cat_003', name: 'Commission Income', type: 'income', code: 'REV003', isActive: true },
-  { id: 'cat_004', name: 'Server Costs', type: 'expense', code: 'EXP001', isActive: true },
-  { id: 'cat_005', name: 'Marketing Expenses', type: 'expense', code: 'EXP002', isActive: true },
-  { id: 'cat_006', name: 'Staff Salaries', type: 'expense', code: 'EXP003', isActive: true },
-  { id: 'cat_007', name: 'Office Rent', type: 'expense', code: 'EXP004', isActive: true },
-  { id: 'cat_008', name: 'Cash & Bank', type: 'asset', code: 'AST001', isActive: true },
-  { id: 'cat_009', name: 'Accounts Receivable', type: 'asset', code: 'AST002', isActive: true },
-  { id: 'cat_010', name: 'Accounts Payable', type: 'liability', code: 'LIA001', isActive: true }
-];
-
-const sampleEntries: AccountEntry[] = [
-  {
-    id: 'acc_001',
-    date: '2024-11-15',
-    description: 'Apollo Hospital Monthly Subscription',
-    category: 'Subscription Revenue',
-    type: 'income',
-    amount: 50000,
-    reference: 'INV-2024-001',
-    clientId: 'hosp_001',
-    clientName: 'Apollo Hospital',
-    status: 'completed',
-    createdAt: '2024-11-15T10:00:00Z'
-  },
-  {
-    id: 'acc_002',
-    date: '2024-11-14',
-    description: 'AWS Server Hosting',
-    category: 'Server Costs',
-    type: 'expense',
-    amount: 15000,
-    reference: 'AWS-NOV-2024',
-    status: 'completed',
-    createdAt: '2024-11-14T14:30:00Z'
-  },
-  {
-    id: 'acc_003',
-    date: '2024-11-13',
-    description: 'Google Ads Campaign',
-    category: 'Marketing Expenses',
-    type: 'expense',
-    amount: 25000,
-    reference: 'GAD-NOV-2024',
-    status: 'completed',
-    createdAt: '2024-11-13T09:15:00Z'
-  },
-  {
-    id: 'acc_004',
-    date: '2024-11-12',
-    description: 'Consultation Commission - Dr. Sharma',
-    category: 'Commission Income',
-    type: 'income',
-    amount: 8000,
-    reference: 'COM-NOV-001',
-    clientId: 'doc_001',
-    clientName: 'Dr. Rajesh Sharma',
-    status: 'completed',
-    createdAt: '2024-11-12T16:45:00Z'
-  },
-  {
-    id: 'acc_005',
-    date: '2024-11-11',
-    description: 'Office Rent - November',
-    category: 'Office Rent',
-    type: 'expense',
-    amount: 45000,
-    reference: 'RENT-NOV-2024',
-    status: 'pending',
-    createdAt: '2024-11-11T11:20:00Z'
-  },
-  {
-    id: 'acc_006',
-    date: '2024-11-10',
-    description: 'Staff Salary - October',
-    category: 'Staff Salaries',
-    type: 'expense',
-    amount: 180000,
-    reference: 'SAL-OCT-2024',
-    status: 'completed',
-    createdAt: '2024-11-10T18:00:00Z'
-  }
-];
-
 const AccountingManagement = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('transactions');
-  const [entries, setEntries] = useState<AccountEntry[]>(sampleEntries);
-  const [categories, setCategories] = useState<AccountCategory[]>(sampleCategories);
+  const [entries, setEntries] = useState<AccountEntry[]>([]);
+  const [categories, setCategories] = useState<AccountCategory[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | AccountEntry['type']>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | AccountEntry['status']>('all');

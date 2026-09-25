@@ -56,6 +56,7 @@ import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 
 // Specialty definitions with their specific prescription elements
+// invented-data-check: static-reference -- clinical-note template catalog, not patient records.
 const specialtyTemplates = [
   {
     id: "general_practice",

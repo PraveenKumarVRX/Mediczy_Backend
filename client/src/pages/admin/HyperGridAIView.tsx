@@ -35,6 +35,7 @@ interface AIModule {
   color: string;
 }
 
+// invented-data-check: static-reference -- AI module catalog, not operational records.
 const AI_MODULES: AIModule[] = [
   { name: "AI Scribe",     endpoint: "/ai/scribe/stats",     requests: 0, avgLatencyMs: 0, errors: 0, icon: Mic,        color: "#6366f1" },
   { name: "AI Vision",     endpoint: "/ai/vision/stats",     requests: 0, avgLatencyMs: 0, errors: 0, icon: Eye,        color: "#06b6d4" },

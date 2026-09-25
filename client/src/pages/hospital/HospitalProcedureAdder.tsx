@@ -90,6 +90,7 @@ const HospitalProcedureAdder = () => {
   }, [navigate]);
 
   // Sample procedures data
+  // invented-data-check: static-reference -- procedure autocomplete catalog, not patient records.
   const procedures: Procedure[] = [
     {
       id: 'PROC001',

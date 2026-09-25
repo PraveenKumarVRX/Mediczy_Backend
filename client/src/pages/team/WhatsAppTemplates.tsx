@@ -77,6 +77,7 @@ const LANGUAGES = [
 ];
 
 // Healthcare-specific template presets
+// invented-data-check: static-reference -- message-template preset catalog, not person records.
 const TEMPLATE_PRESETS = [
   {
     name: 'appointment_reminder',

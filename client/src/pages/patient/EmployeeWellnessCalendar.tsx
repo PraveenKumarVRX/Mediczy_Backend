@@ -89,6 +89,7 @@ const ACTIVITY_TYPES: { value: ActivityType; label: string; icon: React.ElementT
   { value: 'Other', label: 'Other', icon: CalendarCheck, color: 'bg-slate-100 text-slate-700' },
 ];
 
+// invented-data-check: static-reference -- calendar theme configuration, not employee records.
 const WELLNESS_THEMES: MonthTheme[] = [
   { name: 'New Year Wellness', description: 'Start fresh with health goals', icon: Sparkles, color: 'from-blue-500 to-indigo-600' },
   { name: 'Heart Health', description: 'Cardiovascular awareness', icon: Heart, color: 'from-red-500 to-pink-600' },

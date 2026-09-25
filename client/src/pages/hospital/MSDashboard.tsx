@@ -25,59 +25,8 @@ import {
 import api from '@/utils/api';
 import { useHospitalAuth } from '@/hooks/useHospitalAuth';
 
-// ─── Seed data ────────────────────────────────────────────────────────────────
-const seedCensus7d = [
-  { day: 'Mon', opd: 286, ipd: 48, er: 38, surgery: 22 },
-  { day: 'Tue', opd: 312, ipd: 52, er: 42, surgery: 28 },
-  { day: 'Wed', opd: 298, ipd: 44, er: 36, surgery: 18 },
-  { day: 'Thu', opd: 324, ipd: 58, er: 45, surgery: 32 },
-  { day: 'Fri', opd: 340, ipd: 62, er: 50, surgery: 34 },
-  { day: 'Sat', opd: 280, ipd: 38, er: 44, surgery: 14 },
-  { day: 'Sun', opd: 198, ipd: 28, er: 56, surgery: 0  },
-];
-
-const seedQualityTrend = [
-  { month: 'Dec', mortality: 1.8, readmission: 4.2, hai: 0.8, falls: 0.3 },
-  { month: 'Jan', mortality: 1.6, readmission: 3.9, hai: 0.7, falls: 0.4 },
-  { month: 'Feb', mortality: 1.9, readmission: 4.1, hai: 0.9, falls: 0.2 },
-  { month: 'Mar', mortality: 1.5, readmission: 3.7, hai: 0.6, falls: 0.3 },
-  { month: 'Apr', mortality: 1.4, readmission: 3.5, hai: 0.5, falls: 0.2 },
-  { month: 'May', mortality: 1.3, readmission: 3.2, hai: 0.4, falls: 0.2 },
-];
-
-const seedNABH = [
-  { chapter: 'Patient Care (COP)',          score: 88, gap: 12, maxScore: 100 },
-  { chapter: 'Patient Safety (IPSG)',        score: 85, gap: 15, maxScore: 100 },
-  { chapter: 'Medication Management (MMU)', score: 83, gap: 17, maxScore: 100 },
-  { chapter: 'Infection Control (PCI)',      score: 94, gap: 6,  maxScore: 100 },
-  { chapter: 'Access & Continuity (ACC)',   score: 90, gap: 10, maxScore: 100 },
-  { chapter: 'Governance (GLD)',            score: 79, gap: 21, maxScore: 100 },
-  { chapter: 'Facility Management (FMS)',   score: 82, gap: 18, maxScore: 100 },
-  { chapter: 'Human Resources (SQE)',       score: 86, gap: 14, maxScore: 100 },
-];
-
-const seedDoctors = [
-  { name: 'Dr. Rajiv Sharma',   dept: 'Cardiology',    patients: 18, satisfaction: 4.8, cme: 42, cmeTarget: 50, credExpiry: '2027-12-01' },
-  { name: 'Dr. Priya Nair',     dept: 'Gynaecology',   patients: 24, satisfaction: 4.9, cme: 38, cmeTarget: 50, credExpiry: '2028-03-15' },
-  { name: 'Dr. Arun Kumar',     dept: 'Orthopaedics',  patients: 14, satisfaction: 4.6, cme: 20, cmeTarget: 50, credExpiry: '2026-08-01' },
-  { name: 'Dr. Sunita Reddy',   dept: 'Neurology',     patients: 12, satisfaction: 4.7, cme: 45, cmeTarget: 50, credExpiry: '2027-05-20' },
-  { name: 'Dr. Mehta Vivek',    dept: 'General Med',   patients: 28, satisfaction: 4.5, cme: 12, cmeTarget: 50, credExpiry: '2026-07-10' },
-  { name: 'Dr. Kavya Rao',      dept: 'Oncology',      patients: 16, satisfaction: 4.9, cme: 48, cmeTarget: 50, credExpiry: '2028-01-01' },
-];
-
-const seedAdverseEvents = [
-  { id: 'AE-2025-042', event: 'Medication error — wrong dose (insulin)', dept: 'General Ward', severity: 'High', status: 'Under Review', date: '2025-05-15' },
-  { id: 'AE-2025-041', event: 'Patient fall (bed rail left down)', dept: 'Orthopaedics', severity: 'Medium', status: 'Investigated', date: '2025-05-13' },
-  { id: 'AE-2025-040', event: 'Needle stick injury — nursing staff', dept: 'ICU', severity: 'Medium', status: 'Closed', date: '2025-05-10' },
-  { id: 'AE-2025-039', event: 'Delayed diagnosis — CT report TAT breach', dept: 'Radiology', severity: 'Low', status: 'Closed', date: '2025-05-08' },
-];
-
-const seedPendingDischarges = [
-  { patient: 'Suresh Patel',   ward: 'Cardiology',  doctor: 'Dr. Sharma',   reason: 'Pending insurance auth', days: 2 },
-  { patient: 'Lata Mishra',    ward: 'Neurology',   doctor: 'Dr. Reddy',    reason: 'Awaiting transport', days: 1 },
-  { patient: 'Ram Lal Verma',  ward: 'General Med', doctor: 'Dr. Mehta',    reason: 'Family not available', days: 1 },
-  { patient: 'Anita Krishnan', ward: 'Gynaecology', doctor: 'Dr. Nair',     reason: 'Post-op observation ext.', days: 0 },
-];
+// Live data is loaded below; unbacked governance datasets are intentionally empty.
+const emptyDashboardData: any[] = [];
 
 // ─── KPI card ─────────────────────────────────────────────────────────────────
 function ClinicalKPI({ label, value, sub, icon: Icon, color, trend, target }: {
@@ -112,13 +61,11 @@ export default function MSDashboard() {
   const { hospitalData } = useHospitalAuth();
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
-  // Today's census (live fetch with seed fallback)
-  const [todayCensus, setTodayCensus] = useState({ opd: 312, ipd: 284, er: 48, surgery: 26, discharges: 34, pendingDischarge: 14 });
+  // Today's census and quality metrics are populated only from live endpoints.
+  const [todayCensus, setTodayCensus] = useState({ opd: 0, ipd: 0, er: 0, surgery: 0, discharges: 0, pendingDischarge: 0 });
 
-  // Clinical quality KPIs — readmissionRate is now backed by a real query
-  // (outcome_records); mortalityRate/haiRate/hcahps have no backing table
-  // yet, so they keep the seed values below rather than show blank/N-A.
-  const [qualityKpis, setQualityKpis] = useState({ mortalityRate: 1.3, readmissionRate: 3.2, haiRate: 0.4, hcahps: 87 });
+  // Only metrics returned by the live endpoints are displayed; unavailable metrics remain zero.
+  const [qualityKpis, setQualityKpis] = useState({ mortalityRate: 0, readmissionRate: 0, haiRate: 0, hcahps: 0 });
 
   useEffect(() => {
     (async () => {
@@ -130,16 +77,16 @@ export default function MSDashboard() {
           opd:      d.todayOPD       ?? prev.opd,
           ipd:      d.totalPatients  ?? prev.ipd,
         }));
-      } catch { /* use seed */ }
+      } catch { /* live metric unavailable */ }
       try {
         const msRes = await api.get('/hospital/ms/clinical');
         const m = msRes.data?.data ?? msRes.data;
         setQualityKpis(prev => ({ ...prev, readmissionRate: m?.readmissionRate ?? prev.readmissionRate }));
-      } catch { /* use seed */ }
+      } catch { /* live metric unavailable */ }
     })();
   }, []);
 
-  const overallNABH = Math.round(seedNABH.reduce((s,n) => s + n.score, 0) / seedNABH.length);
+  const overallNABH = 0;
 
   return (
     <HospitalLayout title="Medical Superintendent" subtitle="Clinical Governance, Quality & Compliance Command Centre">
@@ -171,12 +118,12 @@ export default function MSDashboard() {
 
       {/* ── Today's Census KPIs ───────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
-        <ClinicalKPI label="OPD Today" value={todayCensus.opd.toString()} sub="Avg 298 last 7d" icon={Users} color="text-indigo-600" trend="up" />
-        <ClinicalKPI label="IPD Census" value={todayCensus.ipd.toString()} sub="82% occupancy" icon={Bed} color="text-blue-600" />
-        <ClinicalKPI label="ER Attendances" value={todayCensus.er.toString()} sub="22 min avg wait" icon={HeartPulse} color="text-red-600" />
-        <ClinicalKPI label="Surgeries Today" value={todayCensus.surgery.toString()} sub="94% theatre use" icon={Stethoscope} color="text-purple-600" trend="up" />
-        <ClinicalKPI label="Discharges Today" value={todayCensus.discharges.toString()} sub="ALOS 4.8d" icon={Activity} color="text-emerald-600" />
-        <ClinicalKPI label="Pending Discharge" value={todayCensus.pendingDischarge.toString()} sub="4 need MS review" icon={AlertTriangle} color="text-amber-600" target="≤10" />
+        <ClinicalKPI label="OPD Today" value={todayCensus.opd ? todayCensus.opd.toString() : '—'} sub={todayCensus.opd ? 'Live dashboard metric' : 'Live metric unavailable'} icon={Users} color="text-indigo-600" />
+        <ClinicalKPI label="IPD Census" value={todayCensus.ipd ? todayCensus.ipd.toString() : '—'} sub={todayCensus.ipd ? 'Live dashboard metric' : 'Live metric unavailable'} icon={Bed} color="text-blue-600" />
+        <ClinicalKPI label="ER Attendances" value={todayCensus.er ? todayCensus.er.toString() : '—'} sub={todayCensus.er ? 'Live dashboard metric' : 'Live metric unavailable'} icon={HeartPulse} color="text-red-600" />
+        <ClinicalKPI label="Surgeries Today" value={todayCensus.surgery ? todayCensus.surgery.toString() : '—'} sub={todayCensus.surgery ? 'Live dashboard metric' : 'Live metric unavailable'} icon={Stethoscope} color="text-purple-600" />
+        <ClinicalKPI label="Discharges Today" value={todayCensus.discharges ? todayCensus.discharges.toString() : '—'} sub={todayCensus.discharges ? 'Live dashboard metric' : 'Live metric unavailable'} icon={Activity} color="text-emerald-600" />
+        <ClinicalKPI label="Pending Discharge" value={todayCensus.pendingDischarge ? todayCensus.pendingDischarge.toString() : '—'} sub={todayCensus.pendingDischarge ? 'Live dashboard metric' : 'Live metric unavailable'} icon={AlertTriangle} color="text-amber-600" target="≤10" />
       </div>
 
       <Tabs defaultValue="census" className="space-y-5">
@@ -195,7 +142,7 @@ export default function MSDashboard() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={seedCensus7d} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <BarChart data={emptyDashboardData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="day" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
@@ -217,10 +164,10 @@ export default function MSDashboard() {
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
                   <ClipboardList className="h-4 w-4 text-amber-500" /> Pending Discharges Requiring Attention
                 </CardTitle>
-                <Badge className="bg-amber-100 text-amber-700">{seedPendingDischarges.length} pending</Badge>
+                <Badge className="bg-amber-100 text-amber-700">{emptyDashboardData.length} pending</Badge>
               </CardHeader>
               <CardContent className="space-y-2.5">
-                {seedPendingDischarges.map((p, i) => (
+                {emptyDashboardData.map((p, i) => (
                   <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-muted/40 hover:bg-muted/60 transition-colors">
                     <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${p.days >= 2 ? 'bg-red-500' : p.days === 1 ? 'bg-amber-500' : 'bg-blue-500'}`} />
                     <div className="flex-1 min-w-0">
@@ -275,10 +222,10 @@ export default function MSDashboard() {
           {/* Quality indicator KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: 'Gross Mortality Rate',    value: `${qualityKpis.mortalityRate}%`, target: '≤2%', good: true,  icon: HeartPulse, color: 'text-emerald-600' },
-              { label: '30-day Readmission Rate', value: `${qualityKpis.readmissionRate}%`, target: '≤5%', good: true,  icon: Activity,   color: 'text-emerald-600' },
-              { label: 'HAI Rate',                value: `${qualityKpis.haiRate}%`, target: '≤1%', good: true,  icon: Shield,     color: 'text-emerald-600' },
-              { label: 'HCAHPS Score',            value: `${qualityKpis.hcahps}%`,  target: '≥85%', good: true, icon: Award,      color: 'text-emerald-600' },
+              { label: 'Gross Mortality Rate',    value: qualityKpis.mortalityRate ? `${qualityKpis.mortalityRate}%` : '—', target: '≤2%', good: true,  icon: HeartPulse, color: 'text-emerald-600' },
+              { label: '30-day Readmission Rate', value: qualityKpis.readmissionRate ? `${qualityKpis.readmissionRate}%` : '—', target: '≤5%', good: true,  icon: Activity,   color: 'text-emerald-600' },
+              { label: 'HAI Rate',                value: qualityKpis.haiRate ? `${qualityKpis.haiRate}%` : '—', target: '≤1%', good: true,  icon: Shield,     color: 'text-emerald-600' },
+              { label: 'HCAHPS Score',            value: qualityKpis.hcahps ? `${qualityKpis.hcahps}%` : '—',  target: '≥85%', good: true, icon: Award,      color: 'text-emerald-600' },
             ].map(k => (
               <Card key={k.label} className="border-0 shadow-sm">
                 <CardContent className="p-4">
@@ -302,7 +249,7 @@ export default function MSDashboard() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={260}>
-                <LineChart data={seedQualityTrend} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                <LineChart data={emptyDashboardData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
@@ -339,7 +286,7 @@ export default function MSDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {seedAdverseEvents.map(ae => (
+                    {emptyDashboardData.map(ae => (
                       <tr key={ae.id} className="hover:bg-muted/30 transition-colors">
                         <td className="py-2.5 font-mono text-xs text-muted-foreground">{ae.id}</td>
                         <td className="py-2.5 max-w-[220px]"><p className="text-sm leading-snug">{ae.event}</p></td>
@@ -389,7 +336,7 @@ export default function MSDashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {seedDoctors.map(d => {
+                    {emptyDashboardData.map(d => {
                       const cmePct  = Math.round((d.cme / d.cmeTarget) * 100);
                       const credExp = new Date(d.credExpiry);
                       const daysToExp = Math.round((credExp.getTime() - Date.now()) / (1000*60*60*24));
@@ -445,9 +392,9 @@ export default function MSDashboard() {
           {/* CME compliance summary */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {[
-              { label: 'Average CME Completion', value: `${Math.round(seedDoctors.reduce((s,d)=>s+(d.cme/d.cmeTarget),0)/seedDoctors.length*100)}%`, desc: 'Across all active doctors', color: 'text-indigo-600' },
-              { label: 'Doctors ≥80% CME',       value: `${seedDoctors.filter(d=>d.cme/d.cmeTarget>=0.8).length}/${seedDoctors.length}`, desc: 'On track for annual target', color: 'text-emerald-600' },
-              { label: 'Credentials Expiring',    value: `${seedDoctors.filter(d=>{ const d_=Math.round((new Date(d.credExpiry).getTime()-Date.now())/(1000*60*60*24)); return d_<365; }).length}`, desc: 'Within 12 months', color: 'text-amber-600' },
+              { label: 'Average CME Completion', value: `${Math.round(emptyDashboardData.reduce((s,d)=>s+(d.cme/d.cmeTarget),0)/emptyDashboardData.length*100)}%`, desc: 'Across all active doctors', color: 'text-indigo-600' },
+              { label: 'Doctors ≥80% CME',       value: `${emptyDashboardData.filter(d=>d.cme/d.cmeTarget>=0.8).length}/${emptyDashboardData.length}`, desc: 'On track for annual target', color: 'text-emerald-600' },
+              { label: 'Credentials Expiring',    value: `${emptyDashboardData.filter(d=>{ const d_=Math.round((new Date(d.credExpiry).getTime()-Date.now())/(1000*60*60*24)); return d_<365; }).length}`, desc: 'Within 12 months', color: 'text-amber-600' },
             ].map(s => (
               <Card key={s.label} className="border-0 shadow-sm">
                 <CardContent className="p-4 text-center">
@@ -487,9 +434,9 @@ export default function MSDashboard() {
                 </div>
                 <div className="space-y-1 w-full">
                   {[
-                    { label: 'Chapters ≥90%', count: seedNABH.filter(n=>n.score>=90).length, color: 'text-emerald-600' },
-                    { label: 'Chapters 80–89%', count: seedNABH.filter(n=>n.score>=80&&n.score<90).length, color: 'text-indigo-600' },
-                    { label: 'Chapters <80%',  count: seedNABH.filter(n=>n.score<80).length, color: 'text-amber-600' },
+                    { label: 'Chapters ≥90%', count: emptyDashboardData.filter(n=>n.score>=90).length, color: 'text-emerald-600' },
+                    { label: 'Chapters 80–89%', count: emptyDashboardData.filter(n=>n.score>=80&&n.score<90).length, color: 'text-indigo-600' },
+                    { label: 'Chapters <80%',  count: emptyDashboardData.filter(n=>n.score<80).length, color: 'text-amber-600' },
                   ].map(s => (
                     <div key={s.label} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">{s.label}</span>
@@ -507,7 +454,7 @@ export default function MSDashboard() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={240}>
-                  <RadarChart data={seedNABH.map(n => ({ subject: n.chapter.split(' ')[0], score: n.score, target: 90 }))}>
+                  <RadarChart data={emptyDashboardData.map(n => ({ subject: n.chapter.split(' ')[0], score: n.score, target: 90 }))}>
                     <PolarGrid />
                     <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10 }} />
                     <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9 }} />
@@ -527,7 +474,7 @@ export default function MSDashboard() {
               <CardTitle className="text-sm font-semibold">NABH Chapter-wise Breakdown</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {seedNABH.map(n => (
+              {emptyDashboardData.map(n => (
                 <div key={n.chapter} className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">{n.chapter}</span>

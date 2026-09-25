@@ -17,6 +17,7 @@
  *   one is a real gate, not advisory, since the plan's own acceptance criterion is "the lint rule
  *   fails the build."
  *
+ *   --report            print every current finding as JSON without consulting the allow-list
  *   --update-allowlist   rewrite the allow-list file with exactly the files currently flagged. Use
  *                        this once, when a human has actually reviewed a *new* finding and decided
  *                        it's acceptable for now — never run it blindly to silence a real violation,
@@ -32,6 +33,8 @@ const PAGES_DIR = path.join(CLIENT_DIR, 'src', 'pages');
 const ALLOWLIST_FILE = path.join(CLIENT_DIR, 'scripts', 'ci', 'invented-data-allowlist.json');
 
 const UPDATE_ALLOWLIST = process.argv.includes('--update-allowlist');
+const REPORT_FINDINGS = process.argv.includes('--report');
+
 
 const PERSON_LIKE_KEY_RE = /\b(name|patientName|patient|mrn|uhid)\s*:/i;
 // A const/array declared at 0-2 leading spaces — module scope, or right at the top of a component
@@ -100,6 +103,15 @@ function countTopLevelObjectElements(arraySpan) {
 }
 
 const findings = [];
+
+/** Static-reference annotations are deliberately narrow: the comment must be the immediately
+ * preceding line of the declaration and must include a human-readable reason. */
+function isAnnotatedStaticReference(text, declarationIndex) {
+  const linesBeforeDeclaration = text.slice(0, declarationIndex).split('\n');
+  const previous = linesBeforeDeclaration[linesBeforeDeclaration.length - 2]?.trim() ?? '';
+  return /^\/\/\s*invented-data-check: static-reference -- .+/.test(previous);
+}
+
 let files;
 try { files = walk(PAGES_DIR); } catch (err) {
   console.error(`Could not walk ${PAGES_DIR}: ${err.message}`);
@@ -120,9 +132,16 @@ for (const file of files) {
     if (objectCount < 5) continue;
     if (!PERSON_LIKE_KEY_RE.test(arraySpan)) continue;
 
+    if (isAnnotatedStaticReference(text, m.index)) continue;
+
     const lineNo = text.slice(0, m.index).split('\n').length;
     findings.push({ file: rel, line: lineNo, identifier: m[1], objectCount });
   }
+}
+
+if (REPORT_FINDINGS) {
+  console.log(JSON.stringify(findings, null, 2));
+  process.exit(0);
 }
 
 const foundFiles = [...new Set(findings.map((f) => f.file))].sort();
@@ -176,7 +195,7 @@ for (const f of newViolations) {
 console.log('\nEither this is a genuine invented-data bug (see docs/WP0.3_INVENTED_DATA_INVENTORY.md — wire the');
 console.log('screen to a real API call, or use DataState + PlaceholderBanner from client/src/components/ui to');
 console.log('label it honestly), or it is a false positive (e.g. static UI config, not seed data presented as');
-console.log('live) — if so, add it to client/scripts/ci/invented-data-allowlist.json with a one-line reason');
-console.log('in the PR description, after a human actually looked at it.');
+console.log('live) — if so, place an `// invented-data-check: static-reference -- <reason>` comment immediately');
+console.log('before that array declaration after a human has actually looked at it.');
 
 process.exit(1);

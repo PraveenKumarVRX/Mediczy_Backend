@@ -69,15 +69,15 @@ The plan splits this into four sub-packages. Status as of 2026-09-25:
     aggregating), supply alerts (no reorder levels in SCM), maintenance/equipment (WP-1.7), per-payer settlements,
     department revenue (invoices carry no department), all Accounts finance-ledger pages.
   - Not touched: `AccountsSupportPage` (static help text; its helpdesk phone/email look invented — confirm or remove).
-- **WP-0.3d — Department screens + server-side fabrication: IMPLEMENTED (2026-09-25).** The committed department pass (`03dc1eac`) rewired dietary, biomedical, and consent screens to live endpoints and removed fabricated records. The follow-up pass in the current worktree removes quality-portal fallback datasets, replaces quality empty/error states with database-backed or explicit unavailable states, removes random triage/remote-monitoring clinical fallbacks, and surfaces ICU-board load/SSE failures with retry/last-updated status. `node scripts/ci/check-invented-data-statics.mjs` passes with 37 known allow-listed files; the remaining allow-list is tracked debt outside the completed named implementation. The documented client JSX blockers were fixed in `ChatDashboard.tsx` and `VideoChatdoctor.tsx`; full client typecheck still has unrelated backlog and remains advisory.
+- **WP-0.3d — Department screens + server-side fabrication: IMPLEMENTED (2026-09-25).** The committed department pass (`03dc1eac`) rewired dietary, biomedical, and consent screens to live endpoints and removed fabricated records. The follow-up pass in the current worktree removes quality-portal fallback datasets, replaces quality empty/error states with database-backed or explicit unavailable states, removes random triage/remote-monitoring clinical fallbacks, and surfaces ICU-board load/SSE failures with retry/last-updated status. `node scripts/ci/check-invented-data-statics.mjs` passes with an empty operational allow-list; 29 static catalog/config arrays across 26 files are covered by file-local `invented-data-check: static-reference` annotations. The documented client JSX blockers were fixed in `ChatDashboard.tsx` and `VideoChatdoctor.tsx`; full client typecheck still has unrelated backlog and remains advisory.
+
 - **Whole-package acceptance criteria (from the plan, verbatim):** with every API mocked to fail, no
   page shows a person name/count/trend that didn't come from the API; with every API returning empty,
   every page shows an explicit empty state; the lint rule passes with an **empty allow-list**; server
   responses never contain fabricated fallback objects (`null` + `dataAvailable: false` instead); the
   clinical lead signs off a walkthrough of ICU, EHR, theatre and blood-bank screens on a hospital with
-  no data. **Remaining acceptance work:** remove the remaining 37 known allow-listed files (or explicitly
-  document why each is legitimately labeled demo/test data), clear the full client typecheck backlog, and
-  complete the clinical walkthrough.
+  no data. **Remaining acceptance work:** clear the app-wide client TypeScript backlog and complete
+  the clinical walkthrough.
 
 Separately fixed this session, outside the plan's own WP-0.3 file list (found via a narrower, more
 precise search than the plan's heuristic): `Ayushman.tsx` (fabricated government health-scheme coverage
@@ -109,7 +109,7 @@ Phase 2 (months 4–9) and Phase 3 (months 10–18) are not expected yet and wer
    CDSS, Teleconsult) — done 2026-09-23, **deployed to production 2026-09-24** together with WP-0.3a and
    the executive/finance pass of WP-0.3c.
 3. ~~**WP-0.3c remainder + WP-0.3d**~~ — implemented; WP-0.3c/0.3d production build and static fabrication checks pass. Remaining package acceptance work is allow-list cleanup plus the clinical walkthrough below.
-4. **Complete the remaining whole-package acceptance work** — clear the 37-entry invented-data allow-list (or document legitimate demo/test-only exceptions), clear the app-wide client TypeScript backlog, and complete the clinical walkthrough. Production build is green; the CI typecheck remains advisory until its backlog is resolved.
+4. **Complete the remaining whole-package acceptance work** — clear the app-wide client TypeScript backlog and complete the clinical walkthrough. The static fabrication gate and allow-list are now clean; production build is green.
 5. **Verify WP-1.1 and WP-1.2's specific unverified acceptance criteria** (the hard admission/discharge
    gate; the exact eight-server-path count) — likely small fixes if gaps are found, since the
    underlying services already exist.

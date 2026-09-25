@@ -195,6 +195,7 @@ interface Specialty {
 // CONSTANTS
 // ==========================================
 
+// invented-data-check: static-reference -- clinical reference catalogs, not patient records.
 const MEDICAL_SPECIALTIES: Specialty[] = [
   { id: 'general', name: 'General Medicine', icon: Stethoscope },
   { id: 'cardiology', name: 'Cardiology', icon: Heart },
@@ -214,6 +215,7 @@ const MEDICAL_SPECIALTIES: Specialty[] = [
   { id: 'emergency', name: 'Emergency Medicine', icon: Zap },
 ];
 
+// invented-data-check: static-reference -- medical-source reference catalog, not patient records.
 const MEDICAL_SOURCES = [
   { id: 'gale', name: 'Gale Encyclopedia of Medicine', region: 'Reference', icon: '📕', category: 'encyclopedia' },
   { id: 'bmj', name: 'British Medical Journal (BMJ)', region: 'UK', icon: '🇬🇧', category: 'journal' },
@@ -230,6 +232,7 @@ const MEDICAL_SOURCES = [
   { id: 'pubmed', name: 'PubMed/NCBI', region: 'USA', icon: '🔬', category: 'database' },
 ];
 
+// invented-data-check: static-reference -- query-category configuration, not patient records.
 const QUERY_CATEGORIES = [
   { id: 'diagnosis', name: 'Diagnosis', icon: Stethoscope },
   { id: 'treatment', name: 'Treatment', icon: Pill },

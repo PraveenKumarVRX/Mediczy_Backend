@@ -71,29 +71,7 @@ function PulseDot({ color = "bg-green-500" }: { color?: string }) {
   );
 }
 
-// ── Fake data helpers (replaced by real API data when available) ─────────────
-const fakeEventTrend = Array.from({ length: 12 }, (_, i) => ({
-  t: `${i + 1}h`,
-  events: Math.round(200 + Math.random() * 800),
-  errors: Math.round(Math.random() * 20),
-}));
-
-const fakeTwinBreakdown = [
-  { name: "Patient", value: 1240 },
-  { name: "Device", value: 870 },
-  { name: "Asset", value: 340 },
-  { name: "Hospital", value: 58 },
-  { name: "Ambulance", value: 92 },
-  { name: "Claim", value: 310 },
-];
-
-const fakeLayerHealth = [
-  { layer: "MQTT", score: 98 }, { layer: "Event Bus", score: 96 },
-  { layer: "Terminology", score: 99 }, { layer: "Twins", score: 94 },
-  { layer: "DICOM", score: 91 }, { layer: "SMART", score: 97 },
-  { layer: "Connectors", score: 88 }, { layer: "Edge", score: 93 },
-  { layer: "Marketplace", score: 100 },
-];
+// ── Derived data from live HyperGrid responses ───────────────────────────────
 
 // ── Main Component ──────────────────────────────────────────────────────────
 export default function HyperGridDashboard() {
@@ -104,6 +82,9 @@ export default function HyperGridDashboard() {
   });
   const [twinSummary, setTwinSummary] = useState<any[]>([]);
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
+  const eventTrend: any[] = [];
+  const twinBreakdown: any[] = [];
+  const layerHealth: any[] = [];
   const [loading, setLoading] = useState(true);
   const [refreshedAt, setRefreshedAt] = useState<Date>(new Date());
 
@@ -176,9 +157,9 @@ export default function HyperGridDashboard() {
           {[
             { label: "Redis", ok: stats.redisOk },
             { label: "Kafka", ok: stats.kafkaOk },
-            { label: "MQTT Broker", ok: true },
-            { label: "Event Bus", ok: true },
-            { label: "Terminology Cache", ok: true },
+            { label: "MQTT Broker", ok: false },
+            { label: "Event Bus", ok: stats.redisOk },
+            { label: "Terminology Cache", ok: false },
           ].map(({ label, ok }) => (
             <span key={label} className="flex items-center gap-1.5 text-xs border rounded-full px-3 py-1">
               <PulseDot color={ok ? "bg-green-500" : "bg-red-400"} />
@@ -189,10 +170,10 @@ export default function HyperGridDashboard() {
 
         {/* KPI row */}
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 pt-2">
-          <KPI label="Network Participants" value={stats.networkParticipants} icon={Network} color="text-indigo-500" trend={8} />
-          <KPI label="Digital Twins"        value={stats.digitalTwins}        icon={Cpu}     color="text-cyan-500"   trend={12} />
+          <KPI label="Network Participants" value={stats.networkParticipants} icon={Network} color="text-indigo-500" />
+          <KPI label="Digital Twins"        value={stats.digitalTwins}        icon={Cpu}     color="text-cyan-500" />
           <KPI label="Online Gateways"      value={stats.onlineGateways}      icon={Wifi}    color="text-green-500" />
-          <KPI label="Marketplace Apps"     value={stats.totalApps}           icon={Store}   color="text-purple-500" trend={4} />
+          <KPI label="Marketplace Apps"     value={stats.totalApps}           icon={Store}   color="text-purple-500" />
           <KPI label="Events Today"         value={stats.eventsToday > 0 ? stats.eventsToday.toLocaleString() : "—"} icon={Zap} color="text-amber-500" />
           <KPI label="MQTT Devices"         value={stats.mqttDevices || "—"}  icon={Radio}   color="text-sky-500" />
         </div>
@@ -218,7 +199,7 @@ export default function HyperGridDashboard() {
                 </CardHeader>
                 <CardContent>
                   <ResponsiveContainer width="100%" height={200}>
-                    <AreaChart data={fakeEventTrend}>
+                    <AreaChart data={eventTrend}>
                       <defs>
                         <linearGradient id="gEvents" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.3} />
@@ -248,11 +229,11 @@ export default function HyperGridDashboard() {
                   <ResponsiveContainer width="55%" height={200}>
                     <PieChart>
                       <Pie
-                        data={twinSummary.length ? twinSummary.map(r => ({ name: r.twin_type, value: Number(r.total) })) : fakeTwinBreakdown}
+                        data={twinSummary.length ? twinSummary.map(r => ({ name: r.twin_type, value: Number(r.total) })) : twinBreakdown}
                         cx="50%" cy="50%" innerRadius={50} outerRadius={80}
                         dataKey="value" paddingAngle={3}
                       >
-                        {(twinSummary.length ? twinSummary : fakeTwinBreakdown).map((_, i) => (
+                        {(twinSummary.length ? twinSummary : twinBreakdown).map((_, i) => (
                           <Cell key={i} fill={COLORS[i % COLORS.length]} />
                         ))}
                       </Pie>
@@ -260,7 +241,7 @@ export default function HyperGridDashboard() {
                     </PieChart>
                   </ResponsiveContainer>
                   <div className="space-y-1.5 text-xs">
-                    {(twinSummary.length ? twinSummary.map(r => ({ name: r.twin_type, value: r.total })) : fakeTwinBreakdown)
+                    {(twinSummary.length ? twinSummary.map(r => ({ name: r.twin_type, value: r.total })) : twinBreakdown)
                       .map((item, i) => (
                         <div key={item.name} className="flex items-center gap-2">
                           <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: COLORS[i % COLORS.length] }} />
@@ -346,7 +327,7 @@ export default function HyperGridDashboard() {
           {/* ── DIGITAL TWINS ── */}
           <TabsContent value="twins" className="mt-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(twinSummary.length ? twinSummary : fakeTwinBreakdown.map(d => ({
+              {(twinSummary.length ? twinSummary : twinBreakdown.map(d => ({
                 twin_type: d.name.toLowerCase(), total: d.value, high_risk: Math.round(d.value * 0.05), critical: Math.round(d.value * 0.01),
               }))).map((row: any, i: number) => (
                 <Card key={row.twin_type}>
@@ -388,13 +369,13 @@ export default function HyperGridDashboard() {
               </CardHeader>
               <CardContent>
                 <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={fakeLayerHealth} layout="vertical" margin={{ left: 20 }}>
+                  <BarChart data={layerHealth} layout="vertical" margin={{ left: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" domain={[80, 100]} tick={{ fontSize: 11 }} unit="%" />
                     <YAxis type="category" dataKey="layer" tick={{ fontSize: 12 }} width={90} />
                     <Tooltip formatter={(v: any) => `${v}%`} />
                     <Bar dataKey="score" radius={[0, 4, 4, 0]}>
-                      {fakeLayerHealth.map((entry, i) => (
+                      {layerHealth.map((entry, i) => (
                         <Cell key={i} fill={entry.score >= 95 ? "#22c55e" : entry.score >= 90 ? "#6366f1" : "#f59e0b"} />
                       ))}
                     </Bar>

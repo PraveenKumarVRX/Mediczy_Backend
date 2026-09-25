@@ -98,6 +98,7 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
 };
 
 // Real hospital data
+// invented-data-check: static-reference -- emergency-service directory, not patient records.
 const hospitalData: Hospital[] = [
   {
     id: "1",

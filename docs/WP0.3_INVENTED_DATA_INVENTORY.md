@@ -1,8 +1,10 @@
 # WP-0.3 — removing invented screen data: inventory and first pass
 
-**Status: first pass done on the highest-density cluster (the hospital practice module); the rest of
-the client is inventoried but not yet triaged file by file.** This is real, multi-week work — sizing
-it below is itself part of the deliverable, not a stand-in for finishing it in one sitting.
+**Status as of 2026-09-25:** the named WP-0.3 implementation passes are in place, and the static gate
+reports no operational fabrication findings with an empty allow-list. Another 29 arrays across 26
+static catalog/config files are explicitly annotated as local references rather than operational
+allow-list debt. The clinical walkthrough and the app-wide TypeScript backlog remain separate
+acceptance work.
 
 ## The five data states
 
@@ -70,9 +72,9 @@ a real error surfaced when it doesn't):
   behind an unconditional "Procedure Added" toast — the local chart entry still saves either way, since
   that part was never actually failing, but the user now knows if the server-side sync didn't).
 
-Verification: `npx tsc --noEmit` clean across the client after all of the above (no type errors
-introduced). These are UI-logic changes with no new tests of their own; each fix follows the exact
-shape already validated for `HospitalPrescriptionCreator.tsx` in an earlier pass of this same effort.
+Verification for the UI-logic changes used the production build and static fabrication gate; there is
+no new targeted test for this pass. The app-wide `npx tsc --noEmit` still has a pre-existing advisory
+backlog, while the two documented client JSX blockers were fixed separately.
 
 ## Already-labeled demo mode: not a violation, checked and left alone
 
@@ -117,10 +119,9 @@ presented as real" read `RemoteHealthMonitoring.tsx` got above before deciding w
 ## Backend gaps this pass surfaced (not fixed — out of scope for a client-only pass)
 
 - No `GET` endpoint lists discharge summaries (`server/routes/hospital/practice.route.js` only has
-  `POST`/`PUT`), and `discharge_summaries` has no `attending_doctor` column — so `HospitalDischargeSummary.tsx`'s
-  summary *list* (as opposed to creating one, which is now fixed) is still seeded from a hardcoded
-  four-record array via `loadHospitalStore`, labeled in-code. Needs a migration + a GET route before
-  the list itself can be real.
+  `POST`/`PUT`), and `discharge_summaries` has no `attending_doctor` column. The client now starts with
+  an honest empty list and an empty admitted-patient selector; a migration, admitted-patient lookup,
+  and GET route are still required before the screen can show real records.
 - No endpoint at all backs `HospitalMRD.tsx`'s "new record" creation — it is local-storage-only, full
   stop. Needs a real `POST /api/hospital/mrd/records` (or similar) before that screen's index can be
   trusted as the department's actual record of what's in the archive.

@@ -77,6 +77,7 @@ const HospitalLabOrder = () => {
   }, [navigate]);
 
   // Sample lab tests data
+  // invented-data-check: static-reference -- lab-test catalog, not patient records.
   const labTests: LabTest[] = [
     {
       id: 'LT001',

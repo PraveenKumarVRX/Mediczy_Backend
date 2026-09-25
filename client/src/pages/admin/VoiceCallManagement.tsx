@@ -121,6 +121,7 @@ const VoiceCallManagement = () => {
     );
   }
 
+  // invented-data-check: static-reference -- supported voice-provider catalog, not operational records.
   const providers = [
     {
       id: 'exotel',

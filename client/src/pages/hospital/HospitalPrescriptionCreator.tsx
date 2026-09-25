@@ -98,6 +98,7 @@ const HospitalPrescriptionCreator = () => {
   }, [navigate]);
 
   // Sample medications data
+  // invented-data-check: static-reference -- medication autocomplete catalog, not patient records.
   const medications: Medication[] = [
     {
       id: 'MED001',

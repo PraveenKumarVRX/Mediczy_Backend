@@ -9,7 +9,8 @@ import {
   Download, AlertCircle,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import api from '@/utils/api';
 
 const navSections: DeptNavSection[] = [
   {
@@ -45,28 +46,6 @@ const navSections: DeptNavSection[] = [
   },
 ];
 
-const kpis = [
-  { label: 'New Admissions Today',   value: '34',    sub: '+5 from yesterday',     icon: PlusCircle,  color: 'text-teal-600' },
-  { label: 'Pending Record Requests',value: '18',    sub: '6 urgent',              icon: AlertCircle, color: 'text-amber-600' },
-  { label: 'Records Completed',      value: '127',   sub: 'This week',             icon: FileCheck,   color: 'text-emerald-600' },
-  { label: 'Discharged Today',       value: '21',    sub: 'Summaries pending: 4',  icon: ArrowUpRight,color: 'text-blue-600' },
-];
-
-const recentAdmissions = [
-  { id: 'MRN-10421', name: 'Rakesh Singh',    dept: 'Cardiology',   ward: 'W-3B', date: '2026-03-15', status: 'Admitted' },
-  { id: 'MRN-10420', name: 'Meera Patel',     dept: 'Medicine',     ward: 'W-1A', date: '2026-03-15', status: 'Admitted' },
-  { id: 'MRN-10419', name: 'Suresh Rao',      dept: 'Orthopaedics', ward: 'W-2C', date: '2026-03-14', status: 'Discharged' },
-  { id: 'MRN-10418', name: 'Anita Joshi',     dept: 'Gynaecology',  ward: 'W-4A', date: '2026-03-14', status: 'Admitted' },
-  { id: 'MRN-10417', name: 'Vijay Kumar',     dept: 'Neurology',    ward: 'ICU-1', date:'2026-03-14', status: 'ICU' },
-];
-
-const recordRequests = [
-  { ref: 'REQ-882', patient: 'R.K. Sharma',   type: 'Court Order',   priority: 'Urgent',  due: 'Today' },
-  { ref: 'REQ-881', patient: 'Suman Das',      type: 'Insurance',     priority: 'Normal',  due: 'Tomorrow' },
-  { ref: 'REQ-880', patient: 'Priya Mehra',    type: 'Patient Copy',  priority: 'Normal',  due: '17-Mar' },
-  { ref: 'REQ-879', patient: 'Harish Gupta',   type: 'Transfer',      priority: 'High',    due: 'Today' },
-];
-
 const statusColor: Record<string, string> = {
   Admitted:   'bg-blue-100 text-blue-700',
   Discharged: 'bg-slate-100 text-slate-600',
@@ -81,6 +60,29 @@ const priorityColor: Record<string, string> = {
 const MRDDashboard = () => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [kpis, setKpis] = useState<any[]>([]);
+  const [recentAdmissions, setRecentAdmissions] = useState<any[]>([]);
+  const [recordRequests, setRecordRequests] = useState<any[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      const [recordsResult, requestsResult] = await Promise.allSettled([
+        api.get('/mrd/records', { params: { limit: 5 } }),
+        api.get('/mrd/retrieval-requests', { params: { limit: 20 } }),
+      ]);
+      const records = recordsResult.status === 'fulfilled' ? (recordsResult.value.data?.data || recordsResult.value.data?.records || []) : [];
+      const requests = requestsResult.status === 'fulfilled' ? (requestsResult.value.data?.data || requestsResult.value.data?.requests || []) : [];
+      setRecentAdmissions(Array.isArray(records) ? records.slice(0, 5) : []);
+      setRecordRequests(Array.isArray(requests) ? requests.slice(0, 20) : []);
+      setKpis([
+        { label: 'New Admissions Today', value: '—', sub: 'Live admission feed unavailable', icon: PlusCircle, color: 'text-teal-600' },
+        { label: 'Pending Record Requests', value: String(Array.isArray(requests) ? requests.length : 0), sub: 'Live retrieval queue', icon: AlertCircle, color: 'text-amber-600' },
+        { label: 'Records Completed', value: '—', sub: 'Live completion feed unavailable', icon: FileCheck, color: 'text-emerald-600' },
+        { label: 'Discharged Today', value: '—', sub: 'Live discharge feed unavailable', icon: ArrowUpRight, color: 'text-blue-600' },
+      ]);
+    };
+    load();
+  }, []);
 
   return (
     <HospDeptLayout
@@ -155,12 +157,12 @@ const MRDDashboard = () => {
                   {recentAdmissions.map((a) => (
                     <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
                         onClick={() => navigate('/mrd/records')}>
-                      <td className="py-2.5 font-medium text-teal-700">{a.id}</td>
-                      <td className="py-2.5">{a.name}</td>
-                      <td className="py-2.5 text-muted-foreground hidden md:table-cell">{a.dept}</td>
-                      <td className="py-2.5 text-muted-foreground hidden md:table-cell">{a.ward}</td>
+                      <td className="py-2.5 font-medium text-teal-700">{a.id || a.patientId || '—'}</td>
+                      <td className="py-2.5">{(a.name || a.patientName || '—')}</td>
+                      <td className="py-2.5 text-muted-foreground hidden md:table-cell">{(a.dept || a.department || '—')}</td>
+                      <td className="py-2.5 text-muted-foreground hidden md:table-cell">{(a.ward || '—')}</td>
                       <td className="py-2.5 text-center">
-                        <Badge className={`${statusColor[a.status]} border-0 text-xs`}>{a.status}</Badge>
+                        <Badge className={`${statusColor[a.status]} border-0 text-xs`}>{(a.status || '—')}</Badge>
                       </td>
                     </tr>
                   ))}
@@ -206,8 +208,8 @@ const MRDDashboard = () => {
                 <div key={r.ref} className="flex items-center justify-between cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800 p-1 rounded"
                      onClick={() => navigate('/mrd/requests')}>
                   <div>
-                    <p className="text-sm font-medium">{r.patient}</p>
-                    <p className="text-xs text-muted-foreground">{r.type} · Due {r.due}</p>
+                    <p className="text-sm font-medium">{(r.patientName || r.patient || '—')}</p>
+                    <p className="text-xs text-muted-foreground">{(r.recordType || r.type || '—')} · {r.dueDate || r.due || ''}</p>
                   </div>
                   <Badge className={`${priorityColor[r.priority]} border-0 text-xs`}>{r.priority}</Badge>
                 </div>
@@ -225,11 +227,11 @@ const MRDDashboard = () => {
             </CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               {[
-                { label: 'Total Admissions',   value: '34' },
-                { label: 'Total Discharges',   value: '21' },
-                { label: 'Records Indexed',    value: '56' },
-                { label: 'ICD Coded Today',    value: '29' },
-                { label: 'ML Cases Active',    value: '3' },
+                { label: 'Total Admissions',   value: '—' },
+                { label: 'Total Discharges',   value: '—' },
+                { label: 'Records Indexed',    value: '—' },
+                { label: 'ICD Coded Today',    value: '—' },
+                { label: 'ML Cases Active',    value: '—' },
               ].map((s) => (
                 <div key={s.label} className="flex justify-between">
                   <span className="text-muted-foreground">{s.label}</span>

@@ -61,6 +61,7 @@ interface Template {
   updatedAt: string;
 }
 
+// invented-data-check: static-reference -- document-template type configuration.
 const templateTypes = [
   { id: "prescription", name: "Prescription", icon: FileText, color: "bg-blue-500" },
   { id: "lab_referral", name: "Lab Referral", icon: FlaskConical, color: "bg-purple-500" },

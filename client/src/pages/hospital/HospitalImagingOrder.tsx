@@ -79,6 +79,7 @@ const HospitalImagingOrder = () => {
   }, [navigate]);
 
   // Sample imaging tests data
+  // invented-data-check: static-reference -- imaging-test catalog, not patient records.
   const imagingTests: ImagingTest[] = [
     {
       id: 'IMG001',

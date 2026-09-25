@@ -116,6 +116,7 @@ function removeLsDevice(id: string) {
 
 // ─── Section configs ──────────────────────────────────────────────────────────
 
+// invented-data-check: static-reference -- supported-device catalog, not patient records.
 const FITNESS_WATCHES = [
   {
     id: 'apple-watch',

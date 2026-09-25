@@ -298,6 +298,7 @@ const dietPlans: Record<string, DietPlan> = {
   },
 };
 
+// invented-data-check: static-reference -- food reference catalogs, not patient records.
 const commonFoods: FoodItem[] = [
   { name: "Roti (1 piece)", calories: 120, image: "🫓", quantity: 0 },
   { name: "Rice (1 katori)", calories: 130, image: "🍚", quantity: 0 },
@@ -311,6 +312,7 @@ const commonFoods: FoodItem[] = [
   { name: "Poha (1 plate)", calories: 250, image: "🍛", quantity: 0 },
 ];
 
+// invented-data-check: static-reference -- food category reference, not patient records.
 const foodCategories = [
   {
     name: "Indian Staples",

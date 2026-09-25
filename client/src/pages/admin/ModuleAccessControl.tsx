@@ -89,6 +89,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
 };
 
 // User type configurations
+// invented-data-check: static-reference -- user-type permission configuration, not person records.
 const userTypeConfig = [
   { id: 'patient', name: 'Patient / Member', icon: Users, color: 'text-blue-500', bg: 'bg-blue-500/10' },
   { id: 'doctor', name: 'Doctor', icon: Stethoscope, color: 'text-green-500', bg: 'bg-green-500/10' },

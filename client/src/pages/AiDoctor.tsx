@@ -54,6 +54,7 @@ interface Symptom {
 }
 
 // Languages
+// invented-data-check: static-reference -- supported-language catalog, not operational records.
 const languages: Language[] = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'es', name: 'Español', flag: '🇪🇸' },

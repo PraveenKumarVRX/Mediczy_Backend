@@ -22,6 +22,7 @@ function authHeaders() {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
+// invented-data-check: static-reference -- insurance-product catalog, not person records.
 const PRODUCTS = [
   { code: 'GMC',   name: 'Group Mediclaim',          color: 'violet',  icon: '🏥' },
   { code: 'GPA',   name: 'Group Personal Accident',  color: 'amber',   icon: '⚡' },

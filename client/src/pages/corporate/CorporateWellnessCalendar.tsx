@@ -121,6 +121,7 @@ interface WellnessActivity {
 }
 
 
+// invented-data-check: static-reference -- calendar theme configuration, not employee records.
 const WELLNESS_THEMES: WellnessTheme[] = [
   { month: 0, name: 'New Year Wellness Kickoff', description: 'Start the year with health goals and resolutions', color: 'from-blue-500 to-blue-600', icon: Sparkles },
   { month: 1, name: 'Heart Health Month', description: 'Focus on cardiovascular wellness and heart-healthy habits', color: 'from-red-500 to-rose-600', icon: Heart },
