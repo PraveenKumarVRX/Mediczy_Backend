@@ -35,11 +35,13 @@ killing at ~1.3 GB free.
   `whisper.cpp`. Takes effect when the language server restarts.
 
 ## Known drift / follow-ups
-- `ecosystem.config.js` is **not** the live `mediczy-server` definition (see the header in that file). The live
-  process has **no V8 heap cap**; `max_memory_restart: 3G` (RSS) is what bounds it. Adding
-  `--max-old-space-size` means re-defining the PM2 app (restart of prod API) — do it in a deploy window from
-  a clean tree, then `pm2 save`.
-- There is a second PM2 daemon under **root** (`/root/.pm2`); confirm it is intentional.
+- `ecosystem.config.js` is **not** the live `mediczy-server` definition (see the header in that file); the live one
+  lives in PM2's saved list. **No V8 heap cap is needed, and adding one would be a regression:** the default heap
+  limit on this box is 4144 MB (`v8.getHeapStatistics()`), above `max_memory_restart: 3G` (RSS), so PM2 already
+  restarts the process *gracefully* well before V8 could hit its limit. A `--max-old-space-size` below ~3 GB would
+  turn that graceful restart into an abrupt V8 abort. (An earlier version of this runbook suggested a cap; that was wrong.)
+- ~~Stray PM2 daemon under root~~ — it had zero apps and its systemd unit (`pm2-root.service`) is disabled; stopped
+  on 2026-09-25 with `PM2_HOME=/root/.pm2 pm2 kill`. Nothing respawns it.
 - Build off-host: the CI `build-client` job + `CLIENT_DIST_ARCHIVE` path exist (`.github/workflows/ci.yml`,
   `deploy-with-checks.yml`) but have never run on GitHub Actions (WP-0.6). Once verified, prod never needs to
   run a 5 GB build.

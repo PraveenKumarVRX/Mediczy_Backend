@@ -467,6 +467,29 @@ const normalizeBulkHeaderKey = (header: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
+const BULK_MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * Excel's "d-mmm-yy" text ("1-Jun-85", "01 June 1985") -> YYYY-MM-DD. A month name is never ambiguous, so this is
+ * safe to resolve in the browser; anything else (already ISO, numeric D/M/Y, junk) is returned unchanged for the
+ * server's own QC to judge. Two-digit years pivot on the current year (a date of birth can't be in the future).
+ */
+const normalizeMonthNameDate = (value: string, now: Date = new Date()): string => {
+  const m = String(value || '').trim().match(/^(\d{1,2})[\s/\-.]+([A-Za-z]{3,9})\.?[\s/\-.,]+(\d{4}|\d{2})$/);
+  if (!m) return value;
+  const month = BULK_MONTH_NAMES.indexOf(m[2].slice(0, 3).toLowerCase()) + 1;
+  const day = parseInt(m[1], 10);
+  let year = parseInt(m[3], 10);
+  if (m[3].length === 2) {
+    const currentYY = now.getFullYear() % 100;
+    year = (year <= currentYY ? 2000 : 1900) + year;
+  }
+  if (month < 1) return value;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return value;
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
 const isBulkEmployeeField = (value: unknown): value is BulkEmployeeField =>
   BULK_EMPLOYEE_FIELDS.includes(value as BulkEmployeeField);
 
@@ -4657,7 +4680,7 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
       employeeId,
       department: rawEmployee.department || '',
       designation: rawEmployee.designation || '',
-      dateOfBirth: rawEmployee.dateOfBirth || '',
+      dateOfBirth: normalizeMonthNameDate(rawEmployee.dateOfBirth || ''),
       gender: rawEmployee.gender || '',
       city: rawEmployee.city || '',
       state: rawEmployee.state || '',
