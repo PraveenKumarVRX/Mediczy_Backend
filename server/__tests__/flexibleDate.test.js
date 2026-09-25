@@ -51,4 +51,19 @@ describe('normalizeFlexibleDate', () => {
   test('a same-value date (e.g. 5/5/1990) is unambiguous even though both readings "match" — day and month are identical', () => {
     expect(normalizeFlexibleDate('5/5/1990')).toEqual({ iso: '1990-05-05', ambiguous: false });
   });
+
+  test('Excel d-mmm-yy month-name dates resolve without ambiguity — real dates from the Dairy Day upload', () => {
+    expect(normalizeFlexibleDate('1-Jun-85')).toEqual({ iso: '1985-06-01', ambiguous: false });
+    expect(normalizeFlexibleDate('4-Jun-85')).toEqual({ iso: '1985-06-04', ambiguous: false });
+    expect(normalizeFlexibleDate('8-Apr-85')).toEqual({ iso: '1985-04-08', ambiguous: false });
+    expect(normalizeFlexibleDate('6-Jun-84')).toEqual({ iso: '1984-06-06', ambiguous: false });
+    expect(normalizeFlexibleDate('01 June 1985')).toEqual({ iso: '1985-06-01', ambiguous: false });
+    expect(normalizeFlexibleDate('5/Jan/2003')).toEqual({ iso: '2003-01-05', ambiguous: false });
+  });
+
+  test('month-name dates that are not real calendar dates or months return null', () => {
+    expect(normalizeFlexibleDate('31-Feb-1990')).toBeNull();
+    expect(normalizeFlexibleDate('1-Foo-85')).toBeNull();
+    expect(normalizeFlexibleDate('garbage')).toBeNull();
+  });
 });

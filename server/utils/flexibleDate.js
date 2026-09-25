@@ -21,6 +21,9 @@
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DATE_PARTS_RE = /^(\d{1,4})[/\-.](\d{1,2})[/\-.](\d{1,4})$/;
+// "1-Jun-85", "01 June 1985", "1/Jun/1985" — Excel's own "d-mmm-yy" format.
+const DATE_MONTH_NAME_RE = /^(\d{1,2})[\s/\-.]+([A-Za-z]{3,9})\.?[\s/\-.,]+(\d{4}|\d{2})$/;
+const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 
 // 00-30 -> 20xx, 31-99 -> 19xx — the standard two-digit-year pivot, and
 // also the sane reading for every real case seen so far in DOB data
@@ -52,6 +55,17 @@ export function normalizeFlexibleDate(raw) {
   const value = String(raw ?? '').trim();
   if (!value) return null;
   if (ISO_RE.test(value)) return { iso: value, ambiguous: false };
+
+  // A month name removes any day/month ambiguity, so this never returns
+  // `ambiguous: true`.
+  const named = value.match(DATE_MONTH_NAME_RE);
+  if (named) {
+    const month = MONTH_NAMES.indexOf(named[2].slice(0, 3).toLowerCase()) + 1;
+    const day = parseInt(named[1], 10);
+    const year = named[3].length === 4 ? parseInt(named[3], 10) : pivotTwoDigitYear(parseInt(named[3], 10));
+    if (month < 1 || !isValidCalendarDate(year, month, day)) return null;
+    return { iso: toIso(year, month, day), ambiguous: false };
+  }
 
   const m = value.match(DATE_PARTS_RE);
   if (!m) return null;
