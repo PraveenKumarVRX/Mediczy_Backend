@@ -68,11 +68,12 @@ router.post('/sign', authUser, async (req, res) => {
       override: req.body.override || null
     });
     const packetId = req.body.packetId;
-    const result = await signDischargePacket(parseInt(packetId), { signedBy: req.user.id, finalContent: req.body.finalContent });
+    const result = await signDischargePacket(parseInt(packetId), { signedBy: req.user.id, finalContent: req.body.finalContent, organizationId, override: req.body.override || null });
     res.json(result);
   } catch (err) {
     if (err.consentBlocked) return res.status(403).json({ success: false, message: err.message, consentBlocked: true, consentType: err.consentType });
-    res.status(400).json({ success: false, message: err.message });
+    if (err.code === 'DISCHARGE_READINESS_BLOCKED') return res.status(409).json({ success: false, code: err.code, message: err.message, mandatoryPending: err.mandatoryPending });
+    res.status(err.status || 400).json({ success: false, code: err.code, message: err.message });
   }
 });
 router.post('/sign/:packetId', authUser, async (req, res) => {
@@ -85,12 +86,15 @@ router.post('/sign/:packetId', authUser, async (req, res) => {
     });
     const result = await signDischargePacket(parseInt(req.params.packetId), {
       signedBy: req.user.id,
-      finalContent: req.body.finalContent
+      finalContent: req.body.finalContent,
+      organizationId,
+      override: req.body.override || null
     });
     res.json(result);
   } catch (err) {
     if (err.consentBlocked) return res.status(403).json({ success: false, message: err.message, consentBlocked: true, consentType: err.consentType });
-    res.status(400).json({ success: false, message: err.message });
+    if (err.code === 'DISCHARGE_READINESS_BLOCKED') return res.status(409).json({ success: false, code: err.code, message: err.message, mandatoryPending: err.mandatoryPending });
+    res.status(err.status || 400).json({ success: false, code: err.code, message: err.message });
   }
 });
 

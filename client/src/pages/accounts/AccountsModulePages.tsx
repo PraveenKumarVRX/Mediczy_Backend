@@ -2,7 +2,7 @@
  * AccountsModulePages — World-class Hospital Accounts Department Portal.
  * Complete finance & billing management: 17 functional module pages.
  */
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import hospitalBillingService from '@/services/hospital-billing.service';
+import hospitalFinanceService from '@/services/hospital-finance.service';
 import { PlaceholderBanner } from '@/components/ui/placeholder-banner';
 
 const fmtInr = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -97,6 +98,59 @@ const Wrap = ({ title, subtitle, children, copilotModule = 'accounts' as const }
 // WP-0.3c: these pages used to render hardcoded seed tables (named patients, vendors, payroll, ledger,
 // tax filings, GSTIN/PAN) with no backend at all. Billing (invoices/payments) is the only real data
 // in Accounts today; everything else says so instead of inventing rows.
+type FinanceRow = Record<string, unknown>;
+
+const LiveFinancePage = ({ title, subtitle, load, columns, renderRow }: {
+  title: string;
+  subtitle: string;
+  load: () => Promise<{ data?: FinanceRow[] }>;
+  columns: string[];
+  renderRow: (row: FinanceRow) => React.ReactNode;
+}) => {
+  const [rows, setRows] = useState<FinanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await loadRef.current();
+      setRows(result.data || []);
+      setError(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'The finance service is unavailable.');
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  return (
+    <Wrap title={title} subtitle={subtitle}>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">{title}</CardTitle>
+            <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+              <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {error && <div className="mb-4 flex items-center justify-between rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700"><span>{error}</span><Button size="sm" variant="outline" onClick={refresh}>Retry</Button></div>}
+          {loading ? <div className="py-10 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading live records…</div> : rows.length === 0 && !error ? <div className="py-10 text-center text-sm text-muted-foreground">No records exist for this organization yet.</div> : (
+            <div className="overflow-x-auto"><table className="w-full"><thead><tr>{columns.map((column) => <TH key={column}>{column}</TH>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={String(row.id ?? index)} className="border-t">{renderRow(row)}</tr>)}</tbody></table></div>
+          )}
+        </CardContent>
+      </Card>
+    </Wrap>
+  );
+};
+
 const NotAvailablePage = ({ title, subtitle, needs }: { title: string; subtitle: string; needs: string }) => (
   <Wrap title={title} subtitle={subtitle}>
     <Card>
@@ -438,14 +492,26 @@ export const AccountsInsuranceBillingPage = () => (
 // 5. EXPENSE MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsExpensesPage = () => (
-  <NotAvailablePage title="Expense Management" subtitle="Operating expenses" needs="an expense ledger" />
+  <LiveFinancePage
+    title="Expense Management"
+    subtitle="Live operating expenses"
+    load={() => hospitalFinanceService.listExpenses()}
+    columns={['Date', 'Category', 'Description', 'Amount', 'Status']}
+    renderRow={(row) => <><TD>{String(row.expense_date ?? '—')}</TD><TD>{String(row.category ?? '—')}</TD><TD>{String(row.description ?? '—')}</TD><TD>{fmtInr(Number(row.amount))}</TD><TD><Bdg s={String(row.status ?? 'recorded')} /></TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 6. VENDOR MANAGEMENT (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsVendorsPage = () => (
-  <NotAvailablePage title="Vendor Management" subtitle="Suppliers & payables" needs="a vendor-payables ledger in Accounts (Supply Chain has its own vendor master)" />
+  <LiveFinancePage
+    title="Vendor Management"
+    subtitle="Live suppliers and payables masters"
+    load={() => hospitalFinanceService.listVendors()}
+    columns={['Code', 'Vendor', 'GSTIN', 'Terms', 'Status']}
+    renderRow={(row) => <><TD>{String(row.vendor_code ?? '—')}</TD><TD>{String(row.vendor_name ?? '—')}</TD><TD>{String(row.gstin ?? '—')}</TD><TD>{String(row.payment_terms_days ?? 0)} days</TD><TD><Bdg s={row.is_active ? 'Active' : 'Inactive'} /></TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -459,28 +525,52 @@ export const AccountsPayrollPage = () => (
 // 8. BUDGET (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsBudgetPage = () => (
-  <NotAvailablePage title="Budget" subtitle="Budget planning & tracking" needs="budgets" />
+  <LiveFinancePage
+    title="Budget"
+    subtitle="Live budgets by fiscal period and category"
+    load={() => hospitalFinanceService.listBudgets()}
+    columns={['Period', 'Department', 'Category', 'Budget', 'Spent']}
+    renderRow={(row) => <><TD>{String(row.period_code ?? '—')}</TD><TD>{String(row.department ?? 'All')}</TD><TD>{String(row.category ?? '—')}</TD><TD>{fmtInr(Number(row.budget_amount))}</TD><TD>{fmtInr(Number(row.spent_amount))}</TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 9. GENERAL LEDGER
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsLedgerPage = () => (
-  <NotAvailablePage title="General Ledger" subtitle="Ledger entries" needs="a general ledger" />
+  <LiveFinancePage
+    title="General Ledger"
+    subtitle="Posted journal entries from the finance ledger"
+    load={() => hospitalFinanceService.listJournalEntries()}
+    columns={['Entry', 'Date', 'Description', 'Debit', 'Credit', 'Status']}
+    renderRow={(row) => <><TD>{String(row.entry_number ?? '—')}</TD><TD>{String(row.entry_date ?? '—')}</TD><TD>{String(row.description ?? '—')}</TD><TD>{fmtInr(Number(row.total_debit))}</TD><TD>{fmtInr(Number(row.total_credit))}</TD><TD><Bdg s={String(row.status ?? 'posted')} /></TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 10. JOURNAL ENTRIES (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsJournalEntriesPage = () => (
-  <NotAvailablePage title="Journal Entries" subtitle="Manual journal postings" needs="journal entries" />
+  <LiveFinancePage
+    title="Journal Entries"
+    subtitle="Balanced, auditable manual journal postings"
+    load={() => hospitalFinanceService.listJournalEntries()}
+    columns={['Entry', 'Date', 'Description', 'Debit', 'Credit', 'Status']}
+    renderRow={(row) => <><TD>{String(row.entry_number ?? '—')}</TD><TD>{String(row.entry_date ?? '—')}</TD><TD>{String(row.description ?? '—')}</TD><TD>{fmtInr(Number(row.total_debit))}</TD><TD>{fmtInr(Number(row.total_credit))}</TD><TD><Bdg s={String(row.status ?? 'posted')} /></TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 11. CHART OF ACCOUNTS (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsChartOfAccountsPage = () => (
-  <NotAvailablePage title="Chart of Accounts" subtitle="Account master" needs="a chart of accounts" />
+  <LiveFinancePage
+    title="Chart of Accounts"
+    subtitle="Live account master"
+    load={() => hospitalFinanceService.listAccounts()}
+    columns={['Code', 'Account', 'Type', 'Status']}
+    renderRow={(row) => <><TD>{String(row.account_code ?? '—')}</TD><TD>{String(row.account_name ?? '—')}</TD><TD>{String(row.account_type ?? '—')}</TD><TD><Bdg s={row.is_active ? 'Active' : 'Inactive'} /></TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -494,7 +584,13 @@ export const AccountsReportsPage = () => (
 // 13. TAX & COMPLIANCE (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
 export const AccountsTaxCompliancePage = () => (
-  <NotAvailablePage title="Tax & Compliance" subtitle="GST, TDS & filings" needs="tax filing records" />
+  <LiveFinancePage
+    title="Tax & Compliance"
+    subtitle="Live tax-code master; filing status is not implied"
+    load={() => hospitalFinanceService.listTaxCodes()}
+    columns={['Code', 'Tax', 'Type', 'Rate', 'Status']}
+    renderRow={(row) => <><TD>{String(row.tax_code ?? '—')}</TD><TD>{String(row.tax_name ?? '—')}</TD><TD>{String(row.tax_type ?? '—')}</TD><TD>{String(row.rate ?? '0')}%</TD><TD><Bdg s={row.is_active ? 'Active' : 'Inactive'} /></TD></>}
+  />
 );
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -284,15 +284,46 @@ export async function updateDraftContent(packetId, { draftContent, diagnosisSumm
 
 // ── Sign ──────────────────────────────────────────────────────────────────────
 
-export async function signDischargePacket(packetId, { signedBy, finalContent }) {
-  await sequelize.query(
+export async function signDischargePacket(packetId, { signedBy, finalContent, organizationId, override = null }) {
+  const { getDischargeReadiness } = await import('./adt.service.js');
+  const [packetRows] = await sequelize.query(
+    `SELECT admission_id AS "admissionId" FROM discharge_packets WHERE id = :id LIMIT 1`,
+    { replacements: { id: packetId }, type: QueryTypes.SELECT }
+  );
+  const admissionId = packetRows[0]?.admissionId;
+  if (!admissionId) {
+    const error = new Error('Discharge draft not found');
+    error.code = 'DISCHARGE_DRAFT_NOT_FOUND';
+    error.status = 404;
+    throw error;
+  }
+  const readiness = await getDischargeReadiness(admissionId, organizationId);
+  if (!readiness.ready) {
+    const pending = readiness.mandatoryPending || [];
+    if (!override?.reasonCode || !override?.approverId || !['admin', 'super_admin', 'medical_director', 'discharge_officer'].includes(override.approverRole)) {
+      const error = new Error(`Discharge packet cannot be signed until mandatory readiness items are complete: ${pending.map(i => i.label).join('; ')}`);
+      error.code = 'DISCHARGE_READINESS_BLOCKED';
+      error.status = 409;
+      error.mandatoryPending = pending;
+      throw error;
+    }
+    await sequelize.query(
+      `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
+       VALUES (:admissionId, :orgId, :items::jsonb, :reason, :approver, :role)`,
+      { replacements: { admissionId, orgId: organizationId || null, items: JSON.stringify(pending), reason: override.reasonCode, approver: override.approverId, role: override.approverRole }, type: QueryTypes.INSERT }
+    );
+  }
+
+  const [rows] = await sequelize.query(
     `UPDATE discharge_packets
      SET status = 'signed', signed_by = :by, signed_at = NOW(),
          final_content = COALESCE(:final, draft_content), updated_at = NOW()
-     WHERE id = :id AND status = 'draft'`,
+     WHERE id = :id AND status = 'draft'
+     RETURNING id, admission_id AS "admissionId", status, signed_by AS "signedBy", signed_at AS "signedAt"`,
     { replacements: { id: packetId, by: signedBy, final: finalContent || null }, type: QueryTypes.UPDATE }
   );
-  return { success: true };
+  if (!rows.length) throw new Error('Discharge draft not found or already signed');
+  return { success: true, data: rows[0] };
 }
 
 // ── Send ──────────────────────────────────────────────────────────────────────

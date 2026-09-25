@@ -5,6 +5,7 @@
 
 import pool from '../db/pgPool.js';
 import paymentGateway from '../services/payment-gateway.service.js';
+import * as glPosting from './finance-gl-posting.service.js';
 import { generateHospitalBillPdf } from './hospital-bill-template.service.js';
 
 let tablesReady = false;
@@ -419,6 +420,16 @@ export async function createInvoice(hospitalId, data, ctx = {}) {
       resourceType: 'hospital_invoice', resourceId: String(invoice.id), afterState: invoice, req: ctx.req
     });
 
+    // Revenue recognition into the tenant ledger. Best-effort by design: a ledger outage must not
+    // roll back an issued invoice, so the outcome is reported rather than thrown.
+    const ledger = await glPosting.postInvoice(hospitalId, invoice, createdBy || ctx.actorId);
+    if (ledger.posted) {
+      await pool.query(
+        `UPDATE hospital_invoices SET metadata = COALESCE(metadata, '{}'::jsonb) || $2::jsonb WHERE id = $1 AND hospital_id = $3`,
+        [invoice.id, JSON.stringify({ ledger }), hospitalId]
+      );
+    }
+
     let pgi = null;
     if (autoPgi && patientLiability > 0) {
       pgi = await createPaymentLink(hospitalId, invoice.id, ctx);
@@ -448,6 +459,11 @@ export async function recordPayment(hospitalId, invoiceId, data, ctx = {}) {
     const result = await recordPaymentTx(client, hospitalId, invoiceId, data, ctx);
     await client.query('COMMIT');
     await auditPayment(hospitalId, data, ctx, result.payment);
+
+    // A credit payment moves no money, so it must not post a cash entry to the GL.
+    if (result.payment.status !== 'credit_pending') {
+      result.ledger = await glPosting.postPayment(hospitalId, result.payment, data.receivedBy || ctx.actorId);
+    }
     return result;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
@@ -808,6 +824,7 @@ export async function createAdjustment(hospitalId, data, ctx = {}) {
     action: 'adjustment.create', resourceType: 'adjustment', resourceId: String(adj.id),
     beforeState: before, afterState: after, req: ctx.req
   });
+  adj.ledger = await glPosting.postAdjustment(hospitalId, { ...adj, invoiceId, adjustmentType, amount }, ctx.actorId);
   return adj;
 }
 
@@ -956,6 +973,13 @@ export async function refundPayment(hospitalId, paymentId, refundAmount, ctx = {
     resourceType: 'hospital_payment', resourceId: String(paymentId),
     metadata: { refundAmount: result.refundAmount, gatewayRefundRequired: result.gatewayRefundRequired }, reason, req: ctx.req
   });
+  // A gateway refund is only a request until the gateway confirms it; posting cash out before then
+  // would leave the ledger permanently wrong if the gateway rejects the refund.
+  if (!result.gatewayRefundRequired) {
+    result.ledger = await glPosting.postRefund(hospitalId, { ...result, paymentId }, ctx.actorId);
+  } else {
+    result.ledger = { posted: false, code: 'GATEWAY_REFUND_PENDING', error: 'Awaiting gateway refund confirmation before GL posting' };
+  }
   return result;
 }
 

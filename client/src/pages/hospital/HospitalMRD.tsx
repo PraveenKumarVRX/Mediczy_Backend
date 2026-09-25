@@ -16,7 +16,6 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/utils/api';
-import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   FolderOpen, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
@@ -131,7 +130,7 @@ const HospitalMRD = () => {
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const zxingReaderRef = useRef<{ reset?: () => void } | null>(null);
   const cameraActiveRef = useRef(false);
 
   useEffect(() => {
@@ -144,104 +143,25 @@ const HospitalMRD = () => {
       navigate('/hospital/login');
       return;
     }
+    let cancelled = false;
+    api.get('/hospital/practice/mrd/records', { headers: hospitalHeaders(), params: { limit: 100 } })
+      .then((response) => {
+        if (cancelled) return;
+        setRecords((response.data?.data || []).map((r: any) => ({
+          id: String(r.id), mrdNumber: r.mrdNumber, patientId: String(r.patientId), patientName: r.patientName,
+          uhid: r.uhid, recordType: r.recordType === 'physical' ? 'IPD' : (r.recordType || 'IPD'),
+          department: r.department || 'General Medicine', admissionDate: r.admissionDate || '', dischargeDate: r.dischargeDate,
+          attendingDoctor: r.attendingDoctor || '', diagnosis: r.diagnosis || '',
+          fileLocation: r.location || 'Main Archive', shelf: '', rack: '',
+          status: r.status === 'archived' ? 'Archived' : 'Active', documents: [], auditTrail: [], createdAt: r.createdAt, updatedAt: r.updatedAt,
+        })));
+      })
+      .catch((error) => { if (!cancelled) toast({ title: 'MRD unavailable', description: error.response?.data?.message || 'The live MRD service is unavailable.', variant: 'destructive' }); });
     setLoading(false);
-  }, [navigate]);
+    return () => { cancelled = true; };
+  }, [navigate, toast]);
 
-  const initialRecords: MedicalRecord[] = [
-    {
-      id: 'MRD001',
-      mrdNumber: 'MRD-2024-001234',
-      patientId: 'P001',
-      patientName: 'Rajesh Kumar',
-      uhid: 'UHID001234',
-      recordType: 'IPD',
-      department: 'Cardiology',
-      admissionDate: '2024-12-01',
-      dischargeDate: '2024-12-04',
-      attendingDoctor: 'Dr. Rajiv Sharma',
-      diagnosis: 'Acute Myocardial Infarction',
-      fileLocation: 'Block A, Floor 2',
-      shelf: 'S-12',
-      rack: 'R-05',
-      status: 'Active',
-      lastAccessed: '2024-12-04',
-      accessedBy: 'Insurance Desk',
-      documents: [
-        { id: 'D001', name: 'Discharge Summary', type: 'Discharge Summary', pages: 3, isDigitized: true, digitalPath: '/records/MRD001/discharge.pdf', addedDate: '2024-12-04' },
-        { id: 'D002', name: 'ECG Report', type: 'Investigation Report', pages: 2, isDigitized: true, addedDate: '2024-12-01' },
-        { id: 'D003', name: 'Angiography Report', type: 'Investigation Report', pages: 5, isDigitized: false, addedDate: '2024-12-02' },
-        { id: 'D004', name: 'Consent Forms', type: 'Consent Form', pages: 4, isDigitized: false, addedDate: '2024-12-01' },
-      ],
-      auditTrail: [
-        { id: 'A001', action: 'Created', performedBy: 'Admission Desk', department: 'Cardiology', timestamp: '2024-12-01 09:30', ipAddress: '192.168.1.101' },
-        { id: 'A002', action: 'Modified', performedBy: 'Dr. Sharma', department: 'Cardiology', timestamp: '2024-12-02 14:15', remarks: 'Added angiography report' },
-        { id: 'A003', action: 'Viewed', performedBy: 'Insurance Desk', department: 'Admin', timestamp: '2024-12-04 10:00', remarks: 'For claim processing' },
-      ],
-      createdAt: '2024-12-01',
-      updatedAt: '2024-12-04',
-    },
-    {
-      id: 'MRD002',
-      mrdNumber: 'MRD-2024-001235',
-      patientId: 'P002',
-      patientName: 'Priya Singh',
-      uhid: 'UHID001235',
-      recordType: 'IPD',
-      department: 'Gynecology',
-      admissionDate: '2024-12-02',
-      attendingDoctor: 'Dr. Anjali Patel',
-      diagnosis: 'Cesarean Section',
-      fileLocation: 'Block A, Floor 2',
-      shelf: 'S-08',
-      rack: 'R-03',
-      status: 'Checked-Out',
-      lastAccessed: '2024-12-04',
-      accessedBy: 'Dr. Patel',
-      documents: [
-        { id: 'D005', name: 'Admission Form', type: 'Other', pages: 2, isDigitized: true, addedDate: '2024-12-02' },
-        { id: 'D006', name: 'USG Report', type: 'Investigation Report', pages: 3, isDigitized: true, addedDate: '2024-12-02' },
-      ],
-      auditTrail: [
-        { id: 'A004', action: 'Created', performedBy: 'Admission Desk', department: 'Gynecology', timestamp: '2024-12-02 08:00' },
-        { id: 'A005', action: 'Checked-Out', performedBy: 'Dr. Patel', department: 'Gynecology', timestamp: '2024-12-04 09:00', remarks: 'For surgery review' },
-      ],
-      createdAt: '2024-12-02',
-      updatedAt: '2024-12-04',
-    },
-    {
-      id: 'MRD003',
-      mrdNumber: 'MRD-2024-001236',
-      patientId: 'P003',
-      patientName: 'Amit Verma',
-      uhid: 'UHID001236',
-      recordType: 'IPD',
-      department: 'Neurology',
-      admissionDate: '2024-11-28',
-      dischargeDate: '2024-12-02',
-      attendingDoctor: 'Dr. Mehta',
-      diagnosis: 'Lumbar Disc Herniation',
-      fileLocation: 'Block B, Floor 1',
-      shelf: 'S-15',
-      rack: 'R-08',
-      status: 'Archived',
-      documents: [
-        { id: 'D007', name: 'Discharge Summary', type: 'Discharge Summary', pages: 4, isDigitized: true, addedDate: '2024-12-02' },
-        { id: 'D008', name: 'MRI Report', type: 'Investigation Report', pages: 6, isDigitized: true, addedDate: '2024-11-29' },
-        { id: 'D009', name: 'Operative Notes', type: 'Operative Notes', pages: 3, isDigitized: true, addedDate: '2024-11-30' },
-      ],
-      auditTrail: [
-        { id: 'A006', action: 'Created', performedBy: 'Admission Desk', department: 'Neurology', timestamp: '2024-11-28 10:00' },
-        { id: 'A007', action: 'Digitized', performedBy: 'MRD Staff', department: 'MRD', timestamp: '2024-12-03 14:00' },
-        { id: 'A008', action: 'Archived', performedBy: 'MRD Staff', department: 'MRD', timestamp: '2024-12-04 16:00' },
-      ],
-      createdAt: '2024-11-28',
-      updatedAt: '2024-12-04',
-    },
-  ];
-
-  const [records, setRecords] = useState<MedicalRecord[]>(
-    () => loadHospitalStore('mrd-records', initialRecords)
-  );
+  const [records, setRecords] = useState<MedicalRecord[]>([]);
 
   const [newRecordForm, setNewRecordForm] = useState({
     patientName: '',
@@ -255,17 +175,10 @@ const HospitalMRD = () => {
     rack: ''
   });
 
-  const fileRequests: FileRequest[] = [
-    { id: 'FR001', requestNumber: 'REQ-2024-0501', mrdNumber: 'MRD-2024-001234', patientName: 'Rajesh Kumar', requestedBy: 'Insurance Desk', department: 'Admin', purpose: 'Insurance', priority: 'Urgent', status: 'Delivered', requestDate: '2024-12-04', requiredDate: '2024-12-04', deliveredDate: '2024-12-04' },
-    { id: 'FR002', requestNumber: 'REQ-2024-0502', mrdNumber: 'MRD-2024-001235', patientName: 'Priya Singh', requestedBy: 'Dr. Patel', department: 'Gynecology', purpose: 'Treatment', priority: 'Emergency', status: 'Processing', requestDate: '2024-12-04', requiredDate: '2024-12-04' },
-    { id: 'FR003', requestNumber: 'REQ-2024-0503', mrdNumber: 'MRD-2024-001200', patientName: 'Vijay Sharma', requestedBy: 'Legal Department', department: 'Legal', purpose: 'Legal', priority: 'Normal', status: 'Pending', requestDate: '2024-12-03', requiredDate: '2024-12-06', remarks: 'Court requirement' },
-  ];
-
-  const digitizationTasks: DigitizationTask[] = [
-    { id: 'DT001', mrdNumber: 'MRD-2024-001234', patientName: 'Rajesh Kumar', totalPages: 14, scannedPages: 10, status: 'In-Progress', assignedTo: 'Scanning Staff 1', startDate: '2024-12-04', priority: 'High' },
-    { id: 'DT002', mrdNumber: 'MRD-2024-001210', patientName: 'Mohan Das', totalPages: 25, scannedPages: 25, status: 'Quality Check', assignedTo: 'Scanning Staff 2', startDate: '2024-12-03', priority: 'Normal' },
-    { id: 'DT003', mrdNumber: 'MRD-2024-001180', patientName: 'Lakshmi Devi', totalPages: 18, scannedPages: 0, status: 'Pending', assignedTo: 'Unassigned', priority: 'Normal' },
-  ];
+  // These operational queues are still local-only screens; keep them empty rather than
+  // presenting fabricated requests/tasks as real MRD activity.
+  const fileRequests: FileRequest[] = [];
+  const digitizationTasks: DigitizationTask[] = [];
 
   const departments = ['Cardiology', 'Neurology', 'Orthopedics', 'Gynecology', 'Pediatrics', 'General Medicine', 'Surgery', 'Emergency'];
 
@@ -292,12 +205,12 @@ const HospitalMRD = () => {
   };
 
   const stats = {
-    totalRecords: 12847,
-    activeFiles: 1250,
-    checkedOut: 45,
-    pendingRequests: fileRequests.filter(r => r.status === 'Pending').length,
-    digitizedRecords: 8500,
-    digitizationRate: 66.2,
+    totalRecords: records.length,
+    activeFiles: records.filter((record) => record.status === 'Active').length,
+    checkedOut: records.filter((record) => record.status === 'Checked-Out').length,
+    pendingRequests: fileRequests.filter((r) => r.status === 'Pending').length,
+    digitizedRecords: records.filter((record) => record.status === 'Digitized').length,
+    digitizationRate: records.length ? Math.round((records.filter((record) => record.status === 'Digitized').length / records.length) * 1000) / 10 : 0,
   };
 
   // Filter records based on search and filters
@@ -333,7 +246,7 @@ const HospitalMRD = () => {
   // (saveHospitalStore below), never the database. It survives this browser only; it is not visible to any other
   // desk or device, and is lost if site data is cleared. Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md — needs
   // a real POST endpoint before this screen can be trusted as the department's actual index.
-  const handleCreateRecord = () => {
+  const handleCreateRecord = async () => {
     if (!newRecordForm.patientName.trim() || !newRecordForm.uhid.trim()) {
       toast({
         title: 'Missing details',
@@ -351,60 +264,35 @@ const HospitalMRD = () => {
       return;
     }
 
-    const createdAt = new Date().toISOString().slice(0, 10);
-    const newRecord: MedicalRecord = {
-      id: `MRD-${Date.now()}`,
-      mrdNumber: `MRD-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
-      patientId: newRecordForm.uhid,
-      patientName: newRecordForm.patientName,
-      uhid: newRecordForm.uhid,
-      recordType: newRecordForm.recordType,
-      department: newRecordForm.department || 'General Medicine',
-      admissionDate: newRecordForm.admissionDate || createdAt,
-      attendingDoctor: newRecordForm.attendingDoctor,
-      diagnosis: newRecordForm.diagnosis || 'Pending',
-      fileLocation: 'Main Archive',
-      shelf: newRecordForm.shelf || 'S-01',
-      rack: newRecordForm.rack || 'R-01',
-      status: 'Active',
-      documents: [],
-      auditTrail: [
-        {
-          id: `A-${Date.now()}`,
-          action: 'Created',
-          performedBy: 'MRD Desk',
-          department: newRecordForm.department || 'General Medicine',
-          timestamp: new Date().toISOString(),
-          remarks: 'Record created in MRD dashboard'
-        }
-      ],
-      createdAt,
-      updatedAt: createdAt
-    };
-
-    setRecords((prev) => {
-      const updated = [newRecord, ...prev];
-      saveHospitalStore('mrd-records', updated);
-      return updated;
-    });
-
-    setNewRecordForm({
-      patientName: '',
-      uhid: '',
-      recordType: 'IPD',
-      department: '',
-      attendingDoctor: '',
-      admissionDate: '',
-      diagnosis: '',
-      shelf: '',
-      rack: ''
-    });
-    setShowNewRecordDialog(false);
-
-    toast({
-      title: 'Record created',
-      description: `${newRecord.patientName}'s record has been saved.`
-    });
+    try {
+      const response = await api.post('/hospital/practice/mrd/records', {
+        patientId: newRecordForm.uhid,
+        patientName: newRecordForm.patientName.trim(),
+        uhid: newRecordForm.uhid.trim(),
+        recordType: newRecordForm.recordType,
+        department: newRecordForm.department,
+        admissionDate: newRecordForm.admissionDate,
+        attendingDoctor: newRecordForm.attendingDoctor.trim(),
+        location: 'Main Archive',
+      }, { headers: hospitalHeaders() });
+      const saved = response.data?.data;
+      if (!saved) throw new Error('MRD service returned no record');
+      const created: MedicalRecord = {
+        id: String(saved.id), mrdNumber: saved.mrdNumber, patientId: String(saved.patientId), patientName: saved.patientName,
+        uhid: saved.uhid, recordType: newRecordForm.recordType, department: saved.department || 'General Medicine',
+        admissionDate: saved.admissionDate || new Date().toISOString().slice(0, 10), attendingDoctor: newRecordForm.attendingDoctor.trim(),
+        diagnosis: newRecordForm.diagnosis || 'Pending', fileLocation: saved.location || 'Main Archive', shelf: newRecordForm.shelf || 'S-01', rack: newRecordForm.rack || 'R-01',
+        status: 'Active', documents: [], auditTrail: [], createdAt: saved.createdAt || new Date().toISOString().slice(0, 10), updatedAt: saved.updatedAt || new Date().toISOString().slice(0, 10),
+      };
+      setRecords((prev) => [created, ...prev]);
+      setNewRecordForm({
+        patientName: '', uhid: '', recordType: 'IPD', department: '', attendingDoctor: '', admissionDate: '', diagnosis: '', shelf: '', rack: ''
+      });
+      setShowNewRecordDialog(false);
+      toast({ title: 'Record created', description: `${created.patientName}'s record was saved to MRD.` });
+    } catch (error: any) {
+      toast({ title: 'Record not created', description: error.response?.data?.message || 'The MRD service rejected the write; nothing was saved locally.', variant: 'destructive' });
+    }
   };
 
   const handlePrintRecord = (record: MedicalRecord) => {

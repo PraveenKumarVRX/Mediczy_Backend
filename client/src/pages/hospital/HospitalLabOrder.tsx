@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
-import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
+import { saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   FlaskConical, Plus, Search, ArrowLeft, Calendar, Clock,
@@ -161,52 +161,22 @@ const HospitalLabOrder = () => {
     }
   ];
 
-  const initialOrders: TestOrder[] = [
-    {
-      id: 'ORD001',
-      orderNumber: 'LAB-2024-001234',
-      patientId: 'P001',
-      patientName: 'Rajesh Kumar',
-      uhid: 'UHID001234',
-      doctorName: 'Dr. Sharma',
-      department: 'Cardiology',
-      tests: [labTests[0], labTests[1]],
-      priority: 'Urgent',
-      status: 'Sample Collected',
-      orderDate: '2024-12-10',
-      requiredDate: '2024-12-10',
-      notes: 'Patient complaining of chest pain',
-      totalAmount: 600
-    },
-    {
-      id: 'ORD002',
-      orderNumber: 'LAB-2024-001235',
-      patientId: 'P002',
-      patientName: 'Priya Singh',
-      uhid: 'UHID001235',
-      doctorName: 'Dr. Patel',
-      department: 'Gynecology',
-      tests: [labTests[4]],
-      priority: 'Routine',
-      status: 'Completed',
-      orderDate: '2024-12-09',
-      requiredDate: '2024-12-11',
-      totalAmount: 200
-    }
-  ];
-  const [orders, setOrders] = useState<TestOrder[]>(() =>
-    loadHospitalStore<TestOrder[]>('lab-orders', initialOrders)
-  );
+  const [orders, setOrders] = useState<TestOrder[]>([]);
+  const [patients, setPatients] = useState<Array<{ id: string; name: string; uhid: string; age?: number; gender?: string }>>([]);
 
-  // WP-0.3: fabricated patient list — no real patient search is wired into this screen yet, so an order placed
-  // here is sent to the backend against one of these fake ids and will likely be rejected once the swallowed-
-  // error fix above makes that visible. Tracked in docs/WP0.3_INVENTED_DATA_INVENTORY.md.
-  const patients = [
-    { id: 'P001', name: 'Rajesh Kumar', uhid: 'UHID001234', age: 45, gender: 'Male' },
-    { id: 'P002', name: 'Priya Singh', uhid: 'UHID001235', age: 32, gender: 'Female' },
-    { id: 'P003', name: 'Amit Verma', uhid: 'UHID001236', age: 28, gender: 'Male' },
-    { id: 'P004', name: 'Sunita Devi', uhid: 'UHID001237', age: 55, gender: 'Female' }
-  ];
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      if (!patientSearch.trim()) { setPatients([]); return; }
+      try {
+        const response = await api.get('/hospital/practice/patients', { headers: hospitalHeaders(), params: { search: patientSearch.trim() }, signal: controller.signal });
+        setPatients(response.data?.data || []);
+      } catch (error: any) {
+        if (error?.code !== 'ERR_CANCELED') setPatients([]);
+      }
+    }, 250);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [patientSearch]);
 
   const categories = ['all', 'Hematology', 'Biochemistry', 'Endocrinology', 'Urinalysis', 'Radiology', 'Cardiology'];
 

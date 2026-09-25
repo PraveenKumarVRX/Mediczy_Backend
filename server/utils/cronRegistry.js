@@ -134,7 +134,10 @@ setInterval(saveToDisk, 60_000).unref(); // persist every minute, don't block sh
  * Mark a task as currently executing (call at start of cron function)
  */
 export function tickStart(key) {
-  running.set(key, { startedAt: new Date().toISOString() });
+  const existing = running.get(key);
+  if (existing) return false;
+  running.set(key, { startedAt: new Date().toISOString(), pid: process.pid });
+  return true;
 }
 
 /**
@@ -203,7 +206,10 @@ export function tickError(key, errorMessage, details = {}) {
  * @param {function} fn - async cron function, should return details object
  */
 export async function withCron(key, fn) {
-  tickStart(key);
+  if (!tickStart(key)) {
+    console.warn(`[cron] skipping ${key}: already running in this process`);
+    return { skipped: true, reason: 'already_running' };
+  }
   try {
     const details = await fn();
     tick(key, details || {});

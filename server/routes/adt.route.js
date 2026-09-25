@@ -42,7 +42,7 @@ router.post('/discharge', authUser, async (req, res) => {
     const result = await dischargePatient({ ...req.body, organizationId, performedBy: req.user.id, override });
     res.json({ success: true, data: result });
   } catch (err) {
-    res.status(403).json({ success: false, message: err.message });
+    res.status(err.status || 400).json({ success: false, code: err.code, message: err.message });
   }
 });
 

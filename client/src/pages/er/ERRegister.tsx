@@ -13,10 +13,11 @@ import {
 import { Siren, UserPlus, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { EMPTY_GUIDED_TRIAGE, deriveGuidedEsi, type GuidedTriage } from '@/utils/erGuidedTriage';
 
 // ESI levels are never inferred from a legacy colour and vice versa (see server/routes/er-workflow.route.js) —
 // a nurse picks exactly one triage mode at registration time, or none if triage will happen at the bedside.
-type TriageMode = 'none' | 'esi' | 'colour';
+type TriageMode = 'none' | 'esi' | 'guided' | 'colour';
 
 const ESI_OPTIONS = [
   { level: 1, label: 'ESI-1 — Resuscitation', hint: 'Immediate, life-threatening' },
@@ -31,6 +32,15 @@ const COLOUR_OPTIONS = [
   { value: 'yellow', label: 'Yellow — Urgent' },
   { value: 'green', label: 'Green — Non-Urgent' },
 ];
+
+const guidedQuestion = (id: keyof GuidedTriage, label: string, checked: boolean, onChange: (value: boolean) => void) => (
+  <div className="flex items-start gap-3 rounded-lg border p-3">
+    <Checkbox id={`guided-${id}`} checked={checked} onCheckedChange={(value) => onChange(value === true)} />
+    <div>
+      <Label htmlFor={`guided-${id}`} className="cursor-pointer text-sm font-medium">{label}</Label>
+    </div>
+  </div>
+);
 
 export default function ERRegister() {
   const navigate = useNavigate();
@@ -50,6 +60,8 @@ export default function ERRegister() {
   const [triageMode, setTriageMode] = useState<TriageMode>('none');
   const [esiLevel, setEsiLevel] = useState('');
   const [triageLevel, setTriageLevel] = useState('');
+  const [guidedTriage, setGuidedTriage] = useState<GuidedTriage>(EMPTY_GUIDED_TRIAGE);
+  const guidedEsiLevel = deriveGuidedEsi(guidedTriage);
 
   const [submitting, setSubmitting] = useState(false);
 
@@ -57,6 +69,13 @@ export default function ERRegister() {
     if (triageMode === 'esi' && !esiLevel) {
       toast({ title: 'Select an ESI level', variant: 'destructive' });
       return;
+    }
+    if (triageMode === 'guided') {
+      const answered = Object.values(guidedTriage).some(Boolean);
+      if (!answered) {
+        toast({ title: 'Answer the guided triage questions', variant: 'destructive' });
+        return;
+      }
     }
     if (triageMode === 'colour' && !triageLevel) {
       toast({ title: 'Select a triage colour', variant: 'destructive' });
@@ -76,8 +95,9 @@ export default function ERRegister() {
         injuryType: injuryType || undefined,
         broughtBy: broughtBy || undefined,
         familyPhone: familyPhone || undefined,
-        esiLevel: triageMode === 'esi' ? Number(esiLevel) : undefined,
+        esiLevel: triageMode === 'esi' ? Number(esiLevel) : triageMode === 'guided' ? guidedEsiLevel : undefined,
         triageLevel: triageMode === 'colour' ? triageLevel : undefined,
+        triageInputs: triageMode === 'guided' ? guidedTriage : undefined,
       });
       const json = res.data;
       if (!json.success) {
@@ -185,7 +205,7 @@ export default function ERRegister() {
               and triage at the bedside from the ER Queue screen.
             </p>
             <div className="flex flex-wrap gap-2">
-              {(['none', 'esi', 'colour'] as TriageMode[]).map(mode => (
+              {(['none', 'esi', 'guided', 'colour'] as TriageMode[]).map(mode => (
                 <Button
                   key={mode}
                   type="button"
@@ -193,7 +213,7 @@ export default function ERRegister() {
                   variant={triageMode === mode ? 'default' : 'outline'}
                   onClick={() => setTriageMode(mode)}
                 >
-                  {mode === 'none' ? 'Triage at bedside' : mode === 'esi' ? 'Assign ESI now' : 'Colour hint only'}
+                  {mode === 'none' ? 'Triage at bedside' : mode === 'esi' ? 'Assign ESI now' : mode === 'guided' ? 'Guided ESI' : 'Colour hint only'}
                 </Button>
               ))}
             </div>
@@ -207,6 +227,16 @@ export default function ERRegister() {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+
+            {triageMode === 'guided' && (
+              <div className="space-y-2">
+                {guidedQuestion('immediateLifeThreat', 'Does the patient need immediate life-saving intervention?', guidedTriage.immediateLifeThreat, (value) => setGuidedTriage((prev) => ({ ...prev, immediateLifeThreat: value })))}
+                {guidedQuestion('highRiskDistress', 'Is there high-risk severe distress or altered mental status?', guidedTriage.highRiskDistress, (value) => setGuidedTriage((prev) => ({ ...prev, highRiskDistress: value })))}
+                {guidedQuestion('multipleResources', 'Will the patient need two or more ED resources?', guidedTriage.multipleResources, (value) => setGuidedTriage((prev) => ({ ...prev, multipleResources: value })))}
+                {guidedQuestion('oneResource', 'Will the patient need one ED resource?', guidedTriage.oneResource, (value) => setGuidedTriage((prev) => ({ ...prev, oneResource: value })))}
+                <p className="text-xs text-slate-500">Guided result: ESI-{guidedEsiLevel}. A nurse must review the result before registration.</p>
+              </div>
             )}
 
             {triageMode === 'colour' && (

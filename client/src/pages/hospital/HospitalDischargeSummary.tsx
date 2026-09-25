@@ -250,7 +250,27 @@ const HospitalDischargeSummary = () => {
   };
 
   const [summaries, setSummaries] = useState<DischargeSummary[]>([]);
-  const admittedPatients: Array<{ id: string; name: string; ward: string; bed: string; admissionDate: string }> = [];
+  const [admittedPatients, setAdmittedPatients] = useState<Array<{ id: string; name: string; ward: string; bed: string; admissionDate: string; attendingDoctor?: string }>>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const headers = hospitalHeaders();
+        const [patientResponse, summaryResponse] = await Promise.all([
+          api.get('/hospital/practice/patients', { headers, params: { search: '' } }),
+          api.get('/hospital/practice/discharge-summaries', { headers, params: { limit: 100 } }),
+        ]);
+        if (cancelled) return;
+        setAdmittedPatients((patientResponse.data?.data || []).filter((p: any) => ['ipd', 'admitted', 'in_icu', 'in_ot', 'pre_admitted'].includes(String(p.admissionStatus || '').toLowerCase())).map((p: any) => ({ id: String(p.id), name: p.name || 'Patient', ward: p.ward || '', bed: p.bed || '', admissionDate: p.admissionDate || '', attendingDoctor: p.attendingDoctor || '' })));
+        setSummaries((summaryResponse.data?.data || []).map((s: any) => ({ id: String(s.id), patientName: s.patient_name || s.patientName || 'Patient', patientId: String(s.patient_id || s.patientId || ''), admissionDate: s.admission_date || s.admissionDate || '', dischargeDate: s.updated_at || s.dischargeDate || '', ward: s.ward || '', bed: s.bed || '', diagnosis: Array.isArray(s.diagnosis) ? s.diagnosis.join(', ') : (s.diagnosis || ''), attendingDoctor: s.attending_doctor || s.attendingDoctor || '', status: s.status || 'draft', createdAt: s.created_at || s.createdAt || '' })));
+      } catch (error: any) {
+        if (!cancelled) toast({ title: 'Unable to load discharge data', description: error.response?.data?.message || 'The live record service is unavailable.', variant: 'destructive' });
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [toast]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig = {
@@ -300,6 +320,10 @@ const HospitalDischargeSummary = () => {
         procedures: [],
         medications: [],
         followUp: '',
+        attendingDoctor: formData.attendingDoctor.trim(),
+        admissionDate: patient.admissionDate,
+        ward: patient.ward,
+        bed: patient.bed,
         status: 'draft'
       };
 
@@ -362,6 +386,10 @@ const HospitalDischargeSummary = () => {
         procedures: [],
         medications: [],
         followUp: '',
+        attendingDoctor: formData.attendingDoctor.trim(),
+        admissionDate: patient.admissionDate,
+        ward: patient.ward,
+        bed: patient.bed,
         status: 'pending_approval'
       };
 

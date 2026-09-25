@@ -210,6 +210,25 @@ export async function setSafetyMode(organizationId, mode, updatedBy = null) {
   return { organizationId, mode };
 }
 
+export async function reconciliationRequired(organizationId) {
+  try {
+    const { rows } = await pool.query('SELECT reconciliation_required FROM clinical_safety_settings WHERE organization_id = $1', [organizationId]);
+    return rows[0] ? rows[0].reconciliation_required !== false : true;
+  } catch {
+    return true;
+  }
+}
+
+export async function setReconciliationRequired(organizationId, required, updatedBy = null) {
+  await pool.query(
+    `INSERT INTO clinical_safety_settings (organization_id, mode, reconciliation_required, updated_by, updated_at)
+     VALUES ($1,'shadow',$2,$3,NOW())
+     ON CONFLICT (organization_id) DO UPDATE SET reconciliation_required = EXCLUDED.reconciliation_required, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [organizationId, !!required, updatedBy]
+  );
+  return { organizationId, reconciliationRequired: !!required };
+}
+
 export async function logSafetyEvaluation(args) { return logEvaluation(args); }
 async function logEvaluation({ organizationId, patientId, actorId, source, mode, outcome, blockers = [], warnings = [], overrideReason = null, acknowledged = null, allergyStatus = null, latencyMs = null }) {
   try {

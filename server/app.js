@@ -250,6 +250,7 @@ import moduleAccessRouter from './routes/module-access.route.js';
 import roleRouter from './routes/role.route.js';
 import hospitalPracticeRouter from './routes/hospital/practice.route.js';
 import hospitalBillingRouter from './routes/hospital/billing.route.js';
+import hospitalFinanceRouter from './routes/hospital/finance.route.js';
 import moduleCopilotRouter from './routes/module-copilot.route.js';
 import careosRouter from './routes/careos.route.js';
 import { healthosApiKeyOrUser } from './middleware/healthos-api-key.middleware.js';
@@ -1545,6 +1546,7 @@ app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital', executiveDashboardRouter); // CEO/CFO/COO/MS executive dashboards
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital/billing', hospitalBillingRouter); // Hospital billing suite — stations, invoices, PGI, audit
+app.use('/api/hospital/finance', hospitalFinanceRouter); // Accounts books: vendors, expenses, budgets, tax, journal
 app.use('/api/hospital/clinical-notes', hospitalClinicalNotesRouter); // Hospital HMIS progress notes / SOAP
 app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints for hospital dashboard modules
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding

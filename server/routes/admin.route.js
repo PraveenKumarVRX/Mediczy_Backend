@@ -1,5 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
+import { listCronLeases } from '../services/cron-lease.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
@@ -7857,6 +7858,15 @@ router.get('/automation/jobs', authUser, requireRole('admin'), async (req, res) 
  * GET /api/admin/automation/jobs/:key/logs
  * Returns recent execution log for a single task.
  */
+router.get('/automation/leases', authUser, requireRole('admin'), async (_req, res) => {
+  try {
+    return res.json({ success: true, data: await listCronLeases() });
+  } catch (err) {
+    console.error('automation/leases error:', err);
+    return res.status(503).json({ success: false, message: 'Lease status is unavailable' });
+  }
+});
+
 router.get('/automation/jobs/:key/logs', authUser, requireRole('admin'), async (req, res) => {
   try {
     const { getTaskLogs } = await import('../utils/cronRegistry.js');

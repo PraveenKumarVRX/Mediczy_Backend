@@ -10,6 +10,8 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { consumeReservation } from './bed-allocation.service.js';
+import { hasSignedReconciliation } from './med-reconciliation.service.js';
+import { reconciliationRequired } from './prescription-safety.service.js';
 
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
 
@@ -294,6 +296,30 @@ export async function dischargePatient({
   reason,
   override = null   // B4: { reasonCode, approverId, approverRole }
 }) {
+  // Reconciliation is a separate hard gate: a readiness checkbox must not be able to
+  // stand in for a signed clinician/pharmacist reconciliation.
+  if (await reconciliationRequired(organizationId)) {
+    const [admission] = await sequelize.query(
+      `SELECT patient_id FROM ip_admissions WHERE id = :admId AND organization_id = :orgId`,
+      { replacements: { admId: admissionId, orgId: organizationId }, type: QueryTypes.SELECT }
+    );
+    const reconciled = admission && await hasSignedReconciliation({ organizationId, patientId: admission.patient_id, admissionId, type: 'discharge' });
+    if (!reconciled) {
+      const authorised = override?.reasonCode && override?.approverId && DISCHARGE_OVERRIDE_ROLES.has(override.approverRole);
+      if (!authorised) {
+        const error = new Error('Discharge blocked — medication reconciliation must be signed before discharge');
+        error.code = 'RECONCILIATION_REQUIRED';
+        error.status = 409;
+        throw error;
+      }
+      await sequelize.query(
+        `INSERT INTO discharge_overrides (admission_id, organization_id, missing_items, reason_code, approver_id, approver_role)
+         VALUES (:admId, :orgId, :items::jsonb, :reason, :approver, :role)`,
+        { replacements: { admId: admissionId, orgId: organizationId, items: JSON.stringify([{ dimension: 'medication_reconciliation' }]), reason: override.reasonCode, approver: override.approverId, role: override.approverRole }, type: QueryTypes.INSERT }
+      );
+    }
+  }
+
   // B4: Gate — check discharge readiness before opening transaction
   const readiness = await getDischargeReadiness(admissionId, organizationId);
   if (!readiness.ready) {

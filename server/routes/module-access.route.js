@@ -13,7 +13,13 @@ import ModuleAccess, {
   SYSTEM_MODULES,
   USER_TYPES 
 } from '../models/postgres/module-access.model.postgres.js';
-import { Op } from 'sequelize';
+import {
+  grantEntitlement,
+  hasModuleEntitlement,
+  listEntitlements,
+  revokeEntitlement,
+  seedDefaultFinanceSetup,
+} from '../services/entitlement.service.js';
 
 const router = express.Router();
 
@@ -348,6 +354,58 @@ router.get('/check/:moduleId', authUser, async (req, res) => {
   } catch (error) {
     console.error('Error checking module access:', error);
     res.status(500).json({ success: false, message: 'Error checking access' });
+  }
+});
+
+// ── Tenant package entitlements ───────────────────────────────────────────────
+
+router.get('/entitlements/list', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const data = await listEntitlements({ organizationId: req.query.organizationId });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(503).json({ success: false, message: 'Entitlements are unavailable until the foundation migration is applied' });
+  }
+});
+
+router.post('/entitlements/grant', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const data = await grantEntitlement(req.body || {}, req.user.id);
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/entitlements/revoke', authUser, requireRole('admin'), async (req, res) => {
+  const { organizationId, packageCode, moduleId } = req.body || {};
+  if (!organizationId || !packageCode || !moduleId) return res.status(400).json({ success: false, message: 'organizationId, packageCode and moduleId are required' });
+  try {
+    const data = await revokeEntitlement(organizationId, packageCode, moduleId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(error.status || 400).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/entitlements/bootstrap-finance', authUser, requireRole('admin'), async (req, res) => {
+  const { organizationId, periodCode } = req.body || {};
+  if (!organizationId) return res.status(400).json({ success: false, message: 'organizationId is required' });
+  try {
+    const data = await seedDefaultFinanceSetup(organizationId, { periodCode, grantedBy: req.user.id });
+    return res.status(201).json({ success: true, data });
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+});
+
+router.get('/entitlements/check/:moduleId', authUser, async (req, res) => {
+  try {
+    const organizationId = req.user?.organization_id || req.user?.tenant_id || req.user?.hospital_id;
+    const hasAccess = await hasModuleEntitlement(organizationId, req.params.moduleId, req.query.action || 'view');
+    return res.json({ success: true, hasAccess, moduleId: req.params.moduleId, action: req.query.action || 'view' });
+  } catch (error) {
+    return res.status(503).json({ success: false, message: 'Entitlement check unavailable' });
   }
 });
 

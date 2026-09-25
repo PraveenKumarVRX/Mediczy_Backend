@@ -1512,6 +1512,71 @@ router.post('/mrd/digitization-queue', verifyHospitalToken, async (req, res) => 
   }
 });
 
+router.get('/discharge-summaries', verifyHospitalToken, async (req, res) => {
+  try {
+    const { patientId, status, limit = '50' } = req.query;
+    const params = { hospitalId: req.hospitalId, limit: Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200) };
+    const where = ['hospital_id = :hospitalId'];
+    if (patientId) { where.push('(patient_id = :patientId OR patient_id::text = :patientIdText)'); params.patientId = patientId; params.patientIdText = String(patientId); }
+    if (status) { where.push('status = :status'); params.status = status; }
+    const [rows] = await sequelize.query(
+      `SELECT * FROM discharge_summaries WHERE ${where.join(' AND ')} ORDER BY updated_at DESC LIMIT :limit`,
+      { replacements: params, type: QueryTypes.SELECT }
+    );
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (error) {
+    console.error('Error listing discharge summaries:', error);
+    res.status(500).json({ success: false, message: 'Failed to list discharge summaries', error: error.message });
+  }
+});
+
+router.get('/mrd/records', verifyHospitalToken, async (req, res) => {
+  try {
+    const { search, limit = '50' } = req.query;
+    const params = { hospitalId: req.hospitalId, limit: Math.min(Math.max(Number.parseInt(limit, 10) || 50, 1), 200) };
+    let where = 'hospital_id = :hospitalId';
+    if (search) { where += ' AND (mrd_number ILIKE :search OR patient_name ILIKE :search OR uhid ILIKE :search)'; params.search = `%${String(search).trim()}%`; }
+    const [rows] = await sequelize.query(
+      `SELECT id, mrd_number AS "mrdNumber", patient_id AS "patientId", patient_name AS "patientName",
+              uhid, record_type AS "recordType", department, admission_date AS "admissionDate",
+              attending_doctor AS "attendingDoctor", diagnosis,
+              discharge_date AS "dischargeDate", total_pages AS "totalPages", location, status,
+              created_at AS "createdAt", updated_at AS "updatedAt"
+         FROM medical_records WHERE ${where} ORDER BY updated_at DESC LIMIT :limit`,
+      { replacements: params, type: QueryTypes.SELECT }
+    );
+    res.json({ success: true, data: rows, total: rows.length });
+  } catch (error) {
+    console.error('Error listing MRD records:', error);
+    res.status(503).json({ success: false, code: 'MRD_UNAVAILABLE', message: 'MRD records are not available' });
+  }
+});
+
+router.post('/mrd/records', verifyHospitalToken, async (req, res) => {
+  const { patientId, patientName, uhid, recordType, department, admissionDate, attendingDoctor, diagnosis, location } = req.body || {};
+  if (!patientId || !patientName || !uhid || !attendingDoctor) {
+    return res.status(400).json({ success: false, message: 'patientId, patientName, uhid and attendingDoctor are required' });
+  }
+  try {
+    const [rows] = await sequelize.query(
+      `INSERT INTO medical_records
+         (mrd_number, patient_id, patient_name, uhid, hospital_id, record_type, department,
+          admission_date, attending_doctor, diagnosis, location, status, created_at, updated_at)
+       VALUES (('MRD-' || TO_CHAR(NOW(), 'YYYY') || '-' || LPAD(nextval('mrd_number_seq')::TEXT, 6, '0')),
+               :patientId, :patientName, :uhid, :hospitalId, :recordType, :department,
+               COALESCE(:admissionDate, CURRENT_DATE), :attendingDoctor, :diagnosis, :location, 'active', NOW(), NOW())
+       RETURNING id, mrd_number AS "mrdNumber", patient_id AS "patientId", patient_name AS "patientName",
+                 uhid, record_type AS "recordType", department, admission_date AS "admissionDate",
+                 attending_doctor AS "attendingDoctor", diagnosis, location, status, created_at AS "createdAt", updated_at AS "updatedAt"`,
+      { replacements: { patientId, patientName, uhid, hospitalId: req.hospitalId, recordType: recordType || 'physical', department: department || null, admissionDate: admissionDate || null, attendingDoctor: attendingDoctor || null, diagnosis: diagnosis || null, location: location || 'Main Archive' }, type: QueryTypes.INSERT }
+    );
+    res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) {
+    console.error('Error creating MRD record:', error);
+    res.status(500).json({ success: false, message: 'Failed to create MRD record', error: error.message });
+  }
+});
+
 /**
  * Save Discharge Summary (Draft)
  * POST /api/hospital/practice/discharge-summaries
@@ -1528,9 +1593,9 @@ router.post('/discharge-summaries', verifyHospitalToken, async (req, res) => {
     const [summary] = await sequelize.query(
       `INSERT INTO discharge_summaries 
        (patient_id, admission_id, diagnosis, procedures, medications, follow_up, 
-        status, hospital_id, created_at, updated_at)
+        status, hospital_id, attending_doctor, admission_date, ward, bed, created_at, updated_at)
        VALUES (:patientId, :admissionId, :diagnosis, :procedures, :medications, :followUp,
-               :status, :hospitalId, NOW(), NOW())
+               :status, :hospitalId, :attendingDoctor, :admissionDate, :ward, :bed, NOW(), NOW())
        RETURNING *`,
       {
         replacements: {
@@ -1541,7 +1606,11 @@ router.post('/discharge-summaries', verifyHospitalToken, async (req, res) => {
           medications: JSON.stringify(medications || []),
           followUp,
           status: status || 'draft',
-          hospitalId
+          hospitalId,
+          attendingDoctor: req.body.attendingDoctor || null,
+          admissionDate: req.body.admissionDate || null,
+          ward: req.body.ward || null,
+          bed: req.body.bed || null
         },
         type: QueryTypes.INSERT
       }
@@ -1566,9 +1635,9 @@ router.post('/discharge-summaries/submit', verifyHospitalToken, async (req, res)
     const [summary] = await sequelize.query(
       `INSERT INTO discharge_summaries 
        (patient_id, admission_id, diagnosis, procedures, medications, follow_up, 
-        status, hospital_id, submitted_at, created_at, updated_at)
+        status, hospital_id, attending_doctor, admission_date, ward, bed, submitted_at, created_at, updated_at)
        VALUES (:patientId, :admissionId, :diagnosis, :procedures, :medications, :followUp,
-               'pending_approval', :hospitalId, NOW(), NOW(), NOW())
+               'pending_approval', :hospitalId, :attendingDoctor, :admissionDate, :ward, :bed, NOW(), NOW(), NOW())
        RETURNING *`,
       {
         replacements: {
@@ -1578,7 +1647,11 @@ router.post('/discharge-summaries/submit', verifyHospitalToken, async (req, res)
           procedures: JSON.stringify(procedures || []),
           medications: JSON.stringify(medications || []),
           followUp,
-          hospitalId
+          hospitalId,
+          attendingDoctor: req.body.attendingDoctor || null,
+          admissionDate: req.body.admissionDate || null,
+          ward: req.body.ward || null,
+          bed: req.body.bed || null
         },
         type: QueryTypes.INSERT
       }
