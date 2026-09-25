@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import DisplayShell from './DisplayShell';
-import DisplayVideoOverlay from '@/components/display/DisplayVideoOverlay';
+import { displayDeviceHeaders } from '@/utils/displayDeviceAuth';
 
 interface ICUBed {
   bed_number: string;
@@ -49,22 +49,24 @@ export default function ICUBoardDisplay() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [teleOpen, setTeleOpen] = useState(false);
-  const [teleSession, setTeleSession] = useState<{ serverUrl: string; token: string } | null>(null);
 
   const startTeleIcu = async () => {
     setError(null);
     try {
-      const res = await fetch('/api/display/kiosk/video-session', {
+      const res = await fetch('/api/display/video/sessions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ purpose: 'tele-icu', roomName: `tele-icu-${Date.now()}` }),
+        headers: displayDeviceHeaders(),
+        body: JSON.stringify({
+          sessionType: 'tele-icu',
+          targetZone: 'icu',
+          role: 'tele-intensivist',
+        }),
       });
       if (!res.ok) throw new Error(`Video session request failed (${res.status})`);
       const json = await res.json();
-      if (!json.serverUrl || !json.token) throw new Error('Video session response was incomplete');
-      setTeleSession({ serverUrl: json.serverUrl, token: json.token });
-      setTeleOpen(true);
+      if (!json.success || !json.roomId || !json.join?.token) {
+        throw new Error(json.message || 'Video session response was incomplete');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to start tele-consultation');
     }
@@ -233,9 +235,6 @@ export default function ICUBoardDisplay() {
           Last updated: {lastUpdated.toLocaleTimeString('en-IN')} · MQTT/SSE vitals + 15s poll
         </p>
       </div>
-      {teleOpen && teleSession && (
-        <DisplayVideoOverlay open={teleOpen} onClose={() => setTeleOpen(false)} serverUrl={teleSession.serverUrl} token={teleSession.token} />
-      )}
     </DisplayShell>
   );
 }
