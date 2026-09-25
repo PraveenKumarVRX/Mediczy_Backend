@@ -61,6 +61,15 @@ function isPlaceholderEmail(email) {
   return false;
 }
 
+function mapCorporateReportTypeToPatientReportType(reportType, mimeType) {
+  const raw = String(reportType || '').toLowerCase();
+  const mime = String(mimeType || '').toLowerCase();
+  if (raw.includes('prescription')) return 'prescription';
+  if (raw.includes('imaging') || raw.includes('xray') || raw.includes('x-ray') || raw.includes('scan')) return 'imaging';
+  if (raw.includes('general') || mime.includes('word')) return 'general';
+  return 'lab';
+}
+
 // Require team or admin role
 function requireTeamOrAdmin(req, res, next) {
   const role = req.user?.role;
@@ -737,7 +746,7 @@ router.post(
     try {
       // ── 1. Fetch employee ──────────────────────────────────
       const [employee] = await postgresSequelize.query(
-        `SELECT id, "firstName", "lastName", email, "phoneNumber"
+        `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id
          FROM users WHERE id = :empId LIMIT 1`,
         { replacements: { empId: parseInt(employeeId) }, type: postgresSequelize.QueryTypes.SELECT }
       );
@@ -818,8 +827,51 @@ router.post(
           }
         );
         const reportId = dbRow?.[0]?.id || dbRow?.id;
+
+        const patientReportRows = await postgresSequelize.query(
+          `INSERT INTO reports
+             ("userId", organization_id, "fileName", "fileSize", "mimeType", "filePath", "fileUrl",
+              "reportType", description, "testName", "labName", "reportDate", status, "uploadedAt",
+              "analysisStatus", metadata, "createdAt", "updatedAt")
+           VALUES
+             (:userId, :organizationId, :fileName, :fileSize, :mimeType, :filePath, :fileUrl,
+              :patientReportType, :description, :testName, :labName, :reportDate, 'active', NOW(),
+              'pending', CAST(:metadata AS JSONB), NOW(), NOW())
+           RETURNING id`,
+          {
+            replacements: {
+              userId: parseInt(employeeId),
+              organizationId: employee.organization_id || null,
+              fileName: file.originalname,
+              fileSize: file.size,
+              mimeType: file.mimetype,
+              filePath: s3Key,
+              fileUrl: reportUrl,
+              patientReportType: mapCorporateReportTypeToPatientReportType(reportType, file.mimetype),
+              description: notes || `${reportLabel} uploaded by ${corporateName || 'corporate health team'}`,
+              testName: perFileReportName,
+              labName: corporateName || 'Corporate health check-up',
+              reportDate,
+              metadata: JSON.stringify({
+                source: 'team_corporate_health_upload',
+                corporateId: parseInt(corporateId),
+                corporateHealthReportId: reportId,
+                corporateReportType: reportType,
+                checkupType: reportType,
+                uploadedByTeamUserId: req.user.id,
+                labOrderId: labOrderId ? parseInt(labOrderId) : null,
+                bucket: corpBucket,
+                s3Key,
+              }),
+            },
+            type: postgresSequelize.QueryTypes.SELECT
+          }
+        );
+        const patientReportId = patientReportRows?.[0]?.id;
+
         uploadedReports.push({
           id: reportId,
+          patientReportId,
           reportName: perFileReportName,
           reportUrl,
           mimeType: file.mimetype,
@@ -1010,6 +1062,7 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         AND ua."entityType" = 'corporate'
         AND ua."entityId" = :corporateId
       WHERE r."reportType" = 'lab'
+        AND COALESCE(r.metadata->>'source', '') <> 'team_corporate_health_upload'
         ${empFilterRpt}
     `;
 

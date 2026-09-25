@@ -3708,6 +3708,7 @@ async function buildEmployeeHealthRecordSheet(corporateId, employeeKey) {
        AND ua."entityId" = :corporateId
      WHERE r."userId" = :userId
        AND r."reportType" = 'lab'
+       AND COALESCE(r.metadata->>'source', '') <> 'team_corporate_health_upload'
 
      ORDER BY report_date DESC, created_at DESC`,
     { replacements: { corporateId, userId: employee.userId }, type: postgresSequelize.QueryTypes.SELECT }
