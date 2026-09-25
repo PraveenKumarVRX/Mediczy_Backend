@@ -273,6 +273,13 @@ interface CorporateAdminUser {
 type CommunicationChannel = 'email' | 'whatsapp' | 'sms';
 type CommunicationRecipientMode = 'individual' | 'selected' | 'bulk';
 type WelcomeEmailMode = 'draft' | 'send' | 'skip';
+type BulkUploadProgressStatus = 'active' | 'done' | 'error';
+type BulkUploadProgressState = {
+  label: string;
+  detail: string;
+  percent: number;
+  status: BulkUploadProgressStatus;
+};
 
 interface EmailQuotaSnapshot {
   used: number;
@@ -889,9 +896,11 @@ const TeamCorporateManagement = () => {
   const [bulkUploadResults, setBulkUploadResults] = useState<{
     created: any[];
     failed: any[];
+    emailWarnings?: any[];
     qcLog: { row: number; employeeId: string; name: string; email: string; issues: string[] }[];
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [bulkUploadProgress, setBulkUploadProgress] = useState<BulkUploadProgressState | null>(null);
   const [bulkWelcomeEmailMode, setBulkWelcomeEmailMode] = useState<WelcomeEmailMode>("draft");
   const [bulkUseAiColumnDetection, setBulkUseAiColumnDetection] = useState(true);
   const [bulkAiColumnSummary, setBulkAiColumnSummary] = useState<string | null>(null);
@@ -4796,6 +4805,20 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
   // Keep old runQC alias used by the QC report display (reads from bulkUploadResults.qcLog)
   const runQC = (empList: any[]) => runQCAndFilter(empList).warnings;
 
+  const updateBulkUploadProgress = (
+    label: string,
+    detail: string,
+    percent: number,
+    status: BulkUploadProgressStatus = 'active'
+  ) => {
+    setBulkUploadProgress({
+      label,
+      detail,
+      percent: Math.max(0, Math.min(100, Math.round(percent))),
+      status,
+    });
+  };
+
   // Bulk Upload Handler
   const handleBulkUpload = async () => {
     if (!bulkUploadFile || !selectedCorporate) {
@@ -4811,8 +4834,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       setIsUploading(true);
       setBulkUploadResults(null);
       setBulkAiColumnSummary(null);
+      updateBulkUploadProgress('Reading file', `Opening ${bulkUploadFile.name}`, 8);
       
       if (/\.xls$/i.test(bulkUploadFile.name) && !/\.xlsx$/i.test(bulkUploadFile.name)) {
+        updateBulkUploadProgress('Upload stopped', 'Legacy .xls files are not supported. Save as .xlsx or CSV.', 100, 'error');
         toast({
           variant: 'destructive',
           title: 'Unsupported Excel format',
@@ -4822,9 +4847,11 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       }
 
       const isExcelFile = /\.xlsx$/i.test(bulkUploadFile.name);
+      updateBulkUploadProgress('Reading file', isExcelFile ? 'Reading workbook sheets' : 'Reading CSV rows', 18);
       const uploadRows = isExcelFile
         ? await readExcelRows(bulkUploadFile)
         : readCSVRows(await bulkUploadFile.text());
+      updateBulkUploadProgress('Mapping columns', 'Finding employee headers', 28);
       let aiColumnMap: Record<string, string> = {};
       const nonEmptyUploadRows = uploadRows.filter(row => row.some(cell => String(cell || '').trim()));
       const deterministicHeaderIndex = findBulkHeaderRowIndex(nonEmptyUploadRows);
@@ -4832,6 +4859,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       const deterministicHeaderScore = scoreBulkHeaderRow(deterministicHeaderRow).score;
       if (bulkUseAiColumnDetection && deterministicHeaderScore < 2) {
         try {
+          updateBulkUploadProgress('Mapping columns', 'Trying AI-assisted header detection', 34);
           aiColumnMap = await inferBulkColumnMapWithAI(uploadRows);
         } catch (aiError: any) {
           setBulkAiColumnSummary('AI column detection failed; used standard parser fallback.');
@@ -4839,9 +4867,11 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       } else if (bulkUseAiColumnDetection) {
         setBulkAiColumnSummary('Standard parser mapped the employee columns; AI detection was not needed.');
       }
+      updateBulkUploadProgress('Parsing employees', 'Converting rows into employee records', 42);
       const employeeList = parseBulkEmployeeRows(uploadRows, aiColumnMap);
       
       if (employeeList.length === 0) {
+        updateBulkUploadProgress('Upload stopped', 'No employee rows were detected in the file.', 100, 'error');
         toast({
           variant: 'destructive',
           title: 'Empty file',
@@ -4851,9 +4881,11 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       }
 
       // Run QC — discard fatal rows, warn on minor issues, deduplicate
+      updateBulkUploadProgress('Checking data', `${employeeList.length} row${employeeList.length === 1 ? '' : 's'} found; running QC`, 52);
       const { passed: cleanList, discarded: discardedRows, warnings: warnRows } = runQCAndFilter(employeeList);
 
       if (cleanList.length === 0) {
+        updateBulkUploadProgress('Upload stopped', `${discardedRows.length} row${discardedRows.length === 1 ? '' : 's'} failed QC`, 100, 'error');
         toast({
           variant: 'destructive',
           title: 'All rows failed QC',
@@ -4870,6 +4902,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         });
       }
 
+      updateBulkUploadProgress('Uploading employees', `${cleanList.length} employee${cleanList.length === 1 ? '' : 's'} passed QC`, 62);
       const token = localStorage.getItem('teamToken');
       const { data } = await api.post('/admin/corporate-employees', {
         corporateId: selectedCorporate.id,
@@ -4878,11 +4911,19 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         welcomeEmailMode: bulkWelcomeEmailMode
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        timeout: 180000
+        timeout: 180000,
+        onUploadProgress: (event) => {
+          const totalBytes = event.total || 0;
+          const sentBytes = event.loaded || 0;
+          const percent = totalBytes > 0 ? 62 + (sentBytes / totalBytes) * 18 : 70;
+          updateBulkUploadProgress('Uploading employees', `${cleanList.length} employee${cleanList.length === 1 ? '' : 's'} sent to server`, percent);
+        },
       });
 
+      updateBulkUploadProgress('Processing result', 'Building upload report', 84);
       const created = data.results?.created || [];
       const failed = data.results?.failed || [];
+      const emailWarnings = data.results?.emailWarnings || [];
       // Merge: discarded rows + server QC + minor warnings
       const serverQc: any[] = data.results?.qcLog || [];
       const serverQcRows = new Set(serverQc.map((q: any) => q.row));
@@ -4891,7 +4932,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         ...serverQc,
         ...warnRows.filter(q => !serverQcRows.has(q.row)),
       ];
-      setBulkUploadResults({ created, failed, qcLog: mergedQc });
+      setBulkUploadResults({ created, failed, emailWarnings, qcLog: mergedQc });
       addPreparedWelcomeEmailDrafts(buildWelcomeEmailDraftsFromCreated(created));
       
       // Close the upload dialog and show the report popup
@@ -4900,6 +4941,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       setShowUploadReport(true);
 
       if (created.length > 0) {
+        updateBulkUploadProgress('Refreshing employees', `${created.length} employee${created.length === 1 ? '' : 's'} activated; refreshing list`, 92);
         fetchEmployees(selectedCorporate.id);
       }
 
@@ -4933,6 +4975,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
           setShowSyncConfirmDialog(true);
         }
       }
+      updateBulkUploadProgress('Upload complete', `${created.length} activated, ${failed.length} failed${emailWarnings.length ? `, ${emailWarnings.length} email warning${emailWarnings.length === 1 ? '' : 's'}` : ''}`, 100, failed.length > 0 ? 'error' : 'done');
     } catch (error: any) {
       const isTimeout = error?.code === 'ECONNABORTED' || String(error?.message || '').toLowerCase().includes('timeout');
       const status = error?.response?.status;
@@ -4947,6 +4990,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       } else if (status === 401) {
         description = 'Session expired. Sign in again to the team portal and retry.';
       }
+      updateBulkUploadProgress(isTimeout ? 'Upload status unknown' : 'Upload failed', description, 100, 'error');
       toast({
         variant: 'destructive',
         title: isTimeout ? 'Upload still processing' : 'Upload failed',
@@ -10155,6 +10199,15 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
               const linked = bulkUploadResults.created.filter((e: any) => !e.isNewUser).length;
               const emailQueued = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'queued').length;
               const emailSkipped = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'skipped').length;
+              const emailDrafts = bulkUploadResults.created.filter((e: any) => e.emailStatus === 'draft').length;
+              const emailWarnings = bulkUploadResults.emailWarnings || bulkUploadResults.created
+                .filter((e: any) => e.emailStatus === 'failed' || e.emailError)
+                .map((e: any) => ({
+                  email: e.email,
+                  name: e.name || '',
+                  employeeId: e.employeeId || '',
+                  reason: e.emailError || 'Welcome email was not prepared or sent',
+                }));
               const qcLog = bulkUploadResults.qcLog || [];
 
               const downloadErrorLog = () => {
@@ -10162,6 +10215,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   ['Type', 'Row', 'Employee ID', 'Name', 'Email', 'Issue'].join(','),
                   ...bulkUploadResults.failed.map((f: any, i: number) =>
                     ['FAILED', '', f.employeeId || '', f.name || '', f.email || '', `"${(f.reason || '').replace(/"/g, '""')}"`].join(',')
+                  ),
+                  ...emailWarnings.map((warning: any) =>
+                    ['EMAIL WARNING', '', warning.employeeId || '', `"${(warning.name || '').replace(/"/g, '""')}"`, warning.email || '', `"${(warning.reason || '').replace(/"/g, '""')}"`].join(',')
                   ),
                   ...qcLog.map((q: any) =>
                     q.issues.map((issue: string) =>
@@ -10236,7 +10292,24 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                         {newUsers > 0 && <p>• {newUsers} new user account{newUsers > 1 ? 's' : ''} created &amp; activated</p>}
                         {linked > 0 && <p>• {linked} existing user{linked > 1 ? 's' : ''} linked &amp; activated</p>}
                         {emailQueued > 0 && <p>• {emailQueued} welcome email{emailQueued > 1 ? 's' : ''} queued</p>}
+                        {emailDrafts > 0 && <p>• {emailDrafts} welcome email draft{emailDrafts > 1 ? 's' : ''} prepared for review</p>}
                         {emailSkipped > 0 && <p>• {emailSkipped} welcome email{emailSkipped > 1 ? 's' : ''} skipped by operator choice</p>}
+                      </div>
+                    </div>
+                  )}
+
+                  {emailWarnings.length > 0 && (
+                    <div className="bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-800 rounded-lg p-3">
+                      <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300 mb-2 flex items-center gap-1.5">
+                        <AlertCircle className="h-4 w-4" /> Email Warnings
+                      </p>
+                      <div className="max-h-32 overflow-y-auto text-xs space-y-1">
+                        {emailWarnings.map((warning: any, idx: number) => (
+                          <div key={idx} className="text-yellow-700 dark:text-yellow-400">
+                            <span className="font-medium">{warning.email || warning.name || `Employee ${idx + 1}`}</span>
+                            <span> - {warning.reason || 'Welcome email was not prepared or sent'}</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   )}
@@ -10327,13 +10400,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
               );
             })()}
             <DialogFooter className="gap-2">
-              {bulkUploadResults && (bulkUploadResults.failed.length > 0 || (bulkUploadResults.qcLog || []).length > 0) && (
+              {bulkUploadResults && (bulkUploadResults.failed.length > 0 || (bulkUploadResults.emailWarnings || []).length > 0 || (bulkUploadResults.qcLog || []).length > 0) && (
                 <Button variant="outline" onClick={() => {
                   const qcLog = bulkUploadResults?.qcLog || [];
                   const lines = [
                     ['Type', 'Row', 'Employee ID', 'Name', 'Email', 'Issue'].join(','),
                     ...(bulkUploadResults?.failed || []).map((f: any) =>
                       ['FAILED', '', f.employeeId || '', `"${(f.name || '').replace(/"/g, '""')}"`, f.email || '', `"${(f.reason || '').replace(/"/g, '""')}"`].join(',')
+                    ),
+                    ...((bulkUploadResults?.emailWarnings || []) as any[]).map((warning: any) =>
+                      ['EMAIL WARNING', '', warning.employeeId || '', `"${(warning.name || '').replace(/"/g, '""')}"`, warning.email || '', `"${(warning.reason || '').replace(/"/g, '""')}"`].join(',')
                     ),
                     ...qcLog.flatMap((q: any) =>
                       q.issues.map((issue: string) =>
@@ -10362,11 +10438,13 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
         {/* Bulk Upload Dialog */}
         <Dialog open={showBulkUploadDialog} onOpenChange={(open) => {
+          if (!open && isUploading) return;
           setShowBulkUploadDialog(open);
           if (!open) {
             setBulkUploadFile(null);
             setBulkUploadResults(null);
             setBulkAiColumnSummary(null);
+            setBulkUploadProgress(null);
           }
         }}>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -10479,6 +10557,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       setBulkUploadFile(file);
                       setBulkUploadResults(null);
                       setBulkAiColumnSummary(null);
+                      setBulkUploadProgress(null);
                     }
                   }}
                 />
@@ -10496,6 +10575,51 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 </label>
               </div>
 
+              {bulkUploadProgress && (
+                <div className={`rounded-lg border p-3 space-y-2 ${
+                  bulkUploadProgress.status === 'error'
+                    ? 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/20'
+                    : bulkUploadProgress.status === 'done'
+                      ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/20'
+                      : 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/20'
+                }`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {bulkUploadProgress.status === 'error' ? (
+                        <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                      ) : bulkUploadProgress.status === 'done' ? (
+                        <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 text-blue-600 animate-spin shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className={`text-sm font-medium ${
+                          bulkUploadProgress.status === 'error'
+                            ? 'text-red-800 dark:text-red-300'
+                            : bulkUploadProgress.status === 'done'
+                              ? 'text-green-800 dark:text-green-300'
+                              : 'text-blue-800 dark:text-blue-300'
+                        }`}>{bulkUploadProgress.label}</p>
+                        <p className="text-xs text-muted-foreground truncate">{bulkUploadProgress.detail}</p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-medium text-muted-foreground">{bulkUploadProgress.percent}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-background/80 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        bulkUploadProgress.status === 'error'
+                          ? 'bg-red-500'
+                          : bulkUploadProgress.status === 'done'
+                            ? 'bg-green-500'
+                            : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${bulkUploadProgress.percent}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => {
@@ -10503,7 +10627,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 setBulkUploadFile(null);
                 setBulkUploadResults(null);
                 setBulkAiColumnSummary(null);
-              }}>
+                setBulkUploadProgress(null);
+              }} disabled={isUploading}>
                 Cancel
               </Button>
               <Button 

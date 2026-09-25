@@ -3257,7 +3257,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
     const { plan: activeCorporatePlan, autoCreated: planAutoCreated } =
       await ensureActiveCorporatePlanForEmployees({ corporateId, corporate });
     
-    const results = { created: [], failed: [], qcLog: [], planAutoCreated };
+    const results = { created: [], failed: [], qcLog: [], emailWarnings: [], planAutoCreated };
 
     // ─── Internal QC pass ────────────────────────────────────────────────────
     const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -3612,7 +3612,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           const welcomeMode = shouldSendWelcomeEmail ? 'send' : (shouldPrepareWelcomeEmail ? 'draft' : 'skip');
           let welcomeBlockedByQualityGate = false;
 
-          if (welcomeMode !== 'skip') {
+          if (welcomeMode === 'send') {
             const activeRecipientDelivery = await findActiveWelcomeDeliveryForRecipient({
               corporateId,
               recipientEmail: normalizedEmail,
@@ -3687,9 +3687,10 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         });
 
         if (emailStatus === 'failed') {
-          results.failed.push({
+          results.emailWarnings.push({
             email: normalizedEmail,
             name: `${firstName || ''} ${lastName || ''}`.trim(),
+            employeeId: employeeId || '',
             reason: emailError || 'Failed to send welcome email'
           });
         }
@@ -3743,7 +3744,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
     const dbLinkedExisting = results.created.filter((item) => item.isNewUser === false).length;
     const welcomeEmailFailed = results.created.filter((item) => item.emailStatus === 'failed').length;
     
-    console.log(`[Corporate Employees] Added ${results.created.length}, failed ${results.failed.length}, QC issues: ${results.qcLog.length} — corporate ${corporateId}`);
+    console.log(`[Corporate Employees] Added ${results.created.length}, failed ${results.failed.length}, QC issues: ${results.qcLog.length}, email warnings: ${results.emailWarnings.length} — corporate ${corporateId}`);
     
     return res.status(201).json({
       success: true,
@@ -3756,6 +3757,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         qcRejected,
         failed: results.failed.length,
         welcomeEmailFailed,
+        emailWarnings: results.emailWarnings.length,
         planAutoCreated: !!planAutoCreated,
         planId: activeCorporatePlan?.id || null,
         planName: activeCorporatePlan?.name || null,
