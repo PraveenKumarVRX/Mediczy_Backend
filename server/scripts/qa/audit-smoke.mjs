@@ -122,18 +122,27 @@ if (SECRET) {
   // ── 2026-09-26 additions: roadmap-intelligence (RLS-backed), refund webhook, clinical-notes scope, imaging registry ──
   const hosp = (role, id, org = ORG) => token({ id, role, userType: 'hospital', ...(org ? { tenant_id: org, organization_id: org } : {}) });
   const RM = '/api/roadmap-intelligence';
-  // FINDING (smoke test 2026-09-26): middleware/ringFencing.js lists /api/roadmap-intelligence in NO user type's allowedPaths,
-  // so today the whole router is unreachable — even for hospital staff and admins (403 ACCESS_DENIED). The router itself is
-  // hardened (tenant from token, role gates, patient ownership, FORCE RLS: __tests__/roadmap-*.test.js and
-  // scripts/qa/roadmap-rls.mjs), but exposing it is a product/SaMD decision (pharmacogenomic recommendations are clinical
-  // decision support). These checks pin the CURRENT state; when someone deliberately whitelists the path they will fail —
-  // replace them with the live checks listed in docs/audit/PHASE1_MICRO_AUDIT_2026-09-25.md.
+  // Exposure is deliberate and narrow (middleware/ringFencing.js): operational analytics sub-routes for hospital/platform
+  // admins only; clinical decision-support / consent sub-routes stay OFF pending SaMD classification + clinical validation.
   await expect('ROADMAP anonymous refused', ['GET', `${RM}/esg/summary`], 401);
-  for (const [label, tok] of [
-    ['a patient', token({ id: 987041, role: 'patient', organization_id: ORG })],
-    ['hospital staff', hosp('nurse', 987044)],
-    ['a platform admin', token({ id: 987046, role: 'admin' })],
-  ]) await expect(`ROADMAP is not exposed: ${label} is denied at the ring-fence`, ['GET', `${RM}/rwe/aggregate`, { tok }], 403, 'ACCESS_DENIED');
+  await expect('ROADMAP a patient is denied at the ring-fence', ['GET', `${RM}/rwe/aggregate`, { tok: token({ id: 987041, role: 'patient', organization_id: ORG }) }], 403, 'ACCESS_DENIED');
+  await expect('ROADMAP a clinical sub-route (wounds) stays OFF even for hospital staff', ['GET', `${RM}/wounds/1`, { tok: hosp('nurse', 987044) }], 403, 'ACCESS_DENIED');
+  await expect('ROADMAP pharmacogenomics stays OFF even for a platform admin', ['POST', `${RM}/pgx/check`, { tok: token({ id: 987046, role: 'admin' }), body: { patientId: 1, medication: 'codeine' } }], 403, 'ACCESS_DENIED');
+  await expect('ROADMAP hospital staff with no tenant claim are refused by the router', ['GET', `${RM}/esg/summary`, { tok: hosp('ms', 987044, null) }], 403, 'TENANT_CONTEXT_REQUIRED');
+  await expect('ROADMAP a billing/security role is fine for analytics (staff role) but clinical writes are not exposed', ['GET', `${RM}/esg/summary`, { tok: hosp('hospital_admin', 987044) }], 200);
+  await expect('ROADMAP antibiogram summary runs under RLS (tables + policy live)', ['GET', `${RM}/antibiogram/summary`, { tok: hosp('quality_staff', 987044) }], 200);
+  await expect('ROADMAP infection-surveillance alerts run under RLS', ['GET', `${RM}/infection-surveillance/alerts`, { tok: hosp('quality_staff', 987044) }], 200);
+  {
+    const r = await call('GET', `${RM}/rwe/aggregate`, { tok: hosp('ms', 987045) });
+    check('ROADMAP RWE is scoped to the caller\'s hospital and not randomised (synthetic hospital → no rows)', r.status === 200 && r.json?.scope === 'hospital' && Array.isArray(r.json?.data) && r.json.data.length === 0, `status ${r.status} scope ${r.json?.scope} rows ${r.json?.data?.length}`);
+    const a = await call('GET', `${RM}/rwe/aggregate`, { tok: token({ id: 987046, role: 'admin' }) });
+    const b = await call('GET', `${RM}/rwe/aggregate`, { tok: token({ id: 987046, role: 'admin' }) });
+    check('ROADMAP RWE platform view (admin) is labelled and deterministic across calls', a.status === 200 && a.json?.scope === 'platform' && JSON.stringify(a.json?.data) === JSON.stringify(b.json?.data), `status ${a.status} scope ${a.json?.scope}`);
+    const f = await call('GET', `${RM}/staffing/forecast`, { tok: hosp('hospital_admin', 987047) });
+    check('ROADMAP staffing forecast counts only the caller\'s hospital (synthetic → 0 samples)', f.status === 200 && f.json?.data?.scope === 'hospital' && f.json.data.samples === 0, `status ${f.status} samples ${f.json?.data?.samples}`);
+  }
+  // (Consultation-recording admin scoping is covered by __tests__/consultation-admin-scope.test.js; a live call would write
+  //  admin_view audit rows against real recordings, so it is deliberately not smoke-tested.)
 
   // Gateway-refund webhook: mounted, whitelisted past the JWT ring-fence, and fails CLOSED without a valid signature.
   {

@@ -20,6 +20,21 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
+// Admin access to recordings is TENANT-scoped: a platform admin (admin / super_admin) may see every hospital's recordings
+// (optionally narrowed with ?organizationId=), any other admin role only their own hospital's. The listing used to accept
+// `organizationId` and then ignore it, and the by-id routes never compared the recording's hospital to the caller's.
+const PLATFORM_ADMIN_ROLES = new Set(['admin', 'super_admin']);
+const adminTenantScope = (req) => {
+  if (PLATFORM_ADMIN_ROLES.has(req.user?.role)) {
+    const asked = Number(req.query?.organizationId);
+    return { ok: true, tenantId: Number.isInteger(asked) && asked > 0 ? asked : null };
+  }
+  const own = Number(req.user?.organization_id || req.user?.tenant_id || req.user?.hospital_id || req.user?.hospitalId);
+  if (Number.isInteger(own) && own > 0) return { ok: true, tenantId: own };
+  return { ok: false };
+};
+const NO_TENANT = { success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital.' };
+
 // Multer storage for browser-recorded blobs (written to temp dir then streamed to MinIO)
 const BLOB_TMP_DIR = '/tmp/consultation-recordings';
 try { fs.mkdirSync(BLOB_TMP_DIR, { recursive: true }); } catch {}
@@ -861,7 +876,9 @@ router.get('/admin/all', authUser, [
       });
     }
 
-    const { organizationId, doctorId, status, fromDate, toDate, limit = 100 } = req.query;
+    const { doctorId, status, fromDate, toDate, limit = 100 } = req.query;
+    const scope = adminTenantScope(req);
+    if (!scope.ok) return res.status(403).json(NO_TENANT);
 
     const where = {};
     
@@ -888,7 +905,9 @@ router.get('/admin/all', authUser, [
         {
           model: AppointmentModel,
           as: 'appointment',
-          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'organization_id']
+          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'organization_id'],
+          // scoped: only recordings whose appointment belongs to the (requested / own) hospital
+          ...(scope.tenantId ? { where: { organization_id: scope.tenantId }, required: true } : {})
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -915,8 +934,7 @@ router.get('/admin/all', authUser, [
     console.error('Admin get recordings error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch recordings',
-      error: error.message
+      message: 'Failed to fetch recordings'
     });
   }
 });
@@ -940,7 +958,9 @@ router.get('/admin/:id', authUser, [
     }
 
     const { id } = req.params;
-    
+    const scope = adminTenantScope(req);
+    if (!scope.ok) return res.status(403).json(NO_TENANT);
+
     const recording = await ConsultationRecording.findByPk(id, {
       include: [
         {
@@ -951,7 +971,8 @@ router.get('/admin/:id', authUser, [
       ]
     });
 
-    if (!recording) {
+    // A recording outside the caller's hospital is reported as not found (no existence leak).
+    if (!recording || (scope.tenantId && Number(recording.appointment?.organization_id) !== scope.tenantId)) {
       return res.status(404).json({
         success: false,
         message: 'Recording not found'
@@ -975,8 +996,7 @@ router.get('/admin/:id', authUser, [
     console.error('Admin get recording error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch recording',
-      error: error.message
+      message: 'Failed to fetch recording'
     });
   }
 });
@@ -1000,12 +1020,15 @@ router.get('/admin/:id/access-log', authUser, [
     }
 
     const { id } = req.params;
-    
+    const scope = adminTenantScope(req);
+    if (!scope.ok) return res.status(403).json(NO_TENANT);
+
     const recording = await ConsultationRecording.findByPk(id, {
-      attributes: ['id', 'appointmentId', 'doctorId', 'patientId', 'accessLog', 'createdAt']
+      attributes: ['id', 'appointmentId', 'doctorId', 'patientId', 'accessLog', 'createdAt'],
+      include: [{ model: AppointmentModel, as: 'appointment', attributes: ['id', 'organization_id'] }]
     });
 
-    if (!recording) {
+    if (!recording || (scope.tenantId && Number(recording.appointment?.organization_id) !== scope.tenantId)) {
       return res.status(404).json({
         success: false,
         message: 'Recording not found'
@@ -1023,8 +1046,7 @@ router.get('/admin/:id/access-log', authUser, [
     console.error('Get access log error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch access log',
-      error: error.message
+      message: 'Failed to fetch access log'
     });
   }
 });

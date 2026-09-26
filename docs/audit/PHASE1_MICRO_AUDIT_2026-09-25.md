@@ -255,3 +255,20 @@ Lesson: never `git add -A` in a worktree that holds symlinked dependencies.
   and gates: `docs/deployment/TENANT_UID_ROLLOUT.md`; verifier: `scripts/ops/verify-tenant-uid.mjs`.
 - **No staging environment exists** (`server/.env` targets production). Everything here was rehearsed on a disposable local
   database and a full-suite comparison against `main`, then applied to production with explicit approval.
+
+
+### Post-remediation closure log (2026-09-26)
+
+Everything found by the post-deploy smoke test, log review and follow-up sweeps, with its final state:
+
+| Item | State |
+|---|---|
+| Gateway-refund webhook answered 401 (registered after the auth middleware) | Fixed, deployed, route-level regression test |
+| FCM active-call recovery `getTableName is not a function` (wrapper passed as include model) | Fixed, deployed |
+| Nurse / assistant auth `column "userId" does not exist` (association selects a column the tables lacked) | Migration `20260926000007` applied to production, deployed |
+| Consultation-recording `include: Appointment` had no association and asked for a non-existent attribute | Fixed, deployed |
+| Consultation-recording **admin** routes were not tenant-scoped (`?organizationId=` accepted then ignored; by-id routes never compared hospitals) | Fixed: hospital/clinic admins are scoped to their own hospital, platform admins may filter; tests |
+| roadmap-intelligence unreachable (ring-fence listed it for no user type) | **Analytics sub-routes exposed** (staffing, rwe, esg, antibiogram, infection-surveillance) for `admin` and `hospital` only; **clinical / consent sub-routes stay OFF** (pgx, voice-biometrics, ar-surgical-plans, trials, sdoh, wounds, revenue-cycle, smart-room). Enabling those needs a SaMD classification (pharmacogenomic recommendations are clinical decision support) and clinical validation — then add their paths to `middleware/ringFencing.js`. |
+| Legacy `/api/insurance` (patient policies/providers) | **Retired candidate, not changed.** The four tables are empty in production and `insurance_policies` has a different schema from its model (`policyName`/`insuranceCompanyId` vs `name`/`providerId`); the routes include associations that were never declared. Making them work is a redesign, not a fix — decide whether to retire or rebuild. |
+| `prod` git branch is 61 commits behind `main` | Nothing deploys from it (workflows and the deploy script use `main`); fast-forward it when convenient: `git push origin main:prod` |
+| UID contract phase | Time-gated: reads are dual-keyed now; after a week without integer/UID disagreement, switch to `tenant_uid` only (docs/deployment/TENANT_UID_ROLLOUT.md) |
