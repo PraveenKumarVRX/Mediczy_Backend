@@ -4,6 +4,7 @@ import * as dischargeSummaries from '../../services/discharge-summary.service.js
 import { requireSessionRole, DISCHARGE_DOC_ROLES, MRD_WRITE_ROLES } from '../../utils/discharge-policy.js';
 import { sendRouteError } from '../../utils/route-errors.js';
 import { auditAction } from '../../utils/action-audit.js';
+import { resolveTenantId } from '../../utils/tenant-identity.js';
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
@@ -216,10 +217,16 @@ const verifyHospitalToken = (req, res, next) => {
     // Support both old system (decoded.id) and new multitenancy (decoded.tenant_id / decoded.hospital_id)
     req.hostTenantId = hostTenantId;
     req.tokenTenantId = tokenTenantId;
-    req.hospitalId = tokenTenantId || decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
+    // Audit SEC-01: `id` is a tenant id only for the legacy hospital account (utils/tenant-identity.js); a staff token
+    // with no tenant claim is refused instead of becoming "tenant = its own user id".
+    const resolvedTenant = tokenTenantId || resolveTenantId(decoded);
+    if (!resolvedTenant) {
+      return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
+    }
+    req.hospitalId = resolvedTenant;
     req.hospitalOrgId = req.hospitalId;  // For DB queries
     req.hospitalName = decoded.hospitalName || decoded.name || 'Hospital';
-    req.tenantId = tokenTenantId || decoded.tenant_id || decoded.hospital_id || decoded.id;
+    req.tenantId = resolvedTenant;
     req.userId = decoded.id;
     req.userRole = role;
     req.capabilities = Array.isArray(decoded.capabilities) ? decoded.capabilities : undefined;

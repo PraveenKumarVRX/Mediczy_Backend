@@ -8,6 +8,7 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import pool from '../../db/pgPool.js';
 import hospitalBilling from '../../services/hospital-billing.service.js';
 import clinicalQualityDashboard from '../../services/clinical-quality-dashboard.service.js';
+import { resolveTenantId } from '../../utils/tenant-identity.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -28,7 +29,12 @@ const verifyHospitalToken = (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
     }
     req.hospitalRole = role;
-    req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
+    // Audit SEC-01: see utils/tenant-identity.js — a staff user id is never a tenant id.
+    const tenantId = resolveTenantId(decoded);
+    if (!tenantId) {
+      return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
+    }
+    req.hospitalId = tenantId;
     req.hospitalName = decoded.hospitalName || decoded.name || 'Hospital';
     return next();
   } catch (error) {

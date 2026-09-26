@@ -14,6 +14,7 @@ import {
 } from '../services/clinical-notes.service.js';
 import ClinicalNote from '../models/clinical-note.model.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 
@@ -28,7 +29,12 @@ const authHospital = (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
     }
     req.hospitalUser = decoded;
-    req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
+    // Audit SEC-01: the tenant comes from the token's tenant claims; `id` counts only for the legacy hospital account.
+    const tenantId = resolveTenantId(decoded);
+    if (!tenantId) {
+      return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital. Ask an administrator to attach it.' });
+    }
+    req.hospitalId = tenantId;
     req.userId = decoded.id;
     req.userRole = role;
     next();
