@@ -248,11 +248,10 @@ Lesson: never `git add -A` in a worktree that holds symlinked dependencies.
   they existed, tokens carry only the integer `id`, and the imaging tables store `tenant_id` as a bigint. Plan: (1) add
   `labs.uid` and backfill; (2) tokens carry a tenant UID; (3) resolve it against the tenant registry; (4) add
   `tenant_uid` to the imaging tables, backfill and switch queries table by table; (5) drop the integer fallback.
-  **Status:** step 1 and the additive half of step 4 are written and rehearsed on a scratch database
-  (`migrations/20260926000004-tenant-uid-expand.migration.js`, `scripts/qa/tenant-uid-expand.mjs`): `labs.uid`,
-  `tenant_uid` on the four `hg_dicom_*` tables, batched backfill, and a trigger that fills `tenant_uid` for every future
-  write with no application change. **Not applied to production** — it needs an explicit go-ahead because the imaging row
-  count in production has not been re-measured (an earlier note said ~600k). After applying, `scripts/ops/verify-tenant-uid.mjs`
-  must report zero unmapped/mismatched rows before steps 2, 3 and 5 (contract phase) are attempted.
+  **Status (2026-09-26):** the additive half is `migrations/20260926000005-imaging-tenant-registry.migration.js` — a typed
+  registry `imaging_tenants (kind, source_id, uid)`, `labs.uid`, `tenant_uid` on the imaging tables (+ `ris_studies`), a
+  trigger that fills it for every writer, per-step short locks with batched backfill and concurrent indexes (proven not to
+  block a concurrent writer on a 225k-row rehearsal). **Not applied to production.** Plan, rehearsal-on-a-restored-snapshot
+  and gates: `docs/deployment/TENANT_UID_ROLLOUT.md`; verifier: `scripts/ops/verify-tenant-uid.mjs`.
 - **No staging environment exists** (`server/.env` targets production). Everything here was rehearsed on a disposable local
   database and a full-suite comparison against `main`, then applied to production with explicit approval.
