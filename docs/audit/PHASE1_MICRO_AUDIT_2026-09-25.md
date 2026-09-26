@@ -233,15 +233,26 @@ Lesson: never `git add -A` in a worktree that holds symlinked dependencies.
   the PACS session issuer had the same fallback. Integer ids are not unique across account tables — hospitals, labs and
   users all contain 70, 2368, 2429 and 2433, and doctor ids (27–1800) overlap lab ids (1–2434) — so doctor 70 was served
   imaging tenant 70. Imaging tenant is now an explicit `tenantId` claim or a validated lab account, else 403.
-- **Same bug class, NOT yet fixed:** seven `hypergrid-*` route files (`terminology`, `edge`, `marketplace`, `events`, `twins`,
-  `mqtt`, `connector`; ~44 sites) use `req.user.tenantId || req.user.id`. They are admin-gated (`requireRole`) and behind the
-  ring-fence, so exposure is narrower, but the tenant model behind them is unclear. Changing them blind risks breaking
-  legitimate admin tooling; fix them together with the UID migration below.
+- **Same bug class in seven `hypergrid-*` routes — FIXED (2026-09-26).** `terminology`, `edge`, `marketplace`, `events`,
+  `twins`, `mqtt`, `connector` (~44 sites) used `req.user.tenantId || req.user.id`. They now use `requireHgTenant`
+  (`utils/hypergrid-tenant.js`): explicit `tenantId` claim → the caller's hospital tenant claim → a platform admin must name an
+  existing tenant → else 403. The caller's own user id is never a tenant. 23 tests, including a static guard against the
+  old fallback in every hypergrid router.
+- **Also fixed (2026-09-26):** hospital clinical-notes list/get were not scoped to the caller's hospital; the doctor-app
+  `/clinical-workflow/notes/patient|admission/:id` returned any patient's notes to any doctor (now requires a care
+  relationship: own note, an appointment with the patient, or the doctor's own hospital); the six inline `app.js` cron jobs
+  now run under the cross-process `beginJob` guard.
 - **Durable fix — use the UIDs that already exist.** Production has a UUID `uid` on users (6847/6847), doctors
   (1118/1118), hospitals (10776/10776) and tenants (51/51), and an alphanumeric `unique_id` on all of those plus labs
   (2426/2427); patients have none (0/18). They do not overlap across tables today. Tenancy was built on integer keys before
   they existed, tokens carry only the integer `id`, and the imaging tables store `tenant_id` as a bigint. Plan: (1) add
   `labs.uid` and backfill; (2) tokens carry a tenant UID; (3) resolve it against the tenant registry; (4) add
-  `tenant_uid` to the imaging tables, backfill (~600k rows) and switch queries table by table; (5) drop the integer fallback.
+  `tenant_uid` to the imaging tables, backfill and switch queries table by table; (5) drop the integer fallback.
+  **Status:** step 1 and the additive half of step 4 are written and rehearsed on a scratch database
+  (`migrations/20260926000004-tenant-uid-expand.migration.js`, `scripts/qa/tenant-uid-expand.mjs`): `labs.uid`,
+  `tenant_uid` on the four `hg_dicom_*` tables, batched backfill, and a trigger that fills `tenant_uid` for every future
+  write with no application change. **Not applied to production** — it needs an explicit go-ahead because the imaging row
+  count in production has not been re-measured (an earlier note said ~600k). After applying, `scripts/ops/verify-tenant-uid.mjs`
+  must report zero unmapped/mismatched rows before steps 2, 3 and 5 (contract phase) are attempted.
 - **No staging environment exists** (`server/.env` targets production). Everything here was rehearsed on a disposable local
   database and a full-suite comparison against `main`, then applied to production with explicit approval.
