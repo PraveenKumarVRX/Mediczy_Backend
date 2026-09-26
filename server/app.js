@@ -860,7 +860,7 @@ app.use(express.json({
   limit: '50mb',
   verify: (req, _res, buf) => {
     // The WhatsApp webhook is HMAC-signed by Meta over the exact bytes it sent, so the raw body is required to verify it.
-    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook') {
+    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook') {
       req.rawBody = buf.toString('utf8');
     }
   }
@@ -1036,6 +1036,7 @@ app.use((req, res, next) => {
       req.path.startsWith('/api/support/webhook/whatsapp') ||
       req.path === '/api/payments/webhook' ||
       req.path === '/api/hospital/billing/pgi/webhook' ||
+      req.path === '/api/hospital/billing/refunds/webhook' ||
       req.path === '/api/payments/config') {
     req.skipAuth = true;
   }

@@ -171,7 +171,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_finance_journal_source
   ON finance_journal_entries (organization_id, source_type, source_id)
   WHERE source_id IS NOT NULL;
 
--- Tenant isolation for the Phase 1 tables. Platform-admin sessions may bypass via app.is_platform_admin.
+-- Entitlement grants/revocations are audited here. operations-governance.service.js creates this
+-- table lazily at request time, but the finance/entitlement service must be able to audit on a
+-- freshly migrated database, so the Phase 1 migration owns it. entity_id stays INTEGER to match the
+-- existing table; callers that need a composite key put it in details.
+CREATE TABLE IF NOT EXISTS operations_audit_log (
+  id BIGSERIAL PRIMARY KEY,
+  module VARCHAR(80) NOT NULL,
+  entity_type VARCHAR(80) NOT NULL,
+  entity_id INTEGER NOT NULL,
+  action VARCHAR(120) NOT NULL,
+  actor VARCHAR(160),
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  organization_id BIGINT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_operations_audit_org ON operations_audit_log (organization_id, created_at DESC);
+
+-- ── Tenant isolation for the Phase 1 tables. Platform-admin sessions may bypass via app.is_platform_admin.
 DO $$
 DECLARE
   t TEXT;

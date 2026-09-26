@@ -635,6 +635,7 @@ const AccountsLedgerPage             = lazyNamed(_AccountsModulePages, "Accounts
 const AccountsJournalEntriesPage     = lazyNamed(_AccountsModulePages, "AccountsJournalEntriesPage");
 const AccountsChartOfAccountsPage    = lazyNamed(_AccountsModulePages, "AccountsChartOfAccountsPage");
 const AccountsReportsPage            = lazyNamed(_AccountsModulePages, "AccountsReportsPage");
+const AccountsFiscalPeriodsPage     = lazyNamed(_AccountsModulePages, "AccountsFiscalPeriodsPage");
 const AccountsTaxCompliancePage      = lazyNamed(_AccountsModulePages, "AccountsTaxCompliancePage");
 const AccountsAnalyticsPage          = lazyNamed(_AccountsModulePages, "AccountsAnalyticsPage");
 const AccountsSettingsPage           = lazyNamed(_AccountsModulePages, "AccountsSettingsPage");
@@ -1653,6 +1654,7 @@ const AppRoutes = () => {
         <Route path="/accounts/journal-entries"     element={<AccountsJournalEntriesPage />} />
         <Route path="/accounts/chart-of-accounts"   element={<AccountsChartOfAccountsPage />} />
         <Route path="/accounts/reports"             element={<AccountsReportsPage />} />
+        <Route path="/accounts/fiscal-periods"      element={<AccountsFiscalPeriodsPage />} />
         <Route path="/accounts/tax-compliance"      element={<AccountsTaxCompliancePage />} />
         <Route path="/accounts/analytics"           element={<AccountsAnalyticsPage />} />
         <Route path="/accounts/settings"            element={<AccountsSettingsPage />} />

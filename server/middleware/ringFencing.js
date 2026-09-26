@@ -874,6 +874,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/email/track/',       // Email open/click tracking pixels (hit by email clients, no auth)
   '/api/display',            // Hospital kiosk & waiting-room displays (LAN/public)
   '/api/hospital/billing/pgi/webhook', // Razorpay webhook — no JWT; the route verifies the HMAC signature over the raw body
+  '/api/hospital/billing/refunds/webhook', // Razorpay refund webhook — no JWT; HMAC-verified over the raw body, the only path that posts a gateway refund to the GL
   '/api/surveillance/edge/', // CCTV edge gateway ingest — no user JWT; every route authenticates by X-Gateway-Key (sha256 at rest)
   '/api/asset-tracking/reader/events', // RFID/IoT reader ingest — no user JWT; the route authenticates each device by its own hashed X-Reader-Key
   '/api/abdm/kiosk',         // ABHA kiosk registration flow

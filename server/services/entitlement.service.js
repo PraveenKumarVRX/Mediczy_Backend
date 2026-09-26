@@ -47,11 +47,13 @@ const platformAdmin = (work) => withRlsTransaction(pool, { orgId: 0, userId: 0, 
 
 /** Append-only audit row, written on the SAME client so it commits or rolls back with the change it describes. */
 async function auditEntitlement(client, { action, organizationId, packageCode, moduleId, actorId, detail = {} }) {
+  // entity_id is INTEGER; the composite org:package:module key belongs in details, not in the id.
   await client.query(
     `INSERT INTO operations_audit_log (module, entity_type, entity_id, action, actor, details, organization_id)
      VALUES ('entitlements', 'tenant_entitlement', $1, $2, $3, $4::jsonb, $5)`,
-    [`${organizationId}:${packageCode || '-'}:${moduleId || '-'}`, action, actorId == null ? 'system' : String(actorId),
-      JSON.stringify({ packageCode, moduleId, ...detail }), organizationId]
+    [Number(organizationId) || 0, action, actorId == null ? 'system' : String(actorId),
+      JSON.stringify({ packageCode: packageCode || null, moduleId: moduleId || null, key: `${organizationId}:${packageCode || '-'}:${moduleId || '-'}`, ...detail }),
+      Number(organizationId) || 0]
   );
 }
 

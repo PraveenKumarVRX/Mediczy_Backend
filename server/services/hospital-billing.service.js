@@ -912,6 +912,122 @@ export async function voidPayment(hospitalId, paymentId, ctx = {}, reason) {
   }
 }
 
+// ─── Gateway refund lifecycle ─────────────────────────────────────────────────
+// A gateway refund is a two-step fact: we ASK the gateway to refund, then the gateway
+// CONFIRMS it. Cash left the hospital the moment the gateway moved it, so the GL must be
+// posted on confirmation — posting at request time would permanently overstate cash if the
+// gateway later rejects the refund, and understate it if the request is replayed.
+
+/** Ask the gateway to refund a pending refund row. Idempotent: an already-issued row is returned as-is. */
+export async function requestGatewayRefund(hospitalId, refundRowId, ctx = {}) {
+  await ensureTables();
+  const refund = (await pool.query(
+    `SELECT r.*, p.gateway_payment_id, p.gateway
+     FROM hospital_payment_refunds r JOIN hospital_payments p ON p.id = r.payment_id
+     WHERE r.id = $1 AND r.hospital_id = $2`, [refundRowId, hospitalId]
+  )).rows[0];
+  if (!refund) throw new Error('Refund not found');
+  if (refund.status !== 'pending_gateway') return { ...refund, alreadySettled: true };
+  if (!refund.gateway_payment_id) throw new Error('This payment was not taken through a gateway, so it needs no gateway refund');
+
+  const result = await paymentGateway.createRazorpayRefund(
+    refund.gateway_payment_id, Number(refund.amount),
+    { hospitalId: String(hospitalId), refundId: String(refund.id) }
+  );
+  const { rows } = await pool.query(
+    `UPDATE hospital_payment_refunds SET status = 'requested', gateway_refund_id = $3
+     WHERE id = $1 AND hospital_id = $2 RETURNING *`, [refundRowId, hospitalId, result.refundId]
+  );
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, action: 'refund.gateway.requested',
+    resourceType: 'hospital_payment_refund', resourceId: String(refundRowId),
+    metadata: { gatewayRefundId: result.refundId, amount: Number(refund.amount) }, req: ctx.req,
+  });
+  return rows[0];
+}
+
+/**
+ * Apply a confirmed gateway refund. Safe to call repeatedly: the row only transitions out of a
+ * pending state once, and the GL posting is keyed on the refund row id.
+ */
+export async function confirmGatewayRefund(hospitalId, { gatewayRefundId, refundId, status }, ctx = {}) {
+  await ensureTables();
+  const found = (await pool.query(
+    `SELECT * FROM hospital_payment_refunds
+     WHERE hospital_id = $1 AND (($2::bigint IS NOT NULL AND id = $2) OR ($3::text IS NOT NULL AND gateway_refund_id = $3))`,
+    [hospitalId, refundId || null, gatewayRefundId || null]
+  )).rows[0];
+  if (!found) return { applied: false, reason: 'no_matching_refund' };
+  // A webhook for an already-final refund is a redelivery, not a failure.
+  if (found.status === 'completed') return { applied: false, reason: 'already_completed', refundId: found.id };
+  if (found.status === 'failed') return { applied: false, reason: 'already_failed', refundId: found.id };
+
+  const rejected = String(status || '').toLowerCase() === 'failed';
+  const { rows } = await pool.query(
+    `UPDATE hospital_payment_refunds SET status = $3
+     WHERE id = $1 AND hospital_id = $2 AND status NOT IN ('completed','failed') RETURNING *`,
+    [found.id, hospitalId, rejected ? 'failed' : 'completed']
+  );
+  if (!rows[0]) return { applied: false, reason: 'raced', refundId: found.id };
+  const refund = rows[0];
+
+  // A failed refund never moved money, so the invoice and payment must go back to what they were.
+  if (rejected) {
+    if (refund.invoice_id) {
+      await pool.query(
+        `UPDATE hospital_invoices i SET amount_paid = i.amount_paid + $2,
+           amount_due = GREATEST(0, i.patient_liability - (i.amount_paid + $2)),
+           status = CASE WHEN i.patient_liability - (i.amount_paid + $2) <= 0 THEN 'paid'
+                         WHEN i.patient_liability - (i.amount_paid + $2) < i.patient_liability THEN 'partial'
+                         ELSE i.status END,
+           updated_at = NOW()
+         WHERE i.id = $1 AND i.hospital_id = $3`,
+        [refund.invoice_id, Number(refund.amount), hospitalId]
+      );
+    }
+    await pool.query(
+      `UPDATE hospital_payments SET refund_amount = GREATEST(0, refund_amount - $2), status = 'completed', refunded_at = NULL
+       WHERE id = $1 AND hospital_id = $2`, [refund.payment_id, hospitalId, Number(refund.amount)]
+    );
+    await logBillingAudit({
+      hospitalId, actorId: ctx.actorId, action: 'refund.gateway.failed',
+      resourceType: 'hospital_payment_refund', resourceId: String(refund.id),
+      metadata: { gatewayRefundId: refund.gateway_refund_id, amount: Number(refund.amount) }, req: ctx.req,
+    });
+    return { applied: true, posted: false, refundId: refund.id, status: 'failed' };
+  }
+
+  await pool.query(
+    `UPDATE hospital_payments SET status = CASE WHEN refund_amount >= amount - 0.005 THEN 'refunded' ELSE status END
+     WHERE id = $1 AND hospital_id = $2`, [refund.payment_id, hospitalId]
+  );
+  await logBillingAudit({
+    hospitalId, actorId: ctx.actorId, action: 'refund.gateway.confirmed',
+    resourceType: 'hospital_payment_refund', resourceId: String(refund.id),
+    metadata: { gatewayRefundId: refund.gateway_refund_id, amount: Number(refund.amount) }, req: ctx.req,
+  });
+
+  // Only now does cash actually leave — this is the single point where the GL is touched.
+  const method = (await pool.query('SELECT payment_method FROM hospital_payments WHERE id = $1', [refund.payment_id])).rows[0]?.payment_method;
+  const ledger = await glPosting.postRefund(hospitalId, {
+    refundId: refund.id, paymentId: refund.payment_id, amount: Number(refund.amount), paymentMethod: method,
+  }, ctx.actorId);
+  return { applied: true, posted: ledger.posted, ledger, refundId: refund.id, status: 'completed' };
+}
+
+/** Sweep refunds still awaiting a gateway answer. Returns the rows an operator should chase. */
+export async function listStaleGatewayRefunds(hospitalId, { olderThanHours = 24 } = {}) {
+  await ensureTables();
+  const { rows } = await pool.query(
+    `SELECT id, payment_id, amount, gateway_refund_id, created_at, status
+     FROM hospital_payment_refunds
+     WHERE hospital_id = $1 AND status IN ('pending_gateway','requested')
+       AND created_at < NOW() - ($2 || ' hours')::interval
+     ORDER BY created_at ASC`,
+    [hospitalId, String(olderThanHours)]
+  );
+  return rows;
+}
 export async function refundPayment(hospitalId, paymentId, refundAmount, ctx = {}, reason) {
   await ensureTables();
   const client = await pool.connect();
@@ -974,11 +1090,22 @@ export async function refundPayment(hospitalId, paymentId, refundAmount, ctx = {
     metadata: { refundAmount: result.refundAmount, gatewayRefundRequired: result.gatewayRefundRequired }, reason, req: ctx.req
   });
   // A gateway refund is only a request until the gateway confirms it; posting cash out before then
-  // would leave the ledger permanently wrong if the gateway rejects the refund.
-  if (!result.gatewayRefundRequired) {
-    result.ledger = await glPosting.postRefund(hospitalId, { ...result, paymentId }, ctx.actorId);
-  } else {
+  // would leave the ledger permanently wrong if the gateway rejects the refund. Ask the gateway now,
+  // and let confirmGatewayRefund() do the GL posting when the confirmation lands.
+  if (result.gatewayRefundRequired) {
+    try {
+      const requested = await requestGatewayRefund(hospitalId, result.refundId, ctx);
+      result.gatewayRefundId = requested.gateway_refund_id || null;
+      result.gatewayRefundStatus = requested.status;
+    } catch (e) {
+      // The refund row stays pending_gateway; an operator can retry or the stale-refund sweep will
+      // surface it. Losing the gateway call must not lose the refund record.
+      result.gatewayRequestError = e.message;
+      console.error('[billing] gateway refund request failed:', e.message);
+    }
     result.ledger = { posted: false, code: 'GATEWAY_REFUND_PENDING', error: 'Awaiting gateway refund confirmation before GL posting' };
+  } else {
+    result.ledger = await glPosting.postRefund(hospitalId, { ...result, paymentId }, ctx.actorId);
   }
   return result;
 }
@@ -1458,6 +1585,7 @@ export default {
   listTemplates, aggregatePatientAccount, getCentralizedDashboard, createInvoice, recordPayment,
   createPaymentLink, confirmPgiPayment, applyVerifiedPgiCapture, getInvoice, listInvoices, listPayments, generateInvoicePdf, listAuditLog,
   logBillingAudit, createAdjustment, voidInvoice, voidPayment, refundPayment,
+  requestGatewayRefund, confirmGatewayRefund, listStaleGatewayRefunds,
   reconcileSession, approveCreditAccount, allocatePayment, generatePatientStatement,
   listPatientStatements, deliverPatientStatement,
   closeBillingPeriod, getCfoDashboard, getRcmDashboard, getCeoDashboard,

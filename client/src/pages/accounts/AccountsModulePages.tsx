@@ -23,6 +23,8 @@ import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import hospitalBillingService from '@/services/hospital-billing.service';
 import hospitalFinanceService from '@/services/hospital-finance.service';
+import api from '@/lib/api';
+import { getHospitalHeaders } from '@/services/hospital.service';
 import { PlaceholderBanner } from '@/components/ui/placeholder-banner';
 
 const fmtInr = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -68,6 +70,7 @@ export const accountsNavSections: DeptNavSection[] = [
     title: 'Reports',
     items: [
       { icon: TrendingUp, label: 'Financial Reports', href: '/accounts/reports' },
+      { icon: Calendar,   label: 'Fiscal Periods',  href: '/accounts/fiscal-periods' },
       { icon: FileCheck,  label: 'Tax & Compliance',  href: '/accounts/tax-compliance' },
       { icon: BarChart3,  label: 'Analytics',         href: '/accounts/analytics' },
     ],
@@ -550,14 +553,116 @@ export const AccountsLedgerPage = () => (
 // ═══════════════════════════════════════════════════════════════════════════
 // 10. JOURNAL ENTRIES (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
+
+// Posted entries are never edited or deleted — a correction is an offsetting entry, so the
+// audit trail keeps both the original and the correction.
+const JournalEntriesInner = () => {
+  const [entries, setEntries] = useState<FinanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [target, setTarget] = useState<FinanceRow | null>(null);
+  const [reason, setReason] = useState('');
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await hospitalFinanceService.listJournalEntries();
+      setEntries(res.data || []); setError(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'The finance service is unavailable.'); setEntries([]);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const reverse = useCallback(async () => {
+    if (!target) return;
+    const trimmed = reason.trim();
+    if (!trimmed) { setActionError('A reason is required — a reversal without one cannot be audited.'); return; }
+    setBusy(String(target.id)); setActionError(null);
+    try {
+      await hospitalFinanceService.reverseJournalEntry(target.id as number, trimmed);
+      setTarget(null); setReason('');
+      await refresh();
+    } catch (e: any) {
+      setActionError(e?.response?.data?.message || 'The entry could not be reversed.');
+    } finally { setBusy(null); }
+  }, [target, reason, refresh]);
+
+  return (
+    <>
+      {actionError && <div className="mb-4"><ReportError message={actionError} onRetry={() => setActionError(null)} /></div>}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Journal Entries</CardTitle>
+            <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+              <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {error && <div className="mb-4"><ReportError message={error} onRetry={refresh} /></div>}
+          {loading ? <div className="py-10 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading entries…</div>
+            : entries.length === 0 && !error ? <div className="py-10 text-center text-sm text-muted-foreground">No journal entries have been posted yet.</div> : (
+              <div className="overflow-x-auto"><table className="w-full">
+                <thead><tr><TH>Entry</TH><TH>Date</TH><TH>Description</TH><TH>Source</TH><TH>Debit</TH><TH>Credit</TH><TH>Status</TH><TH>Action</TH></tr></thead>
+                <tbody>{entries.map((e) => {
+                  const reversible = String(e.status) === 'posted';
+                  return (
+                    <tr key={String(e.id)} className="border-t">
+                      <TD className="font-mono text-xs">{String(e.entry_number)}</TD>
+                      <TD>{String(e.entry_date)}</TD>
+                      <TD>{String(e.description)}</TD>
+                      <TD className="text-xs text-muted-foreground">{e.source_type ? `${e.source_type}${e.source_id ? ` #${e.source_id}` : ''}` : 'manual'}</TD>
+                      <TD className="text-right">{fmtInr(Number(e.total_debit))}</TD>
+                      <TD className="text-right">{fmtInr(Number(e.total_credit))}</TD>
+                      <TD><Bdg s={String(e.status)} /></TD>
+                      <TD>
+                        {reversible ? (
+                          <Button size="sm" variant="outline" onClick={() => { setTarget(e); setReason(''); setActionError(null); }}>
+                            <RefreshCw className="h-3.5 w-3.5" /> Reverse
+                          </Button>
+                        ) : <span className="text-xs text-muted-foreground">{e.reversal_of ? 'Reversing entry' : '—'}</span>}
+                      </TD>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            )}
+        </CardContent>
+      </Card>
+
+      {target && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="rev-title">
+          <div className="w-full max-w-md space-y-4 rounded-lg bg-white p-5 shadow-xl">
+            <h2 id="rev-title" className="text-base font-semibold">Reverse {String(target.entry_number)}</h2>
+            <p className="text-sm text-muted-foreground">
+              This posts an offsetting entry. The original is kept and marked reversed — nothing is deleted or edited.
+            </p>
+            <div>
+              <label className="mb-1 block text-xs font-medium" htmlFor="rev-reason">Reason (required)</label>
+              <Input id="rev-reason" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. posted to the wrong revenue account" className="h-9" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="outline" onClick={() => setTarget(null)}>Cancel</Button>
+              <Button size="sm" variant="destructive" onClick={reverse} disabled={busy === String(target.id)}>
+                {busy === String(target.id) ? 'Reversing…' : 'Post reversal'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 export const AccountsJournalEntriesPage = () => (
-  <LiveFinancePage
-    title="Journal Entries"
-    subtitle="Balanced, auditable manual journal postings"
-    load={() => hospitalFinanceService.listJournalEntries()}
-    columns={['Entry', 'Date', 'Description', 'Debit', 'Credit', 'Status']}
-    renderRow={(row) => <><TD>{String(row.entry_number ?? '—')}</TD><TD>{String(row.entry_date ?? '—')}</TD><TD>{String(row.description ?? '—')}</TD><TD>{fmtInr(Number(row.total_debit))}</TD><TD>{fmtInr(Number(row.total_credit))}</TD><TD><Bdg s={String(row.status ?? 'posted')} /></TD></>}
-  />
+  <Wrap title="Journal Entries" subtitle="Posted, auditable ledger entries">
+    <div className="space-y-4"><JournalEntriesInner /></div>
+  </Wrap>
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -576,8 +681,324 @@ export const AccountsChartOfAccountsPage = () => (
 // ═══════════════════════════════════════════════════════════════════════════
 // 12. FINANCIAL REPORTS
 // ═══════════════════════════════════════════════════════════════════════════
-export const AccountsReportsPage = () => (
-  <NotAvailablePage title="Financial Reports" subtitle="P&L, balance sheet & MIS" needs="an expense ledger and chart of accounts (P&L and balance sheet cannot be computed from billing alone)" />
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+const firstOfMonth = () => `${todayStr().slice(0, 7)}-01`;
+type ReportPayload = { data?: Record<string, unknown> };
+
+/** Shared date-range bar. A report without a stated window is not interpretable. */
+const RangeBar = ({ from, to, onChange, onRefresh, busy, children }: {
+  from: string; to: string; onChange: (next: { from: string; to: string }) => void;
+  onRefresh: () => void; busy: boolean; children?: React.ReactNode;
+}) => (
+  <div className="flex flex-wrap items-end gap-3">
+    <div>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="fin-from">From</label>
+      <Input id="fin-from" type="date" value={from} max={to} onChange={(e) => onChange({ from: e.target.value, to })} className="h-9 w-40" />
+    </div>
+    <div>
+      <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="fin-to">To</label>
+      <Input id="fin-to" type="date" value={to} min={from} onChange={(e) => onChange({ from, to: e.target.value })} className="h-9 w-40" />
+    </div>
+    <Button size="sm" onClick={onRefresh} disabled={busy}>
+      <RefreshCw className={busy ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Run report
+    </Button>
+    {children}
+  </div>
+);
+
+const ReportError = ({ message, onRetry }: { message: string; onRetry: () => void }) => (
+  <div className="flex items-center justify-between rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <span>{message}</span>
+    <Button size="sm" variant="outline" onClick={onRetry}>Retry</Button>
+  </div>
+);
+
+const AmountRow = ({ label, value, bold }: { label: string; value: number; bold?: boolean }) => (
+  <tr className={bold ? 'border-t-2 border-slate-300 font-semibold' : 'border-t'}>
+    <TD className={bold ? 'font-semibold' : ''}>{label}</TD>
+    <TD className={bold ? 'text-right font-semibold' : 'text-right'}>{fmtInr(value)}</TD>
+  </tr>
+);
+
+export const AccountsReportsPage = () => {
+  const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'tax'>('tb');
+  const [from, setFrom] = useState(firstOfMonth());
+  const [to, setTo] = useState(todayStr());
+  const [asOf, setAsOf] = useState(todayStr());
+  const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+
+  const run = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await (
+        tab === 'tb' ? hospitalFinanceService.trialBalance({ from, to })
+          : tab === 'pl' ? hospitalFinanceService.profitAndLoss({ from, to })
+            : tab === 'bs' ? hospitalFinanceService.balanceSheet({ asOf })
+              : hospitalFinanceService.taxSummary({ from, to })
+      );
+      setPayload((res as ReportPayload)?.data ?? null);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'The finance service is unavailable.');
+      setPayload(null);
+    } finally { setLoading(false); }
+  }, [tab, from, to, asOf]);
+
+  useEffect(() => { run(); }, [run]);
+
+  // The CSV endpoint needs the hospital auth header, so a bare <a href> would 401. Fetch it as a
+  // blob and hand the browser a real download instead.
+  const downloadCsv = useCallback(async () => {
+    setDownloading(true); setError(null);
+    try {
+      const res = await api.get(hospitalFinanceService.ledgerCsvUrl({ from, to }), {
+        headers: getHospitalHeaders(), responseType: 'blob',
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = `trial-balance-${from}-${to}.csv`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'The export failed.');
+    } finally { setDownloading(false); }
+  }, [from, to]);
+
+  const data = payload ?? {};
+  const lines = (data.lines ?? []) as Record<string, unknown>[];
+  const income = (data.income ?? []) as Record<string, unknown>[];
+  const expense = (data.expense ?? []) as Record<string, unknown>[];
+  const assets = (data.assets ?? []) as Record<string, unknown>[];
+  const liabilities = (data.liabilities ?? []) as Record<string, unknown>[];
+  const byTaxCode = (data.byTaxCode ?? []) as Record<string, unknown>[];
+  const balancedBadge = (ok: unknown) => (
+    <Badge variant={ok ? 'default' : 'destructive'} className="ml-2">{ok ? 'Balanced' : 'Out of balance'}</Badge>
+  );
+
+  return (
+    <Wrap title="Financial Reports" subtitle="Posted ledger figures for a stated period">
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-base">Reporting window</CardTitle></CardHeader>
+          <CardContent>
+            <RangeBar from={from} to={to} onChange={({ from: f, to: t }) => { setFrom(f); setTo(t); }} onRefresh={run} busy={loading}>
+              <Button size="sm" variant="outline" onClick={downloadCsv} disabled={downloading}>
+                <Download className="h-4 w-4" /> {downloading ? 'Preparing…' : 'Export CSV'}
+              </Button>
+            </RangeBar>
+            {tab === 'bs' && (
+              <div className="mt-3">
+                <label className="mb-1 block text-xs font-medium text-muted-foreground" htmlFor="fin-asof">Balance as of</label>
+                <Input id="fin-asof" type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} className="h-9 w-40" />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {error && <ReportError message={error} onRetry={run} />}
+
+        <Card>
+          <CardHeader className="pb-3">
+            <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+              <TabsList>
+                <TabsTrigger value="tb">Trial Balance</TabsTrigger>
+                <TabsTrigger value="pl">Profit &amp; Loss</TabsTrigger>
+                <TabsTrigger value="bs">Balance Sheet</TabsTrigger>
+                <TabsTrigger value="tax">Tax Summary</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </CardHeader>
+          <CardContent>
+            {loading ? (
+              <div className="py-10 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Calculating…</div>
+            ) : !payload ? (
+              <div className="py-10 text-center text-sm text-muted-foreground">Run a report to see figures.</div>
+            ) : tab === 'tb' ? (
+              <>
+                <p className="mb-3 text-sm text-muted-foreground">Trial balance {balancedBadge(data.balanced)}</p>
+                {lines.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No postings in this window.</p> : (
+                  <div className="overflow-x-auto"><table className="w-full">
+                    <thead><tr><TH>Code</TH><TH>Account</TH><TH>Type</TH><TH>Debit</TH><TH>Credit</TH><TH>Net</TH></tr></thead>
+                    <tbody>{lines.map((l) => (
+                      <tr key={String(l.id)} className="border-t">
+                        <TD className="font-mono text-xs">{String(l.account_code)}</TD>
+                        <TD>{String(l.account_name)}</TD>
+                        <TD className="text-muted-foreground">{String(l.account_type)}</TD>
+                        <TD className="text-right">{fmtInr(Number(l.debit))}</TD>
+                        <TD className="text-right">{fmtInr(Number(l.credit))}</TD>
+                        <TD className="text-right font-medium">{fmtInr(Number(l.net))}</TD>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>
+                )}
+              </>
+            ) : tab === 'pl' ? (
+              <>
+                <p className="mb-2 text-sm font-semibold">Income</p>
+                <table className="w-full"><tbody>{income.map((a) => <AmountRow key={String(a.id)} label={`${a.account_code} — ${a.account_name}`} value={Number(a.credit) - Number(a.debit)} />)}</tbody></table>
+                <p className="mb-2 mt-4 text-sm font-semibold">Expense</p>
+                <table className="w-full"><tbody>{expense.map((a) => <AmountRow key={String(a.id)} label={`${a.account_code} — ${a.account_name}`} value={Number(a.debit) - Number(a.credit)} />)}</tbody></table>
+                <table className="mt-2 w-full"><tbody><AmountRow label="Net profit" value={Number(data.netProfit)} bold /></tbody></table>
+              </>
+            ) : tab === 'bs' ? (
+              <>
+                <p className="mb-3 text-sm text-muted-foreground">As of {String(data.asOf)} {balancedBadge(data.balanced)}</p>
+                <p className="mb-2 text-sm font-semibold">Assets</p>
+                <table className="w-full"><tbody>{assets.map((a) => <AmountRow key={String(a.id)} label={`${a.account_code} — ${a.account_name}`} value={Number(a.debit) - Number(a.credit)} />)}<AmountRow label="Total assets" value={Number(data.totalAssets)} bold /></tbody></table>
+                <p className="mb-2 mt-4 text-sm font-semibold">Liabilities</p>
+                <table className="w-full"><tbody>{liabilities.map((a) => <AmountRow key={String(a.id)} label={`${a.account_code} — ${a.account_name}`} value={Number(a.credit) - Number(a.debit)} />)}<AmountRow label="Total liabilities" value={Number(data.totalLiabilities)} bold /></tbody></table>
+                <table className="mt-4 w-full"><tbody><AmountRow label="Total equity" value={Number(data.totalEquity)} bold /></tbody></table>
+              </>
+            ) : (
+              <>
+                {byTaxCode.length === 0 ? <p className="py-6 text-center text-sm text-muted-foreground">No expensed tax-coded entries in this window.</p> : (
+                  <div className="overflow-x-auto"><table className="w-full">
+                    <thead><tr><TH>Tax code</TH><TH>Taxable value</TH><TH>Tax</TH><TH>Entries</TH></tr></thead>
+                    <tbody>{byTaxCode.map((t) => (
+                      <tr key={String(t.tax_code)} className="border-t">
+                        <TD className="font-mono text-xs">{String(t.tax_code)}</TD>
+                        <TD className="text-right">{fmtInr(Number(t.taxable_value))}</TD>
+                        <TD className="text-right font-medium">{fmtInr(Number(t.tax_amount))}</TD>
+                        <TD className="text-right text-muted-foreground">{String(t.entries)}</TD>
+                      </tr>
+                    ))}</tbody>
+                    <tfoot><tr className="border-t-2"><TH>Total input tax</TH><TD /><TD className="text-right font-semibold">{fmtInr(Number(data.totalTax))}</TD><TD /></tr></tfoot>
+                  </table></div>
+                )}
+                {typeof data.note === 'string' && (
+                  <p className="mt-3 flex items-start gap-2 text-xs text-amber-700"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />{String(data.note)}</p>
+                )}
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </Wrap>
+  );
+};
+
+const FiscalPeriodsInner = () => {
+  const [periods, setPeriods] = useState<FinanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [draft, setDraft] = useState({ period_code: '', start_date: '', end_date: '' });
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await hospitalFinanceService.listFiscalPeriods();
+      setPeriods(res.data || []); setError(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'The finance service is unavailable.'); setPeriods([]);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const create = useCallback(async () => {
+    setBusy('create'); setActionError(null);
+    try {
+      await hospitalFinanceService.createFiscalPeriod(draft);
+      setShowCreate(false); setDraft({ period_code: '', start_date: '', end_date: '' });
+      await refresh();
+    } catch (e: any) {
+      setActionError(e?.response?.data?.message || 'The period could not be created.');
+    } finally { setBusy(null); }
+  }, [draft, refresh]);
+
+  // Closing is irreversible from this screen, so it must be deliberate and must say what it costs.
+  const close = useCallback(async (code: string) => {
+    if (!window.confirm(`Close period ${code}? Nothing further can be posted into it. Existing entries are left exactly as they are — a mistake will need a reversing entry in an open period.`)) return;
+    setBusy(code); setActionError(null);
+    try {
+      await hospitalFinanceService.closeFiscalPeriod(code);
+      await refresh();
+    } catch (e: any) {
+      setActionError(e?.response?.data?.message || 'The period could not be closed.');
+    } finally { setBusy(null); }
+  }, [refresh]);
+
+  return (
+    <>
+      {actionError && <div className="mb-4"><ReportError message={actionError} onRetry={() => setActionError(null)} /></div>}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Periods</CardTitle>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+                <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Refresh
+              </Button>
+              <Button size="sm" onClick={() => setShowCreate((v) => !v)}>
+                <PlusCircle className="h-4 w-4" /> New period
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {showCreate && (
+            <div className="grid gap-3 rounded-lg border bg-slate-50 p-4 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="fp-code">Code</label>
+                <Input id="fp-code" value={draft.period_code} onChange={(e) => setDraft({ ...draft, period_code: e.target.value })} placeholder="2026-05" className="h-9" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="fp-start">Start</label>
+                <Input id="fp-start" type="date" value={draft.start_date} onChange={(e) => setDraft({ ...draft, start_date: e.target.value })} className="h-9" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="fp-end">End</label>
+                <Input id="fp-end" type="date" value={draft.end_date} min={draft.start_date} onChange={(e) => setDraft({ ...draft, end_date: e.target.value })} className="h-9" />
+              </div>
+              <div className="sm:col-span-3">
+                <Button size="sm" onClick={create} disabled={busy === 'create' || !draft.period_code || !draft.start_date || !draft.end_date}>
+                  {busy === 'create' ? 'Creating…' : 'Create period'}
+                </Button>
+              </div>
+            </div>
+          )}
+          {error && <ReportError message={error} onRetry={refresh} />}
+          {loading ? <div className="py-10 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading periods…</div>
+            : periods.length === 0 && !error ? <div className="py-10 text-center text-sm text-muted-foreground">No fiscal periods exist yet. Create one before posting to the ledger.</div> : (
+              <div className="overflow-x-auto"><table className="w-full">
+                <thead><tr><TH>Code</TH><TH>Start</TH><TH>End</TH><TH>Status</TH><TH>Closed</TH><TH>Action</TH></tr></thead>
+                <tbody>{periods.map((p) => {
+                  const closed = String(p.status) === 'closed';
+                  return (
+                    <tr key={String(p.id)} className="border-t">
+                      <TD className="font-mono text-xs">{String(p.period_code)}</TD>
+                      <TD>{String(p.start_date)}</TD>
+                      <TD>{String(p.end_date)}</TD>
+                      <TD><Bdg s={closed ? 'closed' : 'open'} /></TD>
+                      <TD className="text-muted-foreground">{p.closed_at ? String(p.closed_at).slice(0, 16).replace('T', ' ') : '—'}</TD>
+                      <TD>
+                        {closed ? <span className="text-xs text-muted-foreground">Posting closed</span> : (
+                          <Button size="sm" variant="outline" onClick={() => close(String(p.period_code))} disabled={busy === String(p.period_code)}>
+                            {busy === String(p.period_code) ? 'Closing…' : 'Close period'}
+                          </Button>
+                        )}
+                      </TD>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            )}
+        </CardContent>
+      </Card>
+    </>
+  );
+};
+
+export const AccountsFiscalPeriodsPage = () => (
+  <Wrap title="Fiscal Periods" subtitle="Accounting periods and their posting status">
+    <div className="space-y-4"><FiscalPeriodsInner /></div>
+  </Wrap>
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
