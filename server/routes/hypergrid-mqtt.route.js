@@ -16,11 +16,12 @@ import crypto  from 'crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { connectPostgres }        from '../db/postgres.js';
 import { getMqttStats }           from '../services/hypergrid-mqtt.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router = express.Router();
 
 // ── Register a new device ────────────────────────────────────────────────────
-router.post('/devices', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/devices', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { name, deviceType, serialNumber, manufacturer, model, location, gatewayId } = req.body;
     if (!name || !deviceType) return res.status(400).json({ success: false, message: 'name and deviceType required' });
@@ -38,7 +39,7 @@ router.post('/devices', authUser, requireRole(['admin', 'hospital']), async (req
        RETURNING id, name, device_type, device_key, active, created_at`,
       [name, deviceType, serialNumber || null, manufacturer || null,
        model || null, location || null, gatewayId || null,
-       deviceKey, apiSecret, req.user.tenantId || req.user.id]
+       deviceKey, apiSecret, req.hgTenantId]
     );
 
     res.status(201).json({
@@ -57,10 +58,10 @@ router.post('/devices', authUser, requireRole(['admin', 'hospital']), async (req
 });
 
 // ── List devices ─────────────────────────────────────────────────────────────
-router.get('/devices', authUser, async (req, res) => {
+router.get('/devices', authUser, requireHgTenant, async (req, res) => {
   try {
     const { type, gatewayId, page = 1, limit = 50 } = req.query;
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const offset   = (parseInt(page) - 1) * parseInt(limit);
     const pool     = await connectPostgres();
     const r = await pool.query(
@@ -86,14 +87,14 @@ router.get('/devices', authUser, async (req, res) => {
 });
 
 // ── Get device ───────────────────────────────────────────────────────────────
-router.get('/devices/:id', authUser, async (req, res) => {
+router.get('/devices/:id', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     const r = await pool.query(
       `SELECT id, name, device_type, serial_number, manufacturer, model,
               location, gateway_id, device_key, active, created_at, last_seen
        FROM hg_devices WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Device not found' });
     res.json({ success: true, device: r.rows[0] });
@@ -103,7 +104,7 @@ router.get('/devices/:id', authUser, async (req, res) => {
 });
 
 // ── Update device ─────────────────────────────────────────────────────────────
-router.put('/devices/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.put('/devices/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { name, location, model, manufacturer, gatewayId } = req.body;
     const pool = await connectPostgres();
@@ -117,7 +118,7 @@ router.put('/devices/:id', authUser, requireRole(['admin', 'hospital']), async (
            updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2
        RETURNING id, name, device_type, location, model, gateway_id, active`,
-      [req.params.id, req.user.tenantId || req.user.id,
+      [req.params.id, req.hgTenantId,
        name || null, location || null, model || null, manufacturer || null, gatewayId || null]
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Device not found' });
@@ -128,13 +129,13 @@ router.put('/devices/:id', authUser, requireRole(['admin', 'hospital']), async (
 });
 
 // ── Deactivate device ─────────────────────────────────────────────────────────
-router.delete('/devices/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.delete('/devices/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await pool.query(
       `UPDATE hg_devices SET active = FALSE, updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     res.json({ success: true, message: 'Device deactivated' });
   } catch (err) {
@@ -143,14 +144,14 @@ router.delete('/devices/:id', authUser, requireRole(['admin', 'hospital']), asyn
 });
 
 // ── Rotate API key ────────────────────────────────────────────────────────────
-router.post('/devices/:id/rotate-key', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/devices/:id/rotate-key', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const newSecret = crypto.randomBytes(24).toString('hex');
     const pool = await connectPostgres();
     await pool.query(
       `UPDATE hg_devices SET api_secret = $3, updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id, newSecret]
+      [req.params.id, req.hgTenantId, newSecret]
     );
     res.json({ success: true, newSecret, note: 'Update the device firmware with this new secret.' });
   } catch (err) {
@@ -165,11 +166,11 @@ router.get('/broker/stats', authUser, requireRole(['admin']), (req, res) => {
 });
 
 // ── Recent readings ───────────────────────────────────────────────────────────
-router.get('/readings', authUser, async (req, res) => {
+router.get('/readings', authUser, requireHgTenant, async (req, res) => {
   try {
     const { deviceId, eventType, limit = 50 } = req.query;
     const pool     = await connectPostgres();
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const r = await pool.query(
       `SELECT r.* FROM hg_device_readings r
        JOIN hg_devices d ON d.device_key = r.gateway_id OR d.id::text = r.device_id

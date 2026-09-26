@@ -23,12 +23,13 @@ import crypto  from 'crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { connectPostgres }       from '../db/postgres.js';
 import { publishEvent }          from '../services/hypergrid-event-bus.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router          = express.Router();
 const HEARTBEAT_GRACE = parseInt(process.env.EDGE_HEARTBEAT_GRACE || '300', 10); // 5 min
 
 // ── Register gateway ──────────────────────────────────────────────────────────
-router.post('/gateways', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/gateways', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { name, location, facilityId, model, firmwareVersion, capabilities } = req.body;
     if (!name || !facilityId)
@@ -47,7 +48,7 @@ router.post('/gateways', authUser, requireRole(['admin', 'hospital']), async (re
       [name, location || null, facilityId, model || null, firmwareVersion || null,
        JSON.stringify(capabilities || {}), gatewayKey,
        crypto.createHash('sha256').update(gatewaySecret).digest('hex'),
-       req.user.tenantId || req.user.id]
+       req.hgTenantId]
     );
 
     res.status(201).json({
@@ -70,7 +71,7 @@ router.post('/gateways', authUser, requireRole(['admin', 'hospital']), async (re
 });
 
 // ── List gateways ─────────────────────────────────────────────────────────────
-router.get('/gateways', authUser, async (req, res) => {
+router.get('/gateways', authUser, requireHgTenant, async (req, res) => {
   try {
     const { status, facilityId } = req.query;
     const pool = await connectPostgres();
@@ -82,7 +83,7 @@ router.get('/gateways', authUser, async (req, res) => {
          AND ($2::text  IS NULL OR status      = $2)
          AND ($3::text  IS NULL OR facility_id = $3)
        ORDER BY created_at DESC`,
-      [req.user.tenantId || req.user.id, status || null, facilityId || null]
+      [req.hgTenantId, status || null, facilityId || null]
     );
     res.json({ success: true, gateways: r.rows });
   } catch (err) {
@@ -91,14 +92,14 @@ router.get('/gateways', authUser, async (req, res) => {
 });
 
 // ── Get gateway detail ────────────────────────────────────────────────────────
-router.get('/gateways/:id', authUser, async (req, res) => {
+router.get('/gateways/:id', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     const r    = await pool.query(
       `SELECT id, name, location, facility_id, model, firmware_version,
               capabilities, status, last_seen, config, created_at
        FROM hg_edge_gateways WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Gateway not found' });
     res.json({ success: true, gateway: r.rows[0] });
@@ -108,7 +109,7 @@ router.get('/gateways/:id', authUser, async (req, res) => {
 });
 
 // ── Update gateway metadata ───────────────────────────────────────────────────
-router.patch('/gateways/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.patch('/gateways/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { name, location, model, firmwareVersion } = req.body;
     const pool = await connectPostgres();
@@ -120,7 +121,7 @@ router.patch('/gateways/:id', authUser, requireRole(['admin', 'hospital']), asyn
            firmware_version = COALESCE($6, firmware_version),
            updated_at       = NOW()
        WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id, name || null, location || null,
+      [req.params.id, req.hgTenantId, name || null, location || null,
        model || null, firmwareVersion || null]
     );
     res.json({ success: true });
@@ -130,13 +131,13 @@ router.patch('/gateways/:id', authUser, requireRole(['admin', 'hospital']), asyn
 });
 
 // ── Decommission gateway ──────────────────────────────────────────────────────
-router.delete('/gateways/:id', authUser, requireRole(['admin']), async (req, res) => {
+router.delete('/gateways/:id', authUser, requireRole(['admin']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await pool.query(
       `UPDATE hg_edge_gateways SET status = 'decommissioned', updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     res.json({ success: true });
   } catch (err) {
@@ -218,7 +219,7 @@ router.get('/gateways/:id/config', async (req, res) => {
 });
 
 // ── Push config ───────────────────────────────────────────────────────────────
-router.put('/gateways/:id/config', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.put('/gateways/:id/config', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { config } = req.body;
     if (!config || typeof config !== 'object')
@@ -227,7 +228,7 @@ router.put('/gateways/:id/config', authUser, requireRole(['admin', 'hospital']),
     const pool = await connectPostgres();
     await pool.query(
       `UPDATE hg_edge_gateways SET config = $2, updated_at = NOW() WHERE id = $1 AND tenant_id = $3`,
-      [req.params.id, JSON.stringify(config), req.user.tenantId || req.user.id]
+      [req.params.id, JSON.stringify(config), req.hgTenantId]
     );
     res.json({ success: true, message: 'Config will be delivered on next gateway poll.' });
   } catch (err) {

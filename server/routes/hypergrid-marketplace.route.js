@@ -30,6 +30,7 @@ import express from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { connectPostgres }       from '../db/postgres.js';
 import { publishEvent }          from '../services/hypergrid-event-bus.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router = express.Router();
 
@@ -126,10 +127,10 @@ router.post('/apps/:id/review', authUser, requireRole(['admin']), async (req, re
   }
 });
 
-router.post('/apps/:id/install', authUser, async (req, res) => {
+router.post('/apps/:id/install', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool     = await connectPostgres();
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     await pool.query(
       `INSERT INTO hg_app_installs (app_id, tenant_id, installed_by, installed_at)
        VALUES ($1,$2,$3,NOW()) ON CONFLICT (app_id, tenant_id) DO NOTHING`,
@@ -149,12 +150,12 @@ router.post('/apps/:id/install', authUser, async (req, res) => {
   }
 });
 
-router.delete('/apps/:id/install', authUser, async (req, res) => {
+router.delete('/apps/:id/install', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await pool.query(
       `DELETE FROM hg_app_installs WHERE app_id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     res.json({ success: true });
   } catch (err) {

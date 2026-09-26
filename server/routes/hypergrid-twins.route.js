@@ -23,13 +23,14 @@ import {
   computeRisk,
   getTwinTimeline,
 } from '../services/hypergrid-twins.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router = express.Router();
 
 const TWIN_TYPES = ['device', 'patient', 'asset', 'hospital', 'claim', 'ambulance'];
 
 // ── Create / upsert twin ──────────────────────────────────────────────────────
-router.post('/', authUser, async (req, res) => {
+router.post('/', authUser, requireHgTenant, async (req, res) => {
   try {
     const { twinType, externalId, attributes, location } = req.body;
     if (!twinType || !externalId)
@@ -40,7 +41,7 @@ router.post('/', authUser, async (req, res) => {
     const twin = await upsertTwin({
       twinType,
       externalId,
-      tenantId:   req.user.tenantId || req.user.id,
+      tenantId:   req.hgTenantId,
       attributes: attributes || {},
       location:   location   || null,
     });
@@ -52,13 +53,13 @@ router.post('/', authUser, async (req, res) => {
 });
 
 // ── List twins ────────────────────────────────────────────────────────────────
-router.get('/', authUser, async (req, res) => {
+router.get('/', authUser, requireHgTenant, async (req, res) => {
   try {
     const { type, limit = 50, page = 1 } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const twins  = await listTwins({
       twinType:  type     || null,
-      tenantId:  req.user.tenantId || req.user.id,
+      tenantId:  req.hgTenantId,
       limit:     parseInt(limit),
       offset,
     });
@@ -86,12 +87,12 @@ router.get('/summary', authUser, requireRole(['admin']), async (req, res) => {
 });
 
 // ── Get twin ──────────────────────────────────────────────────────────────────
-router.get('/:type/:externalId', authUser, async (req, res) => {
+router.get('/:type/:externalId', authUser, requireHgTenant, async (req, res) => {
   try {
     const twin = await getTwin(
       req.params.type,
       req.params.externalId,
-      req.user.tenantId || req.user.id
+      req.hgTenantId
     );
     if (!twin) return res.status(404).json({ success: false, message: 'Twin not found' });
     res.json({ success: true, twin });
@@ -101,13 +102,13 @@ router.get('/:type/:externalId', authUser, async (req, res) => {
 });
 
 // ── Update twin attributes ────────────────────────────────────────────────────
-router.patch('/:type/:externalId', authUser, async (req, res) => {
+router.patch('/:type/:externalId', authUser, requireHgTenant, async (req, res) => {
   try {
     const { attributes, location } = req.body;
     const twin = await upsertTwin({
       twinType:   req.params.type,
       externalId: req.params.externalId,
-      tenantId:   req.user.tenantId || req.user.id,
+      tenantId:   req.hgTenantId,
       attributes: attributes || {},
       location:   location   || null,
     });
@@ -118,13 +119,13 @@ router.patch('/:type/:externalId', authUser, async (req, res) => {
 });
 
 // ── Delete twin ───────────────────────────────────────────────────────────────
-router.delete('/:type/:externalId', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.delete('/:type/:externalId', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await pool.query(
       `DELETE FROM hg_digital_twins
        WHERE twin_type = $1 AND external_id = $2 AND tenant_id = $3`,
-      [req.params.type, req.params.externalId, req.user.tenantId || req.user.id]
+      [req.params.type, req.params.externalId, req.hgTenantId]
     );
     res.json({ success: true });
   } catch (err) {
@@ -133,7 +134,7 @@ router.delete('/:type/:externalId', authUser, requireRole(['admin', 'hospital'])
 });
 
 // ── Push observation ──────────────────────────────────────────────────────────
-router.post('/:type/:externalId/observations', authUser, async (req, res) => {
+router.post('/:type/:externalId/observations', authUser, requireHgTenant, async (req, res) => {
   try {
     const { observationType, value, unit, metadata } = req.body;
     if (!observationType || value === undefined)
@@ -142,7 +143,7 @@ router.post('/:type/:externalId/observations', authUser, async (req, res) => {
     await pushObservation({
       twinType:        req.params.type,
       externalId:      req.params.externalId,
-      tenantId:        req.user.tenantId || req.user.id,
+      tenantId:        req.hgTenantId,
       observationType,
       value,
       unit:            unit     || null,
@@ -156,13 +157,13 @@ router.post('/:type/:externalId/observations', authUser, async (req, res) => {
 });
 
 // ── Timeline ──────────────────────────────────────────────────────────────────
-router.get('/:type/:externalId/timeline', authUser, async (req, res) => {
+router.get('/:type/:externalId/timeline', authUser, requireHgTenant, async (req, res) => {
   try {
     const { from, to, limit = 100 } = req.query;
     const rows = await getTwinTimeline({
       twinType:   req.params.type,
       externalId: req.params.externalId,
-      tenantId:   req.user.tenantId || req.user.id,
+      tenantId:   req.hgTenantId,
       from:       from  || null,
       to:         to    || null,
       limit:      parseInt(limit),
@@ -174,12 +175,12 @@ router.get('/:type/:externalId/timeline', authUser, async (req, res) => {
 });
 
 // ── Risk score ────────────────────────────────────────────────────────────────
-router.get('/:type/:externalId/risk', authUser, async (req, res) => {
+router.get('/:type/:externalId/risk', authUser, requireHgTenant, async (req, res) => {
   try {
     const risk = await computeRisk(
       req.params.type,
       req.params.externalId,
-      req.user.tenantId || req.user.id
+      req.hgTenantId
     );
     res.json({ success: true, risk });
   } catch (err) {

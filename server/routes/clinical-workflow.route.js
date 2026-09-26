@@ -12,13 +12,16 @@ import { createCodingSuggestions } from '../services/clinical-intelligence.servi
 import { draftSoapNote } from '../services/healthcare-ai-opportunity.service.js';
 import {
   createClinicalNote,
-  listClinicalNotes,
+  listClinicalNotesForDoctor,
   updateClinicalNote,
   signClinicalNote,
   getClinicalNoteById,
 } from '../services/clinical-notes.service.js';
 
 const router = express.Router();
+
+// The hospital a hospital-employed doctor belongs to (null for independent doctors).
+const doctorOrgId = (req) => req.doctor?.hospital_id ?? req.doctor?.organization_id ?? null;
 
 // Create/Update Clinical Note
 router.post('/notes', authDoctor, async (req, res) => {
@@ -196,7 +199,9 @@ router.post('/notes/draft-from-transcript', authDoctor, async (req, res) => {
 // Get Clinical Notes for Patient
 router.get('/notes/patient/:patientId', authDoctor, async (req, res) => {
   try {
-    const notes = await listClinicalNotes({
+    const notes = await listClinicalNotesForDoctor({
+      doctorId: req.doctor.id,
+      doctorOrganizationId: doctorOrgId(req),
       patientId: Number(req.params.patientId),
       admissionId: req.query.admissionId ? Number(req.query.admissionId) : undefined,
       limit: req.query.limit,
@@ -218,7 +223,9 @@ router.get('/notes/patient/:patientId', authDoctor, async (req, res) => {
 // Get Clinical Notes for Admission (IPD ward rounds)
 router.get('/notes/admission/:admissionId', authDoctor, async (req, res) => {
   try {
-    const notes = await listClinicalNotes({
+    const notes = await listClinicalNotesForDoctor({
+      doctorId: req.doctor.id,
+      doctorOrganizationId: doctorOrgId(req),
       admissionId: Number(req.params.admissionId),
       limit: req.query.limit,
     });

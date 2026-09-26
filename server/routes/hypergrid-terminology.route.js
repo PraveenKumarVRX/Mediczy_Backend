@@ -18,6 +18,7 @@ import {
   batchResolve,
   registerLocalCode,
 } from '../services/hypergrid-terminology.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ router.post('/resolve/batch', authUser, async (req, res) => {
 });
 
 // ── Register local code mapping ───────────────────────────────────────────────
-router.post('/codes', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/codes', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { sourceCode, sourceSystem, display, snomedCode,
             snomedDisplay, icd10, icd11, loinc, rxnorm } = req.body;
@@ -80,7 +81,7 @@ router.post('/codes', authUser, requireRole(['admin', 'hospital']), async (req, 
       icd11:  icd11  || null,
       loinc:  loinc  || null,
       rxnorm: rxnorm || null,
-      tenantId: req.user.tenantId || req.user.id,
+      tenantId: req.hgTenantId,
     });
     res.status(201).json({ success: true, message: 'Code mapping registered' });
   } catch (err) {
@@ -90,10 +91,10 @@ router.post('/codes', authUser, requireRole(['admin', 'hospital']), async (req, 
 });
 
 // ── List custom mappings ──────────────────────────────────────────────────────
-router.get('/codes', authUser, async (req, res) => {
+router.get('/codes', authUser, requireHgTenant, async (req, res) => {
   try {
     const { system, limit = 50, page = 1 } = req.query;
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const offset   = (parseInt(page) - 1) * parseInt(limit);
     const pool     = await connectPostgres();
     const r = await pool.query(
@@ -110,12 +111,12 @@ router.get('/codes', authUser, async (req, res) => {
 });
 
 // ── Delete custom mapping ─────────────────────────────────────────────────────
-router.delete('/codes/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.delete('/codes/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await pool.query(
       `DELETE FROM hg_code_map WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     res.json({ success: true, message: 'Mapping deleted' });
   } catch (err) {

@@ -12,11 +12,12 @@ import express from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { connectPostgres }       from '../db/postgres.js';
 import { publishEvent, getEventBusStatus } from '../services/hypergrid-event-bus.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router = express.Router();
 
 // ── Publish event ─────────────────────────────────────────────────────────────
-router.post('/', authUser, async (req, res) => {
+router.post('/', authUser, requireHgTenant, async (req, res) => {
   try {
     const { type, source, patientId, payload } = req.body;
     if (!type) return res.status(400).json({ success: false, message: 'type is required' });
@@ -24,7 +25,7 @@ router.post('/', authUser, async (req, res) => {
     const event = await publishEvent({
       type,
       source:    source || 'api',
-      tenantId:  req.user.tenantId || req.user.id,
+      tenantId:  req.hgTenantId,
       patientId: patientId || null,
       payload:   payload  || {},
     });
@@ -47,10 +48,10 @@ router.post('/', authUser, async (req, res) => {
 });
 
 // ── Query events ──────────────────────────────────────────────────────────────
-router.get('/', authUser, async (req, res) => {
+router.get('/', authUser, requireHgTenant, async (req, res) => {
   try {
     const { type, patientId, from, to, limit = 100, page = 1 } = req.query;
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const offset   = (parseInt(page) - 1) * parseInt(limit);
     const pool     = await connectPostgres();
     const r = await pool.query(
@@ -73,7 +74,7 @@ router.get('/', authUser, async (req, res) => {
 });
 
 // ── Event type catalogue ──────────────────────────────────────────────────────
-router.get('/types', authUser, async (req, res) => {
+router.get('/types', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     const r = await pool.query(
@@ -81,7 +82,7 @@ router.get('/types', authUser, async (req, res) => {
        FROM hg_event_store
        WHERE tenant_id = $1
        GROUP BY event_type ORDER BY count DESC`,
-      [req.user.tenantId || req.user.id]
+      [req.hgTenantId]
     );
     res.json({ success: true, types: r.rows });
   } catch (err) {
@@ -95,12 +96,12 @@ router.get('/bus/status', authUser, requireRole(['admin']), (req, res) => {
 });
 
 // ── Replay events ─────────────────────────────────────────────────────────────
-router.post('/replay', authUser, requireRole(['admin']), async (req, res) => {
+router.post('/replay', authUser, requireRole(['admin']), requireHgTenant, async (req, res) => {
   try {
     const { from, to, type, limit = 500 } = req.body;
     if (!from) return res.status(400).json({ success: false, message: 'from is required' });
     const pool     = await connectPostgres();
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const r = await pool.query(
       `SELECT * FROM hg_event_store
        WHERE tenant_id = $1
