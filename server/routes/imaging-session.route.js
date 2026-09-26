@@ -6,7 +6,7 @@
  * DELETE /api/imaging/session        — clear cookie
  */
 import express from 'express';
-import { resolveImagingTenantId } from '../utils/tenant-identity.js';
+import { resolveImagingTenant, ensureLabTenant } from '../services/imaging-tenant.service.js';
 import jwt from 'jsonwebtoken';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLab } from '../middleware/authLab.middleware.js';
@@ -25,11 +25,12 @@ const COOKIE_OPTS = {
   path: '/',
 };
 
-function signPacsToken(user, tenantId) {
+function signPacsToken(user, tenant) {
   return jwt.sign(
     {
       sub: user.id || user.userId,
-      tenantId,
+      tenantId: tenant?.id ?? null,       // integer kept for back-compat with cookies issued before tenant UIDs
+      tenantUid: tenant?.uid ?? null,     // the typed key the DICOM route resolves and dual-checks
       role: user.role,
       purpose: 'pacs',
     },
@@ -45,17 +46,18 @@ function signPacsToken(user, tenantId) {
 // the specific study the doctor is entitled to view via a ris_studies referral, so the
 // session is scoped only to what they were actually referred, not a blanket tenant grant.
 async function resolveTenantId(user, studyInstanceUID) {
-  // Audit follow-up: the old fallbacks used `user.id` as a tenant "that won't resolve this study". That only holds
-  // while the account id happens to equal no imaging tenant — doctor 70 equals tenant 70. The safe "resolves nothing"
-  // tenant is NO tenant: the viewer opens and simply shows no data.
-  if (user.role !== 'doctor') return resolveImagingTenantId(user);   // explicit tenantId, or a legacy lab/hospital account id
-  if (!studyInstanceUID) return null;                                // no study context — session resolves no data
+  // Returns the TYPED tenant ({ id, uid }) or null. Audit follow-up: the old fallbacks used `user.id` as a tenant "that
+  // won't resolve this study" — which only holds while the account id equals no imaging tenant (doctor 70 = tenant 70).
+  // The safe "resolves nothing" tenant is NO tenant: the viewer opens and simply shows no data.
+  if (user.role !== 'doctor') return resolveImagingTenant(user);   // explicit tenantUid/tenantId claim, or a lab account
+  if (!studyInstanceUID) return null;                              // no study context — session resolves no data
   const referral = await pool.query(
     `SELECT lab_id, tenant_id FROM ris_studies WHERE referring_doctor_id = $1 AND study_instance_uid = $2 LIMIT 1`,
     [user.id, studyInstanceUID],
   );
-  if (!referral.rows.length) return null;                            // not entitled — resolves nothing
-  return referral.rows[0]?.tenant_id || referral.rows[0]?.lab_id || null;
+  if (!referral.rows.length) return null;                          // not entitled — resolves nothing
+  const labId = referral.rows[0]?.tenant_id || referral.rows[0]?.lab_id;
+  return labId ? ensureLabTenant(labId) : null;
 }
 
 function authImagingUser(req, res, next) {
@@ -80,8 +82,8 @@ function authImagingUser(req, res, next) {
 }
 
 router.post('/session', authImagingUser, async (req, res) => {
-  const tenantId = await resolveTenantId(req.user, req.body?.studyInstanceUID);
-  const token = signPacsToken(req.user, tenantId);
+  const tenant = await resolveTenantId(req.user, req.body?.studyInstanceUID);
+  const token = signPacsToken(req.user, tenant);
   res.cookie(PACS_COOKIE, token, COOKIE_OPTS);
   const orthanc = await getOrthancHealth();
   return res.json({
