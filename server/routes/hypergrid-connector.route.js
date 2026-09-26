@@ -23,6 +23,7 @@ import express from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { connectPostgres }       from '../db/postgres.js';
 import { resolveConcept }        from '../services/hypergrid-terminology.service.js';
+import { requireHgTenant } from '../utils/hypergrid-tenant.js';
 
 const router = express.Router();
 
@@ -148,10 +149,10 @@ router.get('/equipment/catalog', authUser, (req, res) => {
   res.json({ success: true, equipment });
 });
 
-router.get('/equipment/coverage', authUser, async (req, res) => {
+router.get('/equipment/coverage', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const connectors = await pool.query(`SELECT connector_type, template_id, status FROM hg_connectors WHERE tenant_id=$1`, [tenantId]);
     const devices = await pool.query(`SELECT device_type, COUNT(*)::int AS count FROM hg_devices WHERE tenant_id=$1 AND COALESCE(status, 'offline') <> 'inactive' GROUP BY device_type`, [tenantId]);
     const connectorTypes = new Set(connectors.rows.map((row) => String(row.connector_type || '').toLowerCase()));
@@ -180,48 +181,48 @@ router.get('/equipment/coverage', authUser, async (req, res) => {
   }
 });
 
-router.get('/equipment/inventory', authUser, async (req, res) => {
+router.get('/equipment/inventory', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
     const { status, department } = req.query;
-    const { rows } = await pool.query(`SELECT * FROM hg_equipment_inventory WHERE tenant_id=$1 AND ($2::text IS NULL OR integration_status=$2) AND ($3::text IS NULL OR department=$3) ORDER BY created_at DESC`, [req.user.tenantId || req.user.id, status || null, department || null]);
+    const { rows } = await pool.query(`SELECT * FROM hg_equipment_inventory WHERE tenant_id=$1 AND ($2::text IS NULL OR integration_status=$2) AND ($3::text IS NULL OR department=$3) ORDER BY created_at DESC`, [req.hgTenantId, status || null, department || null]);
     res.json({ success: true, equipment: rows });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to list equipment inventory' });
   }
 });
-router.post('/equipment/inventory', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/equipment/inventory', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
     const { equipmentClass, deviceName, manufacturer, model, serialNumber, department, location, protocol, ownerDepartment, notes } = req.body;
     if (!equipmentClass || !deviceName) return res.status(400).json({ success: false, message: 'equipmentClass and deviceName required' });
-    const { rows } = await pool.query(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [req.user.tenantId || req.user.id, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, ownerDepartment || null, notes || null]);
+    const { rows } = await pool.query(`INSERT INTO hg_equipment_inventory (tenant_id, equipment_class, device_name, manufacturer, model, serial_number, department, location, protocol, owner_department, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [req.hgTenantId, equipmentClass, deviceName, manufacturer || null, model || null, serialNumber || null, department || null, location || null, protocol || null, ownerDepartment || null, notes || null]);
     res.status(201).json({ success: true, equipment: rows[0] });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to register equipment' });
   }
 });
-router.patch('/equipment/inventory/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.patch('/equipment/inventory/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const VALID = ['identified', 'protocol_confirmed', 'mapped', 'certified', 'active', 'blocked'];
     const { integrationStatus, protocol, connectorId, ownerDepartment, notes } = req.body;
     if (integrationStatus && !VALID.includes(integrationStatus)) return res.status(400).json({ success: false, message: `integrationStatus must be: ${VALID.join(', ')}` });
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
-    const { rows } = await pool.query(`UPDATE hg_equipment_inventory SET integration_status=COALESCE($3,integration_status), protocol=COALESCE($4,protocol), connector_id=COALESCE($5,connector_id), owner_department=COALESCE($6,owner_department), notes=COALESCE($7,notes), updated_at=NOW() WHERE id=$1 AND tenant_id=$2 RETURNING *`, [req.params.id, req.user.tenantId || req.user.id, integrationStatus || null, protocol || null, connectorId || null, ownerDepartment || null, notes || null]);
+    const { rows } = await pool.query(`UPDATE hg_equipment_inventory SET integration_status=COALESCE($3,integration_status), protocol=COALESCE($4,protocol), connector_id=COALESCE($5,connector_id), owner_department=COALESCE($6,owner_department), notes=COALESCE($7,notes), updated_at=NOW() WHERE id=$1 AND tenant_id=$2 RETURNING *`, [req.params.id, req.hgTenantId, integrationStatus || null, protocol || null, connectorId || null, ownerDepartment || null, notes || null]);
     if (!rows[0]) return res.status(404).json({ success: false, message: 'Equipment not found' });
     res.json({ success: true, equipment: rows[0] });
   } catch {
     res.status(500).json({ success: false, message: 'Failed to update equipment' });
   }
 });
-router.get('/equipment/rollout', authUser, async (req, res) => {
+router.get('/equipment/rollout', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await ensureEquipmentInventoryTable(pool);
-    const { rows } = await pool.query(`SELECT integration_status, COUNT(*)::int AS count FROM hg_equipment_inventory WHERE tenant_id=$1 GROUP BY integration_status`, [req.user.tenantId || req.user.id]);
+    const { rows } = await pool.query(`SELECT integration_status, COUNT(*)::int AS count FROM hg_equipment_inventory WHERE tenant_id=$1 GROUP BY integration_status`, [req.hgTenantId]);
     const byStatus = Object.fromEntries(rows.map((row) => [row.integration_status, row.count]));
     res.json({ success: true, data: { byStatus, nextSteps: [
       'Register every physical device model in inventory',
@@ -235,7 +236,7 @@ router.get('/equipment/rollout', authUser, async (req, res) => {
   }
 });
 
-router.post('/packs', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/packs', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { packId, config = {} } = req.body;
     if (!packId) return res.status(400).json({ success: false, message: 'packId required' });
@@ -243,7 +244,7 @@ router.post('/packs', authUser, requireRole(['admin', 'hospital']), async (req, 
     if (!pack) return res.status(404).json({ success: false, message: 'Pack not found' });
 
     const pool     = await connectPostgres();
-    const tenantId = req.user.tenantId || req.user.id;
+    const tenantId = req.hgTenantId;
     const applied  = [];
 
     for (const tplId of pack.templateIds) {
@@ -268,7 +269,7 @@ router.post('/packs', authUser, requireRole(['admin', 'hospital']), async (req, 
 });
 
 // ── Field mappings ────────────────────────────────────────────────────────────
-router.post('/mappings', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/mappings', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { connectorId, sourceField, targetCanonicalField, transformType,
             transformConfig, unit, validationRule, description } = req.body;
@@ -284,7 +285,7 @@ router.post('/mappings', authUser, requireRole(['admin', 'hospital']), async (re
       [connectorId || null, sourceField, targetCanonicalField,
        transformType || 'passthrough', JSON.stringify(transformConfig || {}),
        unit || null, validationRule || null, description || null,
-       req.user.tenantId || req.user.id]
+       req.hgTenantId]
     );
     res.status(201).json({ success: true, mapping: r.rows[0] });
   } catch (err) {
@@ -292,7 +293,7 @@ router.post('/mappings', authUser, requireRole(['admin', 'hospital']), async (re
   }
 });
 
-router.get('/mappings', authUser, async (req, res) => {
+router.get('/mappings', authUser, requireHgTenant, async (req, res) => {
   try {
     const { connectorId } = req.query;
     const pool = await connectPostgres();
@@ -302,7 +303,7 @@ router.get('/mappings', authUser, async (req, res) => {
          AND ($2::int IS NULL OR connector_id = $2)
          AND active = TRUE
        ORDER BY created_at DESC`,
-      [req.user.tenantId || req.user.id, connectorId ? parseInt(connectorId) : null]
+      [req.hgTenantId, connectorId ? parseInt(connectorId) : null]
     );
     res.json({ success: true, mappings: r.rows });
   } catch (err) {
@@ -310,7 +311,7 @@ router.get('/mappings', authUser, async (req, res) => {
   }
 });
 
-router.put('/mappings/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.put('/mappings/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { transformType, transformConfig, unit, validationRule, description } = req.body;
     const pool = await connectPostgres();
@@ -324,7 +325,7 @@ router.put('/mappings/:id', authUser, requireRole(['admin', 'hospital']), async 
            updated_at       = NOW()
        WHERE id = $1 AND tenant_id = $2
        RETURNING *`,
-      [req.params.id, req.user.tenantId || req.user.id,
+      [req.params.id, req.hgTenantId,
        transformType || null, transformConfig ? JSON.stringify(transformConfig) : null,
        unit || null, validationRule || null, description || null]
     );
@@ -335,12 +336,12 @@ router.put('/mappings/:id', authUser, requireRole(['admin', 'hospital']), async 
   }
 });
 
-router.delete('/mappings/:id', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.delete('/mappings/:id', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     await pool.query(
       `UPDATE hg_field_mappings SET active = FALSE WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id]
+      [req.params.id, req.hgTenantId]
     );
     res.json({ success: true });
   } catch (err) {
@@ -379,7 +380,7 @@ router.post('/mappings/test', authUser, async (req, res) => {
 });
 
 // ── Register integration connector ───────────────────────────────────────────
-router.post('/connectors', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/connectors', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { name, connectorType, templateId, config, description } = req.body;
     if (!name || !connectorType)
@@ -391,7 +392,7 @@ router.post('/connectors', authUser, requireRole(['admin', 'hospital']), async (
        VALUES ($1,$2,$3,$4,$5,$6,'draft',NOW())
        RETURNING *`,
       [name, connectorType, templateId || null, JSON.stringify(config || {}),
-       description || null, req.user.tenantId || req.user.id]
+       description || null, req.hgTenantId]
     );
     res.status(201).json({ success: true, connector: r.rows[0] });
   } catch (err) {
@@ -399,13 +400,13 @@ router.post('/connectors', authUser, requireRole(['admin', 'hospital']), async (
   }
 });
 
-router.get('/connectors', authUser, async (req, res) => {
+router.get('/connectors', authUser, requireHgTenant, async (req, res) => {
   try {
     const pool = await connectPostgres();
     const r    = await pool.query(
       `SELECT id, name, connector_type, template_id, status, description, created_at
        FROM hg_connectors WHERE tenant_id = $1 ORDER BY created_at DESC`,
-      [req.user.tenantId || req.user.id]
+      [req.hgTenantId]
     );
     res.json({ success: true, connectors: r.rows });
   } catch (err) {
@@ -413,7 +414,7 @@ router.get('/connectors', authUser, async (req, res) => {
   }
 });
 
-router.patch('/connectors/:id/status', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.patch('/connectors/:id/status', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { status } = req.body;
     const VALID = ['draft', 'configured', 'certified', 'active', 'disabled'];
@@ -422,7 +423,7 @@ router.patch('/connectors/:id/status', authUser, requireRole(['admin', 'hospital
     const pool = await connectPostgres();
     await pool.query(
       `UPDATE hg_connectors SET status = $3, updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
-      [req.params.id, req.user.tenantId || req.user.id, status]
+      [req.params.id, req.hgTenantId, status]
     );
     res.json({ success: true, status });
   } catch (err) {
@@ -431,7 +432,7 @@ router.patch('/connectors/:id/status', authUser, requireRole(['admin', 'hospital
 });
 
 // ── Certification harness ─────────────────────────────────────────────────────
-router.post('/certify', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
+router.post('/certify', authUser, requireRole(['admin', 'hospital']), requireHgTenant, async (req, res) => {
   try {
     const { connectorId } = req.body;
     if (!connectorId)
@@ -440,7 +441,7 @@ router.post('/certify', authUser, requireRole(['admin', 'hospital']), async (req
     const pool      = await connectPostgres();
     const connR     = await pool.query(
       `SELECT * FROM hg_connectors WHERE id = $1 AND tenant_id = $2`,
-      [connectorId, req.user.tenantId || req.user.id]
+      [connectorId, req.hgTenantId]
     );
     if (!connR.rows[0])
       return res.status(404).json({ success: false, message: 'Connector not found' });
