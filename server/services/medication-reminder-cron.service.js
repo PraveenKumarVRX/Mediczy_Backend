@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import { Prescription } from '../models/index.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 
 /**
@@ -33,18 +33,21 @@ class MedicationReminderService {
 
     // Morning reminders - 8:00 AM
     cron.schedule('0 8 * * *', async () => {
+      if (!(await beginJob('medication_morning'))) return;
       await this.sendMedicationReminders('morning');
       tick('medication_morning');
     });
 
     // Afternoon reminders - 2:00 PM
     cron.schedule('0 14 * * *', async () => {
+      if (!(await beginJob('medication_afternoon'))) return;
       await this.sendMedicationReminders('afternoon');
       tick('medication_afternoon');
     });
 
     // Evening reminders - 8:00 PM
     cron.schedule('0 20 * * *', async () => {
+      if (!(await beginJob('medication_evening'))) return;
       await this.sendMedicationReminders('evening');
       tick('medication_evening');
     });

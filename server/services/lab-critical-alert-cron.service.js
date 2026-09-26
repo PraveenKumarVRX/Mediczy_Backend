@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 
 class LabCriticalAlertCronService {
   constructor() {
@@ -72,6 +72,7 @@ class LabCriticalAlertCronService {
     this.isRunning = true;
 
     cron.schedule('*/15 * * * *', async () => {
+      if (!(await beginJob('lab_critical_escalation'))) return;
       try {
         const result = await this.escalateOverdueAlerts();
         tick('lab_critical_escalation', result);

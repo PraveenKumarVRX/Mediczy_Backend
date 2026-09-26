@@ -4,7 +4,7 @@ import User from '../models/user.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import Consent from '../models/consent.model.intelligent.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 
 /**
  * Data Retention Scheduler
@@ -218,6 +218,7 @@ export function initializeDataRetentionScheduler() {
   
   // Run daily at 2 AM
   cron.schedule('0 2 * * *', async () => {
+    if (!(await beginJob('qms_phi_purge'))) return;
     console.log('\n🔄 Running daily data retention tasks...');
     try {
       await expireOldConsents();
@@ -239,6 +240,7 @@ export function initializeDataRetentionScheduler() {
   
   // Run weekly on Sunday at 3 AM
   cron.schedule('0 3 * * 0', async () => {
+    if (!(await beginJob('data_retention_weekly'))) return;
     console.log('\n🔄 Running weekly data retention tasks...');
     try {
       await archiveOldAuditLogs();
@@ -252,6 +254,7 @@ export function initializeDataRetentionScheduler() {
   
   // Run monthly on 1st at 4 AM
   cron.schedule('0 4 1 * *', async () => {
+    if (!(await beginJob('data_retention_monthly'))) return;
     console.log('\n🔄 Running monthly compliance report...');
     try {
       await generateComplianceReport();

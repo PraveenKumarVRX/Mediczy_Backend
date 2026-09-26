@@ -1,6 +1,6 @@
 import cron from 'node-cron';
 import { syncAllUsersStatus } from '../middleware/membership.middleware.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 
@@ -181,6 +181,7 @@ export const sendMembershipExpiryReminders = async ({
 export const startMembershipSyncCron = () => {
   // Run every day at 2:00 AM
   cron.schedule('0 2 * * *', async () => {
+    if (!(await beginJob('membership_sync'))) return;
     console.log('🕐 Starting daily membership status sync...');
     
     try {

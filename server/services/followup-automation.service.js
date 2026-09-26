@@ -3,7 +3,7 @@ import { Prescription } from '../models/index.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 
 /**
  * Follow-Up Appointment Automation Service
@@ -33,6 +33,7 @@ class FollowUpAutomationService {
 
     // Run daily at 10:00 AM
     cron.schedule('0 10 * * *', async () => {
+      if (!(await beginJob('followup_automation'))) return;
       await this.checkFollowUpReminders();
     });
 

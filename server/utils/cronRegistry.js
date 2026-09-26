@@ -179,13 +179,23 @@ export async function beginJob(key, { ttlSeconds } = {}) {
   }
   try {
     const m = await leaseModule();
+    // tickStart succeeded, so no live run exists in this process: any lease entry left over is a stale predecessor
+    // (a run that ended without tick/tickError). Clear it BEFORE acquiring so this process cannot block itself.
+    const stale = leases.get(key);
+    if (stale) { clearInterval(stale.timer); leases.delete(key); await m.releaseCronLease(key, stale.owner).catch(() => {}); }
     const lease = await m.acquireCronLease(key, { ttlSeconds });
     if (!lease.acquired) {
       running.delete(key);
       console.warn(`[cron] skipping ${key}: another process holds the lease`);
       return false;
     }
-    const timer = setInterval(() => { m.heartbeatCronLease(key, lease.owner_id, { ttlSeconds }).catch(() => {}); }, LEASE_HEARTBEAT_MS);
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      // A run that never called tick()/tickError() must not hold the lease forever: stop extending it after the stale
+      // window so it expires on its own (and the flag is likewise treated as stale by tickStart).
+      if (Date.now() - startedAt > STALE_MS) { console.warn(`[cron] ${key}: no completion after ${STALE_MS / 60000} min — releasing its lease`); releaseLease(key); return; }
+      m.heartbeatCronLease(key, lease.owner_id, { ttlSeconds }).catch(() => {});
+    }, LEASE_HEARTBEAT_MS);
     timer.unref?.();
     leases.set(key, { owner: lease.owner_id, timer });
   } catch (e) {
