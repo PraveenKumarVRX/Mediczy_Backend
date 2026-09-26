@@ -236,6 +236,15 @@ const USER_TYPE_PERMISSIONS = {
   },
   admin: {
     allowedPaths: [
+      // roadmap-intelligence: ONLY the operational analytics sub-routes are exposed (tenant-scoped, RLS-backed, role-gated in
+      // the router). The clinical decision-support / consent sub-routes (pgx, voice-biometrics, ar-surgical-plans, trials,
+      // sdoh, wounds, revenue-cycle) stay OFF until a SaMD classification and clinical validation approve them —
+      // see docs/audit/PHASE1_MICRO_AUDIT_2026-09-25.md.
+      '/api/roadmap-intelligence/staffing',
+      '/api/roadmap-intelligence/rwe',
+      '/api/roadmap-intelligence/esg',
+      '/api/roadmap-intelligence/antibiogram',
+      '/api/roadmap-intelligence/infection-surveillance',
       '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)
@@ -437,6 +446,15 @@ const USER_TYPE_PERMISSIONS = {
   },
   hospital: {
     allowedPaths: [
+      // roadmap-intelligence: ONLY the operational analytics sub-routes are exposed (tenant-scoped, RLS-backed, role-gated in
+      // the router). The clinical decision-support / consent sub-routes (pgx, voice-biometrics, ar-surgical-plans, trials,
+      // sdoh, wounds, revenue-cycle) stay OFF until a SaMD classification and clinical validation approve them —
+      // see docs/audit/PHASE1_MICRO_AUDIT_2026-09-25.md.
+      '/api/roadmap-intelligence/staffing',
+      '/api/roadmap-intelligence/rwe',
+      '/api/roadmap-intelligence/esg',
+      '/api/roadmap-intelligence/antibiogram',
+      '/api/roadmap-intelligence/infection-surveillance',
       '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)

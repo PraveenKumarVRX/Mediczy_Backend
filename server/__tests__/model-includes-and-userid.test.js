@@ -19,9 +19,9 @@ describe('includes use real Sequelize models', () => {
     expect(src).not.toMatch(/doctor\.model\.intelligent\.js/);
   });
 
-  it('consultation-recording includes the real Appointment model in all four places', () => {
+  it('consultation-recording includes the real Appointment model in every include (five)', () => {
     const src = read('routes/consultation-recording.route.js');
-    expect(src.match(/model: AppointmentModel,/g)).toHaveLength(4);
+    expect(src.match(/model: AppointmentModel,/g)).toHaveLength(5);
     expect(src).not.toMatch(/model: Appointment,/);
     expect(src).not.toMatch(/'organizationId'\]/);            // not an Appointment attribute (it is organization_id)
   });
