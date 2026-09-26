@@ -2733,7 +2733,17 @@ router.get('/pharmacy/prescriptions', verifyHospitalToken, async (req, res) => {
  * POST /api/hospital/practice/pharmacy/prescriptions
  * Create prescription dispensing record
  */
-router.post('/pharmacy/prescriptions', verifyHospitalToken, async (req, res) => {
+router.post('/pharmacy/prescriptions', verifyHospitalToken, prescriptionSafetyGate('hospital.practice.pharmacy-dispense', async (req) => {
+  // This path carries a medicineId, not a drug name, and the class/interaction checks match on the
+  // name. Resolve it here; a blank name would make the gate pass vacuously, which is worse than
+  // no gate because it looks like a check happened.
+  let name = req.body?.medicineName || req.body?.medicine?.name || null;
+  if (!name && req.body?.medicineId && req.hospitalId) {
+    const med = await PharmacyInventory.findOne({ where: { id: req.body.medicineId, organizationId: req.hospitalId }, attributes: ['medicineName', 'name', 'genericName'] });
+    name = med?.medicineName || med?.name || med?.genericName || null;
+  }
+  return { patientId: req.body?.patientId, medications: [{ name, dosage: req.body?.dosage }] };
+}, { issuing: true }), async (req, res) => {
   try {
     const organizationId = req.hospitalId;
     const {
