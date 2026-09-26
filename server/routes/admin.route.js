@@ -2163,7 +2163,7 @@ router.get('/corporate-users/:corporateId', authUser, requireRole(['admin', 'tea
          JOIN user_associations ua ON ua."userId" = u.id
         WHERE ua."entityType" = 'corporate'
           AND ua."entityId" = :corporateId
-          AND (u.role = 'corporate_admin' OR ua.role = 'admin')
+          AND (u.role IN ('corporate_admin', 'hr_staff') OR ua.role IN ('admin', 'staff'))
         ORDER BY COALESCE(u."lastLoginAt", u."updatedAt") DESC NULLS LAST,
                  u."createdAt" DESC`,
       {
@@ -2219,7 +2219,7 @@ router.put('/corporate-users/:corporateId/:userId', authUser, requireRole(['admi
         WHERE u.id = :userId
           AND ua."entityType" = 'corporate'
           AND ua."entityId" = :corporateId
-          AND (u.role = 'corporate_admin' OR ua.role = 'admin')
+          AND (u.role IN ('corporate_admin', 'hr_staff') OR ua.role IN ('admin', 'staff'))
         LIMIT 1`,
       {
         replacements: { userId, corporateId },
