@@ -376,10 +376,27 @@ Backend delivered:
   middleware chain carries the gate, so a gate declared but never mounted cannot satisfy it. Ungated
   writes are an explicit allowlist with written justifications.
 
-**Known limitation, verified rather than assumed:** the coverage test is static, so it proves a gate
-is *present*, not that it *runs*. Injecting a passthrough ahead of the gate leaves it green. Closing
-that needs a behavioural test that issues a prescription through the real Express app for a patient
-with a recorded allergy and asserts the response is refused.
+The static test proves a gate is *present*, not that it *runs* — so `prescribing-behaviour.test.js`
+closes that gap (commit `d07295a2`). It drives real HTTP through a real Express app and the real
+router, with the gate, `checkPrescriptionSafety`, `evaluatePrescriptionSafety` and `matchAllergy`
+all real; only the data they read is stubbed, so the scenario is fixed and no assertion depends on a
+seeded database. Patient 42 has a recorded penicillin allergy; issuing amoxicillin must be refused.
+
+**Two distinctions the behavioural work made explicit, which had been assumed rather than known:**
+
+- The gate splits DRAFT paths (create / update / from-appointment — evaluate, log, never block)
+  from ISSUING paths (issue, status-issued, eMAR order, practice, pharmacy — these can be blocked).
+  A draft is a working document; refusal is asserted on the issue path, where a prescription actually
+  becomes an order a patient receives. Both behaviours are asserted separately.
+- A non-clinical override is refused at 403 by `authDoctor` before the gate would give 409. That is
+  defence in depth, and the test asserts that nothing was issued rather than a specific status.
+
+**Regression proven by experiment, not assumed:** deleting the gate from the issue route turns 7 of
+the 9 behavioural tests red, including the refusal test. That is the failure this suite exists to
+catch, and the static suite alone does not catch it.
+
+One implementation note found here: `getSafetyMode` caches per organization for 30s, so any test
+needing a different mode must use a different organization id or it silently reads a stale entry.
 
 Frontend: `PrescriptionSafetyAlert` drives itself entirely off the server response — it never decides
 what is safe, only presents what the server decided and collects the override the server asked for.
@@ -387,7 +404,8 @@ what is safe, only presents what the server decided and collects the override th
 Acceptance:
 
 - [x] Every medication write route is behind the safety gate. (9/9; static coverage test)
-- [ ] All required server paths *behaviourally* refuse an unsafe prescription. (needs a real-app test)
+- [x] The issuing path *behaviourally* refuses an unsafe prescription. (real Express app; deleting
+      the gate turns the suite red)
 - [x] No frontend-only bypass exists. (the UI component cannot decide safety)
 - [ ] Clinical sign-off from a prescribing lead.
 - [ ] `shadow` → `enforce` rollout, once alert volume and false positives are reviewed.
