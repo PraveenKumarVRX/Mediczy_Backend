@@ -58,14 +58,15 @@ for (const [m, p] of [
 if (!SECRET) {
   console.log('\n(no JWT_SECRET — authenticated checks skipped)');
 } else {
-  const staffNoOrg = token({ id: 6203, role: 'hospital_admin' });                       // no tenant claim (SEC-01)
-  const nurse = token({ id: 987011, role: 'hospital_admin', organization_id: ORG });     // hospital-role, real-looking tenant
-  const receptionist = token({ id: 987012, role: 'receptionist', organization_id: ORG });
-  // NOTE: the platform ring-fence (middleware/ringFencing.js) has no entry for the mrd_staff / receptionist user types,
-  // so those tokens are refused (INVALID_USER_TYPE) before reaching the route. A refusal is what these negative tests
-  // want; the positive-path tests use hospital_admin, which passes the ring-fence and the route's own role gates.
-  const mrd = nurse;
-  const REFUSED = ['ROLE_NOT_PERMITTED', 'INVALID_USER_TYPE'];
+  // Tokens in the shape real logins mint (routes/hospital-auth.route.js: { id, role, userType:'hospital', tenant_id,
+  // organization_id }), so they pass the platform ring-fence exactly as real staff do.
+  const staff = (role, id, org = ORG) => token({ id, role, userType: 'hospital', ...(org ? { tenant_id: org, organization_id: org } : {}) });
+  const staffNoOrg = staff('ms', 6203, null);                        // no tenant claim (SEC-01)
+  const nurse = staff('hospital_admin', 987011);                      // may sign/override/index
+  const receptionist = staff('receptionist', 987012);                 // real role, real token shape
+  const mrd = staff('mrd_staff', 987013);                             // the records-department role
+  const REFUSED = ['ROLE_NOT_PERMITTED'];
+  const clinicalNurse = staff('nurse', 987014);
 
   // SEC-01: a staff token WITHOUT a tenant must not become "tenant = its user id".
   await expect('SEC-01 tenant-less token is refused, not mapped to its user id', ['GET', '/api/hospital/practice/mrd/records', { tok: staffNoOrg }], 403, 'TENANT_CONTEXT_REQUIRED');
@@ -86,7 +87,7 @@ if (!SECRET) {
   await expect('CLN-01 a forged approver cannot ride along: still 404 for a foreign packet', ['POST', '/api/v1/discharge/sign/1', { tok: nurse, body: { override: { reasonCode: 'x'.repeat(5), approverId: 1, approverRole: 'medical_director' } } }], 404, 'DISCHARGE_DRAFT_NOT_FOUND');
 
   // ER: triage needs a clinical role; a suggested up-triage needs an explicit decision (both before any insert).
-  await expect('CLN-05 a receptionist cannot assign an ESI level', ['POST', '/api/v1/er/register', { tok: receptionist, body: { patientName: 'Smoke', esiLevel: 3 } }], 403, ['TRIAGE_ROLE_REQUIRED', 'INVALID_USER_TYPE']);
+  await expect('CLN-05 a receptionist cannot assign an ESI level', ['POST', '/api/v1/er/register', { tok: receptionist, body: { patientName: 'Smoke', esiLevel: 3 } }], 403, 'TRIAGE_ROLE_REQUIRED');
   await expect('CLN-04 danger-zone vitals demand an up-triage decision (nothing registered)', ['POST', '/api/v1/er/register',
     { tok: nurse, body: { patientName: 'Smoke', age: 40, esiLevel: 3, triageConfirmed: true, triageInputs: { answers: { multipleResources: true }, vitals: { heartRate: 130 } } } }], 409, 'UP_TRIAGE_DECISION_REQUIRED');
   await expect('CLN-04 a level that does not follow from the answers is refused', ['POST', '/api/v1/er/register',
@@ -95,6 +96,17 @@ if (!SECRET) {
   // Discharge summaries: invalid status / missing patient are rejected before any write.
   await expect('CLN-06 a summary for a patient that is not in this hospital is a 404', ['POST', '/api/hospital/practice/discharge-summaries', { tok: nurse, body: { patientId: 999999999 } }], 404, 'PATIENT_NOT_FOUND');
   await expect('CLN-06 approval cannot be written through the edit route', ['PUT', '/api/hospital/practice/discharge-summaries/1', { tok: nurse, body: { status: 'approved' } }], 400, 'STATUS_NOT_ALLOWED');
+}
+
+
+if (SECRET) {
+  // Imaging tenant fallback (doctor 70 = imaging tenant 70). Ids below collide with nothing, so even a regression could
+  // not return real data; the collision itself is pinned by unit tests.
+  const doctor = token({ id: 987021, role: 'doctor' });
+  const hospitalAcct = token({ id: 987022, role: 'hospital', userType: 'hospital' });
+  await expect('IMAGING a doctor token without a tenant is refused (no id-as-tenant fallback)', ['GET', '/api/hypergrid/dicom/studies', { tok: doctor }], 403, 'TENANT_CONTEXT_REQUIRED');
+  await expect('IMAGING a hospital-account token is not an imaging tenant either', ['GET', '/api/hypergrid/dicom/studies', { tok: hospitalAcct }], 403, 'TENANT_CONTEXT_REQUIRED');
+  await expect('IMAGING an explicit tenantId claim is honoured (empty list for a synthetic tenant)', ['GET', '/api/hypergrid/dicom/studies', { tok: token({ id: 987023, role: 'doctor', tenantId: 987001 }) }], 200);
 }
 
 const failed = results.filter((r) => !r).length;

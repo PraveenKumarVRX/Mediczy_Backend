@@ -6,6 +6,7 @@
  * DELETE /api/imaging/session        — clear cookie
  */
 import express from 'express';
+import { resolveImagingTenantId } from '../utils/tenant-identity.js';
 import jwt from 'jsonwebtoken';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLab } from '../middleware/authLab.middleware.js';
@@ -44,14 +45,17 @@ function signPacsToken(user, tenantId) {
 // the specific study the doctor is entitled to view via a ris_studies referral, so the
 // session is scoped only to what they were actually referred, not a blanket tenant grant.
 async function resolveTenantId(user, studyInstanceUID) {
-  if (user.role !== 'doctor') return user.tenantId || user.id;
-  if (!studyInstanceUID) return user.id; // no study context — session won't resolve any data, matches prior behavior
+  // Audit follow-up: the old fallbacks used `user.id` as a tenant "that won't resolve this study". That only holds
+  // while the account id happens to equal no imaging tenant — doctor 70 equals tenant 70. The safe "resolves nothing"
+  // tenant is NO tenant: the viewer opens and simply shows no data.
+  if (user.role !== 'doctor') return resolveImagingTenantId(user);   // explicit tenantId, or a legacy lab/hospital account id
+  if (!studyInstanceUID) return null;                                // no study context — session resolves no data
   const referral = await pool.query(
     `SELECT lab_id, tenant_id FROM ris_studies WHERE referring_doctor_id = $1 AND study_instance_uid = $2 LIMIT 1`,
     [user.id, studyInstanceUID],
   );
-  if (!referral.rows.length) return user.id; // not entitled — falls back to a tenant that won't resolve this study
-  return referral.rows[0]?.tenant_id || referral.rows[0]?.lab_id || user.id;
+  if (!referral.rows.length) return null;                            // not entitled — resolves nothing
+  return referral.rows[0]?.tenant_id || referral.rows[0]?.lab_id || null;
 }
 
 function authImagingUser(req, res, next) {

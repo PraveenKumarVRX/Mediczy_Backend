@@ -4,11 +4,12 @@ import {
   createEstimate, getEstimatesByAdmission, updateEstimateStatus,
   addNonPayableItem, getNonPayableItems, syncOtConsumablesToEstimate
 } from '../services/billing-estimate.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 router.use(hospitalContextFromToken);
 
-const orgId = (req) => req.hospitalId || req.hospitalOrgId || req.user?.organization_id || req.user?.tenant_id || req.user?.id;
+const orgId = (req) => req.hospitalId || req.hospitalOrgId || resolveTenantId(req.user);
 
 // POST /api/v1/billing/estimate
 router.post('/estimate', async (req, res) => {

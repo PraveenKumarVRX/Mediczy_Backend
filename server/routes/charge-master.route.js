@@ -5,9 +5,10 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { runBedDayCharging } from '../services/ip-bed-day-charging.service.js';
 import { evaluateBillingClearance, autoFinalizeEstimate } from '../services/discharge-billing-clearance.service.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
-const orgId = (req) => req.hospitalId || req.hospitalOrgId || req.user?.organization_id || req.user?.tenant_id || req.user?.id;
+const orgId = (req) => req.hospitalId || req.hospitalOrgId || resolveTenantId(req.user);
 
 router.use(hospitalContextFromToken);
 

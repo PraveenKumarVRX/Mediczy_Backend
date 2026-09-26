@@ -28,3 +28,29 @@ describe('resolveTenantId — regression for audit SEC-01', () => {
     expect(requireTenant({ user: { id: 1, role: 'ms', organization_id: 7 } }, { status: () => { throw new Error('should not respond'); } })).toBe(7);
   });
 });
+
+import { resolveImagingTenantId } from '../utils/tenant-identity.js';
+
+describe('resolveImagingTenantId — imaging tenants are lab/imaging-centre ids, never a staff or doctor id', () => {
+  it('accepts an explicit tenantId claim', () => {
+    expect(resolveImagingTenantId({ id: 70, role: 'doctor', tenantId: 2368 })).toBe(2368);
+  });
+
+  it('accepts the account id only for a LAB account (the only role validated against the labs table)', () => {
+    expect(resolveImagingTenantId({ id: 2433, role: 'lab' })).toBe(2433);
+  });
+
+  it('REFUSES hospital / clinic / doctor / admin / patient whose own id equals an imaging tenant id', () => {
+    // hospitals, labs and users share ids 70, 2368, 2429, 2433 in production; doctor 70 = tenant 70 today
+    for (const role of ['hospital', 'clinic', 'doctor', 'admin', 'patient', 'user', 'nurse', 'super-admin']) {
+      for (const id of [70, 2368, 2429, 2433]) expect(resolveImagingTenantId({ id, role })).toBeNull();
+    }
+  });
+
+  it('returns null for empty / invalid input instead of a fallback', () => {
+    expect(resolveImagingTenantId()).toBeNull();
+    expect(resolveImagingTenantId({ id: 0, role: 'lab' })).toBeNull();
+    expect(resolveImagingTenantId({ id: 'abc', role: 'lab' })).toBeNull();
+    expect(resolveImagingTenantId({ tenantId: -3, role: 'doctor', id: 5 })).toBeNull();
+  });
+});

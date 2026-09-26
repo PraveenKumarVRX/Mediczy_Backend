@@ -9,6 +9,7 @@
  */
 
 import express from 'express';
+import { resolveImagingTenantId } from '../utils/tenant-identity.js';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
@@ -49,7 +50,7 @@ const OHIF_METADATA_CONCURRENCY = Math.max(1, parseInt(process.env.OHIF_METADATA
 const pixelTagCache = new Map();
 const upload = multer({
   storage: s3Storage('dicom', {
-    resolveTenant: (req) => req.user?.tenantId || req.user?.id || req.lab?.id,
+    resolveTenant: (req) => resolveImagingTenantId(req.user) || req.lab?.id,
   }),
   limits: { fileSize: 512 * 1024 * 1024 },
 });
@@ -151,7 +152,14 @@ const authAnyDicom = (req, res, next) => {
       if (decoded?.role === 'lab') {
         return authDicomAccess(req, res, next);
       }
-      req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: decoded.tenantId || decoded.id };
+      // Any valid JWT used to be accepted with `tenantId = decoded.tenantId || decoded.id`, so a doctor whose own id
+      // equalled an imaging tenant id was served that tenant's studies. The tenant must now be explicit (or a legacy
+      // lab/hospital/clinic account); anyone else is refused.
+      const imagingTenant = resolveImagingTenantId(decoded);
+      if (!imagingTenant) {
+        return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to an imaging tenant' });
+      }
+      req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: imagingTenant };
       return next();
     } catch {
       // Fall through to regular authUser handling.
@@ -173,11 +181,18 @@ const authAnyDicom = (req, res, next) => {
       // Fall through to regular authUser handling.
     }
   }
-  return authUser(req, res, next);
+  return authUser(req, res, (err) => {
+    if (err) return next(err);
+    if (!resolveImagingTenantId(req.user)) {
+      return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to an imaging tenant' });
+    }
+    return next();
+  });
 };
 
+// Fail-closed: no `|| req.user.id` fallback (see resolveImagingTenantId).
 function tenantId(req) {
-  return req.user?.tenantId || req.user?.id;
+  return resolveImagingTenantId(req.user);
 }
 
 function cleanDicomUid(value) {

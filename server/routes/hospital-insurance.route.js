@@ -31,6 +31,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { notifyClaimStatusChange, generateStatusQrCode } from '../services/insurance-claim-notify.service.js';
 import nhcxClient, { isNhcxConfigured } from '../services/nhcx-client.service.js';
 import pgPool from '../db/pgPool.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1354,7 +1355,7 @@ router.get('/claims/:claimId/detail', authUser, requireRole(['hospital', 'admin'
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
 
-    const hospitalId = req.user.hospital_id || req.user.tenant_id || req.user.id;
+    const hospitalId = resolveTenantId(req.user);
     const eraService = (await import('../services/hospital-era.service.js')).default;
     const postings = await eraService.listEraPostings(hospitalId, {
       claimId: claim.id,
@@ -2321,7 +2322,7 @@ router.get('/patient/:patientId/billing-summary', authUser, requireRole(['hospit
  */
 router.post('/reconciliation/upload', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
   try {
-    const hospitalId = req.user.hospital_id || req.user.tenant_id || req.user.id;
+    const hospitalId = resolveTenantId(req.user);
     const remittances = Array.isArray(req.body?.remittances) ? req.body.remittances : (req.body?.claimNumber ? [req.body] : []);
     if (remittances.length === 0) {
       return res.json({
@@ -2361,7 +2362,7 @@ router.post('/reconciliation/upload', authUser, requireRole(['hospital', 'admin'
  */
 router.get('/reconciliation/postings', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
   try {
-    const hospitalId = req.user.hospital_id || req.user.tenant_id || req.user.id;
+    const hospitalId = resolveTenantId(req.user);
     const eraService = (await import('../services/hospital-era.service.js')).default;
     const postings = await eraService.listEraPostings(hospitalId, {
       limit: parseInt(req.query.limit) || 50,
