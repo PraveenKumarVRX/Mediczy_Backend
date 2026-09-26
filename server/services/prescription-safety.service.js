@@ -70,6 +70,10 @@ export function matchAllergy(allergy, drug, classes) {
 export function evaluatePrescriptionSafety({ medications = [], allergyStatus = 'unknown', allergies = [], classes = [], currentMedications = [], conditions = [], pregnant = false }) {
   const items = [];
   const drugs = medications.map((m) => ({ raw: m, name: medName(m), generics: resolveGenerics(medName(m)) })).filter((d) => d.name);
+  // A medicine with no usable name cannot be checked at all. Passing it silently would look like coverage while checking
+  // nothing (the pharmacy path carries only a medicineId that has to be resolved to a name), so it is a blocker.
+  const unnamed = medications.length - drugs.length;
+  if (unnamed > 0) items.push(item('DRUG_UNRESOLVED', 'system', null, 'blocker', `${unnamed} medicine(s) on this prescription have no name, so they could not be checked for allergies, interactions or duplicates.`, 'Medicine name missing or could not be resolved'));
   for (const d of drugs) d.classes = classesOfGenerics(d.generics, classes);
   const current = currentMedications.map((n) => ({ name: String(n), generics: resolveGenerics(String(n)) })).filter((d) => d.name);
 
@@ -264,10 +268,19 @@ const isClinical = (req) => Boolean(req.doctor) || CLINICAL_ROLES.has(String(req
  *                   Draft paths (create/update) evaluate and log so the writer sees alerts, but are never blocked.
  */
 export const prescriptionSafetyGate = (source, extract, { issuing = false } = {}) => async (req, res, next) => {
-  let ctx = null;
-  try { ctx = await extract(req); } catch (e) { console.error(`[safety:${source}] extract failed:`, e.message); }
-  if (!ctx || !ctx.patientId || !Array.isArray(ctx.medications) || ctx.medications.length === 0) return next();
+  let ctx = null; let extractFailed = false;
+  try { ctx = await extract(req); } catch (e) { extractFailed = true; console.error(`[safety:${source}] extract failed:`, e.message); }
   const organizationId = orgOfRequest(req); const actorId = actorOfRequest(req);
+  if (extractFailed) {
+    // Could not even work out WHAT is being prescribed. On an issuing path in enforce mode that must fail closed, exactly
+    // like a failed check — silently skipping the gate would let the prescription through unchecked.
+    const failMode = await getSafetyMode(organizationId);
+    await logEvaluation({ organizationId, patientId: null, actorId, source, mode: failMode, outcome: 'error' });
+    if (failMode === 'enforce' && issuing) return res.status(503).json({ success: false, code: 'SAFETY_UNAVAILABLE', message: 'The safety check could not be completed, so this prescription cannot be issued right now. Try again, or contact IT.' });
+    res.setHeader('X-Safety-Check', 'unavailable');
+    return next();
+  }
+  if (!ctx || !ctx.patientId || !Array.isArray(ctx.medications) || ctx.medications.length === 0) return next();
   const mode = await getSafetyMode(organizationId);
   let result;
   try {
