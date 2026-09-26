@@ -225,8 +225,23 @@ would have failed.** `99f1b6ef` untracks the symlink and ignores `**/node_module
 (`rm node_modules && npm ci --omit=dev`) was blocked by the permission system and is the first step in the runbook.
 Lesson: never `git add -A` in a worktree that holds symlinked dependencies.
 
-### Still open / found by the smoke test
-- **`mrd_staff` (and `receptionist`) tokens are refused with `INVALID_USER_TYPE` by the platform ring-fence** (`middleware/ringFencing.js` has no entry for those user types) before they reach any route, so the records-department role cannot actually use the MRD endpoints it is meant for. That is platform RBAC design, not changed here; `hospital_admin`/`ms` work.
-- Other portals derive a hospital id from `decoded.id` with the priority reversed (`middleware/authPortalQms.middleware.js`, `services/clinic-portal.service.js`) — outside the hospital-staff scope of this audit but the same class of risk.
-- **No staging environment exists** (`server/.env` targets production). Everything here was rehearsed on a disposable local database and a full-suite comparison against `main`, then applied to production with explicit approval.
-
+### Found by the smoke test and follow-up sweep (2026-09-26)
+- **Retracted:** an earlier note said `mrd_staff`/`receptionist` were blocked by the ring-fence. That was a test artifact —
+  real logins mint `userType: 'hospital'` and pass it. With real-shape tokens both roles reach the routes and are gated
+  exactly by the new role checks (smoke test 28/28).
+- **Imaging tenant collision (fixed, deployed `c9393c3e`).** `hypergrid-dicom` used `tenantId || id` for every token, and
+  the PACS session issuer had the same fallback. Integer ids are not unique across account tables — hospitals, labs and
+  users all contain 70, 2368, 2429 and 2433, and doctor ids (27–1800) overlap lab ids (1–2434) — so doctor 70 was served
+  imaging tenant 70. Imaging tenant is now an explicit `tenantId` claim or a validated lab account, else 403.
+- **Same bug class, NOT yet fixed:** seven `hypergrid-*` route files (`terminology`, `edge`, `marketplace`, `events`, `twins`,
+  `mqtt`, `connector`; ~44 sites) use `req.user.tenantId || req.user.id`. They are admin-gated (`requireRole`) and behind the
+  ring-fence, so exposure is narrower, but the tenant model behind them is unclear. Changing them blind risks breaking
+  legitimate admin tooling; fix them together with the UID migration below.
+- **Durable fix — use the UIDs that already exist.** Production has a UUID `uid` on users (6847/6847), doctors
+  (1118/1118), hospitals (10776/10776) and tenants (51/51), and an alphanumeric `unique_id` on all of those plus labs
+  (2426/2427); patients have none (0/18). They do not overlap across tables today. Tenancy was built on integer keys before
+  they existed, tokens carry only the integer `id`, and the imaging tables store `tenant_id` as a bigint. Plan: (1) add
+  `labs.uid` and backfill; (2) tokens carry a tenant UID; (3) resolve it against the tenant registry; (4) add
+  `tenant_uid` to the imaging tables, backfill (~600k rows) and switch queries table by table; (5) drop the integer fallback.
+- **No staging environment exists** (`server/.env` targets production). Everything here was rehearsed on a disposable local
+  database and a full-suite comparison against `main`, then applied to production with explicit approval.
