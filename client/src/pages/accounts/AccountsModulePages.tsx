@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DollarSign, Receipt, CreditCard, Banknote, ShieldCheck,
   Wallet, Users, ClipboardList, TrendingUp, BarChart3,
@@ -527,14 +528,146 @@ export const AccountsPayrollPage = () => (
 // ═══════════════════════════════════════════════════════════════════════════
 // 8. BUDGET (NEW)
 // ═══════════════════════════════════════════════════════════════════════════
+const BudgetsInner = () => {
+  const [budgets, setBudgets] = useState<FinanceRow[]>([]);
+  const [periods, setPeriods] = useState<FinanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [draft, setDraft] = useState({ periodCode: '', department: '', category: '', budgetAmount: '' });
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [b, p] = await Promise.all([
+        hospitalFinanceService.listBudgets(),
+        hospitalFinanceService.listFiscalPeriods(),
+      ]);
+      setBudgets(b.data || []);
+      // A budget needs an OPEN period; default the picker to the first one.
+      const open = (p.data || []).filter((x) => String(x.status) === 'open');
+      setPeriods(open);
+      setDraft((d) => (d.periodCode || !open[0] ? { ...d, periodCode: d.periodCode || String(open[0]?.period_code ?? '') } : d));
+      setError(null);
+    } catch (e: any) {
+      setError(e?.response?.data?.message || 'The finance service is unavailable.');
+      setBudgets([]);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const save = useCallback(async () => {
+    setBusy(true); setActionError(null);
+    try {
+      await hospitalFinanceService.upsertBudget({
+        periodCode: draft.periodCode,
+        department: draft.department.trim() || null,
+        category: draft.category.trim(),
+        budgetAmount: Number(draft.budgetAmount),
+      });
+      setShowForm(false);
+      setDraft({ ...draft, department: '', category: '', budgetAmount: '' });
+      await refresh();
+    } catch (e: any) {
+      setActionError(e?.response?.data?.message || 'The budget could not be saved.');
+    } finally { setBusy(false); }
+  }, [draft, refresh]);
+
+  return (
+    <>
+      {actionError && <div className="mb-4"><ReportError message={actionError} onRetry={() => setActionError(null)} /></div>}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Budgets</CardTitle>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={refresh} disabled={loading}>
+                <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} /> Refresh
+              </Button>
+              <Button size="sm" onClick={() => setShowForm((v) => !v)} disabled={periods.length === 0}>
+                <PlusCircle className="h-4 w-4" /> Set budget
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {periods.length === 0 && !loading && !error && (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              No open fiscal period exists, so a budget cannot be set. Create one on the Fiscal Periods page first.
+            </p>
+          )}
+          {showForm && (
+            <div className="grid gap-3 rounded-lg border bg-slate-50 p-4 sm:grid-cols-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="bg-period">Period</label>
+                <Select value={draft.periodCode} onValueChange={(v) => setDraft({ ...draft, periodCode: v })}>
+                  <SelectTrigger><SelectValue placeholder="Select period" /></SelectTrigger>
+                  <SelectContent>{periods.map((p) => (
+                    <SelectItem key={String(p.id)} value={String(p.period_code)}>
+                      {String(p.period_code)} ({String(p.start_date)} – {String(p.end_date)})
+                    </SelectItem>
+                  ))}</SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="bg-dept">Department</label>
+                <Input id="bg-dept" value={draft.department} onChange={(e) => setDraft({ ...draft, department: e.target.value })} placeholder="All departments" className="h-9" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="bg-cat">Category</label>
+                <Input id="bg-cat" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} placeholder="e.g. Consumables" className="h-9" />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="bg-amt">Amount (₹)</label>
+                <Input id="bg-amt" type="number" min="0" step="0.01" value={draft.budgetAmount} onChange={(e) => setDraft({ ...draft, budgetAmount: e.target.value })} className="h-9" />
+              </div>
+              <div className="sm:col-span-4">
+                <Button size="sm" onClick={save} disabled={busy || !draft.periodCode || !draft.category.trim() || draft.budgetAmount === ''}>
+                  {busy ? 'Saving…' : 'Save budget'}
+                </Button>
+              </div>
+            </div>
+          )}
+          {error && <ReportError message={error} onRetry={refresh} />}
+          {loading ? <div className="py-10 text-center text-sm text-muted-foreground"><Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />Loading budgets…</div>
+            : budgets.length === 0 && !error ? <div className="py-10 text-center text-sm text-muted-foreground">No budgets set for this organization yet.</div> : (
+              <div className="overflow-x-auto"><table className="w-full">
+                <thead><tr><TH>Period</TH><TH>Department</TH><TH>Category</TH><TH>Budget</TH><TH>Spent</TH><TH>Used</TH></tr></thead>
+                <tbody>{budgets.map((b) => {
+                  const budgeted = Number(b.budget_amount) || 0;
+                  const spent = Number(b.spent_amount) || 0;
+                  const pct = budgeted > 0 ? Math.round((spent / budgeted) * 100) : 0;
+                  return (
+                    <tr key={String(b.id)} className="border-t">
+                      <TD className="font-mono text-xs">{String(b.period_code)}</TD>
+                      <TD>{String(b.department ?? 'All')}</TD>
+                      <TD>{String(b.category)}</TD>
+                      <TD className="text-right">{fmtInr(budgeted)}</TD>
+                      <TD className="text-right">{fmtInr(spent)}</TD>
+                      <TD className="w-32">
+                        <div className="flex items-center gap-2">
+                          <Progress value={Math.min(pct, 100)} className="h-2 flex-1" />
+                          <span className={`w-10 text-right text-xs font-medium ${pct > 100 ? 'text-red-600' : 'text-muted-foreground'}`}>{pct}%</span>
+                        </div>
+                      </TD>
+                    </tr>
+                  );
+                })}</tbody>
+              </table></div>
+            )}
+        </CardContent>
+      </Card>
+    </>
+  );
+};
+
 export const AccountsBudgetPage = () => (
-  <LiveFinancePage
-    title="Budget"
-    subtitle="Live budgets by fiscal period and category"
-    load={() => hospitalFinanceService.listBudgets()}
-    columns={['Period', 'Department', 'Category', 'Budget', 'Spent']}
-    renderRow={(row) => <><TD>{String(row.period_code ?? '—')}</TD><TD>{String(row.department ?? 'All')}</TD><TD>{String(row.category ?? '—')}</TD><TD>{fmtInr(Number(row.budget_amount))}</TD><TD>{fmtInr(Number(row.spent_amount))}</TD></>}
-  />
+  <Wrap title="Budget" subtitle="Budgets by fiscal period and category">
+    <div className="space-y-4"><BudgetsInner /></div>
+  </Wrap>
 );
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -659,9 +792,146 @@ const JournalEntriesInner = () => {
   );
 };
 
+const ManualJournalInner = () => {
+  const [accounts, setAccounts] = useState<FinanceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [entryDate, setEntryDate] = useState(todayStr());
+  const [description, setDescription] = useState('');
+  const [lines, setLines] = useState([{ accountId: '', narration: '', debit: '', credit: '' }]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const res = await hospitalFinanceService.listAccounts();
+        setAccounts(res.data || []); setError(null);
+      } catch (e: any) {
+        setError(e?.response?.data?.message || 'The finance service is unavailable.');
+      } finally { setLoading(false); }
+    })();
+  }, []);
+
+  const setLine = (i: number, patch: Partial<typeof lines[number]>) =>
+    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  // The server enforces balance; surfacing it here avoids a pointless round trip and makes the
+  // failure legible ("debits and credits must match") rather than a generic 400.
+  const debits = lines.reduce((s, l) => s + Number(l.debit || 0), 0);
+  const credits = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
+  const balanced = debits > 0 && Math.abs(debits - credits) < 0.005;
+  const complete = description.trim() && lines.length >= 2
+    && lines.every((l) => l.accountId && (Number(l.debit) > 0 ? Number(l.credit) === 0 : Number(l.credit) > 0));
+
+  const post = useCallback(async () => {
+    setBusy(true); setActionError(null);
+    try {
+      await hospitalFinanceService.postJournalEntry({
+        entry_date: entryDate,
+        description: description.trim(),
+        lines: lines.map((l) => ({
+          accountId: Number(l.accountId),
+          narration: l.narration.trim() || null,
+          debit: Number(l.debit || 0),
+          credit: Number(l.credit || 0),
+        })),
+      });
+      setShowForm(false);
+      setDescription('');
+      setLines([{ accountId: '', narration: '', debit: '', credit: '' }]);
+    } catch (e: any) {
+      setActionError(e?.response?.data?.message || 'The entry could not be posted.');
+    } finally { setBusy(false); }
+  }, [entryDate, description, lines]);
+
+  return (
+    <>
+      {actionError && <div className="mb-4"><ReportError message={actionError} onRetry={() => setActionError(null)} /></div>}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Post a manual journal entry</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Use this for accruals, corrections and corrections the source systems cannot post. Every entry
+            is permanent — to fix a mistake, reverse it with a reason rather than editing.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium" htmlFor="je-date">Date</label>
+              <Input id="je-date" type="date" value={entryDate} onChange={(e) => setEntryDate(e.target.value)} className="h-9" />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="mb-1 block text-xs font-medium" htmlFor="je-desc">Description</label>
+              <Input id="je-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What this entry records" className="h-9" />
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr><TH>Account</TH><TH>Narration</TH><TH>Debit</TH><TH>Credit</TH><TH /></tr></thead>
+              <tbody>{lines.map((l, i) => (
+                <tr key={i} className="border-t">
+                  <td>
+                    <Select value={l.accountId} onValueChange={(v) => setLine(i, { accountId: v })}>
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Select account" /></SelectTrigger>
+                      <SelectContent>{accounts.map((a) => (
+                        <SelectItem key={String(a.id)} value={String(a.id)}>
+                          {String(a.account_code)} — {String(a.account_name)}
+                        </SelectItem>
+                      ))}</SelectContent>
+                    </Select>
+                  </td>
+                  <td><Input value={l.narration} onChange={(e) => setLine(i, { narration: e.target.value })} className="h-9" /></td>
+                  <td><Input type="number" min="0" step="0.01" value={l.debit}
+                    onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? '' : l.credit })}
+                    className="h-9 text-right" /></td>
+                  <td><Input type="number" min="0" step="0.01" value={l.credit}
+                    onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? '' : l.debit })}
+                    className="h-9 text-right" /></td>
+                  <td>
+                    {lines.length > 2 && (
+                      <Button size="sm" variant="ghost" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}
+                        aria-label={`Remove line ${i + 1}`}><XCircle className="h-4 w-4" /></Button>
+                    )}
+                  </td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr className="border-t">
+                <TH colSpan={2}>Totals</TH>
+                <TD className="text-right font-semibold">{fmtInr(debits)}</TD>
+                <TD className="text-right font-semibold">{fmtInr(credits)}</TD>
+                <TD />
+              </tr></tfoot>
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm" variant="outline" onClick={() => setLines((ls) => [...ls, { accountId: '', narration: '', debit: '', credit: '' }])}>
+              <PlusCircle className="h-4 w-4" /> Add line
+            </Button>
+            <Badge variant={balanced ? 'default' : 'secondary'}>
+              {balanced ? 'Balanced' : `Out of balance by ${fmtInr(Math.abs(debits - credits))}`}
+            </Badge>
+            <div className="flex-1" />
+            <Button size="sm" onClick={post} disabled={busy || !complete || !balanced}>
+              {busy ? 'Posting…' : 'Post entry'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </>
+  );
+};
+
+/** Manual posting sits above the list: an accountant's first action is to post, not to browse. */
 export const AccountsJournalEntriesPage = () => (
-  <Wrap title="Journal Entries" subtitle="Posted, auditable ledger entries">
-    <div className="space-y-4"><JournalEntriesInner /></div>
+  <Wrap title="Journal Entries" subtitle="Post and audit ledger entries">
+    <div className="space-y-4">
+      <ManualJournalInner />
+      <JournalEntriesInner />
+    </div>
   </Wrap>
 );
 

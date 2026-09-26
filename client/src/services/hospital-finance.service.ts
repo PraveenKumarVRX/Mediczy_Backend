@@ -11,6 +11,7 @@ export const hospitalFinanceService = {
   listExpenses: async (params?: { from?: string; to?: string; status?: string }) => (await api.get(`${BASE}/expenses`, { params, headers: headers() })).data,
   createExpense: async (data: Record<string, unknown>) => (await api.post(`${BASE}/expenses`, data, { headers: headers() })).data,
   listBudgets: async () => (await api.get(`${BASE}/budgets`, { headers: headers() })).data,
+  upsertBudget: async (data: Record<string, unknown>) => (await api.post(`${BASE}/budgets`, data, { headers: headers() })).data,
   listTaxCodes: async () => (await api.get(`${BASE}/tax-codes`, { headers: headers() })).data,
   listJournalEntries: async (params?: { from?: string; to?: string; limit?: number }) => (await api.get(`${BASE}/journal-entries`, { params, headers: headers() })).data,
   postJournalEntry: async (data: Record<string, unknown>) => (await api.post(`${BASE}/journal-entries`, data, { headers: headers() })).data,

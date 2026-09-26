@@ -58,6 +58,49 @@ export async function listBudgets(organizationId) {
   });
 }
 
+/**
+ * Create or update a budget line. Upserts on (org, period, department, category) so re-saving a
+ * budget is safe to repeat — the alternative is a unique-violation error on a form the user can
+ * legitimately submit twice.
+ */
+export async function upsertBudget(organizationId, input, actorId) {
+  const { fiscalPeriodId, periodCode, department, category, budgetAmount } = input || {};
+  if (!category || budgetAmount === undefined || budgetAmount === null) {
+    throw new Error('category and budgetAmount are required');
+  }
+  if (Number(budgetAmount) < 0) throw new Error('budgetAmount cannot be negative');
+  return scoped(organizationId, actorId, async (client) => {
+    // Resolve the period either by id or by code, and refuse to budget into a CLOSED period —
+    // a budget against a period that can no longer be posted to is misleading.
+    let period;
+    if (fiscalPeriodId) {
+      const r = await client.query(
+        `SELECT * FROM finance_fiscal_periods WHERE id = $1 AND organization_id = $2`, [fiscalPeriodId, organizationId]);
+      period = r.rows[0];
+    } else if (periodCode) {
+      const r = await client.query(
+        `SELECT * FROM finance_fiscal_periods WHERE period_code = $1 AND organization_id = $2`, [periodCode, organizationId]);
+      period = r.rows[0];
+    } else {
+      const r = await client.query(
+        `SELECT * FROM finance_fiscal_periods WHERE organization_id = $1 AND status = 'open' ORDER BY start_date LIMIT 1`, [organizationId]);
+      period = r.rows[0];
+    }
+    if (!period) throw new Error('No fiscal period matches that periodCode/id for this organization');
+    if (period.status === 'closed') throw new Error(`Fiscal period ${period.period_code} is closed and cannot take a new budget`);
+
+    const { rows } = await client.query(
+      `INSERT INTO finance_budgets (organization_id, fiscal_period_id, department, category, budget_amount, approved_by)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (organization_id, fiscal_period_id, department, category)
+       DO UPDATE SET budget_amount = EXCLUDED.budget_amount, approved_by = EXCLUDED.approved_by, updated_at = NOW()
+       RETURNING *`,
+      [organizationId, period.id, department || null, category, Number(budgetAmount), actorId || null]
+    );
+    return rows[0];
+  });
+}
+
 export async function listTaxCodes(organizationId) {
   return scoped(organizationId, 0, async (client) => (await client.query('SELECT * FROM finance_tax_codes WHERE organization_id = $1 ORDER BY tax_code', [organizationId])).rows);
 }
@@ -280,7 +323,7 @@ export async function reverseJournalEntry(organizationId, entryId, reason, actor
 }
 
 export default {
-  listAccounts, listVendors, createVendor, listExpenses, createExpense, listBudgets, listTaxCodes,
+  listAccounts, listVendors, createVendor, listExpenses, createExpense, listBudgets, upsertBudget, listTaxCodes,
   listJournalEntries, postJournalEntry, listFiscalPeriods, createFiscalPeriod, closeFiscalPeriod,
   reverseJournalEntry,
 };

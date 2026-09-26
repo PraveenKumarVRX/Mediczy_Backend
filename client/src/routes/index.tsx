@@ -233,6 +233,7 @@ const HyperGridMarketplace       = lazy(() => import("@/pages/admin/HyperGridMar
 const EnterpriseLoginPage        = lazy(() => import("@/pages/enterprise/EnterpriseLoginPage"));
 const EnterpriseCallbackPage     = lazy(() => import("@/pages/enterprise/EnterpriseCallbackPage"));
 const AdminSaMD                = lazy(() => import("@/pages/admin/AdminSaMD"));
+const AdminJobStatus           = lazy(() => import("@/pages/admin/AdminJobStatus"));
 
 // ─── CRM ─────────────────────────────────────────────────────────────────────
 const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
@@ -1551,6 +1552,7 @@ const AppRoutes = () => {
         <Route path="/admin/feedback-intelligence/component/:name" element={<AdminRoute><ComponentDeepDive /></AdminRoute>} />
         <Route path="/admin/feedback-intelligence/prompts"      element={<AdminRoute><PromptVersionManager /></AdminRoute>} />
         <Route path="/admin/samd-compliance"      element={<AdminRoute><AdminSaMD /></AdminRoute>} />
+        <Route path="/admin/jobs"                 element={<AdminRoute><AdminJobStatus /></AdminRoute>} />
         <Route path="/admin/ai-guard"             element={<AdminRoute><SIBAIDashboard /></AdminRoute>} />
         <Route path="/admin/developers"          element={<AdminRoute><DeveloperPortal /></AdminRoute>} />
         <Route path="/admin/hypergrid"            element={<AdminRoute><HyperGridDashboard /></AdminRoute>} />
