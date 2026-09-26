@@ -125,6 +125,44 @@ export async function listClinicalNotes({ patientId, admissionId, limit = 50, or
   );
 }
 
+/**
+ * Care-relationship check for the doctor app (audit follow-up: /clinical-workflow/notes/patient|admission/:id returned
+ * ANY patient's notes to ANY doctor). A doctor may read a patient's notes when they wrote one for that patient, or
+ * have an appointment with them. `patientId` is matched as a user id and as a patients.id (both are in use).
+ */
+export async function doctorHasCareRelationship(doctorId, patientId) {
+  const d = Number(doctorId); const p = Number(patientId);
+  if (!Number.isInteger(d) || d <= 0 || !Number.isInteger(p) || p <= 0) return false;
+  await ensureClinicalNoteColumns();
+  const rows = await sequelize.query(
+    `SELECT 1 FROM clinical_notes WHERE "doctorId" = :d AND "patientId" = :p
+     UNION ALL
+     SELECT 1 FROM appointments a
+      WHERE a."doctorId" = :d
+        AND (a."userId" = :p OR a."userId" IN (SELECT "userId" FROM patients WHERE id = :p))
+     LIMIT 1`,
+    { replacements: { d, p }, type: QueryTypes.SELECT }
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Notes the doctor is entitled to see: the listing is narrowed to patients they have a care relationship with, or —
+ * for hospital-employed doctors — notes stamped with their own hospital. Nothing else is returned.
+ */
+export async function listClinicalNotesForDoctor({ doctorId, doctorOrganizationId, patientId, admissionId, limit } = {}) {
+  const notes = await listClinicalNotes({ patientId, admissionId, limit });
+  const allowedPatients = new Map();
+  const visible = [];
+  for (const note of notes) {
+    if (Number(note.doctorId) === Number(doctorId)) { visible.push(note); continue; }
+    if (doctorOrganizationId != null && note.organization_id != null && Number(note.organization_id) === Number(doctorOrganizationId)) { visible.push(note); continue; }
+    if (!allowedPatients.has(note.patientId)) allowedPatients.set(note.patientId, await doctorHasCareRelationship(doctorId, note.patientId));
+    if (allowedPatients.get(note.patientId)) visible.push(note);
+  }
+  return visible;
+}
+
 export async function updateClinicalNote(id, doctorId, updates) {
   await ensureClinicalNoteColumns();
   const note = await ClinicalNote.findOne({ where: { id, doctorId } });
