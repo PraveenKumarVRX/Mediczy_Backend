@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator';
 import { authDoctor, authUser } from '../middleware/auth.middleware.js';
 import ConsultationRecording from '../models/consultationRecording.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
+import { Appointment as AppointmentModel } from '../models/index.js';   // includes need the REAL Sequelize model, not the *.intelligent.js wrapper
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -602,7 +603,7 @@ router.get('/doctor', authDoctor, [
       where,
       include: [
         {
-          model: Appointment,
+          model: AppointmentModel,
           as: 'appointment',
           attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime']
         }
@@ -640,7 +641,7 @@ router.get('/:id', authDoctor, [
     const recording = await ConsultationRecording.findByPk(id, {
       include: [
         {
-          model: Appointment,
+          model: AppointmentModel,
           as: 'appointment',
           attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'notes']
         }
@@ -885,9 +886,9 @@ router.get('/admin/all', authUser, [
       where,
       include: [
         {
-          model: Appointment,
+          model: AppointmentModel,
           as: 'appointment',
-          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'organizationId']
+          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'organization_id']
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -943,7 +944,7 @@ router.get('/admin/:id', authUser, [
     const recording = await ConsultationRecording.findByPk(id, {
       include: [
         {
-          model: Appointment,
+          model: AppointmentModel,
           as: 'appointment',
           attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'notes', 'organization_id']
         }

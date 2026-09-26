@@ -16,6 +16,7 @@ import Corporate from './postgres/corporate.model.postgres.js';
 import MembershipPlan from './postgres/membership-plan.model.postgres.js';
 import Homecare from './postgres/homecare.model.postgres.js';
 import Appointment from './postgres/appointment.model.postgres.js';
+import ConsultationRecording from './consultationRecording.model.intelligent.js';
 
 export function setupUserHierarchyAssociations() {
   // User <-> Appointment (for patient relationship)
@@ -26,6 +27,14 @@ export function setupUserHierarchyAssociations() {
   Appointment.belongsTo(User, {
     foreignKey: 'userId',
     as: 'patient'
+  });
+
+  // ConsultationRecording -> Appointment (routes/consultation-recording.route.js includes it as 'appointment'; the
+  // association was never declared, so every include threw). No DB constraint: the column already exists as is.
+  ConsultationRecording.belongsTo(Appointment, {
+    foreignKey: 'appointmentId',
+    as: 'appointment',
+    constraints: false
   });
 
   // Doctor <-> Appointment
