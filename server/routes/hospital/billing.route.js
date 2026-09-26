@@ -82,6 +82,65 @@ router.post('/pgi/webhook', async (req, res) => {
   }
 });
 
+// Razorpay refund webhook — no hospital JWT; mounted BEFORE the auth middleware below (a webhook placed after it
+// is answered 401 and never reaches its handler) and whitelisted in ringFencing. Same signature discipline as the capture webhook: HMAC over the RAW request text,
+// fail closed, and the gateway event id is claimed first so a redelivery applies nothing twice.
+// This is the ONLY place a gateway refund touches the general ledger.
+router.post('/refunds/webhook', async (req, res) => {
+  let claimed = null;
+  try {
+    const raw = req.rawBody;
+    if (typeof raw !== 'string' || !raw) {
+      return res.status(400).json({ success: false, message: 'Webhook body was not captured' });
+    }
+    let signatureOk;
+    try {
+      signatureOk = paymentGateway.verifyRazorpayWebhook(raw, req.headers['x-razorpay-signature']);
+    } catch (e) {
+      console.error('[refund webhook] not configured:', e.message);
+      return res.status(503).json({ success: false, message: 'Webhook is not configured' });
+    }
+    if (!signatureOk) return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
+
+    let event;
+    try { event = JSON.parse(raw); } catch { return res.status(400).json({ success: false, message: 'Invalid JSON' }); }
+    if (event.event !== 'refund.processed' && event.event !== 'refund.failed') {
+      return res.json({ success: true, ignored: true });
+    }
+
+    const entity = event.payload?.refund?.entity;
+    const gatewayRefundId = entity?.id;
+    const notes = entity?.notes || {};
+    const hospitalId = Number(notes.hospitalId);
+    if (!gatewayRefundId || !Number.isInteger(hospitalId) || hospitalId <= 0) {
+      return res.json({ success: true, ignored: true }); // not one of our refunds
+    }
+
+    const eventId = String(req.headers['x-razorpay-event-id'] || crypto.createHash('sha256').update(raw).digest('hex')).slice(0, 200);
+    const { rows } = await pool.query(
+      `INSERT INTO payment_gateway_events (gateway, event_id, event_type, hospital_id) VALUES ('razorpay', $1, $2, $3)
+       ON CONFLICT (gateway, event_id) DO NOTHING RETURNING id`,
+      [eventId, event.event, hospitalId]
+    );
+    if (!rows[0]) return res.json({ success: true, duplicate: true });
+    claimed = rows[0].id;
+
+    const result = await hospitalBilling.confirmGatewayRefund(hospitalId, {
+      gatewayRefundId,
+      refundId: notes.refundId ? Number(notes.refundId) : null,
+      status: entity?.status || (event.event === 'refund.failed' ? 'failed' : 'processed'),
+    }, { actorId: null, actorName: 'razorpay_webhook' });
+
+    await pool.query(`UPDATE payment_gateway_events SET processed_at = NOW(), outcome = $2 WHERE id = $1`, [claimed, result.applied ? 'applied' : result.reason]);
+    return res.json({ success: true, applied: result.applied, reason: result.reason || null, posted: !!result.posted });
+  } catch (e) {
+    console.error('[refund webhook]', e.message);
+    // Release the claim so the gateway's retry can process this event (5xx -> retry).
+    if (claimed) await pool.query(`DELETE FROM payment_gateway_events WHERE id = $1`, [claimed]).catch(() => {});
+    res.status(500).json({ success: false, message: 'Webhook processing failed' });
+  }
+});
+
 router.use(verifyHospitalToken);
 
 // ── Stations ────────────────────────────────────────────────────────────────
@@ -348,65 +407,6 @@ router.post('/credit-accounts/:id/approve', requireBillingSupervisor, async (req
     res.json({ success: true, account });
   } catch (e) {
     res.status(400).json({ success: false, message: e.message });
-  }
-});
-
-// Razorpay refund webhook — no hospital JWT; mounted before auth middleware and whitelisted in
-// ringFencing. Same signature discipline as the capture webhook: HMAC over the RAW request text,
-// fail closed, and the gateway event id is claimed first so a redelivery applies nothing twice.
-// This is the ONLY place a gateway refund touches the general ledger.
-router.post('/refunds/webhook', async (req, res) => {
-  let claimed = null;
-  try {
-    const raw = req.rawBody;
-    if (typeof raw !== 'string' || !raw) {
-      return res.status(400).json({ success: false, message: 'Webhook body was not captured' });
-    }
-    let signatureOk;
-    try {
-      signatureOk = paymentGateway.verifyRazorpayWebhook(raw, req.headers['x-razorpay-signature']);
-    } catch (e) {
-      console.error('[refund webhook] not configured:', e.message);
-      return res.status(503).json({ success: false, message: 'Webhook is not configured' });
-    }
-    if (!signatureOk) return res.status(400).json({ success: false, message: 'Invalid webhook signature' });
-
-    let event;
-    try { event = JSON.parse(raw); } catch { return res.status(400).json({ success: false, message: 'Invalid JSON' }); }
-    if (event.event !== 'refund.processed' && event.event !== 'refund.failed') {
-      return res.json({ success: true, ignored: true });
-    }
-
-    const entity = event.payload?.refund?.entity;
-    const gatewayRefundId = entity?.id;
-    const notes = entity?.notes || {};
-    const hospitalId = Number(notes.hospitalId);
-    if (!gatewayRefundId || !Number.isInteger(hospitalId) || hospitalId <= 0) {
-      return res.json({ success: true, ignored: true }); // not one of our refunds
-    }
-
-    const eventId = String(req.headers['x-razorpay-event-id'] || crypto.createHash('sha256').update(raw).digest('hex')).slice(0, 200);
-    const { rows } = await pool.query(
-      `INSERT INTO payment_gateway_events (gateway, event_id, event_type, hospital_id) VALUES ('razorpay', $1, $2, $3)
-       ON CONFLICT (gateway, event_id) DO NOTHING RETURNING id`,
-      [eventId, event.event, hospitalId]
-    );
-    if (!rows[0]) return res.json({ success: true, duplicate: true });
-    claimed = rows[0].id;
-
-    const result = await hospitalBilling.confirmGatewayRefund(hospitalId, {
-      gatewayRefundId,
-      refundId: notes.refundId ? Number(notes.refundId) : null,
-      status: entity?.status || (event.event === 'refund.failed' ? 'failed' : 'processed'),
-    }, { actorId: null, actorName: 'razorpay_webhook' });
-
-    await pool.query(`UPDATE payment_gateway_events SET processed_at = NOW(), outcome = $2 WHERE id = $1`, [claimed, result.applied ? 'applied' : result.reason]);
-    return res.json({ success: true, applied: result.applied, reason: result.reason || null, posted: !!result.posted });
-  } catch (e) {
-    console.error('[refund webhook]', e.message);
-    // Release the claim so the gateway's retry can process this event (5xx -> retry).
-    if (claimed) await pool.query(`DELETE FROM payment_gateway_events WHERE id = $1`, [claimed]).catch(() => {});
-    res.status(500).json({ success: false, message: 'Webhook processing failed' });
   }
 });
 

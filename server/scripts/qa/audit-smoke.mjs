@@ -118,6 +118,45 @@ if (SECRET) {
   }
 }
 
+if (SECRET) {
+  // ── 2026-09-26 additions: roadmap-intelligence (RLS-backed), refund webhook, clinical-notes scope, imaging registry ──
+  const hosp = (role, id, org = ORG) => token({ id, role, userType: 'hospital', ...(org ? { tenant_id: org, organization_id: org } : {}) });
+  const RM = '/api/roadmap-intelligence';
+  // FINDING (smoke test 2026-09-26): middleware/ringFencing.js lists /api/roadmap-intelligence in NO user type's allowedPaths,
+  // so today the whole router is unreachable — even for hospital staff and admins (403 ACCESS_DENIED). The router itself is
+  // hardened (tenant from token, role gates, patient ownership, FORCE RLS: __tests__/roadmap-*.test.js and
+  // scripts/qa/roadmap-rls.mjs), but exposing it is a product/SaMD decision (pharmacogenomic recommendations are clinical
+  // decision support). These checks pin the CURRENT state; when someone deliberately whitelists the path they will fail —
+  // replace them with the live checks listed in docs/audit/PHASE1_MICRO_AUDIT_2026-09-25.md.
+  await expect('ROADMAP anonymous refused', ['GET', `${RM}/esg/summary`], 401);
+  for (const [label, tok] of [
+    ['a patient', token({ id: 987041, role: 'patient', organization_id: ORG })],
+    ['hospital staff', hosp('nurse', 987044)],
+    ['a platform admin', token({ id: 987046, role: 'admin' })],
+  ]) await expect(`ROADMAP is not exposed: ${label} is denied at the ring-fence`, ['GET', `${RM}/rwe/aggregate`, { tok }], 403, 'ACCESS_DENIED');
+
+  // Gateway-refund webhook: mounted, whitelisted past the JWT ring-fence, and fails CLOSED without a valid signature.
+  {
+    const r = await call('POST', '/api/hospital/billing/refunds/webhook', { body: { event: 'refund.processed', payload: {} } });
+    check('REFUND webhook is reachable without a JWT and refuses an unsigned body (400, or 503 if unconfigured)', [400, 503].includes(r.status), `status ${r.status}`);
+    const r2 = await call('GET', '/api/hospital/billing/refunds/pending', {});
+    check('REFUND pending list still requires authentication', r2.status === 401, `status ${r2.status}`);
+  }
+
+  // Clinical notes: scoped to the caller's hospital (and this call proves the lazily-added columns work on production).
+  await expect('NOTES a staff token with no tenant is refused', ['GET', '/api/hospital/clinical-notes/notes/patient/1', { tok: hosp('nurse', 987048, null) }], 403);
+  {
+    const r = await call('GET', '/api/hospital/clinical-notes/notes/patient/1', { tok: hosp('nurse', 987049) });
+    check('NOTES a synthetic hospital sees NO notes for patient 1 (other hospitals\' notes are not returned)', r.status === 200 && Array.isArray(r.json?.data) && r.json.data.length === 0, `status ${r.status} rows ${r.json?.data?.length}`);
+  }
+
+  // Imaging registry, positive path: an explicit tenantId of a REAL lab resolves through imaging_tenants (lab 1 owns test studies).
+  {
+    const r = await call('GET', '/api/hypergrid/dicom/studies', { tok: token({ id: 987050, role: 'doctor', tenantId: 1 }) });
+    check('IMAGING registry: an explicit tenantId of a real lab resolves and lists that lab\'s studies', r.status === 200 && (r.json?.studies || []).every((x) => String(x.tenant_id) === '1'), `status ${r.status} studies ${(r.json?.studies || []).length}`);
+  }
+}
+
 const failed = results.filter((r) => !r).length;
 console.log(`\n${results.length - failed}/${results.length} smoke checks passed`);
 process.exit(failed ? 1 : 0);
