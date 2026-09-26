@@ -1902,7 +1902,7 @@ startCrmAutomationCron();
 
 // ============== SaMD: Drift Monitor (weekly Sun 01:00) ==============
 import governanceServiceForCron from './services/ai-model-governance.service.js';
-import { tick as cronTick, tickError as cronTickError, tickStart as cronTickStart } from './utils/cronRegistry.js';
+import { tick as cronTick, tickError as cronTickError, beginJob as cronBeginJob } from './utils/cronRegistry.js';
 import cron from 'node-cron';
 import nodemailer from 'nodemailer';
 import { runWeeklyMisForAllCorporates } from './services/corporate-wellness-mis.service.js';
@@ -1924,7 +1924,7 @@ async function sendDriftAlert(drifted) {
 }
 
 cron.schedule('0 1 * * 0', async () => {
-  cronTickStart('ai_drift_monitor');
+  if (!(await cronBeginJob('ai_drift_monitor'))) return;   // one run at a time across processes; tick/tickError release it
   try {
     const result = await governanceServiceForCron.runDriftMonitor();
     cronTick('ai_drift_monitor', { alerts: result.alerts?.length || 0, features: result.results?.length || 0 });
@@ -1940,7 +1940,7 @@ cron.schedule('0 1 * * 0', async () => {
 });
 
 cron.schedule('0 1 * * 1', async () => {
-  cronTickStart('ai_demographic_parity');
+  if (!(await cronBeginJob('ai_demographic_parity'))) return;   // one run at a time across processes; tick/tickError release it
   try {
     const result = await governanceServiceForCron.computeDemographicParity();
     cronTick('ai_demographic_parity', { groups: result.groups?.length || 0, flagged: result.disparityFlagged || 0 });
@@ -1951,7 +1951,7 @@ cron.schedule('0 1 * * 1', async () => {
 
 // ============== Corporate Wellness Weekly MIS (Mon 08:00 IST) ==============
 cron.schedule('30 2 * * 1', async () => {
-  cronTickStart('corporate_weekly_mis');
+  if (!(await cronBeginJob('corporate_weekly_mis'))) return;   // one run at a time across processes; tick/tickError release it
   try {
     const result = await runWeeklyMisForAllCorporates({ sendEmail: true });
     cronTick('corporate_weekly_mis', {
@@ -1968,7 +1968,7 @@ cron.schedule('30 2 * * 1', async () => {
 import { runNightlyBilling } from './services/hospital-billing-cron.service.js';
 
 cron.schedule('0 2 * * *', async () => {
-  cronTickStart('hospital_billing_nightly');
+  if (!(await cronBeginJob('hospital_billing_nightly'))) return;   // the service also holds its own lease (hospital-billing-nightly)
   try {
     const result = await runNightlyBilling();
     cronTick('hospital_billing_nightly', result);
@@ -1981,7 +1981,7 @@ cron.schedule('0 2 * * *', async () => {
 import { verifyChain as verifyAuditChain } from './services/audit-chain.service.js';
 
 cron.schedule('0 3 * * *', async () => {
-  cronTickStart('audit_chain_verify');
+  if (!(await cronBeginJob('audit_chain_verify'))) return;   // one run at a time across processes; tick/tickError release it
   try {
     const result = await verifyAuditChain();
     cronTick('audit_chain_verify', { valid: result.valid, checkedRows: result.checkedRows, brokenAt: result.brokenAt });
@@ -1996,7 +1996,7 @@ cron.schedule('0 3 * * *', async () => {
 // ITEM-06: Auto-create next month's audit_log partition on the 25th at 1 AM
 import { ensureNextMonthPartition } from './migrations/audit-log-partitioning.migration.js';
 cron.schedule('0 1 25 * *', async () => {
-  cronTickStart('audit_log_partition');
+  if (!(await cronBeginJob('audit_log_partition'))) return;   // one run at a time across processes; tick/tickError release it
   try {
     await ensureNextMonthPartition();
     cronTick('audit_log_partition', { action: 'next_month_partition_ensured' });
