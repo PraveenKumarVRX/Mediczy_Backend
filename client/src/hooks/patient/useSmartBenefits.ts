@@ -10,8 +10,11 @@ import api from '@/utils/api';
 // insurer/policyNumber are null for employer-funded plans -- never fabricated.
 export interface BenefitPlan {
   id: string;
+  source?: 'user_health_packages' | string;
+  packageId?: string | null;
   name: string;
   type: 'gmc' | 'gpa' | 'gtl' | 'opd' | 'dental' | 'vision' | 'wellness' | 'topup' | 'parents' | 'personal';
+  benefitCategory?: 'insurance' | 'wellness' | 'health_checkup' | string;
   insurer: string | null;
   isEmployerFunded?: boolean;
   policyNumber: string | null;
@@ -23,13 +26,21 @@ export interface BenefitPlan {
   validTo: string;
   features: string[];
   sublimits: { name: string; limit: number; used: number }[];
+  status?: string;
+  bookingEligible?: boolean;
+  familyEligible?: boolean;
+  familyDiscountPercent?: number;
+  familyPrice?: number | null;
+  usedAt?: string | null;
 }
 
 export interface FamilyMember {
   id: string;
   name: string;
   relationship: string;
+  relation?: string;
   age: number;
+  gender?: string;
   covered: boolean;
   planId: string;
 }
@@ -52,6 +63,37 @@ export interface Claim {
 
 const getToken = () => localStorage.getItem('token');
 
+const calculateAge = (dateOfBirth?: string | null) => {
+  if (!dateOfBirth) return 0;
+  const birthDate = new Date(dateOfBirth);
+  if (Number.isNaN(birthDate.getTime())) return 0;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age -= 1;
+  return Math.max(0, age);
+};
+
+const normalizeFamilyMember = (member: any): FamilyMember => {
+  const relationship = String(member.relationship || member.relation || 'family').trim();
+  const name = String(
+    member.name ||
+    [member.firstName, member.lastName].filter(Boolean).join(' ') ||
+    'Family member'
+  ).trim();
+
+  return {
+    id: String(member.id),
+    name,
+    relationship,
+    relation: relationship.charAt(0).toUpperCase() + relationship.slice(1),
+    age: Number(member.age) || calculateAge(member.dateOfBirth),
+    gender: member.gender || '',
+    covered: member.covered !== false,
+    planId: member.planId || '',
+  };
+};
+
 export function useSmartBenefits() {
   const [plans, setPlans]   = useState<BenefitPlan[]>([]);
   const [family, setFamily] = useState<FamilyMember[]>([]);
@@ -72,7 +114,13 @@ export function useSmartBenefits() {
       ]);
 
       if (Array.isArray(benefitsRes?.data?.plans)) setPlans(benefitsRes.data.plans);
-      if (Array.isArray(familyRes?.data?.familyMembers)) setFamily(familyRes.data.familyMembers);
+
+      const familyPayload = Array.isArray(familyRes?.data?.familyMembers)
+        ? familyRes.data.familyMembers
+        : Array.isArray(familyRes?.data?.data)
+          ? familyRes.data.data
+          : [];
+      setFamily(familyPayload.map(normalizeFamilyMember));
 
       if (Array.isArray(claimsRes?.data?.claims)) {
         setClaims(claimsRes.data.claims);

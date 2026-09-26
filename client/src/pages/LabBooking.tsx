@@ -12,7 +12,8 @@ import {
   FileText,
   CheckCircle2,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -57,6 +58,19 @@ interface Test {
   duration: string;
 }
 
+interface FamilyMember {
+  id: number | string;
+  firstName?: string;
+  lastName?: string;
+  name?: string;
+  relationship?: string;
+  phoneNumber?: string;
+  gender?: string;
+}
+
+const getFamilyMemberName = (member: FamilyMember) =>
+  member.name || [member.firstName, member.lastName].filter(Boolean).join(" ") || "Family member";
+
 const LabBooking = () => {
   const { labId } = useParams<{ labId: string }>();
   const navigate = useNavigate();
@@ -66,9 +80,24 @@ const LabBooking = () => {
 
   // Get service type from query parameter
   const serviceTypeFromQuery = searchParams.get("serviceType") || "checkup";
+  const benefitSource = searchParams.get("source") || "";
+  const corporatePackageId = searchParams.get("packageId") || "";
+  const corporatePackageName = searchParams.get("packageName") || "Corporate health checkup package";
+  const corporatePackagePrice = Number(searchParams.get("packagePrice") || 0);
+  const familyDiscountPercent = Number(searchParams.get("familyDiscount") || 20);
+  const familyDiscountedPrice = Number(searchParams.get("familyPrice") || 0);
+  const initialBookingFor = searchParams.get("bookingFor") === "family" || benefitSource === "corporate-family-benefit"
+    ? "family"
+    : "self";
+  const isCorporateBenefitBooking = benefitSource === "corporate-benefit" || benefitSource === "corporate-family-benefit";
 
   const [lab, setLab] = useState<Lab | null>(null);
-  const [labLoading, setLabLoading] = useState(true);
+  const [labLoading, setLabLoading] = useState(Boolean(labId));
+  const [corporateLabs, setCorporateLabs] = useState<Lab[]>([]);
+  const [selectedLabId, setSelectedLabId] = useState(labId || "");
+  const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
+  const [bookingFor, setBookingFor] = useState<"self" | "family">(initialBookingFor);
+  const [selectedFamilyMemberId, setSelectedFamilyMemberId] = useState("");
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedTime, setSelectedTime] = useState("");
   const [serviceType, setServiceType] = useState<string>(serviceTypeFromQuery);
@@ -77,20 +106,26 @@ const LabBooking = () => {
   const [notes, setNotes] = useState("");
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const effectiveLabId = labId || selectedLabId;
+  const selectedFamilyMember = familyMembers.find((member) => String(member.id) === selectedFamilyMemberId);
 
   // Fetch lab details
   useEffect(() => {
     let cancelled = false;
 
     const fetchLab = async () => {
-      if (!labId) return;
+      if (!effectiveLabId) {
+        setLab(null);
+        setLabLoading(false);
+        return;
+      }
 
       try {
         setLabLoading(true);
-        const { data } = await api.get(`/labs/${labId}`);
+        const { data } = await api.get(`/labs/${effectiveLabId}`);
         
         if (!cancelled) {
-          setLab(data.lab || data);
+          setLab(data.lab || data.data || data);
         }
       } catch (error: any) {
         console.error("Fetch lab error:", error);
@@ -113,18 +148,55 @@ const LabBooking = () => {
     return () => {
       cancelled = true;
     };
-  }, [labId, navigate, toast]);
+  }, [effectiveLabId, isCorporateBenefitBooking, navigate, toast]);
+
+  useEffect(() => {
+    if (!isCorporateBenefitBooking) return;
+
+    let cancelled = false;
+
+    const fetchCorporateBookingContext = async () => {
+      const [labsRes, familyRes] = await Promise.all([
+        api.get("/employee/my-labs").catch(() => null),
+        api.get("/family-members").catch(() => null),
+      ]);
+
+      if (cancelled) return;
+
+      const labs = Array.isArray(labsRes?.data?.labs) ? labsRes.data.labs : [];
+      setCorporateLabs(labs);
+      if (!selectedLabId && labs.length === 1) {
+        setSelectedLabId(String(labs[0].id));
+      }
+
+      const familyPayload = Array.isArray(familyRes?.data?.data)
+        ? familyRes.data.data
+        : Array.isArray(familyRes?.data?.familyMembers)
+          ? familyRes.data.familyMembers
+          : [];
+      setFamilyMembers(familyPayload);
+      if (initialBookingFor === "family" && !selectedFamilyMemberId && familyPayload.length === 1) {
+        setSelectedFamilyMemberId(String(familyPayload[0].id));
+      }
+    };
+
+    fetchCorporateBookingContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialBookingFor, isCorporateBenefitBooking, selectedFamilyMemberId, selectedLabId]);
 
   // Fetch available tests
   const { data: availableTests = [] } = useQuery<Test[]>({
-    queryKey: ["labTests", labId, serviceType],
+    queryKey: ["labTests", effectiveLabId, serviceType],
     queryFn: async () => {
-      const { data } = await api.get(`/labs/${labId}/tests`, {
+      const { data } = await api.get(`/labs/${effectiveLabId}/tests`, {
         params: { serviceType },
       });
       return data.tests || [];
     },
-    enabled: !!labId,
+    enabled: !!effectiveLabId,
   });
 
   // Generate available dates (next 7 days)
@@ -162,6 +234,13 @@ const LabBooking = () => {
   };
 
   const calculateTotalFee = () => {
+    if (isCorporateBenefitBooking && corporatePackageId) {
+      if (bookingFor === "family") {
+        return familyDiscountedPrice > 0 ? familyDiscountedPrice : Math.max(0, Math.round(corporatePackagePrice * (100 - familyDiscountPercent) / 100));
+      }
+      return 0;
+    }
+
     const testsTotal = selectedTests.reduce((sum, testId) => {
       const test = availableTests.find((t) => t.id === testId);
       return sum + (test?.price || 0);
@@ -176,7 +255,19 @@ const LabBooking = () => {
         description: "Please sign in before booking.",
         variant: "destructive",
       });
-      navigate("/login", { state: { redirectTo: `/lab-booking/${labId}?serviceType=${serviceType}` } });
+      const redirectTo = effectiveLabId
+        ? `/lab-booking/${effectiveLabId}?serviceType=${serviceType}`
+        : `/lab-booking?${searchParams.toString()}`;
+      navigate("/login", { state: { redirectTo } });
+      return;
+    }
+
+    if (!effectiveLabId) {
+      toast({
+        title: "Select a lab",
+        description: "Choose a corporate network lab before continuing.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -189,7 +280,16 @@ const LabBooking = () => {
       return;
     }
 
-    if (selectedTests.length === 0) {
+    if (bookingFor === "family" && !selectedFamilyMemberId) {
+      toast({
+        title: "Select family member",
+        description: "Choose the family member who will use this discounted checkup.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (selectedTests.length === 0 && !corporatePackageId) {
       toast({
         title: "No tests selected",
         description: "Please select at least one test to book.",
@@ -205,7 +305,7 @@ const LabBooking = () => {
     try {
       setBookingLoading(true);
 
-      const labIdentifier = (lab?.id ?? lab?._id ?? labId)?.toString();
+      const labIdentifier = (lab?.id ?? lab?._id ?? effectiveLabId)?.toString();
 
       if (!labIdentifier || !/^\d+$/.test(labIdentifier)) {
         toast({
@@ -216,14 +316,37 @@ const LabBooking = () => {
         return;
       }
 
-      const tests = selectedTests.map((testId) => {
-        const test = availableTests.find((t) => t.id === testId);
-        return {
-          id: testId,
-          name: test?.name || "",
-          price: test?.price || 0,
-        };
-      });
+      const tests = selectedTests.length > 0
+        ? selectedTests.map((testId) => {
+            const test = availableTests.find((t) => t.id === testId);
+            return {
+              id: testId,
+              name: test?.name || "",
+              price: test?.price || 0,
+            };
+          })
+        : corporatePackageId
+          ? [{
+              id: corporatePackageId,
+              name: corporatePackageName,
+              price: totalFee,
+            }]
+          : [];
+
+      const patientName = bookingFor === "family" && selectedFamilyMember
+        ? getFamilyMemberName(selectedFamilyMember)
+        : currentUser?.name || `${currentUser?.firstName} ${currentUser?.lastName}`.trim();
+      const patientPhone = bookingFor === "family" && selectedFamilyMember?.phoneNumber
+        ? selectedFamilyMember.phoneNumber
+        : currentUser?.phoneNumber || currentUser?.phone;
+
+      const corporateNotes = isCorporateBenefitBooking
+        ? [
+            notes.trim(),
+            `Corporate health checkup package: ${corporatePackageName}`,
+            bookingFor === "family" ? `Family discounted booking: ${familyDiscountPercent}% off` : "Employee assigned corporate checkup",
+          ].filter(Boolean).join("\n")
+        : notes.trim();
 
       const bookingData = {
         labId: parseInt(labIdentifier, 10),
@@ -233,9 +356,17 @@ const LabBooking = () => {
         tests,
         testType: serviceType === "checkup" ? "Health Checkup" : "Diagnostic Test",
         symptoms: symptoms.trim(),
-        notes: notes.trim(),
-        patientName: currentUser?.name || `${currentUser?.firstName} ${currentUser?.lastName}`,
-        patientPhone: currentUser?.phoneNumber || currentUser?.phone,
+        notes: corporateNotes,
+        patientName,
+        patientPhone,
+        bookingFor,
+        familyMemberId: bookingFor === "family" ? selectedFamilyMemberId : null,
+        corporateBenefitSource: benefitSource || null,
+        corporatePackageId: corporatePackageId || null,
+        corporatePackageName: corporatePackageName || null,
+        corporatePackagePrice: corporatePackagePrice || null,
+        familyDiscountPercent: bookingFor === "family" ? familyDiscountPercent : null,
+        familyDiscountedPrice: bookingFor === "family" ? totalFee : null,
       };
 
       const { data } = await api.post("/labs/book", bookingData);
@@ -274,7 +405,7 @@ const LabBooking = () => {
     );
   }
 
-  if (!lab) {
+  if (!lab && !isCorporateBenefitBooking) {
     return (
       <MainLayout>
         <div className="container mx-auto px-4 py-12 flex flex-col items-center gap-3 text-center">
@@ -290,7 +421,7 @@ const LabBooking = () => {
 
   const totalFee = calculateTotalFee();
   const bookingSteps = [
-    { id: 1, label: 'Choose tests', done: selectedTests.length > 0 },
+    { id: 1, label: isCorporateBenefitBooking ? 'Choose lab' : 'Choose tests', done: Boolean(effectiveLabId) && (selectedTests.length > 0 || Boolean(corporatePackageId)) },
     { id: 2, label: 'Pick slot', done: Boolean(selectedDate && selectedTime) },
     { id: 3, label: 'Confirm booking', done: false }
   ];
@@ -323,43 +454,116 @@ const LabBooking = () => {
             </div>
           </div>
 
-          <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
-            <div className="flex items-start gap-6">
-              <div className="w-20 h-20 rounded-lg bg-primary/10 flex items-center justify-center">
-                <FlaskConical className="h-10 w-10 text-primary" />
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h2 className="text-2xl font-semibold">{lab.name}</h2>
-                    {lab.address && (
-                      <p className="text-gray-600 mt-1">{lab.address}</p>
-                    )}
-                    {lab.phone && (
-                      <p className="text-sm text-gray-500 mt-1">📞 {lab.phone}</p>
+          {isCorporateBenefitBooking && (
+            <Card className="p-6 mb-8 shadow-lg border-cyan-200/80 bg-cyan-50/60">
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="h-5 w-5 text-cyan-700 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-base font-semibold text-cyan-950">{corporatePackageName}</h3>
+                  <p className="text-sm text-cyan-800 mt-1">
+                    Employee checkup is included. Family members can use the same package at {familyDiscountPercent}% off.
+                  </p>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="corporate-lab">Corporate network lab</Label>
+                      <select
+                        id="corporate-lab"
+                        value={selectedLabId}
+                        onChange={(event) => setSelectedLabId(event.target.value)}
+                        className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      >
+                        <option value="">Select lab</option>
+                        {corporateLabs.map((item) => (
+                          <option key={item.id} value={item.id}>{item.name}</option>
+                        ))}
+                      </select>
+                      {corporateLabs.length === 0 && (
+                        <p className="text-xs text-cyan-800">No assigned corporate labs were found. Ask HR to map labs before booking.</p>
+                      )}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Booking for</Label>
+                      <RadioGroup value={bookingFor} onValueChange={(value) => setBookingFor(value as "self" | "family")} className="grid grid-cols-2 gap-2">
+                        <div className="flex items-center space-x-2 rounded-lg border bg-white px-3 py-2">
+                          <RadioGroupItem value="self" id="booking-self" />
+                          <Label htmlFor="booking-self" className="cursor-pointer text-sm">Self</Label>
+                        </div>
+                        <div className="flex items-center space-x-2 rounded-lg border bg-white px-3 py-2">
+                          <RadioGroupItem value="family" id="booking-family" />
+                          <Label htmlFor="booking-family" className="cursor-pointer text-sm">Family</Label>
+                        </div>
+                      </RadioGroup>
+                    </div>
+                    {bookingFor === "family" && (
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="family-member">Family member</Label>
+                        <select
+                          id="family-member"
+                          value={selectedFamilyMemberId}
+                          onChange={(event) => setSelectedFamilyMemberId(event.target.value)}
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        >
+                          <option value="">Select family member</option>
+                          {familyMembers.map((member) => (
+                            <option key={member.id} value={member.id}>
+                              {getFamilyMemberName(member)}{member.relationship ? ` (${member.relationship})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm text-cyan-900">
+                          <Users className="h-4 w-4 text-cyan-700" />
+                          <span>Discounted payable amount: <strong>₹{totalFee}</strong></span>
+                        </div>
+                        {familyMembers.length === 0 && (
+                          <p className="text-xs text-cyan-800">Add family members from your profile before booking a family checkup.</p>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
-                {lab.rating && (
-                  <div className="flex items-center gap-2 mt-3">
-                    <Badge variant="secondary">
-                      ⭐ {(+lab.rating).toFixed(1)}
-                    </Badge>
-                    {lab.accreditation && lab.accreditation.length > 0 && (
-                      <Badge variant="outline">
-                        <CheckCircle2 className="h-3 w-3 mr-1" />
-                        Accredited
-                      </Badge>
-                    )}
-                    <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
-                      <ShieldCheck className="h-3 w-3 mr-1" />
-                      Safe sample handling
-                    </Badge>
-                  </div>
-                )}
               </div>
-            </div>
-          </Card>
+            </Card>
+          )}
+
+          {lab && (
+            <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
+              <div className="flex items-start gap-6">
+                <div className="w-20 h-20 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FlaskConical className="h-10 w-10 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h2 className="text-2xl font-semibold">{lab.name}</h2>
+                      {lab.address && (
+                        <p className="text-gray-600 mt-1">{typeof lab.address === "string" ? lab.address : JSON.stringify(lab.address)}</p>
+                      )}
+                      {lab.phone && (
+                        <p className="text-sm text-gray-500 mt-1">Phone: {lab.phone}</p>
+                      )}
+                    </div>
+                  </div>
+                  {lab.rating && (
+                    <div className="flex items-center gap-2 mt-3">
+                      <Badge variant="secondary">
+                        {(+lab.rating).toFixed(1)}
+                      </Badge>
+                      {lab.accreditation && lab.accreditation.length > 0 && (
+                        <Badge variant="outline">
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                          Accredited
+                        </Badge>
+                      )}
+                      <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100">
+                        <ShieldCheck className="h-3 w-3 mr-1" />
+                        Safe sample handling
+                      </Badge>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
 
           <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
             <h3 className="text-lg font-semibold mb-4">Service Type</h3>
@@ -383,6 +587,11 @@ const LabBooking = () => {
 
           <Card className="p-6 mb-8 shadow-lg border-slate-200/80">
             <h3 className="text-lg font-semibold mb-4">Select Tests</h3>
+            {isCorporateBenefitBooking && corporatePackageId && (
+              <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                {corporatePackageName} is selected from your corporate benefit.
+              </div>
+            )}
             <div className="space-y-2">
               {availableTests.map((test) => (
                 <div
@@ -510,7 +719,7 @@ const LabBooking = () => {
             </Button>
             <Button
               onClick={handleBooking}
-              disabled={!selectedDate || !selectedTime || selectedTests.length === 0}
+              disabled={!effectiveLabId || !selectedDate || !selectedTime || (selectedTests.length === 0 && !corporatePackageId)}
               className="flex-1"
             >
               <CalendarCheck className="h-4 w-4 mr-2" />
@@ -531,7 +740,15 @@ const LabBooking = () => {
           <div className="space-y-3 py-4">
             <div>
               <p className="text-sm text-gray-500">Lab</p>
-              <p className="font-medium">{lab.name}</p>
+              <p className="font-medium">{lab?.name || "Selected corporate network lab"}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Patient</p>
+              <p className="font-medium">
+                {bookingFor === "family" && selectedFamilyMember
+                  ? `${getFamilyMemberName(selectedFamilyMember)}${selectedFamilyMember.relationship ? ` (${selectedFamilyMember.relationship})` : ""}`
+                  : currentUser?.name || `${currentUser?.firstName || ""} ${currentUser?.lastName || ""}`.trim()}
+              </p>
             </div>
             <div>
               <p className="text-sm text-gray-500">Service Type</p>
@@ -540,14 +757,20 @@ const LabBooking = () => {
             <div>
               <p className="text-sm text-gray-500">Tests Selected</p>
               <ul className="list-disc list-inside">
-                {selectedTests.map((testId) => {
-                  const test = availableTests.find((t) => t.id === testId);
-                  return (
-                    <li key={testId} className="text-sm">
-                      {test?.name} - ₹{test?.price}
+                {selectedTests.length > 0
+                  ? selectedTests.map((testId) => {
+                      const test = availableTests.find((t) => t.id === testId);
+                      return (
+                        <li key={testId} className="text-sm">
+                          {test?.name} - ₹{test?.price}
+                        </li>
+                      );
+                    })
+                  : (
+                    <li className="text-sm">
+                      {corporatePackageName} - ₹{totalFee}
                     </li>
-                  );
-                })}
+                  )}
               </ul>
             </div>
             <div>

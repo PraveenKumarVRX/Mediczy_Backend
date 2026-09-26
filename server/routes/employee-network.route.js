@@ -53,6 +53,28 @@ const inferPlanType = (value) => {
   return 'gmc';
 };
 
+const parseJsonObject = (value) => {
+  if (!value) return {};
+  if (typeof value === 'object' && !Array.isArray(value)) return value;
+  if (typeof value !== 'string') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const asStringList = (value) => Array.isArray(value)
+  ? value.map((item) => String(item || '').trim()).filter(Boolean)
+  : [];
+
+const normalizePercent = (value, fallback = 20) => {
+  const percent = Number(value);
+  if (!Number.isFinite(percent)) return fallback;
+  return Math.min(100, Math.max(0, percent));
+};
+
 /**
  * Helper: resolve the corporate that the logged-in user belongs to (as employee).
  * Returns { corporateId, companyName } or null if not a corporate employee.
@@ -283,7 +305,8 @@ router.get('/benefits', authUser, async (req, res) => {
       });
     }
 
-    const rows = await postgresSequelize.query(
+    const [rows, healthPackageRows] = await Promise.all([
+      postgresSequelize.query(
       `SELECT up.id,
               up.status,
               up.metadata,
@@ -305,8 +328,25 @@ router.get('/benefits', authUser, async (req, res) => {
         WHERE up."userId" = :userId
           AND up.status = 'active'
         ORDER BY COALESCE(up."startDate", up."createdAt") DESC`,
-      { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
-    );
+        { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT }
+      ),
+      postgresSequelize.query(
+        `SELECT "packageId",
+                "packageName",
+                "packageDetails",
+                "validFrom",
+                "validTo",
+                status,
+                "usedAt"
+           FROM user_health_packages
+          WHERE "userId" = :userId
+            AND corporate_id = :corporateId
+            AND LOWER(COALESCE(status, 'active')) = 'active'
+            AND ("validTo" IS NULL OR "validTo" >= CURRENT_DATE)
+          ORDER BY COALESCE("validTo", NOW()) DESC, "packageName" ASC`,
+        { replacements: { userId: req.user.id, corporateId: corp.corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      ),
+    ]);
 
     const plans = rows.map((row, idx) => {
       const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
@@ -350,12 +390,49 @@ router.get('/benefits', authUser, async (req, res) => {
       };
     });
 
+    const healthCheckupPlans = healthPackageRows.map((row, idx) => {
+      const details = parseJsonObject(row.packageDetails);
+      const tests = asStringList(details.tests || details.features);
+      const price = Number(details.price ?? details.cost ?? 0) || 0;
+      const familyDiscountPercent = normalizePercent(details.familyDiscountPercent ?? details.familyDiscount);
+      const familyPrice = price > 0
+        ? Math.max(0, Math.round(price * (100 - familyDiscountPercent) / 100))
+        : null;
+      const used = Boolean(row.usedAt);
+      return {
+        id: `health-package-${row.packageId || idx}`,
+        source: 'user_health_packages',
+        packageId: row.packageId || null,
+        name: row.packageName || details.name || `Health Checkup Package ${idx + 1}`,
+        type: 'wellness',
+        benefitCategory: 'health_checkup',
+        insurer: null,
+        isEmployerFunded: true,
+        policyNumber: null,
+        sumInsured: price,
+        utilized: used ? price : 0,
+        remaining: used ? 0 : price,
+        familyCovered: 1,
+        validFrom: toISODate(row.validFrom) || toISODate(new Date()),
+        validTo: toISODate(row.validTo) || toISODate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)),
+        features: tests.length ? tests.slice(0, 12) : [details.description || 'Assigned corporate health checkup'].filter(Boolean),
+        sublimits: [],
+        status: row.status || 'active',
+        bookingEligible: !used,
+        familyEligible: true,
+        familyDiscountPercent,
+        familyPrice,
+        usedAt: toISODate(row.usedAt),
+      };
+    });
+
     return res.json({
       success: true,
       isCorporateEmployee: true,
       corporateId: corp.corporateId,
       corporateName: corp.companyName,
-      plans
+      plans: [...healthCheckupPlans, ...plans],
+      healthCheckups: healthCheckupPlans
     });
   } catch (err) {
     console.error('GET /benefits error:', err);

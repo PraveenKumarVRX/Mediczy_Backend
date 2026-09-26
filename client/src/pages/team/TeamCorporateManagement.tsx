@@ -209,7 +209,9 @@ interface HealthPackage {
   name: string;
   tests: string[];
   price: number;
+  familyDiscountPercent?: number;
   validityDays: number;
+  description?: string;
   type?: HealthPackageType;
   employeeCount?: number;
   canDelete?: boolean;
@@ -1015,6 +1017,7 @@ const TeamCorporateManagement = () => {
     type: 'annual' as HealthPackageType,
     tests: [] as string[],
     price: '',
+    familyDiscountPercent: '20',
     validityDays: '365'
   });
   
@@ -2969,7 +2972,9 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
             name: pkg.packageName || details.name || 'Health Package',
             tests: details.tests || [],
             price: Number(details.cost || details.price || 0),
+            familyDiscountPercent: Number(details.familyDiscountPercent || details.familyDiscount || 20),
             validityDays,
+            description: details.description || '',
             type: details.type as HealthPackageType | undefined,
             employeeCount: typeof pkg.employeeCount === 'number' ? pkg.employeeCount : undefined,
             canDelete: Boolean(pkg.canDelete),
@@ -5339,6 +5344,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       type: pkg.type || 'annual',
       tests: pkg.tests,
       price: pkg.price.toString(),
+      familyDiscountPercent: String(pkg.familyDiscountPercent ?? 20),
       validityDays: pkg.validityDays.toString()
     });
     setShowEditPackageDialog(true);
@@ -5361,6 +5367,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         packageDetails: {
           tests: newPackage.tests,
           price: parseFloat(newPackage.price),
+          familyDiscountPercent: parseFloat(newPackage.familyDiscountPercent) || 20,
           description: newPackage.description,
           type: newPackage.type,
         },
@@ -5379,7 +5386,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
       setShowEditPackageDialog(false);
       setEditingPackage(null);
-      setNewPackage({ name: '', description: '', type: 'annual', tests: [], price: '', validityDays: '365' });
+      setNewPackage({ name: '', description: '', type: 'annual', tests: [], price: '', familyDiscountPercent: '20', validityDays: '365' });
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -5471,6 +5478,15 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       await api.post('/admin/corporate-package-assignments', {
         corporateId: selectedCorporate.id,
         packageId: assigningPackage.id,
+        packageName: assigningPackage.name,
+        packageDetails: {
+          tests: assigningPackage.tests,
+          price: assigningPackage.price,
+          familyDiscountPercent: assigningPackage.familyDiscountPercent ?? 20,
+          description: assigningPackage.description || '',
+          type: assigningPackage.type || 'annual',
+        },
+        validityDays: assigningPackage.validityDays || 365,
         employeeIds: selectedEmployeesForAssign.length > 0 ? selectedEmployeesForAssign : 'all'
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
@@ -5484,15 +5500,13 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       setShowAssignPackageDialog(false);
       setAssigningPackage(null);
       setSelectedEmployeesForAssign([]);
+      await fetchHealthPackages(selectedCorporate.id);
     } catch (error: any) {
-      // Still show success for demo purposes
       toast({
-        title: 'Package Assigned',
-        description: `${assigningPackage.name} has been assigned to ${selectedEmployeesForAssign.length > 0 ? selectedEmployeesForAssign.length + ' employees' : 'all employees'}`
+        variant: 'destructive',
+        title: 'Package assignment failed',
+        description: error?.response?.data?.message || error?.message || 'Failed to assign health package'
       });
-      setShowAssignPackageDialog(false);
-      setAssigningPackage(null);
-      setSelectedEmployeesForAssign([]);
     }
   };
 
@@ -5535,11 +5549,19 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       }
       const selectedPlan = corporatePlans.find(p => String(p.id) === bulkPlanId) ||
         healthPackages.find(p => String(p.id) === bulkPlanId);
+      const selectedHealthPackage = healthPackages.find(p => String(p.id) === bulkPlanId);
       await api.post('/admin/corporate-package-assignments', {
         corporateId: selectedCorporate.id,
         packageId: bulkPlanId,
         packageName: selectedPlan?.name || `Plan ${bulkPlanId}`,
-        packageDetails: {},
+        packageDetails: selectedHealthPackage ? {
+          tests: selectedHealthPackage.tests,
+          price: selectedHealthPackage.price,
+          familyDiscountPercent: selectedHealthPackage.familyDiscountPercent ?? 20,
+          description: selectedHealthPackage.description || '',
+          type: selectedHealthPackage.type || 'annual',
+        } : {},
+        validityDays: selectedHealthPackage?.validityDays || 365,
         employeeIds: empIds,
       }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
       toast({ title: 'Plan Assigned', description: `Plan assigned to ${empIds.length} employee${empIds.length !== 1 ? 's' : ''}.` });
@@ -5579,6 +5601,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         packageDetails: {
           tests:       newPackage.tests,
           price:       parseFloat(newPackage.price),
+          familyDiscountPercent: parseFloat(newPackage.familyDiscountPercent) || 20,
           description: newPackage.description,
           type:        newPackage.type,
         },
@@ -5602,6 +5625,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         name: newPackage.name,
         tests: newPackage.tests,
         price: parseFloat(newPackage.price),
+        familyDiscountPercent: parseFloat(newPackage.familyDiscountPercent) || 20,
         validityDays: parseInt(newPackage.validityDays) || 365,
         type: newPackage.type
       };
@@ -5614,7 +5638,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
     }
 
     setShowAddPackageDialog(false);
-    setNewPackage({ name: '', description: '', type: 'annual', tests: [], price: '', validityDays: '365' });
+    setNewPackage({ name: '', description: '', type: 'annual', tests: [], price: '', familyDiscountPercent: '20', validityDays: '365' });
   };
 
   const handleCreatePlan = async () => {
@@ -9290,6 +9314,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     onChange={(e) => setNewPackage({...newPackage, validityDays: e.target.value})}
                   />
                 </div>
+                <div className="space-y-2">
+                  <Label>Family Discount (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="20"
+                    value={newPackage.familyDiscountPercent}
+                    onChange={(e) => setNewPackage({...newPackage, familyDiscountPercent: e.target.value})}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <Label>Tests Included ({newPackage.tests.length})</Label>
@@ -10377,6 +10412,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     placeholder="365"
                     value={newPackage.validityDays}
                     onChange={(e) => setNewPackage({...newPackage, validityDays: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Family Discount (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    placeholder="20"
+                    value={newPackage.familyDiscountPercent}
+                    onChange={(e) => setNewPackage({...newPackage, familyDiscountPercent: e.target.value})}
                   />
                 </div>
               </div>

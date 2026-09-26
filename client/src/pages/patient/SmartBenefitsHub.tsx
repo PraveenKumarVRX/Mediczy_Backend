@@ -35,6 +35,7 @@ import api from '@/utils/api';
 import { getToken } from '@/hooks/auth';
 import { useAuth } from '@/auth/AuthProvider';
 import MainLayout from '@/components/layout/MainLayout';
+import { FamilyMemberDialog } from '@/components/profile/FamilyMemberDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 const insurerLabel = (plan: BenefitPlan) => plan.insurer || 'Employer-funded (no third-party insurer)';
@@ -72,6 +73,8 @@ const typeIcon: Record<string, any> = {
 };
 
 const eCardEligible = new Set(['gmc', 'parents', 'topup', 'personal']);
+const isHealthCheckupPlan = (plan: BenefitPlan) =>
+  plan.benefitCategory === 'health_checkup' || plan.source === 'user_health_packages';
 
 const policyBenefitChips: Record<string, { icon: any; label: string; highlight?: boolean }[]> = {
   gmc: [
@@ -129,6 +132,12 @@ const statusConfig: Record<string, { color: string; bg: string; icon: any; label
 const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
 const fmtFull = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 const MOTION_STAGGER = 0.08;
+const genderLabel = (value?: string) => {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized === 'm' || normalized === 'male') return 'Male';
+  if (normalized === 'f' || normalized === 'female') return 'Female';
+  return 'Other';
+};
 
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -140,6 +149,7 @@ export default function SmartBenefitsHub() {
   const [eCardPlan, setECardPlan] = useState<BenefitPlan | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<BenefitPlan | null>(null);
   const [networkSearch, setNetworkSearch] = useState('');
+  const [showAddFamilyDialog, setShowAddFamilyDialog] = useState(false);
 
   // ── Data loading delegated to hook ──────────────────────────────────────
   const {
@@ -150,6 +160,26 @@ export default function SmartBenefitsHub() {
   const totalUtilized = plans.reduce((s, p) => s + p.utilized, 0);
   const totalRemaining = plans.reduce((s, p) => s + p.remaining, 0);
   const activeClaims = claims.filter(c => !['settled', 'rejected'].includes(c.status));
+
+  const openHealthCheckupBooking = (plan: BenefitPlan, forFamily = false) => {
+    const params = new URLSearchParams({
+      serviceType: 'checkup',
+      source: forFamily ? 'corporate-family-benefit' : 'corporate-benefit',
+      packageName: plan.name,
+    });
+    if (plan.packageId) params.set('packageId', String(plan.packageId));
+    if (forFamily) {
+      params.set('bookingFor', 'family');
+      if (typeof plan.familyDiscountPercent === 'number') {
+        params.set('familyDiscount', String(plan.familyDiscountPercent));
+      }
+      if (typeof plan.familyPrice === 'number') {
+        params.set('familyPrice', String(plan.familyPrice));
+      }
+      if (plan.sumInsured > 0) params.set('packagePrice', String(plan.sumInsured));
+    }
+    navigate(`/lab-booking?${params.toString()}`);
+  };
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
@@ -274,6 +304,7 @@ export default function SmartBenefitsHub() {
                   const Icon = typeIcon[plan.type] || Shield;
                   const gradient = typeGradient[plan.type] || typeGradient.gmc;
                   const pct = plan.sumInsured > 0 ? (plan.utilized / plan.sumInsured) * 100 : 0;
+                  const isCheckup = isHealthCheckupPlan(plan);
                   return (
                     <motion.div key={plan.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * MOTION_STAGGER, duration: 0.25 }}
@@ -294,7 +325,7 @@ export default function SmartBenefitsHub() {
                               </div>
                             </div>
                             <Badge className="bg-white/20 text-white border-0 text-[10px]">
-                              {plan.familyCovered} covered
+                              {isCheckup ? 'Assigned Checkup' : `${plan.familyCovered} covered`}
                             </Badge>
                           </div>
                         </div>
@@ -302,20 +333,24 @@ export default function SmartBenefitsHub() {
                           <div className="flex items-center justify-between mb-3">
                             <div>
                               <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">
-                                {plan.isEmployerFunded ? 'Benefit Limit' : 'Sum Insured'}
+                                {isCheckup ? 'Package Value' : plan.isEmployerFunded ? 'Benefit Limit' : 'Sum Insured'}
                               </p>
-                              <p className="text-lg font-bold text-white">{fmtFull(plan.sumInsured)}</p>
+                              <p className="text-lg font-bold text-white">{plan.sumInsured > 0 ? fmtFull(plan.sumInsured) : 'Included'}</p>
                             </div>
                             <div className="text-right">
-                              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Available</p>
-                              <p className="text-lg font-bold text-emerald-400">{fmtFull(plan.remaining)}</p>
+                              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{isCheckup ? 'Status' : 'Available'}</p>
+                              <p className="text-lg font-bold text-emerald-400">
+                                {isCheckup ? (plan.bookingEligible === false ? 'Used' : 'Available') : fmtFull(plan.remaining)}
+                              </p>
                             </div>
                           </div>
-                          <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden mb-3">
-                            <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }}
-                              transition={{ delay: 0.3, duration: 0.6, ease: 'easeOut' }}
-                              className={`h-full bg-gradient-to-r ${gradient} rounded-full`} />
-                          </div>
+                          {!isCheckup && (
+                            <div className="relative h-2 bg-slate-800 rounded-full overflow-hidden mb-3">
+                              <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+                                transition={{ delay: 0.3, duration: 0.6, ease: 'easeOut' }}
+                                className={`h-full bg-gradient-to-r ${gradient} rounded-full`} />
+                            </div>
+                          )}
 
                           {/* Per-policy benefit chips */}
                           {(policyBenefitChips[plan.type] || []).length > 0 && (
@@ -335,12 +370,48 @@ export default function SmartBenefitsHub() {
                               })}
                             </div>
                           )}
+                          {isCheckup && plan.familyEligible && (
+                            <div className="mb-3 rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 py-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-300">Family benefit</span>
+                                <Badge className="bg-cyan-400/10 text-cyan-200 border-0 text-[10px]">
+                                  {plan.familyDiscountPercent || 20}% off
+                                </Badge>
+                              </div>
+                              <p className="mt-1 text-[11px] text-slate-300">
+                                Family members can book this checkup
+                                {typeof plan.familyPrice === 'number' ? ` at ${fmtFull(plan.familyPrice)}` : ' at the corporate discounted rate'}.
+                              </p>
+                            </div>
+                          )}
 
                           <div className="flex items-center justify-between">
                             <p className="text-[10px] text-slate-500">
-                              {pct.toFixed(1)}% used • Valid till {new Date(plan.validTo).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                              {isCheckup
+                                ? `Valid till ${new Date(plan.validTo).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`
+                                : `${pct.toFixed(1)}% used • Valid till ${new Date(plan.validTo).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}`}
                             </p>
                             <div className="flex items-center gap-2">
+                              {isCheckup && plan.bookingEligible !== false && (
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    openHealthCheckupBooking(plan, false);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors border border-emerald-500/20">
+                                  <Calendar className="h-3 w-3" /> Book
+                                </button>
+                              )}
+                              {isCheckup && plan.familyEligible && (
+                                <button
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    openHealthCheckupBooking(plan, true);
+                                  }}
+                                  className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-lg bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors border border-cyan-500/20">
+                                  <Users className="h-3 w-3" /> Family
+                                </button>
+                              )}
                               {eCardEligible.has(plan.type) && (
                                 <button
                                   onClick={e => { e.stopPropagation(); setECardPlan(plan); setShowECard(true); }}
@@ -505,7 +576,7 @@ export default function SmartBenefitsHub() {
                                 </Badge>
                               )}
                             </div>
-                            <p className="text-xs text-slate-500">{member.relation} • {member.age} yrs • {member.gender === 'M' ? 'Male' : 'Female'}</p>
+                            <p className="text-xs text-slate-500">{member.relation} • {member.age} yrs • {genderLabel(member.gender)}</p>
                           </div>
                           <div className="text-right flex-shrink-0">
                             {member.healthScore && (
@@ -527,7 +598,12 @@ export default function SmartBenefitsHub() {
                 ))}
 
                 {/* Add Family Member */}
-                <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
+                <motion.button
+                  type="button"
+                  onClick={() => setShowAddFamilyDialog(true)}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.5 }}
                   className="w-full p-4 rounded-xl border-2 border-dashed border-slate-700 hover:border-blue-500/50 text-slate-500 hover:text-blue-400 flex items-center justify-center gap-2 transition-all">
                   <Users className="h-4 w-4" />
                   <span className="text-sm font-medium">Add Family Member</span>
@@ -701,6 +777,12 @@ export default function SmartBenefitsHub() {
           })()}
         </DialogContent>
       </Dialog>
+
+      <FamilyMemberDialog
+        open={showAddFamilyDialog}
+        onOpenChange={setShowAddFamilyDialog}
+        onSuccess={loadBenefitsData}
+      />
 
       {/* ─── Plan Detail Modal ───────────────────────────────────────────── */}
       <Dialog open={!!selectedPlan} onOpenChange={() => setSelectedPlan(null)}>

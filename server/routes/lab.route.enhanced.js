@@ -1,6 +1,7 @@
 import express from 'express';
 import { Op, Sequelize } from 'sequelize';
 import Lab from '../models/postgres/lab.model.postgres.js';
+import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 import { Appointment } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { orchestrator } from '../db/orchestrator.js';
@@ -707,7 +708,15 @@ router.post('/book', authUser, async (req, res) => {
       patientName,
       patientPhone,
       patientAddress,
-      prescriptionUrl
+      prescriptionUrl,
+      bookingFor = 'self',
+      familyMemberId,
+      corporateBenefitSource,
+      corporatePackageId,
+      corporatePackageName,
+      corporatePackagePrice,
+      familyDiscountPercent,
+      familyDiscountedPrice
     } = req.body;
 
     // Validate required fields
@@ -726,9 +735,9 @@ router.post('/book', authUser, async (req, res) => {
     }
 
     // Calculate estimated fee based on service type
-    const baseFee = serviceType === 'checkup' ? 1500 : 2500;
-    const testFees = tests.reduce((sum, test) => sum + (test.price || 0), 0);
-    const totalFee = baseFee + testFees;
+    let baseFee = serviceType === 'checkup' ? 1500 : 2500;
+    let testFees = tests.reduce((sum, test) => sum + (Number(test.price) || 0), 0);
+    let totalFee = baseFee + testFees;
 
     // Get lab details
     const lab = await Lab.findByPk(labId);
@@ -739,16 +748,65 @@ router.post('/book', authUser, async (req, res) => {
       });
     }
 
+    let familyMember = null;
+    if (bookingFor === 'family' || familyMemberId) {
+      if (!familyMemberId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Family member is required for a family health checkup booking'
+        });
+      }
+
+      familyMember = await FamilyMember.findOne({
+        where: {
+          id: familyMemberId,
+          userId: req.user?.id,
+          isActive: true
+        }
+      });
+
+      if (!familyMember) {
+        return res.status(400).json({
+          success: false,
+          message: 'Selected family member was not found on your profile'
+        });
+      }
+    }
+
+    const isCorporateBenefitBooking = ['corporate-benefit', 'corporate-family-benefit'].includes(corporateBenefitSource);
+    const requestedDiscountedPrice = Number(familyDiscountedPrice);
+    const safeDiscountedPrice = Number.isFinite(requestedDiscountedPrice) && requestedDiscountedPrice >= 0
+      ? requestedDiscountedPrice
+      : null;
+
+    if (isCorporateBenefitBooking) {
+      baseFee = 0;
+      if (familyMember && safeDiscountedPrice !== null) {
+        testFees = safeDiscountedPrice;
+        totalFee = safeDiscountedPrice;
+      } else if (corporatePackageId) {
+        testFees = 0;
+        totalFee = 0;
+      } else {
+        totalFee = testFees;
+      }
+    }
+
     // Create appointment record in database
     const appointment = await Appointment.create({
       userId: req.user?.id,
-      patientName: patientName || req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Patient',
+      patientName: familyMember
+        ? `${familyMember.firstName || ''} ${familyMember.lastName || ''}`.trim()
+        : patientName || req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Patient',
       patientEmail: req.user?.email || null,
-      patientPhone: patientPhone || req.user?.phoneNumber || req.user?.phone || '',
+      patientPhone: familyMember?.phoneNumber || patientPhone || req.user?.phoneNumber || req.user?.phone || '',
       patientDetails: {
         address: patientAddress || {},
         symptoms: symptoms || '',
-        notes: notes || ''
+        notes: notes || '',
+        bookingFor: familyMember ? 'family' : 'self',
+        familyMemberId: familyMember ? familyMember.id : null,
+        relationship: familyMember ? familyMember.relationship : null
       },
       doctorName: 'Lab',
       specialization: 'Laboratory',
@@ -776,7 +834,15 @@ router.post('/book', authUser, async (req, res) => {
         totalFee,
         baseFee,
         testFees,
-        prescriptionUrl: prescriptionUrl || null
+        prescriptionUrl: prescriptionUrl || null,
+        corporateBenefitSource: corporateBenefitSource || null,
+        corporatePackageId: corporatePackageId || null,
+        corporatePackageName: corporatePackageName || null,
+        corporatePackagePrice: corporatePackagePrice || null,
+        familyDiscountPercent: familyMember ? familyDiscountPercent || null : null,
+        familyDiscountedPrice: familyMember ? safeDiscountedPrice : null,
+        bookingFor: familyMember ? 'family' : 'self',
+        familyMemberId: familyMember ? familyMember.id : null
       }
     });
 

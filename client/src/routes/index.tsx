@@ -1983,6 +1983,7 @@ const AppRoutes = () => {
         <Route path="/reposts"               element={<Navigate to="/report-scanner" replace />} />
         <Route path="/consultation/:doctorId" element={<ConsultationBooking />} />
         <Route path="/nurse-booking/:nurseId" element={<NurseBooking />} />
+        <Route path="/lab-booking"            element={<LabBooking />} />
         <Route path="/lab-booking/:labId"     element={<LabBooking />} />
         <Route path="/homecare-booking/:homecareId" element={<HomecareBooking />} />
         <Route path="/my-bookings"           element={<Navigate to="/appointments" replace />} />
