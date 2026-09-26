@@ -385,16 +385,31 @@ Backend still outstanding:
 
 - **Live migration.** The migration has only ever run on a disposable local database. There is no
   staging environment (see section 11.1), so the "staging first" gate cannot currently be satisfied.
-- **Insurance settlement endpoint.** `postInsuranceSettlement` is verified working but has no caller;
-  no insurance remittance writer exists.
-- **Gateway-refund confirmed webhook.** Gateway refunds intentionally do not post at request time.
-  The confirm-event path that must post them does not exist.
 - **Payroll, procurement, pharmacy posting adapters** — not started.
 - Per-transaction tax/GST treatment. The tax summary is expense-side only; output GST on invoices and
-  input-GST credit reconciliation are not wired, and the summary reports this in its own `note` field.
+  input-GST credit reconciliation are not wired, and the summary reports this in its own `note` field,
+  which the UI surfaces.
 
-Frontend (not started): accounts module pages for ledger, journal, chart of accounts, tax, reports,
-vendors, expenses; KPI-to-source drill-down; CSV/PDF export with filters.
+Insurance settlement is **done**, and this was verified rather than assumed. ERA remittances post
+through `recordPayment()`, and the payment spec routes a payment carrying `insurance_claim_id` to the
+*insurance* receivable rather than the patient's. Calling `postInsuranceSettlement()` there as well
+would double-post the same cash, so it remains the standalone adapter for settlements that do not
+arrive as a payment row.
+
+Gateway refunds (commit `98610b09`): a gateway refund was previously a dead end — the row was written
+as `pending_gateway` and nothing ever completed it, so a patient could be owed money indefinitely with
+no ledger trace. `requestGatewayRefund` → `confirmGatewayRefund` now completes the lifecycle, and the
+webhook (`POST /api/hospital/billing/refunds/webhook`) is the only path that posts a gateway refund to
+the ledger, because cash only leaves when the gateway says it did. A failed refund reinstates the
+invoice and posts nothing. `GET /refunds/pending` surfaces unanswered refunds.
+
+Frontend (delivered in `98610b09`): Financial Reports (trial balance, P&L, balance sheet, tax summary
+with a stated range, balanced/out-of-balance badge, CSV export), Journal Entries with reversal behind
+a required reason, and Fiscal Periods with create/close. Loading, empty, error and retry states
+throughout.
+
+Frontend still outstanding: KPI-to-source drill-down, budget authoring, and a posting UI for manual
+journal entries (the API exists; only list and reverse are exposed in the UI).
 
 UI design:
 
@@ -406,6 +421,8 @@ Acceptance:
 
 - [x] A real invoice posts to AR and revenue. (dry run)
 - [x] A real payment posts cash/bank and clears AR. (dry run)
+- [x] Insurance remittance clears the insurance receivable, not patient AR. (dry run + adapter test)
+- [x] A gateway refund reaches the ledger only on gateway confirmation. (6 lifecycle tests)
 - [x] GST report is generated from real postings. (expense-side only; output GST still pending)
 - [ ] Same, on a live tenant database.
 
@@ -477,8 +494,9 @@ Still outstanding:
 - Admin entitlement management UI, including package, enabled modules, exceptions, and dates.
 - Portal navigation filtered by entitlements, and an upgrade/request-access state for disabled
   modules rather than a broken screen.
-- Entitlement audit UX. Grants and revocations are currently recorded via `granted_by`; there is no
-  auditable history table or viewer.
+- Entitlement audit UX. Grants and revocations are now written to `operations_audit_log` in the
+  same transaction as the change they describe, so a failed change leaves no orphan audit row and a
+  successful one cannot be unaudited. There is still no viewer screen for that history.
 - Coverage is not proven: only `accounts_finance` is wired to `requireModuleEntitlement`. Which
   other modules are supposed to be package-gated has not been enumerated, so "all paid modules are
   enforced" is currently an assumption rather than a verified fact.
@@ -487,7 +505,8 @@ Acceptance:
 
 - [x] Unlicensed module is inaccessible by route and API. (enforcement implemented; UI not built)
 - [x] Entitlement checks are tenant-scoped and fail closed without an RLS context.
-- [ ] Audit shows who changed entitlements. (no viewer yet)
+- [x] Audit records who changed entitlements, when, and in the same transaction as the change.
+      (No viewer screen yet.)
 - [ ] Verified on a live tenant.
 
 ### 4.7 WP-1.7 CMMS and cold chain
