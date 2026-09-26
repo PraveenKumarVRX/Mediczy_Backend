@@ -334,30 +334,64 @@ Acceptance:
 
 ### 4.2 WP-1.2 prescribing-time safety
 
-Status: built in shadow mode; eight server paths unverified.
+Status: built in shadow mode; the eight server paths are now counted, enforced and covered by a
+test. A ninth, ungated path was found and closed in `79555c53`. Behavioural verification and
+clinical sign-off remain.
 
-Backend:
+Recounted server paths that create or change medication — the plan's "eight" was correct, and a
+ninth had appeared:
 
-- Recount the exact server routes that create/update prescriptions or medication orders.
-- Add hard blocks for unsafe combinations according to policy.
-- Log warning, block, override, and final submit events.
-- Keep 41 existing tests and add route-coverage tests for all required server paths.
+| Path | Source |
+|---|---|
+| `prescription.create` | `POST /api/prescriptions` |
+| `prescription.update` | `PUT /api/prescriptions/:id` |
+| `prescription.issue` | `POST /api/prescriptions/:id/issue` |
+| `prescription.status-issued` | `PATCH /api/prescriptions/:id/status` |
+| `prescription.from-appointment` | `POST /api/prescriptions/from-appointment/:appointmentId` |
+| `emar.order` | `POST /api/v1/emar/orders` |
+| `hospital.practice.prescription` | `POST /api/hospital/practice/prescriptions` |
+| `hospital.practice.pharmacy-dispense` | `POST /api/hospital/practice/pharmacy/prescriptions` |
 
-Frontend:
+The ninth was found by writing the coverage test, not by reading the plan: the pharmacy dispensing
+route recorded a medicine going to a patient with no gate at all, while the sibling
+`POST /prescriptions` in the same file was gated. Its gate resolves `medicineId` to a drug name
+first, because the class and interaction rules match on the name — a gate handed only an id would
+have found nothing and passed vacuously, which reads as coverage while checking nothing.
 
-- Prescription writer shows safety panel before submit.
-- Unsafe items are highlighted inline with reason and alternatives.
-- Override path is available only to allowed roles.
+Deliberately **not** gated, with reasons recorded in the test: bedside administration, hold, and
+discontinue. They create no medication, and blocking a discontinue would block safe clinical
+action. Lab and imaging orders are not drugs.
 
-UI design:
+Backend delivered:
 
-- Safety panel uses severity grouping: contraindication, allergy, interaction, dose, duplicate therapy.
-- Primary submit button is disabled for hard blocks until resolved or valid override.
+- Hard blocks for allergy (exact, class, and cross-reaction), critical interaction, drug-condition,
+  duplicate therapy, and dose, from approved knowledge-fabric classes only — no model output sets a
+  threshold or a class membership.
+- Per-organization mode (`clinical_safety_settings`): `shadow` computes and logs and never blocks;
+  `enforce` returns 409 `SAFETY_BLOCK` unless a clinical role supplies an override with a reason of
+  at least 10 characters and an acknowledgement covering every blocker.
+- Issuing paths **fail closed** with 503 `SAFETY_UNAVAILABLE` if the safety service itself errors;
+  drafts fail open with a visible `X-Safety-Check: unavailable` header.
+- `prescribing-route-coverage.test.js` reads route sources as text and asserts each write path's own
+  middleware chain carries the gate, so a gate declared but never mounted cannot satisfy it. Ungated
+  writes are an explicit allowlist with written justifications.
+
+**Known limitation, verified rather than assumed:** the coverage test is static, so it proves a gate
+is *present*, not that it *runs*. Injecting a passthrough ahead of the gate leaves it green. Closing
+that needs a behavioural test that issues a prescription through the real Express app for a patient
+with a recorded allergy and asserts the response is refused.
+
+Frontend: `PrescriptionSafetyAlert` drives itself entirely off the server response — it never decides
+what is safe, only presents what the server decided and collects the override the server asked for.
 
 Acceptance:
 
-- All required server paths block unsafe prescribing.
-- No frontend-only bypass exists.
+- [x] Every medication write route is behind the safety gate. (9/9; static coverage test)
+- [ ] All required server paths *behaviourally* refuse an unsafe prescription. (needs a real-app test)
+- [x] No frontend-only bypass exists. (the UI component cannot decide safety)
+- [ ] Clinical sign-off from a prescribing lead.
+- [ ] `shadow` → `enforce` rollout, once alert volume and false positives are reviewed.
+
 
 ### 4.3 WP-1.3 ledger and GST
 
