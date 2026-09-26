@@ -1,7 +1,7 @@
 /**
- * Regression harness for typed imaging tenants (migration 20260926000004 + routes/hypergrid-dicom.route.js).
+ * Regression harness for typed imaging tenants (migration 20260926000005 + routes/hypergrid-dicom.route.js).
  * Drives the REAL router with real JWTs against a DISPOSABLE local database that already has the DICOM/ris/labs/tenants
- * tables and migrations 20260926000004 applied. Refuses any non-local host (server/.env points at production).
+ * tables and migrations 20260926000005 applied. Refuses any non-local host (server/.env points at production).
  *
  *   DRYRUN_DATABASE=… DRYRUN_USER=… DRYRUN_PASSWORD=… node scripts/qa/imaging-uid-regression.mjs
  */
@@ -68,7 +68,7 @@ try {
   // ── FUTURE collision: a platform tenant and a lab that share integer id 1 ───────────────────
   const tenantKindUid = (await pool.query(`INSERT INTO imaging_tenants (kind, source_id, note) VALUES ('tenant', 1, 'harness: platform tenant 1') ON CONFLICT (kind, source_id) DO UPDATE SET note = EXCLUDED.note RETURNING uid`)).rows[0].uid;
   const cols = (await pool.query(`select column_name, data_type from information_schema.columns where table_name='hg_dicom_studies' and is_nullable='NO' and column_default is null`)).rows;
-  const vals = { study_instance_uid: 'STUDY-PLATFORM-TENANT-1', tenant_id: 1, tenant_uid: tenantKindUid, patient_id: 'p', patient_name: 'n' };
+  const vals = { study_instance_uid: 'STUDY-PLATFORM-TENANT-1', tenant_id: 1, tenant_uid: tenantKindUid, patient_id: 1, patient_name: 'n' };
   for (const c of cols) if (!(c.column_name in vals)) vals[c.column_name] = /int|numeric/.test(c.data_type) ? 0 : /bool/.test(c.data_type) ? false : /timestamp|date/.test(c.data_type) ? new Date() : /ARRAY/.test(c.data_type) ? [] : /json/.test(c.data_type) ? '{}' : 'x';
   const names = Object.keys(vals);
   await pool.query(`INSERT INTO hg_dicom_studies (${names.map((n) => `"${n}"`).join(',')}) VALUES (${names.map((_, i) => `$${i + 1}`).join(',')}) ON CONFLICT DO NOTHING`, names.map((n) => vals[n]));

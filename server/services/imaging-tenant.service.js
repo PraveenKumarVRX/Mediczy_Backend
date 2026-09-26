@@ -1,7 +1,7 @@
 /**
- * Typed imaging-tenant identity (see migrations/20260926000004-imaging-tenant-uids.migration.js).
+ * Typed imaging-tenant identity (see migrations/20260926000005-imaging-tenant-registry.migration.js).
  *
- * An imaging tenant is identified by a UID from the `imaging_tenants` registry, whose `kind` says which id space the
+ * An imaging tenant is identified by a UID from the `imaging_tenants` registry (for a lab: labs.uid), whose `kind` says which id space the
  * integer came from. A principal is mapped to a tenant ONLY through the registry:
  *   - an explicit `tenantUid` claim (server-minted, e.g. the PACS session cookie) → the registry row with that uid;
  *   - an explicit `tenantId` claim (server-minted, or the trusted bridge header) → the LAB with that id;
@@ -29,8 +29,8 @@ export async function ensureLabTenant(labId) {
   let { rows } = await pool.query(`SELECT uid, source_id FROM imaging_tenants WHERE kind = 'lab' AND source_id = $1`, [id]);
   if (!rows[0]) {
     await pool.query(
-      `INSERT INTO imaging_tenants (kind, source_id, source_uid, note)
-       SELECT 'lab', l.id, l.uid, 'created on first use' FROM labs l WHERE l.id = $1
+      `INSERT INTO imaging_tenants (uid, kind, source_id, source_uid, note)
+       SELECT l.uid, 'lab', l.id, l.uid, 'created on first use' FROM labs l WHERE l.id = $1
        ON CONFLICT (kind, source_id) DO NOTHING`, [id]);
     ({ rows } = await pool.query(`SELECT uid, source_id FROM imaging_tenants WHERE kind = 'lab' AND source_id = $1`, [id]));
   }
