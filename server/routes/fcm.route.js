@@ -12,7 +12,7 @@ import {
 } from '../utils/firebase-admin.js';
 import { FCMToken } from '../services/notification.service.js';
 import Appointment from '../models/appointment.model.intelligent.js';
-import Doctor from '../models/doctor.model.intelligent.js';
+import { Doctor } from '../models/index.js';   // the REAL Sequelize model: an include needs one (the *.intelligent.js default is a plain wrapper object, which made every include throw "getTableName is not a function")
 import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import {
