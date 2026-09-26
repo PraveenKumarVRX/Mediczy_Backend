@@ -1948,7 +1948,7 @@ router.delete('/corporates/:id', authUser, requireRole(['admin', 'team']), requi
  */
 router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async (req, res) => {
   try {
-    const { corporateId, firstName, lastName, email, phoneNumber, password } = req.body;
+    const { corporateId, firstName, lastName, email, phoneNumber, password, promoteExisting } = req.body;
     
     if (!corporateId || !email || !password) {
       return res.status(400).json({
@@ -1958,21 +1958,6 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
     }
     
     const normalizedEmail = email.toLowerCase().trim();
-
-    // Check if user already exists
-    const existingUsers = await postgresSequelize.query(`
-      SELECT id FROM users WHERE email = :email
-    `, {
-      replacements: { email: normalizedEmail },
-      type: postgresSequelize.QueryTypes.SELECT
-    });
-
-    if (existingUsers && existingUsers.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: 'User with this email already exists'
-      });
-    }
 
     // Verify corporate exists
     const corporates = await postgresSequelize.query(`
@@ -1987,6 +1972,88 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
         success: false,
         message: 'Corporate not found'
       });
+    }
+
+    // FIX (2026-09-26): an email that already belongs to a plain employee of
+    // THIS corporate used to hit a dead-end "User with this email already
+    // exists" — the employee shows in Corporate Employees but can never be
+    // made HR. users has one row per email, so the right move is to grant HR
+    // access to that same account (role + a second user_associations row;
+    // the unique index includes role so the employee association stays).
+    // Needs an explicit promoteExisting=true so a permission change is never
+    // silent. Lookup is case-insensitive, matching the edit endpoint.
+    const [existingUser] = await postgresSequelize.query(`
+      SELECT u.id, u.role, u.status, u.organization_type, u.organization_id,
+        EXISTS (
+          SELECT 1 FROM user_associations ua
+          WHERE ua."userId" = u.id AND ua."entityType" = 'corporate'
+            AND ua."entityId" = :corporateId AND ua.role = 'employee'
+        ) AS is_employee_here,
+        EXISTS (
+          SELECT 1 FROM user_associations ua
+          WHERE ua."userId" = u.id AND ua."entityType" = 'corporate'
+            AND ua."entityId" = :corporateId AND ua.role IN ('admin', 'staff')
+        ) AS is_hr_here
+      FROM users u
+      WHERE LOWER(u.email) = :email
+      LIMIT 1
+    `, {
+      replacements: { email: normalizedEmail, corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    let promoteUserId = null;
+    if (existingUser) {
+      const companyName = corporates[0].companyName || 'this corporate';
+      const hrRoles = ['corporate_admin', 'hr_staff'];
+
+      if (existingUser.is_hr_here || (hrRoles.includes(existingUser.role) && String(existingUser.organization_id) === String(corporateId))) {
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_ALREADY_HR',
+          message: `This email is already an HR admin of ${companyName}.`
+        });
+      }
+
+      if (!existingUser.is_employee_here || existingUser.role !== 'patient') {
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_IN_USE',
+          message: 'User with this email already exists (registered outside this corporate\'s employee list). Use a different email.'
+        });
+      }
+
+      if (existingUser.status && existingUser.status !== 'active') {
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_IS_INACTIVE_EMPLOYEE',
+          message: `This email is an ${existingUser.status} employee account of ${companyName}. Reactivate the employee first, then make them HR admin.`
+        });
+      }
+
+      // Feature flag, OFF by default. Promotion overwrites users.role (patient ->
+      // HR) and the password on the employee's own account, and mixes HR and
+      // employee access in one login. Not enabled until the one-account /
+      // two-context design lands. With it off, promoteExisting is ignored.
+      if (process.env.ENABLE_EMPLOYEE_TO_HR_PROMOTION !== 'true') {
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_IS_EMPLOYEE',
+          canPromote: false,
+          message: `This email is already an employee of ${companyName}. Use a different email for the HR login (for example a plus-address such as name+hr@company.com).`
+        });
+      }
+
+      if (promoteExisting !== true && promoteExisting !== 'true') {
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_IS_EMPLOYEE',
+          canPromote: true,
+          message: `This email is already an employee of ${companyName}. Make them an HR admin as well?`
+        });
+      }
+
+      promoteUserId = existingUser.id;
     }
     
     // Hash password
@@ -2017,34 +2084,56 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
     // in the database but could never actually log in via the real
     // corporate login form. Confirmed against two real accounts
     // (Ninjacart HR admins) that were silently broken by this exact gap.
-    const [userResult] = await postgresSequelize.query(`
-      INSERT INTO users (
-        email, password, "firstName", "lastName", role,
-        "isCorporate", "isAdmin", "isTeam",
-        "dateOfBirth", "phoneNumber", gender,
-        organization_type, organization_id, status,
-        "createdAt", "updatedAt"
-      )
-      VALUES (
-        :email, :password, :firstName, :lastName, :roleToAssign,
-        true, false, false,
-        '1990-01-01', :phoneNumber, 'Male',
-        'corporate', :corporateId, 'active',
-        NOW(), NOW()
-      )
-      RETURNING id, email, "firstName", "lastName", role
-    `, {
-      replacements: {
-        email: normalizedEmail,
-        password: hashedPassword,
-        firstName: firstName || 'HR',
-        lastName: lastName || 'Admin',
-        phoneNumber: phoneNumber || '',
-        corporateId,
-        roleToAssign
-      },
-      type: postgresSequelize.QueryTypes.INSERT
-    });
+    let userResult;
+    if (promoteUserId) {
+      // Promote the existing employee account: same row, same email — only
+      // role/org scope (required by corporateLogin) and the password the admin
+      // just set change. Employee association is left untouched.
+      userResult = await postgresSequelize.query(`
+        UPDATE users
+           SET role = :roleToAssign,
+               "isCorporate" = true,
+               organization_type = 'corporate',
+               organization_id = :corporateId,
+               password = :password,
+               status = 'active',
+               "updatedAt" = NOW()
+         WHERE id = :userId
+        RETURNING id, email, "firstName", "lastName", role
+      `, {
+        replacements: { userId: promoteUserId, roleToAssign, corporateId, password: hashedPassword },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+    } else {
+      [userResult] = await postgresSequelize.query(`
+        INSERT INTO users (
+          email, password, "firstName", "lastName", role,
+          "isCorporate", "isAdmin", "isTeam",
+          "dateOfBirth", "phoneNumber", gender,
+          organization_type, organization_id, status,
+          "createdAt", "updatedAt"
+        )
+        VALUES (
+          :email, :password, :firstName, :lastName, :roleToAssign,
+          true, false, false,
+          '1990-01-01', :phoneNumber, 'Male',
+          'corporate', :corporateId, 'active',
+          NOW(), NOW()
+        )
+        RETURNING id, email, "firstName", "lastName", role
+      `, {
+        replacements: {
+          email: normalizedEmail,
+          password: hashedPassword,
+          firstName: firstName || 'HR',
+          lastName: lastName || 'Admin',
+          phoneNumber: phoneNumber || '',
+          corporateId,
+          roleToAssign
+        },
+        type: postgresSequelize.QueryTypes.INSERT
+      });
+    }
     
     const newUser = userResult && userResult[0] ? userResult[0] : null;
     
@@ -2149,23 +2238,32 @@ router.get('/corporate-users/:corporateId', authUser, requireRole(['admin', 'tea
     const numericCorporateId = req.resolvedCorporate.id;
 
     const users = await postgresSequelize.query(
-      `SELECT u.id,
-              u.email,
-              u."firstName",
-              u."lastName",
-              u."phoneNumber",
-              u.status,
-              u."lastLoginAt",
-              u."createdAt",
-              ua.role AS association_role,
-              ua.status AS association_status
-         FROM users u
-         JOIN user_associations ua ON ua."userId" = u.id
-        WHERE ua."entityType" = 'corporate'
-          AND ua."entityId" = :corporateId
-          AND (u.role IN ('corporate_admin', 'hr_staff') OR ua.role IN ('admin', 'staff'))
-        ORDER BY COALESCE(u."lastLoginAt", u."updatedAt") DESC NULLS LAST,
-                 u."createdAt" DESC`,
+      // DISTINCT ON: a user promoted from employee holds two associations
+      // (employee + admin/staff) for this corporate — list them once, preferring
+      // the HR association. 'staff' is included so hr_staff created by this
+      // endpoint (when a corporate_admin already exists) are actually visible.
+      `SELECT * FROM (
+         SELECT DISTINCT ON (u.id)
+                u.id,
+                u.email,
+                u."firstName",
+                u."lastName",
+                u."phoneNumber",
+                u.status,
+                u."lastLoginAt",
+                u."createdAt",
+                u."updatedAt",
+                ua.role AS association_role,
+                ua.status AS association_status
+           FROM users u
+           JOIN user_associations ua ON ua."userId" = u.id
+          WHERE ua."entityType" = 'corporate'
+            AND ua."entityId" = :corporateId
+            AND (u.role IN ('corporate_admin', 'hr_staff') OR ua.role IN ('admin', 'staff'))
+          ORDER BY u.id, (ua.role IN ('admin', 'staff')) DESC
+       ) hr
+       ORDER BY COALESCE(hr."lastLoginAt", hr."updatedAt") DESC NULLS LAST,
+                hr."createdAt" DESC`,
       {
         replacements: { corporateId: numericCorporateId },
         type: postgresSequelize.QueryTypes.SELECT,
