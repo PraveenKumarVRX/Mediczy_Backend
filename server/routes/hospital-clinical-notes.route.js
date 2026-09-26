@@ -88,6 +88,7 @@ router.get('/notes/patient/:patientId', authHospital, async (req, res) => {
       patientId: Number(req.params.patientId),
       admissionId: req.query.admissionId ? Number(req.query.admissionId) : undefined,
       limit: req.query.limit,
+      organizationId: req.hospitalId,           // notes are only visible to the hospital that wrote them
     });
     res.json({ success: true, data: notes });
   } catch (err) {
@@ -100,6 +101,7 @@ router.get('/notes/admission/:admissionId', authHospital, async (req, res) => {
     const notes = await listClinicalNotes({
       admissionId: Number(req.params.admissionId),
       limit: req.query.limit,
+      organizationId: req.hospitalId,
     });
     res.json({ success: true, data: notes });
   } catch (err) {

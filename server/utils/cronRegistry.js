@@ -33,6 +33,9 @@ export const TASK_DEFINITIONS = [
   // Billing
   { key: 'payment_reminders',     name: 'Payment Reminders',                     schedule: 'Daily 9 AM',       category: 'billing',    scheduleDesc: '0 9 * * *' },
   { key: 'tenant_billing',        name: 'Tenant Billing (Auto-Invoices)',         schedule: '1st of month',     category: 'billing',    scheduleDesc: '0 0 1 * *' },
+  { key: 'hospital-billing-nightly', name: 'Hospital Billing (bed-day charging, overdue invoices)', schedule: 'Nightly 2 AM IST', category: 'billing',    scheduleDesc: '0 2 * * *' },
+  { key: 'hospital_billing_nightly', name: 'Hospital Billing scheduler (app.js wrapper)',            schedule: 'Nightly 2 AM IST', category: 'billing',    scheduleDesc: '0 2 * * *' },
+  { key: 'corporate_weekly_mis',   name: 'Corporate Wellness Weekly MIS (emails)',  schedule: 'Mon 08:00 IST',   category: 'corporate', scheduleDesc: '30 2 * * 1' },
   // Clinical
   { key: 'medication_morning',    name: 'Medication Reminder — Morning',         schedule: 'Daily 8 AM',       category: 'clinical',   scheduleDesc: '0 8 * * *' },
   { key: 'medication_afternoon',  name: 'Medication Reminder — Afternoon',       schedule: 'Daily 2 PM',       category: 'clinical',   scheduleDesc: '0 14 * * *' },
