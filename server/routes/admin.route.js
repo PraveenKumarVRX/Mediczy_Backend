@@ -1993,7 +1993,7 @@ router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async 
         EXISTS (
           SELECT 1 FROM user_associations ua
           WHERE ua."userId" = u.id AND ua."entityType" = 'corporate'
-            AND ua."entityId" = :corporateId AND ua.role = 'employee'
+            AND ua."entityId" = :corporateId AND ua.role = 'employee' AND ua.status = 'active'
         ) AS is_employee_here,
         EXISTS (
           SELECT 1 FROM user_associations ua
