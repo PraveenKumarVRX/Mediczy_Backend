@@ -8,11 +8,8 @@ import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 
 const clientQuery = jest.fn();
-const dbQuery = jest.fn();
-const poolMock = { query: jest.fn(), connect: jest.fn(async () => ({ query: clientQuery, release: jest.fn() })) };
+const poolMock = { query: jest.fn(async () => ({ rows: [] })), connect: jest.fn(async () => ({ query: clientQuery, release: jest.fn() })) };
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: poolMock, pool: poolMock }));
-const realPg = await import('../db/postgres.js');
-jest.unstable_mockModule('../db/postgres.js', () => ({ ...realPg, connectPostgres: jest.fn(async () => ({ query: dbQuery })) }));
 
 const { default: request } = await import('supertest');
 const { default: express } = await import('express');
@@ -22,9 +19,9 @@ const tok = (claims) => `Bearer ${jwt.sign(claims, JWT_CONFIG.SECRET, { expiresI
 
 const sqlOf = (mock) => mock.mock.calls.map((c) => String(c[0]));
 beforeEach(() => {
-  clientQuery.mockReset(); dbQuery.mockReset();
-  clientQuery.mockImplementation(async (sql) => (/FROM users/.test(sql) ? { rows: [{ gender: 'female', patients: 40 }, { gender: 'male', patients: 3 }] } : { rows: [] }));
-  dbQuery.mockImplementation(async (sql) => (/FROM appointments/.test(sql) ? { rows: [{ day: '2026-09-01', visits: 12 }] } : { rows: [] }));
+  clientQuery.mockReset();
+  clientQuery.mockImplementation(async (sql) => (/FROM users/.test(sql) ? { rows: [{ gender: 'female', patients: 40 }, { gender: 'male', patients: 3 }] }
+    : /FROM appointments/.test(sql) ? { rows: [{ day: '2026-09-01', visits: 12 }] } : { rows: [] }));
 });
 
 describe('GET /rwe/aggregate', () => {
@@ -76,7 +73,7 @@ describe('GET /staffing/forecast', () => {
   it('counts only the caller\'s hospital\'s appointments', async () => {
     const res = await request(app).get('/r/staffing/forecast').set('authorization', tok({ id: 9, role: 'hospital_admin', tenant_id: 7 }));
     expect(res.status).toBe(200);
-    const call = dbQuery.mock.calls.find((c) => /FROM appointments/.test(c[0]));
+    const call = clientQuery.mock.calls.find((c) => /FROM appointments/.test(c[0]));
     expect(call[0]).toMatch(/organization_id = \$1/);
     expect(call[1]).toEqual([7]);
     expect(res.body.data.scope).toBe('hospital');
@@ -85,7 +82,7 @@ describe('GET /staffing/forecast', () => {
   it('refuses a tenant-less non-admin', async () => {
     const res = await request(app).get('/r/staffing/forecast').set('authorization', tok({ id: 9, role: 'nurse' }));
     expect(res.status).toBe(403);
-    expect(dbQuery.mock.calls.some((c) => /FROM appointments/.test(c[0]))).toBe(false);
+    expect(clientQuery.mock.calls.some((c) => /FROM appointments/.test(c[0]))).toBe(false);
   });
 });
 
