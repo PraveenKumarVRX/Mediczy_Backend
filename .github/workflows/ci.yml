@@ -133,5 +133,25 @@ jobs:
       # plan's own acceptance criterion is "the lint rule fails the build." It only fails on a *new*
       # file matching the pattern; the operational allow-list is empty, while static catalog/config
       # files use file-local `invented-data-check: static-reference` annotations.
+
+  request-ddl-statics:
+    name: Request-time schema creation check (WP-1.5, real gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # WP-1.5: a CREATE TABLE in a request handler runs on every call, needs DDL rights in
+      # production, races other writers, and hides the fact that no migration was written. The
+      # plan's non-negotiable standard #1 forbids it outright.
+      #
+      # This is a real gate, not advisory, but it fails only on a *new* statement. The existing
+      # debt (103 files / 311 statements / 302 tables) is baselined and must be worked down, not
+      # silently grandfathered: the count is expected to fall, and the baseline is regenerated
+      # as each file is migrated. Blocking all 311 today would make the gate unmergeable and
+      # would be a lie about how much is safe.
+      - run: node server/scripts/qa/audit-request-ddl-and-rls.mjs --fail-on-new server/scripts/qa/request-ddl-baseline.json
+
       # Cleanup and clinical acceptance remain tracked in docs/IMPLEMENTATION_STATUS_AND_NEXT_STEPS.md.
       - run: node client/scripts/ci/check-invented-data-statics.mjs

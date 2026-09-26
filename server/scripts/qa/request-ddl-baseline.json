@@ -1,0 +1,2182 @@
+{
+  "generatedAt": "2026-09-26T04:50:47.021Z",
+  "findings": [
+    {
+      "file": "server/routes/activityTracker.route.js",
+      "line": 15,
+      "table": "daily_activity",
+      "severity": "guarded",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/admin.route.js",
+      "line": 2519,
+      "table": "corporate_welcome_email_deliveries",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/admin.route.js",
+      "line": 5374,
+      "table": "corporate_wellness_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/admin.route.js",
+      "line": 6089,
+      "table": "corporate_network_assignments",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/ai-governance.route.js",
+      "line": 388,
+      "table": "ai_adverse_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/ai.js",
+      "line": 21,
+      "table": "ai_doctor_metrics",
+      "severity": "guarded",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm-ai.route.js",
+      "line": 65,
+      "table": "crm_ai_email_communications",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm-analysis.route.js",
+      "line": 35,
+      "table": "crm_rfq_policy_history",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm-analysis.route.js",
+      "line": 72,
+      "table": "crm_rfq_analysis_cache",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm-underwriting.route.js",
+      "line": 110,
+      "table": "crm_insurance_products",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm-underwriting.route.js",
+      "line": 124,
+      "table": "crm_product_coverage_matrix",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm-underwriting.route.js",
+      "line": 144,
+      "table": "crm_rfq_underwriting",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 31,
+      "table": "api_v2_refresh_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 50,
+      "table": "crm_refresh_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 65,
+      "table": "crm_login_attempts",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 75,
+      "table": "crm_leads",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 108,
+      "table": "crm_deals",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 135,
+      "table": "crm_activities",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 152,
+      "table": "crm_contacts",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 174,
+      "table": "crm_rfqs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 217,
+      "table": "crm_rfq_members",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 238,
+      "table": "crm_quotes",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 265,
+      "table": "crm_rfq_claims",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 296,
+      "table": "crm_rfq_files",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 309,
+      "table": "crm_rfq_audit_log",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 325,
+      "table": "crm_product_tc_master",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 347,
+      "table": "crm_agencies",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 369,
+      "table": "crm_agents",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 392,
+      "table": "crm_commissions",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "line": 418,
+      "table": "crm_corporate_health_plans",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 20,
+      "table": "crm_marketing_senders",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 33,
+      "table": "crm_marketing_lists",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 42,
+      "table": "crm_marketing_list_members",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 61,
+      "table": "crm_marketing_imports",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 77,
+      "table": "crm_marketing_templates",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 90,
+      "table": "crm_marketing_campaigns",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 106,
+      "table": "crm_marketing_campaign_lists",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 112,
+      "table": "crm_marketing_campaign_recipients",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 127,
+      "table": "crm_marketing_suppressions",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmCampaigns.route.js",
+      "line": 134,
+      "table": "crm_marketing_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmEmail.route.js",
+      "line": 28,
+      "table": "crm_email_settings",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmEmail.route.js",
+      "line": 52,
+      "table": "crm_email_inbox",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/crmEmail.route.js",
+      "line": 74,
+      "table": "crm_email_templates",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/biomedical.route.js",
+      "line": 42,
+      "table": "hg_equipment_inventory",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 48,
+      "table": "blood_bank_units",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 62,
+      "table": "blood_bank_requisitions",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 81,
+      "table": "blood_bank_donors",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 110,
+      "table": "blood_donor_donations",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 133,
+      "table": "blood_donor_communications",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 152,
+      "table": "blood_donor_comm_recipients",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/bloodBank.route.js",
+      "line": 164,
+      "table": "blood_bank_audit_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/cssd.route.js",
+      "line": 33,
+      "table": "cssd_sets",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/cssd.route.js",
+      "line": 44,
+      "table": "cssd_cycles",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/cssd.route.js",
+      "line": 58,
+      "table": "cssd_jobs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/cssd.route.js",
+      "line": 70,
+      "table": "cssd_set_usage",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/dietary.route.js",
+      "line": 37,
+      "table": "dietary_orders",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/dietary.route.js",
+      "line": 55,
+      "table": "dietary_templates",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/dept/dietary.route.js",
+      "line": 67,
+      "table": "dietary_counselling",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital/practice.route.js",
+      "line": 1614,
+      "table": "discharge_plans",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital/practice.route.js",
+      "line": 3476,
+      "table": "prems_survey_invitations",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital/practice.route.js",
+      "line": 3493,
+      "table": "hospital_tariffs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital/practice.route.js",
+      "line": 3526,
+      "table": "hospital_tariffs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital/practice.route.js",
+      "line": 3585,
+      "table": "prems_responses",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital/practice.route.js",
+      "line": 3612,
+      "table": "prems_responses",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-auth.route.js",
+      "line": 36,
+      "table": "tenant_interop_config",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-auth.route.js",
+      "line": 48,
+      "table": "fhir_audit_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-auth.route.js",
+      "line": 140,
+      "table": "api_v2_refresh_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-auth.route.js",
+      "line": 159,
+      "table": "hospital_refresh_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-auth.route.js",
+      "line": 173,
+      "table": "hospital_login_attempts",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-display.route.js",
+      "line": 46,
+      "table": "display_zones",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-display.route.js",
+      "line": 57,
+      "table": "display_devices",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-display.route.js",
+      "line": 74,
+      "table": "emergency_broadcasts",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hospital-display.route.js",
+      "line": 88,
+      "table": "checkin_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 158,
+      "table": "hr_locations",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 178,
+      "table": "hr_biometric_devices",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 194,
+      "table": "hr_biometric_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 210,
+      "table": "hr_recruitment_requisitions",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 233,
+      "table": "hr_recruitment_candidates",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 259,
+      "table": "hr_recruitment_interviews",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 275,
+      "table": "hr_benefit_programs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 293,
+      "table": "hr_performance_reviews",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 320,
+      "table": "hr_leave_requests",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 337,
+      "table": "hr_shift_rosters",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 355,
+      "table": "hr_onboarding_tasks",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 372,
+      "table": "hr_employee_documents",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 390,
+      "table": "hr_timesheets",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 406,
+      "table": "hr_lms_programs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 424,
+      "table": "hr_lms_enrollments",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 439,
+      "table": "hr_goals",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 456,
+      "table": "hr_engagement_surveys",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 471,
+      "table": "hr_engagement_survey_responses",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 482,
+      "table": "hr_helpdesk_tickets",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 501,
+      "table": "hr_cv_documents",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 520,
+      "table": "hr_email_settings",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hrms.route.js",
+      "line": 544,
+      "table": "hr_email_inbox",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/hypergrid-connector.route.js",
+      "line": 32,
+      "table": "hg_equipment_inventory",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/auth.routes.js",
+      "line": 20,
+      "table": "lab_portal_state",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 258,
+      "table": "ris_studies",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 314,
+      "table": "ris_study_audit_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 326,
+      "table": "ris_sample_custody_events",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 340,
+      "table": "ris_qc_reviews",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 352,
+      "table": "ris_result_context",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 365,
+      "table": "ris_critical_value_alerts",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/lab/ris-imaging.route.js",
+      "line": 384,
+      "table": "ris_qc_templates",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/org-membership-plans.route.js",
+      "line": 94,
+      "table": "team_plan_customization_approvals",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/payroll.route.js",
+      "line": 34,
+      "table": "payroll_structures",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/payroll.route.js",
+      "line": 48,
+      "table": "payroll_runs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/payroll.route.js",
+      "line": 60,
+      "table": "payroll_run_lines",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/provider-network-bot.route.js",
+      "line": 161,
+      "table": "provider_network_batches",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/provider-network-bot.route.js",
+      "line": 175,
+      "table": "provider_network_entries",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/provider-network-bot.route.js",
+      "line": 207,
+      "table": "smarthealth_provider_network",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/qms.route.js",
+      "line": 120,
+      "table": "display_devices",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/rwe-platform.route.js",
+      "line": 27,
+      "table": "rwe_export_requests",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/sib-chatbots.route.js",
+      "line": 11,
+      "table": "sib_chatbot_configs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/sib-chatbots.route.js",
+      "line": 20,
+      "table": "sib_chatbot_interactions",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 52,
+      "table": "api_v2_refresh_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 71,
+      "table": "team_refresh_tokens",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 86,
+      "table": "team_login_attempts",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 96,
+      "table": "team_appointments",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 114,
+      "table": "team_communication_logs",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 135,
+      "table": "team_communication_templates",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/routes/team.route.js",
+      "line": 1858,
+      "table": "crm_ai_email_communications",
+      "severity": "per-request",
+      "layer": "route"
+    },
+    {
+      "file": "server/services/abdm-client.service.js",
+      "line": 59,
+      "table": "abha_registrations",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/abdm-client.service.js",
+      "line": 78,
+      "table": "abdm_consents",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/abdm-client.service.js",
+      "line": 97,
+      "table": "abdm_phi_requests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/abdm-client.service.js",
+      "line": 108,
+      "table": "hfr_facility_registrations",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/abdm-client.service.js",
+      "line": 119,
+      "table": "hpr_provider_registrations",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/adt.service.js",
+      "line": 21,
+      "table": "discharge_readiness_items",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/adt.service.js",
+      "line": 38,
+      "table": "discharge_overrides",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/cognitive-router.js",
+      "line": 162,
+      "table": "ai_routing_decisions",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/cognitive-router.js",
+      "line": 184,
+      "table": "ai_routing_thresholds",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/evaluation-engine.js",
+      "line": 44,
+      "table": "ai_execution_telemetry",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/multi-agent-orchestrator.js",
+      "line": 57,
+      "table": "ai_agent_runs",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/multi-agent-orchestrator.js",
+      "line": 80,
+      "table": "ai_api_keys",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/multi-agent-orchestrator.js",
+      "line": 94,
+      "table": "ai_user_agent_grants",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/scoring-model.js",
+      "line": 83,
+      "table": "ai_routing_weights",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-brain/semantic-cache.service.js",
+      "line": 62,
+      "table": "if",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-copilot-pending-actions.service.js",
+      "line": 10,
+      "table": "ai_copilot_pending_actions",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ai-proactive-alerts-cron.service.js",
+      "line": 183,
+      "table": "ai_proactive_alerts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/anesthesia.service.js",
+      "line": 12,
+      "table": "anesthesia_assessments",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/anesthesia.service.js",
+      "line": 47,
+      "table": "anesthesia_records",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/bed-allocation.service.js",
+      "line": 23,
+      "table": "bed_reservations",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/billing-estimate.service.js",
+      "line": 14,
+      "table": "billing_estimates",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/billing-estimate.service.js",
+      "line": 53,
+      "table": "non_payable_items",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/billing-ledger-bridge.service.js",
+      "line": 10,
+      "table": "hospital_billing_charges",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/cda-r2.service.js",
+      "line": 36,
+      "table": "cda_documents",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/cdss-feedback.service.js",
+      "line": 20,
+      "table": "ai_cdss_feedback",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/clinical-intelligence.service.js",
+      "line": 36,
+      "table": "clinical_alerts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/clinical-intelligence.service.js",
+      "line": 53,
+      "table": "clinical_coding_suggestions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/closed-loop-notifier.service.js",
+      "line": 29,
+      "table": "ticket_resolution_followups",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/consent-enforcement.service.js",
+      "line": 22,
+      "table": "consent_enforcement_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/corporate-employee-qc.service.js",
+      "line": 43,
+      "table": "corporate_employee_qc_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/corporate-hmis.service.js",
+      "line": 14,
+      "table": "corporate_referrals",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/corporate-hmis.service.js",
+      "line": 40,
+      "table": "corporate_eligibility_checks",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/corporate-hmis.service.js",
+      "line": 61,
+      "table": "fitness_certificates",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/corporate-hmis.service.js",
+      "line": 85,
+      "table": "return_to_work_clearances",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/crm-automations.service.js",
+      "line": 26,
+      "table": "crm_automations",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/crm-automations.service.js",
+      "line": 42,
+      "table": "crm_automation_executions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/crm-segments.service.js",
+      "line": 23,
+      "table": "crm_segments",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/crm-segments.service.js",
+      "line": 37,
+      "table": "crm_segment_members",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/daily-health-score.service.js",
+      "line": 757,
+      "table": "daily_health_scores",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 237,
+      "table": "users",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 254,
+      "table": "doctors",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 274,
+      "table": "patients",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 294,
+      "table": "appointments",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 311,
+      "table": "lab_tests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 327,
+      "table": "prescriptions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 343,
+      "table": "pharmacy_inventory",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 360,
+      "table": "billing",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 378,
+      "table": "departments",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 391,
+      "table": "staff",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/database-provisioning.service.js",
+      "line": 406,
+      "table": "activity_logs",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/discharge-workflow.service.js",
+      "line": 16,
+      "table": "discharge_packets",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-analytics.service.js",
+      "line": 57,
+      "table": "notification_events",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-analytics.service.js",
+      "line": 71,
+      "table": "appointment_analytics",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-analytics.service.js",
+      "line": 83,
+      "table": "user_engagement",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-analytics.service.js",
+      "line": 94,
+      "table": "payment_analytics",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-etl.service.js",
+      "line": 32,
+      "table": "appointment_facts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-etl.service.js",
+      "line": 48,
+      "table": "patient_dim",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-etl.service.js",
+      "line": 60,
+      "table": "doctor_dim",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-etl.service.js",
+      "line": 72,
+      "table": "prescription_facts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-etl.service.js",
+      "line": 82,
+      "table": "ai_usage_facts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/duckdb-etl.service.js",
+      "line": 96,
+      "table": "etl_runs",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/emar.service.js",
+      "line": 44,
+      "table": "emar_blocked_attempts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/emr-order-router.service.js",
+      "line": 16,
+      "table": "hospital_partner_orgs",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/emr-order-router.service.js",
+      "line": 26,
+      "table": "emr_order_events",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/emr-order-router.service.js",
+      "line": 38,
+      "table": "hospital_billing_charges",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/enterprise-auth.service.js",
+      "line": 14,
+      "table": "enterprise_sso_identities",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/fee-schedule-versioning.service.js",
+      "line": 8,
+      "table": "charge_master",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/fee-schedule-versioning.service.js",
+      "line": 24,
+      "table": "charge_master_versions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/fhir-subscription.service.js",
+      "line": 18,
+      "table": "fhir_subscriptions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/follow-up-hmis.service.js",
+      "line": 15,
+      "table": "follow_up_plans",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/follow-up-hmis.service.js",
+      "line": 38,
+      "table": "recovery_checkins",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/follow-up-hmis.service.js",
+      "line": 61,
+      "table": "remote_monitoring_alerts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/follow-up-hmis.service.js",
+      "line": 82,
+      "table": "patient_feedback",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/follow-up-hmis.service.js",
+      "line": 101,
+      "table": "outcome_records",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hmis-automation.service.js",
+      "line": 29,
+      "table": "automation_jobs",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hmis-automation.service.js",
+      "line": 49,
+      "table": "automation_run_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hmis-preauth.service.js",
+      "line": 14,
+      "table": "hmis_preauth_requests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hmis-preauth.service.js",
+      "line": 52,
+      "table": "hmis_preauth_documents",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 16,
+      "table": "billing_stations",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 24,
+      "table": "billing_cashier_sessions",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 33,
+      "table": "hospital_bill_templates",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 42,
+      "table": "hospital_invoices",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 54,
+      "table": "hospital_invoice_lines",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 60,
+      "table": "hospital_payments",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 68,
+      "table": "hospital_credit_accounts",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 74,
+      "table": "hospital_credit_ledger",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 79,
+      "table": "billing_audit_log",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-billing.service.js",
+      "line": 85,
+      "table": "hospital_patient_statements",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/hospital-os/hospital-copilot.service.js",
+      "line": 88,
+      "table": "hospital_copilot_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/icu.service.js",
+      "line": 19,
+      "table": "icu_admissions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/icu.service.js",
+      "line": 39,
+      "table": "icu_ventilator_charts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/icu.service.js",
+      "line": 62,
+      "table": "icu_drip_records",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/icu.service.js",
+      "line": 79,
+      "table": "icu_daily_goals",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/icu.service.js",
+      "line": 100,
+      "table": "icu_severity_scores",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/icu.service.js",
+      "line": 115,
+      "table": "icu_events",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-clinical-claims.service.js",
+      "line": 24,
+      "table": "imaging_clinical_claims",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-daily-minio-transfer.service.js",
+      "line": 52,
+      "table": "imaging_daily_transfer_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-evidence-graph.service.js",
+      "line": 23,
+      "table": "imaging_evidence_facts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-evidence-graph.service.js",
+      "line": 43,
+      "table": "above",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-evidence-graph.service.js",
+      "line": 52,
+      "table": "imaging_evidence_claims",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-evidence-graph.service.js",
+      "line": 68,
+      "table": "imaging_evidence_claim_facts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-guidelines.service.js",
+      "line": 26,
+      "table": "imaging_guidelines",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-knowledge-base.service.js",
+      "line": 42,
+      "table": "imaging_knowledge_base",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-knowledge-base.service.js",
+      "line": 93,
+      "table": "imaging_anatomy_relationships",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-report-provenance.service.js",
+      "line": 18,
+      "table": "imaging_report_provenance",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-report-provenance.service.js",
+      "line": 44,
+      "table": "above.",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-validation-factory.service.js",
+      "line": 24,
+      "table": "imaging_validation_cases",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-validation-factory.service.js",
+      "line": 37,
+      "table": "imaging_validation_annotations",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/imaging-validation-factory.service.js",
+      "line": 52,
+      "table": "imaging_validation_adjudications",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/imaging/pacs-minio-archive.service.js",
+      "line": 70,
+      "table": "pacs_minio_archive_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/iso27001.service.js",
+      "line": 24,
+      "table": "iso27001_controls",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/iso27001.service.js",
+      "line": 34,
+      "table": "iso27001_evidence",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/iso27001.service.js",
+      "line": 52,
+      "table": "iso27001_risk_register",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/kiosk-registration.service.js",
+      "line": 49,
+      "table": "kiosk_registration_invites",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/kiosk-registration.service.js",
+      "line": 922,
+      "table": "health_camp_registrations",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/lab-rule-engine.service.js",
+      "line": 327,
+      "table": "lab_rule_alerts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/llm-metrics.service.js",
+      "line": 27,
+      "table": "llm_provider_metrics",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/marketplace/specialist-marketplace.service.js",
+      "line": 65,
+      "table": "specialist_registry",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/marketplace/specialist-marketplace.service.js",
+      "line": 88,
+      "table": "marketplace_requests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/marketplace/tele-pathology.service.js",
+      "line": 53,
+      "table": "pathology_slides",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/marketplace/tele-pathology.service.js",
+      "line": 77,
+      "table": "pathology_consults",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/module-copilot.service.js",
+      "line": 112,
+      "table": "module_copilot_log",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nabh-jci-compliance.service.js",
+      "line": 25,
+      "table": "compliance_standards",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nabh-jci-compliance.service.js",
+      "line": 34,
+      "table": "compliance_checkpoints",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nabh-jci-compliance.service.js",
+      "line": 44,
+      "table": "compliance_evidence",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nabh-jci-compliance.service.js",
+      "line": 59,
+      "table": "compliance_incidents",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/notification-preferences.service.js",
+      "line": 22,
+      "table": "notification_preferences",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nursing-echart.service.js",
+      "line": 17,
+      "table": "nursing_flowsheet_entries",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nursing-echart.service.js",
+      "line": 57,
+      "table": "nursing_io_summary",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nursing-ipd.service.js",
+      "line": 14,
+      "table": "nursing_assessments",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/nursing-ipd.service.js",
+      "line": 45,
+      "table": "nursing_tasks",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/operations-governance.service.js",
+      "line": 18,
+      "table": "operations_approvals",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/operations-governance.service.js",
+      "line": 32,
+      "table": "operations_audit_log",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/operative-notes.service.js",
+      "line": 14,
+      "table": "operative_notes",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ot-consumables.service.js",
+      "line": 14,
+      "table": "procedure_consumables",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ot-consumables.service.js",
+      "line": 35,
+      "table": "implant_records",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ot-consumables.service.js",
+      "line": 58,
+      "table": "family_notifications",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/ot-scheduling.service.js",
+      "line": 19,
+      "table": "ot_safety_overrides",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/patient-navigation.service.js",
+      "line": 19,
+      "table": "patient_navigation_events",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/report-analysis.service.js",
+      "line": 376,
+      "table": "ai_report_lab_values",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/revenue-share/homecare-billing.service.js",
+      "line": 42,
+      "table": "homecare_billing_events",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/revenue-share/rcm-denial-workflow.service.js",
+      "line": 58,
+      "table": "rcm_denial_followups",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/revenue-share/revenue-share-ledger.service.js",
+      "line": 91,
+      "table": "revenue_share_agreements",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/revenue-share/revenue-share-ledger.service.js",
+      "line": 118,
+      "table": "revenue_share_ledger",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/sftp-adapter.service.js",
+      "line": 65,
+      "table": "sftp_connections",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/sftp-adapter.service.js",
+      "line": 84,
+      "table": "sftp_transfers",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/signup-analytics.service.js",
+      "line": 19,
+      "table": "signup_analytics",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tele-icu/icu-command-network.service.js",
+      "line": 46,
+      "table": "icu_command_networks",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tele-icu/icu-command-network.service.js",
+      "line": 55,
+      "table": "icu_command_network_members",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tele-icu/icu-command-network.service.js",
+      "line": 64,
+      "table": "icu_command_rosters",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tele-icu/tele-icu-device-bridge.service.js",
+      "line": 55,
+      "table": "tele_icu_bed_devices",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tele-icu/tele-icu-device-bridge.service.js",
+      "line": 82,
+      "table": "tele_icu_av_sessions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tele-icu/tele-icu-device-bridge.service.js",
+      "line": 95,
+      "table": "tele_icu_device_commands",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tenant-billing.service.js",
+      "line": 30,
+      "table": "tenant_usage",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tenant-billing.service.js",
+      "line": 45,
+      "table": "tenant_invoices",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tenant-provisioner.service.js",
+      "line": 107,
+      "table": "",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/token-revocation.service.js",
+      "line": 37,
+      "table": "portal_refresh_tokens",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/token-revocation.service.js",
+      "line": 60,
+      "table": "api_v2_refresh_tokens",
+      "severity": "guarded",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 118,
+      "table": "tpa_claims",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 150,
+      "table": "tpa_claim_events",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 163,
+      "table": "tpa_claim_documents",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 180,
+      "table": "tpa_claim_shortfalls",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 194,
+      "table": "tpa_preauth_requests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 216,
+      "table": "tpa_fwa_scores",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 226,
+      "table": "tpa_members",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 250,
+      "table": "tpa_network_hospitals",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 270,
+      "table": "tpa_public_claim_access",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 278,
+      "table": "tpa_claim_files",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 294,
+      "table": "tpa_policy_rules",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 307,
+      "table": "tpa_notifications",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 323,
+      "table": "tpa_approval_requests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 338,
+      "table": "tpa_provider_cases",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 357,
+      "table": "tpa_interop_events",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 374,
+      "table": "tpa_policy_underwriting_cases",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 392,
+      "table": "tpa_member_enrollments",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 413,
+      "table": "tpa_provider_contracts",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 432,
+      "table": "tpa_provider_soc_versions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 447,
+      "table": "tpa_provider_blacklist",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 461,
+      "table": "tpa_cashless_forms",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 476,
+      "table": "tpa_cashless_requests",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 501,
+      "table": "tpa_claim_inward_register",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 515,
+      "table": "tpa_claim_scan_batches",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 529,
+      "table": "tpa_claim_bill_entries",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 544,
+      "table": "tpa_claim_bill_line_items",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 557,
+      "table": "tpa_claim_adjudications",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 573,
+      "table": "tpa_claim_charge_entries",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/tpa-claims-lifecycle.service.js",
+      "line": 587,
+      "table": "tpa_claim_payment_advices",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/x12n-edi.service.js",
+      "line": 62,
+      "table": "edi_transactions",
+      "severity": "per-request",
+      "layer": "service"
+    },
+    {
+      "file": "server/services/x12n-edi.service.js",
+      "line": 82,
+      "table": "edi_segments",
+      "severity": "per-request",
+      "layer": "service"
+    }
+  ]
+}

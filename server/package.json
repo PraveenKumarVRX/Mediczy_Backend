@@ -70,7 +70,8 @@
     "test:team-booking-alert:send": "node scripts/smoke-team-booking-alert.mjs --send",
     "test:healthos-smoke": "node scripts/healthos-smoke.mjs",
     "test:portal-healthos-smoke": "node scripts/portal-healthos-smoke.mjs",
-    "test:ring-fence-healthos-sanity": "node scripts/ring-fence-healthos-sanity.mjs"
+    "test:ring-fence-healthos-sanity": "node scripts/ring-fence-healthos-sanity.mjs",
+    "audit:request-ddl": "node scripts/qa/audit-request-ddl-and-rls.mjs"
   },
   "keywords": [],
   "author": "",
