@@ -9,7 +9,7 @@
  */
 
 import express from 'express';
-import { resolveImagingTenantId } from '../utils/tenant-identity.js';
+import { resolveImagingTenant } from '../services/imaging-tenant.service.js';
 import multer from 'multer';
 import jwt from 'jsonwebtoken';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
@@ -50,7 +50,7 @@ const OHIF_METADATA_CONCURRENCY = Math.max(1, parseInt(process.env.OHIF_METADATA
 const pixelTagCache = new Map();
 const upload = multer({
   storage: s3Storage('dicom', {
-    resolveTenant: (req) => resolveImagingTenantId(req.user) || req.lab?.id,
+    resolveTenant: (req) => req.imagingTenant?.id ?? req.lab?.id,
   }),
   limits: { fileSize: 512 * 1024 * 1024 },
 });
@@ -112,16 +112,15 @@ router.use((req, res, next) => {
 });
 
 const authDicomAccess = (req, res, next) => {
-  authLab(req, res, () => {
-    req.user = {
-      ...(req.user || {}),
-      ...(req.lab || {}),
-      id: req.lab?.id,
-      tenantId: req.lab?.id,
-      role: 'lab',
-    };
-    req.userRole = 'lab';
-    next();
+  authLab(req, res, async () => {
+    try {
+      const tenant = await resolveImagingTenant({ role: 'lab', id: req.lab?.id });
+      if (!tenant) return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This lab is not registered as an imaging tenant' });
+      req.imagingTenant = tenant;
+      req.user = { ...(req.user || {}), ...(req.lab || {}), id: req.lab?.id, tenantId: tenant.id, tenantUid: tenant.uid, role: 'lab' };
+      req.userRole = 'lab';
+      return next();
+    } catch (err) { return next(err); }
   });
 };
 
@@ -130,69 +129,83 @@ const authDicomAccess = (req, res, next) => {
 // verifyWebhook. Tenant comes from a header since this runs before multer parses the body.
 const BRIDGE_TOKEN = process.env.ORTHANC_BRIDGE_TOKEN || process.env.MEDICZY_INTERNAL_TOKEN || '';
 
-const authAnyDicom = (req, res, next) => {
-  const authHeader0 = req.headers.authorization || '';
-  if (BRIDGE_TOKEN && authHeader0 === `Bearer ${BRIDGE_TOKEN}`) {
-    const tid = parseInt(req.headers['x-tenant-id'], 10);
-    if (!tid) {
-      return res.status(400).json({ success: false, message: 'X-Tenant-Id header required for internal bridge auth' });
-    }
-    req.user = { id: 0, tenantId: tid, role: 'internal-bridge' };
-    return next();
-  }
-  const queryToken = req.query.access_token || req.query.token;
-  if (queryToken && !req.headers.authorization) {
-    req.headers.authorization = `Bearer ${queryToken}`;
-  }
-  const authHeader = req.headers.authorization || '';
-  if (authHeader.toLowerCase().startsWith('bearer ')) {
-    const token = authHeader.split(' ')[1];
-    try {
-      const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-      if (decoded?.role === 'lab') {
-        return authDicomAccess(req, res, next);
+const noTenant = (res) => res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to an imaging tenant' });
+
+const authAnyDicom = async (req, res, next) => {
+  try {
+    const authHeader0 = req.headers.authorization || '';
+    if (BRIDGE_TOKEN && authHeader0 === `Bearer ${BRIDGE_TOKEN}`) {
+      const tid = parseInt(req.headers['x-tenant-id'], 10);
+      if (!tid) {
+        return res.status(400).json({ success: false, message: 'X-Tenant-Id header required for internal bridge auth' });
       }
-      // Any valid JWT used to be accepted with `tenantId = decoded.tenantId || decoded.id`, so a doctor whose own id
-      // equalled an imaging tenant id was served that tenant's studies. The tenant must now be explicit (or a legacy
-      // lab/hospital/clinic account); anyone else is refused.
-      const imagingTenant = resolveImagingTenantId(decoded);
-      if (!imagingTenant) {
-        return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to an imaging tenant' });
-      }
-      req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: imagingTenant };
+      const tenant = await resolveImagingTenant({ tenantId: tid });
+      if (!tenant) return noTenant(res);
+      req.imagingTenant = tenant;
+      req.user = { id: 0, tenantId: tenant.id, tenantUid: tenant.uid, role: 'internal-bridge' };
       return next();
-    } catch {
-      // Fall through to regular authUser handling.
     }
-  }
-  // The OHIF viewer's own DICOMweb (QIDO/WADO) fetches carry no Authorization header —
-  // imagingViewer.ts's openOhifViewer() relies entirely on the pacs_session HttpOnly
-  // cookie (imaging-session.route.js), which until now only gated nginx's auth_request
-  // on the static /ohif/ shell, never the actual study-data API calls the shell makes.
-  const pacsToken = req.cookies?.pacs_session;
-  if (pacsToken) {
-    try {
-      const decoded = jwt.verify(pacsToken, JWT_CONFIG.SECRET);
-      if (decoded?.purpose === 'pacs') {
-        req.user = { id: decoded.sub, tenantId: decoded.tenantId, role: decoded.role };
+    const queryToken = req.query.access_token || req.query.token;
+    if (queryToken && !req.headers.authorization) {
+      req.headers.authorization = `Bearer ${queryToken}`;
+    }
+    const authHeader = req.headers.authorization || '';
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+      const token = authHeader.split(' ')[1];
+      let decoded = null;
+      try { decoded = jwt.verify(token, JWT_CONFIG.SECRET); } catch { /* fall through to regular authUser handling */ }
+      if (decoded) {
+        if (decoded.role === 'lab') return authDicomAccess(req, res, next);
+        // Any valid JWT used to be accepted with `tenantId = decoded.tenantId || decoded.id`, so an account whose own id
+        // equalled an imaging tenant id was served that tenant's studies. The tenant now comes ONLY from the typed
+        // registry (explicit tenantUid / tenantId claim, or a lab account) — never from the caller's own id.
+        const tenant = await resolveImagingTenant(decoded);
+        if (!tenant) return noTenant(res);
+        req.imagingTenant = tenant;
+        req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: tenant.id, tenantUid: tenant.uid };
         return next();
       }
-    } catch {
-      // Fall through to regular authUser handling.
     }
+    // The OHIF viewer's own DICOMweb (QIDO/WADO) fetches carry no Authorization header —
+    // imagingViewer.ts's openOhifViewer() relies entirely on the pacs_session HttpOnly
+    // cookie (imaging-session.route.js), which until now only gated nginx's auth_request
+    // on the static /ohif/ shell, never the actual study-data API calls the shell makes.
+    const pacsToken = req.cookies?.pacs_session;
+    if (pacsToken) {
+      try {
+        const decoded = jwt.verify(pacsToken, JWT_CONFIG.SECRET);
+        if (decoded?.purpose === 'pacs') {
+          const tenant = await resolveImagingTenant({ tenantUid: decoded.tenantUid, tenantId: decoded.tenantId });
+          if (!tenant) return noTenant(res);
+          req.imagingTenant = tenant;
+          req.user = { id: decoded.sub, tenantId: tenant.id, tenantUid: tenant.uid, role: decoded.role };
+          return next();
+        }
+      } catch {
+        // Fall through to regular authUser handling.
+      }
+    }
+    return authUser(req, res, async (err) => {
+      if (err) return next(err);
+      try {
+        const tenant = await resolveImagingTenant(req.user);
+        if (!tenant) return noTenant(res);
+        req.imagingTenant = tenant;
+        return next();
+      } catch (e) { return next(e); }
+    });
+  } catch (err) {
+    return next(err);
   }
-  return authUser(req, res, (err) => {
-    if (err) return next(err);
-    if (!resolveImagingTenantId(req.user)) {
-      return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to an imaging tenant' });
-    }
-    return next();
-  });
 };
 
-// Fail-closed: no `|| req.user.id` fallback (see resolveImagingTenantId).
+// Fail-closed: the tenant is whatever the typed registry resolved for this request (never the caller's own id).
 function tenantId(req) {
-  return resolveImagingTenantId(req.user);
+  return req.imagingTenant?.id ?? null;
+}
+
+function tenantUid(req) {
+  return req.imagingTenant?.uid ?? null;
 }
 
 function cleanDicomUid(value) {
@@ -273,23 +286,24 @@ function resolveStudyModality(risStudy, orthancStudy, seriesRows) {
   return risModality || modalitiesInStudy || firstSeriesModality || 'OT';
 }
 
-async function loadRisStudyForTenant(pool, studyUID, tid) {
+async function loadRisStudyForTenant(pool, studyUID, tid, tuid) {
   const r = await pool.query(
     `SELECT * FROM ris_studies
      WHERE study_instance_uid = $1
        AND ($2::bigint IS NULL OR lab_id = $2 OR tenant_id = $2)
+       AND ($3::uuid IS NULL OR tenant_uid = $3)
      ORDER BY created_at DESC
      LIMIT 1`,
-    [studyUID, tid || null],
+    [studyUID, tid || null, tuid || null],
   );
   return r.rows[0] || null;
 }
 
-async function ensureStudyIndexedFromOrthanc(pool, studyUID, tid) {
+async function ensureStudyIndexedFromOrthanc(pool, studyUID, tid, tuid) {
   const uid = cleanDicomUid(studyUID);
   if (!uid || !tid) return null;
 
-  const risStudy = await loadRisStudyForTenant(pool, uid, tid);
+  const risStudy = await loadRisStudyForTenant(pool, uid, tid, tuid);
   if (!risStudy) return null;
 
   const orthancStudy = await fetchOrthancStudyByUid(uid).catch(() => null);
@@ -415,24 +429,25 @@ async function ensureStudyIndexedFromOrthanc(pool, studyUID, tid) {
   return studyRes.rows[0] || null;
 }
 
-async function loadStudy(pool, studyUID, tid) {
+async function loadStudy(pool, studyUID, tid, tuid) {
   const uid = cleanDicomUid(studyUID);
+  // Dual key: the integer AND the tenant UID must match, so an id that merely equals another tenant's never matches.
   const r = await pool.query(
-    `SELECT * FROM hg_dicom_studies WHERE study_instance_uid = $1 AND tenant_id = $2`,
-    [uid, tid],
+    `SELECT * FROM hg_dicom_studies WHERE study_instance_uid = $1 AND tenant_id = $2 AND tenant_uid = $3`,
+    [uid, tid, tuid],
   );
-  return r.rows[0] || await ensureStudyIndexedFromOrthanc(pool, uid, tid);
+  return r.rows[0] || await ensureStudyIndexedFromOrthanc(pool, uid, tid, tuid);
 }
 
-async function loadInstances(pool, studyUID, tid, seriesUID = null) {
+async function loadInstances(pool, studyUID, tid, tuid, seriesUID = null) {
   const uid = cleanDicomUid(studyUID);
   const series = cleanDicomUid(seriesUID);
   const r = await pool.query(
     `SELECT * FROM hg_dicom_instances
-     WHERE study_instance_uid = $1 AND tenant_id = $2
+     WHERE study_instance_uid = $1 AND tenant_id = $2 AND tenant_uid = $4
        AND ($3::text IS NULL OR series_instance_uid = $3)
      ORDER BY instance_number NULLS LAST, created_at ASC`,
-    [uid, tid, series || null],
+    [uid, tid, series || null, tuid],
   );
   return r.rows;
 }
@@ -442,6 +457,7 @@ router.post('/studies', authAnyDicom, upload.array('files'), async (req, res) =>
   try {
     const pool = await connectPostgres();
     const tid = tenantId(req);
+    const tuid = tenantUid(req);
     let studyUID = req.body.studyInstanceUID || null;
     let patientId = req.body.patientId || null;
     let patientName = req.body.patientName || null;
@@ -530,6 +546,7 @@ router.get('/studies', authAnyDicom, async (req, res) => {
     const mod = Modality || modality;
     const sdate = StudyDate || studyDate;
     const tid = tenantId(req);
+    const tuid = tenantUid(req);
     const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
     const pool = await connectPostgres();
     const r = await pool.query(
@@ -537,14 +554,14 @@ router.get('/studies', authAnyDicom, async (req, res) => {
        FROM hg_dicom_studies s
        LEFT JOIN hg_dicom_instances i
          ON i.study_instance_uid = s.study_instance_uid AND i.tenant_id = s.tenant_id
-       WHERE s.tenant_id = $1
+       WHERE s.tenant_id = $1 AND s.tenant_uid = $7
          AND ($2::text IS NULL OR s.patient_id::text = $2 OR s.patient_name ILIKE '%' || $2 || '%')
          AND ($3::text IS NULL OR s.modality = $3)
          AND ($4::text IS NULL OR s.study_date::text = $4)
        GROUP BY s.id
        ORDER BY s.created_at DESC
        LIMIT $5 OFFSET $6`,
-      [tid, pid || null, mod || null, sdate || null, parseInt(limit, 10), offset],
+      [tid, pid || null, mod || null, sdate || null, parseInt(limit, 10), offset, tuid],
     );
 
     if (wantsDicomJson(req)) {
@@ -571,9 +588,10 @@ router.get('/series', authAnyDicom, async (req, res) => {
     if (!uid) return res.status(400).json({ success: false, message: 'StudyInstanceUID required' });
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, uid, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, uid, tid, tuid);
     if (!study) return res.status(404).json([]);
-    const instances = await loadInstances(pool, uid, tid);
+    const instances = await loadInstances(pool, uid, tid, tuid);
     const grouped = groupInstancesBySeries(instances);
     const series = [...grouped.entries()].map(([seriesUid, insts]) =>
       seriesToDicomJson(study, seriesUid, insts),
@@ -601,9 +619,10 @@ router.get('/instances', authAnyDicom, async (req, res) => {
     if (!StudyInstanceUID) return res.status(400).json({ success: false, message: 'StudyInstanceUID required' });
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, StudyInstanceUID, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, StudyInstanceUID, tid, tuid);
     if (!study) return res.status(404).json([]);
-    const instances = await loadInstances(pool, StudyInstanceUID, tid, SeriesInstanceUID || null);
+    const instances = await loadInstances(pool, StudyInstanceUID, tid, tuid, SeriesInstanceUID || null);
     const payload = instances.map((inst) => instanceToDicomJson(study, inst));
     if (wantsDicomJson(req)) {
       setDicomCacheHeaders(res, 'metadata', policy);
@@ -626,9 +645,10 @@ router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, req.params.studyUID, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
-    const instances = await loadInstances(pool, req.params.studyUID, tid);
+    const instances = await loadInstances(pool, req.params.studyUID, tid, tuid);
     if (wantsDicomJson(req)) {
       setDicomCacheHeaders(res, 'metadata', policy);
       setServerTiming(res, 'dicomweb-study', startedAt);
@@ -650,9 +670,10 @@ router.get('/studies/:studyUID/series', authAnyDicom, async (req, res) => {
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, req.params.studyUID, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json([]);
-    const instances = await loadInstances(pool, req.params.studyUID, tid);
+    const instances = await loadInstances(pool, req.params.studyUID, tid, tuid);
     const grouped = groupInstancesBySeries(instances);
     const series = [...grouped.entries()].map(([seriesUid, insts]) =>
       seriesToDicomJson(study, seriesUid, insts),
@@ -678,9 +699,10 @@ router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, req.params.studyUID, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json([]);
-    const instances = await loadInstances(pool, req.params.studyUID, tid, req.params.seriesUID);
+    const instances = await loadInstances(pool, req.params.studyUID, tid, tuid, req.params.seriesUID);
     const payload = instances.map((inst) => instanceToDicomJson(study, inst));
     if (wantsDicomJson(req)) {
       setDicomCacheHeaders(res, 'metadata', policy);
@@ -705,9 +727,10 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, req.params.studyUID, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json([]);
-    const instances = await loadInstances(pool, req.params.studyUID, tid, req.params.seriesUID);
+    const instances = await loadInstances(pool, req.params.studyUID, tid, tuid, req.params.seriesUID);
     // Rows/Columns/BitsAllocated/PhotometricInterpretation etc. aren't stored in
     // hg_dicom_instances — parsed from each real file so cornerstone can actually
     // interpret the pixel bytes returned by the frames endpoint (see imagePixelTagsFromBuffer).
@@ -745,9 +768,10 @@ router.get('/studies/:studyUID/ai-readiness', authAnyDicom, async (req, res) => 
   try {
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const study = await loadStudy(pool, req.params.studyUID, tid);
+    const tuid = tenantUid(req);
+    const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
-    const instances = await loadInstances(pool, req.params.studyUID, tid);
+    const instances = await loadInstances(pool, req.params.studyUID, tid, tuid);
     const grouped = groupInstancesBySeries(instances);
     const series = [];
 
@@ -832,14 +856,15 @@ async function streamInstance(req, res) {
   const policy = dicomPolicyForRequest(req);
   const pool = await connectPostgres();
   const tid = tenantId(req);
+  const tuid = tenantUid(req);
   const studyUID = cleanDicomUid(req.params.studyUID);
   const seriesUID = cleanDicomUid(req.params.seriesUID);
   const sopUID = cleanDicomUid(req.params.sopUID);
   const r = await pool.query(
     `SELECT i.* FROM hg_dicom_instances i
-     WHERE i.sop_instance_uid = $1 AND i.study_instance_uid = $2 AND i.tenant_id = $3
+     WHERE i.sop_instance_uid = $1 AND i.study_instance_uid = $2 AND i.tenant_id = $3 AND i.tenant_uid = $5
        AND ($4::text IS NULL OR i.series_instance_uid = $4)`,
-    [sopUID, studyUID, tid, seriesUID || null],
+    [sopUID, studyUID, tid, seriesUID || null, tuid],
   );
   if (!r.rows[0]) return res.status(404).json({ success: false, message: 'Instance not found' });
   const inst = r.rows[0];
@@ -1002,12 +1027,12 @@ router.get('/worklist', authAnyDicom, async (req, res) => {
     const pool = await connectPostgres();
     const r = await pool.query(
       `SELECT * FROM hg_dicom_worklist
-       WHERE tenant_id = $1
+       WHERE tenant_id = $1 AND tenant_uid = $4
          AND ($2::text IS NULL OR modality = $2)
          AND ($3::date IS NULL OR scheduled_date = $3::date)
          AND status NOT IN ('completed','cancelled')
        ORDER BY scheduled_date ASC, scheduled_time ASC NULLS LAST`,
-      [tenantId(req), modality || null, date || null],
+      [tenantId(req), modality || null, date || null, tenantUid(req)],
     );
     res.json({ success: true, worklist: r.rows });
   } catch (err) {
