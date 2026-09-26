@@ -86,20 +86,30 @@ export async function createClinicalNote(payload) {
   return getClinicalNoteById(note.id);
 }
 
-export async function getClinicalNoteById(id) {
+export async function getClinicalNoteById(id, { organizationId } = {}) {
   await ensureClinicalNoteColumns();
+  // When a hospital context is given the note must belong to it (audit follow-up: notes were readable across tenants).
+  const scoped = organizationId != null;
   const [row] = await sequelize.query(
     `SELECT cn.*, cn.admission_id, cn.note_type, cn.author_role, cn.organization_id
-     FROM clinical_notes cn WHERE cn.id = :id LIMIT 1`,
-    { replacements: { id }, type: QueryTypes.SELECT }
+     FROM clinical_notes cn WHERE cn.id = :id ${scoped ? 'AND cn.organization_id = :organizationId' : ''} LIMIT 1`,
+    { replacements: { id, ...(scoped ? { organizationId } : {}) }, type: QueryTypes.SELECT }
   );
   return row || null;
 }
 
-export async function listClinicalNotes({ patientId, admissionId, limit = 50 } = {}) {
+/**
+ * `organizationId` scopes the listing to one hospital (the hospital-staff routes always pass it). Omitting it keeps the
+ * legacy doctor-app behaviour. Notes with no organization (legacy rows) are NOT visible to any hospital.
+ */
+export async function listClinicalNotes({ patientId, admissionId, limit = 50, organizationId } = {}) {
   await ensureClinicalNoteColumns();
   const clauses = [];
   const replacements = { limit: Number(limit) || 50 };
+  if (organizationId != null) {
+    clauses.push(`organization_id = :organizationId`);
+    replacements.organizationId = organizationId;
+  }
   if (patientId) {
     clauses.push(`"patientId" = :patientId`);
     replacements.patientId = patientId;
@@ -108,7 +118,7 @@ export async function listClinicalNotes({ patientId, admissionId, limit = 50 } =
     clauses.push(`admission_id = :admissionId`);
     replacements.admissionId = admissionId;
   }
-  if (!clauses.length) return [];
+  if (!patientId && !admissionId) return [];           // never an unbounded listing, even for a hospital
   return sequelize.query(
     `SELECT * FROM clinical_notes WHERE ${clauses.join(' AND ')} ORDER BY "createdAt" DESC LIMIT :limit`,
     { replacements, type: QueryTypes.SELECT }
