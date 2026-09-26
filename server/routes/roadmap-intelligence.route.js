@@ -2,6 +2,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { connectPostgres } from '../db/postgres.js';
+import pool from '../db/pgPool.js';
+import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
+import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
 const authRoadmap = (req, res, next) => {
@@ -15,6 +18,18 @@ const authRoadmap = (req, res, next) => {
     res.status(401).json({ success: false, message: 'Invalid token' });
   }
 };
+
+// Aggregate endpoints read PLATFORM tables (users, appointments) that hold every hospital's rows, so they must be scoped
+// by a REAL tenant claim — never by `req.tenantId`, which falls back to the caller's own user id. A platform admin (no
+// tenant of their own) gets the platform-wide view; anyone else without a tenant is refused.
+const PLATFORM_ADMIN_ROLES = new Set(['admin', 'system_admin', 'super_admin', 'platform_admin', 'super-admin']);
+const aggregateScope = (req, res, next) => {
+  const tenant = Number(resolveTenantId(req.identity));
+  if (Number.isInteger(tenant) && tenant > 0) { req.aggregateScope = { tenantId: tenant }; return next(); }
+  if (PLATFORM_ADMIN_ROLES.has(req.identity?.role)) { req.aggregateScope = { tenantId: null }; return next(); }
+  return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This account is not attached to a hospital.' });
+};
+const MIN_CELL = 5;   // small-cell suppression: a group smaller than this is reported as null, never as a guess
 const ensureTables = async () => {
   const db = await connectPostgres();
   await db.query(`
@@ -89,7 +104,6 @@ const pgxMap = {
   clopidogrel: { gene: 'CYP2C19', risky: ['poor metabolizer'], recommendation: 'Consider alternate antiplatelet therapy.' },
   warfarin: { gene: 'CYP2C9', risky: ['poor metabolizer'], recommendation: 'Review lower starting dose and monitoring.' },
 };
-const noise = (value) => Math.max(0, Math.round(value + (Math.random() - 0.5) * 2));
 
 router.post('/sdoh/screenings', authRoadmap, async (req, res) => {
   const db = await ensureTables();
@@ -123,13 +137,17 @@ router.post('/trials/match', authRoadmap, async (req, res) => {
   const matches = trials.filter((trial) => trial.conditions.some((c) => diagnoses.some((d) => d.includes(c))) && (!age || (age >= trial.minAge && age <= trial.maxAge)));
   res.json({ success: true, data: matches, source: 'curated_offline_registry' });
 });
-router.get('/staffing/forecast', authRoadmap, async (req, res) => {
+router.get('/staffing/forecast', authRoadmap, aggregateScope, async (req, res) => {
   const db = await ensureTables();
-  const { rows } = await db.query(`SELECT COALESCE("appointmentDate"::date, CURRENT_DATE) AS day, COUNT(*)::int AS visits FROM appointments WHERE "appointmentDate" >= CURRENT_DATE - INTERVAL '28 days' GROUP BY day ORDER BY day`);
+  const { tenantId } = req.aggregateScope;
+  const { rows } = await db.query(
+    `SELECT COALESCE("appointmentDate"::date, CURRENT_DATE) AS day, COUNT(*)::int AS visits FROM appointments
+      WHERE "appointmentDate" >= CURRENT_DATE - INTERVAL '28 days' AND ($1::int IS NULL OR organization_id = $1)
+      GROUP BY day ORDER BY day`, [tenantId]);
   const avg = rows.length ? rows.reduce((s, r) => s + Number(r.visits), 0) / rows.length : 0;
   const projectedPatients = Math.round(avg * 1.08);
   const recommendedNurses = Math.max(1, Math.ceil(projectedPatients / 6));
-  res.json({ success: true, data: { projectedPatients, recommendedNurses, assumption: '8% buffer over trailing 28-day mean', samples: rows.length } });
+  res.json({ success: true, data: { projectedPatients, recommendedNurses, assumption: '8% buffer over trailing 28-day mean', samples: rows.length, scope: tenantId ? 'hospital' : 'platform' } });
 });
 router.post('/antibiogram/results', authRoadmap, async (req, res) => {
   const db = await ensureTables();
@@ -148,10 +166,26 @@ router.get('/infection-surveillance/alerts', authRoadmap, async (req, res) => {
   const { rows } = await db.query(`SELECT organism, COUNT(*)::int AS isolates FROM culture_results WHERE tenant_id = $1 AND collected_at >= CURRENT_DATE - INTERVAL '7 days' GROUP BY organism HAVING COUNT(*) >= 3 ORDER BY isolates DESC`, [req.tenantId]);
   res.json({ success: true, data: rows.map((r) => ({ ...r, severity: Number(r.isolates) >= 5 ? 'high' : 'medium' })) });
 });
-router.get('/rwe/aggregate', authRoadmap, async (_req, res) => {
-  const db = await ensureTables();
-  const { rows } = await db.query(`SELECT COALESCE(gender,'unknown') AS gender, COUNT(*)::int AS patients FROM users GROUP BY COALESCE(gender,'unknown')`);
-  res.json({ success: true, data: rows.map((r) => ({ gender: r.gender, noisyPatientCount: noise(Number(r.patients)) })), privacy: 'noisy_aggregate_only' });
+router.get('/rwe/aggregate', authRoadmap, aggregateScope, async (req, res) => {
+  const { tenantId } = req.aggregateScope;
+  try {
+    // `users` has forced row-level security: read it inside a tenant-scoped (or platform-admin) transaction, and filter
+    // explicitly as well so the query is correct on its own.
+    const rows = await withRlsTransaction(pool, { orgId: tenantId || 0, userId: Number(req.identity.id) || 0, isPlatformAdmin: !tenantId }, async (client) =>
+      (await client.query(
+        `SELECT COALESCE(gender::text,'unknown') AS gender, COUNT(*)::int AS patients FROM users
+          WHERE ($1::int IS NULL OR organization_id = $1) GROUP BY COALESCE(gender::text,'unknown') ORDER BY 1`, [tenantId])).rows);
+    const data = rows.map((r) => {
+      const n = Number(r.patients);
+      const patientCount = n < MIN_CELL ? null : n;
+      // `noisyPatientCount` is kept as a deprecated alias for the current client; it is the same REAL (or suppressed) value.
+      return { gender: r.gender, patientCount, noisyPatientCount: patientCount, suppressed: patientCount === null };
+    });
+    res.json({ success: true, data, scope: tenantId ? 'hospital' : 'platform', privacy: `exact_counts_cells_under_${MIN_CELL}_suppressed` });
+  } catch (err) {
+    console.error('[roadmap-intelligence] rwe/aggregate failed:', err.message);
+    res.status(500).json({ success: false, message: 'Aggregate unavailable' });
+  }
 });
 router.post('/pgx/profiles', authRoadmap, async (req, res) => {
   const db = await ensureTables();
