@@ -307,14 +307,44 @@ Phase 1 has two overlapping tracks:
 
 ### 4.1 WP-1.1 allergy, problem list, reconciliation
 
-Status: built in shadow mode; enforcement unverified.
+Status: discharge side enforced and tested; **the admission side has no such endpoint**, so the
+original acceptance criterion cannot be met as written.
 
-Backend:
+Correction to this section, from checking the code rather than the plan:
 
-- Verify admission-complete endpoint blocks when reconciliation is unsigned.
-- Verify discharge-sign endpoint blocks when reconciliation is unsigned.
-- Implement override-only path with reason, user, timestamp, and patient context.
-- Emit audit event for unsigned block, override, sign, and reconciliation update.
+- **There is no admission-complete endpoint or function.** `completeAdmission` appears nowhere in
+  the server; the only occurrence of the string in the repository is in this document. The admission
+  lifecycle here is `admitPatient` → `dischargePatient` with no intermediate "complete" step.
+  "Verify admission-complete blocks when reconciliation is unsigned" was therefore not an
+  unverified claim — it referred to something that does not exist.
+- **`admitPatient` carries no reconciliation gate.** The only consumer of
+  `hasSignedReconciliation` is the discharge path.
+- The data model *does* support an admission-type reconciliation: `med_reconciliation.type` is a
+  free string, `startReconciliation` accepts any type, and `POST /api/clinical-safety/...` can start
+  one. Nothing acts on it.
+
+No admission-time hard block was added, deliberately. Refusing a bed because a pharmacist has not
+finished medication reconciliation is not a safe control without clinical sign-off, and it would
+be actively dangerous in an emergency admission. The correct shape is a prominent non-blocking
+surface at admission plus the existing hard gate at discharge. That is a design decision for a
+clinician and a product owner, not something to infer from this plan.
+
+Delivered and tested:
+
+- **Discharge sign blocks on unsigned reconciliation** — `signDischargePacket` verifies the actual
+  signed record (not the readiness checklist), honours the tenant's `reconciliation_required`
+  setting, and requires an authorised override to proceed (`discharge-signing-gate.test.js`).
+- **Discharge itself blocks** on unsigned reconciliation, with an audited override path
+  (`adt.service.js`).
+- Both emit `discharge_overrides` rows carrying admission, organization, missing item, reason code,
+  approver and approver role — the who/what/why an audit needs.
+
+Still outstanding:
+
+- Decide the admission-side design with a clinician, then implement it.
+- Frontend: reconciliation banner at the final action, a blocking state that says what is unsigned
+  and who can sign, and an override dialog that requires a reason. None of this exists today.
+- Clinical sign-off for the discharge gate itself.
 
 Frontend:
 
@@ -329,7 +359,8 @@ UI design:
 
 Acceptance:
 
-- Admission and discharge cannot complete unsigned unless override path is used.
+- [x] Discharge cannot complete unsigned unless the override path is used. (tested)
+- [ ] Admission behaviour — no admission-complete step exists; design decision required.
 - Override is auditable and visible in patient record.
 
 ### 4.2 WP-1.2 prescribing-time safety
@@ -549,9 +580,18 @@ Still outstanding:
 - Entitlement audit UX. Grants and revocations are now written to `operations_audit_log` in the
   same transaction as the change they describe, so a failed change leaves no orphan audit row and a
   successful one cannot be unaudited. There is still no viewer screen for that history.
-- Coverage is not proven: only `accounts_finance` is wired to `requireModuleEntitlement`. Which
-  other modules are supposed to be package-gated has not been enumerated, so "all paid modules are
-  enforced" is currently an assumption rather than a verified fact.
+- **Package-gated module inventory — measured, and it is one module.** `requireModuleEntitlement`
+  appears 21 times in the entire server, all of them in `server/routes/hospital/finance.route.js`,
+  all of them gating `accounts_finance`. No other module id is enforced anywhere.
+
+  So the current state is: entitlement *machinery* exists and works (tenant-scoped, RLS-checked,
+  audited, fail-closed), and exactly one module is actually gated with it. Every other paid or
+  premium module is reachable by any authenticated user of that tenant regardless of package.
+
+  This is the gap WP-1.6 was asking to be enumerated, and the enumeration is the deliverable. Which
+  modules *should* be package-gated is a commercial and clinical decision — it needs the packaging
+  plan agreed, not a code change. Until that list exists, adding gates speculatively would lock
+  tenants out of modules they currently pay for.
 
 Acceptance:
 
