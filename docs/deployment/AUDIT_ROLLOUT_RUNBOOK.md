@@ -1,7 +1,7 @@
 # Audit remediation — rollout runbook (2026-09-26)
 
-State: code is on `main` (`99f1b6ef`), **production still runs `3941b30d`.** Nothing below has been done yet.
-Do the steps **in order**; each one is safe to stop after.
+**Status: COMPLETED 2026-09-26.** Production runs `10c41613`; migration 3 applied; FORCE RLS on 9/9 tables; smoke test 25/25.
+Kept as the reference procedure for the next rollout. Do the steps **in order**; each one is safe to stop after.
 
 ## 0. Restore the server dependencies (blocking)
 `/home/ubuntu/Mediczy/server/node_modules` is currently a self-referential symlink (see the audit doc, §10).
@@ -62,7 +62,6 @@ tenant that does not exist and only requests that are rejected before any write.
 Also confirm: `GET /api/health` 200, `https://app.mediqzy.com` loads, `pm2 jlist` shows all apps online, and
 `journalctl`/`logs/mediczy-server-error.log` has no new stack traces since the restart.
 
-## 6. Then merge the cron-guard branch
-`audit/remediation-2026-09-25` (`229ce542`) guards 16 more cron callbacks. Run
-`npm test -- cron-lease-wiring cron-single-flight`, then merge and reload. It changes when scheduled jobs run, so
-watch `logs/` for `[cron] skipping …` lines for the first day.
+## 6. Watch the cron guard
+The cron-guard change (all 34 guarded jobs) is live. It changes when scheduled jobs run, so watch `logs/` for
+`[cron] skipping …` lines for the first day; `cron_job_leases` should be empty between runs.

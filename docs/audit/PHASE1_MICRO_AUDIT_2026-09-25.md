@@ -177,10 +177,11 @@
 
 ## 9. Remediation status (2026-09-26)
 
-**Merged to `main` (`99f1b6ef`) and pushed. NOT yet deployed to production** — see the rollout runbook
-(`docs/deployment/AUDIT_ROLLOUT_RUNBOOK.md`) for what is still needed and why.
+**Merged and DEPLOYED to production (`10c41613`, 2026-09-26).** Migration 3 was applied and FORCE RLS turned on for the nine
+phase-1 tables, both with explicit approval and verified by query; the post-deploy smoke test passes 25/25
+(`server/scripts/qa/audit-smoke.mjs`). See `docs/deployment/AUDIT_ROLLOUT_RUNBOOK.md`.
 
-Evidence: 944 server tests (67 new) with **zero regressions** against `main` (the same 8 environment-dependent
+Evidence: 950 server tests (73 new) with **zero regressions** against the previous `main` (the same 8 environment-dependent
 failures exist on both; one pre-existing failure, `adt-beds`, is fixed); 34 client tests; client type-check unchanged
 at 934; **61/61 real-database regression checks** on a disposable non-superuser database
 (`npm run test:phase1-audit-regression`); 69 changed server modules import cleanly; the client production build
@@ -189,20 +190,20 @@ succeeds and contains the new screens.
 | ID | Status | What was done / what remains |
 |---|---|---|
 | CLN-01/02/03 | **Fixed** | Sign routes need a permitted role; override approver = the authenticated caller (body approver ignored); packet lookup/update/send are organization-scoped; consent uses the packet's own patient; ADT discharge override likewise. Role lists are configurable (`DISCHARGE_SIGN_ROLES`, `DISCHARGE_OVERRIDE_ROLES`) — **the policy itself is still leadership's decision (§7.2).** |
-| SEC-01/02 | **Fixed** | One resolver (`utils/tenant-identity.js`) reads `organization_id`/`tenant_id`/`hospital_id`; `id` counts only for the legacy `hospital` account; a token with no tenant gets 403. Applied to both hospital middlewares and all 106 `req.user.…\|\| req.user.id` call sites in 23 route files. |
+| SEC-01/02 | **Fixed and live — including a second pass** | One resolver (`utils/tenant-identity.js`) reads `organization_id`/`tenant_id`/`hospital_id`; `id` counts only for the legacy `hospital` account; a token with no tenant gets 403. The post-deploy smoke test then found three routers (practice, executive-dashboard, clinical-notes) with their own private copy of the fallback; fixed in `10c41613`. Applied to the hospital middlewares, those three routers, and all 106 `req.user.…\|\| req.user.id` call sites in 23 route files. |
 | FIN-01/02 | **Fixed, proven on a real DB** | Reports keep both an entry and its reversal (net zero); reversal is atomic; `reversal_of` sits on the reversal; a reversal cannot be reversed; 3 concurrent reversals produce one. |
 | FIN-03 | **Fixed** | Closed periods and periods with entries cannot change dates; overlaps refused; posting needs a covering period. |
 | FIN-04/05 | **Fixed** | Fiscal year from the IST date; 12 monthly periods; all entry dates are IST. |
 | FIN-06 | **Fixed** | GST split on invoices; refund reinstates A/R and is keyed on the refund row; positive adjustment reduces A/R; per-remittance settlement keys; input-GST account; impossible source documents rejected. |
-| FIN-07 | **Fixed in code; migration 3 must be applied** | Deferred DB trigger enforces balance at COMMIT. Per-organisation gapless numbering was **not** changed (gaps in journal numbers are permitted; stated limitation). |
+| FIN-07 | **Fixed and live** (migration 3 applied) | Deferred DB trigger enforces balance at COMMIT. Per-organisation gapless numbering was **not** changed (gaps in journal numbers are permitted; stated limitation). |
 | FIN-08/09 | **Fixed** | Structured errors (no DB text); `GET /finance/reconciliation` + idempotent `POST /finance/reconciliation/repost`; expense approval endpoint added (recorded expenses could never reach the ledger before). |
-| FIN-10 | **Script ready; needs a privileged run** | `server/scripts/ops/force-rls-phase1.mjs` (isolation proven safe). The permission system blocked applying it from the automation. |
+| FIN-10 | **Fixed and live** | FORCE RLS applied to all 9 tables on 2026-09-26 (`server/scripts/ops/force-rls-phase1.mjs`); verified 9/9 forced. |
 | CLN-04/05 | **Fixed; needs clinical sign-off** | ESI danger-zone vitals with age bands; required up-triage decision; explicit nurse confirmation; role-gated; server authoritative. **Decision support only until the medical director approves the thresholds (§7.3).** |
 | CLN-06 | **Fixed** | Patient/admission verified; one open summary per admission (no duplicates, one survey invitation); `approved` can no longer be written through the edit route; role gate. The 2 duplicate rows already in production are left untouched. **No approve route exists in this router — approval still lives elsewhere (unverified).** |
 | CLN-07 | **Fixed** | Override rows are written in the same transaction as the signature. |
-| OPS-01 | **Fixed — and it was worse than reported** | *No* job was protected: none of the 22 jobs checked `tickStart`'s result and `withCron` was unused. `beginJob` (in-process flag with stale expiry + DB lease, fails open, auto-released) now guards those 22. **16 more schedule callbacks in 12 notification/maintenance services are guarded on the feature branch (`229ce542`) but NOT merged — unverified because Jest could not run (see §10).** 2 services have a different shape and remain unguarded. |
+| OPS-01 | **Fixed — and it was worse than reported** | *No* job was protected: none of the 22 jobs checked `tickStart`'s result and `withCron` was unused. `beginJob` (in-process flag with stale expiry + DB lease, fails open, auto-released) now guards those 22. 16 more schedule callbacks in 12 notification/maintenance services are now guarded too (verified: 12/12 cron tests, full suite no regressions). 2 services have a different shape and remain unguarded. **Not yet observed firing in production — watch `logs/` for `[cron] skipping …` over the first day.** |
 | OPS-02/03 | **Fixed** | Role gate + audit rows on MRD writes (indexer id is now recorded — it was always null); explicit idempotent UHID assignment `POST /mrd/uhid/assign` (`UH<org>-<seq>`); nothing is auto-assigned — **numbering policy is leadership's (§7.5).** |
-| SEC-03 | **Fixed in code; migration 3 must be applied** | Audit rows for grant/revoke/bootstrap; revoke records who/when. |
+| SEC-03 | **Fixed and live** (migration 3 applied) | Audit rows for grant/revoke/bootstrap; revoke records who/when. |
 | COR-01 | **By design, unchanged** | Bad fields are blanked with a warning in the upload report; review the report. |
 | COR-02/03 | **Fixed** | Audit rows for package delete/toggle and partner assignment (previous list recorded, so an overwrite is recoverable). |
 | COR-04 | **Resolved — not a finding** | AI analysis of a report is only run at the employee's own request; no worker scans for pending reports. |
@@ -223,4 +224,9 @@ symlink. Production kept running (modules were already loaded) but **any restart
 would have failed.** `99f1b6ef` untracks the symlink and ignores `**/node_modules`. Re-creating the directory
 (`rm node_modules && npm ci --omit=dev`) was blocked by the permission system and is the first step in the runbook.
 Lesson: never `git add -A` in a worktree that holds symlinked dependencies.
+
+### Still open / found by the smoke test
+- **`mrd_staff` (and `receptionist`) tokens are refused with `INVALID_USER_TYPE` by the platform ring-fence** (`middleware/ringFencing.js` has no entry for those user types) before they reach any route, so the records-department role cannot actually use the MRD endpoints it is meant for. That is platform RBAC design, not changed here; `hospital_admin`/`ms` work.
+- Other portals derive a hospital id from `decoded.id` with the priority reversed (`middleware/authPortalQms.middleware.js`, `services/clinic-portal.service.js`) — outside the hospital-staff scope of this audit but the same class of risk.
+- **No staging environment exists** (`server/.env` targets production). Everything here was rehearsed on a disposable local database and a full-suite comparison against `main`, then applied to production with explicit approval.
 
