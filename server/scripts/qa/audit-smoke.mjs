@@ -109,15 +109,13 @@ if (SECRET) {
   await expect('IMAGING a tenantId claim that is not a registered lab is refused (an integer cannot mint a tenant)', ['GET', '/api/hypergrid/dicom/studies', { tok: token({ id: 987023, role: 'doctor', tenantId: 987001 }) }], 403, 'TENANT_CONTEXT_REQUIRED');
   await expect('IMAGING an unknown tenantUid is refused', ['GET', '/api/hypergrid/dicom/studies', { tok: token({ id: 987024, role: 'doctor', tenantUid: '11111111-1111-4111-8111-111111111111' }) }], 403, 'TENANT_CONTEXT_REQUIRED');
 
-  // HyperGrid platform routes: tenant is the caller's hospital, never their own user id.
-  const hgNoTenant = token({ id: 70, role: 'nurse', userType: 'hospital' });
-  const hgAdmin = token({ id: 987032, role: 'admin' });
-  for (const p of ['/api/hypergrid/terminology/codes', '/api/hypergrid/edge/gateways', '/api/hypergrid/twins']) {
-    await expect(`HG a tenant-less staff token is refused on GET ${p}`, ['GET', p, { tok: hgNoTenant }], 403, ['TENANT_CONTEXT_REQUIRED', 'ROLE_NOT_PERMITTED']);
+  // HyperGrid platform routes authenticate through authUser, which looks the user up in the database — a synthetic token
+  // for a non-existent user is a 401 before the tenant gate is ever reached, so the tenant gate is pinned by
+  // __tests__/hypergrid-tenant.test.js and hypergrid-routes-tenant.test.js instead. Here: each router is mounted and
+  // refuses an anonymous caller.
+  for (const p of ['/api/hypergrid/terminology/codes', '/api/hypergrid/edge/gateways', '/api/hypergrid/twins', '/api/hypergrid/events', '/api/hypergrid/mqtt/devices', '/api/hypergrid/connectors']) {
+    await expect(`HG anonymous refused on GET ${p}`, ['GET', p], 401);
   }
-  await expect('HG hospital staff resolve their own tenant (empty list for a synthetic org)', ['GET', '/api/hypergrid/twins', { tok: staff('hospital_admin', 987031) }], 200);
-  await expect('HG a platform admin must name a tenant (400, not the admin id)', ['GET', '/api/hypergrid/edge/gateways', { tok: hgAdmin }], 400, 'TENANT_REQUIRED');
-  await expect('HG a platform admin naming a non-existent tenant is a 404', ['GET', '/api/hypergrid/edge/gateways?tenantId=987001', { tok: hgAdmin }], 404, 'TENANT_NOT_FOUND');
 }
 
 const failed = results.filter((r) => !r).length;
