@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -1266,9 +1267,16 @@ const DoctorSettings = () => {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">Two-Factor Authentication</p>
-                      <p className="text-sm text-muted-foreground">Add an extra layer of security</p>
+                      {/* There is no MFA backend yet, so this must not look like a working
+                          control. A button that silently does nothing is worse than an
+                          honest gap: a doctor who clicks it may believe 2FA is protecting
+                          their account when nothing is. */}
+                      <p className="text-sm text-muted-foreground">
+                        Not available yet — two-factor authentication is not implemented, and
+                        this account is protected by password only.
+                      </p>
                     </div>
-                    <Button variant="outline">Enable 2FA</Button>
+                    <Badge variant="secondary">Not available</Badge>
                   </div>
                 </div>
 

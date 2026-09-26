@@ -1113,8 +1113,12 @@ const PaymentManagement = () => {
                     <div>
                       <Label>Auto-retry Failed Payments</Label>
                       <div className="flex items-center space-x-2 mt-2">
-                        <Switch defaultChecked />
-                        <Label className="text-sm">Enable automatic retry for failed payments</Label>
+                        {/* Was <Switch defaultChecked /> with no handler: it showed as ON while
+                            persisting nothing and enabling no retry behaviour. */}
+                        <Switch checked={false} disabled aria-label="Automatic payment retry (not configurable here)" />
+                        <Label className="text-sm text-muted-foreground">
+                          Not configurable in this screen — no retry policy is applied from here.
+                        </Label>
                       </div>
                     </div>
                     <div>
@@ -1149,21 +1153,34 @@ const PaymentManagement = () => {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium">Fraud Detection</div>
-                        <div className="text-sm text-muted-foreground">Real-time fraud monitoring</div>
+                        {/* Displayed as ENABLED with no implementation behind it. A payments
+                            screen claiming real-time fraud monitoring is a false security
+                            statement, so it now shows the real state. */}
+                        <div className="text-sm text-muted-foreground">
+                          No real-time fraud monitoring is configured for this organization.
+                        </div>
                       </div>
-                      <Switch defaultChecked />
+                      <Switch checked={false} disabled aria-label="Fraud detection (not configured)" />
                     </div>
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="font-medium">Two-Factor Authentication</div>
-                        <div className="text-sm text-muted-foreground">Additional security layer</div>
+                        {/* This was <Switch defaultChecked /> — it rendered as ENABLED for a
+                            control that has no implementation at all. In a security or
+                            compliance review that is a false statement about the account's
+                            posture, so it now displays the real state. */}
+                        <div className="text-sm text-muted-foreground">
+                          Not enforced — MFA is not implemented for any account.
+                        </div>
                       </div>
-                      <Switch defaultChecked />
+                      <Switch checked={false} disabled aria-label="Two-factor authentication (not available)" />
                     </div>
                   </div>
-                  <Button variant="outline" className="w-full">
+                  {/* Was a live-looking button with no onClick. Rotating API keys is a
+                      credential operation, so it must not appear to work when it does not. */}
+                  <Button variant="outline" className="w-full" disabled>
                     <Key className="mr-2 h-4 w-4" />
-                    Regenerate API Keys
+                    Regenerate API Keys (unavailable)
                   </Button>
                 </CardContent>
               </Card>

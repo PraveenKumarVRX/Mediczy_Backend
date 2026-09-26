@@ -405,9 +405,14 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>Two-Factor Authentication</Label>
-                  <p className="text-sm text-slate-400">Require 2FA for admin accounts</p>
+                  {/* Previously a live-looking Switch writing to local React state only. Toggling
+                      it implied 2FA was enforced on admin accounts; it is not implemented at
+                      all. Disabled and labelled so the gap is visible instead of implied. */}
+                  <p className="text-sm text-slate-400">
+                    Not enforced — MFA is not implemented. No admin account requires a second factor.
+                  </p>
                 </div>
-                <Switch checked={security.twoFactor} onCheckedChange={v => setSecurity(p => ({ ...p, twoFactor: v }))} />
+                <Switch checked={false} disabled aria-label="Two-factor authentication (not available)" />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">

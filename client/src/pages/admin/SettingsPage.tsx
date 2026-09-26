@@ -553,14 +553,14 @@ const SettingsPage = () => {
                     <div className="flex items-center justify-between">
                       <div className="space-y-1">
                         <Label>Two-Factor Authentication</Label>
+                        {/* Was a Switch over local state only, so an admin could turn on
+                            "Require 2FA for all admin accounts" and see it stick while nothing
+                            was enforced anywhere. Now disabled and explicit. */}
                         <p className="text-sm text-muted-foreground">
-                          Require 2FA for all admin accounts
+                          Not enforced — MFA is not implemented. No admin account requires a second factor.
                         </p>
                       </div>
-                      <Switch
-                        checked={securitySettings.twoFactorAuth}
-                        onCheckedChange={(checked) => setSecuritySettings({ ...securitySettings, twoFactorAuth: checked })}
-                      />
+                      <Switch checked={false} disabled aria-label="Two-factor authentication (not available)" />
                     </div>
 
                     <div className="flex items-center justify-between">
