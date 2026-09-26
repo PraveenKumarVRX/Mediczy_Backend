@@ -3552,14 +3552,32 @@ Current ask: ${taskCopilotInput.trim() || latestUserMessage}`;
     
     try {
       const token = localStorage.getItem('teamToken');
-      const response = await api.post('/admin/corporate-users', {
+      const postHRAdmin = (promoteExisting: boolean) => api.post('/admin/corporate-users', {
         ...newHRAdmin,
         corporateId: selectedCorporate.id,
         role: 'corporate_admin',
-        isCorporate: true
+        isCorporate: true,
+        ...(promoteExisting ? { promoteExisting: true } : {})
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
+
+      let response;
+      try {
+        response = await postHRAdmin(false);
+      } catch (err: any) {
+        // Email already belongs to an employee of this corporate: offer to grant
+        // that same account HR access instead of dead-ending on "already exists".
+        if (err.response?.data?.canPromote) {
+          const confirmed = window.confirm(
+            `${err.response.data.message}\n\nThe employee keeps their employee record. Their login password will be set to the one entered in this form.`
+          );
+          if (!confirmed) return;
+          response = await postHRAdmin(true);
+        } else {
+          throw err;
+        }
+      }
       
       const created = response.data;
       toast({
