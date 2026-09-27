@@ -1526,9 +1526,13 @@ const HospitalCommunicationHub = () => {
                   <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-slate-800 dark:text-white">{pref.label}</span>
-                      <Switch defaultChecked />
+                      {/* Was <Switch defaultChecked /> — appeared enabled while persisting
+                          nothing. Shown disabled with the real state. */}
+                      <Switch checked={false} disabled aria-label={`${pref.label} (not configurable here)`} />
                     </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">{pref.desc}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+                      {pref.desc} — not configurable here; this is not a live setting.
+                    </p>
                     <div className="flex gap-1">
                       {pref.channels.map((ch, i) => (
                         <Badge key={i} variant="outline" className="text-xs capitalize">{ch}</Badge>

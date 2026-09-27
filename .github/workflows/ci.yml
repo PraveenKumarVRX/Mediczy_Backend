@@ -153,5 +153,26 @@ jobs:
       # would be a lie about how much is safe.
       - run: node server/scripts/qa/audit-request-ddl-and-rls.mjs --fail-on-new server/scripts/qa/request-ddl-baseline.json
 
+  dead-affordances:
+    name: Dead affordance check (WP-0.3, real gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      # WP-0.3: a control that LOOKS live but does nothing converts a missing capability into a
+      # false assurance — the most dangerous class of UI defect in a clinical system. Real examples
+      # found and fixed in this repo: a "Two-Factor Authentication" switch rendered as ENABLED with
+      # no MFA anywhere in the server, "Driver SOS" emergency alerts, "Fraud Detection", an
+      # "Enable 2FA" button with no handler, a "Regenerate API Keys" button with no handler, and a
+      # "Update Password" form whose submit did nothing.
+      #
+      # This is a real gate, not advisory: the current finding count is zero, so any new occurrence
+      # fails the build. It is deliberately narrow — a switch rendered ON with no handler, and a
+      # credential-action button with no handler — because a broader rule produced 500+ mostly
+      # false positives on decorative icon buttons, and a check that cries wolf gets switched off.
+      - run: node client/scripts/ci/check-dead-affordances.mjs --fail-on-new client/scripts/ci/dead-affordances-baseline.json
+
       # Cleanup and clinical acceptance remain tracked in docs/IMPLEMENTATION_STATUS_AND_NEXT_STEPS.md.
       - run: node client/scripts/ci/check-invented-data-statics.mjs

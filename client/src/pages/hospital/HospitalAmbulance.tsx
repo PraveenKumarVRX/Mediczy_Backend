@@ -933,9 +933,15 @@ const HospitalAmbulance = () => {
                   <div key={idx} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
                     <div>
                       <p className="font-medium text-slate-800 dark:text-white">{setting.label}</p>
-                      <p className="text-xs text-slate-500">{setting.desc}</p>
+                      {/* Was <Switch defaultChecked />: every row rendered as ON, so "Driver SOS"
+                          read as an active emergency-alert capability when nothing persists it and
+                          no alert is wired. That is the most dangerous version of this defect, so
+                          these now show the real state. */}
+                      <p className="text-xs text-slate-500">
+                        {setting.desc} — not configurable here; this is not a live setting.
+                      </p>
                     </div>
-                    <Switch defaultChecked />
+                    <Switch checked={false} disabled aria-label={`${setting.label} (not configurable here)`} />
                   </div>
                 ))}
               </CardContent>

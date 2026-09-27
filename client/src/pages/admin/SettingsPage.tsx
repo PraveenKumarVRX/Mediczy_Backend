@@ -998,9 +998,12 @@ const SettingsPage = () => {
                               Restore from a backup file
                             </p>
                           </div>
-                          <Button variant="outline" className="w-full">
+                          {/* Was a live-looking button with no onClick. Restoring a database
+                              backup is a recovery operation, and an operator who clicks it and
+                              sees nothing may assume a restore ran. */}
+                          <Button variant="outline" className="w-full" disabled>
                             <Upload className="h-4 w-4 mr-2" />
-                            Restore Backup
+                            Restore Backup (unavailable)
                           </Button>
                         </div>
                       </CardContent>

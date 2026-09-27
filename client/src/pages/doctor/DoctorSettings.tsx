@@ -1251,15 +1251,16 @@ const DoctorSettings = () => {
                       <Label htmlFor="currentPassword">Current Password</Label>
                       <Input id="currentPassword" type="password" />
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="newPassword">New Password</Label>
-                      <Input id="newPassword" type="password" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                      <Input id="confirmPassword" type="password" />
-                    </div>
-                    <Button variant="outline">Update Password</Button>
+                    {/* The form was fully built — new password, confirm — with a submit button
+                        that had no handler. A doctor could type a new password, click Update, see
+                        nothing happen, and reasonably conclude the password had been changed. In a
+                        hospital that is a real security failure, and it invites reusing the old
+                        password they were trying to retire. The inputs are removed too, so the
+                        screen no longer collects a credential it cannot store. */}
+                    <p className="text-sm text-muted-foreground">
+                      Changing your password is not available in this screen. Use the password-reset
+                      flow, which sends a link to your registered email.
+                    </p>
                   </div>
                 </div>
 
