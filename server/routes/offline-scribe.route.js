@@ -8,6 +8,7 @@
 
 import express from 'express';
 import fetch from 'node-fetch';
+import FormData from 'form-data';
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
@@ -17,6 +18,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import logger from '../config/logger.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { checkPrescriptionSafety } from '../services/prescription-safety.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 const ambientSessions = new Map();
@@ -299,6 +301,55 @@ async function transcribeWithCloudFallback(file, language = 'auto') {
     };
 }
 
+// FIX (2026-09-30): this route's only transcription path (transcribeWithCloudFallback,
+// above) sends the full consultation audio to Groq's and OpenAI's cloud APIs. There is a
+// working local, on-infra STT service running right here (offline_scribe/, port 8006) —
+// audio never has to leave the host — but nothing in this file called it. Patient audio
+// went to a third-party cloud on every single ambient-scribe transcription regardless of
+// whether that was ever intended or disclosed. This tries the local service first, with a
+// bounded timeout (local Whisper's "medium" model measured at ~4.5-8x audio duration on
+// this 4-core CPU host — a 3-minute dictation can take 15-25 minutes; that is a real
+// latency problem, not something this fix changes, so a slow local response still falls
+// through to cloud rather than hanging the request). Set SCRIBE_PREFER_LOCAL=false to
+// disable this tier entirely (e.g. if the local service is known-down) and go straight to
+// cloud, matching the previous behaviour.
+const SCRIBE_PREFER_LOCAL = process.env.SCRIBE_PREFER_LOCAL !== 'false';
+const LOCAL_STT_TIMEOUT_MS = parseInt(process.env.SCRIBE_LOCAL_TIMEOUT_MS || '', 10) || 120000;
+
+async function transcribeLocal(file, language = 'auto') {
+    const form = new FormData();
+    form.append('file', file.buffer, { filename: file.originalname || 'scribe-audio.webm', contentType: file.mimetype || 'audio/webm' });
+    form.append('language', language || 'auto');
+    const res = await fetch(`${OFFLINE_SCRIBE_URL}/api/scribe/transcribe`, {
+        method: 'POST',
+        headers: { ...form.getHeaders(), ...(OFFLINE_SCRIBE_TOKEN ? { 'X-Scribe-Token': OFFLINE_SCRIBE_TOKEN } : {}) },
+        body: form,
+        signal: AbortSignal.timeout(LOCAL_STT_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`local STT returned ${res.status}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || 'local STT failed');
+    return {
+        success: true,
+        text: data.text || '',
+        language: data.language || language || 'auto',
+        detected_language: data.language || language || 'auto',
+        duration_seconds: data.audio_duration || null,
+        provider: `local-whisper-cpp:${data.model_used || data.backend || 'unknown'}`
+    };
+}
+
+async function transcribeAudio(file, language = 'auto') {
+    if (SCRIBE_PREFER_LOCAL) {
+        try {
+            return await transcribeLocal(file, language);
+        } catch (localErr) {
+            logger.warn('Local STT unavailable/slow, falling back to cloud', { error: localErr.message });
+        }
+    }
+    return transcribeWithCloudFallback(file, language);
+}
+
 const INDIAN_LANGUAGE_MAP = {
     auto: 'auto',
     en: 'en',
@@ -548,7 +599,7 @@ router.post('/transcribe', authUser, requireScribeAccess, upload.single('audio')
         }
 
         const language = normalizeLanguage(req.body.language || 'auto');
-        const result = await transcribeWithCloudFallback(req.file, language);
+        const result = await transcribeAudio(req.file, language);
 
         // Log for audit
         logger.info('Audio transcribed via AI Scribe cloud STT cascade', {
@@ -722,6 +773,36 @@ router.post('/discharge', authUser, requireScribeAccess, (req, res) => {
 // Ambient streaming MVP
 // ===================================
 
+// FIX (2026-09-30): ambient recording previously had no consent capture anywhere —
+// HospitalAIScribe.tsx could start recording the moment the doctor tapped the mic, with
+// no record of whether the patient was told or agreed. This is an attestation by the
+// doctor (in-person consultation, patient is not a logged-in party to this API call), not
+// a patient-signed token like consultation-recording.route.js uses for telemedicine — the
+// two are different in-person-vs-remote situations and are not made to match here.
+// Best-effort audit: if operations_audit_log does not exist yet on this environment
+// (it is a Phase 1 migration, not guaranteed applied — see docs/IMPLEMENTATION_STATUS_
+// AND_NEXT_STEPS.md), consent is still enforced from the in-memory session; only the
+// durable audit trail is degraded, not silently, and not recording is ever blocked by it.
+async function auditScribeEvent(req, action, details) {
+    try {
+        await postgresSequelize.query(
+            `INSERT INTO operations_audit_log (module, entity_type, entity_id, action, actor, details, organization_id)
+             VALUES ('ai-scribe', 'ambient_session', :entityId, :action, :actor, :details, :orgId)`,
+            {
+                replacements: {
+                    entityId: String(details.sessionId || ''),
+                    action,
+                    actor: String(req.user?.id || 'unknown'),
+                    details: JSON.stringify(details),
+                    orgId: req.user?.organization_id || req.user?.tenant_id || null,
+                },
+            }
+        );
+    } catch (auditErr) {
+        logger.warn('Ambient scribe audit write skipped (non-fatal)', { action, error: auditErr.message });
+    }
+}
+
 router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
     _evictExpiredSessions();
     if (ambientSessions.size >= MAX_AMBIENT_SESSIONS) {
@@ -729,6 +810,16 @@ router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
     }
     const requestedDocumentType = mapDocumentTypeForBackend(req.body.document_type || 'opd-notes');
     if (!enforceDoctorOnlyDocumentAccess(req, res, requestedDocumentType)) return;
+
+    const consentGranted = req.body.consent_granted === true || req.body.consent_granted === 'true';
+    if (!consentGranted) {
+        return res.status(400).json({
+            success: false,
+            code: 'CONSENT_REQUIRED',
+            message: 'Patient consent to record this consultation is required before starting.'
+        });
+    }
+    const consentMethod = String(req.body.consent_method || 'verbal').trim().slice(0, 100);
 
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     ambientSessions.set(id, {
@@ -739,8 +830,10 @@ router.post('/sessions', authUser, requireScribeAccess, async (req, res) => {
         patientContext: req.body.patient_context || {},
         chunkPaths: [],   // disk paths instead of in-memory buffers
         chunkCount: 0,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        consent: { granted: true, method: consentMethod, capturedAt: new Date().toISOString(), capturedBy: req.user?.id }
     });
+    auditScribeEvent(req, 'start', { sessionId: id, consentMethod, documentType: requestedDocumentType });
     res.status(201).json({ success: true, sessionId: id });
 });
 
@@ -760,6 +853,22 @@ router.post('/sessions/:id/chunks', authUser, requireScribeAccess, upload.single
     return res.status(202).json({ success: true, chunkCount: session.chunkCount });
 });
 
+// FIX (2026-09-30): there was no way to actually stop and discard a recording — only
+// finalize (which transcribes it) or let the 4-hour TTL eventually sweep it. A doctor
+// who starts a session, then has the patient withdraw consent or realizes they hit the
+// wrong patient, could not delete that audio on request; it sat on disk until the sweep.
+router.post('/sessions/:id/discard', authUser, requireScribeAccess, async (req, res) => {
+    const session = ambientSessions.get(req.params.id);
+    if (!session || session.ownerId !== req.user?.id) {
+        return res.status(404).json({ success: false, message: 'Ambient session not found' });
+    }
+    const chunkCount = session.chunkCount;
+    _cleanupSessionFiles(session);
+    ambientSessions.delete(req.params.id);
+    auditScribeEvent(req, 'discard', { sessionId: req.params.id, chunkCount, reason: String(req.body?.reason || '').slice(0, 200) });
+    return res.json({ success: true, discarded: true });
+});
+
 router.post('/sessions/:id/finalize', authUser, requireScribeAccess, async (req, res) => {
     const session = ambientSessions.get(req.params.id);
     if (!session || session.ownerId !== req.user?.id) {
@@ -777,7 +886,7 @@ router.post('/sessions/:id/finalize', authUser, requireScribeAccess, async (req,
             originalname: 'ambient-session.webm',
             mimetype: 'audio/webm'
         };
-        const transcription = await transcribeWithCloudFallback(audioFile, session.language);
+        const transcription = await transcribeAudio(audioFile, session.language);
         const document = await generateScribeDocument({
             documentType: session.documentType,
             transcript: transcription.text,
@@ -802,6 +911,7 @@ router.post('/sessions/:id/finalize', authUser, requireScribeAccess, async (req,
         };
         _cleanupSessionFiles(session);
         ambientSessions.delete(req.params.id);
+        auditScribeEvent(req, 'finalize', { sessionId: req.params.id, chunkCount: session.chunkCount, sttProvider: transcription.provider, documentType: session.documentType });
         return res.json({ success: true, sessionId: req.params.id, result });
     } catch (error) {
         logger.error('Ambient scribe finalize failed:', { error: error.message, userId: req.user?.id });
@@ -846,7 +956,7 @@ router.post('/full-pipeline', authUser, requireScribeAccess, upload.single('audi
         };
 
         const started = Date.now();
-        const transcription = await transcribeWithCloudFallback(req.file, language);
+        const transcription = await transcribeAudio(req.file, language);
         const document = await generateScribeDocument({
             documentType,
             transcript: transcription.text,
