@@ -9,6 +9,11 @@ import { getTenantSubdomain, slugToDisplayName } from '@/utils/tenantHost';
  * - Generic:            /hr/login
  * - Path-scoped:        /hr/:slug/login  (e.g. /hr/hycare-hospitals/login)
  * - Subdomain-scoped:   https://hycare.mediqzy.com/hr/login
+ *
+ * HR signs in with a USERNAME, unlike the other department portals. HR and ward staff commonly
+ * share or lack a corporate email, and `users.email` is UNIQUE, so such a person could not be
+ * given an hr_staff row at all and their HR privileges were unreachable. The server still accepts
+ * an email for the HR accounts that already have one.
  */
 const HRLogin = () => {
   const { slug } = useParams<{ slug?: string }>();
@@ -34,6 +39,7 @@ const HRLogin = () => {
       dashboardPath="/hr/dashboard"
       hospitalSlug={hospitalSlug}
       hospitalName={hospitalName}
+      identifierField="username"
     />
   );
 };

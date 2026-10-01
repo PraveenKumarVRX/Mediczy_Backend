@@ -1240,7 +1240,18 @@ export const insuranceCoordinatorLogin = async (req, res) => {
  * If no hospital identifier is supplied in the request, the lookup falls back
  * to email+role across all hospitals (suitable for single-tenant deployments).
  */
-const makeDeptHandlers = (roleKey, displayName) => {
+/**
+ * Builds the signup/login pair for one department staff role.
+ *
+ * options.allowUsername — the department may authenticate by `users.username` instead of an
+ * email. Added for HR (20261001000001): HR and ward staff frequently share or simply lack a
+ * corporate address, and `users.email` is UNIQUE, so such a person could not be given an
+ * hr_staff row at all and their HR privileges were unreachable. Email still works for the
+ * accounts that already have one — this widens the identifier, it does not replace it.
+ */
+const makeDeptHandlers = (roleKey, displayName, options = {}) => {
+  const allowUsername = options.allowUsername === true;
+  const credentialLabel = allowUsername ? 'username or email' : 'email';
   const signup = async (req, res) => {
     try {
       const errors = validationResult(req);
@@ -1251,18 +1262,38 @@ const makeDeptHandlers = (roleKey, displayName) => {
       const { hospital_id, hospital_slug, hospital_domain, email, password, first_name, last_name, phone, department } = req.body;
       const hospitalIdentifier = hospital_id || hospital_slug || hospital_domain;
 
+      // Normalised here as well as in the model hook, because the duplicate pre-check below
+      // queries on it before any hook has run.
+      const username = allowUsername && typeof req.body.username === 'string'
+        ? req.body.username.trim().toLowerCase() || null
+        : null;
+      if (allowUsername && !username && !email) {
+        return res.status(400).json({ success: false, message: 'A username or an email is required' });
+      }
+
       const hospital = await findHospitalByIdentifier(hospitalIdentifier);
       if (!hospital) {
         return res.status(404).json({ success: false, message: 'Hospital not found. Please provide a valid hospital_id, hospital_slug, or hospital_domain.' });
       }
 
-      const existing = await User.findOne({ where: { email, organization_id: hospital.id, role: roleKey } });
-      if (existing) {
-        return res.status(409).json({ success: false, message: 'An account with this email already exists.' });
+      // A username is unique platform-wide (partial unique index on lower(username)), so it is
+      // checked without the organization/role scope that the email check uses.
+      if (username) {
+        const takenName = await User.findOne({ where: { username } });
+        if (takenName) {
+          return res.status(409).json({ success: false, message: 'That username is already taken.' });
+        }
+      }
+      if (email) {
+        const existing = await User.findOne({ where: { email, organization_id: hospital.id, role: roleKey } });
+        if (existing) {
+          return res.status(409).json({ success: false, message: 'An account with this email already exists.' });
+        }
       }
 
       const staff = await User.create({
-        email,
+        email: email || null,
+        username,
         password,
         firstName: first_name,
         lastName: last_name,
@@ -1287,7 +1318,7 @@ const makeDeptHandlers = (roleKey, displayName) => {
         message: `${displayName} account created successfully`,
         data: {
           token,
-          staff: { id: staff.id, email: staff.email, first_name: staff.firstName, last_name: staff.lastName, role: staff.role,
+          staff: { id: staff.id, email: staff.email, username: staff.username, first_name: staff.firstName, last_name: staff.lastName, role: staff.role,
             hospital: { id: hospital.id, name: hospital.name, slug: hospital.slug } }
         }
       });
@@ -1306,11 +1337,34 @@ const makeDeptHandlers = (roleKey, displayName) => {
 
       const { hospital_id, hospital_slug, hospital_domain, email, password } = req.body;
 
-      if (!checkRateLimit(email)) {
+      // Which column identifies this account. A department that allows usernames accepts either,
+      // so staff who already have an email keep their existing credentials.
+      const username = allowUsername && typeof req.body.username === 'string'
+        ? req.body.username.trim().toLowerCase()
+        : '';
+      const byUsername = username.length > 0;
+      // What the rate limiter and the audit log record. Keyed on whichever identifier was actually
+      // submitted — keying username logins on a blank email would put the whole department into
+      // one shared attempt budget.
+      const identifier = byUsername ? username : email;
+
+      // Hard guard, not a formality: Sequelize silently DROPS an undefined value from a `where`,
+      // so a body carrying neither identifier would degrade to { role, status } and match the
+      // first active member of this department — an authentication bypass. The validators cannot
+      // catch this for HR, where both fields are individually optional.
+      if (!identifier || typeof identifier !== 'string' || !identifier.trim()) {
+        return res.status(400).json({ success: false, message: `A ${credentialLabel} is required` });
+      }
+
+      if (!checkRateLimit(identifier)) {
         return res.status(429).json({ success: false, message: 'Too many login attempts. Please try again in 15 minutes.' });
       }
 
       const hospitalIdentifier = hospital_id || hospital_slug || hospital_domain;
+
+      // Stored usernames are already case-folded (User model beforeCreate/beforeUpdate), so an
+      // equality match on the folded input is enough and agrees with the lower(username) index.
+      const identifyBy = byUsername ? { username } : { email };
 
       let staff;
       if (hospitalIdentifier) {
@@ -1319,21 +1373,21 @@ const makeDeptHandlers = (roleKey, displayName) => {
         if (!hospital) {
           return res.status(404).json({ success: false, message: 'Hospital not found.' });
         }
-        staff = await User.findOne({ where: { email, organization_id: hospital.id, role: roleKey, status: 'active' } });
+        staff = await User.findOne({ where: { ...identifyBy, organization_id: hospital.id, role: roleKey, status: 'active' } });
       } else {
-        // Single-tenant fallback: find by email + role only
-        staff = await User.findOne({ where: { email, role: roleKey, status: 'active' } });
+        // Single-tenant fallback: find by identifier + role only
+        staff = await User.findOne({ where: { ...identifyBy, role: roleKey, status: 'active' } });
       }
 
       if (!staff) {
-        await auditLoginAttempt(req, null, email, false, `${displayName} not found`);
-        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        await auditLoginAttempt(req, null, identifier, false, `${displayName} not found`);
+        return res.status(401).json({ success: false, message: `Invalid ${credentialLabel} or password` });
       }
 
       const isPasswordValid = await staff.verifyPassword(password);
       if (!isPasswordValid) {
-        await auditLoginAttempt(req, staff.id, email, false, 'Invalid password');
-        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+        await auditLoginAttempt(req, staff.id, identifier, false, 'Invalid password');
+        return res.status(401).json({ success: false, message: `Invalid ${credentialLabel} or password` });
       }
 
       const hospital = await Tenant.findByPk(staff.organization_id);
@@ -1347,14 +1401,14 @@ const makeDeptHandlers = (roleKey, displayName) => {
       await staff.update({ metadata: { ...staff.metadata, last_login: new Date().toISOString(), login_source: 'web_portal' } });
 
       console.log(`✅ ${displayName} login successful:`, staff.id);
-      await auditLoginAttempt(req, staff.id, email, true);
+      await auditLoginAttempt(req, staff.id, identifier, true);
 
       res.status(200).json({
         success: true,
         message: 'Login successful',
         data: {
           token,
-          staff: { id: staff.id, email: staff.email, first_name: staff.firstName, last_name: staff.lastName, phone: staff.phoneNumber, role: staff.role, department: staff.metadata?.department,
+          staff: { id: staff.id, email: staff.email, username: staff.username, first_name: staff.firstName, last_name: staff.lastName, phone: staff.phoneNumber, role: staff.role, department: staff.metadata?.department,
             hospital: hospital ? { id: hospital.id, name: hospital.name, slug: hospital.slug, logo: hospital.logo, type: hospital.type, address: hospital.address, phone: hospital.phone, email: hospital.email } : null }
         }
       });
@@ -1371,7 +1425,7 @@ const makeDeptHandlers = (roleKey, displayName) => {
 const _accounts   = makeDeptHandlers('accounts_staff',       'Accounts Staff');
 const _mrd        = makeDeptHandlers('mrd_staff',            'MRD Staff');
 const _insDeskH   = makeDeptHandlers('insurance_desk_staff', 'Insurance Desk Staff');
-const _hr         = makeDeptHandlers('hr_staff',             'HR Staff');
+const _hr         = makeDeptHandlers('hr_staff',             'HR Staff', { allowUsername: true });
 const _itEdp      = makeDeptHandlers('it_edp_staff',         'IT/EDP Staff');
 const _ot         = makeDeptHandlers('ot_staff',             'OT Staff');
 const _icu        = makeDeptHandlers('icu_staff',            'ICU Staff');

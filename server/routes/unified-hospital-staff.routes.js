@@ -356,6 +356,36 @@ const deptLoginValidation = [
   body('password').notEmpty().withMessage('Password is required')
 ];
 
+// HR authenticates by username OR email (makeDeptHandlers('hr_staff', ..., { allowUsername: true })),
+// so neither identifier can be required on its own here. "At least one of them" is enforced in the
+// handler rather than as a validator: an absent field short-circuits its own express-validator
+// chain, so a cross-field rule placed on either one would simply not run.
+const usernameRule = body('username').optional({ checkFalsy: true }).trim()
+  .isLength({ min: 3, max: 100 }).withMessage('Username must be 3-100 characters')
+  .matches(/^[a-zA-Z0-9._-]+$/).withMessage('Username may contain only letters, numbers, dots, underscores and hyphens');
+
+const hrLoginValidation = [
+  body('hospital_id').optional().trim(),
+  body('hospital_slug').optional().trim(),
+  body('hospital_domain').optional().trim(),
+  usernameRule,
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('Invalid email'),
+  body('password').notEmpty().withMessage('Password is required')
+];
+
+const hrSignupValidation = [
+  body('hospital_id').optional().trim(),
+  body('hospital_slug').optional().trim(),
+  body('hospital_domain').optional().trim(),
+  usernameRule,
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('Invalid email'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('first_name').trim().notEmpty().withMessage('First name is required'),
+  body('last_name').trim().notEmpty().withMessage('Last name is required'),
+  body('phone').optional().trim(),
+  body('department').optional().trim()
+];
+
 // Accounts
 router.post('/accounts/signup', deptBodyValidation, accountsStaffSignup);
 router.post('/accounts/login', authLimiter, deptLoginValidation, accountsStaffLogin);
@@ -395,8 +425,8 @@ router.post('/insurance-desk/signup', deptBodyValidation, insuranceDeskSignup);
 router.post('/insurance-desk/login', authLimiter, deptLoginValidation, insuranceDeskLogin);
 
 // HR
-router.post('/hr/signup', deptBodyValidation, hrStaffSignup);
-router.post('/hr/login', authLimiter, deptLoginValidation, hrStaffLogin);
+router.post('/hr/signup', hrSignupValidation, hrStaffSignup);
+router.post('/hr/login', authLimiter, hrLoginValidation, hrStaffLogin);
 
 // IT/EDP
 router.post('/it-edp/signup', deptBodyValidation, itEdpStaffSignup);
