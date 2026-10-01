@@ -13,6 +13,7 @@ import sharedPool from '../db/pgPool.js';
 import User from '../models/postgres/user.model.postgres.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
+import { resolveOrgTypeForTenant } from '../utils/organizationType.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -653,6 +654,21 @@ async function requireHr(req, res, next) {
       return res.status(403).json({ success: false, message: 'Valid hospital context is required' });
     }
 
+    // Which users.organization_type this session scopes by. Resolved ONCE, from the tenant's own
+    // type, instead of nine separate `req.hrOrganizationType` fallbacks. Those
+    // always produced 'hospital' (the department-login token carries no organization_type at all),
+    // so a corporate or clinic tenant's HR saw an empty module — and, worse, four of those nine
+    // sites are WRITES that stamped organization_type onto newly created staff, spreading the
+    // wrong value.
+    const tenantRecord = await Tenant.findByPk(req.tenantId).catch(() => null);
+    const resolved = resolveOrgTypeForTenant(tenantRecord, hrUser?.organization_type);
+    req.hrOrganizationType = resolved.orgType;
+    if (!resolved.expressible) {
+      // tenants.type has values users.organization_type cannot express (broker, ambulance, tpa,
+      // ngo, psu, insurer, homecare, aggregator). Keep the previous behaviour, but say so.
+      console.warn(`[hrms] tenant ${req.tenantId} is type '${resolved.tenantType}', which has no users.organization_type equivalent; scoping by '${resolved.orgType}'`);
+    }
+
     // Real subdomain isolation: extractTenant (global middleware) already resolved
     // req.tenant from the Host header for any tenants-table entity. When a request
     // arrives on a specific subdomain, the session's own tenant must match it —
@@ -869,7 +885,7 @@ router.patch('/locations/:id', async (req, res) => {
 router.get('/users', async (req, res) => {
   const [users, locations] = await Promise.all([
     User.findAll({
-      where: { organization_id: req.tenantId, organization_type: req.hrUser?.organization_type || 'hospital', role: { [Op.in]: HR_USER_ROLES } },
+      where: { organization_id: req.tenantId, organization_type: req.hrOrganizationType, role: { [Op.in]: HR_USER_ROLES } },
       order: [['firstName', 'ASC'], ['lastName', 'ASC']],
       limit: 200,
     }),
@@ -898,7 +914,7 @@ router.post('/users', async (req, res) => {
     gender: 'Other',
     phoneNumber: safeText(phone, 30),
     organization_id: req.tenantId,
-    organization_type: req.hrUser?.organization_type || 'hospital',
+    organization_type: req.hrOrganizationType,
     tenant_id: req.tenantId,
     role: safeRole,
     department_name: 'HR',
@@ -920,7 +936,7 @@ router.post('/users', async (req, res) => {
 });
 
 router.patch('/users/:id/scope', async (req, res) => {
-  const user = await User.findOne({ where: { id: req.params.id, organization_id: req.tenantId, organization_type: req.hrUser?.organization_type || 'hospital', role: { [Op.in]: HR_USER_ROLES } } });
+  const user = await User.findOne({ where: { id: req.params.id, organization_id: req.tenantId, organization_type: req.hrOrganizationType, role: { [Op.in]: HR_USER_ROLES } } });
   if (!user) return res.status(404).json({ success: false, message: 'HR user not found' });
   const assignedLocationIds = normalizeArray(req.body?.locationIds ?? user.scope?.locationIds ?? []).map(String);
   const featurePermissions = Array.isArray(req.body?.permissions) ? req.body.permissions : (user.permissions || HR_FEATURE_CATALOG.map(feature => feature.key));
@@ -986,8 +1002,13 @@ router.get('/summary', async (req, res) => {
 
 router.get('/staff', async (req, res) => {
   const scope = await getRequesterLocationScope(req);
-  const filters = scope.isSuperUser ? req.query : { ...req.query, allowedLocationIds: scope.locationIds };
-  const staff = await listStaff(req.tenantId, filters, req.hrUser?.organization_type || 'hospital');
+  // An EMPTY locationIds array means "no location restriction recorded for this user", not
+  // "allowed nowhere". listStaff rejects any member whose locationId is absent from the array, so
+  // passing [] filtered out every colleague: /hr/summary reported 9 staff while /hr/staff returned
+  // []. Only pass the restriction when there is actually one.
+  const restrict = !scope.isSuperUser && Array.isArray(scope.locationIds) && scope.locationIds.length > 0;
+  const filters = restrict ? { ...req.query, allowedLocationIds: scope.locationIds } : { ...req.query };
+  const staff = await listStaff(req.tenantId, filters, req.hrOrganizationType);
   res.json({ success: true, data: staff });
 });
 
@@ -1037,7 +1058,7 @@ router.post('/staff', async (req, res) => {
     gender,
     phoneNumber: safeText(phone, 20),
     organization_id: req.tenantId,
-    organization_type: req.hrUser?.organization_type || 'hospital',
+    organization_type: req.hrOrganizationType,
     role: safeRole,
     status: 'active',
     metadata: {
@@ -1067,7 +1088,7 @@ router.patch('/staff/:id', async (req, res) => {
     where: {
       id: req.params.id,
       organization_id: req.tenantId,
-      organization_type: req.hrUser?.organization_type || 'hospital',
+      organization_type: req.hrOrganizationType,
       role: { [Op.in]: STAFF_ROLES },
     },
   });
@@ -1097,7 +1118,7 @@ router.delete('/staff/:id', async (req, res) => {
     where: {
       id: req.params.id,
       organization_id: req.tenantId,
-      organization_type: req.hrUser?.organization_type || 'hospital',
+      organization_type: req.hrOrganizationType,
       role: { [Op.in]: STAFF_ROLES },
     },
   });
@@ -1818,7 +1839,7 @@ router.post('/performance/reviews', async (req, res) => {
     where: {
       id: staffId,
       organization_id: req.tenantId,
-      organization_type: req.hrUser?.organization_type || 'hospital',
+      organization_type: req.hrOrganizationType,
       role: { [Op.in]: STAFF_ROLES },
     },
   });
@@ -2627,7 +2648,7 @@ router.post('/recruitment/candidates/:id/hire', async (req, res) => {
       gender,
       phoneNumber: phone || candidate.phone || '0000000000',
       organization_id: req.tenantId,
-      organization_type: req.hrUser?.organization_type || 'hospital',
+      organization_type: req.hrOrganizationType,
       role: safeRole,
       status: 'active',
       metadata: {

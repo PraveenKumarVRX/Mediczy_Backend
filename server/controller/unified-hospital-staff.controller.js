@@ -23,6 +23,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import { resolveOrgTypeForTenant } from '../utils/organizationType.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -64,13 +65,21 @@ const findHospitalByIdentifier = async (identifier) => {
     ? raw.slice(0, -(platformDomain.length + 1)).split('.')[0]
     : raw;
 
-  // Try to find by ID, slug, subdomain, or custom_domain
-  // Filter by type = 'hospital' (Tenant model uses 'type' not 'organization_type')
+  // Try to find by ID, slug, subdomain, or custom_domain.
+  //
+  // Deliberately NOT restricted to type='hospital' any more. Every department login routes its
+  // hospital_slug / hospital_domain through here, so the old filter meant a clinic, corporate,
+  // broker or aggregator tenant answered 404 "Hospital not found." for its own slug — roughly 53
+  // existing staff (tenant 7 broker=36, tenant 3 clinic=11, and others) could never use a
+  // slug-scoped or subdomain login, only the generic form. Verified 2026-10-01: slug
+  // 'ninjacart' -> 404 while 'smart-hospital' resolved.
+  //
+  // Widening this does not widen access: the caller still requires a users row matching this
+  // organization_id AND the portal's role AND status='active', and the password is still checked.
   const hospital = await Tenant.findOne({
     where: {
       [Op.and]: [
         { status: 'active' },
-        { type: 'hospital' },
         {
           [Op.or]: [
             { id: isNaN(identifier) ? null : parseInt(identifier) },
@@ -1291,6 +1300,12 @@ const makeDeptHandlers = (roleKey, displayName, options = {}) => {
         }
       }
 
+      // From the tenant's own type, not a hardcoded guess.
+      const { orgType: staffOrgType, expressible } = resolveOrgTypeForTenant(hospital, null);
+      if (!expressible) {
+        console.warn(`[${displayName} signup] tenant ${hospital.id} is type '${hospital.type}', which users.organization_type cannot express; storing '${staffOrgType}'`);
+      }
+
       const staff = await User.create({
         email: email || null,
         username,
@@ -1300,6 +1315,10 @@ const makeDeptHandlers = (roleKey, displayName, options = {}) => {
         phoneNumber: phone || null,
         role: roleKey,
         organization_id: hospital.id,
+        // Without this the column takes its model default, 'individual', and the new staff member
+        // is invisible to the HR module — listStaff() filters on organization_type, so the account
+        // exists, logs in, and appears nowhere.
+        organization_type: staffOrgType,
         permissions: getRolePermissions(roleKey),
         scope: 'organization',
         status: 'active',
