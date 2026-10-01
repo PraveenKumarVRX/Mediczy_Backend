@@ -1,5 +1,4 @@
 /**
-import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL User Model
  * Primary database model for user data
  * 
@@ -11,6 +10,7 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
  * - Row-level security ready
  */
 
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
