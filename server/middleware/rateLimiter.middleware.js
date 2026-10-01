@@ -120,6 +120,17 @@ const authKeyGenerator = (req) => {
     return `auth:${normalizedRoute}:email:${email}`;
   }
 
+  // HR — and any department that opts into username auth — posts `username` and no email at all.
+  // Without this branch those requests fall through to the IP key below, and one hospital behind
+  // a single NAT would share one 5-attempt budget across its whole department.
+  const username = typeof req.body?.username === 'string'
+    ? req.body.username.trim().toLowerCase()
+    : '';
+
+  if (username) {
+    return `auth:${normalizedRoute}:username:${username}`;
+  }
+
   const ip = getClientIp(req);
   return `auth:${normalizedRoute}:ip:${ip}`;
 };

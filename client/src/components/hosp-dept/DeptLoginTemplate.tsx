@@ -22,12 +22,20 @@ interface DeptLoginTemplateProps {
   /** When set (e.g. from /hr/:slug/login), scopes auth to that hospital tenant. */
   hospitalSlug?: string;
   hospitalName?: string;
+  /**
+   * Which credential this department's staff sign in with. Defaults to 'email'.
+   * HR passes 'username' because HR and ward staff commonly share or lack a corporate
+   * address, and users.email is UNIQUE — see the server-side makeDeptHandlers({ allowUsername }).
+   */
+  identifierField?: 'email' | 'username';
 }
 
 const DeptLoginTemplate = ({
   deptKey, title, description, Icon, dashboardPath, hospitalSlug, hospitalName,
+  identifierField = 'email',
 }: DeptLoginTemplateProps) => {
-  const [email, setEmail]               = useState('');
+  const isUsername = identifierField === 'username';
+  const [identifier, setIdentifier]     = useState('');
   const [password, setPassword]         = useState('');
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
@@ -65,14 +73,18 @@ const DeptLoginTemplate = ({
       // advances past 404/405 — stops right there and never reaches the real
       // endpoint. Legacy hospital-auth fallbacks stay last for departments that
       // predate the unified staff router.
+      // The server accepts either identifier for a username-enabled department, so send exactly
+      // the one this portal collected — posting a blank `email` alongside a username would make
+      // the rate limiter key on an empty string.
+      const credential = isUsername ? { username: identifier } : { email: identifier };
       const authBody = normalizedSlug
         ? {
-            email,
+            ...credential,
             password,
             hospital_slug: normalizedSlug,
             hospital_domain: `${normalizedSlug}.mediqzy.com`,
           }
-        : { email, password };
+        : { ...credential, password };
       const attempts = [
         { endpoint: `/hospital/staff/${deptKey}/login`,  body: authBody },
         { endpoint: `/${deptKey}/login`,                 body: authBody },
@@ -185,16 +197,21 @@ const DeptLoginTemplate = ({
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
+                  <label htmlFor={identifierField} className="text-sm font-medium flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-teal-600" />
-                    Email Address
+                    {isUsername ? 'Username' : 'Email Address'}
                   </label>
                   <Input
-                    id="email"
-                    type="email"
-                    placeholder="staff@hospital.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id={identifierField}
+                    // A username must not be typed into type="email": the browser would refuse to
+                    // submit it as an invalid address.
+                    type={isUsername ? 'text' : 'email'}
+                    autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    placeholder={isUsername ? 'priya.hr' : 'staff@hospital.com'}
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
                     required
                     className="h-12 text-base border-2 focus:border-teal-500 transition-colors"
                   />
