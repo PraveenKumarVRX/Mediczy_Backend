@@ -273,7 +273,13 @@ const demoAdminCorporates = [
 // Admin login
 router.post('/login', authLimiter, [
   body('email').isEmail(),
-  body('password').isLength({ min: 4 })
+  // Never validate password SHAPE at login — only that one was sent. The password is checked
+  // against a bcrypt hash, so a length rule here adds no security and silently locks out any
+  // account whose correct password is shorter than the rule. That is not hypothetical: a 7-char
+  // team password could never sign in, and the account was re-keyed to fit this validator rather
+  // than the validator being fixed. Shape belongs on the routes that SET a password.
+  // (`deptLoginValidation` in unified-hospital-staff.routes.js already does this correctly.)
+  body('password').notEmpty().withMessage('Password is required')
 ], adminLogin);
 
 // Refresh — issue new access + refresh token pair (rotation, no re-login needed)
