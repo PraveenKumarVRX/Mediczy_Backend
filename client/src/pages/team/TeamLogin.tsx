@@ -127,6 +127,11 @@ const TeamLogin = () => {
         setError('Your account is inactive or login access is disabled');
       } else if (err.response?.data?.message) {
         setError(err.response.data.message);
+      } else if (err.response?.data?.errors?.[0]?.msg) {
+        // express-validator 400s carry { errors: [{ msg }] } and no top-level message
+        setError(err.response.data.errors[0].msg);
+      } else if (err.response) {
+        setError('Login failed. Please try again.');
       } else {
         setError('Login failed. Please check your connection and try again.');
       }
