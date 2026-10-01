@@ -44,10 +44,31 @@ const User = sequelize.define('User', {
   },
   email: {
     type: DataTypes.STRING(255),
-    allowNull: false,
+    // Nullable since 20261001000001: staff who log in by `username` (HR, and any department
+    // whose people share or lack a corporate address) have no email of their own. Still UNIQUE
+    // — Postgres treats NULLs as distinct, so username-only rows do not collide with each other.
+    allowNull: true,
     unique: true,
     validate: {
       isEmail: true
+    }
+  },
+  username: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    // Uniqueness is enforced in the database by a partial, case-insensitive index
+    // (users_username_lower_unique, see migrations/20261001000001-users-username-login.migration.js)
+    // rather than a plain column constraint, so the many existing username-NULL rows stay unindexed.
+    // Deliberately not declared `unique: true` here: that would describe a different constraint
+    // from the one that actually exists.
+    validate: {
+      // No spaces or '@': an '@' would make a username indistinguishable from an email at login,
+      // where the identifier decides which column is searched.
+      is: {
+        args: /^[a-zA-Z0-9._-]+$/,
+        msg: 'Username may contain only letters, numbers, dots, underscores and hyphens'
+      },
+      len: { args: [3, 100], msg: 'Username must be 3-100 characters' }
     }
   },
   password: {
@@ -378,6 +399,13 @@ const User = sequelize.define('User', {
   // Hooks
   hooks: {
     beforeCreate: async (user) => {
+      // Usernames are matched case-insensitively at login (the unique index is on lower(username)),
+      // so store them already folded — otherwise 'Priya' and 'priya' look distinct to the app
+      // while the database rejects the second as a duplicate.
+      if (typeof user.username === 'string') {
+        user.username = user.username.trim().toLowerCase() || null;
+      }
+
       // Generate unique ID if not set
       if (!user.unique_id) {
         user.unique_id = await generateUniqueIdForModel(User, user.role || 'user');
@@ -412,6 +440,11 @@ const User = sequelize.define('User', {
     },
     
     beforeUpdate: async (user) => {
+      // Same case-folding as beforeCreate, for a username that is being changed.
+      if (user.changed('username') && typeof user.username === 'string') {
+        user.username = user.username.trim().toLowerCase() || null;
+      }
+
       // Hash password if changed
       if (user.changed('password') && user.password) {
         user.password = await hashPasswordIfPlaintext(user.password, 10);
