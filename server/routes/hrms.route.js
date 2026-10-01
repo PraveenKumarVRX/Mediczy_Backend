@@ -951,7 +951,7 @@ router.patch('/users/:id/scope', async (req, res) => {
 });
 
 router.get('/summary', async (req, res) => {
-  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 });
+  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);
   const { rows: attendanceRows } = await sharedPool.query(
     `SELECT
        COUNT(DISTINCT staff_user_id) FILTER (WHERE event_type IN ('check_in','in')) AS present,
@@ -1256,7 +1256,7 @@ router.post('/biometric-events', async (req, res) => {
 
 router.get('/attendance', async (req, res) => {
   const date = req.query.date || todayISO();
-  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 });
+  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);
   const { rows: events } = await sharedPool.query(
     `SELECT e.*, d.device_uid, d.name AS device_name
      FROM hr_biometric_events e
@@ -1492,7 +1492,7 @@ router.post('/shifts', async (req, res) => {
 });
 
 router.get('/onboarding', async (req, res) => {
-  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 });
+  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);
   const ids = staff.map(member => Number(member.id)).filter(Boolean);
   const taskRows = ids.length ? await sharedPool.query(
     `SELECT id, staff_user_id AS "staffId", task_key AS "taskKey", task_label AS "taskLabel", status, due_date AS "dueDate", completed_at AS "completedAt"
@@ -1727,7 +1727,7 @@ router.patch('/helpdesk/tickets/:id/status', async (req, res) => {
 router.get('/performance', async (req, res) => {
   const cycle = safeText(req.query.cycle, 40) || defaultPerformanceCycle();
   const days = clampInt(req.query.days, 30, 7, 180);
-  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 });
+  const staff = await listStaff(req.tenantId, { status: 'active', limit: 500 }, req.hrOrganizationType);
   const staffIds = staff.map(member => Number(member.id)).filter(Boolean);
 
   const [reviewResult, attendanceResult] = await Promise.all([
