@@ -65,7 +65,11 @@ const Tenant = sequelize.define('Tenant', {
       'psu',        // Public Sector Undertaking
       'ngo',        // Non-Governmental Organization
       'insurer',    // Insurance Company
-      'broker'      // Insurance Broker / Aggregator
+      'broker',     // Insurance Broker / Aggregator
+      // Present in the Postgres enum_tenants_type but previously absent here, so Sequelize
+      // validation rejected every write to the one tenant that uses it (id 12, 'Mayden') —
+      // the row was readable and un-updatable. Verified against prod 2026-10-01.
+      'aggregator'
     ),
     allowNull: false,
     comment: 'Type of healthcare organization'
@@ -280,7 +284,9 @@ const Tenant = sequelize.define('Tenant', {
   
   // Status
   status: {
-    type: DataTypes.ENUM('pending', 'active', 'suspended', 'cancelled'),
+    // 'trial' exists in the Postgres enum_tenants_status; without it here, Sequelize rejects
+    // writes to any trial tenant. Verified against prod 2026-10-01.
+    type: DataTypes.ENUM('pending', 'active', 'suspended', 'cancelled', 'trial'),
     allowNull: false,
     defaultValue: 'pending'
   },
