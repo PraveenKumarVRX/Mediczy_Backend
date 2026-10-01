@@ -145,6 +145,8 @@ const authIpKeyGenerator = (req) => {
 const limitExceededHandler = (req, res) => {
   res.status(429).json({
     success: false,
+    // Top-level message so clients that read data.message (login pages) show it instead of a generic error.
+    message: 'Too many requests. Please try again later.',
     error: {
       code: 'RATE_LIMIT_EXCEEDED',
       message: 'Too many requests. Please try again later.',
@@ -260,6 +262,7 @@ const authIpAlertHandler = (req, res) => {
   });
   res.status(429).json({
     success: false,
+    message: 'Too many login attempts from this network. Please try again later.',
     error: {
       code: 'RATE_LIMIT_EXCEEDED',
       message: 'Too many login attempts from this network. Please try again later.',
