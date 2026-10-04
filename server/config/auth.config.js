@@ -5,8 +5,26 @@
  */
 
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Load by EXPLICIT path, not from the process working directory.
+//
+// `dotenv.config()` with no path reads ./.env relative to cwd. The repository has two .env files
+// carrying DIFFERENT 128-character JWT_SECRETs (repo root vs server/), so the secret this module
+// resolved depended on where the process happened to be started. Production is unaffected —
+// scripts/ssm-env-loader.mjs sets process.env.JWT_SECRET from /mediczy/prod/JWT_SECRET before any
+// dotenv call, and dotenv never overrides an existing variable — but a bare `node script.js` run
+// from the repository root picked up the other secret and minted tokens the fleet rejects.
+//
+// server/.env is loaded FIRST so it wins, because dotenv keeps the first value it sets and
+// server/.env is the one that matches SSM. Note this is the reverse of db/pgPool.js, which loads
+// the root file first; that difference is deliberate here and should not be "tidied" to match.
+const __dirname = dirname(fileURLToPath(import.meta.url));
 if (process.env.NODE_ENV !== 'production' || process.env.DOTENV_IN_PROD === 'true') {
-    dotenv.config();
+    dotenv.config({ path: join(__dirname, '..', '.env') });        // server/.env — authoritative
+    dotenv.config({ path: join(__dirname, '..', '..', '.env') });  // repo root — fallback only
+    dotenv.config();                                               // cwd — last resort
 }
 
 // CRITICAL: Single JWT secret for entire application
@@ -15,7 +33,8 @@ const JWT_SECRET = process.env.JWT_SECRET;
 
 if (!JWT_SECRET) {
     console.error('FATAL ERROR: JWT_SECRET environment variable is not set!');
-    console.error('Please add JWT_SECRET to your .env file');
+    console.error('Looked in: the environment (set by scripts/ssm-env-loader.mjs in production),');
+    console.error('then server/.env, then the repository root .env.');
     console.error('Example: JWT_SECRET=your-super-secret-key-here');
     process.exit(1);
 }
