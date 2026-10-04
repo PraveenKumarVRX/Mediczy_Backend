@@ -218,7 +218,7 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
     const enrichedItems = await Promise.all(items.map(async (item) => {
       const name = item.medicine_name || item.name || '';
       const result = await sharedPool.query(
-        `SELECT id, name, brand_name, generic_name, strength, form, mrp, unit_price, pack_size, manufacturer
+        `SELECT id, name, brand_name, generic_name, strength, form, mrp, unit_price, pack_size, manufacturer, schedule
          FROM pharmacy_medicines
          WHERE name ILIKE $1 OR brand_name ILIKE $1 OR generic_name ILIKE $1
          ORDER BY
@@ -242,11 +242,49 @@ router.post('/', authUser, prescriptionUpload.single('prescription'), async (req
         manufacturer:  dbMed?.manufacturer|| item.manufacturer|| null,
         pack_size:     dbMed?.pack_size   || item.pack_size   || null,
         medicine_id:   dbMed?.id          || null,
+        // Persisted on the line so a dispensing pharmacist sees the schedule without re-querying,
+        // and so an audit can tell what the system believed at the time of the order.
+        schedule:      dbMed?.schedule    || null,
         quantity:      qty,
         unit_price:    unitMrp,
         line_total:    parseFloat((unitMrp * qty).toFixed(2)),
       };
     }));
+
+    // ── Prescription gate for scheduled drugs ─────────────────────────────
+    // Schedule H / H1 / X cannot lawfully be supplied without a prescription (Drugs and Cosmetics
+    // Rules). Until 2026-10-04 nothing here read pharmacy_medicines.schedule at all: the column
+    // was accurate (Clonazepam -> X, Rosuvastatin -> H) and simply never consulted, so 29
+    // prescription-only orders were accepted with no prescription on file, including one
+    // Schedule X benzodiazepine. The prescription file was documented as "optional" and an upload
+    // failure was explicitly non-fatal.
+    //
+    // Policy (decided 2026-10-04): require a stored prescription, else reject. The order must not
+    // enter the fulfilment queue at all without one.
+    const RX_REQUIRED_SCHEDULES = new Set(['H', 'H1', 'X']);
+    const rxItems = enrichedItems.filter(
+      (i) => i.schedule && RX_REQUIRED_SCHEDULES.has(String(i.schedule).toUpperCase().trim()),
+    );
+    if (rxItems.length > 0 && !prescriptionFileUrl) {
+      const named = rxItems
+        .map((i) => `${i.brand_name || i.medicine_name} (Schedule ${String(i.schedule).toUpperCase()})`)
+        .join(', ');
+      // Distinguish "none attached" from "attached but we failed to store it" — the second is our
+      // fault and the customer should be told to retry rather than told their order is invalid.
+      const uploadAttemptedButFailed = Boolean(req.file);
+      console.warn(`[pharmacy-orders] rejected: prescription required for ${named} (user ${userId}, upload_attempted=${uploadAttemptedButFailed})`);
+      return res.status(400).json({
+        success: false,
+        code: uploadAttemptedButFailed ? 'PRESCRIPTION_UPLOAD_FAILED' : 'PRESCRIPTION_REQUIRED',
+        message: uploadAttemptedButFailed
+          ? 'We could not store your prescription file, so the order was not placed. Please try uploading it again.'
+          : `A doctor's prescription is required for: ${named}. Please attach a prescription and place the order again.`,
+        requiresPrescription: rxItems.map((i) => ({
+          medicine_name: i.brand_name || i.medicine_name,
+          schedule: String(i.schedule).toUpperCase(),
+        })),
+      });
+    }
 
     // ── Calculate totals ───────────────────────────────────────────────────
     const subtotal          = parseFloat(enrichedItems.reduce((s, i) => s + i.line_total, 0).toFixed(2));
