@@ -11,7 +11,12 @@ import { col, fn, where as sequelizeWhere } from "sequelize";
 import Doctor from "../models/doctor.model.intelligent.js";
 import Nurse from "../models/nurse.model.intelligent.js";
 import Assistant from "../models/assistant.model.intelligent.js";
-import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
+// The .intelligent module exports plain wrapper objects with no Sequelize associations, so
+// `include: [{ model: MembershipPlan, as: "plan" }]` threw "include.model.getTableName is not
+// a function" and buildInactiveAccountContext() silently returned {} on every sign-in. The
+// postgres models are real Sequelize models and define UserPlan.belongsTo(MembershipPlan,
+// { foreignKey: 'membershipPlanId', as: 'plan' }) -- the same pair membership.route.js uses.
+import { UserPlan, MembershipPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import postgresSequelize from "../db/postgres-sequelize.js";
 import { tryAutoActivateCorporateEmployeeForLogin } from "../services/corporate-employee-activation.service.js";
 

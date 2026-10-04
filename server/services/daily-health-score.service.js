@@ -354,7 +354,11 @@ export async function enrichLogDataFromDiary(userId, dateStr) {
       FROM health_diary
       WHERE "userId" = :userId
         AND "entryDate"::date = :date
-        AND "entryType" IN ('vital', 'sleep', 'mood', 'activity', 'medication', 'lab_result', 'device_reading', 'screen_time')
+        -- Compared as text, not as enum_health_diary_entryType: 'screen_time' is not a label on
+        -- that enum, and Postgres casts every literal in the list, so including it made the whole
+        -- query fail with "invalid input value for enum" and lost ALL diary enrichment, not just
+        -- screen time. Adding the label needs ALTER TYPE as its owner (postgres); this does not.
+        AND "entryType"::text IN ('vital', 'sleep', 'mood', 'activity', 'medication', 'lab_result', 'device_reading', 'screen_time')
     `, {
       replacements: { userId, date: dateStr },
       type: QueryTypes.SELECT,
