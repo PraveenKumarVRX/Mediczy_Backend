@@ -959,7 +959,11 @@ const ringFencingMiddleware = (req, res, next) => {
   // Get token from header
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    console.log('🚫 Ring-fencing: No valid authorization header');
+    // Every unauthenticated request hit this (632 lines in a 20k sample). The request is
+    // rejected with 401 regardless, so the line carried no information the response did not.
+    if (process.env.LOG_RING_FENCING_DENIALS === 'true') {
+      console.log('🚫 Ring-fencing: No valid authorization header');
+    }
     return res.status(401).json({
       error: 'Authentication required',
       code: 'NO_TOKEN'

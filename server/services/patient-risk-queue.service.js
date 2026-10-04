@@ -109,6 +109,9 @@ export function startRiskWorker(processBatch) {
  */
 export async function processBatchesDirect(patients, processBatch, batchSize = BATCH_SIZE) {
   let created = 0, updated = 0, gateBlocked = 0;
+  // Per-batch counters of why the quality gate blocked, merged so the caller can report one
+  // tally per run instead of a line per patient.
+  const blockerTally = {};
   const batches = [];
 
   for (let i = 0; i < patients.length; i += batchSize) {
@@ -124,11 +127,14 @@ export async function processBatchesDirect(patients, processBatch, batchSize = B
         created     += r.value?.created     || 0;
         updated     += r.value?.updated     || 0;
         gateBlocked += r.value?.gateBlocked || 0;
+        for (const [code, count] of Object.entries(r.value?.blockerTally || {})) {
+          blockerTally[code] = (blockerTally[code] || 0) + count;
+        }
       }
     }
   }
 
-  return { created, updated, gateBlocked };
+  return { created, updated, gateBlocked, blockerTally };
 }
 
 export { QUEUE_NAME, BATCH_SIZE, CONCURRENCY };

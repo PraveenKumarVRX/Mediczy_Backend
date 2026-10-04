@@ -13,7 +13,11 @@ const scheduleDeviceMonitoring = () => {
   
   // Every 5 minutes: Check heartbeats and low battery
   cron.schedule('*/5 * * * *', async () => {
-    console.log('🔍 Running device heartbeat check...');
+    // 288 of these a day said only that cron works; the registry tick() already records
+    // every run, and a failure still logs below.
+    if (process.env.LOG_DEVICE_HEARTBEAT === 'true') {
+      console.log('🔍 Running device heartbeat check...');
+    }
     try {
       await deviceMonitoringService.checkOfflineDevices();
       await deviceMonitoringService.checkLowBatteryDevices();

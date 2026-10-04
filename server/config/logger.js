@@ -75,33 +75,61 @@ if (IS_PRODUCTION) {
   );
 }
 
+// Monitoring scrapes were the single largest source of log volume: Prometheus polling
+// /metrics/internal and the blackbox exporter polling /api/health produced ~63% of all lines
+// (12.6k of a 20k-line sample), which buried real events and rotated useful history away early.
+// These paths are logged only when they FAIL, so a broken health check is still visible, and
+// LOG_MONITORING_REQUESTS=true restores the old behaviour for debugging.
+const MONITORING_PATHS = new Set([
+  '/api/health',
+  '/health',
+  '/healthz',
+  '/metrics',
+  '/metrics/internal',
+]);
+
+function isMonitoringRequest(req) {
+  const rawPath = req.path || req.url || '';
+  return MONITORING_PATHS.has(rawPath.split('?')[0]);
+}
+
 // Request logging middleware
 export function requestLogger(req, res, next) {
   const start = Date.now();
   const requestId = req.headers['x-request-id'] || `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
+
   req.requestId = requestId;
   req.logger = logger.child({ requestId });
-  
+
+  const quiet = isMonitoringRequest(req) && process.env.LOG_MONITORING_REQUESTS !== 'true';
+
   // Log request
-  req.logger.info('Incoming request', {
-    method: req.method,
-    url: req.url,
-    ip: req.ip,
-    userAgent: req.get('user-agent')
-  });
-  
+  if (!quiet) {
+    req.logger.info('Incoming request', {
+      method: req.method,
+      url: req.url,
+      ip: req.ip,
+      userAgent: req.get('user-agent')
+    });
+  }
+
   // Log response
   const originalSend = res.send;
   res.send = function(data) {
     const duration = Date.now() - start;
-    req.logger.info('Response sent', {
-      statusCode: res.statusCode,
-      duration: `${duration}ms`
-    });
+    // A failing monitoring endpoint is exactly what we want to see, so quiet applies only to
+    // successful scrapes.
+    if (!quiet || res.statusCode >= 400) {
+      const level = quiet ? 'warn' : 'info';
+      req.logger[level]('Response sent', {
+        ...(quiet ? { method: req.method, url: req.url } : {}),
+        statusCode: res.statusCode,
+        duration: `${duration}ms`
+      });
+    }
     return originalSend.call(this, data);
   };
-  
+
   next();
 }
 
