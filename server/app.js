@@ -153,7 +153,6 @@ import whatsappBusinessRouter from './routes/whatsapp.business.route.js';
 import whatsappProductionRouter from './routes/whatsapp-production.route.js';
 import whatsappNumbersRouter from './routes/whatsapp-numbers.route.js';
 import whatsappRouter from './routes/whatsapp.route.js';
-import rocketChatRouter from './routes/rocketchat.routes.js';
 import chatRouter from './routes/chat.route.js';
 import supportChatRouter from './routes/support-chat.route.js';
 import omnichannelJourneyRouter from './routes/omnichannel-journey.route.js';
@@ -1027,12 +1026,11 @@ app.use(activityLogger({
 }));
 
 // Twilio WhatsApp Webhook Bypass - MUST RUN FIRST before session/auth checks
-// Allow unauthenticated requests for Twilio webhooks and RocketChat outgoing webhooks
+// Allow unauthenticated requests for Twilio and Chatwoot webhooks (they verify their own signatures)
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/whatsapp-production/webhook') ||
       req.path.startsWith('/api/whatsapp-production/fallback') ||
       req.path.startsWith('/api/whatsapp-production/status-callback') ||
-      req.path.startsWith('/api/support/webhook/rocketchat') ||
       req.path.startsWith('/api/support/webhook/whatsapp') ||
       req.path === '/api/payments/webhook' ||
       req.path === '/api/hospital/billing/pgi/webhook' ||
@@ -1516,11 +1514,10 @@ app.use('/api/whatsapp', whatsappRouter); // WhatsApp templates, campaigns & mes
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
 app.use('/api/whatsapp-numbers', whatsappNumbersRouter); // WhatsApp multiple numbers management
 app.use('/api/payments', paymentRouter); // Payment gateway management
-app.use('/api/rocketchat', rocketChatRouter); // RocketChat integration
 app.use('/api/whatsapp-business', whatsappBusinessRouter); // WhatsApp Business API integration
 app.use('/api/whatsapp-production', whatsappProductionRouter); // Production WhatsApp messaging with templates
 app.use('/api/chat', chatRouter); // Chat system endpoints
-app.use('/api/support', supportChatRouter); // Omnichannel support chat (WhatsApp + In-App to RocketChat)
+app.use('/api/support', supportChatRouter); // Omnichannel support chat (WhatsApp + In-App -> Chatwoot)
 app.use('/api/omnichannel', omnichannelJourneyRouter); // Omnichannel journey builder — multi-channel patient messaging
 app.use('/api/embeddings', embeddingsRouter); // Embeddings management via PGVector
 app.use('/api/cdss', cdssKnowledgeRouter); // CDSS mobile aliases: /query, /guidelines

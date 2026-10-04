@@ -141,7 +141,7 @@ const ChatMessageModel = sequelize.define('ChatMessage', {
   channel: {
     type: DataTypes.STRING(20),
     defaultValue: 'app',
-    comment: 'app, whatsapp, email, rocketchat, sms'
+    comment: 'app, whatsapp, email, chatwoot, sms'
   },
   attachments: {
     type: DataTypes.JSONB,

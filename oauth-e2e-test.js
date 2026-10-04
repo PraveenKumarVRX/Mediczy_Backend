@@ -11,8 +11,6 @@ const crypto = require('crypto');
 const querystring = require('querystring');
 
 const BACKEND_URL = 'http://localhost:8888';
-const CLIENT_ID = 'rocketchat-client-id';
-const CLIENT_SECRET = 'rocketchat-client-secret-secure-key-12345';
 const REDIRECT_URI = 'http://localhost:3100/_oauth/mediqzy';
 
 const colors = {
@@ -272,12 +270,9 @@ async function testOAuthFlow() {
       }
     }
 
-    // Step 5: Rocket.Chat Integration Simulation
-    log('\n📍 Step 5: Rocket.Chat Integration Simulation', colors.cyan);
     log('──────────────────────────────────────────────────────────────────', colors.cyan);
 
     if (userInfo) {
-      log(`RocketChat User Auto-Creation:`, colors.blue);
       log(`  username: "${userInfo.username}"`, colors.yellow);
       log(`  email: "${userInfo.email}"`, colors.yellow);
       log(`  name: "${userInfo.name}"`, colors.yellow);
@@ -331,14 +326,9 @@ async function testOAuthFlow() {
   log('Next Steps:', colors.bold);
   log('='.repeat(70) + '\n', colors.bold);
 
-  log(`1. Configure Rocket.Chat OAuth:`, colors.blue);
-  log(`   cd /home/ubuntu/Mediczy && node configure-rocketchat-oauth.js`, colors.cyan);
   
-  log(`\n2. Test Rocket.Chat integration:`, colors.blue);
-  log(`   - Logout of Rocket.Chat`, colors.cyan);
   log(`   - Click "Login with Mediqzy" button`, colors.cyan);
   log(`   - Complete OAuth flow`, colors.cyan);
-  log(`   - Verify user auto-created in Rocket.Chat`, colors.cyan);
 
   log(`\n3. Monitor logs:`, colors.blue);
   log(`   tail -f /home/ubuntu/Mediczy/logs/server-out.log | grep -i oauth`, colors.cyan);

@@ -9,7 +9,7 @@
  *
  * Delivery channels (in priority order):
  *   1. Email via AWS SES (if requester.email present)
- *   2. WhatsApp via RocketChat Omnichannel (if requester.phone present)
+ *   2. WhatsApp (retired with RocketChat on 2026-10-04; never actually delivered -- see below)
  *
  * Schedule: every 30 minutes (offset at :45)
  */
@@ -17,7 +17,6 @@
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import { tick, tickError, tickStart, beginJob } from '../utils/cronRegistry.js';
-import rocketChatService from './rocketchat.service.js';
 
 const APP_URL   = process.env.APP_URL || 'https://app.mediqzy.com';
 const FROM_EMAIL = process.env.SES_FROM_EMAIL || process.env.EMAIL_FROM || 'support@mediqzy.com';
@@ -206,19 +205,12 @@ class ClosedLoopNotifierService {
     }
 
     // ── WhatsApp fallback ────────────────────────────────────────────────────
-    if (row.requester_phone) {
-      const msg =
-        `Hi ${row.requester_name || 'there'}, your Mediczy support ticket ` +
-        `#${row.ticket_id} has been resolved. ` +
-        `Please rate your experience: ${ratingUrl}`;
-      try {
-        await rocketChatService.sendDirectMessage(row.requester_phone, msg);
-        return 'whatsapp';
-      } catch {
-        // fall through
-      }
-    }
-
+    // Removed with RocketChat on 2026-10-04. This branch called
+    // rocketChatService.sendDirectMessage(), a method that was never defined on that service, so
+    // it threw on every attempt and fell through to 'none' -- the WhatsApp rating notification has
+    // never actually been delivered. Re-implementing it needs a real outbound WhatsApp sender
+    // (Twilio, via the Chatwoot bridge in services/chatwoot-bridge.service.js), which is a
+    // deliberate piece of work rather than a like-for-like swap. Email above remains the live path.
     return 'none';
   }
 }

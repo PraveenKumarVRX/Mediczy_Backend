@@ -303,7 +303,7 @@ const TeamPharmacyEdit       = lazy(() => import("@/pages/team/TeamPharmacyEdit"
 const WhatsAppCommunication  = lazy(() => import("@/pages/team/WhatsAppCommunication"));
 const WhatsAppTemplates      = lazy(() => import("@/pages/team/WhatsAppTemplates"));
 const WhatsAppInbox          = lazy(() => import("@/pages/team/WhatsAppInbox"));
-const RocketChatOmnichannel  = lazy(() => import("@/pages/team/RocketChatOmnichannel"));
+const ChatwootOmnichannel   = lazy(() => import("@/pages/team/ChatwootOmnichannel"));
 const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateManagement"));
 const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
@@ -1463,7 +1463,7 @@ const AppRoutes = () => {
         <Route path="/team/orders-revenue"
           element={<TeamGuard permission="Finance Access"><TeamOrdersRevenue /></TeamGuard>} />
         <Route path="/team/rc-omnichannel"
-          element={<TeamGuard permission="Chat Dashboard Access"><RocketChatOmnichannel /></TeamGuard>} />
+          element={<TeamGuard permission="Chat Dashboard Access"><ChatwootOmnichannel /></TeamGuard>} />
         <Route path="/team/chat-analytics"
           element={<TeamGuard permission="Chat Dashboard Access"><TeamChatAnalyticsPage /></TeamGuard>} />
         <Route path="/team/support-tickets"

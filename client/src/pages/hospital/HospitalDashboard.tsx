@@ -78,7 +78,7 @@ const quickModules = [
   { title: 'Imaging Orders', description: 'Order imaging tests, radiology', icon: Scan, color: 'from-indigo-500 to-indigo-600', route: '/hospital/imaging-order', capability: 'imaging' },
   { title: 'Prescription Creator', description: 'Create and manage prescriptions', icon: Pill, color: 'from-orange-500 to-orange-600', route: '/hospital/prescription-creator', capability: 'prescriptions' },
   { title: 'Procedure Scheduler', description: 'Schedule medical procedures', icon: Stethoscope, color: 'from-pink-500 to-pink-600', route: '/hospital/procedure-adder', capability: 'procedures' },
-  { title: 'Team Chat', description: 'Internal messaging for staff & partners (RocketChat)', icon: MessageSquare, color: 'from-purple-500 to-purple-600', route: '/hospital/team-chat', capability: 'communication' },
+  { title: 'Team Chat', description: 'Internal messaging for staff & partners (Chatwoot)', icon: MessageSquare, color: 'from-purple-500 to-purple-600', route: '/hospital/team-chat', capability: 'communication' },
 ];
 
 const ihxInsuranceFunctions = [

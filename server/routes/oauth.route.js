@@ -137,7 +137,7 @@ const handleOAuthProviderSuccess = (req, res, provider) => {
  * 
  * Example:
  * https://app.mediqzy.com/oauth/authorize?
- *   client_id=rocketchat&
+ *   client_id=<client>&
  *   redirect_uri=http://localhost:3100/_oauth/mediqzy&
  *   response_type=code&
  *   scope=openid%20email%20profile&
@@ -238,7 +238,7 @@ router.get('/authorize', authUser, async (req, res) => {
  * grant_type=authorization_code&
  * code=ABC123&
  * redirect_uri=http://localhost:3100/_oauth/mediqzy&
- * client_id=rocketchat&
+ * client_id=<client>&
  * client_secret=secret123
  * 
  * Response:
