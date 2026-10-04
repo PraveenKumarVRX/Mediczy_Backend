@@ -834,6 +834,43 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
       { where: { id: payment.orderId } }
     );
 
+    // ── Propagate the payment to the pharmacy order ───────────────────────────
+    // patient_pharmacy_orders.payment_status and payment_id were written by NOTHING: the INSERT
+    // in patient-pharmacy-orders.route.js omits both columns (so they sit at their defaults
+    // 'pending' and NULL), its three UPDATE sites touch only status/status_history, and the only
+    // payment_status write anywhere in the server is on ambulance_trip. Every paid pharmacy order
+    // therefore still read payment_status='pending' with no payment id, so the pharmacy saw paid
+    // orders as unpaid and would not dispense. Found 2026-10-04 on orders 38 and 39, both paid
+    // through Razorpay with invoices marked paid.
+    //
+    // Guarded and non-fatal: the money is already captured and the Payment/Order rows are already
+    // updated, so a failure here must be loud but must not fail the verification response.
+    try {
+      const paidOrder = await Order.findByPk(payment.orderId);
+      const pharmacyOrderId = paidOrder?.metadata?.pharmacyOrderId;
+      if (pharmacyOrderId) {
+        const gatewayRef = payment.gatewayPaymentId || payment.paymentId || null;
+        // A raw UPDATE returns [rows, metadata]; on pg the metadata IS the affected count
+        // (verified: a non-matching id returns [[], 0]), so read it defensively either way.
+        const [, meta] = await sequelize.query(
+          `UPDATE patient_pharmacy_orders
+              SET payment_status = 'paid',
+                  payment_id     = COALESCE($1, payment_id),
+                  updated_at     = NOW()
+            WHERE order_id = $2`,
+          { bind: [gatewayRef, pharmacyOrderId], type: sequelize.QueryTypes.UPDATE },
+        );
+        const rowCount = meta?.rowCount ?? meta ?? 0;
+        if (rowCount) {
+          console.log(`✅ pharmacy order ${pharmacyOrderId} marked paid (${gatewayRef || 'no gateway ref'})`);
+        } else {
+          console.error(`⚠️ pharmacy order ${pharmacyOrderId} referenced by order ${payment.orderId} was not found — payment NOT propagated`);
+        }
+      }
+    } catch (pharmErr) {
+      console.error(`❌ failed to mark pharmacy order paid for order ${payment.orderId}:`, pharmErr.message);
+    }
+
     // Create transaction record
     await Transaction.create({
       transactionId: `TXN_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
