@@ -136,6 +136,7 @@ async function sendAdminPurchaseAlert({
   customerPhone,
   employer,
   itemLabel,
+  lineItems,
   amount,
   currency = 'INR',
   paymentId,
@@ -144,6 +145,45 @@ async function sendAdminPurchaseAlert({
   invoiceNumber,
 }) {
   if (ADMIN_ALERT_EMAILS.length === 0) return;
+
+  // Itemise the alert. Before this, the team email carried only `itemLabel` — for a pharmacy
+  // order that is the literal string 'Pharmacy Order' (buildOrderItemLabel in billing.route.js),
+  // so the alert said money arrived and nothing about what was bought. The customer's invoice
+  // already renders lineItems; the alert simply never received them.
+  //
+  // A single line whose description equals itemLabel adds nothing over the Item row, so it is
+  // skipped — that is the synthesised fallback, not real detail.
+  const items = Array.isArray(lineItems) ? lineItems.filter(Boolean) : [];
+  const meaningful = items.length > 1
+    || (items.length === 1 && String(items[0].description || '').trim() !== String(itemLabel || '').trim());
+  const itemsBlock = meaningful ? `
+      <table style="width:100%;border-collapse:collapse;font-size:13px;margin:12px 0 4px;">
+        <thead>
+          <tr style="background:#f9fafb;">
+            <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb;">Item</th>
+            <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb;">Qty</th>
+            <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #e5e7eb;">Rate</th>
+            <th style="padding:6px 8px;text-align:right;border-bottom:1px solid #e5e7eb;">Amount</th>
+          </tr>
+        </thead>
+        <tbody>${items.map((i) => `
+          <tr>
+            <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;">${escapeHtml(i.description)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:center;">${escapeHtml(i.quantity ?? 1)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:right;">${formatMoney(i.unitPrice ?? i.total, currency)}</td>
+            <td style="padding:6px 8px;border-bottom:1px solid #f3f4f6;text-align:right;">${formatMoney(i.total, currency)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '';
+
+  // Say so explicitly when the detail is absent, rather than leaving the reader to wonder whether
+  // the order really had one anonymous line. itemsCount comes from the order metadata.
+  const noDetailNote = !meaningful ? `
+      <p style="margin:10px 0 0;padding:8px 10px;background:#fffbeb;border-left:3px solid #f59e0b;font-size:12px;color:#92400e;">
+        No itemised detail was recorded for this order, so only the total is shown.
+        If this is a pharmacy order, the items are not persisted anywhere the notification can read.
+      </p>` : '';
+
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:0 auto;">
       <h2 style="margin:0 0 12px;color:#0f766e;">💰 New purchase on Mediqzy</h2>
@@ -158,6 +198,8 @@ async function sendAdminPurchaseAlert({
         <tr><td style="padding:4px 0;color:#666;">Invoice</td><td style="padding:4px 0;">${escapeHtml(invoiceNumber || '—')}</td></tr>
         <tr><td style="padding:4px 0;color:#666;">Time</td><td style="padding:4px 0;">${formatDateTime(purchasedAt)}</td></tr>
       </table>
+      ${itemsBlock}
+      ${noDetailNote}
     </div>`;
 
   const subject = `💰 New purchase: ${formatMoney(amount, currency)} — ${itemLabel} — ${customerName}`;
@@ -241,6 +283,7 @@ async function notifyOrderPurchase({ order, user, payment, lineItems, itemLabel 
         customerPhone: user.phoneNumber,
         employer: user.employer_name,
         itemLabel: itemLabel || `Order #${order.orderNumber}`,
+        lineItems: invoice.lineItems,
         amount: order.total,
         currency: order.currency,
         paymentId: payment.gatewayPaymentId || payment.paymentId,
@@ -291,6 +334,7 @@ async function notifyMembershipPurchase({ user, plan, payment, previousPlanName,
         customerPhone: user.phoneNumber,
         employer: user.employer_name,
         itemLabel,
+        lineItems: [{ description: itemLabel, quantity: 1, unitPrice: amountDue, total: amountDue }],
         amount: amountDue,
         currency: 'INR',
         paymentId: payment?.paymentId,
