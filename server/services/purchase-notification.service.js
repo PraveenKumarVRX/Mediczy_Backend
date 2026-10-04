@@ -112,6 +112,61 @@ function buildInvoiceHtml({
   </div>`;
 }
 
+/**
+ * Pharmacy orders keep their medicines in patient_pharmacy_orders, linked from the billing order
+ * by metadata.pharmacyOrderId -> patient_pharmacy_orders.order_id (note: order_id, NOT id — the
+ * table has no `id` column, which is why this link is easy to miss).
+ *
+ * Without this, buildOrderItemLabel() in billing.route.js returns the constant 'Pharmacy Order'
+ * and the notifier synthesises a single anonymous line, so neither the customer's invoice nor the
+ * team alert named a single medicine — the complaint that prompted this (2026-10-04).
+ *
+ * Best-effort: any failure returns null and the caller falls back to the old behaviour.
+ */
+async function resolvePharmacyLineItems(order) {
+  const pharmacyOrderId = order?.metadata?.pharmacyOrderId;
+  if (!pharmacyOrderId) return null;
+  try {
+    const { default: pool } = await import('../db/pgPool.js');
+    const db = pool.pool || pool.default || pool;
+    const { rows } = await db.query(
+      `SELECT items, delivery_charge, delivery_type, delivery_address
+         FROM patient_pharmacy_orders WHERE order_id = $1 LIMIT 1`,
+      [pharmacyOrderId],
+    );
+    if (!rows.length || !Array.isArray(rows[0].items) || !rows[0].items.length) return null;
+
+    const lineItems = rows[0].items.map((i) => {
+      const name = String(i.brand_name || i.medicine_name || 'Medicine').trim();
+      // Brand names usually already carry the strength ("A-Rosuvastatin 10mg"), so appending it
+      // again reads as "A-Rosuvastatin 10mg 10mg Tablet" on a customer invoice.
+      const strength = i.strength && !name.toLowerCase().includes(String(i.strength).toLowerCase())
+        ? String(i.strength) : '';
+      const spec = [strength, i.form].filter(Boolean).join(' ');
+      const pack = i.pack_size ? ` — ${i.pack_size}` : '';
+      const generic = i.generic_name && !name.toLowerCase().includes(String(i.generic_name).toLowerCase())
+        ? ` [${i.generic_name}]` : '';
+      return {
+        description: `${name}${spec ? ' ' + spec : ''}${pack}${generic}`.trim(),
+        quantity: i.quantity ?? 1,
+        unitPrice: i.unit_price ?? i.line_total,
+        total: i.line_total ?? i.unit_price,
+      };
+    });
+
+    // Delivery is a charge the customer paid; it belongs on the invoice as its own line, not
+    // folded silently into the total.
+    const delivery = Number(rows[0].delivery_charge || 0);
+    if (delivery > 0) {
+      lineItems.push({ description: `Delivery (${rows[0].delivery_type || 'delivery'})`, quantity: 1, unitPrice: delivery, total: delivery });
+    }
+    return { lineItems, deliveryType: rows[0].delivery_type, deliveryAddress: rows[0].delivery_address };
+  } catch (err) {
+    console.error(`⚠️ Could not resolve pharmacy line items for order ${order?.id} (pharmacyOrderId ${pharmacyOrderId}):`, err.message);
+    return null;
+  }
+}
+
 async function sendCustomerPurchaseConfirmation(details) {
   if (!details.customerEmail) {
     console.warn(`[purchase-notification] No customer email on file for invoice ${details.invoiceNumber} — skipping confirmation email`);
@@ -137,6 +192,8 @@ async function sendAdminPurchaseAlert({
   employer,
   itemLabel,
   lineItems,
+  deliveryType,
+  deliveryAddress,
   amount,
   currency = 'INR',
   paymentId,
@@ -184,6 +241,18 @@ async function sendAdminPurchaseAlert({
         If this is a pharmacy order, the items are not persisted anywhere the notification can read.
       </p>` : '';
 
+  // Fulfilment needs the destination, not just the money.
+  const addr = deliveryAddress && typeof deliveryAddress === 'object'
+    ? [deliveryAddress.line1, deliveryAddress.line2, deliveryAddress.city, deliveryAddress.state, deliveryAddress.pincode]
+        .filter(Boolean).join(', ').replace(/\s+/g, ' ').trim()
+    : (typeof deliveryAddress === 'string' ? deliveryAddress : '');
+  const deliveryBlock = (deliveryType || addr) ? `
+      <p style="margin:10px 0 0;font-size:13px;">
+        <span style="color:#666;">Delivery</span>
+        <strong style="text-transform:capitalize;">${escapeHtml(String(deliveryType || '').replace(/_/g, ' ') || '—')}</strong>
+        ${addr ? `<br><span style="color:#666;">Address</span> ${escapeHtml(addr)}` : ''}
+      </p>` : '';
+
   const html = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:520px;margin:0 auto;">
       <h2 style="margin:0 0 12px;color:#0f766e;">💰 New purchase on Mediqzy</h2>
@@ -199,6 +268,7 @@ async function sendAdminPurchaseAlert({
         <tr><td style="padding:4px 0;color:#666;">Time</td><td style="padding:4px 0;">${formatDateTime(purchasedAt)}</td></tr>
       </table>
       ${itemsBlock}
+      ${deliveryBlock}
       ${noDetailNote}
     </div>`;
 
@@ -227,6 +297,10 @@ async function notifyOrderPurchase({ order, user, payment, lineItems, itemLabel 
     const invoiceService = (await import('./invoice.service.js')).default;
     const paymentGateway = (await import('./payment-gateway.service.js')).default;
 
+    // Real medicines first; fall back to whatever the caller passed.
+    const pharmacy = await resolvePharmacyLineItems(order);
+    const effectiveLineItems = pharmacy?.lineItems || lineItems;
+
     let invoice = await Invoice.findOne({ where: { orderId: order.id } });
     if (!invoice) {
       const invoiceNumber = paymentGateway.generateInvoiceNumber();
@@ -242,7 +316,7 @@ async function notifyOrderPurchase({ order, user, payment, lineItems, itemLabel 
         discount: order.discount,
         total: order.total,
         currency: order.currency || 'INR',
-        lineItems: lineItems || [{ description: itemLabel, quantity: 1, unitPrice: order.total, total: order.total }],
+        lineItems: effectiveLineItems || [{ description: itemLabel, quantity: 1, unitPrice: order.total, total: order.total }],
         customerDetails: {
           name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
           email: user.email,
@@ -284,6 +358,8 @@ async function notifyOrderPurchase({ order, user, payment, lineItems, itemLabel 
         employer: user.employer_name,
         itemLabel: itemLabel || `Order #${order.orderNumber}`,
         lineItems: invoice.lineItems,
+        deliveryType: pharmacy?.deliveryType,
+        deliveryAddress: pharmacy?.deliveryAddress,
         amount: order.total,
         currency: order.currency,
         paymentId: payment.gatewayPaymentId || payment.paymentId,
