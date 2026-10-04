@@ -411,19 +411,11 @@ router.post('/webhook/whatsapp', async (req, res) => {
   }
 });
 
-/**
- * POST /api/support/webhook/rocketchat
- * Retired endpoint. RocketChat was removed on 2026-10-04; nothing calls this any more. It answers
- * 410 Gone rather than 404 so that any stale outgoing webhook still pointed here is unambiguous in
- * the logs, and it is kept for one release before deletion.
- */
-router.post('/webhook/rocketchat', (_req, res) => {
-  return res.status(410).json({
-    success: false,
-    code: 'ROCKETCHAT_RETIRED',
-    message: 'RocketChat was retired. Agent replies now arrive via the Chatwoot webhook.',
-  });
-});
+// The RocketChat outgoing-webhook endpoint that used to live here is gone. It briefly answered
+// 410 Gone, but that handler was unreachable: /api/support/webhook/rocketchat was removed from
+// PUBLIC_ENDPOINTS in middleware/ringFencing.js at the same time, so ring-fencing answers 401
+// before routing ever reaches this file. A stale webhook pointed here is rejected either way, and
+// an unreachable handler only misleads the next reader.
 
 
 // ============================================================================
