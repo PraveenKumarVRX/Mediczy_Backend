@@ -40,6 +40,12 @@ try {
     ? (await p.query(`SELECT max(archived_at) AS last_run FROM pacs_minio_archive_log`)).rows[0]
     : null;
   out('ARCHIVE_LAST_RUN_AT', arch?.last_run ? new Date(arch.last_run).toISOString() : 'never');
+  // Effective archive config, not a .env grep: PACS_ARCHIVE_MINIO_* live in SSM and are
+  // injected by ssm-env-loader, so grepping server/.env reports "not configured" when it is.
+  const { isPacsArchiveMinioConfigured } = await import('../../services/imaging/pacs-minio-archive.service.js');
+  out('ARCHIVE_CONFIGURED', isPacsArchiveMinioConfigured() ? 1 : 0);
+  out('ARCHIVE_HYDRATE_ENABLED',
+    ['0', 'false', 'no'].includes(String(process.env.PACS_MINIO_ARCHIVE_HYDRATE_ORTHANC_ONLY ?? 'true').toLowerCase()) ? 0 : 1);
   out('DB_OK', 1);
 } catch (err) {
   out('DB_OK', 0);

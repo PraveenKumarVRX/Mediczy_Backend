@@ -35,6 +35,8 @@ REMIND_HOURS="${REMIND_HOURS:-24}"             # re-send while still broken
 ORTHANC_HTTP="${ORTHANC_HTTP:-http://localhost:8042}"
 
 CRIT=(); WARN=(); INFO=()
+fresh=""
+fval() { [ -n "$fresh" ] && echo "$fresh" | grep -m1 "^$1=" | cut -d= -f2-; }
 add_crit() { CRIT+=("$1"); }
 add_warn() { WARN+=("$1"); }
 add_info() { INFO+=("$1"); }
@@ -93,7 +95,6 @@ fi
 fresh="$(cd "$ROOT_DIR/server" && node scripts/ssm-env-loader.mjs scripts/ops/pacs-ingest-freshness.mjs 2>/dev/null | grep -E '^[A-Z0-9_]+=')"
 # Read values by key instead of eval'ing the block: no quoting hazards, and a missing key yields
 # an empty string rather than tripping `set -u` halfway through the checks.
-fval() { echo "$fresh" | grep -m1 "^$1=" | cut -d= -f2-; }
 if [ -z "$fresh" ]; then
   add_crit "could not read ingest freshness from the database"
 else
@@ -135,10 +136,22 @@ else
 fi
 
 # ── 7. archive destination configured ────────────────────────────────────────────────────────
-if grep -qE '^PACS_ARCHIVE_MINIO_ENDPOINT=.+' "$ROOT_DIR/server/.env" 2>/dev/null; then
-  add_info "PACS_ARCHIVE_MINIO_* configured"
+# Read the EFFECTIVE state from the helper, which runs under ssm-env-loader. The first version of
+# this check grepped server/.env and reported "not configured" while the cron was in fact running,
+# because PACS_ARCHIVE_MINIO_* live in SSM and never appear in that file.
+ARCHIVE_CONFIGURED="$(fval ARCHIVE_CONFIGURED 2>/dev/null)"
+ARCHIVE_HYDRATE_ENABLED="$(fval ARCHIVE_HYDRATE_ENABLED 2>/dev/null)"
+if [ "${ARCHIVE_CONFIGURED:-}" = "1" ]; then
+  add_info "archive destination configured (S3 -> MinIO mirror can run)"
+elif [ -n "${ARCHIVE_CONFIGURED:-}" ]; then
+  add_warn "archive destination NOT configured — the S3->MinIO mirror cannot run"
 else
-  add_warn "PACS_ARCHIVE_MINIO_* not configured — the S3->MinIO archive cron cannot start"
+  add_warn "could not determine archive configuration"
+fi
+if [ "${ARCHIVE_HYDRATE_ENABLED:-}" = "1" ]; then
+  add_info "orthanc-only hydration enabled"
+else
+  add_info "orthanc-only hydration disabled (deliberate until Orthanc can read MinIO)"
 fi
 
 # ── verdict ──────────────────────────────────────────────────────────────────────────────────
