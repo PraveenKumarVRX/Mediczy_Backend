@@ -26,6 +26,30 @@ async function getSesClient() {
   }
 }
 
+// SES refuses any From that is not a verified identity. On this account (checked 2026-10-04)
+// mysmarthealth.in is verified and mediqzy.com is NOT, yet SMTP_FROM/EMAIL_FROM point at
+// noreply@mediqzy.com for the Brevo path. With SES as the only transport there is no SMTP
+// fallback to absorb that, so the envelope address is pinned to a verified domain while the
+// display name the caller chose is preserved.
+const SES_FROM_ADDRESS = process.env.SES_FROM_ADDRESS || 'hello@mysmarthealth.in';
+const SES_VERIFIED_DOMAINS = String(process.env.SES_VERIFIED_DOMAINS || 'mysmarthealth.in')
+  .split(',').map((d) => d.trim().toLowerCase()).filter(Boolean);
+
+function coerceSesFrom(from) {
+  const raw = String(from || '').trim();
+  const match = raw.match(/^"?([^"<]*)"?\s*<([^>]+)>$/);
+  const name = (match ? match[1] : '').trim();
+  const address = (match ? match[2] : raw).trim();
+  const domain = address.includes('@') ? address.split('@').pop().toLowerCase() : '';
+  if (domain && SES_VERIFIED_DOMAINS.includes(domain)) {
+    return raw;
+  }
+  if (address) {
+    console.warn(`[email] From ${address} is not an SES-verified identity; sending as ${SES_FROM_ADDRESS}`);
+  }
+  return `"${name || 'Mediqzy'}" <${SES_FROM_ADDRESS}>`;
+}
+
 function isZohoHost(host) {
   return String(host || '').toLowerCase().includes('zoho');
 }
@@ -39,12 +63,20 @@ async function sendViaSes(msg) {
   const { SendEmailCommand } = await import('@aws-sdk/client-sesv2');
   const client = await getSesClient();
   if (!client) throw new Error('SES client unavailable');
-  const fromAddress = typeof msg.from === 'object'
-    ? `"${msg.from.name}" <${msg.from.email}>`
-    : (msg.from || `"Mediqzy Corporate Health" <hello@mysmarthealth.in>`);
+  const fromAddress = coerceSesFrom(typeof msg.from === 'object'
+    ? `"${msg.from.name || 'Mediqzy'}" <${msg.from.email || SES_FROM_ADDRESS}>`
+    : (msg.from || `"Mediqzy Corporate Health" <${SES_FROM_ADDRESS}>`));
+  // bcc is carried on msg and must be honoured by BOTH transports; SES needs it on Destination,
+  // nodemailer takes a `bcc` field. Normalised to an array and filtered so an empty value can
+  // never produce an empty recipient entry (SES rejects the whole send for that).
+  const bccList = (Array.isArray(msg.bcc) ? msg.bcc : [msg.bcc])
+    .map((a) => String(a || '').trim()).filter(Boolean);
   await client.send(new SendEmailCommand({
     FromEmailAddress: fromAddress,
-    Destination: { ToAddresses: [msg.to] },
+    Destination: {
+      ToAddresses: [msg.to],
+      ...(bccList.length ? { BccAddresses: bccList } : {}),
+    },
     Content: {
       Simple: {
         Subject: { Data: msg.subject, Charset: 'UTF-8' },
@@ -177,22 +209,29 @@ async function sendViaSmtp(msg) {
     throw new Error(`Unsupported SMTP host for welcome emails: ${smtp.host}. Allowed: Brevo SMTP.`);
   }
 
+  const bccList = (Array.isArray(msg.bcc) ? msg.bcc : [msg.bcc])
+    .map((a) => String(a || '').trim()).filter(Boolean);
   return transporter.sendMail({
     from: buildFromAddress(msg, smtp),
     to: msg.to,
+    ...(bccList.length ? { bcc: bccList.join(', ') } : {}),
     subject: msg.subject,
     html: msg.html,
   });
 }
 
 // Normalize SendGrid-style msg object → nodemailer format and send.
-// Prefers SES when Zoho SMTP is configured (Zoho blocks bulk sends).
-// options.provider: 'ses' | 'brevo' | 'auto' (default: auto)
+// Transport policy: SES only. Brevo SMTP is no longer an automatic fallback — a Brevo send
+// now has to be asked for explicitly (options.provider='brevo' or EMAIL_PROVIDER=brevo), so a
+// transient SES error surfaces as a failure instead of silently re-routing mail to another
+// provider with a different From domain and different deliverability reputation.
+// options.provider: 'ses' | 'brevo' | 'auto'; default comes from EMAIL_PROVIDER, itself 'ses'.
 async function sendMail(msg, options = {}) {
-  const { provider = 'auto' } = options;
+  const configuredProvider = String(process.env.EMAIL_PROVIDER || 'ses').toLowerCase();
+  const provider = options.provider || configuredProvider;
   const normalizedProvider = ['ses', 'brevo', 'auto'].includes(String(provider || '').toLowerCase())
     ? String(provider).toLowerCase()
-    : 'auto';
+    : 'ses';
   const retryAttempts = Math.max(1, Math.min(parseInt(String(process.env.WELCOME_EMAIL_RETRY_ATTEMPTS || '2'), 10) || 2, 5));
   const retryDelayMs = Math.max(250, parseInt(String(process.env.WELCOME_EMAIL_RETRY_DELAY_MS || '700'), 10) || 700);
 
@@ -215,7 +254,10 @@ async function sendMail(msg, options = {}) {
         } else {
           await sendViaSmtp(msg);
         }
-        return;
+        if (process.env.EMAIL_TRANSPORT_LOG !== 'false') {
+          console.log(`[email] delivered via ${channel.toUpperCase()} -> ${msg.to}`);
+        }
+        return channel;
       } catch (error) {
         const transient = isTransientMailError(error);
         attemptErrors.push(`[${channel} attempt ${attempt}] ${error?.message || error}`);
@@ -971,21 +1013,53 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
 /**
  * Shared transactional email path for corporate outreach and other non-welcome sends.
  */
-export async function sendTransactionalEmail({ to, subject, html, text, fromName }) {
+export async function sendTransactionalEmail({ to, subject, html, text, fromName, bcc, provider }) {
   const bodyHtml = html || `<pre style="font-family:Segoe UI,Arial,sans-serif;white-space:pre-wrap;">${String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>`;
-  await sendMail({
+  const channel = await sendMail({
     to,
     subject,
     html: bodyHtml,
+    ...(bcc ? { bcc } : {}),
     from: fromName ? { name: fromName, email: undefined } : undefined,
-  });
-  return { success: true };
+  }, provider ? { provider } : {});
+  return { success: true, provider: channel };
 }
 
 /**
  * Lightweight provider health for communication hub dashboards.
  */
 export async function getEmailProviderStatus() {
+  const configuredProvider = String(process.env.EMAIL_PROVIDER || 'ses').toLowerCase();
+
+  if (configuredProvider === 'ses') {
+    try {
+      const { GetAccountCommand } = await import('@aws-sdk/client-sesv2');
+      const client = await getSesClient();
+      if (!client) throw new Error('SES SDK unavailable');
+      const account = await client.send(new GetAccountCommand({}));
+      return {
+        configured: true,
+        healthy: Boolean(account?.SendingEnabled),
+        host: `ses:${process.env.AWS_REGION || 'ap-south-1'}`,
+        fromEmail: SES_FROM_ADDRESS,
+        provider: 'ses',
+        sandbox: !account?.ProductionAccessEnabled,
+        quota24h: account?.SendQuota?.Max24HourSend ?? null,
+        sent24h: account?.SendQuota?.SentLast24Hours ?? null,
+        error: account?.SendingEnabled ? null : 'SES sending is disabled for this account',
+      };
+    } catch (error) {
+      return {
+        configured: true,
+        healthy: false,
+        host: `ses:${process.env.AWS_REGION || 'ap-south-1'}`,
+        fromEmail: SES_FROM_ADDRESS,
+        provider: 'ses',
+        error: error?.message || 'SES verification failed',
+      };
+    }
+  }
+
   try {
     const smtp = await resolveSmtpConfig();
     const hasAuth = Boolean(smtp?.auth?.user && smtp?.auth?.pass);

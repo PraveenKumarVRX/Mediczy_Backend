@@ -22,6 +22,15 @@ const ADMIN_ALERT_EMAILS = (process.env.PURCHASE_ALERT_EMAILS || 'parinitha@mysm
   .map(e => e.trim())
   .filter(Boolean);
 
+// Standing rule (2026-10-04): every order confirmation sent to a CUSTOMER is blind-copied to the
+// business, so there is always an internal record of exactly what the customer was told — the
+// same invoice, the same line items, the same totals. BCC rather than CC so the customer never
+// sees the internal address. Overridable, and settable to empty to switch the rule off.
+const CUSTOMER_CONFIRMATION_BCC = (process.env.ORDER_CONFIRMATION_BCC ?? 'info@mysmarthealth.in')
+  .split(',')
+  .map(e => e.trim())
+  .filter(Boolean);
+
 function formatMoney(amount, currency = 'INR') {
   const n = Number(amount || 0);
   const symbol = currency === 'INR' ? '₹' : `${currency} `;
@@ -173,13 +182,19 @@ async function sendCustomerPurchaseConfirmation(details) {
     return;
   }
   try {
+    // details.bcc lets a caller override per-send; otherwise the standing rule applies.
+    const bcc = details.bcc !== undefined
+      ? (Array.isArray(details.bcc) ? details.bcc : [details.bcc]).filter(Boolean)
+      : CUSTOMER_CONFIRMATION_BCC;
     await sendTransactionalEmail({
       to: details.customerEmail,
       subject: `Your Mediqzy order confirmation — ${details.invoiceNumber} (${formatMoney(details.total, details.currency)})`,
       html: buildInvoiceHtml(details),
       fromName: 'Mediqzy',
+      provider: 'ses',
+      ...(bcc.length ? { bcc } : {}),
     });
-    console.log(`✅ Purchase confirmation emailed to ${details.customerEmail} (${details.invoiceNumber})`);
+    console.log(`✅ Purchase confirmation emailed to ${details.customerEmail} (${details.invoiceNumber})${bcc.length ? ` [bcc ${bcc.join(', ')}]` : ''}`);
   } catch (err) {
     console.error(`❌ Purchase confirmation email FAILED for ${details.invoiceNumber} → ${details.customerEmail}:`, err.message);
   }
@@ -278,7 +293,7 @@ async function sendAdminPurchaseAlert({
   // comma-joined string of addresses.
   await Promise.all(ADMIN_ALERT_EMAILS.map(async (to) => {
     try {
-      await sendTransactionalEmail({ to, subject, html, fromName: 'Mediqzy Alerts' });
+      await sendTransactionalEmail({ to, subject, html, fromName: 'Mediqzy Alerts', provider: 'ses' });
       console.log(`✅ Admin purchase alert sent to ${to}`);
     } catch (err) {
       console.error(`❌ Admin purchase alert email FAILED for ${to}:`, err.message);
