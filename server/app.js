@@ -1636,13 +1636,21 @@ app.use('/api/clinic', clinicPatientRouter); // Clinic patient management (signu
 
 // Unified Patient Routes - Single Mediczy Mobile App for all tenants
 app.use('/api/patient', unifiedPatientRouter); // Patient signup, login, profile (multi-tenant)
+// HR portal login alias for the web bundle. HR signs in with a USERNAME, so this must accept
+// the same body as /api/hospital/staff/hr/login (hrLoginValidation) -- it previously required
+// `email` via .isEmail(), which rejected every username-only HR login with "Invalid email".
+// The browser happens to try /hospital/staff/hr/login first and so never hit this, but any
+// direct caller of the documented alias did.
 app.post('/api/hr/login', authLimiter, [
   expressBody('hospital_id').optional().trim(),
   expressBody('hospital_slug').optional().trim(),
   expressBody('hospital_domain').optional().trim(),
-  expressBody('email').isEmail().withMessage('Invalid email'),
+  expressBody('username').optional({ checkFalsy: true }).trim()
+    .isLength({ min: 3, max: 100 }).withMessage('Username must be 3-100 characters')
+    .matches(/^[a-zA-Z0-9._-]+$/).withMessage('Username may contain only letters, numbers, dots, underscores and hyphens'),
+  expressBody('email').optional({ checkFalsy: true }).isEmail().withMessage('Invalid email'),
   expressBody('password').notEmpty().withMessage('Password is required')
-], hrStaffLogin); // HR portal login alias for web bundle
+], hrStaffLogin);
 app.use('/api/hr', hrmsRouter); // HRMS staff, attendance, and biometric device workflows
 
 // Unified Hospital Staff Routes - Single Mediczy Mobile App for all hospital staff
