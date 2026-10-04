@@ -122,15 +122,15 @@ async function runTests() {
 
   await test('OAuth client credentials configured', async () => {
     const envContent = fs.readFileSync('/home/ubuntu/Mediczy/.env', 'utf-8');
-    const hasClientId = envContent.includes('OAUTH_ROCKETCHAT_CLIENT_ID') || envContent.includes('OAUTH_CLIENT_ID');
-    const hasClientSecret = envContent.includes('OAUTH_ROCKETCHAT_CLIENT_SECRET') || envContent.includes('OAUTH_CLIENT_SECRET');
+    const hasClientId = envContent.includes('OAUTH_CLIENT_ID');
+    const hasClientSecret = envContent.includes('OAUTH_CLIENT_SECRET');
     const hasJwtSecret = envContent.includes('JWT_SECRET') || envContent.includes('JWT_ACCESS_SECRET');
 
     if (!hasClientId) {
-      throw new Error('OAuth client ID not configured (OAUTH_ROCKETCHAT_CLIENT_ID/OAUTH_CLIENT_ID)');
+      throw new Error('OAuth client ID not configured (OAUTH_CLIENT_ID)');
     }
     if (!hasClientSecret) {
-      throw new Error('OAuth client secret not configured (OAUTH_ROCKETCHAT_CLIENT_SECRET/OAUTH_CLIENT_SECRET)');
+      throw new Error('OAuth client secret not configured (OAUTH_CLIENT_SECRET)');
     }
     if (!hasJwtSecret) {
       throw new Error('JWT secret not configured (JWT_SECRET/JWT_ACCESS_SECRET)');
@@ -389,8 +389,8 @@ async function runTests() {
   await test('OAuth clients defines Rocket.Chat client', async () => {
     try {
       const code = fs.readFileSync('/home/ubuntu/Mediczy/server/db/oauth-clients.js', 'utf-8');
-      if (!code.includes('rocketchat') && !code.includes('rocketchat-client-id')) {
-        throw new Error('Rocket.Chat OAuth client not defined');
+      if (code.includes('rocketchat')) {
+        throw new Error('RocketChat OAuth client should have been removed (retired 2026-10-04)');
       }
     } catch (e) {
       throw e;
@@ -408,10 +408,6 @@ async function runTests() {
 
   await test('oauth-e2e-test.js exists and is runnable', async () => {
     fileExists('/home/ubuntu/Mediczy/oauth-e2e-test.js', 'OAuth E2E test');
-  });
-
-  await test('configure-rocketchat-oauth.js exists', async () => {
-    fileExists('/home/ubuntu/Mediczy/configure-rocketchat-oauth.js', 'Rocket.Chat OAuth config');
   });
 
   // ─────────────────────────────────────────────────────────
@@ -464,8 +460,6 @@ async function runTests() {
   const docFiles = [
     'OAUTH_SSO_IMPLEMENTATION.md',
     'OAUTH_DEPLOYMENT_CHECKLIST.md',
-    'ROCKETCHAT_OAUTH_CONFIGURATION.md',
-    'ROCKETCHAT_OAUTH_SETUP_GUIDE.md',
     'PRODUCTION_DEPLOYMENT_READINESS.md',
     'OAUTH_DEPLOYMENT_STATUS.md',
     'NEXT_STEPS_DEPLOYMENT.md'

@@ -1,6 +1,6 @@
 /**
  * Support Chat Widget Component
- * In-app chat for patients to connect with support team via RocketChat
+ * In-app chat for patients to connect with the support team via Chatwoot
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -58,6 +58,21 @@ interface DrIshaSuggestion {
   available: boolean;
   message: string;
   hint: string;
+}
+
+/**
+ * The backend answers 503 with code SUPPORT_CHAT_NOT_CONFIGURED while the Chatwoot support inbox
+ * is not yet wired up (RocketChat was retired 2026-10-04). That is a different situation from a
+ * genuine failure, and telling a patient "failed to connect" when live chat simply is not running
+ * yet sends them in circles, so it gets its own message.
+ */
+const SUPPORT_UNAVAILABLE_MESSAGE =
+  'Live chat is not available right now. Please email support@mysmarthealth.in and we will get back to you.';
+
+function isSupportUnavailable(error: any): boolean {
+  return error?.response?.status === 503
+    || error?.response?.data?.code === 'SUPPORT_CHAT_NOT_CONFIGURED'
+    || error?.response?.data?.code === 'AGENT_CONSOLE_NOT_MIGRATED';
 }
 
 const SupportChatWidget: React.FC = () => {
@@ -183,7 +198,7 @@ const SupportChatWidget: React.FC = () => {
       }
     } catch (error: any) {
       console.error('Start chat error:', error);
-      toast.error('Failed to connect to support');
+      toast.error(isSupportUnavailable(error) ? SUPPORT_UNAVAILABLE_MESSAGE : 'Failed to connect to support');
     } finally {
       setIsLoading(false);
     }
@@ -245,7 +260,7 @@ const SupportChatWidget: React.FC = () => {
       }
     } catch (error) {
       console.error('Send message error:', error);
-      toast.error('Failed to send message');
+      toast.error(isSupportUnavailable(error) ? SUPPORT_UNAVAILABLE_MESSAGE : 'Failed to send message');
     } finally {
       setIsSending(false);
     }

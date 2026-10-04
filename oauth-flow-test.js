@@ -13,8 +13,6 @@ const crypto = require('crypto');
 
 const BASE_URL = process.env.APP_BASE_URL || 'http://localhost:8000';
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8888';
-const CLIENT_ID = process.env.OAUTH_ROCKETCHAT_CLIENT_ID || 'rocketchat-client-id';
-const CLIENT_SECRET = process.env.OAUTH_ROCKETCHAT_CLIENT_SECRET || 'rocketchat-client-secret-secure-key-12345';
 const REDIRECT_URI = `${BASE_URL}/oauth-callback`;
 
 let testResults = {

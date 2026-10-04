@@ -165,7 +165,7 @@ const QUICK_ACTIONS = [
   },
   {
     title: "RC Omnichannel",
-    description: "Full RocketChat agent interface",
+    description: "Chatwoot agent workspace (opens in a new tab)",
     icon: MessageSquare,
     color: "bg-gradient-to-br from-red-500/10 to-orange-500/10 border-red-500/20",
     iconColor: "text-red-600",

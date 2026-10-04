@@ -1,4 +1,4 @@
--- Create tickets table for RocketChat integration
+-- Create tickets table for the support ticketing system
 -- Compatible with MongoDB-style ticket structure
 
 CREATE TABLE IF NOT EXISTS tickets (

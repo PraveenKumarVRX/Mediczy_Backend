@@ -1,4 +1,4 @@
--- Add missing JSONB columns to tickets table for RocketChat integration
+-- Add missing JSONB columns to the tickets table for the support ticketing system
 -- Run this as the table owner (postgres or admin user)
 
 -- Add new columns

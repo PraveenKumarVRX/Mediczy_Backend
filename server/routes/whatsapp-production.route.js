@@ -2,8 +2,23 @@ import express from 'express';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
-import rocketChatService from '../services/rocketchat.service.js';
-import omnichannelChatService from '../services/omnichannel-chat.service.js';
+import supportChat from '../services/support-chat-provider.service.js';
+
+/**
+ * Inbound WhatsApp used to be relayed into RocketChat (a #general post plus a livechat sync).
+ * RocketChat was retired on 2026-10-04 and the tenant-aware replacement is the Chatwoot bridge in
+ * services/chatwoot-bridge.service.js, which receives Twilio callbacks and pushes them into each
+ * tenant's Chatwoot API inbox. These helpers keep the old call shapes so the handlers below are
+ * unchanged, and mirror into Chatwoot's shared support thread when it is configured. They never
+ * throw: WhatsApp handling must not depend on the agent workspace.
+ */
+const agentRelay = {
+  sendMessage: async (channel, text) => {
+    const key = String(channel) === 'GENERAL' ? 'support-feed' : String(channel).replace(/^ticket-/, '');
+    return supportChat.postTicketNote({ ticketId: key, body: typeof text === 'string' ? text : JSON.stringify(text) });
+  },
+  syncToLivechat: async () => ({ synced: false, reason: 'rocketchat_retired' }),
+};
 import n8nService from '../services/n8n.service.js';
 import whatsAppSIBBrain from '../services/whatsapp-sib-brain.service.js';
 import { cache } from '../db/redis.js';
@@ -707,14 +722,14 @@ router.post('/conversations/:phoneNumber/resolve', async (req, res) => {
       previousState: currentState
     });
     
-    // Notify RocketChat
+    // Notify the agent workspace
     try {
-      await rocketChatService.sendMessage(
+      await agentRelay.sendMessage(
         'GENERAL',
         `✅ *HANDOFF RESOLVED*\n📱 Customer: +${phoneNumber}\n📋 Resolution: ${resolution}\n${notes ? `📝 Notes: ${notes}\n` : ''}🤖 *Bot is now active* for this conversation\n⏰ Time: ${new Date().toLocaleString()}`
       );
     } catch (rcError) {
-      logger.error('Failed to notify RocketChat about resolution:', rcError.message);
+      logger.error('Failed to notify the agent workspace about resolution:', rcError.message);
     }
     
     // Optionally send confirmation to customer
@@ -1084,10 +1099,10 @@ router.post('/webhook', (req, res, next) => {
       messageCount: currentMessages.length
     });
     
-    // Post incoming WhatsApp message to RocketChat #general
+    // Mirror the incoming WhatsApp message to the shared support thread
     // WATI-LIKE OMNICHANNEL: Create/get a livechat room per WhatsApp contact so agents
     // can reply from RC Omnichannel and the reply is routed back to WhatsApp.
-    omnichannelChatService.syncToLivechat(
+    agentRelay.syncToLivechat(
       phoneNumber,
       customerName,
       Body || '[Media Message]',
@@ -1101,10 +1116,10 @@ router.post('/webhook', (req, res, next) => {
     // Also keep posting to #general for the team chat room visibility
     const rcMessage = `📱 **WhatsApp Message from ${userContext.isKnownUser ? userContext.user.name + ' (Patient ID: ' + userContext.user.id + ')' : customerName}** (${phoneNumber})\n\n${Body || '[Media Message]'}`;
     
-    rocketChatService.sendMessage('GENERAL', rcMessage).then(() => {
-      logger.info('✅ WhatsApp message posted to RocketChat #general via rocketChatService');
+    agentRelay.sendMessage('GENERAL', rcMessage).then(() => {
+      logger.info('✅ WhatsApp message mirrored to the agent workspace support thread');
     }).catch(rcError => {
-      logger.warn('⚠️ rocketChatService #general post failed (non-fatal):', rcError.message);
+      logger.warn('⚠️ agent-workspace mirror failed (non-fatal):', rcError.message);
     });
     
     // Emit Socket.IO event to notify team members (if Socket.IO is available)
@@ -1139,9 +1154,9 @@ router.post('/webhook', (req, res, next) => {
     }
     
     if (teamMemberRequested) {
-      // Post to RocketChat and notify user
+      // Mirror to the agent workspace and notify the user
       try {
-        await rocketChatService.sendMessage(
+        await agentRelay.sendMessage(
           'GENERAL',
           `🔔 *Customer Request*\n👤 From: ${customerName} (+${phoneNumber})\n💬 Message: ${Body}\n\n📞 Requesting: ${teamMemberRequested}\n⏰ Time: ${new Date().toLocaleString()}`
         );
@@ -1153,13 +1168,13 @@ router.post('/webhook', (req, res, next) => {
         });
         
         const teamAckMsg = `I've notified our team. ${teamMemberRequested.charAt(0).toUpperCase() + teamMemberRequested.slice(1)} or another team member will respond to you shortly. 👍`;
-        logger.info('✅ Team member request forwarded to RocketChat', {
+        logger.info('✅ Team member request forwarded to the agent workspace', {
           phoneNumber,
           teamMember: teamMemberRequested
         });
         return res.type('text/xml').status(200).send(twimlReply(teamAckMsg));
       } catch (error) {
-        logger.error('Error forwarding to RocketChat:', error.message);
+        logger.error('Error forwarding to the agent workspace:', error.message);
       }
     }
 
@@ -1419,15 +1434,15 @@ bookingType === 'health_checkup'
             global.io.to(WHATSAPP_ROOM_ID).emit('new_message', aiMessageObj);
           }
           
-          // Also post AI response to RocketChat
+          // Also mirror the AI response to the agent workspace
           try {
-            await rocketChatService.sendMessage(
+            await agentRelay.sendMessage(
               'GENERAL',
               `🤖 *Dr. iSHA Response*\n📱 To: ${customerName} (+${phoneNumber})\n⏰ ${new Date().toLocaleString()}\n\n${sanitizedReply}`
             );
-            logger.info('✅ AI response posted to RocketChat');
+            logger.info('✅ AI response mirrored to the agent workspace');
           } catch (rcError) {
-            logger.error('Failed to post AI response to RocketChat:', rcError.message);
+            logger.error('Failed to mirror the AI response to the agent workspace:', rcError.message);
           }
           
           logger.info('🤖 AI auto-reply sent', {
@@ -1448,15 +1463,15 @@ bookingType === 'health_checkup'
               triggerMessage: Body
             });
             
-            // Notify RocketChat about the escalation
+            // Notify the agent workspace about the escalation
             try {
-              await rocketChatService.sendMessage(
+              await agentRelay.sendMessage(
                 'GENERAL',
                 `🚨 *HUMAN HANDOFF ACTIVATED*\n👤 Customer: ${customerName} (+${phoneNumber})\n${userContext.isKnownUser ? `🆔 Patient: ${userContext.user.name}\n` : ''}📋 Department: ${department}\n📝 Reason: ${reason}\n💬 Trigger: "${Body}"\n⏰ Time: ${new Date().toLocaleString()}\n\n⚡ *Bot responses paused* - Human agent please respond`
               );
               logger.info('🚨 Human handoff activated', { phoneNumber, department, reason });
             } catch (rcError) {
-              logger.error('Failed to notify RocketChat about handoff:', rcError.message);
+              logger.error('Failed to notify the agent workspace about handoff:', rcError.message);
             }
           }
           

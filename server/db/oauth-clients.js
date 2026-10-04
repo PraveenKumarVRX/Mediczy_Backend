@@ -8,22 +8,6 @@
 // In production: move to database table with encryption
 export const oauthClients = {
   // Rocket.Chat OAuth Client
-  rocketchat: {
-    client_id: process.env.OAUTH_ROCKETCHAT_CLIENT_ID,
-    client_secret: process.env.OAUTH_ROCKETCHAT_CLIENT_SECRET,
-    redirect_uris: [
-      'http://localhost:3100/_oauth/mediqzy',
-      'https://rocket.mediqzy.com/_oauth/mediqzy',
-      process.env.ROCKETCHAT_OAUTH_REDIRECT_URI || 'http://localhost:3100/_oauth/mediqzy'
-    ],
-    name: 'Rocket.Chat Omnichannel',
-    description: 'SSO integration for Rocket.Chat',
-    scope: ['openid', 'email', 'profile'],
-    confidential: true,
-    grant_types: ['authorization_code'],
-    response_types: ['code'],
-    enabled: true
-  }
 };
 
 /**

@@ -853,7 +853,6 @@ const PUBLIC_ENDPOINTS = [
   '/api/whatsapp-production/webhook', // WhatsApp incoming message webhook (Twilio)
   '/api/whatsapp-production/status-callback', // WhatsApp message status callback (Twilio)
   '/api/whatsapp-production/fallback', // WhatsApp fallback webhook (Twilio)
-  '/api/support/webhook/rocketchat', // RocketChat outgoing webhook (agent replies)
   '/api/support/webhook/whatsapp', // WhatsApp support webhook
   '/api/support/departments', // Support department list (public, needed before login)
   '/api/whatsapp-production/user-context', // WhatsApp user context lookup

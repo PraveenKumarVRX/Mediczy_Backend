@@ -2,7 +2,23 @@ import express from 'express';
 import Ticket from '../models/ticket.model.js';
 import { User } from '../models/user.model.intelligent.js';
 import auth from '../middleware/auth.js';
-import rocketChatService from '../services/rocketchat.service.js';
+import supportChat from '../services/support-chat-provider.service.js';
+
+/**
+ * Ticket chat mirroring. The RocketChat build created a private channel per ticket and posted a
+ * notification to #GENERAL; Chatwoot has no channel-per-ticket concept, so notes are mirrored into
+ * a Chatwoot conversation keyed by the ticket (and a shared "support-feed" thread in place of
+ * #GENERAL). Every call is best-effort and never throws: creating or updating a ticket must not
+ * depend on the chat workspace being reachable. Under RocketChat these calls were all failing and
+ * logging once per ticket; postTicketNote() warns once per process instead.
+ */
+const ticketChat = {
+  createChannel: async (name) => ({ created: false, reason: 'chatwoot_has_no_per_ticket_channel', name }),
+  sendMessage: async (channel, text) => {
+    const key = String(channel) === 'GENERAL' ? 'support-feed' : String(channel).replace(/^ticket-/, '');
+    return supportChat.postTicketNote({ ticketId: key, body: text });
+  },
+};
 import logger from '../config/logger.js';
 import slaTracker from '../services/sla-tracker.service.js';
 import closedLoopNotifier from '../services/closed-loop-notifier.service.js';
@@ -158,14 +174,14 @@ router.post('/from-whatsapp', async (req, res) => {
     
     logger.info(`Creating WhatsApp ticket for ${customerName} (${phoneNumber})`);
 
-    // Post to RocketChat immediately (even if ticket creation fails in DB)
+    // Mirror to the agent workspace (best-effort; ticket handling must not depend on it)
     try {
       const channelName = `ticket-${ticketNumber}`.toLowerCase();
       
       // Create private channel for ticket discussion (ignore if already exists)
       try {
-        await rocketChatService.createChannel(channelName, [], true);
-        logger.info(`Created RocketChat channel: ${channelName}`);
+        await ticketChat.createChannel(channelName, [], true);
+        logger.info(`Mirrored ticket thread: ${channelName}`);
       } catch (channelError) {
         // Channel might already exist, that's okay
         logger.warn(`Channel creation note for ${channelName}:`, channelError.message);
@@ -182,11 +198,11 @@ router.post('/from-whatsapp', async (req, res) => {
         `🗨️ *Discuss in:* #${channelName}\n` +
         `⏰ *Created:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
 
-      await rocketChatService.sendMessage('GENERAL', notificationMessage);
+      await ticketChat.sendMessage('GENERAL', notificationMessage);
       
       // Try to post to ticket channel (might fail if channel doesn't exist)
       try {
-        await rocketChatService.sendMessage(channelName, notificationMessage);
+        await ticketChat.sendMessage(channelName, notificationMessage);
       } catch (msgError) {
         logger.warn(`Could not post to ${channelName}:`, msgError.message);
       }
@@ -199,16 +215,16 @@ router.post('/from-whatsapp', async (req, res) => {
               `${idx + 1}. ${msg.sender === 'user' ? '👤' : '🤖'} **${msg.sender === 'user' ? customerName : 'Dr. iSHA'}**: ${msg.content}`
             ).join('\n\n');
           
-          await rocketChatService.sendMessage(channelName, historyMessage);
+          await ticketChat.sendMessage(channelName, historyMessage);
         } catch (histError) {
           logger.warn('Could not post conversation history:', histError.message);
         }
       }
       
-      logger.info(`Posted WhatsApp ticket to RocketChat: ${channelName}`);
+      logger.info(`Mirrored WhatsApp ticket to the agent workspace: ${channelName}`);
     } catch (rcError) {
-      logger.error('RocketChat integration error for WhatsApp ticket:', rcError.message);
-      // Don't fail the whole request if RocketChat fails
+      logger.error('Agent-workspace mirror error for WhatsApp ticket (non-fatal):', rcError.message);
+      // Don't fail the whole request if the agent workspace is unreachable
     }
 
     res.status(201).json({
@@ -222,7 +238,7 @@ router.post('/from-whatsapp', async (req, res) => {
         phoneNumber,
         customerName
       },
-      message: 'Ticket notification sent to team via RocketChat'
+      message: 'Ticket notification sent to the support team'
     });
   } catch (error) {
     console.error('Error creating WhatsApp ticket:', error);
@@ -420,12 +436,12 @@ router.post('/', auth, async (req, res) => {
       });
     }
 
-    // Create RocketChat channel for this ticket and post notification
+    // Mirror this ticket to the agent workspace
     try {
       const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
       
       // Create private channel for ticket discussion
-      await rocketChatService.createChannel(channelName, [], true);
+      await ticketChat.createChannel(channelName, [], true);
       
       // Post ticket creation notification to GENERAL channel
       const priorityEmoji = {
@@ -461,12 +477,12 @@ router.post('/', auth, async (req, res) => {
         `💬 *Discuss in:* #${channelName}\n` +
         `⏰ *Created:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
 
-      await rocketChatService.sendMessage('GENERAL', notificationMessage);
+      await ticketChat.sendMessage('GENERAL', notificationMessage);
       
-      logger.info(`Created RocketChat channel for ticket: ${channelName}`);
+      logger.info(`Mirrored ticket thread for ticket: ${channelName}`);
     } catch (rcError) {
-      logger.error('RocketChat integration error for new ticket:', rcError.message);
-      // Don't fail ticket creation if RocketChat fails
+      logger.error('Ticket chat mirroring error (non-fatal):', rcError.message);
+      // Don't fail ticket creation if the agent workspace is unreachable
     }
 
     res.status(201).json(ticket);
@@ -507,7 +523,7 @@ router.put('/:id', auth, async (req, res) => {
     if (dueDate) ticket.dueDate = new Date(dueDate);
     if (tags) ticket.tags = tags;
 
-    // Track if we need to send RocketChat notification
+    // Track if we need to send an agent-workspace notification
     let statusChanged = false;
     let oldStatus = ticket.status;
 
@@ -555,7 +571,7 @@ router.put('/:id', auth, async (req, res) => {
       }).catch(() => {});
     }
 
-    // Send RocketChat notification for status changes
+    // Send an agent-workspace notification for status changes
     if (statusChanged) {
       try {
         const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
@@ -576,16 +592,16 @@ router.put('/:id', auth, async (req, res) => {
           (resolution ? `\n\n✅ *Resolution:* ${resolution}` : '');
 
         // Post to ticket channel
-        await rocketChatService.sendMessage(channelName, updateMessage);
+        await ticketChat.sendMessage(channelName, updateMessage);
         
         // Post major updates to GENERAL channel
         if (status === 'resolved' || status === 'closed') {
-          await rocketChatService.sendMessage('GENERAL', updateMessage);
+          await ticketChat.sendMessage('GENERAL', updateMessage);
         }
         
-        logger.info(`Posted ticket update to RocketChat: ${ticket.ticketId}`);
+        logger.info(`Mirrored ticket update to the agent workspace: ${ticket.ticketId}`);
       } catch (rcError) {
-        logger.error('RocketChat notification error:', rcError.message);
+        logger.error('Agent-workspace notification error (non-fatal):', rcError.message);
       }
     }
 
@@ -627,7 +643,7 @@ router.post('/:id/messages', auth, async (req, res) => {
       isInternal
     });
 
-    // Post message to RocketChat ticket channel
+    // Mirror the message to the agent workspace
     try {
       const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
       
@@ -636,10 +652,10 @@ router.post('/:id/messages', auth, async (req, res) => {
       
       const chatMessage = `${senderIcon} *${req.user.name}*${visibilityTag}\n\n${content.trim()}`;
       
-      await rocketChatService.sendMessage(channelName, chatMessage);
-      logger.info(`Posted message to RocketChat channel: ${channelName}`);
+      await ticketChat.sendMessage(channelName, chatMessage);
+      logger.info(`Mirrored message to the agent workspace: ${channelName}`);
     } catch (rcError) {
-      logger.error('RocketChat message posting error:', rcError.message);
+      logger.error('Agent-workspace message mirror error (non-fatal):', rcError.message);
     }
 
     res.json(ticket);

@@ -17,7 +17,6 @@ import User from './server/models/user.model.intelligent.js';
           designation: 'Team Lead',
           isTeam: true,
           canLogin: true,
-          permissions: ['view_dashboard', 'manage_team', 'view_reports', 'access_rocketchat']
         }
       });
       console.log('Updated user:', { id: user.id, email: user.email, role: user.role });
@@ -42,7 +41,6 @@ import User from './server/models/user.model.intelligent.js';
           designation: 'Team Lead',
           isTeam: true,
           canLogin: true,
-          permissions: ['view_dashboard', 'manage_team', 'view_reports', 'access_rocketchat']
         }
       });
       console.log('✅ Created team user:', { id: user.id, email: user.email, role: user.role });
@@ -52,7 +50,6 @@ import User from './server/models/user.model.intelligent.js';
     console.log('Email:', email);
     console.log('Password: Welcome@2026');
     console.log('Role: team');
-    console.log('RocketChat: Also created with same credentials');
     
     process.exit(0);
   } catch (error) {

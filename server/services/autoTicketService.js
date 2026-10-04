@@ -6,8 +6,8 @@
 
 import Ticket from '../models/ticket.model.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import supportChat from './support-chat-provider.service.js';
 import logger from '../config/logger.js';
-import rocketChatService from './rocketchat.service.js';
 
 // Lazy import — avoids circular dependency; only fires after ticket is persisted.
 async function triggerAggregatorForComplaint() {
@@ -295,7 +295,7 @@ export async function createAutoTicket({
     classifyAndRecordSla(String(ticket.ticketId || ticket._id), classifyText);
   }
 
-  // ── RocketChat notification ──────────────────────────────────────────────
+  // ── Agent workspace notification ─────────────────────────────────────────
   const priorityEmoji = { low: '🔵', medium: '🟡', high: '🟠', critical: '🔴' }[priority] || '⚪';
   const catEntry = SERVICE_INTENTS.find((i) => i.category === category);
   const catEmoji = catEntry?.emoji || '📋';
@@ -315,9 +315,11 @@ export async function createAutoTicket({
       : `🔴 *Status:* Unassigned – no active team member found\n`) +
     `⏰ *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
 
-  rocketChatService
-    .sendMessage('GENERAL', rcMsg)
-    .catch((e) => logger.warn('[autoTicket] RocketChat notify failed:', e.message));
+  // Mirrored into Chatwoot's shared support thread; best-effort, and it never rejects, so ticket
+  // creation is unaffected when the workspace is unreachable or not yet configured.
+  supportChat
+    .postTicketNote({ ticketId: 'support-feed', body: rcMsg })
+    .catch((e) => logger.warn('[autoTicket] agent-workspace notify failed:', e.message));
 
   logger.info(
     `[autoTicket] ✅ Ticket ${ticket.ticketId || ticket._id} | ${category} | ` +

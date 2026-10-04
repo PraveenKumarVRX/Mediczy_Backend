@@ -155,7 +155,7 @@ class WhatsAppBotService {
   }
 
   /**
-   * Format bot response for display in RocketChat/WhatsApp
+   * Format bot response for display in the agent workspace / WhatsApp
    * @param {Object} botResponse - Bot response from Dr.iSHA
    * @param {string} language - Language code
    * @returns {string} Formatted message for customer
