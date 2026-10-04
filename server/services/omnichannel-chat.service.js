@@ -65,7 +65,13 @@ class OmnichannelChatService {
         return true;
       }
     } catch (error) {
-      console.error('❌ RocketChat connection failed:', error.message);
+      // RocketChat is optional and is not deployed here, so this fired on every connect attempt.
+      // Reported once per process at warn level: absent-by-design is not an error, but a
+      // RocketChat that is meant to be up and is not should still be visible.
+      if (!OmnichannelChatService._connectWarningLogged) {
+        OmnichannelChatService._connectWarningLogged = true;
+        console.warn(`⚠️  RocketChat not reachable at ${this.rocketChatUrl} (${error.message}); omnichannel chat disabled. Further attempts will not be logged.`);
+      }
       return false;
     }
   }

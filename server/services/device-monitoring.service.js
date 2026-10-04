@@ -27,7 +27,10 @@ class DeviceMonitoringService {
         }
       });
 
-      console.log(`Found ${offlineDevices.length} offline devices`);
+      // Ran every 5 minutes and almost always found zero; only a non-zero result is news.
+      if (offlineDevices.length > 0) {
+        console.log(`Found ${offlineDevices.length} offline devices`);
+      }
 
       // Update status to maintenance if offline for too long (2 hours)
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);

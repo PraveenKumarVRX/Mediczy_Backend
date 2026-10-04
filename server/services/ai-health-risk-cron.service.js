@@ -87,14 +87,18 @@ class HealthRiskScoreCron {
       }
 
       // ITEM-21: Process in batches of 10 with concurrency 2 (no cron storm)
-      const { created, updated, gateBlocked } = await processBatchesDirect(
+      const { created, updated, gateBlocked, blockerTally } = await processBatchesDirect(
         patients,
         async (batch) => this._processBatch(batch, db),
       );
 
       const elapsed = Date.now() - startTime;
-      console.log(`✅ [HealthRisk] Completed: ${created} created, ${updated} updated, ${gateBlocked} gate-blocked in ${elapsed}ms`);
-      tick('ai_health_risk', { created, updated, gateBlocked, patients: patients.length, elapsedMs: elapsed });
+      const blockerSummary = Object.entries(blockerTally || {})
+        .sort((a, b) => b[1] - a[1])
+        .map(([code, count]) => `${code}×${count}`)
+        .join(', ');
+      console.log(`✅ [HealthRisk] Completed: ${created} created, ${updated} updated, ${gateBlocked} gate-blocked in ${elapsed}ms${blockerSummary ? ` — blockers: ${blockerSummary}` : ''}`);
+      tick('ai_health_risk', { created, updated, gateBlocked, blockerTally, patients: patients.length, elapsedMs: elapsed });
 
     } catch (error) {
       tickError('ai_health_risk', error.message);
@@ -105,6 +109,7 @@ class HealthRiskScoreCron {
   /** Process a batch of patients; returns { created, updated, gateBlocked } */
   async _processBatch(batch, db) {
     let created = 0, updated = 0, gateBlocked = 0;
+    const blockerTally = {};
     for (const patient of batch) {
       try {
         const score      = await this.computePatientScore(patient);
@@ -116,7 +121,13 @@ class HealthRiskScoreCron {
         });
         if (gateResult.hasBlockers) {
           gateBlocked++;
-          console.warn(`[HealthRisk] Gate BLOCKED for patient ${patient.patient_id}: ${gateResult.blockers.map(b => b.code).join(', ')}`);
+          // Tallied and reported once per run instead of one warn per patient: a normal run
+          // blocks most patients for incomplete data and printed ~136 identical lines. The
+          // per-patient audit trail is logGateResult() -> ai_quality_gate_log, which is the
+          // record that actually matters and is unchanged.
+          for (const blocker of gateResult.blockers) {
+            blockerTally[blocker.code] = (blockerTally[blocker.code] || 0) + 1;
+          }
           await qualityGates.logGateResult(gateResult, { source: 'health_risk_cron' });
           continue;
         }
@@ -146,7 +157,7 @@ class HealthRiskScoreCron {
         console.error(`[HealthRisk] Error for patient ${patient.patient_id}:`, err.message);
       }
     }
-    return { created, updated, gateBlocked };
+    return { created, updated, gateBlocked, blockerTally };
   }
 
   /**
