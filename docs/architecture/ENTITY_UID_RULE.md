@@ -126,18 +126,33 @@ commits no tenant check was ever added or removed. It does two things.
    Admin and team tokens bypass it (audit-logged).
 
 It never compares an organisation, a tenant or a uid. Row-Level Security is the database layer meant to do
-that. 79 of 944 tables have RLS enabled and forced, with 100 policies; the app role is a non-superuser
-without `BYPASSRLS`, so where RLS is on it binds. The limits:
+that. It was measured on production on 2026-10-05, and the first description of it here was too pessimistic:
 
-- Every policy keys on an **integer** (`organization_id`, `tenant_id`, `user_id`); none references a uid.
-- The 8 `app.current_tenant` policies (including `corporates`) have a **fail-open first clause**
-  (`current_setting('app.current_tenant') IS NULL OR … = ''` ⇒ allow). That setting is made only in
-  `middleware/api-auth.js` (the aggregator API-key path), never for portal logins.
+- **79 of 944 tables have RLS enabled and forced, but only 2 of them hold data** (`corporates` 12 rows,
+  `api_lab_bookings` 4). The other 77 are empty PHI tables awaiting use. The app role is a non-superuser
+  without `BYPASSRLS`, so where RLS is on it binds.
+- **92 of the 100 policies are fail-closed**: with no context set they see nothing. Only **8 are fail-open**
+  (an unset or empty context lets every row through), on 4 tables (`corporates`, `api_lab_bookings`,
+  `api_appointments`, `api_prescriptions`), all keyed on `app.current_tenant`. That setting is made only in
+  `middleware/api-auth.js` (the aggregator API-key path), never for portal logins, which is why `corporates`
+  has to stay permissive: a fail-closed `corporates` policy would break corporate sign-in.
+- **The context is not middleware.** `middleware/rls-context.middleware.js` offers two opt-in helpers,
+  `setRlsContext` and `withRlsTransaction` (42 call sites, used by the PHI services), and the context exists
+  only inside a transaction that calls one.
+- Every policy still keys on an **integer** (`organization_id`, `tenant_id`, `user_id`); none references a uid.
 - `tenants`, `hospitals` and `doctors` have no RLS; `users` is forced but not enabled, a no-op.
 
-The UID rule does not replace either layer. It gives them an unambiguous key to enforce on. Moving
-ring-fencing's ownership check and the RLS policies from integers to uids is steps 3–5 of the plan above,
-and the RLS context being set universally and transaction-locally is the open prerequisite for RLS to bind.
+**A latent bug was found and fixed** (migration `20261005000300`). The 8 fail-open policies cast
+`current_setting('app.current_tenant', true)` straight to integer. After any transaction that set it with
+`is_local = true` (the API-key path), the pooled connection keeps the setting defined but **empty**, and every
+later query on those tables failed with `22P02 invalid input syntax for type integer: ""`; reproduced on
+production. The first aggregator API call would have poisoned a connection and made the corporate portal 500
+intermittently. The policies now use `NULLIF(current_setting(...), '')::integer`. This is semantics-preserving:
+nothing was made stricter or looser.
+
+The UID rule does not replace either layer. It gives them an unambiguous key to enforce on. Making the RLS
+context universal (so `corporates` and the API tables can be fail-closed) and moving ring-fencing's ownership
+check and the policies from integers to uids is the contract phase of the plan above.
 
 ## Legacy ids
 
@@ -180,9 +195,8 @@ trusted as targets: 30 columns named `tenant_id`/`hospital_id` hold values from 
    host. `somya.pagare` (`organization_id = 49`) is now admitted on ninjacart.mediqzy.com and refused on
    madras-medical-mission-chennai.mediqzy.com, where the integer gate used to admit her. The integer gate remains
    only as a fallback for the 16 users with no `organization_uid`.
-3. **Next, by blast radius** — `attach_uid_reference` on the highest-traffic references: `users`
-   (`tenant_id`), `hospitals`/`doctors`/`nurses`/`insurance_brokers` (`tenant_id`), then the
-   `hospital_id`, `corporate_id`, `tpa_id`, `lab_id`, `pharmacy_id` families.
+3. **Done (live)** — 131 uid twins on the integer references whose target could be established from
+   evidence (28 declared FK, 74 corroborated convention, 29 imaging/lab). See ENTITY_REFERENCE_AUDIT.md.
 4. **Then** switch each reader from the integer to the uid, table by table.
 5. **Finally** (contract) make the uid column `NOT NULL` and stop writing the integer.
 

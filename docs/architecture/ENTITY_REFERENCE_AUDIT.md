@@ -3,6 +3,42 @@
 Produced by `server/scripts/ci/audit-entity-references.mjs` (read-only). Run on production, 2026-10-05.
 Companion to [ENTITY_UID_RULE.md](ENTITY_UID_RULE.md).
 
+## Status, 2026-10-05 (later): the expand step is done
+
+| | |
+|---|---|
+| **Twins applied** | **131** uid twins (61,759 rows), kept in step with their integer by trigger, each with a foreign key to `entity_registry`. 28 by declared FK, 74 by a convention corroborated by the data, 29 imaging/lab. |
+| **Verified** | for every twin: column, FK, trigger, every row filled, every uid agrees with its integer and its table (`verify-entity-uid-rule.mjs`, check 6). A new populated reference column without a twin is flagged (check 6b). |
+| **Writers fixed** | `corporate-hr-management.service.js` and `hrms.route.js` record `users.organization_uid`; a trigger on `users` derives it for the other nine writers and refuses a role/kind mismatch. |
+| **Left alone, 7 columns** | needs a decision, listed below |
+
+Two defects found and fixed while doing it: the twin trigger refused an ordinary update of the integer while a
+uid was set (it now makes the other side **follow**; confirmed live on `corporates.tenant_id`), and the
+generator re-twinned a pair an earlier migration had already made.
+
+### The 7 columns left alone
+
+| Column | Why |
+|---|---|
+| `display_devices`, `hospital_queue_entries`, `hospital_queue_token_sequences`, `hospital_uhid_sequences`, `kiosk_registration_invites` `.organization_id` | **Two id-spaces in one column.** Real tenant ids (1, 3, 4, 11) are mixed with `hospitals`-directory ids (2368 "Ruby Medical Centre", 11332 "QA General Hospital"), and `11` is both the Smart Hospital tenant and directory hospital #11. An integer cannot say which hospital a UHID sequence or a queue entry belongs to. **Decision needed:** does "organization" in the queue module mean the tenant or the directory hospital? The 2368 and 11332 rows look like QA data. |
+| `clinical_alerts.tenant_id` | the 4 values exist in no `tenants` row (they fit `hospitals`, `labs`, `provider_clinics`) |
+| `hg_dicom_instances.tenant_id` | 423,808 rows: too large to rewrite inside a migration; already carries the older UUID `tenant_uid`, and the imaging tables around it now also have `lab_uid` |
+
+`users.organization_id` is covered by `organization_uid` and its trigger rather than a twin. 16 users stay
+`NULL` because their integer (1, 2, 3 or 5) is both a tenant and a corporates id.
+
+### Decisions I made, for your review
+
+- **Imaging `tenant_id` → `lab_uid`** (29 columns). Every value exists in `labs` and in none of `tenants`, and
+  `utils/tenant-identity.js` documents `tenant_id` there as a lab account id. The five `hg_dicom_*` tables and
+  `ris_studies` therefore carry two twins now (the older UUID `tenant_uid` and the 6-character `lab_uid`):
+  redundant but harmless; unifying them is a later cleanup.
+- **`users.aggregator_id` → `insurance_brokers`**, by the precedent of `corporates.aggregator_id`'s declared FK.
+  All 39 populated values are `2`, which as a tenant would be a clinic ("mediczy-test-clinic"), as a broker is
+  `VV8DGT`. A single small integer is weak evidence on its own; the FK precedent carries the decision.
+- **`hospital_id` → `tenants`**, by the FK on `pre_authorizations.hospital_id` and the three `resolveTenantId`
+  implementations, and checked per column against the data.
+
 ## Headline
 
 The earlier figure of "603 integer cross-entity columns" was misleading in both directions. A wider
