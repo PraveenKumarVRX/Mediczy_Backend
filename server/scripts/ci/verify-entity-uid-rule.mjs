@@ -19,6 +19,7 @@
  *   6. REFERENCES  every uid twin (users.organization_uid, corporates.tenant_uid, ...) agrees with the
  *                  integer it shadows.
  */
+import fs from 'node:fs';
 import pool from '../../db/pgPool.js';
 import { ENTITY_KIND_PREFIXES } from '../../utils/uniqueIdGenerator.js';
 
@@ -124,21 +125,50 @@ if (!orphanTotal) pass('none');
 else if (!FIX) console.log('     (harmless: re-run with --fix to retire them)');
 
 // 6. references ---------------------------------------------------------------
-console.log('\n6. uid twins agree with the integer they shadow');
-const twins = [
-  { table: 'corporates', int: 'tenant_id', uid: 'tenant_uid', target: 'tenants' },
-];
+// Every uid twin recorded by attach_uid_reference(), not a hard-coded list.
+console.log('6. uid twins agree with the integer they shadow');
+const twins = (await q('SELECT table_name, int_col, uid_col, target FROM entity_uid_references ORDER BY 1, 2').catch(() => []));
+let twinProblems = 0;
 for (const tw of twins) {
-  const bad = await q(`SELECT t.id FROM ${tw.table} t JOIN entity_registry r ON r.uid = t.${tw.uid}
-                        WHERE t.${tw.int} IS NOT NULL AND (r.source_table <> $1 OR r.source_id <> t.${tw.int}) LIMIT 5`, [tw.target]);
-  const missing = await q(`SELECT t.id FROM ${tw.table} t WHERE t.${tw.int} IS NOT NULL AND t.${tw.uid} IS NULL LIMIT 5`);
-  if (bad.length) fail(`${tw.table}.${tw.uid} disagrees with ${tw.int} on ${bad.map((b) => '#' + b.id).join(', ')}`);
-  else if (missing.length) warn(`${tw.table}: ${tw.int} set but ${tw.uid} empty on ${missing.map((b) => '#' + b.id).join(', ')}`);
-  else pass(`${tw.table}.${tw.uid} agrees with ${tw.int}`);
+  const T = JSON.stringify(tw.table_name); const I = JSON.stringify(tw.int_col); const U = JSON.stringify(tw.uid_col);
+  const disagree = (await q(`SELECT count(*) n FROM ${T} t LEFT JOIN entity_registry r ON r.uid = t.${U}
+                              WHERE t.${U} IS NOT NULL AND (r.source_table IS DISTINCT FROM $1 OR r.source_id IS DISTINCT FROM t.${I})`, [tw.target]))[0].n;
+  const unfilled = (await q(`SELECT count(*) n FROM ${T} t JOIN ${JSON.stringify(tw.target)} g ON g.id = t.${I} WHERE t.${U} IS NULL`))[0].n;
+  if (Number(disagree) > 0) { twinProblems += 1; fail(`${tw.table_name}.${tw.uid_col} disagrees with ${tw.int_col} on ${disagree} row(s)`); }
+  else if (Number(unfilled) > 0) { twinProblems += 1; warn(`${tw.table_name}: ${unfilled} row(s) have ${tw.int_col} set but ${tw.uid_col} empty`); }
 }
+if (!twinProblems) pass(`all ${twins.length} twins agree with their integer and point at the right table`);
+
+// Discovery: a populated integer reference column with no twin. This is the check that notices the
+// next one. Columns deliberately left alone (and why) are listed in the generated manifest.
+console.log('\n6b. populated integer entity references that have no uid twin');
+const manifestPath = new URL('../../migrations/20261005000200-entity-uid-reference-twins.manifest.json', import.meta.url);
+let knownLeft = new Set();
+try { knownLeft = new Set(JSON.parse(fs.readFileSync(manifestPath, 'utf8')).left.map((l) => l.key)); } catch { /* no manifest */ }
+const twinned = new Set(twins.map((t) => `${t.table_name}.${t.int_col}`));
+const FAMILY = /(^|_)(tenant|organization|organisation|org|hospital|corporate|tpa|lab|pharmacy|clinic|broker|insurer|ambulance|homecare|aggregator)_id$/;
+const refCols = (await q(`
+  SELECT c.table_name, c.column_name FROM information_schema.columns c
+    JOIN information_schema.tables t ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+   WHERE c.table_schema = 'public' AND c.data_type IN ('integer', 'bigint', 'smallint')
+     AND c.table_name !~ '^(backup_|_probe|pg_|entity_)'`)).filter((c) => FAMILY.test(c.column_name));
+const untwinned = [];
+for (const c of refCols) {
+  const key = `${c.table_name}.${c.column_name}`;
+  if (twinned.has(key) || knownLeft.has(key)) continue;
+  const twinCol = c.column_name.replace(/_id$/, '_uid');
+  const hasTwin = (await q(`SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name IN ($2, 'lab_uid')`, [c.table_name, twinCol])).length > 0;
+  if (hasTwin) continue;
+  const n = (await q(`SELECT count(${JSON.stringify(c.column_name)}) n FROM ${JSON.stringify(c.table_name)}`))[0].n;
+  if (Number(n) > 0) untwinned.push(`${key} (${n} rows)`);
+}
+untwinned.length
+  ? warn(`${untwinned.length} populated reference column(s) have no twin: ${untwinned.slice(0, 8).join(', ')}${untwinned.length > 8 ? ' …' : ''} (generate: scripts/ops/generate-uid-reference-migration.mjs)`)
+  : pass(`none; ${knownLeft.size} columns are deliberately left alone (see the manifest) and every other populated reference has a twin`);
+
 const usersNoUid = (await q(`SELECT count(*) n FROM users WHERE organization_id IS NOT NULL AND organization_uid IS NULL`))[0].n;
 Number(usersNoUid) > 0
-  ? warn(`users: ${usersNoUid} row(s) have organization_id but no organization_uid yet (backfill: scripts/ops/backfill-organization-uid.mjs)`)
+  ? warn(`users: ${usersNoUid} row(s) have organization_id but no organization_uid (the integer is ambiguous: both a tenant and a corporates id)`)
   : pass('users.organization_uid is populated wherever organization_id is');
 
 // 7. role / organisation kind ---------------------------------------------------
