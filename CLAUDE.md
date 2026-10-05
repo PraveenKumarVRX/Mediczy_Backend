@@ -44,10 +44,10 @@ insurance company `I` · broker `V` · wellness company `W` · PSU `S` · aggreg
 People tables (users, patients, doctors, nurses, assistants, team, corporate employees) are under the
 same global registry with role prefixes.
 
-> **Rollout status (2026-10-05):** the migration that installs the database triggers is merged but **not
-> yet applied to production**. Until it is, rules 1–2 are enforced by application code only and
-> `tenants` has no uid. See the status line in
-> [docs/architecture/ENTITY_UID_RULE.md](docs/architecture/ENTITY_UID_RULE.md).
+> **Rollout status (2026-10-05):** live in production. The database triggers, `entity_registry` and the uid
+> twins are applied and `scripts/ci/verify-entity-uid-rule.mjs` reports 0 violations. The remaining integer
+> references are being migrated in waves; see
+> [docs/architecture/ENTITY_REFERENCE_AUDIT.md](docs/architecture/ENTITY_REFERENCE_AUDIT.md).
 
 ### The rules
 
