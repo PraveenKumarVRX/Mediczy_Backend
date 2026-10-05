@@ -462,10 +462,21 @@ export async function getActiveAdmissions(organizationId, { wardId, status, limi
 
   return sequelize.query(
     `SELECT a.*, w.name as ward_name, b.bed_number,
+            -- Patient demographics and the admitting doctor's name, so callers do not have to
+            -- fetch each patient separately to render an admitted-patient list. ip_admissions
+            -- stores only patient_id / admitting_doctor_id, and both reference users.
+            p."firstName" AS patient_first_name,
+            p."lastName"  AS patient_last_name,
+            p.gender      AS patient_gender,
+            CASE WHEN p."dateOfBirth" IS NOT NULL
+                 THEN date_part('year', age(p."dateOfBirth"))::int END AS patient_age,
+            NULLIF(TRIM(CONCAT_WS(' ', d."firstName", d."lastName")), '') AS admitting_doctor_name,
             (SELECT COUNT(*) FROM medication_orders mo WHERE mo.admission_id = a.id AND mo.order_status = 'active') as active_medication_count
      FROM ip_admissions a
      LEFT JOIN wards w ON w.id = a.ward_id
      LEFT JOIN beds b ON b.id = a.bed_id
+     LEFT JOIN users p ON p.id = a.patient_id
+     LEFT JOIN users d ON d.id = a.admitting_doctor_id
      WHERE ${where}
      ORDER BY a.admission_datetime DESC
      LIMIT :limit OFFSET :offset`,
