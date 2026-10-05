@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { sendTransactionalEmail } from './welcome-email.service.js';
 import OTP from '../models/otp.model.intelligent.js';
 import userModel from '../models/user.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
@@ -248,50 +249,16 @@ class PasswordResetService {
   async sendOTPViaEmail(account, otpCode) {
     try {
       // Try to get default config from database first
-      let transporter, fromEmail, fromName;
-      
-      try {
-        const defaultConfig = await emailService.getDefaultConfig();
-        if (defaultConfig) {
-          transporter = await emailService.getTransporter(defaultConfig);
-          fromEmail = defaultConfig.fromEmail;
-          fromName = defaultConfig.fromName;
-        }
-      } catch (dbError) {
-        console.log('No database email config, using environment fallback');
-      }
-
-      // Fallback to environment variables if no database config
-      if (!transporter) {
-        const nodemailer = require('nodemailer');
-        const port = parseInt(process.env.SMTP_PORT) || 587;
-        const smtpConfig = {
-          host: process.env.SMTP_HOST || 'smtp.gmail.com',
-          port: port,
-          secure: port === 465, // Use SSL for port 465, TLS for 587
-          auth: {
-            user: (process.env.SMTP_USER || process.env.SMTP_FROM || '').trim(),
-            pass: (process.env.SMTP_PASSWORD || process.env.SMTP_PASS || '').trim()
-          }
-        };
-
-        // Skip email if credentials not configured
-        if (!smtpConfig.auth.user || !smtpConfig.auth.pass) {
-          console.warn('⚠️ SMTP credentials not configured, skipping email');
-          throw new Error('Email service not configured - please add SMTP_USER and SMTP_PASSWORD to .env');
-        }
-
-        transporter = nodemailer.createTransport(smtpConfig);
-        fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@mediqzy.com';
-        fromName = 'Mediczy';
-      }
-
-      await transporter.sendMail({
-        from: `"${fromName}" <${fromEmail}>`,
+      // Sent through the shared mailer, which is SES-only (EMAIL_PROVIDER defaults to 'ses').
+      // This built its own nodemailer transport whose fallback host was smtp.gmail.com, so a
+      // password-reset OTP could leave over a different provider -- and a different From domain --
+      // than the rest of Mediqzy's mail. That is exactly the message you least want filtered.
+      await sendTransactionalEmail({
         to: account.email,
         subject: 'Password Reset OTP - Mediczy',
         html: this.getEmailOTPTemplate(account.name || account.email, otpCode),
-        text: this.getEmailOTPTextTemplate(account.name || account.email, otpCode)
+        text: this.getEmailOTPTextTemplate(account.name || account.email, otpCode),
+        fromName: 'Mediqzy',
       });
 
       console.log(`✅ Password reset OTP sent to email: ${account.email}`);
