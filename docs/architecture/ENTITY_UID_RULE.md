@@ -93,6 +93,53 @@ backfills it, adds a foreign key into `entity_registry(uid)`, and installs a tri
 Applied so far: `corporates.tenant_id → tenant_uid`. `users.organization_uid` exists with a registry
 foreign key; it is **not** filled mechanically because the integer it shadows is the ambiguous one.
 
+## HR is two different modules
+
+`hr_staff` is one role string used in two unrelated places:
+
+| | Hospital HR | Corporate HR |
+|---|---|---|
+| Module | the hospital's own **HRMS** (its staff, attendance, payroll) | **employee wellness programmes** of a corporate client; no HRMS |
+| Organisation | a hospital (or other provider) tenant, kind `hospital`/`clinic`/… | a corporate, kind `corporate` |
+| Sign-in | `/api/hospital/staff/hr/login` | `/api/corporate/login` |
+| Example | `hr.mediczy` (Smart Hospital) | `ninjacart.hr`, `arun.kamble` |
+
+Both are also employees of their organisation, which is why their work email cannot be their login.
+Because the role string is shared, **the role can never decide which portal or organisation a user belongs
+to — the kind of their organisation does.** That is what `users.organization_uid` carries: a corporate
+user's uid resolves to a `corporate` registry entry, a hospital HR user's to a `hospital` tenant.
+`corporate-scope.service.js` refuses a hospital HRMS user at the corporate portal even though the role
+matches, `backfill-organization-uid.mjs` resolves by organisation kind, and check 7 of the verifier fails on
+any user whose role and organisation kind disagree.
+
+## Relation to ring-fencing and Row-Level Security
+
+Ring-fencing (`middleware/ringFencing.js`) is **not** a tenant-isolation mechanism and never was: in 130
+commits no tenant check was ever added or removed. It does two things.
+
+1. **A role → path allowlist** (`corporate` may call `/api/corporate/*`). Mounted at `app.js:1084`; 330
+   routers sit behind it. The ~13 department routers mounted ahead of it (finance, blood bank, mortuary,
+   procurement, …) authenticate themselves: 36 unauthenticated probes against production all returned 401.
+2. **An own-id check on URLs** of the form `/api/<kind>/<number>`, comparing the number with
+   `decoded.id || userId || doctorId || … || corporateId || hospitalId || …`. That caller identity is
+   whichever of ~15 integers is first non-null, so a company-account token (`id` = a `corporates` id) and an
+   HR sub-user token (`id` = a `users` id) put integers from different tables in the same variable.
+   Admin and team tokens bypass it (audit-logged).
+
+It never compares an organisation, a tenant or a uid. Row-Level Security is the database layer meant to do
+that. 79 of 944 tables have RLS enabled and forced, with 100 policies; the app role is a non-superuser
+without `BYPASSRLS`, so where RLS is on it binds. The limits:
+
+- Every policy keys on an **integer** (`organization_id`, `tenant_id`, `user_id`); none references a uid.
+- The 8 `app.current_tenant` policies (including `corporates`) have a **fail-open first clause**
+  (`current_setting('app.current_tenant') IS NULL OR … = ''` ⇒ allow). That setting is made only in
+  `middleware/api-auth.js` (the aggregator API-key path), never for portal logins.
+- `tenants`, `hospitals` and `doctors` have no RLS; `users` is forced but not enabled, a no-op.
+
+The UID rule does not replace either layer. It gives them an unambiguous key to enforce on. Moving
+ring-fencing's ownership check and the RLS policies from integers to uids is steps 3–5 of the plan above,
+and the RLS context being set universally and transaction-locally is the open prerequisite for RLS to bind.
+
 ## Legacy ids
 
 561 ids pre-date the rule and are registered with `legacy = true`; they are never rewritten, because

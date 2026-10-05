@@ -4,6 +4,7 @@ import userModel, { generateAuthTokenForUser } from '../models/user.model.intell
 import { Corporate } from '../models/index.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { resolveCorporateScope } from '../services/corporate-scope.service.js';
 
 // Fetch real employees from user_associations + users for a given corporate ID
 const fetchCorporateEmployees = async (corporateId) => {
@@ -108,26 +109,57 @@ export const corporateLogin = async (req, res) => {
           status: 'active',
         },
       });
-      if (hrUser && req.tenant && hrUser.organization_id !== req.tenant.id) {
+      // UID-based scope, preferred. The user's organisation is the registry entry named by
+      // users.organization_uid, which must be of kind `corporate`; the subdomain check compares
+      // tenant UIDs. hr_staff is also a role in the HOSPITAL HRMS module, so the role cannot say
+      // which portal a user belongs to -- the organisation's kind does. Done BEFORE the password
+      // check, as the integer gate was, so a wrong-host attempt reveals nothing about the account.
+      // A user with no organization_uid yet (or a database without the column) gets mode 'legacy'
+      // and falls through to the integer logic below unchanged.
+      let uidScope = null;
+      if (hrUser) {
+        uidScope = await resolveCorporateScope(
+          {
+            query: (sql, replacements) =>
+              postgresSequelize.query(sql, { replacements, type: postgresSequelize.QueryTypes.SELECT }),
+            findCorporateById: (id) => Corporate.findByPk(id),
+          },
+          hrUser,
+          req.tenant,
+        );
+        if (!uidScope.ok && uidScope.mode === 'uid') {
+          await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, uidScope.reason);
+          return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
+        }
+      }
+
+      // LEGACY integer gate: only for users who have no organization_uid yet. It is the very check
+      // that admitted somya.pagare (organization_id 49, a CORPORATES id) on a hospital's subdomain
+      // because tenants.id 49 is that hospital. Remove once organization_uid is backfilled.
+      if (hrUser && !uidScope?.ok && req.tenant && hrUser.organization_id !== req.tenant.id) {
         await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Wrong tenant subdomain');
         return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
       }
       if (hrUser && await hrUser.comparePassword(password)) {
-        const corporateScopeConditions = [
-          { id: hrUser.organization_id },
-          { tenantId: hrUser.organization_id },
-          { tenantId: hrUser.tenant_id },
-        ].filter((condition) => Object.values(condition)[0]);
-        if (corporateScopeConditions.length === 0) {
-          await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Corporate scope missing');
-          return res.status(403).json({ success: false, message: 'Corporate scope missing for this HR user' });
-        }
+        let scopedCorporate = uidScope?.ok ? uidScope.corporate : null;
 
-        const scopedCorporate = await Corporate.findOne({
-          where: {
-            [Op.or]: corporateScopeConditions,
-          },
-        });
+        if (!scopedCorporate) {
+          const corporateScopeConditions = [
+            { id: hrUser.organization_id },
+            { tenantId: hrUser.organization_id },
+            { tenantId: hrUser.tenant_id },
+          ].filter((condition) => Object.values(condition)[0]);
+          if (corporateScopeConditions.length === 0) {
+            await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Corporate scope missing');
+            return res.status(403).json({ success: false, message: 'Corporate scope missing for this HR user' });
+          }
+
+          scopedCorporate = await Corporate.findOne({
+            where: {
+              [Op.or]: corporateScopeConditions,
+            },
+          });
+        }
         if (!scopedCorporate) {
           await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Corporate scope not found');
           return res.status(403).json({ success: false, message: 'Corporate scope not found for this HR user' });
