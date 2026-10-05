@@ -23,9 +23,33 @@
 import User from '../models/postgres/user.model.postgres.js';
 import Corporate from '../models/postgres/corporate.model.postgres.js';
 import welcomeEmailService from './welcome-email.service.js';
+import organizationUid from './organization-uid.service.js';
 
 const MAX_HR_STAFF_PER_CORPORATE = 15;
 const INVITABLE_ROLES = ['hr_staff', 'corporate_cmo', 'corporate_ohc'];
+// Everyone who belongs on the corporate's HR team: the super-HR plus the roles it can invite.
+const HR_TEAM_ROLES = ['corporate_admin', ...INVITABLE_ROLES];
+
+/**
+ * The ids of a corporate's HR-team members, resolved by UID.
+ *
+ * This service used to compare users.organization_id with the CORPORATES id. But organization_id holds
+ * a TENANTS id for the users hrms.route.js created, so the two groups never met: Dairy Day's super-HR
+ * saw an empty team (its users sit under tenant 57, the corporate is #45), Ninjacart's team was split
+ * across 49 and 58, and Ninjacart's own super-HR was refused for corporate 49. users.organization_uid
+ * names the corporate unambiguously. Returns null when there is no uid to use (a database without the
+ * column), and the caller falls back to the legacy integer comparison.
+ */
+async function hrTeamIds(corporateId, { activeOnly = true } = {}) {
+  const uid = await organizationUid.corporateUid(corporateId);
+  if (!uid || !(await organizationUid.hasColumn())) return null;
+  const [rows] = await User.sequelize.query(
+    `SELECT id FROM users
+      WHERE organization_type = 'corporate' AND organization_uid = :uid
+        AND role IN (:roles) ${activeOnly ? "AND status = 'active'" : ''}`,
+    { replacements: { uid, roles: HR_TEAM_ROLES } });
+  return rows.map((r) => r.id);
+}
 
 function genTempPassword() {
   const raw = [...Array(12)].map(() => Math.random().toString(36)[2] || '0').join('');
@@ -38,7 +62,7 @@ async function requireActiveSuperAdmin(corporateId, actingUserId) {
   if (
     actor.role !== 'corporate_admin' ||
     actor.organization_type !== 'corporate' ||
-    Number(actor.organization_id) !== Number(corporateId) ||
+    !(await organizationUid.userBelongsToCorporate(actor, corporateId)) ||
     actor.status !== 'active'
   ) {
     const err = new Error('Only the corporate super-HR (corporate_admin) can perform this action');
@@ -49,8 +73,11 @@ async function requireActiveSuperAdmin(corporateId, actingUserId) {
 }
 
 export async function listHrTeam(corporateId) {
+  const ids = await hrTeamIds(corporateId);
   const rows = await User.findAll({
-    where: { organization_type: 'corporate', organization_id: corporateId, status: 'active' },
+    where: ids
+      ? { id: ids }
+      : { organization_type: 'corporate', organization_id: corporateId, status: 'active', role: HR_TEAM_ROLES },
     attributes: ['id', 'firstName', 'lastName', 'email', 'role', 'invited_by', 'lastLoginAt', 'createdAt'],
     order: [['role', 'ASC'], ['createdAt', 'ASC']],
   });
@@ -74,9 +101,12 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
     throw err;
   }
 
-  const currentCount = await User.count({
-    where: { organization_type: 'corporate', organization_id: corporateId, status: 'active' },
-  });
+  const teamIds = await hrTeamIds(corporateId);
+  const currentCount = teamIds
+    ? teamIds.length
+    : await User.count({
+        where: { organization_type: 'corporate', organization_id: corporateId, status: 'active', role: HR_TEAM_ROLES },
+      });
   if (currentCount >= MAX_HR_STAFF_PER_CORPORATE) {
     const err = new Error(`This corporate has reached the maximum of ${MAX_HR_STAFF_PER_CORPORATE} HR accounts — remove an inactive one or contact support to raise the limit`);
     err.statusCode = 409;
@@ -109,6 +139,9 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
     status: 'active',
     invited_by: invitedByUserId,
   });
+  // organization_id above stays the corporates id this service has always written; the UID is what
+  // names the corporate unambiguously, and what the sign-in gate and the team queries use.
+  await organizationUid.setUserOrganizationUid(created.id, await organizationUid.corporateUid(corporateId));
 
   let emailStatus = 'skipped';
   try {
@@ -159,7 +192,7 @@ export async function removeHrStaff({ corporateId, requestedByUserId, targetUser
   if (
     !target ||
     target.organization_type !== 'corporate' ||
-    Number(target.organization_id) !== Number(corporateId) ||
+    !(await organizationUid.userBelongsToCorporate(target, corporateId)) ||
     !INVITABLE_ROLES.includes(target.role)
   ) {
     throw new Error('Target is not an HR staff, CMO, or OHC member of this corporate');
@@ -182,7 +215,7 @@ export async function transferSuperHr({ corporateId, requestedByUserId, newAdmin
   if (
     !successor ||
     successor.organization_type !== 'corporate' ||
-    Number(successor.organization_id) !== Number(corporateId) ||
+    !(await organizationUid.userBelongsToCorporate(successor, corporateId)) ||
     successor.role !== 'hr_staff' ||
     successor.status !== 'active'
   ) {
