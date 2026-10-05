@@ -141,5 +141,21 @@ Number(usersNoUid) > 0
   ? warn(`users: ${usersNoUid} row(s) have organization_id but no organization_uid yet (backfill: scripts/ops/backfill-organization-uid.mjs)`)
   : pass('users.organization_uid is populated wherever organization_id is');
 
+// 7. role / organisation kind ---------------------------------------------------
+// hr_staff is a role in TWO modules: hospital HRMS and corporate employee wellness. The role cannot
+// say which; the organisation's kind does. A corporate-portal user must belong to a corporate, and a
+// hospital HRMS user must not.
+console.log('\n7. role / organisation-kind consistency (hospital HRMS vs corporate wellness)');
+const mismatched = await q(`
+  SELECT u.id, u.username, u.role, u.organization_type::text AS otype, r.kind
+    FROM users u JOIN entity_registry r ON r.uid = u.organization_uid
+   WHERE (u.role IN ('corporate_admin','corporate_cmo','corporate_ohc') AND r.kind <> 'corporate')
+      OR (u.role = 'hr_staff' AND u.organization_type = 'corporate' AND r.kind <> 'corporate')
+      OR (u.role = 'hr_staff' AND u.organization_type <> 'corporate' AND r.kind = 'corporate')
+   LIMIT 20`);
+mismatched.length
+  ? mismatched.forEach((m) => fail(`user ${m.id} (${m.username ?? '-'}) is ${m.role}/${m.otype} but belongs to a ${m.kind}`))
+  : pass('every corporate-portal user belongs to a corporate; no hospital HRMS user does');
+
 console.log(`\n${failures ? '❌' : '✅'} ${failures} violation(s), ${warnings} warning(s)`);
 process.exit(failures ? 1 : 0);
