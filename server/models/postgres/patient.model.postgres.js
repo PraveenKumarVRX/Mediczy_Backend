@@ -198,7 +198,7 @@ const Patient = sequelize.define('Patient', {
 // Hooks
 Patient.beforeCreate(async (patient) => {
   if (!patient.unique_id) {
-    patient.unique_id = await generateUniqueId('P');
+    patient.unique_id = await generateUniqueId('patient');
   }
   if (!patient.firstVisitDate) {
     patient.firstVisitDate = new Date();

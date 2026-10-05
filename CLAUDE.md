@@ -30,6 +30,46 @@ This file gives Claude essential context for working in this repository.
 
 ---
 
+## Entity IDs — MANDATORY FOR ALL WORK THAT CREATES OR REFERENCES AN ENTITY
+
+Every entity has a **6-character, kind-prefixed UID** (`H7K2PX` = hospital, `C4M9TA` = corporate)
+issued **by the database** on insert. A numeric `id` is private to its own table and **must never be
+used to point at an entity of another table or kind** — id `49` is Madras Medical Mission in `tenants`
+and Ninjacart in `corporates`, which is how a corporate HR user ended up admitted to the wrong
+tenant's subdomain.
+
+**Entities** (each has a kind and prefix in `entity_kinds`): corporate `C` · hospital `H` · clinic `K` ·
+lab `L` · pharmacy `P` · ambulance `B` · homecare `M` · diagnostic centre `Y` · NGO `G` · TPA `X` ·
+insurance company `I` · broker `V` · wellness company `W` · PSU `S` · aggregator `Z`.
+People tables (users, patients, doctors, nurses, assistants, team, corporate employees) are under the
+same global registry with role prefixes.
+
+### The rules
+
+1. **Never mint an id in application code, and never supply `unique_id` on INSERT.** Omit it; the
+   `trg_entity_uid_*` triggers generate it, register it in `entity_registry` and guarantee it is unique
+   across **every** table. `Math.random().toString(36)` ids are how 13 labs ended up with prefix-less ids.
+2. **A uid is immutable** once set, and is never reused after deletion (the registry row is retired).
+3. **Never reference another entity by a bare integer.** Store the uid (or both — see below) and look
+   it up through `entity_registry(uid) -> kind, source_table, source_id`, never by guessing which table
+   an integer belongs to. Comparing `a.organization_id !== req.tenant.id` is the bug this rule exists to prevent.
+4. **A new entity table is not finished until it is under the rule.** In the same migration:
+   `SELECT attach_entity_uid_rule('<table>', '<kind>');` — this adds the column, registers existing rows,
+   makes it `NOT NULL` + unique and installs the triggers. A new kind needs a row in `entity_kinds`
+   **and** an entry in `ENTITY_KIND_PREFIXES` (`server/utils/uniqueIdGenerator.js`).
+5. **A new cross-entity reference gets a uid column from day one**, and an existing integer reference
+   is migrated with `SELECT attach_uid_reference('<table>', '<int_col>', '<uid_col>', '<target_table>');`.
+   The pair is then kept consistent by trigger: a write where the integer and the uid disagree, or where
+   a uid belongs to the wrong table, is rejected.
+6. **Verify before you finish:** `node scripts/ssm-env-loader.mjs scripts/ci/verify-entity-uid-rule.mjs`
+   must exit 0. It fails on database/code prefix drift, on any table with a `unique_id` column that is
+   not under the rule, on unregistered rows and on disagreeing uid twins.
+
+Design, kinds, legacy ids and the phased plan for the remaining integer references:
+[docs/architecture/ENTITY_UID_RULE.md](docs/architecture/ENTITY_UID_RULE.md).
+
+---
+
 ## SaMD Governance — MANDATORY FOR ALL AI WORK
 
 This is a healthcare platform with AI features that qualify as **Software as a Medical Device (SaMD)**. Any work touching AI/ML components must follow these rules:

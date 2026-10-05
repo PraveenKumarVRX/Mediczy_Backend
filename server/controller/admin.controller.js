@@ -378,7 +378,6 @@ export const bulkUploadLabs = async (req, res) => {
         const plainPassword = lab.password || Math.random().toString(36).slice(-10) + 'A1!';
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
         const phoneNumber = lab.phone || lab.phoneNumber || '';
-        const uniqueId = Math.random().toString(36).substring(2, 8).toUpperCase();
         const address = JSON.stringify({
           street: lab.street || '',
           city: lab.city || '',
@@ -389,8 +388,12 @@ export const bulkUploadLabs = async (req, res) => {
         });
 
         const rows = await sequelize.query(`
-          INSERT INTO labs (name, email, password, "phoneNumber", address, status, "isVerified", unique_id, "createdAt", "updatedAt")
-          VALUES (:name, :email, :password, :phoneNumber, :address::jsonb, 'active', true, :uniqueId, NOW(), NOW())
+          -- unique_id is deliberately NOT supplied: the database issues it (an L-prefixed uid,
+          -- registered in entity_registry) on every insert. This statement used to mint one with
+          -- Math.random().toString(36), which has no kind prefix and can contain 0/O -- the source of
+          -- the 13 labs holding prefix-less ids -- and the strict prefix check would now refuse it.
+          INSERT INTO labs (name, email, password, "phoneNumber", address, status, "isVerified", "createdAt", "updatedAt")
+          VALUES (:name, :email, :password, :phoneNumber, :address::jsonb, 'active', true, NOW(), NOW())
           ON CONFLICT (email) DO UPDATE SET
             password = EXCLUDED.password,
             "phoneNumber" = COALESCE(NULLIF(EXCLUDED."phoneNumber", ''), labs."phoneNumber"),
@@ -398,15 +401,15 @@ export const bulkUploadLabs = async (req, res) => {
             status = 'active',
             "isVerified" = true,
             "updatedAt" = NOW()
-          RETURNING id, name, email
+          RETURNING id, name, email, unique_id
         `, {
-          replacements: { name: lab.name, email, password: hashedPassword, phoneNumber, address, uniqueId },
+          replacements: { name: lab.name, email, password: hashedPassword, phoneNumber, address },
           type: QueryTypes.SELECT,
         });
 
         if (rows && rows.length > 0) {
           inserted++;
-          created.push({ id: rows[0].id, name: rows[0].name, email: rows[0].email });
+          created.push({ id: rows[0].id, name: rows[0].name, email: rows[0].email, uniqueId: rows[0].unique_id });
         } else {
           skipped++;
           errors.push({ lab: lab.name, reason: 'No row returned' });

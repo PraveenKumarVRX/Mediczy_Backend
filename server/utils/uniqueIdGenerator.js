@@ -13,7 +13,8 @@
  * - H: Hospital
  * - L: Lab
  * - P: Pharmacy
- * - I: Insurer
+ * - I: Insurance company / insurer
+ * - V: Insurance broker
  * - X: TPA
  * - G: NGO
  * - S: PSU
@@ -21,7 +22,18 @@
  * - B: Ambulance
  * - O: OHC (Occupational Health Center)
  * - K: Clinic
+ * - Y: Diagnostic centre
+ * - W: Wellness company
+ * - Z: Aggregator
+ * - E: Corporate employee
  * - R: Admin/System
+ *
+ * THE DATABASE IS THE AUTHORITY. entity_kinds / entity_registry (migration
+ * 20261005000000-entity-uid-rule.sql) issue and register these ids on every insert, enforce that an
+ * organisation's id carries its kind's prefix, and guarantee no two entities in ANY table share
+ * one. This file mirrors the prefixes for code that must name a kind before the row exists;
+ * scripts/ci/verify-entity-uid-rule.mjs fails if the two ever disagree. See
+ * docs/architecture/ENTITY_UID_RULE.md.
  */
 
 // Characters used for ID generation (excluding confusing chars like 0/O, 1/I/l)
@@ -58,8 +70,17 @@ const ROLE_PREFIX_MAP = {
   'corporate_employee': 'E',
   'hospital': 'H',
   'hospital_admin': 'H',
-  'clinic': 'C',
-  'clinic_admin': 'C',
+  // Was 'C', the same letter as corporate, while getRoleFromUniqueId() below already said K. The
+  // two maps disagreed, and every one of the 547 existing clinic ids carries the wrong C prefix.
+  'clinic': 'K',
+  'clinic_admin': 'K',
+  'diagnostic_centre': 'Y',
+  'diagnostic_center': 'Y',
+  'diagnostic_centre_admin': 'Y',
+  'wellness_company': 'W',
+  'wellness_company_admin': 'W',
+  'aggregator': 'Z',
+  'aggregator_admin': 'Z',
   'lab': 'L',
   'lab_admin': 'L',
   'pharmacy': 'P',
@@ -120,10 +141,20 @@ const ROLE_PREFIX_MAP = {
  * @param {string} role - The user role
  * @returns {string} Single character prefix
  */
+const warnedRoles = new Set();
 export const getPrefixForRole = (role) => {
   if (!role) return ROLE_PREFIX_MAP.default;
   const normalizedRole = role.toLowerCase().replace(/[-\s]/g, '_');
-  return ROLE_PREFIX_MAP[normalizedRole] || ROLE_PREFIX_MAP.default;
+  const prefix = ROLE_PREFIX_MAP[normalizedRole];
+  if (prefix) return prefix;
+  // Falling back to U is kept so user creation never fails on a role nobody mapped, but it must
+  // not be silent: generateUniqueId('P') and ('T') passed a LETTER where a role belongs, fell
+  // through to U here, and gave every patient and team member a U-prefixed id for years.
+  if (!warnedRoles.has(normalizedRole)) {
+    warnedRoles.add(normalizedRole);
+    console.warn(`[uniqueId] no prefix mapped for role "${role}"; using "${ROLE_PREFIX_MAP.default}". Add it to ROLE_PREFIX_MAP.`);
+  }
+  return ROLE_PREFIX_MAP.default;
 };
 
 /**
@@ -173,6 +204,9 @@ export const getRoleFromUniqueId = (uniqueId) => {
     'E': 'corporate_employee',
     'H': 'hospital',
     'K': 'clinic',
+    'Y': 'diagnostic_centre',
+    'W': 'wellness_company',
+    'Z': 'aggregator',
     'L': 'lab',
     'P': 'pharmacy',
     'I': 'insurer',
@@ -203,10 +237,9 @@ export const generateUniqueIdSafe = (role, existingIds = new Set(), maxAttempts 
       return newId;
     }
   }
-  // Fallback: append timestamp-based suffix
-  const prefix = getPrefixForRole(role);
-  const timestamp = Date.now().toString(36).toUpperCase().slice(-5);
-  return `${prefix}${timestamp}`;
+  // The old fallback appended a timestamp, which is not collision-safe: two calls in the same
+  // millisecond return the same id. Failing loudly is better than handing out a duplicate.
+  throw new Error(`Unable to allocate a unique id for role "${role}" after ${maxAttempts} attempts`);
 };
 
 /**
@@ -234,7 +267,20 @@ export const isUniqueIdCompatibleWithRole = (uniqueId, role) => {
   return uniqueId.charAt(0) === getPrefixForRole(role);
 };
 
+/**
+ * kind -> prefix, exactly as seeded into the entity_kinds table. The verifier compares this with the
+ * database so the two cannot drift. Aliases (insurer, employee, ...) live in ROLE_PREFIX_MAP only.
+ */
+export const ENTITY_KIND_PREFIXES = Object.freeze({
+  corporate: 'C', hospital: 'H', clinic: 'K', lab: 'L', pharmacy: 'P', ambulance: 'B',
+  homecare: 'M', diagnostic_centre: 'Y', ngo: 'G', tpa: 'X', insurance_company: 'I', broker: 'V',
+  wellness_company: 'W', psu: 'S', aggregator: 'Z',
+  user: 'U', patient: 'U', doctor: 'D', nurse: 'N', assistant: 'A', team: 'T',
+  corporate_employee: 'E', ohc: 'O', admin: 'R',
+});
+
 export default {
+  ENTITY_KIND_PREFIXES,
   generateUniqueId,
   generateUniqueIdSafe,
   generateUniqueIdForModel,
