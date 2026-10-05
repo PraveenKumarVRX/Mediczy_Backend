@@ -56,25 +56,35 @@ export const corporateLogin = async (req, res) => {
   }
 
   try {
-    const { email, password } = req.body;
-    const normalizedEmail = String(email || '').toLowerCase();
+    const { email, username, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase().trim();
+    // HR signs in with a username: users.email is UNIQUE, so while an HR person's work address is
+    // held by their hr_staff row they cannot also have an employee row. A username lets the HR
+    // account keep a system address and frees the work address for their employee account.
+    const normalizedUsername = String(username || '').toLowerCase().trim();
+    // What the audit trail records, and what the caller actually typed.
+    const loginIdentifier = normalizedUsername || normalizedEmail;
     const bcrypt = (await import('bcrypt')).default;
     const jwt = (await import('jsonwebtoken')).default;
 
     // Require an active corporate record in the corporates table (allow pending for demo data)
-    const corporateRecord = await Corporate.findOne({
-      where: {
-        email: normalizedEmail,
-        status: ['active', 'Active', 'ACTIVE', 'pending', 'Pending']
-      }
-    });
+    // The company-level account lives in `corporates`, which has no username column, so it is
+    // reachable by email only. A username-only sign-in skips straight to the users table.
+    const corporateRecord = normalizedEmail
+      ? await Corporate.findOne({
+          where: {
+            email: normalizedEmail,
+            status: ['active', 'Active', 'ACTIVE', 'pending', 'Pending']
+          }
+        })
+      : null;
 
     // Real subdomain isolation: when arriving on a specific tenant's subdomain
     // (req.tenant set by the global extractTenant middleware), only that tenant's
     // own account may log in here — stops dairyday.mediqzy.com accepting some
     // other corporate's credentials. Generic hosts (app.mediqzy.com) skip this.
     if (corporateRecord && req.tenant && corporateRecord.tenantId !== req.tenant.id) {
-      await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, false, 'Wrong tenant subdomain');
+      await auditLoginAttempt(req, corporateRecord.id, loginIdentifier, false, 'Wrong tenant subdomain');
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
@@ -84,17 +94,22 @@ export const corporateLogin = async (req, res) => {
       // they have no Corporate row of their own. Fall back to that path before
       // rejecting, so a sub-user's own login actually works.
       const { default: User } = await import('../models/postgres/user.model.postgres.js');
-      const { Op } = await import('sequelize');
+      const { Op, fn, col, where: sqlWhere } = await import('sequelize');
+      // Matched against lower(username) to line up with users_username_lower_unique, the partial
+      // case-insensitive index that enforces username uniqueness.
+      const identifierClause = normalizedUsername
+        ? { [Op.and]: [sqlWhere(fn('lower', col('username')), normalizedUsername)] }
+        : { email: normalizedEmail };
       const hrUser = await User.findOne({
         where: {
-          email: normalizedEmail,
+          ...identifierClause,
           organization_type: 'corporate',
           role: { [Op.in]: ['corporate_admin', 'hr_staff', 'corporate_cmo', 'corporate_ohc'] },
           status: 'active',
         },
       });
       if (hrUser && req.tenant && hrUser.organization_id !== req.tenant.id) {
-        await auditLoginAttempt(req, hrUser.id, normalizedEmail, false, 'Wrong tenant subdomain');
+        await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Wrong tenant subdomain');
         return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
       }
       if (hrUser && await hrUser.comparePassword(password)) {
@@ -104,7 +119,7 @@ export const corporateLogin = async (req, res) => {
           { tenantId: hrUser.tenant_id },
         ].filter((condition) => Object.values(condition)[0]);
         if (corporateScopeConditions.length === 0) {
-          await auditLoginAttempt(req, hrUser.id, normalizedEmail, false, 'Corporate scope missing');
+          await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Corporate scope missing');
           return res.status(403).json({ success: false, message: 'Corporate scope missing for this HR user' });
         }
 
@@ -114,7 +129,7 @@ export const corporateLogin = async (req, res) => {
           },
         });
         if (!scopedCorporate) {
-          await auditLoginAttempt(req, hrUser.id, normalizedEmail, false, 'Corporate scope not found');
+          await auditLoginAttempt(req, hrUser.id, loginIdentifier, false, 'Corporate scope not found');
           return res.status(403).json({ success: false, message: 'Corporate scope not found for this HR user' });
         }
 
@@ -137,13 +152,14 @@ export const corporateLogin = async (req, res) => {
           { expiresIn: process.env.JWT_ACCESS_TTL || '15m' },
         );
         await hrUser.update({ lastLoginAt: new Date() }).catch(() => {});
-        await auditLoginAttempt(req, hrUser.id, normalizedEmail, true);
+        await auditLoginAttempt(req, hrUser.id, loginIdentifier, true);
         return res.status(200).json({
           success: true,
           token,
           user: {
             id: hrUser.id,
             email: hrUser.email,
+            username: hrUser.username || null,
             firstName: hrUser.firstName,
             lastName: hrUser.lastName,
             role: hrUser.role,
@@ -152,7 +168,7 @@ export const corporateLogin = async (req, res) => {
           corporate: scopedCorporate,
         });
       }
-      await auditLoginAttempt(req, null, normalizedEmail, false, 'Corporate not found');
+      await auditLoginAttempt(req, null, loginIdentifier, false, 'Corporate not found');
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
@@ -166,7 +182,7 @@ export const corporateLogin = async (req, res) => {
     }
 
     if (!validPassword) {
-      await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, false, 'Invalid password');
+      await auditLoginAttempt(req, corporateRecord.id, loginIdentifier, false, 'Invalid password');
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
@@ -185,7 +201,7 @@ export const corporateLogin = async (req, res) => {
       { portal: 'corporate', deviceFp }
     );
 
-    await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, true);
+    await auditLoginAttempt(req, corporateRecord.id, loginIdentifier, true);
 
     return res.json({
       success: true,
