@@ -11,6 +11,7 @@ import { Op } from 'sequelize';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import sharedPool from '../db/pgPool.js';
 import User from '../models/postgres/user.model.postgres.js';
+import organizationUid from '../services/organization-uid.service.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
 import { resolveOrgTypeForTenant } from '../utils/organizationType.js';
@@ -931,6 +932,15 @@ router.post('/users', async (req, res) => {
       temporaryPasswordIssuedAt: new Date().toISOString(),
     },
   });
+  // Record WHICH organisation this HR user belongs to, by uid. organization_id above is the tenant id,
+  // which is not enough on its own: tenants and corporates share integer values. `hr_staff` is a role in
+  // two different modules, so the kind decides: a corporate's HR user belongs to the CORPORATE (employee
+  // wellness portal), every other organisation's belongs to that TENANT (the hospital HRMS).
+  const orgUid = req.hrOrganizationType === 'corporate'
+    ? await organizationUid.corporateUidForTenant(req.tenantId)
+    : await organizationUid.tenantUid(req.tenantId);
+  await organizationUid.setUserOrganizationUid(user.id, orgUid);
+
   const locations = await listHrLocations(req.tenantId);
   res.status(201).json({ success: true, message: 'HR user created', data: normalizeHrUser(user, makeLocationMap(locations)) });
 });
