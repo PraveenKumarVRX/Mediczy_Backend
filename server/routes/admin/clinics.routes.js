@@ -115,12 +115,23 @@ router.patch('/:id/details', async (req, res) => {
 
         // Look up in provider_clinics by unique_id or numeric id
         const isNumeric = /^\d+$/.test(id);
-        const findResult = await pool.query(
+        let findResult = await pool.query(
             isNumeric
                 ? 'SELECT * FROM provider_clinics WHERE id = $1'
                 : 'SELECT * FROM provider_clinics WHERE unique_id = $1',
             [isNumeric ? parseInt(id) : id]
         );
+        // A clinic id that was re-issued (the 547 original ids carried C, corporate's letter, instead
+        // of K) keeps working: the old value is an alias of the new one. Guarded so this is safe
+        // before the entity UID migration exists: 42P01 undefined_table just means "no aliases yet".
+        if (findResult.rows.length === 0 && !isNumeric) {
+            try {
+                findResult = await pool.query(
+                    'SELECT c.* FROM provider_clinics c WHERE c.unique_id = resolve_entity_uid($1)', [id]);
+            } catch (aliasErr) {
+                if (aliasErr.code !== '42883' && aliasErr.code !== '42P01') throw aliasErr;
+            }
+        }
 
         if (findResult.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Clinic not found' });

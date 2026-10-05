@@ -63,10 +63,23 @@ CREATE TABLE IF NOT EXISTS entity_registry (
   source_id    bigint NOT NULL,
   legacy       boolean NOT NULL DEFAULT false,   -- issued before the rule, prefix may not match its kind
   created_at   timestamptz NOT NULL DEFAULT now(),
-  retired_at   timestamptz,                      -- set when the entity is deleted; a uid is never reused
-  UNIQUE (source_table, source_id)
+  retired_at   timestamptz                       -- set when the entity is deleted OR re-issued; a uid is never reused
 );
+-- One ACTIVE uid per entity. A partial index rather than UNIQUE (source_table, source_id), so a
+-- re-issued entity can keep its old, retired row next to the new active one.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_entity_registry_active_source
+  ON entity_registry (source_table, source_id) WHERE retired_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_entity_registry_kind ON entity_registry (kind);
+
+-- A re-issued uid keeps working: the old value is retired (never reusable) and resolves to its
+-- replacement, so an id that was printed, shared or bookmarked is not broken by a correction.
+CREATE TABLE IF NOT EXISTS entity_uid_aliases (
+  old_uid    text PRIMARY KEY REFERENCES entity_registry (uid),
+  uid        text NOT NULL REFERENCES entity_registry (uid),
+  reason     text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_entity_uid_aliases_uid ON entity_uid_aliases (uid);
 
 -- Which tables the rule has been attached to. The verifier reads this to find tables that have a
 -- unique_id-style column but were never attached.
@@ -147,11 +160,15 @@ BEGIN
   IF TG_OP = 'UPDATE' THEN
     v_old_uid := to_jsonb(OLD) ->> v_col;
     IF v_old_uid IS NOT NULL THEN
-      IF v_uid IS DISTINCT FROM v_old_uid THEN
-        RAISE EXCEPTION 'entity_uid: %.% is immutable (% -> %)', TG_TABLE_NAME, v_col, v_old_uid, v_uid
+      IF v_uid IS NOT DISTINCT FROM v_old_uid THEN
+        RETURN NEW;
+      END IF;
+      -- The ONLY way a uid may change is reissue_entity_uid(), which sets this transaction-local flag
+      -- after retiring the old registry row. Anything else, including a hand-written UPDATE, is refused.
+      IF COALESCE(current_setting('app.entity_uid_reissue', true), '') <> 'on' OR v_uid IS NULL THEN
+        RAISE EXCEPTION 'entity_uid: %.% is immutable (% -> %); use reissue_entity_uid()', TG_TABLE_NAME, v_col, v_old_uid, v_uid
           USING ERRCODE = '23514';
       END IF;
-      RETURN NEW;
     END IF;
   END IF;
 
@@ -246,7 +263,7 @@ BEGIN
       SELECT t.%1$I, %2$L, %3$L, t.id::bigint,
              (%4$L::boolean AND left(t.%1$I, 1) <> (SELECT prefix FROM entity_kinds WHERE kind = %2$L))
         FROM %3$I t WHERE t.%1$I IS NOT NULL
-      ON CONFLICT (source_table, source_id) DO NOTHING
+      ON CONFLICT (source_table, source_id) WHERE retired_at IS NULL DO NOTHING
     $q$, p_col, p_kind, p_table, p_strict);
   ELSE
     EXECUTE format($q$
@@ -254,7 +271,7 @@ BEGIN
       SELECT t.%1$I, k.kind, %2$L, t.id::bigint, (%3$L::boolean AND left(t.%1$I, 1) <> k.prefix)
         FROM %2$I t JOIN entity_kinds k ON k.tenant_type = t.%4$I::text
        WHERE t.%1$I IS NOT NULL
-      ON CONFLICT (source_table, source_id) DO NOTHING
+      ON CONFLICT (source_table, source_id) WHERE retired_at IS NULL DO NOTHING
     $q$, p_col, p_table, p_strict, p_type_col);
   END IF;
   GET DIAGNOSTICS v_registered = ROW_COUNT;
@@ -380,6 +397,58 @@ BEGIN
     'CREATE TRIGGER %I BEFORE INSERT OR UPDATE OF %I, %I ON %I FOR EACH ROW EXECUTE FUNCTION uid_ref_sync(%L, %L, %L, %L)',
     'trg_uid_ref_' || p_uid_col, p_int_col, p_uid_col, p_table, p_int_col, p_uid_col, p_target, p_target_col);
   RETURN jsonb_build_object('table', p_table, 'uid_column', p_uid_col, 'filled', v_filled);
+END
+$fn$;
+
+-- ── 6b. resolve and re-issue ─────────────────────────────────────────────────
+-- resolve_entity_uid: the CURRENT uid for any uid ever issued (active, or retired-and-replaced).
+CREATE OR REPLACE FUNCTION resolve_entity_uid(p_uid text) RETURNS text
+LANGUAGE sql STABLE AS $$
+  SELECT CASE
+           WHEN EXISTS (SELECT 1 FROM entity_registry WHERE uid = p_uid AND retired_at IS NULL) THEN p_uid
+           ELSE (SELECT uid FROM entity_uid_aliases WHERE old_uid = p_uid)
+         END
+$$;
+
+-- reissue_entity_uid: replace an entity's uid (for example to correct a wrong prefix). The old uid is
+-- retired and kept as an alias of the new one, so it keeps resolving. This is the only sanctioned
+-- way a uid changes; a hand-written UPDATE is still refused by the immutability trigger.
+CREATE OR REPLACE FUNCTION reissue_entity_uid(p_table text, p_id bigint, p_reason text DEFAULT NULL)
+RETURNS text
+LANGUAGE plpgsql AS $fn$
+DECLARE
+  v_rule record;
+  v_old  text;
+  v_kind text;
+  v_new  text;
+BEGIN
+  SELECT * INTO v_rule FROM entity_uid_rules WHERE table_name = p_table;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'reissue_entity_uid: table "%" is not under the entity uid rule', p_table;
+  END IF;
+
+  EXECUTE format('SELECT %I FROM %I WHERE id = $1', v_rule.column_name, p_table) INTO v_old USING p_id;
+  IF v_old IS NULL THEN
+    RAISE EXCEPTION 'reissue_entity_uid: %.id=% not found or has no uid', p_table, p_id;
+  END IF;
+
+  SELECT kind INTO v_kind FROM entity_registry WHERE uid = v_old AND retired_at IS NULL;
+  IF v_kind IS NULL THEN
+    RAISE EXCEPTION 'reissue_entity_uid: % is not an active uid', v_old;
+  END IF;
+
+  v_new := generate_entity_uid(v_kind);
+
+  UPDATE entity_registry SET retired_at = now(), legacy = true WHERE uid = v_old AND retired_at IS NULL;
+  PERFORM set_config('app.entity_uid_reissue', 'on', true);
+  EXECUTE format('UPDATE %I SET %I = $1 WHERE id = $2', p_table, v_rule.column_name) USING v_new, p_id;
+  PERFORM set_config('app.entity_uid_reissue', 'off', true);
+
+  -- Flatten: anything that already pointed at the uid being replaced now points at its successor,
+  -- so resolve_entity_uid() stays a single hop however many times an entity is re-issued.
+  UPDATE entity_uid_aliases SET uid = v_new WHERE uid = v_old;
+  INSERT INTO entity_uid_aliases (old_uid, uid, reason) VALUES (v_old, v_new, p_reason);
+  RETURN v_new;
 END
 $fn$;
 
