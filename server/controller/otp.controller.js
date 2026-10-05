@@ -1,4 +1,4 @@
-import nodemailer from 'nodemailer';
+import { sendTransactionalEmail } from '../services/welcome-email.service.js';
 import OTP from '../models/otp.model.intelligent.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { SMSService, SMSTemplateManager } from '../services/sms.service.js';
@@ -27,30 +27,12 @@ if (smsConfig.apiKey && smsConfig.apiSecret) {
   console.warn('⚠️  SMS service not configured. Set SMS_API_KEY and SMS_API_SECRET in .env');
 }
 
-// ── Nodemailer transporter (lazy-init) ────────────────────────────────────────
+// ── Email OTP delivery ────────────────────────────────────────────────────────
 
-let emailTransporter = null;
-
-function getEmailTransporter() {
-  if (emailTransporter) return emailTransporter;
-
-  if (!process.env.EMAIL_HOST) {
-    console.warn('⚠️  Email OTP not configured — EMAIL_HOST is not set');
-    return null;
-  }
-
-  emailTransporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT || '587', 10),
-    secure: process.env.EMAIL_SECURE === 'true',
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-
-  return emailTransporter;
-}
+// Email OTPs are sent through the shared mailer, which is SES-only. This file used to own a lazy
+// nodemailer transport keyed off EMAIL_HOST/EMAIL_USER/EMAIL_FROM -- a different set of variables
+// from the rest of the platform -- so login OTPs depended on config nothing else used and would
+// silently return 'failed' if it was unset.
 
 // ── Resend cooldown tracking (in-memory fallback for Redis) ───────────────────
 // Shape: Map<identifier, lastSentMs>
@@ -119,18 +101,14 @@ async function deliverViaSMS(phone, otp) {
 async function deliverViaEmail(email, otp) {
   if (!email) return 'not_requested';
 
-  const transporter = getEmailTransporter();
-  if (!transporter) return 'failed';
-
   try {
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@mediczy.com',
+    await sendTransactionalEmail({
       to: email,
       subject: 'Your Mediczy OTP',
       text: `Your Mediczy OTP is ${otp.code}. Valid for 10 minutes. Do not share.`,
       html: `<p>Your Mediczy OTP is <strong>${otp.code}</strong>. Valid for 10 minutes. Do not share.</p>`,
-    };
-    await transporter.sendMail(mailOptions);
+      fromName: 'Mediqzy',
+    });
     console.log(`✅ OTP sent via email to ${email}`);
     return 'sent';
   } catch (err) {
