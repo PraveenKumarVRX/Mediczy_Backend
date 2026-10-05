@@ -1,0 +1,1351 @@
+{
+ "decided": [
+  {
+   "table": "ambulance_trip",
+   "int": "ambulance_id",
+   "uid": "ambulance_uid",
+   "target": "ambulances",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "declared FK -> ambulances",
+   "fk": true
+  },
+  {
+   "table": "api_activity_logs",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 16,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_audit_logs",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_credentials",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "api_homecare_bookings",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_homecare_services",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_lab_bookings",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_lab_tests",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 116,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_users",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "api_v2_refresh_tokens",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 304,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "beds",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 11,
+   "why": "convention organization_id -> tenants, all 3 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "billing_audit_log",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "billing_stations",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "careos_care_teams",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "careos_clinical_events",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "careos_coordinator_alerts",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "careos_graph_nodes",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "careos_patient_passports",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "careos_treatment_pathways",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "corporate_employees",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 1467,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporate_generated_reports",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 36,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporate_health_reports",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 37,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporate_network_assignments",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 257,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporate_plan_sponsorships",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporate_team_assignments",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporate_welcome_email_deliveries",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 17610,
+   "why": "convention corporate_id -> corporates, all 4 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "corporate_wellness_events",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 6,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "corporates",
+   "int": "aggregator_id",
+   "uid": "aggregator_uid",
+   "target": "insurance_brokers",
+   "targetCol": "broker_uid",
+   "rows": 12,
+   "why": "declared FK -> insurance_brokers",
+   "fk": true
+  },
+  {
+   "table": "corporates",
+   "int": "owned_by_tenant_id",
+   "uid": "owned_by_tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 12,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "crm_audit_log",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "crm_contacts_v2",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 52,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "crm_identity_keys",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 105,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "crm_leads_v2",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 52,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "crm_person_identities",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 54,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "crm_source_taxonomy",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "crm_specialty_profiles",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 21,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "dicom_institution_patterns",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "dicom_modalities",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "dicom_vpn_peers",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "discharge_packets",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "discharge_readiness_items",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 48,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "discharge_summaries",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "doctor_assistants",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "doctors",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1118,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "doctors",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1118,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "ehr_records",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "email_event_assignments",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "era_remittances",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "fhir_audit_events",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 71,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "healthos_population_metrics",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 6,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hg_dicom_access_log",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "hg_dicom_reports",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "hg_dicom_studies",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 301,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "hg_dicom_worklist",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "hospital_bill_templates",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hospital_branches",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 4,
+   "why": "convention hospital_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hospital_copilot_log",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hospital_refresh_tokens",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 174,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hospitals",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 10776,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "hr_recruitment_candidates",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hr_recruitment_interviews",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "hr_recruitment_requisitions",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "imaging_ai_report_drafts",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 76,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_ai_triage",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 88,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_clinical_claims",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 70,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_collab_sessions",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 41,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_critical_alerts",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_evidence_claims",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 47,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_evidence_facts",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 135,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_orders",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "imaging_prior_comparisons",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_report_interpretations",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 75,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_report_provenance",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 71,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_validation_cases",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_vna_objects",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 341,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "imaging_workflow_instances",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 477,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "insurance_brokers",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 6,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "ip_admissions",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ip_sheets",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "lab_portal_state",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 16,
+   "why": "convention lab_id -> labs, all 4 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "medication_orders",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "organization_admins",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "ot_bookings",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ot_rooms",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "pharmacy_inventory",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 27,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "pre_authorizations",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "pre_authorizations",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "prescription_dispensing",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 8,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "procedure_schedules",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "reports",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 112,
+   "why": "convention organization_id -> tenants, all 2 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_critical_value_alerts",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention lab_id -> labs, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_qc_reviews",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention lab_id -> labs, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_qc_templates",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention lab_id -> labs, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_report_templates",
+   "int": "tenant_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 9,
+   "why": "imaging family: tenant_id is a LAB account id (utils/tenant-identity.js); values exist in labs, not in tenants",
+   "fk": false
+  },
+  {
+   "table": "ris_result_context",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention lab_id -> labs, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_sample_custody_events",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 12,
+   "why": "convention lab_id -> labs, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_studies",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 479,
+   "why": "convention lab_id -> labs, all 4 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "ris_study_audit_events",
+   "int": "lab_id",
+   "uid": "lab_uid",
+   "target": "labs",
+   "targetCol": "unique_id",
+   "rows": 21,
+   "why": "convention lab_id -> labs, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "team_communication_logs",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention corporate_id -> corporates, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tenant_interop_config",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tenant_partners",
+   "int": "corporate_tenant_id",
+   "uid": "corporate_tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention corporate_tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tenant_partners",
+   "int": "partner_tenant_id",
+   "uid": "partner_tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention partner_tenant_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_approval_requests",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_cashless_forms",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_cashless_requests",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 9,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claim_adjudications",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claim_bill_entries",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claim_charge_entries",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claim_inward_register",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claim_payment_advices",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claim_scan_batches",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_claims",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 14,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_interop_events",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_member_enrollments",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_members",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 6,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_network_hospitals",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 8,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_notifications",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_policy_rules",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 5,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_policy_underwriting_cases",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_preauth_requests",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_provider_blacklist",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_provider_cases",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 8,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_provider_contracts",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "tpa_provider_soc_versions",
+   "int": "tpa_id",
+   "uid": "tpa_uid",
+   "target": "tpas",
+   "targetCol": "unique_id",
+   "rows": 3,
+   "why": "convention tpa_id -> tpas, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "user_health_packages",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 5070,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "users",
+   "int": "aggregator_id",
+   "uid": "aggregator_uid",
+   "target": "insurance_brokers",
+   "targetCol": "broker_uid",
+   "rows": 6852,
+   "why": "convention aggregator_id -> insurance_brokers, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "users",
+   "int": "corporate_id",
+   "uid": "corporate_uid",
+   "target": "corporates",
+   "targetCol": "unique_id",
+   "rows": 6852,
+   "why": "declared FK -> corporates",
+   "fk": true
+  },
+  {
+   "table": "users",
+   "int": "tenant_id",
+   "uid": "tenant_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 6852,
+   "why": "declared FK -> tenants",
+   "fk": true
+  },
+  {
+   "table": "vital_records",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 2,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "wards",
+   "int": "organization_id",
+   "uid": "organization_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention organization_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  },
+  {
+   "table": "wayfinding_queries",
+   "int": "hospital_id",
+   "uid": "hospital_uid",
+   "target": "tenants",
+   "targetCol": "unique_id",
+   "rows": 1,
+   "why": "convention hospital_id -> tenants, all 1 distinct value(s) exist there",
+   "fk": false
+  }
+ ],
+ "left": [
+  {
+   "key": "clinical_alerts.tenant_id",
+   "why": "tenant_id suggests tenants but the values do not all exist there (they fit: hospitals, labs, provider_clinics)",
+   "rows": 4
+  },
+  {
+   "key": "display_devices.organization_id",
+   "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
+   "rows": 8
+  },
+  {
+   "key": "hg_dicom_instances.tenant_id",
+   "why": "423808 rows: too large to rewrite in a migration (already dual-keyed for imaging)",
+   "rows": 423808
+  },
+  {
+   "key": "hospital_queue_entries.organization_id",
+   "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
+   "rows": 27
+  },
+  {
+   "key": "hospital_queue_token_sequences.organization_id",
+   "why": "organization_id suggests tenants but the values do not all exist there (they fit: hospitals)",
+   "rows": 5
+  },
+  {
+   "key": "hospital_uhid_sequences.organization_id",
+   "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
+   "rows": 5
+  },
+  {
+   "key": "kiosk_registration_invites.organization_id",
+   "why": "organization_id suggests tenants but the values do not all exist there (they fit: hospitals)",
+   "rows": 19
+  }
+ ]
+}
