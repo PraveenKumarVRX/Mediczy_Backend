@@ -44,6 +44,11 @@ insurance company `I` · broker `V` · wellness company `W` · PSU `S` · aggreg
 People tables (users, patients, doctors, nurses, assistants, team, corporate employees) are under the
 same global registry with role prefixes.
 
+> **Rollout status (2026-10-05):** the migration that installs the database triggers is merged but **not
+> yet applied to production**. Until it is, rules 1–2 are enforced by application code only and
+> `tenants` has no uid. See the status line in
+> [docs/architecture/ENTITY_UID_RULE.md](docs/architecture/ENTITY_UID_RULE.md).
+
 ### The rules
 
 1. **Never mint an id in application code, and never supply `unique_id` on INSERT.** Omit it; the

@@ -1,6 +1,11 @@
 # Entity UID Rule
 
-**Status:** database rule live from migration `20261005000000-entity-uid-rule.sql`.
+**Status (2026-10-05): the migration is MERGED but NOT YET APPLIED to production.** Until it is applied,
+the triggers described below do not exist in the live database, `tenants` still has no UID, and the rule
+is enforced only by the application code. Apply it with
+`node scripts/ssm-env-loader.mjs scripts/ops/apply-entity-uid-rule.mjs --apply` (a dry run, without
+`--apply`, rolls back and is safe at any time: 48 checks passed against production data).
+Until then, `scripts/ci/verify-entity-uid-rule.mjs` reports the migration as missing.
 **Rule of record:** the *Entity IDs* section of [CLAUDE.md](../../CLAUDE.md).
 
 ## The problem this removes
@@ -109,9 +114,13 @@ rewrite the remaining integer references. That is deliberate: 603 columns across
 converted safely in one change, and the expand/contract pattern used for imaging (dual-key reads) is
 the proven route.
 
-1. **Done** — registry, kinds, triggers; every entity and people table attached; `corporates.tenant_uid`.
-2. **Done at the auth gates** — corporate sign-in resolves the user's organisation through
-   `users.organization_uid → entity_registry` and compares tenant **uids**, never integers.
+1. **Written and rehearsed, not yet applied** — registry, kinds, triggers; every entity and people table
+   attached; `corporates.tenant_uid`.
+2. **Not yet done** — move the corporate sign-in gate onto uids: resolve the user's organisation through
+   `users.organization_uid → entity_registry` and compare tenant **uids**, never integers. Needs step 1
+   applied and `users.organization_uid` backfilled first. **Until then the tenant-isolation defect is
+   still live**: `somya.pagare` (`organization_id = 49`) is rejected on ninjacart.mediqzy.com and admitted
+   on madras-medical-mission-chennai.mediqzy.com.
 3. **Next, by blast radius** — `attach_uid_reference` on the highest-traffic references: `users`
    (`tenant_id`), `hospitals`/`doctors`/`nurses`/`insurance_brokers` (`tenant_id`), then the
    `hospital_id`, `corporate_id`, `tpa_id`, `lab_id`, `pharmacy_id` families.
