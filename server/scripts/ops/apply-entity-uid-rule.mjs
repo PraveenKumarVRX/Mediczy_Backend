@@ -72,8 +72,15 @@ try {
     console.log(`  ${a.table.padEnd(24)} .${String(a.uid_column).padEnd(10)} uid twin filled for ${a.filled} row(s)`);
   }
 
-  // ── 2. behaviour, on throwaway temp tables ────────────────────────────────
-  console.log('\n── behaviour (temp tables, discarded) ──');
+  // ── 2. behaviour, on throwaway tables ─────────────────────────────────────
+  // EVERYTHING in this section runs inside a savepoint that is ALWAYS rolled back, even under
+  // --apply. The probes register rows in entity_registry, entity_uid_rules and entity_uid_aliases
+  // (30,000+ of them for the bulk test); a temp TABLE vanishes with the session but those rows are
+  // ordinary rows in permanent tables, so without this they are committed with the migration. They
+  // were, once: the first --apply left 30,014 probe uids behind and the verifier tripped on a rule
+  // for a table that no longer existed. A dry run hid it, because the dry run rolls back everything.
+  await q('SAVEPOINT probes');
+  console.log('\n── behaviour (throwaway tables, rolled back) ──');
   await q('CREATE TEMP TABLE _probe_org (id serial PRIMARY KEY, unique_id text, note text)');
   await q("SELECT attach_entity_uid_rule('_probe_org', 'clinic')");
 
@@ -182,6 +189,17 @@ try {
   await q('ROLLBACK TO SAVEPOINT clinic_rehearsal');
   const still = (await q("SELECT count(*) FILTER (WHERE left(unique_id,1) <> 'K') wrong FROM provider_clinics")).rows[0];
   Number(still.wrong) > 0 ? ok(`rehearsal rolled back: ${still.wrong} clinics are back on their original ids`) : bad('rollback of rehearsal did not restore');
+
+  // Discard every probe row/table, then PROVE nothing survived. This assertion would have caught the leak.
+  await q('ROLLBACK TO SAVEPOINT probes');
+  const leaked = (await q(`SELECT
+      (SELECT count(*) FROM entity_registry    WHERE source_table LIKE '\\_probe%') AS reg,
+      (SELECT count(*) FROM entity_uid_rules   WHERE table_name   LIKE '\\_probe%') AS rules,
+      (SELECT count(*) FROM entity_uid_aliases WHERE old_uid NOT IN (SELECT uid FROM entity_registry)) AS aliases,
+      (SELECT count(*) FROM pg_class WHERE relname LIKE '\\_probe%') AS rels`)).rows[0];
+  Object.values(leaked).every((n) => Number(n) === 0)
+    ? ok('no probe data survives the rollback (registry, rules, aliases, tables)')
+    : bad('PROBE DATA LEAKED', JSON.stringify(leaked));
 
   // ── 3. the real tables ────────────────────────────────────────────────────
   console.log('\n── real tables ──');
