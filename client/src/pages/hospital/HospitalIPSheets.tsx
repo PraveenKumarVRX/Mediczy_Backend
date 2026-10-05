@@ -76,103 +76,71 @@ const HospitalIPSheets = () => {
     if (restored?.note) setDraftNote(restored.note);
   }, [selectedPatient?.id]);
 
-  // Mock IP patients data
-  const [ipPatients] = useState<IPPatient[]>([
-    {
-      id: 'IP001',
-      name: 'Rajesh Kumar',
-      age: 55,
-      gender: 'Male',
-      ward: 'ICU',
-      bed: 'ICU-05',
-      admissionDate: '2026-01-02',
-      diagnosis: 'Acute Myocardial Infarction',
-      attendingDoctor: 'Dr. Sharma',
-      condition: 'serious',
-      dayOfAdmission: 6
-    },
-    {
-      id: 'IP002',
-      name: 'Priya Singh',
-      age: 28,
-      gender: 'Female',
-      ward: 'Gynecology',
-      bed: 'GYN-12',
-      admissionDate: '2026-01-04',
-      diagnosis: 'Post Caesarean Section',
-      attendingDoctor: 'Dr. Patel',
-      condition: 'stable',
-      dayOfAdmission: 4
-    },
-    {
-      id: 'IP003',
-      name: 'Amit Verma',
-      age: 62,
-      gender: 'Male',
-      ward: 'Neurology',
-      bed: 'NEURO-03',
-      admissionDate: '2026-01-01',
-      diagnosis: 'Ischemic Stroke',
-      attendingDoctor: 'Dr. Mehta',
-      condition: 'critical',
-      dayOfAdmission: 7
-    },
-    {
-      id: 'IP004',
-      name: 'Neha Gupta',
-      age: 35,
-      gender: 'Female',
-      ward: 'Orthopedics',
-      bed: 'ORTHO-08',
-      admissionDate: '2026-01-05',
-      diagnosis: 'Fracture Right Femur - Post ORIF',
-      attendingDoctor: 'Dr. Joshi',
-      condition: 'stable',
-      dayOfAdmission: 3
-    },
-    {
-      id: 'IP005',
-      name: 'Vikram Reddy',
-      age: 45,
-      gender: 'Male',
-      ward: 'General Medicine',
-      bed: 'GM-22',
-      admissionDate: '2026-01-06',
-      diagnosis: 'Diabetic Ketoacidosis',
-      attendingDoctor: 'Dr. Rao',
-      condition: 'serious',
-      dayOfAdmission: 2
-    },
-  ]);
+  /**
+   * Admitted patients come from the ADT service (GET /api/v1/adt/admissions), scoped to the
+   * caller's organization by the server.
+   *
+   * This list used to be five hardcoded patients with real-sounding diagnoses ("Acute Myocardial
+   * Infarction", "Ischemic Stroke", "Diabetic Ketoacidosis"), named attending doctors and day-of-
+   * admission counts. The page is not a demo: handleSaveSheet() writes a real row to ip_sheets,
+   * so a clinician could read invented clinical detail and save notes against a patient id that
+   * does not exist. Fabricated clinical content is now gone; where no API serves a section it
+   * renders an explicit empty state instead of plausible numbers.
+   */
+  const [ipPatients, setIpPatients] = useState<IPPatient[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [patientsError, setPatientsError] = useState<string | null>(null);
 
-  // Mock vitals data
-  const [vitalsData] = useState<VitalRecord[]>([
-    { time: '06:00', temperature: 98.6, pulse: 72, bp: '120/80', respRate: 16, spo2: 98, recordedBy: 'Nurse Kavita' },
-    { time: '10:00', temperature: 99.2, pulse: 78, bp: '124/82', respRate: 18, spo2: 97, recordedBy: 'Nurse Priya' },
-    { time: '14:00', temperature: 98.8, pulse: 74, bp: '118/78', respRate: 16, spo2: 98, recordedBy: 'Nurse Kavita' },
-    { time: '18:00', temperature: 99.0, pulse: 76, bp: '122/80', respRate: 17, spo2: 97, recordedBy: 'Nurse Rahul' },
-    { time: '22:00', temperature: 98.4, pulse: 70, bp: '116/76', respRate: 15, spo2: 99, recordedBy: 'Nurse Deepa' },
-  ]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get('/v1/adt/admissions', { headers: hospitalHeaders() });
+        const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        const mapped: IPPatient[] = rows.map((r: any) => {
+          const admitted = r.admission_datetime || r.admissionDatetime;
+          const day = admitted
+            ? Math.max(1, Math.floor((Date.now() - new Date(admitted).getTime()) / 86400000) + 1)
+            : 0;
+          return {
+            id: String(r.id ?? r.admission_number ?? ''),
+            name: [r.patient_first_name, r.patient_last_name].filter(Boolean).join(' ')
+              || r.patient_name || r.uhid || r.admission_number || 'Unknown patient',
+            age: Number(r.patient_age ?? 0),
+            gender: r.patient_gender || '—',
+            ward: r.ward_name || r.ward || '—',
+            bed: r.bed_number || r.bed || '—',
+            admissionDate: admitted ? String(admitted).slice(0, 10) : '—',
+            diagnosis: r.admission_diagnosis || '—',
+            attendingDoctor: r.admitting_doctor_name || '—',
+            // The API has no triage/condition field; do not invent one.
+            condition: 'stable',
+            dayOfAdmission: day,
+          };
+        });
+        if (!cancelled) { setIpPatients(mapped); setPatientsError(null); }
+      } catch (err: any) {
+        if (!cancelled) {
+          setPatientsError(err?.response?.data?.message || 'Could not load admitted patients');
+          setIpPatients([]);
+        }
+      } finally {
+        if (!cancelled) setPatientsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  // Mock intake/output data
-  const [intakeOutputData] = useState([
-    { time: '06:00', oralIntake: 200, ivFluids: 500, output: 400, type: 'Urine' },
-    { time: '08:00', oralIntake: 150, ivFluids: 0, output: 0, type: '-' },
-    { time: '10:00', oralIntake: 100, ivFluids: 500, output: 350, type: 'Urine' },
-    { time: '12:00', oralIntake: 250, ivFluids: 0, output: 0, type: '-' },
-    { time: '14:00', oralIntake: 100, ivFluids: 500, output: 450, type: 'Urine' },
-    { time: '16:00', oralIntake: 150, ivFluids: 0, output: 0, type: '-' },
-    { time: '18:00', oralIntake: 200, ivFluids: 500, output: 380, type: 'Urine' },
-  ]);
-
-  // Mock medication chart
-  const [medicationData] = useState([
-    { name: 'Inj. Ceftriaxone 1gm', route: 'IV', frequency: 'BD', times: ['08:00', '20:00'], given: [true, false] },
-    { name: 'Tab. Pantoprazole 40mg', route: 'Oral', frequency: 'OD', times: ['08:00'], given: [true] },
-    { name: 'Inj. Enoxaparin 40mg', route: 'SC', frequency: 'OD', times: ['09:00'], given: [true] },
-    { name: 'Tab. Atorvastatin 40mg', route: 'Oral', frequency: 'HS', times: ['21:00'], given: [false] },
-    { name: 'Inj. Insulin Regular', route: 'SC', frequency: 'TID (as per sliding scale)', times: ['08:00', '14:00', '20:00'], given: [true, true, false] },
-  ]);
+  /**
+   * Vitals, intake/output and the medication administration record were hardcoded: five vitals
+   * rounds attributed to named nurses, a full fluid balance chart, and a MAR listing real drugs
+   * and doses ("Inj. Ceftriaxone 1gm", "Inj. Insulin Regular ... sliding scale") with "given"
+   * checkboxes. A nurse could read that as a live medication record. No API serves these for an
+   * admission yet, so they are empty and each section says so rather than showing invented values.
+   */
+  const [vitalsData] = useState<VitalRecord[]>([]);
+  const [intakeOutputData] = useState<Array<{ time: string; oralIntake: number; ivFluids: number; output: number; type: string }>>([]);
+  const [medicationData] = useState<Array<{ name: string; route: string; frequency: string; times: string[]; given: boolean[] }>>([]);
 
   const getConditionBadge = (condition: string) => {
     const config = {
@@ -382,6 +350,19 @@ const HospitalIPSheets = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
+                {patientsLoading && (
+                  <div className="p-4 text-sm text-slate-500 dark:text-slate-400">Loading admitted patients…</div>
+                )}
+                {!patientsLoading && patientsError && (
+                  <div className="p-4 text-sm text-red-600 dark:text-red-400">
+                    {patientsError}
+                  </div>
+                )}
+                {!patientsLoading && !patientsError && filteredPatients.length === 0 && (
+                  <div className="p-4 text-sm text-slate-500 dark:text-slate-400">
+                    No admitted patients found for this hospital.
+                  </div>
+                )}
                 {filteredPatients.map((patient) => (
                   <div
                     key={patient.id}
@@ -511,6 +492,14 @@ const HospitalIPSheets = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
+                        {vitalsData.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-sm text-slate-500 dark:text-slate-400 py-6">
+                              No vitals recorded for this admission.
+                              <div className="mt-1 text-xs text-slate-400">Not yet connected to this sheet.</div>
+                            </TableCell>
+                          </TableRow>
+                        )}
                         {vitalsData.map((vital, idx) => (
                           <TableRow key={idx}>
                             <TableCell className="font-medium">{vital.time}</TableCell>
@@ -572,6 +561,14 @@ const HospitalIPSheets = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
+                        {intakeOutputData.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-sm text-slate-500 dark:text-slate-400 py-6">
+                              No intake/output recorded for this admission.
+                              <div className="mt-1 text-xs text-slate-400">Not yet connected to this sheet.</div>
+                            </TableCell>
+                          </TableRow>
+                        )}
                         {intakeOutputData.map((entry, idx) => (
                           <TableRow key={idx}>
                             <TableCell className="font-medium">{entry.time}</TableCell>
@@ -634,6 +631,14 @@ const HospitalIPSheets = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
+                        {medicationData.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-sm text-slate-500 dark:text-slate-400 py-6">
+                              No medication administration recorded for this admission.
+                              <div className="mt-1 text-xs text-slate-400">Not yet connected to this sheet.</div>
+                            </TableCell>
+                          </TableRow>
+                        )}
                         {medicationData.map((med, idx) => (
                           <TableRow key={idx}>
                             <TableCell className="font-medium">{med.name}</TableCell>
@@ -696,24 +701,10 @@ const HospitalIPSheets = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {[
-                        { shift: 'Night Shift (22:00 - 06:00)', nurse: 'Nurse Deepa', notes: 'Patient slept well. No complaints of pain. Vitals stable throughout the night. IV fluids running as per schedule. No new symptoms observed.' },
-                        { shift: 'Morning Shift (06:00 - 14:00)', nurse: 'Nurse Kavita', notes: 'Patient had breakfast, oral intake good. Ambulated to bathroom with assistance. Wound dressing changed - wound healing well, no signs of infection. Patient is compliant with physiotherapy exercises.' },
-                        { shift: 'Evening Shift (14:00 - 22:00)', nurse: 'Nurse Rahul', notes: 'Mild fever spike at 14:00 (99.2°F), Paracetamol given. Temperature normalized by 16:00. Patient received family visitors. Good appetite, taking oral medications well.' },
-                      ].map((note, idx) => (
-                        <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline">{note.shift}</Badge>
-                              <span className="text-sm text-slate-500 dark:text-slate-400">by {note.nurse}</span>
-                            </div>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                          <p className="text-slate-600 dark:text-slate-300">{note.notes}</p>
+                      <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                          No nursing notes recorded for this admission.
+                          <div className="mt-1 text-xs text-slate-400">Nursing notes are not yet connected to this sheet.</div>
                         </div>
-                      ))}
                     </div>
                     <div className="mt-4">
                       <Label>Add New Note</Label>
@@ -746,37 +737,10 @@ const HospitalIPSheets = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      {[
-                        { time: '08:00', doctor: 'Dr. Sharma', order: 'Continue IV fluids NS @ 100ml/hr. Monitor urine output hourly. Repeat RFT if urine output <30ml/hr for 2 consecutive hours.', status: 'active' },
-                        { time: '10:30', doctor: 'Dr. Sharma', order: 'Start Tab. Amoxicillin 500mg TID if oral intake improves. Continue IV antibiotics until then.', status: 'pending' },
-                        { time: '14:00', doctor: 'Dr. Patel (Consultant)', order: 'Echo scheduled for tomorrow. Continue current cardiac medications. May start oral anticoagulation after echo.', status: 'active' },
-                        { time: '16:00', doctor: 'Dr. Sharma', order: 'Step down from ICU to ward if vitals remain stable for next 12 hours. Continue telemetry monitoring.', status: 'pending' },
-                      ].map((order, idx) => (
-                        <div key={idx} className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border-l-4 border-teal-500">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <Clock className="h-4 w-4 text-slate-400" />
-                              <span className="text-sm font-medium text-slate-600 dark:text-slate-300">{order.time}</span>
-                              <span className="text-sm text-slate-500 dark:text-slate-400">• {order.doctor}</span>
-                            </div>
-                            <Badge className={order.status === 'active' 
-                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                            }>
-                              {order.status === 'active' ? 'Active' : 'Pending'}
-                            </Badge>
-                          </div>
-                          <p className="text-slate-700 dark:text-slate-200">{order.order}</p>
-                          <div className="flex items-center gap-2 mt-3">
-                            <Button variant="outline" size="sm">
-                              <CheckCircle className="h-4 w-4 mr-2" /> Acknowledge
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4 mr-2" /> Edit
-                            </Button>
-                          </div>
+                      <div className="p-6 text-center text-sm text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800 rounded-xl">
+                          No physician orders recorded for this admission.
+                          <div className="mt-1 text-xs text-slate-400">Doctor's orders are not yet connected to this sheet.</div>
                         </div>
-                      ))}
                     </div>
                   </CardContent>
                 </Card>
