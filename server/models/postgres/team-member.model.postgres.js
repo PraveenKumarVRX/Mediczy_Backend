@@ -231,7 +231,7 @@ const TeamMember = sequelize.define('TeamMember', {
 // Hooks
 TeamMember.beforeCreate(async (teamMember) => {
   if (!teamMember.unique_id) {
-    teamMember.unique_id = await generateUniqueId('T');
+    teamMember.unique_id = await generateUniqueId('team');
   }
   
   if (teamMember.password) {
