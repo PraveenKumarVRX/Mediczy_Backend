@@ -365,7 +365,9 @@ export const useLogin = () => {
     { token: string; requirePasswordChange?: boolean; user?: any; doctor?: any; corporate?: any; tpa?: any; psu?: any; insurer?: any; ngo?: any },
     Error,
     {
-      credentials: { email: string; password: string };
+      // Corporate HR signs in with a username rather than an email (users.email is UNIQUE, so an
+      // HR person's work address cannot also back their employee account), so either is accepted.
+      credentials: { email?: string; username?: string; password: string };
       loginType: ValidLoginType;
     }
   >({

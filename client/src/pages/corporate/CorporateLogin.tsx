@@ -21,8 +21,21 @@ import { useToast } from "@/hooks/use-toast";
 import { useLogin } from "@/hooks/auth";
 import { initializeFirebaseMessaging } from "@/lib/firebase-config";
 
+/**
+ * HR signs in with a username; the company account still signs in with its email.
+ *
+ * HR is also an employee, and users.email is UNIQUE -- while an HR person's work address is held
+ * by their hr_staff row, that same person cannot also have an employee row. So the field takes
+ * either: anything containing "@" is sent as `email`, anything else as `username`.
+ */
 const formSchema = z.object({
-  email: z.string().email("Enter a valid corporate email"),
+  identifier: z.string().trim().min(1, "Enter your username or corporate email")
+    .refine(
+      (v) => (v.includes("@")
+        ? /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)
+        : /^[a-zA-Z0-9._-]{3,100}$/.test(v)),
+      "Enter a valid username, or a valid corporate email",
+    ),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -56,14 +69,19 @@ const CorporateLogin = () => {
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { email: "", password: "" },
+    defaultValues: { identifier: "", password: "" },
   });
 
   const loginMutation = useLogin();
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
+    // The server validator accepts `username` OR `email`; send whichever this is.
+    const { identifier, password } = values;
+    const credentials = identifier.includes("@")
+      ? { email: identifier.toLowerCase(), password }
+      : { username: identifier, password };
     loginMutation.mutate(
-      { credentials: values, loginType: "corporate" },
+      { credentials, loginType: "corporate" },
       {
         onSuccess: (data) => {
           // Store corporate profile data for help/support ticket defaults.
@@ -191,13 +209,23 @@ const CorporateLogin = () => {
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <FormField
                     control={form.control}
-                    name="email"
+                    name="identifier"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Corporate Email</FormLabel>
+                        <FormLabel>Username or Corporate Email</FormLabel>
                         <FormControl>
-                          <Input type="email" placeholder="hr@company.com" {...field} />
+                          <Input
+                            type="text"
+                            autoComplete="username"
+                            autoCapitalize="none"
+                            spellCheck={false}
+                            placeholder="your.username"
+                            {...field}
+                          />
                         </FormControl>
+                        <p className="text-xs text-muted-foreground">
+                          HR accounts sign in with a username. Company accounts use their corporate email.
+                        </p>
                         <FormMessage />
                       </FormItem>
                     )}

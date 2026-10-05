@@ -202,25 +202,35 @@ let corporateRiskAlertsConfig = {
 // Corporate authentication & dashboard intelligence endpoints
 // ---------------------------------------------------------------------------
 
-router.post(
-  '/login',
-  authLimiter,
-  [
-    body('email').isEmail().withMessage('Valid email is required'),
-    body('password').notEmpty().withMessage('Password is required'),
-  ],
-  corporateLogin
-);
+/**
+ * Corporate portal sign-in accepts a USERNAME or an email.
+ *
+ * HR is also an employee. users.email is UNIQUE, so one email is one row is one role: while an
+ * HR person's work address is held by their hr_staff/corporate_admin row, that same person cannot
+ * also have an employee row, and their two identities collide. Signing HR in by username lets the
+ * HR account carry a system address (e.g. ninjacart@mediqzy.com) and leaves the work address free
+ * for their employee account.
+ *
+ * Email is still accepted so the existing corporate accounts keep working -- the company-level
+ * record in `corporates` has no username column and is keyed by email only.
+ */
+const corporateLoginValidation = [
+  body('username').optional({ checkFalsy: true }).trim()
+    .isLength({ min: 3, max: 100 }).withMessage('Username must be 3-100 characters')
+    .matches(/^[a-zA-Z0-9._-]+$/).withMessage('Username may contain only letters, numbers, dots, underscores and hyphens'),
+  body('email').optional({ checkFalsy: true }).isEmail().withMessage('Valid email is required'),
+  body('password').notEmpty().withMessage('Password is required'),
+  body().custom((value) => {
+    if (!value?.username && !value?.email) {
+      throw new Error('Username or email is required');
+    }
+    return true;
+  }),
+];
 
-router.post(
-  '/auth/login',
-  authLimiter,
-  [
-    body('email').isEmail().withMessage('Valid email is required'),
-    body('password').notEmpty().withMessage('Password is required'),
-  ],
-  corporateLogin
-);
+router.post('/login', authLimiter, corporateLoginValidation, corporateLogin);
+
+router.post('/auth/login', authLimiter, corporateLoginValidation, corporateLogin);
 
 router.get('/dashboard/summary', authCorporate, getCorporateSummary);
 router.get('/dashboard/health-analytics', authCorporate, getCorporateHealthAnalytics);
