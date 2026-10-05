@@ -106,6 +106,9 @@ const ROLE_PREFIX_MAP = {
   'employee': 'E',
 
   // Department and hospital staff roles stored in the users table.
+  // HR staff are part of the hospital (its HRMS), so they carry the staff prefix like every other
+  // hospital department role. hr_staff was unmapped and fell back to U.
+  'hr_staff': 'T',
   'lab_staff': 'T',
   'pharmacy_staff': 'T',
   'blood_bank_staff': 'T',

@@ -55,7 +55,7 @@ apart:
 
 People tables (`users`, `patients`, `doctors`, `nurses`, `doctor_assistants`, `team_members`,
 `corporate_employees`) are under the same global registry but **relaxed**: they carry role prefixes
-(`U D N A T E`) and the prefix is not forced to match a single kind. Organisation prefixes are unique
+(`U D N A T E`; `hr_staff` is hospital staff and carries `T`) and the prefix is not forced to match a single kind. Organisation prefixes are unique
 among organisations (`uq_entity_kinds_org_prefix`), so an organisation uid's first letter names its kind.
 
 **NGO and wellness company have no dedicated table.** NGOs are `tenants` rows (`type = ngo`) and get a
@@ -95,24 +95,37 @@ foreign key; it is **not** filled mechanically because the integer it shadows is
 
 ## Legacy ids
 
-561 ids pre-date the rule and are registered with `legacy = true`; they are never rewritten, because
-an id that has been shared or printed is a public contract.
+561 ids pre-date the rule and are registered with `legacy = true`. A uid is a public identifier, so it is
+never silently rewritten.
 
-| Table | Count | Why |
-|---|---|---|
-| `provider_clinics` | 547 | all carry `C…`, from the `clinic → C` bug |
-| `labs` | 13 | prefix-less `Math.random()` ids from the bulk import |
-| `insurance_brokers` | 1 | `B…`, the ambulance prefix; brokers are `V` |
+| Table | Count | Why | Status |
+|---|---|---|---|
+| `provider_clinics` | 547 | all carry `C…`, from the `clinic → C` bug | **re-issue APPROVED** (as `K…`) |
+| `labs` | 13 | prefix-less `Math.random()` ids from the bulk import | not approved |
+| `insurance_brokers` | 1 | `B…`, the ambulance prefix; brokers are `V` | not approved |
 
-Legacy ids still resolve unambiguously — the registry stores the **kind**, so a `C…` clinic is never
-mistaken for a corporate. Re-issuing them is a separate decision.
+Legacy ids still resolve unambiguously because the registry stores the **kind**, so a `C…` clinic is never
+mistaken for a corporate.
+
+**Re-issuing** is done only by `reissue_entity_uid(table, id, reason)`; a hand-written `UPDATE` of a uid is
+still refused. The old uid is retired (it can never be issued again), kept in `entity_uid_aliases`, and
+`resolve_entity_uid(old)` returns the new one, so an id that was printed or shared does not break. Aliases are
+flattened on every re-issue, so resolution stays one hop. The tool is
+`scripts/ops/reissue-legacy-uids.mjs --table provider_clinics [--apply]` (dry run by default, writes the
+old → new mapping to a CSV before it commits). It is separate from the migration, so approving one does not
+approve the other. Rehearsed against production inside a rolled-back savepoint: all 547 clinics move to `K…`,
+all distinct, all 547 old ids still resolve. Nothing referenced the clinic uids: 1,359 text columns across
+every populated table were scanned and none held one, and the only code that resolves a clinic by public id
+(`admin/clinics.routes.js`) now also accepts an old id.
 
 ## What this does not do yet — and the plan
 
 The rule makes every entity identifiable and stops new ambiguity at the database. It does **not**
-rewrite the remaining integer references. That is deliberate: 603 columns across 300+ tables cannot be
-converted safely in one change, and the expand/contract pattern used for imaging (dual-key reads) is
-the proven route.
+rewrite the remaining integer references. [ENTITY_REFERENCE_AUDIT.md](ENTITY_REFERENCE_AUDIT.md) measured
+them: of 637 candidate columns, **467 are in empty tables** and need no data migration, and only **140 hold
+data (about 490,000 rows, 423,808 of them in one table that is already dual-keyed)**. Column names cannot be
+trusted as targets: 30 columns named `tenant_id`/`hospital_id` hold values from a different id-space (imaging's
+`tenant_id` is a lab id). The expand/contract pattern used for imaging (dual-key reads) is the route.
 
 1. **Written and rehearsed, not yet applied** — registry, kinds, triggers; every entity and people table
    attached; `corporates.tenant_uid`.

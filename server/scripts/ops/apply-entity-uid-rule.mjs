@@ -143,6 +143,46 @@ try {
   await expectError('a uid of the WRONG TABLE is rejected (a hospital uid in a tenants reference)', 'INSERT INTO _probe_ref (tenant_uid) VALUES ($1)', [hospUid], '23514');
   await expectError('an unregistered uid is rejected', "INSERT INTO _probe_ref (tenant_uid) VALUES ('QQQQQQ')", [], '23503');
 
+  // Re-issuing a uid (used to correct a wrong prefix) without breaking the old value.
+  console.log('\n── re-issue and aliases (temp tables, discarded) ──');
+  r = await ins("INSERT INTO _probe_org (unique_id) VALUES ('KRRRR2') RETURNING id, unique_id");
+  const reId = r.id;
+  const reNew = (await q("SELECT reissue_entity_uid('_probe_org', $1, 'test') AS u", [reId])).rows[0].u;
+  /^K[A-Z0-9]{5}$/.test(reNew) && reNew !== 'KRRRR2' ? ok('a re-issue produces a new uid with the kind prefix', `KRRRR2 -> ${reNew}`) : bad('reissue', reNew);
+  (await q("SELECT resolve_entity_uid('KRRRR2') AS u")).rows[0].u === reNew ? ok('the OLD uid still resolves, to the new one') : bad('alias resolve');
+  (await q('SELECT resolve_entity_uid($1) AS u', [reNew])).rows[0].u === reNew ? ok('the new uid resolves to itself') : bad('self resolve');
+  const oldRow = (await q("SELECT retired_at, legacy FROM entity_registry WHERE uid='KRRRR2'")).rows[0];
+  oldRow.retired_at && oldRow.legacy ? ok('the old registry row is retired and flagged legacy') : bad('old row', JSON.stringify(oldRow));
+  await expectError('the old uid can never be issued again', "INSERT INTO _probe_org (unique_id) VALUES ('KRRRR2')", [], '23505');
+  await expectError('a hand-written UPDATE is STILL refused (only reissue_entity_uid may change a uid)', "UPDATE _probe_org SET unique_id='KSSSS3' WHERE id=" + reId, [], '23514');
+  const reNew2 = (await q("SELECT reissue_entity_uid('_probe_org', $1, 'second') AS u", [reId])).rows[0].u;
+  (await q("SELECT resolve_entity_uid('KRRRR2') AS u")).rows[0].u === reNew2 ? ok('re-issued twice: the FIRST old uid resolves to the latest (aliases flattened)') : bad('flatten');
+  await expectError('a table that is not under the rule is refused', "SELECT reissue_entity_uid('entity_kinds', 1)", [], null);
+
+  // ── REHEARSAL on the real clinics: always rolled back, even under --apply ──
+  console.log('\n── rehearsal: re-issue every legacy clinic id (ALWAYS rolled back; the real run is a separate step) ──');
+  await q('SAVEPOINT clinic_rehearsal');
+  try {
+    const before = (await q("SELECT count(*) n, count(*) FILTER (WHERE left(unique_id,1) <> 'K') wrong FROM provider_clinics")).rows[0];
+    const ids = (await q("SELECT id FROM provider_clinics WHERE left(unique_id,1) <> 'K' ORDER BY id")).rows;
+    const tr = Date.now();
+    for (const row of ids) await q("SELECT reissue_entity_uid('provider_clinics', $1, 'prefix correction: clinic ids were issued C (corporate) instead of K')", [row.id]);
+    const after = (await q("SELECT count(*) n, count(*) FILTER (WHERE left(unique_id,1) <> 'K') wrong, count(DISTINCT unique_id) d FROM provider_clinics")).rows[0];
+    const al = (await q("SELECT count(*) n FROM entity_uid_aliases a JOIN entity_registry r ON r.uid = a.uid WHERE r.source_table='provider_clinics' AND r.retired_at IS NULL")).rows[0];
+    const act = (await q("SELECT count(*) n FROM entity_registry WHERE source_table='provider_clinics' AND retired_at IS NULL")).rows[0];
+    const resolved = (await q(`SELECT count(*) n FROM entity_uid_aliases a JOIN provider_clinics c ON c.unique_id = resolve_entity_uid(a.old_uid) WHERE left(a.old_uid,1)='C'`)).rows[0];
+    Number(before.wrong) === ids.length ? ok(`${before.wrong} of ${before.n} clinics carry a non-K id before`) : bad('before', JSON.stringify(before));
+    Number(after.wrong) === 0 && Number(after.d) === Number(after.n) ? ok(`after: every clinic id starts with K and all ${after.n} are distinct`, `${((Date.now() - tr) / 1000).toFixed(1)}s`) : bad('after', JSON.stringify(after));
+    Number(al.n) === ids.length ? ok(`${al.n} aliases written: every old C-id still resolves`) : bad('aliases', JSON.stringify(al));
+    Number(act.n) === Number(after.n) ? ok(`registry holds exactly one ACTIVE uid per clinic (${act.n})`) : bad('active', JSON.stringify(act));
+    Number(resolved.n) === ids.length ? ok('resolve_entity_uid(old C-id) lands on the clinic that owned it, for all of them') : bad('resolved', JSON.stringify(resolved));
+  } catch (e) {
+    bad('clinic rehearsal', e.message.split('\n')[0]);
+  }
+  await q('ROLLBACK TO SAVEPOINT clinic_rehearsal');
+  const still = (await q("SELECT count(*) FILTER (WHERE left(unique_id,1) <> 'K') wrong FROM provider_clinics")).rows[0];
+  Number(still.wrong) > 0 ? ok(`rehearsal rolled back: ${still.wrong} clinics are back on their original ids`) : bad('rollback of rehearsal did not restore');
+
   // ── 3. the real tables ────────────────────────────────────────────────────
   console.log('\n── real tables ──');
   const rules = (await q("SELECT table_name, kind, column_name, type_column FROM entity_uid_rules WHERE table_name NOT LIKE '\\_probe%' ORDER BY table_name")).rows;
