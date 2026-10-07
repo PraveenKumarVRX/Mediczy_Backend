@@ -11,8 +11,8 @@
 -- integer. `owner_uid` is the lab (or hospital) that runs the collection, `facility_uid` the hospital whose
 -- ward is visited, `partner_uid` the hospital whose bookings a lab may bridge. Records that are not
 -- entities (an admission, a booking) are referenced as text, always together with the uid of the entity
--- that owns them. A phlebotomist is a person record of the owner, identified by a uuid; whether people
--- of this kind get a registry kind and prefix is an open decision recorded in the ADR.
+-- that owns them. A phlebotomist is a person record of the owner: an integer primary key private to its table
+-- and a registry uid (kind 'phlebotomist', prefix F, chosen by the lead 2026-10-07) as its public identity.
 
 -- ── 0. helpers ───────────────────────────────────────────────────────────────
 -- The owner of a collection must be a lab or a hospital/clinic tenant. entity_registry holds every uid
@@ -57,7 +57,7 @@ $fn$;
 -- A verified field worker. Separate from the lab account: the lab login is a shared organisational
 -- credential and cannot say WHO collected a specimen.
 CREATE TABLE IF NOT EXISTS lab_phlebotomists (
-  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  id                     bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,   -- private to this table; the public identity is unique_id
   display_name           text NOT NULL CHECK (length(btrim(display_name)) BETWEEN 2 AND 120),
   email                  text NOT NULL CHECK (email = lower(btrim(email)) AND email ~ '^[^@\s]+@[^@\s]+$'),
   phone                  text,
@@ -80,11 +80,21 @@ DROP TRIGGER IF EXISTS trg_lab_phlebotomists_touch ON lab_phlebotomists;
 CREATE TRIGGER trg_lab_phlebotomists_touch BEFORE UPDATE ON lab_phlebotomists
   FOR EACH ROW EXECUTE FUNCTION collection_touch_updated_at();
 
+-- A phlebotomist is a registered entity kind (prefix F, chosen by the lead 2026-10-07). attach_entity_uid_rule adds
+-- unique_id, issues one to every existing row (none yet), makes it NOT NULL + unique and installs the triggers that
+-- generate it on INSERT, register it in entity_registry and refuse to change it. The application never supplies it.
+-- It is a person kind (is_org = false) attached in relaxed mode like the other people tables, and it must come
+-- BEFORE the tables below, which reference the worker by this uid and never by the integer id.
+INSERT INTO entity_kinds (kind, prefix, label, is_org, tenant_type)
+VALUES ('phlebotomist', 'F', 'Phlebotomist / collection worker', false, NULL)
+ON CONFLICT (kind) DO NOTHING;
+SELECT attach_entity_uid_rule('lab_phlebotomists', 'phlebotomist', 'unique_id', false);
+
 -- Which owner a worker may work for, and what they may do there. A worker with no active membership
 -- cannot log in; a suspended membership removes access to that owner without touching the others.
 CREATE TABLE IF NOT EXISTS lab_phlebotomist_memberships (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  phlebotomist_id uuid NOT NULL REFERENCES lab_phlebotomists (id),
+  phlebotomist_uid text NOT NULL REFERENCES lab_phlebotomists (unique_id),
   owner_uid       text NOT NULL REFERENCES entity_registry (uid),
   scopes          text[] NOT NULL DEFAULT ARRAY['phlebotomy.worklist.read', 'phlebotomy.collection.write']::text[],
   can_home        boolean NOT NULL DEFAULT true,
@@ -98,7 +108,7 @@ CREATE TABLE IF NOT EXISTS lab_phlebotomist_memberships (
   CHECK (active_to IS NULL OR active_to > active_from),
   CHECK (scopes <@ ARRAY['phlebotomy.worklist.read', 'phlebotomy.collection.write']::text[])
 );
-CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_phleb_membership ON lab_phlebotomist_memberships (phlebotomist_id, owner_uid)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_phleb_membership ON lab_phlebotomist_memberships (phlebotomist_uid, owner_uid)
   WHERE status <> 'ended';
 CREATE INDEX IF NOT EXISTS idx_lab_phleb_membership_owner ON lab_phlebotomist_memberships (owner_uid, status);
 DROP TRIGGER IF EXISTS trg_lab_phleb_membership_owner ON lab_phlebotomist_memberships;
@@ -143,7 +153,7 @@ CREATE TABLE IF NOT EXISTS lab_collection_tasks (
   priority           text NOT NULL DEFAULT 'routine' CHECK (priority IN ('routine', 'urgent', 'stat')),
   scheduled_start    timestamptz,
   scheduled_end      timestamptz,
-  assigned_to        uuid REFERENCES lab_phlebotomists (id),
+  assigned_uid       text REFERENCES lab_phlebotomists (unique_id),
   assignment_version integer NOT NULL DEFAULT 0,
   version            integer NOT NULL DEFAULT 1,
   patient_snapshot   jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -157,7 +167,7 @@ CREATE TABLE IF NOT EXISTS lab_collection_tasks (
   CHECK (source_kind = 'manual' OR source_ref IS NOT NULL),
   CHECK (source_kind = 'manual' OR partner_uid IS NOT NULL),
   CHECK (scheduled_end IS NULL OR scheduled_start IS NULL OR scheduled_end >= scheduled_start),
-  CHECK (status = 'unassigned' OR status = 'cancelled' OR status = 'refused' OR assigned_to IS NOT NULL
+  CHECK (status = 'unassigned' OR status = 'cancelled' OR status = 'refused' OR assigned_uid IS NOT NULL
          OR status IN ('lab_received', 'rejected_by_lab')),
   CHECK (mode = 'home' OR status NOT IN ('en_route', 'arrived', 'in_transit', 'handed_over')),
   CHECK (mode = 'ward' OR status NOT IN ('at_bedside', 'ward_handoff'))
@@ -167,7 +177,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_lab_collection_task_live_source
   ON lab_collection_tasks (owner_uid, source_kind, source_ref)
   WHERE source_ref IS NOT NULL AND status NOT IN ('cancelled', 'refused', 'lab_received', 'rejected_by_lab');
 CREATE INDEX IF NOT EXISTS idx_lab_collection_tasks_board ON lab_collection_tasks (owner_uid, mode, status, scheduled_start);
-CREATE INDEX IF NOT EXISTS idx_lab_collection_tasks_worker ON lab_collection_tasks (assigned_to, status) WHERE assigned_to IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_lab_collection_tasks_worker ON lab_collection_tasks (assigned_uid, status) WHERE assigned_uid IS NOT NULL;
 DROP TRIGGER IF EXISTS trg_lab_collection_tasks_uid ON lab_collection_tasks;
 CREATE TRIGGER trg_lab_collection_tasks_uid BEFORE INSERT OR UPDATE OF owner_uid, partner_uid ON lab_collection_tasks
   FOR EACH ROW EXECUTE FUNCTION collection_assert_entity_uid('owner_uid', 'partner_uid');
@@ -205,6 +215,7 @@ CREATE TRIGGER trg_lab_collection_task_ward_uid BEFORE INSERT OR UPDATE OF facil
 CREATE TABLE IF NOT EXISTS lab_collection_task_tests (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id          uuid NOT NULL REFERENCES lab_collection_tasks (id),
+  position         integer NOT NULL DEFAULT 0,   -- the order the tests were requested in (created_at ties inside one transaction)
   test_code        text,
   test_name        text NOT NULL,
   container_type   text NOT NULL DEFAULT 'unspecified',
@@ -226,7 +237,7 @@ CREATE TABLE IF NOT EXISTS lab_collection_specimens (
   container_type   text NOT NULL DEFAULT 'unspecified',
   status           text NOT NULL DEFAULT 'scanned' CHECK (status IN ('scanned', 'collected', 'in_transit', 'handed_over', 'received', 'rejected')),
   collected_at     timestamptz,
-  collected_by     uuid REFERENCES lab_phlebotomists (id),
+  collected_by_uid text REFERENCES lab_phlebotomists (unique_id),
   received_at      timestamptz,
   received_by      text,
   sample_condition text,

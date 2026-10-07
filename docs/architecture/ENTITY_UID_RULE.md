@@ -54,7 +54,7 @@ apart:
 
 People tables (`users`, `patients`, `doctors`, `nurses`, `doctor_assistants`, `team_members`,
 `corporate_employees`) are under the same global registry but **relaxed**: they carry role prefixes
-(`U D N A T E`; `hr_staff` is hospital staff and carries `T`) and the prefix is not forced to match a single kind. Organisation prefixes are unique
+(`U D N A T E`; `hr_staff` is hospital staff and carries `T`; lab collection workers, `lab_phlebotomists`, carry `F`) and the prefix is not forced to match a single kind. Organisation prefixes are unique
 among organisations (`uq_entity_kinds_org_prefix`), so an organisation uid's first letter names its kind.
 
 **NGO and wellness company have no dedicated table.** NGOs are `tenants` rows (`type = ngo`) and get a

@@ -103,6 +103,8 @@ const ROLE_PREFIX_MAP = {
   'ambulance_admin': 'B',
   'ohc': 'O',
   'ohc_admin': 'O',
+  // Lab collection workers (lab_phlebotomists). Prefix chosen by the lead, 2026-10-07.
+  'phlebotomist': 'F',
   'employee': 'E',
 
   // Department and hospital staff roles stored in the users table.
@@ -220,6 +222,7 @@ export const getRoleFromUniqueId = (uniqueId) => {
     'M': 'homecare',
     'B': 'ambulance',
     'O': 'ohc',
+    'F': 'phlebotomist',
     'R': 'admin'
   };
   
@@ -279,7 +282,7 @@ export const ENTITY_KIND_PREFIXES = Object.freeze({
   homecare: 'M', diagnostic_centre: 'Y', ngo: 'G', tpa: 'X', insurance_company: 'I', broker: 'V',
   wellness_company: 'W', psu: 'S', aggregator: 'Z',
   user: 'U', patient: 'U', doctor: 'D', nurse: 'N', assistant: 'A', team: 'T',
-  corporate_employee: 'E', ohc: 'O', admin: 'R',
+  corporate_employee: 'E', ohc: 'O', phlebotomist: 'F', admin: 'R',
 });
 
 export default {

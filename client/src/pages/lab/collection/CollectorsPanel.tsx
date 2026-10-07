@@ -59,7 +59,7 @@ function ResetPasswordDialog({ collector, onClose }: { collector: Collector | nu
   const [pw, setPw] = useState("");
   const submit = async () => {
     if (!collector) return;
-    try { await resetPassword.mutateAsync({ id: collector.id, password: pw }); setPw(""); onClose(); }
+    try { await resetPassword.mutateAsync({ id: collector.uid, password: pw }); setPw(""); onClose(); }
     catch (e) { problem(e, "Could not reset the password"); }
   };
   return (
@@ -81,7 +81,7 @@ export function CollectorsPanel() {
   const [resetting, setResetting] = useState<Collector | null>(null);
 
   const toggle = async (c: Collector) => {
-    try { await setMembership.mutateAsync({ id: c.id, status: c.membership.status === "active" ? "suspended" : "active" }); }
+    try { await setMembership.mutateAsync({ id: c.uid, status: c.membership.status === "active" ? "suspended" : "active" }); }
     catch (e) { problem(e, "Could not update the collector"); }
   };
 
@@ -98,8 +98,8 @@ export function CollectorsPanel() {
             <TableHeader><TableRow><TableHead>Collector</TableHead><TableHead>Covers</TableHead><TableHead>Qualification</TableHead><TableHead>Workload</TableHead><TableHead>Status</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {rows.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell><span className="block font-medium">{c.displayName}</span><span className="block text-xs text-muted-foreground">{c.email}</span></TableCell>
+                <TableRow key={c.uid}>
+                  <TableCell><span className="block font-medium">{c.displayName}</span><span className="block text-xs text-muted-foreground">{c.email}</span><span className="block font-mono text-xs text-muted-foreground">{c.uid}</span></TableCell>
                   <TableCell>{[c.membership.canHome && "Home", c.membership.canWard && "Ward"].filter(Boolean).join(" + ")}</TableCell>
                   <TableCell>{c.qualification || "—"}{c.qualificationExpires && <span className="block text-xs text-muted-foreground">until {new Date(c.qualificationExpires).toLocaleDateString()}</span>}</TableCell>
                   <TableCell>{c.workload.openTasks} open{c.workload.carryingSpecimens > 0 && `, carrying ${c.workload.carryingSpecimens}`}<span className="block text-xs text-muted-foreground">last sign-in {formatWhen(c.lastLoginAt)}</span></TableCell>

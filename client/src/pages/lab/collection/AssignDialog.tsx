@@ -25,8 +25,8 @@ export function AssignDialog({ task, open, onOpenChange }: Props) {
   const [reason, setReason] = useState("");
 
   const candidates = useMemo(
-    () => (collectors.data?.phlebotomists ?? []).filter((c) => c.eligible && (task.mode === "home" ? c.membership.canHome : c.membership.canWard) && c.id !== task.assignedTo),
-    [collectors.data, task.mode, task.assignedTo],
+    () => (collectors.data?.phlebotomists ?? []).filter((c) => c.eligible && (task.mode === "home" ? c.membership.canHome : c.membership.canWard) && c.uid !== task.assignedUid),
+    [collectors.data, task.mode, task.assignedUid],
   );
   const pending = assign.isPending || reassign.isPending;
   const canSubmit = Boolean(selected) && (!reassigning || reason.trim().length > 0) && !pending;
@@ -34,8 +34,8 @@ export function AssignDialog({ task, open, onOpenChange }: Props) {
   const submit = async () => {
     if (!selected) return;
     try {
-      if (reassigning) await reassign.mutateAsync({ id: task.id, version: task.version, phlebotomistId: selected, reason: reason.trim() });
-      else await assign.mutateAsync({ id: task.id, version: task.version, phlebotomistId: selected });
+      if (reassigning) await reassign.mutateAsync({ id: task.id, version: task.version, phlebotomistUid: selected, reason: reason.trim() });
+      else await assign.mutateAsync({ id: task.id, version: task.version, phlebotomistUid: selected });
       setSelected(null); setReason(""); onOpenChange(false);
     } catch (e) {
       problem(e, reassigning ? "Could not reassign" : "Could not assign");
@@ -62,11 +62,11 @@ export function AssignDialog({ task, open, onOpenChange }: Props) {
         )}
         <ul className="max-h-72 space-y-2 overflow-y-auto" role="radiogroup" aria-label="Eligible collectors">
           {candidates.map((c) => (
-            <li key={c.id}>
+            <li key={c.uid}>
               <button
-                type="button" role="radio" aria-checked={selected === c.id} onClick={() => setSelected(c.id)}
+                type="button" role="radio" aria-checked={selected === c.uid} onClick={() => setSelected(c.uid)}
                 className={cn("flex w-full items-center justify-between rounded-md border p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  selected === c.id && "border-primary bg-accent")}
+                  selected === c.uid && "border-primary bg-accent")}
               >
                 <span>
                   <span className="block font-medium">{c.displayName}</span>

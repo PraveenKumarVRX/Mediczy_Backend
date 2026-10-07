@@ -22,7 +22,7 @@ export const keys = {
   partners: ["lab-collection", "partners"] as const,
 };
 
-export interface BoardFilters { status?: string; assignedTo?: string; overdue?: boolean }
+export interface BoardFilters { status?: string; assignedUid?: string; overdue?: boolean }
 
 export function useBoard(mode: CollectionMode, filters: BoardFilters) {
   return useInfiniteQuery({
@@ -30,7 +30,7 @@ export function useBoard(mode: CollectionMode, filters: BoardFilters) {
     initialPageParam: null as string | null,
     queryFn: async ({ pageParam }) => {
       const { data } = await api.get(`${BASE}/ops`, {
-        params: { mode, limit: 50, cursor: pageParam ?? undefined, status: filters.status || undefined, assignedTo: filters.assignedTo || undefined, overdue: filters.overdue || undefined },
+        params: { mode, limit: 50, cursor: pageParam ?? undefined, status: filters.status || undefined, assignedUid: filters.assignedUid || undefined, overdue: filters.overdue || undefined },
       });
       return data as BoardPage;
     },
@@ -75,10 +75,10 @@ export function useCollectionMutations() {
   const useOp = <V, R = unknown>(fn: (v: V) => Promise<R>) => useMutation({ mutationFn: fn, onSettled: refresh });
   return {
     createTask: useOp((input: Record<string, unknown>) => post<{ task: { id: string } }>("/tasks", input)),
-    assign: useOp((v: { id: string; version: number; phlebotomistId: string }) =>
-      post(`/tasks/${v.id}/assign`, { expectedVersion: v.version, phlebotomistId: v.phlebotomistId })),
-    reassign: useOp((v: { id: string; version: number; phlebotomistId: string; reason: string }) =>
-      post(`/tasks/${v.id}/reassign`, { expectedVersion: v.version, phlebotomistId: v.phlebotomistId, reason: v.reason })),
+    assign: useOp((v: { id: string; version: number; phlebotomistUid: string }) =>
+      post(`/tasks/${v.id}/assign`, { expectedVersion: v.version, phlebotomistUid: v.phlebotomistUid })),
+    reassign: useOp((v: { id: string; version: number; phlebotomistUid: string; reason: string }) =>
+      post(`/tasks/${v.id}/reassign`, { expectedVersion: v.version, phlebotomistUid: v.phlebotomistUid, reason: v.reason })),
     cancel: useOp((v: { id: string; version: number; reason: string }) =>
       post(`/tasks/${v.id}/cancel`, { expectedVersion: v.version, reason: v.reason })),
     receive: useOp((v: { specimenId: string; outcome: "accepted" | "rejected"; condition?: string; reason?: string }) =>

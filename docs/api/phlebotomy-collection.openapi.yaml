@@ -10,7 +10,8 @@ info:
     **Mutations** require `Idempotency-Key` (8–128 of `A-Za-z0-9._:-`). Mobile mutations also require `X-Device-Id`
     and a body `expectedVersion`. The same key with the same body replays the stored response
     (`Idempotent-Replayed: true`); the same key with a different body is `422 idempotency_key_reuse`.
-    Actor, owner and worker are always derived from the token.
+    Actor, owner and worker are always derived from the token. A collector is identified everywhere by its registry uid
+    (kind `phlebotomist`, prefix `F`, e.g. `F7K2PX`); no internal numeric id is exposed.
 servers:
   - url: https://mediqzy.com/api
 tags:
@@ -140,7 +141,7 @@ paths:
       parameters:
         - { name: mode, in: query, schema: { type: string, enum: [home, ward] } }
         - { name: status, in: query, schema: { type: string }, description: comma separated }
-        - { name: assignedTo, in: query, schema: { type: string, format: uuid } }
+        - { name: assignedUid, in: query, schema: { type: string, pattern: '^F[A-Z0-9]{5}$' } }
         - { name: overdue, in: query, schema: { type: boolean } }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
@@ -160,9 +161,9 @@ paths:
   /lab/collection/tasks/{id}: { get: { tags: [Lab portal], summary: Task detail (tests, specimens), parameters: [{ $ref: '#/components/parameters/TaskId' }], responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } } }
   /lab/collection/tasks/{id}/timeline: { get: { tags: [Lab portal], summary: Immutable task, custody, consent and verification timeline, parameters: [{ $ref: '#/components/parameters/TaskId' }], responses: { '200': { description: OK } } } }
   /lab/collection/tasks/{id}/assign:
-    post: { tags: [Lab portal], summary: unassigned → assigned. 422 worker_not_eligible if inactive/unverified/expired/not a member/not enabled for the mode., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [phlebotomistId], properties: { expectedVersion: { type: integer }, phlebotomistId: { type: string, format: uuid } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+    post: { tags: [Lab portal], summary: unassigned → assigned. 422 worker_not_eligible if inactive/unverified/expired/not a member/not enabled for the mode., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [phlebotomistUid], properties: { expectedVersion: { type: integer }, phlebotomistUid: { type: string, pattern: '^F[A-Z0-9]{5}$' } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
   /lab/collection/tasks/{id}/reassign:
-    post: { tags: [Lab portal], summary: Until collection only. Needs a reason; the new worker must accept the new assignment version., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [phlebotomistId, reason], properties: { expectedVersion: { type: integer }, phlebotomistId: { type: string, format: uuid }, reason: { type: string, maxLength: 300 } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+    post: { tags: [Lab portal], summary: Until collection only. Needs a reason; the new worker must accept the new assignment version., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [phlebotomistUid, reason], properties: { expectedVersion: { type: integer }, phlebotomistUid: { type: string, pattern: '^F[A-Z0-9]{5}$' }, reason: { type: string, maxLength: 300 } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
   /lab/collection/tasks/{id}/cancel:
     post: { tags: [Lab portal], summary: Until collection only; a collected task cannot be cancelled., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { expectedVersion: { type: integer }, reason: { type: string, maxLength: 300 } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
   /lab/collection/tasks/{id}/redraw:
@@ -179,8 +180,8 @@ paths:
   /lab/collection/phlebotomists:
     get: { tags: [Lab portal], summary: Directory with workload and the server's eligibility verdict, responses: { '200': { description: OK } } }
     post: { tags: [Lab portal], summary: Provision a verified collector (the lab attests identity and qualification), requestBody: { required: true, content: { application/json: { schema: { type: object, required: [displayName, email, password], properties: { displayName: { type: string }, email: { type: string }, phone: { type: string }, password: { type: string, minLength: 10 }, qualification: { type: string }, qualificationExpires: { type: string, format: date-time }, canHome: { type: boolean, default: true }, canWard: { type: boolean, default: false } } } } } }, responses: { '201': { description: Created }, '409': { description: email_in_use (same answer whether the person works for another lab), content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } } } }
-  /lab/collection/phlebotomists/{id}/membership: { patch: { tags: [Lab portal], summary: Suspend, reinstate or end the membership (revokes sessions when not active; returns openTasksToReassign), parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }], requestBody: { content: { application/json: { schema: { type: object, properties: { status: { type: string, enum: [active, suspended, ended] }, canHome: { type: boolean }, canWard: { type: boolean }, activeTo: { type: string, format: date-time, nullable: true } } } } } }, responses: { '200': { description: OK } } } }
-  /lab/collection/phlebotomists/{id}/reset-password: { post: { tags: [Lab portal], summary: Set a temporary password (forces change, revokes sessions), parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string, minLength: 10 } } } } } }, responses: { '200': { description: OK } } } }
+  /lab/collection/phlebotomists/{id}/membership: { patch: { tags: [Lab portal], summary: Suspend, reinstate or end the membership (revokes sessions when not active; returns openTasksToReassign), parameters: [{ name: id, in: path, required: true, description: the collector's uid, schema: { type: string, pattern: '^F[A-Z0-9]{5}$' } }], requestBody: { content: { application/json: { schema: { type: object, properties: { status: { type: string, enum: [active, suspended, ended] }, canHome: { type: boolean }, canWard: { type: boolean }, activeTo: { type: string, format: date-time, nullable: true } } } } } }, responses: { '200': { description: OK } } } }
+  /lab/collection/phlebotomists/{id}/reset-password: { post: { tags: [Lab portal], summary: Set a temporary password (forces change, revokes sessions), parameters: [{ name: id, in: path, required: true, description: the collector's uid, schema: { type: string, pattern: '^F[A-Z0-9]{5}$' } }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string, minLength: 10 } } } } } }, responses: { '200': { description: OK } } } }
 
 components:
   securitySchemes:

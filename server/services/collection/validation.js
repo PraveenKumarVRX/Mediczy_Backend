@@ -64,6 +64,12 @@ export function uuid(value, field) {
   return value.toLowerCase();
 }
 
+/** A collector's public identity: the registry uid, kind phlebotomist, prefix F. */
+export function workerUid(value, field = 'phlebotomistUid') {
+  if (typeof value !== 'string' || !/^F[A-Z0-9]{5}$/.test(value)) throw invalid(`${field} must be a collector uid (F + 5 characters)`, { field });
+  return value;
+}
+
 export function ownerUid(value, field = 'uid') {
   if (!isUid(value)) throw invalid(`${field} must be a 6-character uid`, { field });
   return value;

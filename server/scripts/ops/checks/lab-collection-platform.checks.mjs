@@ -116,9 +116,19 @@ export async function behaviour({ q, ok, bad, expectError }) {
   const alice = await mkWorker(labP, 'Alice Probe', { canHome: true, canWard: true });
   const bob = await mkWorker(labP, 'Bob Probe', { canHome: true, canWard: false });
   const carol = await mkWorker(lab2P, 'Carol Probe', { canHome: true });
-  const aliceP = await principalOf(alice.id);
-  const bobP = await principalOf(bob.id);
-  const carolP = await principalOf(carol.id);
+  const aliceP = await principalOf(alice.uid);
+  const bobP = await principalOf(bob.uid);
+  const carolP = await principalOf(carol.uid);
+
+  console.log('  phlebotomist uids:');
+  check('each worker gets a database-issued uid with the F prefix', [alice, bob, carol].every((w) => /^F[A-Z0-9]{5}$/.test(w.uid)), `${alice.uid} ${bob.uid} ${carol.uid}`);
+  check('the three uids are distinct', new Set([alice.uid, bob.uid, carol.uid]).size === 3);
+  const reg = (await q(`SELECT kind, source_table, source_id FROM entity_registry WHERE uid = $1`, [alice.uid])).rows[0];
+  const row = (await q(`SELECT id FROM lab_phlebotomists WHERE unique_id = $1`, [alice.uid])).rows[0];
+  check('the uid is registered as kind phlebotomist against lab_phlebotomists', reg && reg.kind === 'phlebotomist' && reg.source_table === 'lab_phlebotomists' && Number.isInteger(Number(row.id)));
+  check('the principal and profile expose the uid, and the uid is not the audit reference', aliceP.uid === alice.uid && aliceP.ref === `phleb:${alice.uid}`);
+  await expectError('a worker\'s uid is immutable', null, () => q(`UPDATE lab_phlebotomists SET unique_id = 'F00000' WHERE unique_id = $1`, [alice.uid]));
+  await expectError('a uid that belongs to another kind cannot be reused as a worker uid', null, () => q(`UPDATE lab_phlebotomists SET unique_id = $2 WHERE unique_id = $1`, [bob.uid, LAB]));
 
   // ── 1. the schema refuses what the rules forbid, even to a direct writer ──
   console.log('  schema guarantees:');
@@ -128,7 +138,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
   await expectError('an owner uid that is not in the registry at all is refused', '23514',
     () => q(`INSERT INTO lab_collection_tasks (owner_uid, mode, source_kind, created_by) VALUES ('ZZZZZZ', 'home', 'manual', 'x')`));
   await expectError('a ward task cannot be in a home-only status (en_route)', '23514',
-    () => q(`INSERT INTO lab_collection_tasks (owner_uid, mode, source_kind, status, assigned_to, created_by) VALUES ($1, 'ward', 'manual', 'en_route', $2, 'x')`, [LAB, alice.id]));
+    () => q(`INSERT INTO lab_collection_tasks (owner_uid, mode, source_kind, status, assigned_uid, created_by) VALUES ($1, 'ward', 'manual', 'en_route', $2, 'x')`, [LAB, alice.uid]));
   await expectError('a booking-sourced task must name its partner hospital', '23514',
     () => q(`INSERT INTO lab_collection_tasks (owner_uid, mode, source_kind, source_ref, created_by) VALUES ($1, 'home', 'booking', 'b1', 'x')`, [LAB]));
   const seed = await newTask();
@@ -168,16 +178,16 @@ export async function behaviour({ q, ok, bad, expectError }) {
   // ── 3. dispatch ───────────────────────────────────────────────────────────
   console.log('\n  dispatch:');
   const T = (t) => mk(labP, t);
-  let r = await T(t1)('assign', { phlebotomistId: alice.id });
+  let r = await T(t1)('assign', { phlebotomistUid: alice.uid });
   check('assign: unassigned → assigned, version bumps, assignment version bumps', r.body.task.status === 'assigned' && r.body.task.version === 2 && r.body.task.assignmentVersion === 1);
-  await fails('assigning an already-assigned task is refused (the legacy code silently re-assigned it)', () => T(t1)('assign', { phlebotomistId: bob.id }), 409, 'invalid_transition');
+  await fails('assigning an already-assigned task is refused (the legacy code silently re-assigned it)', () => T(t1)('assign', { phlebotomistUid: bob.uid }), 409, 'invalid_transition');
   const tCarol = await newTask();
-  await fails('a worker of ANOTHER lab cannot be assigned', () => T(tCarol)('assign', { phlebotomistId: carol.id }), 422);
+  await fails('a worker of ANOTHER lab cannot be assigned', () => T(tCarol)('assign', { phlebotomistUid: carol.uid }), 422);
   const tWard = { id: w1.body.task.id, version: 1, status: 'unassigned' };
-  await fails('a worker not enabled for ward work cannot take a ward task', () => T(tWard)('assign', { phlebotomistId: bob.id }), 422);
-  await fails('a made-up worker id is refused', () => T(tCarol)('assign', { phlebotomistId: crypto.randomUUID() }), 422);
-  await fails('a stale expectedVersion is a conflict, with the current version', () => svc.command({ principal: labP, command: 'assign', taskId: tCarol.id, expectedVersion: 99, payload: { phlebotomistId: bob.id } }), 409, 'version_conflict');
-  await fails('a collector cannot assign, even on a task that is theirs', () => mk(aliceP, t1)('assign', { phlebotomistId: alice.id }), 403, 'forbidden');
+  await fails('a worker not enabled for ward work cannot take a ward task', () => T(tWard)('assign', { phlebotomistUid: bob.uid }), 422);
+  await fails('a made-up worker id is refused', () => T(tCarol)('assign', { phlebotomistUid: 'F00000' }), 422);
+  await fails('a stale expectedVersion is a conflict, with the current version', () => svc.command({ principal: labP, command: 'assign', taskId: tCarol.id, expectedVersion: 99, payload: { phlebotomistUid: bob.uid } }), 409, 'version_conflict');
+  await fails('a collector cannot assign, even on a task that is theirs', () => mk(aliceP, t1)('assign', { phlebotomistUid: alice.uid }), 403, 'forbidden');
   await fails('a lab account cannot accept on a collector\'s behalf', () => T(t1)('accept', { assignmentVersion: 1 }), 403);
   await fails('lab 2 cannot touch lab 1\'s task: it looks absent', () => mk(lab2P, tCarol)('cancel', { reason: 'x' }), 404, 'not_found');
 
@@ -216,7 +226,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
   await fails('a barcode outside the allowed alphabet is refused', () => A(t1)('scan_specimen', { barcode: 'bad barcode!', testIds: [lipid.id] }), 422);
   const dupOwner = await newTask();
   const dupOwnerT = { ...dupOwner };
-  await T(dupOwnerT)('assign', { phlebotomistId: alice.id });
+  await T(dupOwnerT)('assign', { phlebotomistUid: alice.uid });
   await mk(aliceP, dupOwnerT)('accept', { assignmentVersion: 1 });
   await mk(aliceP, dupOwnerT)('depart'); await mk(aliceP, dupOwnerT)('arrive');
   await mk(aliceP, dupOwnerT)('verify_patient', { method: 'wristband', identifierTypes: ['wristband'], result: 'match' });
@@ -236,7 +246,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
 
   r = await A(t1)('collect');
   check('collect: consented → collected with all specimens', r.body.task.status === 'collected' && r.body.tests.every((t) => t.status === 'collected'));
-  await fails('a collected task cannot be reassigned (the legacy code reset it to assigned)', () => T(t1)('reassign', { phlebotomistId: bob.id, reason: 'x' }), 409, 'invalid_transition');
+  await fails('a collected task cannot be reassigned (the legacy code reset it to assigned)', () => T(t1)('reassign', { phlebotomistUid: bob.uid, reason: 'x' }), 409, 'invalid_transition');
   await fails('a collected task cannot be cancelled', () => T(t1)('cancel', { reason: 'x' }), 409, 'invalid_transition');
   await fails('handoff is refused before transit starts (home)', () => A(t1)('handoff', { receiverKind: 'lab' }), 409, 'invalid_transition');
   await A(t1)('start_transit');
@@ -270,26 +280,26 @@ export async function behaviour({ q, ok, bad, expectError }) {
   // ── 5. refusal, decline, reassign, cancel, rejection and redraw ───────────
   console.log('\n  the other paths:');
   const tRef = await newTask();
-  await T(tRef)('assign', { phlebotomistId: alice.id });
+  await T(tRef)('assign', { phlebotomistUid: alice.uid });
   for (const [c, p] of [['accept', { assignmentVersion: 1 }], ['depart', {}], ['arrive', {}], ['verify_patient', { method: 'wristband', identifierTypes: ['wristband'], result: 'match' }]]) await A(tRef)(c, p);
   r = await A(tRef)('consent', { outcome: 'refused', consentVersion: 'v1', method: 'verbal', language: 'en' });
   check('a refusal closes the task as refused and raises patient_refused', r.body.task.status === 'refused' && r.body.task.closedAt
     && (await q(`SELECT 1 FROM lab_collection_exceptions WHERE task_id = $1 AND code = 'patient_refused'`, [tRef.id])).rows.length === 1);
 
   const tDec = await newTask();
-  await T(tDec)('assign', { phlebotomistId: alice.id });
+  await T(tDec)('assign', { phlebotomistUid: alice.uid });
   r = await A(tDec)('decline', { reason: 'Vehicle broke down' });
   check('decline returns the task to the pool with a declined_by_worker exception', r.body.task.status === 'unassigned'
     && (await q(`SELECT 1 FROM lab_collection_exceptions WHERE task_id = $1 AND code = 'declined_by_worker'`, [tDec.id])).rows.length === 1);
   await fails('after declining, the worker no longer sees the task', () => A(tDec)('accept', { assignmentVersion: 2 }), 404, 'not_found');
 
   const tRe = await newTask();
-  await T(tRe)('assign', { phlebotomistId: alice.id });
+  await T(tRe)('assign', { phlebotomistUid: alice.uid });
   await A(tRe)('accept', { assignmentVersion: 1 });
-  await fails('reassign needs a reason', () => T(tRe)('reassign', { phlebotomistId: bob.id }), 422);
-  await fails('reassign to the same worker is refused', () => T(tRe)('reassign', { phlebotomistId: alice.id, reason: 'x' }), 422);
-  r = await T(tRe)('reassign', { phlebotomistId: bob.id, reason: 'Closer to the address' });
-  check('reassign moves the task back to assigned for the new worker and bumps the assignment version', r.body.task.status === 'assigned' && r.body.task.assignedTo === bob.id && r.body.task.assignmentVersion === 2);
+  await fails('reassign needs a reason', () => T(tRe)('reassign', { phlebotomistUid: bob.uid }), 422);
+  await fails('reassign to the same worker is refused', () => T(tRe)('reassign', { phlebotomistUid: alice.uid, reason: 'x' }), 422);
+  r = await T(tRe)('reassign', { phlebotomistUid: bob.uid, reason: 'Closer to the address' });
+  check('reassign moves the task back to assigned for the new worker and bumps the assignment version', r.body.task.status === 'assigned' && r.body.task.assignedUid === bob.uid && r.body.task.assignmentVersion === 2);
   await fails('the previous worker\'s queued command now fails: the task is gone from their view', () => A({ ...tRe, version: r.body.task.version })('depart'), 404, 'not_found');
   await fails('the new worker must accept the NEW assignment version', () => mk(bobP, tRe)('accept', { assignmentVersion: 1 }), 409, 'assignment_changed');
   await mk(bobP, tRe)('accept', { assignmentVersion: 2 });
@@ -297,7 +307,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
   check('cancel before collection closes the task with its reason', r.body.task.status === 'cancelled' && r.body.task.cancelReason === 'Customer cancelled');
 
   const tRej = await newTask(homeInput({ tests: [{ name: 'CBC', containerType: 'edta' }, { name: 'ESR', containerType: 'edta' }] }));
-  await T(tRej)('assign', { phlebotomistId: alice.id });
+  await T(tRej)('assign', { phlebotomistUid: alice.uid });
   for (const [c, p] of [['accept', { assignmentVersion: 1 }], ['depart', {}], ['arrive', {}], ['verify_patient', { method: 'wristband', identifierTypes: ['wristband'], result: 'match' }], ['consent', { outcome: 'granted', consentVersion: 'v1', method: 'verbal', language: 'en' }]]) await A(tRej)(c, p);
   await A(tRej)('scan_specimen', { barcode: 'BC-0002-A', testIds: [tRej.tests[0].id] });
   await A(tRej)('scan_specimen', { barcode: 'BC-0002-B', testIds: [tRej.tests[1].id] });
@@ -324,7 +334,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
 
   // ── 6. ward collection ────────────────────────────────────────────────────
   console.log('\n  ward collection:');
-  await T(tWard)('assign', { phlebotomistId: alice.id });
+  await T(tWard)('assign', { phlebotomistUid: alice.uid });
   await A(tWard)('accept', { assignmentVersion: 1 });
   await fails('depart is a home step: refused on a ward task', () => A(tWard)('depart'), 409, 'invalid_transition');
   await fails('bedside needs location confirmation', () => A(tWard)('bedside', {}), 422);
@@ -347,7 +357,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
 
   // source rechecks: a cancelled booking and a discharged patient block collection and raise exceptions
   const tBk = { id: b1.body.task.id, version: 1, status: 'unassigned' };
-  await T(tBk)('assign', { phlebotomistId: alice.id });
+  await T(tBk)('assign', { phlebotomistUid: alice.uid });
   for (const [c, p] of [['accept', { assignmentVersion: 1 }], ['depart', {}], ['arrive', {}], ['verify_patient', { method: 'wristband', identifierTypes: ['wristband'], result: 'match' }], ['consent', { outcome: 'granted', consentVersion: 'v1', method: 'verbal', language: 'en' }]]) await A(tBk)(c, p);
   await A(tBk)('scan_specimen', { barcode: 'BK-0001-A', testIds: [b1.body.tests[0].id] });
   await q(`UPDATE api_lab_bookings SET status = 'cancelled' WHERE booking_id = $1`, [BOOKING_OK]);
@@ -357,7 +367,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
 
   const w2 = await svc.createTask({ principal: labP, input: { mode: 'ward', source: 'admission', facilityUid: HOSP_WARD, admissionRef: '2', patient: { name: 'Ward Probe Two' }, tests: ['CBC'] } });
   const tW2 = { id: w2.body.task.id, version: 1, status: 'unassigned' };
-  await T(tW2)('assign', { phlebotomistId: alice.id });
+  await T(tW2)('assign', { phlebotomistUid: alice.uid });
   await A(tW2)('accept', { assignmentVersion: 1 });
   await q(`UPDATE ip_admissions SET status = 'discharged' WHERE id = 2`);
   r = await A(tW2)('bedside', { locationConfirmed: true });
@@ -380,7 +390,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
   check('cursor paging is stable and non-overlapping', page1.tasks.length === 2 && page1.nextCursor && !page2.tasks.some((t) => page1.tasks.some((p) => p.id === t.id)));
   const accepted = (await svc.getTask(aliceP, tBk.id)).task;
   check('a collector sees the address once the task is accepted', Boolean(accepted.home.address));
-  const tFresh = await newTask(); await T(tFresh)('assign', { phlebotomistId: alice.id });
+  const tFresh = await newTask(); await T(tFresh)('assign', { phlebotomistUid: alice.uid });
   const unaccepted = (await svc.getTask(aliceP, tFresh.id)).task;
   check('…but not before: the address and phone are withheld from an unaccepted assignment', !('address' in unaccepted.home) && !('contactPhone' in unaccepted.home));
   const bd = await svc.board(labP, {});
@@ -410,34 +420,34 @@ export async function behaviour({ q, ok, bad, expectError }) {
   const rf = await phleb.refresh({ refreshToken: li.refreshToken, deviceId: dev });
   check('refresh rotates the pair', rf.accessToken && rf.refreshToken !== li.refreshToken);
   await fails('a used refresh token cannot be replayed', () => phleb.refresh({ refreshToken: li.refreshToken }), 401, 'invalid_refresh_token');
-  await fails('a refresh token for another portal is refused', () => phleb.refresh({ refreshToken: jwt.sign({ jti: crypto.randomUUID(), userId: alice.id, portal: 'lab', tokenType: 'refresh' }, JWT_CONFIG.SECRET) }), 401);
+  await fails('a refresh token for another portal is refused', () => phleb.refresh({ refreshToken: jwt.sign({ jti: crypto.randomUUID(), userId: alice.uid, portal: 'lab', tokenType: 'refresh' }, JWT_CONFIG.SECRET) }), 401);
   for (let i = 0; i < 5; i += 1) await phleb.login({ email: bob.email, password: 'wrong-pass-1234' }).catch(() => {});
   await fails('five wrong passwords lock the account: even the right password is then refused', () => phleb.login({ email: bob.email, password: PASSWORD }), 401, 'invalid_credentials');
-  await q(`UPDATE lab_phlebotomists SET locked_until = NULL, failed_logins = 0 WHERE id = $1`, [bob.id]);
+  await q(`UPDATE lab_phlebotomists SET locked_until = NULL, failed_logins = 0 WHERE unique_id = $1`, [bob.uid]);
   await phleb.login({ email: bob.email, password: PASSWORD });
 
   const dave = await mkWorker(labP, 'Dave Probe', {});
-  const daveBefore = await phleb.loadPrincipal(dave.id);
-  await phleb.updateMembership(labP, dave.id, { status: 'suspended' });
-  const daveAfter = await phleb.loadPrincipal(dave.id);
+  const daveBefore = await phleb.loadPrincipal(dave.uid);
+  await phleb.updateMembership(labP, dave.uid, { status: 'suspended' });
+  const daveAfter = await phleb.loadPrincipal(dave.uid);
   check('suspending a membership takes effect on the very next request (no waiting for token expiry)', Boolean(daveBefore.principal) && daveAfter.reason === 'no_active_membership');
   await fails('a suspended worker cannot sign in', () => phleb.login({ email: dave.email, password: PASSWORD }), 403, 'account_unavailable');
-  await fails('a suspended worker cannot be assigned', () => T(tCarol)('assign', { phlebotomistId: dave.id }), 422);
+  await fails('a suspended worker cannot be assigned', () => T(tCarol)('assign', { phlebotomistUid: dave.uid }), 422);
   const erin = await mkWorker(labP, 'Erin Probe', { qualificationExpires: '2020-01-01' });
-  check('an expired qualification locks the worker out', (await phleb.loadPrincipal(erin.id)).reason === 'qualification_expired');
-  await fails('…and they cannot be assigned work', () => T(tCarol)('assign', { phlebotomistId: erin.id }), 422);
+  check('an expired qualification locks the worker out', (await phleb.loadPrincipal(erin.uid)).reason === 'qualification_expired');
+  await fails('…and they cannot be assigned work', () => T(tCarol)('assign', { phlebotomistUid: erin.uid }), 422);
   await fails('a duplicate email is refused without saying whether they work for another lab', () => mkWorker(lab2P, 'Alice Probe'), 409, 'email_in_use');
   await fails('a weak password is refused', () => phleb.create(labP, { displayName: 'Frank Probe', email: 'frank@probe.invalid', password: 'short1' }), 422);
-  await fails('lab 2 cannot suspend lab 1\'s worker', () => phleb.updateMembership(lab2P, alice.id, { status: 'suspended' }), 404, 'not_found');
+  await fails('lab 2 cannot suspend lab 1\'s worker', () => phleb.updateMembership(lab2P, alice.uid, { status: 'suspended' }), 404, 'not_found');
   const lst = await phleb.list(labP);
-  const aliceRow = lst.phlebotomists.find((p) => p.id === alice.id);
+  const aliceRow = lst.phlebotomists.find((p) => p.uid === alice.uid);
   check('the worker directory shows workload and eligibility, only for this lab', lst.phlebotomists.every((p) => p.email !== carol.email) && aliceRow.workload.openTasks >= 1 && aliceRow.eligible === true
-    && lst.phlebotomists.find((p) => p.id === erin.id).eligible === false);
+    && lst.phlebotomists.find((p) => p.uid === erin.uid).eligible === false);
   check('no password hash ever leaves the service', !JSON.stringify(lst).includes('$2') && !JSON.stringify(alice).includes('password'));
   const pw = await phleb.changePassword(aliceP, { currentPassword: PASSWORD, newPassword: 'Brand-new-pass-77' });
-  check('changing the password clears must-change and revokes every session', pw.ok && [...jtis.values()].filter((j) => j.userId === alice.id).every((j) => j.revoked));
+  check('changing the password clears must-change and revokes every session', pw.ok && [...jtis.values()].filter((j) => j.userId === alice.uid).every((j) => j.revoked));
   await fails('the old password no longer works', () => phleb.login({ email: alice.email, password: PASSWORD }), 401);
-  await phleb.resetPassword(labP, alice.id, { password: PASSWORD });
+  await phleb.resetPassword(labP, alice.uid, { password: PASSWORD });
 
   // ── 9. permission model ───────────────────────────────────────────────────
   console.log('\n  permission split:');
@@ -478,7 +488,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
   h = await asLab(request(app).post('/api/lab/collection/tasks')).send(homeInput());
   check('POST /lab/collection/tasks → 201', h.status === 201 && h.body.success === true);
   const ht = { id: h.body.task.id, version: h.body.task.version };
-  h = await asLab(request(app).post(`/api/lab/collection/tasks/${ht.id}/assign`)).send({ expectedVersion: ht.version, phlebotomistId: frank.id });
+  h = await asLab(request(app).post(`/api/lab/collection/tasks/${ht.id}/assign`)).send({ expectedVersion: ht.version, phlebotomistUid: frank.uid });
   check('POST /lab/collection/tasks/:id/assign → 200 and the version moves', h.status === 200 && h.body.task.version === ht.version + 1);
   ht.version = h.body.task.version;
   h = await asW2(request(app).get('/api/phlebotomy/tasks'));
@@ -506,10 +516,10 @@ export async function behaviour({ q, ok, bad, expectError }) {
   check('no token → 401', h.status === 401);
   h = await request(app).get('/api/phlebotomy/tasks').set('Authorization', `Bearer ${labToken}`);
   check('a LAB token on the phlebotomist API → 403 wrong_account_type', h.status === 403 && h.body.code === 'wrong_account_type');
-  const forged = jwt.sign({ id: frank.id, role: 'phlebotomist', tokenType: 'access', jti: crypto.randomUUID() }, JWT_CONFIG.SECRET, { expiresIn: '5m' });
+  const forged = jwt.sign({ id: frank.uid, role: 'phlebotomist', tokenType: 'access', jti: crypto.randomUUID() }, JWT_CONFIG.SECRET, { expiresIn: '5m' });
   h = await request(app).get('/api/phlebotomy/tasks').set('Authorization', `Bearer ${forged}`);
   check('a token with the right role but no phlebotomy audience → 403', h.status === 403);
-  const asRefresh = jwt.sign({ id: frank.id, role: 'phlebotomist', aud: PHLEBOTOMY_AUDIENCE, tokenType: 'refresh', jti: crypto.randomUUID() }, JWT_CONFIG.SECRET, { expiresIn: '5m' });
+  const asRefresh = jwt.sign({ id: frank.uid, role: 'phlebotomist', aud: PHLEBOTOMY_AUDIENCE, tokenType: 'refresh', jti: crypto.randomUUID() }, JWT_CONFIG.SECRET, { expiresIn: '5m' });
   h = await request(app).get('/api/phlebotomy/me').set('Authorization', `Bearer ${asRefresh}`);
   check('a REFRESH token cannot be used as an access token → 403', h.status === 403);
 
@@ -537,7 +547,7 @@ export async function behaviour({ q, ok, bad, expectError }) {
     const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json() { resolve({ blocked: this.statusCode }); return this; } };
     ringFencingMiddleware({ originalUrl: path, method: 'GET', headers: token ? { authorization: `Bearer ${token}` } : {}, query: {}, body: {} }, res, () => resolve({ blocked: false }));
   });
-  const realToken = (await issue({ id: frank.id, role: 'phlebotomist', aud: PHLEBOTOMY_AUDIENCE })).accessToken;
+  const realToken = (await issue({ id: frank.uid, role: 'phlebotomist', aud: PHLEBOTOMY_AUDIENCE })).accessToken;
   const noLog = console.log; console.log = () => {};
   const rfResults = {
     own: await rf2('/api/phlebotomy/tasks', realToken),
@@ -562,6 +572,7 @@ export async function leak({ q }) {
     tasks: await t('lab_collection_tasks'), specimens: await t('lab_collection_specimens'), custody: await t('lab_specimen_custody_events'),
     task_events: await t('lab_collection_task_events'), consents: await t('lab_collection_consents'), operations: await t('lab_mobile_operations'),
     outbox: await t('lab_collection_outbox'), exceptions: await t('lab_collection_exceptions'),
+    registry_phlebotomists: Number((await q(`SELECT count(*) n FROM entity_registry WHERE kind = 'phlebotomist'`)).rows[0].n),
     bookings_cancelled: Number((await q(`SELECT count(*) n FROM api_lab_bookings WHERE booking_id = '${BOOKING_OK}' AND lower(status) = 'cancelled'`)).rows[0].n),
     admission_2_not_admitted: Number((await q(`SELECT count(*) n FROM ip_admissions WHERE id = 2 AND status <> 'admitted'`)).rows[0].n),
     moved_beds: Number((await q(`SELECT count(*) n FROM beds WHERE bed_number LIKE '%-MOVED'`)).rows[0].n),
@@ -573,9 +584,15 @@ export async function state({ q, ok, bad }) {
       AND (table_name LIKE 'lab\\_collection\\_%' OR table_name LIKE 'lab\\_phleb%' OR table_name IN ('lab_specimen_custody_events', 'lab_mobile_operations'))`)).rows[0].n;
   tables === 15 ? ok('15 collection tables exist') : bad('table count', tables);
 
-  const regKinds = (await q(`SELECT count(*)::int n FROM information_schema.columns WHERE table_schema = 'public' AND table_name LIKE 'lab\\_%' AND column_name = 'unique_id'
-      AND table_name IN (SELECT table_name FROM information_schema.tables WHERE table_name LIKE 'lab\\_collection\\_%' OR table_name LIKE 'lab\\_phleb%')`)).rows[0].n;
-  regKinds === 0 ? ok('no new table has a unique_id column (so nothing falls outside the entity-uid verifier)') : bad('unexpected unique_id columns', regKinds);
+  const uidCols = (await q(`SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'unique_id'
+      AND (table_name LIKE 'lab\\_collection\\_%' OR table_name LIKE 'lab\\_phleb%' OR table_name LIKE 'lab\\_specimen%' OR table_name = 'lab_mobile_operations')`)).rows.map((r) => r.table_name);
+  uidCols.length === 1 && uidCols[0] === 'lab_phlebotomists' ? ok('unique_id exists only on lab_phlebotomists, the one new entity table') : bad('unexpected unique_id columns', uidCols.join(','));
+  const rule = (await q(`SELECT kind, strict FROM entity_uid_rules WHERE table_name = 'lab_phlebotomists'`)).rows[0];
+  rule && rule.kind === 'phlebotomist' && rule.strict === false ? ok('lab_phlebotomists is under the entity uid rule (kind phlebotomist, relaxed like other people tables)') : bad('uid rule', JSON.stringify(rule));
+  const kind = (await q(`SELECT prefix, is_org FROM entity_kinds WHERE kind = 'phlebotomist'`)).rows[0];
+  kind && kind.prefix === 'F' && kind.is_org === false ? ok('entity_kinds: phlebotomist = F, a person kind') : bad('entity kind', JSON.stringify(kind));
+  const { ENTITY_KIND_PREFIXES } = await import('../../../utils/uniqueIdGenerator.js');
+  ENTITY_KIND_PREFIXES.phlebotomist === 'F' ? ok('code and database agree on the prefix (no drift for verify-entity-uid-rule)') : bad('prefix drift', ENTITY_KIND_PREFIXES.phlebotomist);
 
   const intRefs = (await q(`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'
       AND (table_name LIKE 'lab\\_collection\\_%' OR table_name LIKE 'lab\\_phleb%' OR table_name LIKE 'lab\\_specimen%' OR table_name = 'lab_mobile_operations')

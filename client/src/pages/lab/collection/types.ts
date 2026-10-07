@@ -26,7 +26,7 @@ export interface CollectionTask {
   sourceKind: "manual" | "booking" | "admission";
   sourceRef: string | null;
   partnerUid: string | null;
-  assignedTo: string | null;
+  assignedUid: string | null;
   assigneeName: string | null;
   redrawOf: string | null;
   cancelReason: string | null;
@@ -75,7 +75,7 @@ export interface Kpis {
 }
 
 export interface Collector {
-  id: string; displayName: string; email: string; phone: string | null; status: "active" | "suspended" | "left";
+  uid: string; displayName: string; email: string; phone: string | null; status: "active" | "suspended" | "left";
   qualification: string | null; qualificationExpires: string | null; verifiedAt: string | null; mustChangePassword: boolean; lastLoginAt: string | null;
   membership: { status: "active" | "suspended" | "ended"; canHome: boolean; canWard: boolean; activeTo: string | null };
   workload: { openTasks: number; carryingSpecimens: number };

@@ -19,13 +19,13 @@
 
 ## 2. Decisions
 
-**D1 — Entity references are uids; no integer crosses an entity boundary.** `owner_uid` (lab or hospital/clinic tenant), `partner_uid`, `facility_uid` are `text` foreign keys into `entity_registry(uid)`, with a trigger that restricts them to `labs`/`tenants` (a corporate or patient uid is refused). Records that are not entities (a booking, an admission) are referenced as text **together with** the owning entity's uid. The checks assert that no new table has an integer `*_id` entity column and none has a `unique_id` column.
+**D1 — Entity references are uids; no integer crosses an entity boundary.** `owner_uid` (lab or hospital/clinic tenant), `partner_uid`, `facility_uid` are `text` foreign keys into `entity_registry(uid)`, with a trigger that restricts them to `labs`/`tenants` (a corporate or patient uid is refused). Records that are not entities (a booking, an admission) are referenced as text **together with** the owning entity's uid. The checks assert that no new table has an integer `*_id` entity column, and that `unique_id` exists only on `lab_phlebotomists` (under the rule, kind `phlebotomist`).
 
 **D2 — Two principals, split permissions.** A *lab* login is an organisational credential: `collection.read`, `collection.dispatch.write`, `collection.custody.receive`, `collection.admin` for its own uid only, and nothing collector-shaped. A *phlebotomist* holds `phlebotomy.worklist.read` and `phlebotomy.collection.write` per membership, can act only on tasks **assigned to them**, and a task that is not theirs is reported as absent (404), not forbidden. Permissions are enforced at the route and again inside the service.
 
 **D3 — The phlebotomist is its own verified identity** (`lab_phlebotomists` + `lab_phlebotomist_memberships`), not a `users` row and not the lab login. The lab provisions and attests the worker. Passwords are bcrypt (cost 12), ≥10 chars with a letter and digit; the first sign-in forces a change; five failures lock for 15 minutes; unknown email costs the same as a wrong password. Tokens come from `issuePortalTokenPair` (portal `phlebotomy`, access 15 min, refresh 7 d, rotating) with audience `mediczy-phlebotomy`. The token carries identity only; status, qualification expiry, membership windows and the owning lab's status are **re-read from the database on every request**, so suspension is immediate. Refresh is `POST /api/phlebotomy/auth/refresh` rather than a new branch of `/api/auth/refresh`, to leave that shared endpoint untouched.
 
-**D4 — Whether a phlebotomist gets an entity kind/prefix is deliberately not decided here.** The CLAUDE.md rule covers people tables under "role prefixes", and the prefix letters are the lead's to assign. The table uses a `uuid` key and no `unique_id` column, so the verifier is neither tripped nor satisfied. *If a prefix is wanted:* add the `entity_kinds` row and `ENTITY_KIND_PREFIXES` entry, then `attach_entity_uid_rule('lab_phlebotomists', '<kind>')`; nothing else changes.
+**D4 — A phlebotomist is a registered entity kind, prefix `F`** (the lead's decision, 2026-10-07; `F` for field collector, a free letter). `lab_phlebotomists` has an integer primary key private to the table (the uid rule's registry is keyed on an integer `id`) and `unique_id` (e.g. `F7K2PX`), issued by the database trigger, registered in `entity_registry`, immutable, never supplied by the application. Every reference to a worker (`assigned_uid`, `collected_by_uid`, membership `phlebotomist_uid`) is a foreign key to that uid, the token subject and the API identify the worker by it, and no internal integer is exposed. It is a person kind (`is_org = false`) attached in relaxed mode like the other people tables. The prefix is also in `ENTITY_KIND_PREFIXES` and `ROLE_PREFIX_MAP`, so `verify-entity-uid-rule.mjs` stays at zero drift **provided the migration is applied before this code is deployed**. The worker's uid is returned on the profile and shown in the Collectors table; audit references are `phleb:<uid>`.
 
 **D5 — One task, two modes, a state machine that is data.** `lab_collection_tasks` is canonical; `lab_collection_task_home` / `_ward` hold mode-only fields and the service rejects the other mode's fields. `services/collection/state-machine.js` is a pure table: any (mode, status, command, actor) not listed is refused, which is what stops a generic "next stage" action skipping evidence. `scan_specimen` is bound to `consented` and does not move the task. A patient refusal closes the task as `refused`; a lab rejection closes it as `rejected_by_lab` and a **redraw is a new linked task** (`redraw_of`) carrying only the rejected tests. A barcode is reserved to its owner for ever, including after rejection.
 
@@ -68,7 +68,7 @@
 
 ## 5. Rollout (needs the lead's go-ahead at each step)
 
-1. Dry run (already done): `node scripts/ssm-env-loader.mjs scripts/ops/apply-migration-checked.mjs --file migrations/20261007000000-lab-collection-platform.sql --checks scripts/ops/checks/lab-collection-platform.checks.mjs` → 181/181, rolled back.
+1. Dry run (already done): `node scripts/ssm-env-loader.mjs scripts/ops/apply-migration-checked.mjs --file migrations/20261007000000-lab-collection-platform.sql --checks scripts/ops/checks/lab-collection-platform.checks.mjs` → all checks pass, rolled back.
 2. Apply with `--apply` (one transaction, commits only if every check passes, probes run in an always-rolled-back savepoint with a leak assertion).
 3. Merge, fast-forward the live checkout, `pm2 restart mediczy-server --update-env`; rebuild the client (`NODE_OPTIONS=--max-old-space-size=7168`, `MemoryMax=8500M`).
 4. Provision: link a lab to a hospital (`INSERT INTO lab_collection_partners …`), add collectors in **Collectors**.
@@ -87,7 +87,7 @@
 
 | Decision | Default in this build | What changes when decided |
 |---|---|---|
-| Phlebotomist identity source | Own table + own credentials (D3) | Swap `loadPrincipal`/`login` for SSO/staff IDs; nothing else |
+| Phlebotomist identity source | Own table + own credentials + uid prefix F (D3, D4) | Swap `loadPrincipal`/`login` for SSO/staff IDs; nothing else |
 | Pilot lab/hospital | None; fixtures only in the rehearsal | Create `lab_collection_partners` rows |
 | LIS accession / barcode format | `^[A-Za-z0-9._-]{4,64}$`, unique per owner | Tighten the CHECK and validator |
 | Tube catalogue and handling | Free-text container, same-container tubes | Add a catalogue table and enforce volume |

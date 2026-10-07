@@ -19,11 +19,11 @@ const task = (over: Record<string, unknown> = {}) => ({
   id: "11111111-1111-4111-8111-111111111111", mode: "home", status: "unassigned", priority: "routine", scheduledStart: null, scheduledEnd: null,
   version: 3, assignmentVersion: 0, patient: { name: "Probe Patient", age: 41, gender: "female", scheduleSlot: "07:00 AM – 09:00 AM" },
   collectedAt: null, closedAt: null, createdAt: "2026-10-07T04:00:00Z", permittedCommands: ["assign", "cancel"], ownerUid: "LDQM9T", sourceKind: "manual",
-  sourceRef: null, partnerUid: null, assignedTo: null, assigneeName: null, redrawOf: null, cancelReason: null,
+  sourceRef: null, partnerUid: null, assignedUid: null, assigneeName: null, redrawOf: null, cancelReason: null,
   home: { departedAt: null, arrivedAt: null, address: { line1: "12 Probe Street", city: "Bengaluru" }, contactPhone: null }, ...over,
 });
 const collector = (over: Record<string, unknown> = {}) => ({
-  id: "22222222-2222-4222-8222-222222222222", displayName: "Alice Probe", email: "alice@probe.invalid", phone: null, status: "active", qualification: null,
+  uid: "F2222A", displayName: "Alice Probe", email: "alice@probe.invalid", phone: null, status: "active", qualification: null,
   qualificationExpires: null, verifiedAt: "2026-10-01T00:00:00Z", mustChangePassword: false, lastLoginAt: null,
   membership: { status: "active", canHome: true, canWard: true, activeTo: null }, workload: { openTasks: 2, carryingSpecimens: 0 }, eligible: true, ...over,
 });
@@ -90,7 +90,7 @@ describe("CollectionOpsPage", () => {
   it("assigns an eligible collector with the task's version and an idempotency key", async () => {
     serve({
       board: () => ({ tasks: [task()], nextCursor: null, summary }),
-      collectors: [collector(), collector({ id: "44444444-4444-4444-8444-444444444444", displayName: "Suspended Sam", eligible: false })],
+      collectors: [collector(), collector({ uid: "F4444B", displayName: "Suspended Sam", eligible: false })],
     });
     post.mockResolvedValue({ data: { success: true } } as never);
     renderPage();
@@ -103,7 +103,7 @@ describe("CollectionOpsPage", () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [url, body, config] = post.mock.calls[0];
     expect(url).toBe("/lab/collection/tasks/11111111-1111-4111-8111-111111111111/assign");
-    expect(body).toEqual({ expectedVersion: 3, phlebotomistId: "22222222-2222-4222-8222-222222222222" });
+    expect(body).toEqual({ expectedVersion: 3, phlebotomistUid: "F2222A" });
     expect((config as { headers: Record<string, string> }).headers["Idempotency-Key"]).toMatch(/^[A-Za-z0-9._:-]{8,128}$/);
   });
 

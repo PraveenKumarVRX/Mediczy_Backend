@@ -63,7 +63,7 @@ function BoardTab({ mode, onOpenTask, onCreate }: { mode: CollectionMode; onOpen
   const [assignedTo, setAssignedTo] = useState(ALL);
   const [overdue, setOverdue] = useState(false);
   const collectors = useCollectors();
-  const board = useBoard(mode, { status: status === ALL ? undefined : status, assignedTo: assignedTo === ALL ? undefined : assignedTo, overdue });
+  const board = useBoard(mode, { status: status === ALL ? undefined : status, assignedUid: assignedTo === ALL ? undefined : assignedTo, overdue });
   const tasks = useMemo(() => board.data?.pages.flatMap((p) => p.tasks) ?? [], [board.data]);
   const filtered = status !== ALL || assignedTo !== ALL || overdue;
 
@@ -81,7 +81,7 @@ function BoardTab({ mode, onOpenTask, onCreate }: { mode: CollectionMode; onOpen
           <Label htmlFor="f-collector">Collector</Label>
           <Select value={assignedTo} onValueChange={setAssignedTo}>
             <SelectTrigger id="f-collector" className="w-48"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value={ALL}>Everyone</SelectItem>{(collectors.data?.phlebotomists ?? []).map((c) => <SelectItem key={c.id} value={c.id}>{c.displayName}</SelectItem>)}</SelectContent>
+            <SelectContent><SelectItem value={ALL}>Everyone</SelectItem>{(collectors.data?.phlebotomists ?? []).map((c) => <SelectItem key={c.uid} value={c.uid}>{c.displayName}</SelectItem>)}</SelectContent>
           </Select>
         </div>
         <label className="flex items-center gap-2 pb-2 text-sm"><Checkbox checked={overdue} onCheckedChange={(v) => setOverdue(v === true)} />Overdue only</label>

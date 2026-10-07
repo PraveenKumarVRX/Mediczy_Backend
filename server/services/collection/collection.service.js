@@ -133,7 +133,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
       FROM lab_collection_tasks t
       LEFT JOIN lab_collection_task_home h ON h.task_id = t.id
       LEFT JOIN lab_collection_task_ward w ON w.task_id = t.id
-      LEFT JOIN lab_phlebotomists p ON p.id = t.assigned_to`;
+      LEFT JOIN lab_phlebotomists p ON p.unique_id = t.assigned_uid`;
 
   function ownerScope(principal) {
     if (principal.type === 'lab') return [principal.ownerUid];
@@ -165,7 +165,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
     if (lab) {
       Object.assign(out, {
         ownerUid: row.owner_uid, sourceKind: row.source_kind, sourceRef: row.source_ref, partnerUid: row.partner_uid,
-        assignedTo: row.assigned_to, assigneeName: row.assignee_name || null, redrawOf: row.redraw_of, cancelReason: row.cancel_reason,
+        assignedUid: row.assigned_uid, assigneeName: row.assignee_name || null, redrawOf: row.redraw_of, cancelReason: row.cancel_reason,
       });
     }
     if (row.mode === 'home') {
@@ -185,7 +185,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
   async function testsOf(c, taskId) {
     const { rows } = await c.query(
       `SELECT id, test_code, test_name, container_type, required_volume_ml, handling, priority, status, specimen_id
-         FROM lab_collection_task_tests WHERE task_id = $1 ORDER BY created_at, id`, [taskId]);
+         FROM lab_collection_task_tests WHERE task_id = $1 ORDER BY position, created_at, id`, [taskId]);
     return rows.map((r) => ({
       id: r.id, code: r.test_code, name: r.test_name, containerType: r.container_type,
       requiredVolumeMl: r.required_volume_ml === null ? null : Number(r.required_volume_ml),
@@ -211,7 +211,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
       `${TASK_SELECT} WHERE t.id = $1 AND t.owner_uid = ANY($2::text[]) ${lock ? 'FOR UPDATE OF t' : ''}`, [id, scope]);
     const row = rows[0];
     // A collector sees only tasks assigned to them; anything else looks absent rather than forbidden.
-    if (!row || (principal.type === 'phlebotomist' && !ignoreAssignee && row.assigned_to !== principal.id)) throw notFound();
+    if (!row || (principal.type === 'phlebotomist' && !ignoreAssignee && row.assigned_uid !== principal.uid)) throw notFound();
     return row;
   }
 
@@ -254,13 +254,13 @@ export function createCollectionService({ pool, now = () => new Date() }) {
     try {
       const { rows } = await c.query(
         `${TASK_SELECT.replace('SELECT t.*,', 'SELECT t.*, COALESCE(t.scheduled_start, t.created_at) AS sort_key, COALESCE(t.scheduled_start, t.created_at)::text AS sort_key_text,')}
-          WHERE t.assigned_to = $1 AND t.owner_uid = ANY($2::text[])
+          WHERE t.assigned_uid = $1 AND t.owner_uid = ANY($2::text[])
             AND ($3::text IS NULL OR t.mode = $3)
             AND ((t.mode = 'home' AND t.owner_uid = ANY($6::text[])) OR (t.mode = 'ward' AND t.owner_uid = ANY($7::text[])))
             AND (t.status <> ALL($8::text[]) OR t.closed_at > now() - interval '2 days')
             AND ($4::text IS NULL OR (COALESCE(t.scheduled_start, t.created_at), t.id) > ($4::timestamptz, $5::uuid))
           ORDER BY sort_key, t.id LIMIT ${lim + 1}`,
-        [principal.id, owners, m, ck, ci,
+        [principal.uid, owners, m, ck, ci,
           scopes.filter((s) => s.canHome).map((s) => s.ownerUid), scopes.filter((s) => s.canWard).map((s) => s.ownerUid), FINAL_STATUSES]);
       const page = rows.slice(0, lim);
       return {
@@ -282,15 +282,15 @@ export function createCollectionService({ pool, now = () => new Date() }) {
     const statuses = filters.status ? String(filters.status).split(',').map((s) => s.trim()).filter(Boolean) : null;
     const from = v.date(filters.from, 'from');
     const to = v.date(filters.to, 'to');
-    const assignedTo = filters.assignedTo ? v.uuid(filters.assignedTo, 'assignedTo') : null;
+    const assignedUid = filters.assignedUid ? v.workerUid(filters.assignedUid, 'assignedUid') : null;
     const overdue = filters.overdue === true || filters.overdue === 'true';
     const c = await pool.connect();
     try {
       const where = `t.owner_uid = $1 AND ($2::text IS NULL OR t.mode = $2) AND ($3::text[] IS NULL OR t.status = ANY($3))
-        AND ($4::uuid IS NULL OR t.assigned_to = $4) AND ($5::timestamptz IS NULL OR COALESCE(t.scheduled_start, t.created_at) >= $5)
+        AND ($4::text IS NULL OR t.assigned_uid = $4) AND ($5::timestamptz IS NULL OR COALESCE(t.scheduled_start, t.created_at) >= $5)
         AND ($6::timestamptz IS NULL OR COALESCE(t.scheduled_start, t.created_at) <= $6)
         AND (NOT $7::boolean OR (t.scheduled_end < now() AND t.status = ANY($8::text[])))`;
-      const base = [principal.ownerUid, mode, statuses, assignedTo, from, to, overdue, PRE_COLLECTION];
+      const base = [principal.ownerUid, mode, statuses, assignedUid, from, to, overdue, PRE_COLLECTION];
       const { rows } = await c.query(
         `${TASK_SELECT.replace('SELECT t.*,', 'SELECT t.*, COALESCE(t.scheduled_start, t.created_at) AS sort_key, COALESCE(t.scheduled_start, t.created_at)::text AS sort_key_text,')}
           WHERE ${where} AND ($9::text IS NULL OR (COALESCE(t.scheduled_start, t.created_at), t.id) > ($9::timestamptz, $10::uuid))
@@ -355,11 +355,11 @@ export function createCollectionService({ pool, now = () => new Date() }) {
   }
 
   // ── eligibility ────────────────────────────────────────────────────────────
-  async function assertEligible(c, ownerUid, phlebotomistId, mode) {
+  async function assertEligible(c, ownerUid, phlebotomistUid, mode) {
     const { rows } = await c.query(
       `SELECT p.status, p.qualification_expires, p.verified_at, m.status AS m_status, m.active_from, m.active_to, m.can_home, m.can_ward, m.scopes
-         FROM lab_phlebotomists p JOIN lab_phlebotomist_memberships m ON m.phlebotomist_id = p.id AND m.owner_uid = $2 AND m.status <> 'ended'
-        WHERE p.id = $1`, [phlebotomistId, ownerUid]);
+         FROM lab_phlebotomists p JOIN lab_phlebotomist_memberships m ON m.phlebotomist_uid = p.unique_id AND m.owner_uid = $2 AND m.status <> 'ended'
+        WHERE p.unique_id = $1`, [phlebotomistUid, ownerUid]);
     const r = rows[0];
     const why = (reason) => invalid('That worker cannot be assigned this task', { code: 'worker_not_eligible', reason });
     if (!r) throw why('not a member of this lab');
@@ -377,19 +377,19 @@ export function createCollectionService({ pool, now = () => new Date() }) {
   // `stay` means "commit what I wrote but do not move the task" (a recorded mismatch, a blocked step).
   const HANDLERS = {
     async assign({ c, task, payload }) {
-      const wid = v.uuid(payload.phlebotomistId, 'phlebotomistId');
+      const wid = v.workerUid(payload.phlebotomistUid);
       await assertEligible(c, task.owner_uid, wid, task.mode);
-      return { patch: { assigned_to: wid, assignment_version: task.assignment_version + 1 }, data: { assignedTo: wid } };
+      return { patch: { assigned_uid: wid, assignment_version: task.assignment_version + 1 }, data: { assignedUid: wid } };
     },
 
     async reassign({ c, task, payload }) {
-      const wid = v.uuid(payload.phlebotomistId, 'phlebotomistId');
+      const wid = v.workerUid(payload.phlebotomistUid);
       const reason = v.str(payload.reason, 'reason', { max: 300 });
-      if (wid === task.assigned_to) throw invalid('The task is already assigned to that worker', { field: 'phlebotomistId' });
+      if (wid === task.assigned_uid) throw invalid('The task is already assigned to that worker', { field: 'phlebotomistUid' });
       await assertEligible(c, task.owner_uid, wid, task.mode);
       return {
-        patch: { assigned_to: wid, assignment_version: task.assignment_version + 1 },
-        data: { from: task.assigned_to, to: wid, reason },
+        patch: { assigned_uid: wid, assignment_version: task.assignment_version + 1 },
+        data: { from: task.assigned_uid, to: wid, reason },
       };
     },
 
@@ -405,7 +405,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
     async decline({ c, task, principal, payload }) {
       const reason = v.str(payload.reason, 'reason', { max: 300 });
       await raiseException(c, task, { code: 'declined_by_worker', reason, principal, nextAction: 'Reassign to another collector' });
-      return { patch: { assigned_to: null, assignment_version: task.assignment_version + 1 }, data: { reason, declinedBy: task.assigned_to } };
+      return { patch: { assigned_uid: null, assignment_version: task.assignment_version + 1 }, data: { reason, declinedBy: task.assigned_uid } };
     },
 
     async depart({ c, task }) {
@@ -489,8 +489,8 @@ export function createCollectionService({ pool, now = () => new Date() }) {
       let specimen;
       try {
         const ins = await c.query(
-          `INSERT INTO lab_collection_specimens (task_id, owner_uid, barcode, container_type, status, collected_by)
-           VALUES ($1, $2, $3, $4, 'scanned', $5) RETURNING *`, [task.id, task.owner_uid, barcode, [...containers][0], principal.id]);
+          `INSERT INTO lab_collection_specimens (task_id, owner_uid, barcode, container_type, status, collected_by_uid)
+           VALUES ($1, $2, $3, $4, 'scanned', $5) RETURNING *`, [task.id, task.owner_uid, barcode, [...containers][0], principal.uid]);
         specimen = ins.rows[0];
       } catch (err) {
         if (err.code === '23505') throw conflict('duplicate_barcode', 'That barcode is already registered', { barcode });
@@ -563,7 +563,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
     decline: 'collection.task.declined',
   };
 
-  const PATCHABLE = ['assigned_to', 'assignment_version', 'cancel_reason', 'collected_at', 'closed_at'];
+  const PATCHABLE = ['assigned_uid', 'assignment_version', 'cancel_reason', 'collected_at', 'closed_at'];
 
   async function execute(c, { principal, command, taskId, expectedVersion, operationId, correlationId, payload }) {
     const task = await readTask(c, principal, taskId, { lock: true });
@@ -772,10 +772,10 @@ export function createCollectionService({ pool, now = () => new Date() }) {
            VALUES ($1, $2, $3, $4, $5, $6, $7)`,
           [task.id, ward.facilityUid, ward.admissionRef, ward.wardName, ward.bedLabel, ward.roundLabel, ward.isolationRequired]);
       }
-      for (const t of tests) {
+      for (const [i, t] of tests.entries()) {
         await c.query(
-          `INSERT INTO lab_collection_task_tests (task_id, test_code, test_name, container_type, required_volume_ml, handling, priority)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`, [task.id, t.code, t.name, t.containerType, t.volumeMl, t.handling, t.priority]);
+          `INSERT INTO lab_collection_task_tests (task_id, position, test_code, test_name, container_type, required_volume_ml, handling, priority)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [task.id, i, t.code, t.name, t.containerType, t.volumeMl, t.handling, t.priority]);
       }
       await taskEvent(c, task, { eventType: 'task.created', from: null, to: 'unassigned', version: 1, actor: ACTORS.DISPATCH, principal, operationId, data: { mode, source } });
       await outbox(c, {
@@ -858,7 +858,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
       if (existing.rows[0]) return { status: 200, body: { redrawTaskId: existing.rows[0].id, replayed: true } };
       const { rows: rejected } = await c.query(
         `SELECT t.* FROM lab_collection_task_tests t JOIN lab_collection_specimens s ON s.id = t.specimen_id
-          WHERE t.task_id = $1 AND s.status = 'rejected'`, [task.id]);
+          WHERE t.task_id = $1 AND s.status = 'rejected' ORDER BY t.position`, [task.id]);
       if (!rejected.length) throw conflict('nothing_to_redraw', 'No specimens were rejected');
       const ins = await c.query(
         `INSERT INTO lab_collection_tasks (owner_uid, mode, source_kind, source_ref, partner_uid, priority, scheduled_start, scheduled_end, patient_snapshot, redraw_of, created_by)
@@ -873,10 +873,10 @@ export function createCollectionService({ pool, now = () => new Date() }) {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [nt.id, task.facility_uid, task.admission_ref, task.ward_name, task.bed_label, task.round_label, task.isolation_required, task.order_version]);
       }
-      for (const t of rejected) {
+      for (const [i, t] of rejected.entries()) {
         await c.query(
-          `INSERT INTO lab_collection_task_tests (task_id, test_code, test_name, container_type, required_volume_ml, handling, priority)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`, [nt.id, t.test_code, t.test_name, t.container_type, t.required_volume_ml, t.handling, t.priority]);
+          `INSERT INTO lab_collection_task_tests (task_id, position, test_code, test_name, container_type, required_volume_ml, handling, priority)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [nt.id, i, t.test_code, t.test_name, t.container_type, t.required_volume_ml, t.handling, t.priority]);
       }
       await c.query(
         `UPDATE lab_collection_exceptions SET status = 'resolved', resolved_by = $2, resolved_at = now(), resolution = $3, redraw_task_id = $4
@@ -971,7 +971,7 @@ export function createCollectionService({ pool, now = () => new Date() }) {
         `SELECT t.id, t.mode, t.status, t.priority, t.source_kind, t.created_at, t.collected_at, t.closed_at, p.display_name AS collector,
                 (SELECT count(*) FROM lab_collection_specimens s WHERE s.task_id = t.id)::int AS specimens,
                 (SELECT count(*) FROM lab_collection_specimens s WHERE s.task_id = t.id AND s.status = 'rejected')::int AS rejected_specimens
-           FROM lab_collection_tasks t LEFT JOIN lab_phlebotomists p ON p.id = t.assigned_to
+           FROM lab_collection_tasks t LEFT JOIN lab_phlebotomists p ON p.unique_id = t.assigned_uid
           WHERE t.owner_uid = $1 AND ($2::timestamptz IS NULL OR t.created_at >= $2) AND ($3::timestamptz IS NULL OR t.created_at <= $3)
           ORDER BY t.created_at DESC LIMIT 5000`, [principal.ownerUid, f, t]);
       return rows;
