@@ -19,6 +19,8 @@ import labOrdersRouter from './orders.route.js';
 import labRisImagingRouter from './ris-imaging.route.js';
 import labBranchesRouter from './branches.route.js';
 import labRuleEngineRouter from '../lab-rule-engine.route.js';
+import labCollectionRouter from './collection.route.js';
+import phlebotomyRouter from '../phlebotomy.route.js';
 
 export const LAB_ROUTE_STAGES = {
   // Clinical workflow block: lab results, abnormal flagging, patient notifications
@@ -32,6 +34,9 @@ export const LAB_ROUTE_STAGES = {
   // Lab portal: auth, incoming EMR orders, RIS (PACS/DICOM; the clinic RIS
   // mount reuses the same router for dental OPG / C-arm / angio), branch registry
   portal: [
+    // Collection platform (home + ward). Mounted BEFORE '/api/lab' so the lab auth router never sees these paths.
+    ['/api/lab/collection', labCollectionRouter],
+    ['/api/phlebotomy', phlebotomyRouter],
     ['/api/lab', labAuthRouter],
     ['/api/lab/orders', labOrdersRouter],
     ['/api/lab/ris', labRisImagingRouter],

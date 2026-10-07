@@ -525,6 +525,12 @@ const USER_TYPE_PERMISSIONS = {
     ],
     tokenField: 'clinicId'
   },
+  // Collection field workers (lab phlebotomists). Their token is confined to the phlebotomy API: even if some other
+  // portal's middleware were to accept a token carrying their id, ring-fencing refuses the path first.
+  phlebotomist: {
+    allowedPaths: ['/api/phlebotomy'],
+    tokenField: 'id'
+  },
   lab: {
     allowedPaths: [
       '/api/lab',
@@ -887,6 +893,11 @@ const PUBLIC_ENDPOINTS = [
   '/api/notifications/send-internal', // n8n internal workflow notification endpoint (token-auth at route level)
   '/api/webhooks/n8n-callback/', // n8n workflow callbacks (server-to-server, token-auth at route level)
   '/api/pharmacy/medicines', // Public medicine search from master database
+  // Phlebotomist session endpoints: a worker has no token yet at login/refresh; every other /api/phlebotomy route
+  // is authenticated by authPhlebotomist inside the router.
+  '/api/phlebotomy/auth/login',
+  '/api/phlebotomy/auth/refresh',
+  '/api/phlebotomy/auth/logout',
   '/api/lab-tests/catalog',  // Public lab test catalog — browse tests and prices without login
   '/api/email/track/',       // Email open/click tracking pixels (hit by email clients, no auth)
   '/api/display',            // Hospital kiosk & waiting-room displays (LAN/public)
