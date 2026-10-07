@@ -1,4 +1,5 @@
 /**
+ * RETIRED 2026-10-07 (superseded by lab_uid; see docs/architecture/IMAGING_TENANT_UID_CONTRACT.md). Kept for history.
  * Imaging tenant registry + tenant UIDs — EXPAND phase. Additive, idempotent, re-runnable, and safe on a live system.
  * (Supersedes the unapplied 20260926000004 drafts.)
  *
@@ -70,6 +71,9 @@ async function ensureIndexConcurrently(name, table, columns) {
 }
 
 export async function up({ log = console.log } = {}) {
+  if (process.env.ALLOW_RETIRED_TENANT_UID !== '1') {
+    throw new Error('RETIRED 2026-10-07: imaging is keyed by lab_uid now and migration 20261007000500 drops the tenant_uid columns and imaging_tenants this would re-create. Set ALLOW_RETIRED_TENANT_UID=1 only for a historical rehearsal.');
+  }
   // 1. labs.uid (2–3k rows: trivial)
   await ddlWithRetry('ALTER TABLE labs ADD COLUMN IF NOT EXISTS uid uuid', { log });
   await q('UPDATE labs SET uid = gen_random_uuid() WHERE uid IS NULL');

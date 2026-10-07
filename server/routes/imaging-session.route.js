@@ -29,8 +29,8 @@ function signPacsToken(user, tenant) {
   return jwt.sign(
     {
       sub: user.id || user.userId,
-      tenantId: tenant?.id ?? null,       // integer kept for back-compat with cookies issued before tenant UIDs
-      tenantUid: tenant?.uid ?? null,     // the typed key the DICOM route resolves and dual-checks
+      tenantId: tenant?.id ?? null,       // the lab's integer id
+      labUid: tenant?.uid ?? null,        // the lab's entity uid (labs.unique_id), the key the DICOM route resolves and dual-checks
       role: user.role,
       purpose: 'pacs',
     },
@@ -49,7 +49,7 @@ async function resolveTenantId(user, studyInstanceUID) {
   // Returns the TYPED tenant ({ id, uid }) or null. Audit follow-up: the old fallbacks used `user.id` as a tenant "that
   // won't resolve this study" — which only holds while the account id equals no imaging tenant (doctor 70 = tenant 70).
   // The safe "resolves nothing" tenant is NO tenant: the viewer opens and simply shows no data.
-  if (user.role !== 'doctor') return resolveImagingTenant(user);   // explicit tenantUid/tenantId claim, or a lab account
+  if (user.role !== 'doctor') return resolveImagingTenant(user);   // explicit labUid/tenantId claim, or a lab account
   if (!studyInstanceUID) return null;                              // no study context — session resolves no data
   const referral = await pool.query(
     `SELECT lab_id, tenant_id FROM ris_studies WHERE referring_doctor_id = $1 AND study_instance_uid = $2 LIMIT 1`,

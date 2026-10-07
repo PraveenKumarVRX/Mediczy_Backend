@@ -43,10 +43,10 @@ describe('HyperGrid DICOM: an account id is never an imaging tenant', () => {
     expect(query.mock.calls.some((c) => /hg_dicom/.test(String(c[0])))).toBe(false);
   });
 
-  it('an explicit tenantId claim that is a REAL lab is honoured; both its id and its registry UID key the query, and the doctor\'s own id never does', async () => {
-    const LAB_UID = 'eeeeeeee-0000-4000-8000-000000987001';
-    query.mockImplementation(async (sql, params = []) => (/FROM imaging_tenants WHERE kind = 'lab'/.test(String(sql)) && params[0] === 987001
-      ? { rows: [{ uid: LAB_UID, source_id: '987001' }], rowCount: 1 } : { rows: [], rowCount: 0 }));
+  it('an explicit tenantId claim that is a REAL lab is honoured; both its id and its lab uid key the query, and the doctor\'s own id never does', async () => {
+    const LAB_UID = 'L98700';
+    query.mockImplementation(async (sql, params = []) => (/FROM labs WHERE id = \$1/.test(String(sql)) && params[0] === 987001
+      ? { rows: [{ id: 987001, unique_id: LAB_UID }], rowCount: 1 } : { rows: [], rowCount: 0 }));
     const res = await request(app).get(STUDIES).set('authorization', tok({ id: 70, role: 'doctor', tenantId: 987001 }));
     expect(res.status).not.toBe(403);
     const dicomCalls = query.mock.calls.filter((c) => /hg_dicom/.test(String(c[0])));

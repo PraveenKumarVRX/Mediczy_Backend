@@ -1,7 +1,7 @@
 /**
- * Regression harness for typed imaging tenants (migration 20260926000005 + routes/hypergrid-dicom.route.js).
- * Drives the REAL router with real JWTs against a DISPOSABLE local database that already has the DICOM/ris/labs/tenants
- * tables and migrations 20260926000005 applied. Refuses any non-local host (server/.env points at production).
+ * Regression harness for imaging tenants keyed by the lab's entity uid (`lab_uid`; routes/hypergrid-dicom.route.js).
+ * Drives the REAL router with real JWTs against a DISPOSABLE local database that has the DICOM/ris/labs tables, a `lab_uid`
+ * twin on each imaging table and (for the retired-uid case) entity_uid_aliases + resolve_entity_uid(). Refuses any non-local host (server/.env points at production).
  *
  *   DRYRUN_DATABASE=… DRYRUN_USER=… DRYRUN_PASSWORD=… node scripts/qa/imaging-uid-regression.mjs
  */
@@ -34,8 +34,9 @@ const bridge = (tenantId) => ({ Authorization: 'Bearer harness-bridge', 'X-Tenan
 const listUids = (res) => (res.body?.studies || res.body?.data || res.body?.rows || []).map((s) => s.study_instance_uid).sort();
 
 try {
-  const reg = (await pool.query(`SELECT source_id::int id, uid FROM imaging_tenants WHERE kind='lab'`)).rows;
+  const reg = (await pool.query(`SELECT id::int id, unique_id AS uid, uid::text AS legacy FROM labs WHERE unique_id IS NOT NULL`)).rows;
   const uidOf = Object.fromEntries(reg.map((r) => [r.id, r.uid]));
+  const legacyOf = Object.fromEntries(reg.map((r) => [r.id, r.legacy]));
 
   // ── typed resolution through the bridge (lab id space) ──────────────────────────────────────
   let r = await request(app).get('/dicom/studies').set(bridge(2368));
@@ -50,31 +51,43 @@ try {
   r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 2368, role: 'hospital', userType: 'hospital' })}`);
   check('hospital account 2368 (= lab 2368) is refused too', r.status === 403, String(r.status));
 
-  // ── explicit tenantUid claim (the typed key) ────────────────────────────────────────────────
-  r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 5, role: 'doctor', tenantUid: uidOf[2368] })}`);
-  check('a valid tenantUid claim resolves to that tenant and lists its studies', r.status === 200 && JSON.stringify(listUids(r)) === JSON.stringify(own), `${r.status} ${listUids(r).length}`);
-  r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 5, role: 'doctor', tenantUid: '11111111-1111-1111-1111-111111111111' })}`);
-  check('an unknown tenantUid is refused (no fall-through to the integer)', r.status === 403, String(r.status));
-  r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 2368, role: 'doctor', tenantUid: 'not-a-uuid', tenantId: 2368 })}`);
-  check('a malformed tenantUid is refused even alongside a matching integer claim', r.status === 403, String(r.status));
+  // ── explicit labUid claim (the lab's entity uid) ────────────────────────────────────────────────
+  r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 5, role: 'doctor', labUid: uidOf[2368] })}`);
+  check('a valid labUid claim resolves to that lab and lists its studies', r.status === 200 && JSON.stringify(listUids(r)) === JSON.stringify(own), `${r.status} ${listUids(r).length}`);
+  r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 5, role: 'doctor', labUid: 'LZZZZZ' })}`);
+  check('an unknown labUid is refused (no fall-through to the integer)', r.status === 403, String(r.status));
+  r = await request(app).get('/dicom/studies').set('Authorization', `Bearer ${sign({ id: 2368, role: 'doctor', labUid: "1' OR '1'='1", tenantId: 2368 })}`);
+  check('a malformed labUid is refused even alongside a matching integer claim', r.status === 403, String(r.status));
 
   // ── PACS session cookie ─────────────────────────────────────────────────────────────────────
-  const cookie = `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', tenantUid: uidOf[2433], tenantId: 2433 })}`;
+  const cookie = `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', labUid: uidOf[2433], tenantId: 2433 })}`;
   r = await request(app).get('/dicom/studies').set('Cookie', cookie);
-  check('a PACS cookie carrying the typed tenant lists that tenant only', r.status === 200 && listUids(r).length >= 2 && listUids(r).every((u) => u.startsWith('STUDY-2433')), `${r.status} ${listUids(r).join(',')}`);
-  r = await request(app).get('/dicom/studies').set('Cookie', `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', tenantId: null, tenantUid: null })}`);
+  check('a PACS cookie carrying the lab uid lists that lab only', r.status === 200 && listUids(r).length >= 2 && listUids(r).every((u) => u.startsWith('STUDY-2433')), `${r.status} ${listUids(r).join(',')}`);
+  r = await request(app).get('/dicom/studies').set('Cookie', `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', tenantId: null, labUid: null })}`);
   check('a PACS cookie with no tenant (doctor not entitled) is refused, not mapped to the doctor id', r.status === 403, String(r.status));
 
-  // ── FUTURE collision: a platform tenant and a lab that share integer id 1 ───────────────────
-  const tenantKindUid = (await pool.query(`INSERT INTO imaging_tenants (kind, source_id, note) VALUES ('tenant', 1, 'harness: platform tenant 1') ON CONFLICT (kind, source_id) DO UPDATE SET note = EXCLUDED.note RETURNING uid`)).rows[0].uid;
-  const cols = (await pool.query(`select column_name, data_type from information_schema.columns where table_name='hg_dicom_studies' and is_nullable='NO' and column_default is null`)).rows;
-  const vals = { study_instance_uid: 'STUDY-PLATFORM-TENANT-1', tenant_id: 1, tenant_uid: tenantKindUid, patient_id: 1, patient_name: 'n' };
-  for (const c of cols) if (!(c.column_name in vals)) vals[c.column_name] = /int|numeric/.test(c.data_type) ? 0 : /bool/.test(c.data_type) ? false : /timestamp|date/.test(c.data_type) ? new Date() : /ARRAY/.test(c.data_type) ? [] : /json/.test(c.data_type) ? '{}' : 'x';
-  const names = Object.keys(vals);
-  await pool.query(`INSERT INTO hg_dicom_studies (${names.map((n) => `"${n}"`).join(',')}) VALUES (${names.map((_, i) => `$${i + 1}`).join(',')}) ON CONFLICT DO NOTHING`, names.map((n) => vals[n]));
-  r = await request(app).get('/dicom/studies').set(bridge(1));
-  const lab1 = listUids(r);
-  check('lab 1 sees ITS studies but NOT the platform-tenant-1 study sharing the same integer id', r.status === 200 && lab1.length >= 2 && !lab1.includes('STUDY-PLATFORM-TENANT-1'), lab1.join(','));
+  // ── compatibility: a cookie issued before 2026-10-07 carries the lab's UUID as tenantUid ───────
+  r = await request(app).get('/dicom/studies').set('Cookie', `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', tenantUid: legacyOf[2433], tenantId: 2433 })}`);
+  check('LEGACY: a pre-change cookie (UUID tenantUid) still lists that lab only', r.status === 200 && listUids(r).length >= 2 && listUids(r).every((u) => u.startsWith('STUDY-2433')), `${r.status} ${listUids(r).join(',')}`);
+  r = await request(app).get('/dicom/studies').set('Cookie', `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', tenantUid: legacyOf[2368], tenantId: 2433 })}`);
+  check('LEGACY: the UUID claim wins over a contradicting integer claim (it does not fall through)', r.status === 200 && listUids(r).every((u) => u.startsWith('STUDY-2368') || u.startsWith('NEW-2368')), `${r.status} ${listUids(r).join(',')}`);
+
+  // ── a re-issued (retired) lab uid keeps working ─────────────────────────────────────────────
+  await pool.query(`INSERT INTO entity_uid_aliases (old_uid, uid) VALUES ('LOLD00', $1) ON CONFLICT (old_uid) DO UPDATE SET uid = EXCLUDED.uid`, [uidOf[2433]]);
+  tenants._clearCache();
+  r = await request(app).get('/dicom/studies').set('Cookie', `pacs_session=${sign({ sub: 9, role: 'doctor', purpose: 'pacs', labUid: 'LOLD00', tenantId: 2433 })}`);
+  check('a retired lab uid resolves to the lab\'s current uid', r.status === 200 && listUids(r).length >= 2 && listUids(r).every((u) => u.startsWith('STUDY-2433')), `${r.status} ${listUids(r).join(',')}`);
+
+  // ── defence in depth: a row whose lab_uid DISAGREES with its tenant_id is invisible to both labs ──
+  const victim = (await pool.query(`SELECT study_instance_uid FROM hg_dicom_studies WHERE tenant_id = 2368 ORDER BY id LIMIT 1`)).rows[0].study_instance_uid;
+  await pool.query(`UPDATE hg_dicom_studies SET lab_uid = $2 WHERE study_instance_uid = $1`, [victim, uidOf[2433]]);
+  r = await request(app).get('/dicom/studies').set(bridge(2368));
+  const seen2368 = listUids(r);
+  r = await request(app).get('/dicom/studies').set(bridge(2433));
+  check('a study whose lab_uid disagrees with its tenant_id is served to NEITHER lab (both keys must match)', !seen2368.includes(victim) && !listUids(r).includes(victim), `${victim}`);
+  r = await request(app).get(`/dicom/studies/${victim}`).set(bridge(2368));
+  check('…and its detail is not readable by the lab that owns the integer', r.status === 404 || r.status === 403, String(r.status));
+  await pool.query(`UPDATE hg_dicom_studies SET lab_uid = $2 WHERE study_instance_uid = $1`, [victim, uidOf[2368]]);
 
   // ── the study / worklist read paths use the dual key too ────────────────────────────────────
   const anyStudy = own[0];
@@ -82,8 +95,6 @@ try {
   check('study detail: the owning tenant can read it', r.status === 200, String(r.status));
   r = await request(app).get(`/dicom/studies/${anyStudy}`).set(bridge(2433));
   check('study detail: another lab gets 404 for it', r.status === 404 || r.status === 403, String(r.status));
-  r = await request(app).get('/dicom/studies/STUDY-PLATFORM-TENANT-1').set(bridge(1));
-  check('study detail: lab 1 cannot read the platform-tenant-1 study by its UID', r.status === 404 || r.status === 403, String(r.status));
   r = await request(app).get('/dicom/worklist').set(bridge(2368));
   check('worklist read runs (dual-keyed) and returns a list', r.status === 200 && Array.isArray(r.body.worklist), String(r.status));
 
@@ -93,8 +104,8 @@ try {
   for (const c of wcols) if (!(c.column_name in wv)) wv[c.column_name] = /int|numeric/.test(c.data_type) ? 0 : /bool/.test(c.data_type) ? false : /timestamp|date/.test(c.data_type) ? new Date() : /json/.test(c.data_type) ? '{}' : 'x';
   const wn = Object.keys(wv);
   await pool.query(`INSERT INTO hg_dicom_worklist (${wn.map((n) => `"${n}"`).join(',')}) VALUES (${wn.map((_, i) => `$${i + 1}`).join(',')})`, wn.map((n) => wv[n]));
-  const wl = (await pool.query(`SELECT tenant_uid FROM hg_dicom_worklist WHERE tenant_id = 2368 ORDER BY id DESC LIMIT 1`)).rows[0];
-  check('trigger: a worklist row written with only tenant_id has the right tenant_uid', !!wl && wl.tenant_uid === uidOf[2368], wl ? String(wl.tenant_uid).slice(0, 8) : 'no row');
+  const wl = (await pool.query(`SELECT lab_uid FROM hg_dicom_worklist WHERE tenant_id = 2368 ORDER BY id DESC LIMIT 1`)).rows[0];
+  check('trigger: a worklist row written with only tenant_id has the right lab_uid', !!wl && wl.lab_uid === uidOf[2368], wl ? String(wl.lab_uid) : 'no row');
 } catch (err) {
   check('harness completed without a fatal error', false, err.stack || err.message);
 } finally {

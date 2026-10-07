@@ -117,7 +117,7 @@ const authDicomAccess = (req, res, next) => {
       const tenant = await resolveImagingTenant({ role: 'lab', id: req.lab?.id });
       if (!tenant) return res.status(403).json({ success: false, code: 'TENANT_CONTEXT_REQUIRED', message: 'This lab is not registered as an imaging tenant' });
       req.imagingTenant = tenant;
-      req.user = { ...(req.user || {}), ...(req.lab || {}), id: req.lab?.id, tenantId: tenant.id, tenantUid: tenant.uid, role: 'lab' };
+      req.user = { ...(req.user || {}), ...(req.lab || {}), id: req.lab?.id, tenantId: tenant.id, labUid: tenant.uid, role: 'lab' };
       req.userRole = 'lab';
       return next();
     } catch (err) { return next(err); }
@@ -142,7 +142,7 @@ const authAnyDicom = async (req, res, next) => {
       const tenant = await resolveImagingTenant({ tenantId: tid });
       if (!tenant) return noTenant(res);
       req.imagingTenant = tenant;
-      req.user = { id: 0, tenantId: tenant.id, tenantUid: tenant.uid, role: 'internal-bridge' };
+      req.user = { id: 0, tenantId: tenant.id, labUid: tenant.uid, role: 'internal-bridge' };
       return next();
     }
     const queryToken = req.query.access_token || req.query.token;
@@ -158,11 +158,11 @@ const authAnyDicom = async (req, res, next) => {
         if (decoded.role === 'lab') return authDicomAccess(req, res, next);
         // Any valid JWT used to be accepted with `tenantId = decoded.tenantId || decoded.id`, so an account whose own id
         // equalled an imaging tenant id was served that tenant's studies. The tenant now comes ONLY from the typed
-        // registry (explicit tenantUid / tenantId claim, or a lab account) — never from the caller's own id.
+        // registry (explicit labUid / tenantId claim, or a lab account) — never from the caller's own id.
         const tenant = await resolveImagingTenant(decoded);
         if (!tenant) return noTenant(res);
         req.imagingTenant = tenant;
-        req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: tenant.id, tenantUid: tenant.uid };
+        req.user = { ...decoded, id: decoded.id || decoded.userId, tenantId: tenant.id, labUid: tenant.uid };
         return next();
       }
     }
@@ -175,10 +175,10 @@ const authAnyDicom = async (req, res, next) => {
       try {
         const decoded = jwt.verify(pacsToken, JWT_CONFIG.SECRET);
         if (decoded?.purpose === 'pacs') {
-          const tenant = await resolveImagingTenant({ tenantUid: decoded.tenantUid, tenantId: decoded.tenantId });
+          const tenant = await resolveImagingTenant({ labUid: decoded.labUid, tenantUid: decoded.tenantUid, tenantId: decoded.tenantId }); // tenantUid: only cookies issued before 2026-10-07 (a lab UUID)
           if (!tenant) return noTenant(res);
           req.imagingTenant = tenant;
-          req.user = { id: decoded.sub, tenantId: tenant.id, tenantUid: tenant.uid, role: decoded.role };
+          req.user = { id: decoded.sub, tenantId: tenant.id, labUid: tenant.uid, role: decoded.role };
           return next();
         }
       } catch {
@@ -204,7 +204,8 @@ function tenantId(req) {
   return req.imagingTenant?.id ?? null;
 }
 
-function tenantUid(req) {
+/** The lab's entity uid (labs.unique_id), matched against the lab_uid twin on the imaging tables. */
+function labUidOf(req) {
   return req.imagingTenant?.uid ?? null;
 }
 
@@ -291,7 +292,7 @@ async function loadRisStudyForTenant(pool, studyUID, tid, tuid) {
     `SELECT * FROM ris_studies
      WHERE study_instance_uid = $1
        AND ($2::bigint IS NULL OR lab_id = $2 OR tenant_id = $2)
-       AND ($3::uuid IS NULL OR tenant_uid = $3)
+       AND ($3::text IS NULL OR lab_uid = $3)
      ORDER BY created_at DESC
      LIMIT 1`,
     [studyUID, tid || null, tuid || null],
@@ -433,7 +434,7 @@ async function loadStudy(pool, studyUID, tid, tuid) {
   const uid = cleanDicomUid(studyUID);
   // Dual key: the integer AND the tenant UID must match, so an id that merely equals another tenant's never matches.
   const r = await pool.query(
-    `SELECT * FROM hg_dicom_studies WHERE study_instance_uid = $1 AND tenant_id = $2 AND tenant_uid = $3`,
+    `SELECT * FROM hg_dicom_studies WHERE study_instance_uid = $1 AND tenant_id = $2 AND lab_uid = $3`,
     [uid, tid, tuid],
   );
   return r.rows[0] || await ensureStudyIndexedFromOrthanc(pool, uid, tid, tuid);
@@ -444,7 +445,7 @@ async function loadInstances(pool, studyUID, tid, tuid, seriesUID = null) {
   const series = cleanDicomUid(seriesUID);
   const r = await pool.query(
     `SELECT * FROM hg_dicom_instances
-     WHERE study_instance_uid = $1 AND tenant_id = $2 AND tenant_uid = $4
+     WHERE study_instance_uid = $1 AND tenant_id = $2 AND lab_uid = $4
        AND ($3::text IS NULL OR series_instance_uid = $3)
      ORDER BY instance_number NULLS LAST, created_at ASC`,
     [uid, tid, series || null, tuid],
@@ -457,7 +458,7 @@ router.post('/studies', authAnyDicom, upload.array('files'), async (req, res) =>
   try {
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     let studyUID = req.body.studyInstanceUID || null;
     let patientId = req.body.patientId || null;
     let patientName = req.body.patientName || null;
@@ -546,7 +547,7 @@ router.get('/studies', authAnyDicom, async (req, res) => {
     const mod = Modality || modality;
     const sdate = StudyDate || studyDate;
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
     const pool = await connectPostgres();
     const r = await pool.query(
@@ -554,7 +555,7 @@ router.get('/studies', authAnyDicom, async (req, res) => {
        FROM hg_dicom_studies s
        LEFT JOIN hg_dicom_instances i
          ON i.study_instance_uid = s.study_instance_uid AND i.tenant_id = s.tenant_id
-       WHERE s.tenant_id = $1 AND s.tenant_uid = $7
+       WHERE s.tenant_id = $1 AND s.lab_uid = $7
          AND ($2::text IS NULL OR s.patient_id::text = $2 OR s.patient_name ILIKE '%' || $2 || '%')
          AND ($3::text IS NULL OR s.modality = $3)
          AND ($4::text IS NULL OR s.study_date::text = $4)
@@ -588,7 +589,7 @@ router.get('/series', authAnyDicom, async (req, res) => {
     if (!uid) return res.status(400).json({ success: false, message: 'StudyInstanceUID required' });
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, uid, tid, tuid);
     if (!study) return res.status(404).json([]);
     const instances = await loadInstances(pool, uid, tid, tuid);
@@ -619,7 +620,7 @@ router.get('/instances', authAnyDicom, async (req, res) => {
     if (!StudyInstanceUID) return res.status(400).json({ success: false, message: 'StudyInstanceUID required' });
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, StudyInstanceUID, tid, tuid);
     if (!study) return res.status(404).json([]);
     const instances = await loadInstances(pool, StudyInstanceUID, tid, tuid, SeriesInstanceUID || null);
@@ -645,7 +646,7 @@ router.get('/studies/:studyUID', authAnyDicom, async (req, res) => {
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
     const instances = await loadInstances(pool, req.params.studyUID, tid, tuid);
@@ -670,7 +671,7 @@ router.get('/studies/:studyUID/series', authAnyDicom, async (req, res) => {
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json([]);
     const instances = await loadInstances(pool, req.params.studyUID, tid, tuid);
@@ -699,7 +700,7 @@ router.get('/studies/:studyUID/series/:seriesUID/instances', authAnyDicom, async
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json([]);
     const instances = await loadInstances(pool, req.params.studyUID, tid, tuid, req.params.seriesUID);
@@ -727,7 +728,7 @@ router.get('/studies/:studyUID/series/:seriesUID/metadata', authAnyDicom, async 
     const policy = dicomPolicyForRequest(req);
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json([]);
     const instances = await loadInstances(pool, req.params.studyUID, tid, tuid, req.params.seriesUID);
@@ -768,7 +769,7 @@ router.get('/studies/:studyUID/ai-readiness', authAnyDicom, async (req, res) => 
   try {
     const pool = await connectPostgres();
     const tid = tenantId(req);
-    const tuid = tenantUid(req);
+    const tuid = labUidOf(req);
     const study = await loadStudy(pool, req.params.studyUID, tid, tuid);
     if (!study) return res.status(404).json({ success: false, message: 'Study not found' });
     const instances = await loadInstances(pool, req.params.studyUID, tid, tuid);
@@ -856,13 +857,13 @@ async function streamInstance(req, res) {
   const policy = dicomPolicyForRequest(req);
   const pool = await connectPostgres();
   const tid = tenantId(req);
-  const tuid = tenantUid(req);
+  const tuid = labUidOf(req);
   const studyUID = cleanDicomUid(req.params.studyUID);
   const seriesUID = cleanDicomUid(req.params.seriesUID);
   const sopUID = cleanDicomUid(req.params.sopUID);
   const r = await pool.query(
     `SELECT i.* FROM hg_dicom_instances i
-     WHERE i.sop_instance_uid = $1 AND i.study_instance_uid = $2 AND i.tenant_id = $3 AND i.tenant_uid = $5
+     WHERE i.sop_instance_uid = $1 AND i.study_instance_uid = $2 AND i.tenant_id = $3 AND i.lab_uid = $5
        AND ($4::text IS NULL OR i.series_instance_uid = $4)`,
     [sopUID, studyUID, tid, seriesUID || null, tuid],
   );
@@ -1027,12 +1028,12 @@ router.get('/worklist', authAnyDicom, async (req, res) => {
     const pool = await connectPostgres();
     const r = await pool.query(
       `SELECT * FROM hg_dicom_worklist
-       WHERE tenant_id = $1 AND tenant_uid = $4
+       WHERE tenant_id = $1 AND lab_uid = $4
          AND ($2::text IS NULL OR modality = $2)
          AND ($3::date IS NULL OR scheduled_date = $3::date)
          AND status NOT IN ('completed','cancelled')
        ORDER BY scheduled_date ASC, scheduled_time ASC NULLS LAST`,
-      [tenantId(req), modality || null, date || null, tenantUid(req)],
+      [tenantId(req), modality || null, date || null, labUidOf(req)],
     );
     res.json({ success: true, worklist: r.rows });
   } catch (err) {

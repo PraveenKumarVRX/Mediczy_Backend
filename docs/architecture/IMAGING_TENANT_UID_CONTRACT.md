@@ -26,11 +26,13 @@ They are not dead columns. They are the imaging tenant-isolation key, read by li
 
 Removing them means changing the tenant identity of a **security boundary**: every predicate above, the session claim's shape (every open PACS session would be invalidated and force a re-login), the resolver, the registry and the QA scripts (`scripts/qa/imaging-uid-regression.mjs`, `tenant-uid-rehearsal.mjs`). That is a project with its own rehearsal, not a column drop.
 
-## Contract plan (for approval, in order)
+## Contract — executed 2026-10-07 (steps 2–4, in this order)
 
-1. Apply `20261007000200`, run the backfill, validate the FK and index. (`verify-entity-uid-rule.mjs` warns "unfilled" until done, then is silent.)
-2. Resolver: `resolveImagingTenant` returns `{ id, uid: labs.unique_id, kind: 'lab' }`; keep accepting the old UUID `tenantUid` claim for one release (mapped through `imaging_tenants.source_uid`) so open sessions survive.
-3. Predicates: `tenant_uid = $n` → `lab_uid = $n` (text) in the 30 sites, with `tests/imaging-uid-regression` extended to cross-lab negatives for every route; ship dual-condition for one release (`AND (lab_uid = $n)` only after the old column is no longer written).
-4. Stop the `imaging_fill_tenant_uid*` triggers; drop the UUID columns and `imaging_tenants` last, after a release with no readers (grep clean, `pg_stat_user_tables` shows no reads of the columns' indexes).
+1. **Step A — `20261007000400`** (additive): `(lab_uid, study_instance_uid)` indexes on studies and instances, replacing the old `(tenant_uid, study_instance_uid)` composites' job.
+2. **Step B — code** (branch `viveka-uid-wave3`): `imaging-tenant.service.js` now resolves a tenant from `labs` alone — by `labUid` (a retired uid resolves through `resolve_entity_uid`), by `tenantId`, or from a lab account — and returns `{ id, uid: labs.unique_id, kind: 'lab' }`. The PACS cookie now carries `labUid`. Every predicate in `hypergrid-dicom.route.js` matches `lab_uid` (text) instead of the UUID `tenant_uid`. **Compatibility:** a UUID `tenantUid` claim (cookies issued before the change, one hour) still maps to the same lab through `labs.uid`; remove `LEGACY_UUID_CLAIM` after 2026-10-09.
+3. **Step C — verify no readers:** the `tenant_uid` indexes' `idx_scan` counters (`pg_stat_user_indexes`) are recorded before the deploy and compared after; the harness and jest suites pass.
+4. **Step D — `20261007000500`**: drop the six `trg_*_tenant_uid` triggers, `imaging_fill_tenant_uid*`, the six `tenant_uid` columns (their indexes go with them), `imaging_tenant_ambiguities` and `imaging_tenants`. Everything dropped is derivable from `labs.uid` + the row's lab id. The old migration `20260926000005` is retired (its `up()` refuses to run) and `verify-tenant-uid.mjs` / `tenant-uid-rehearsal.mjs` are removed.
 
-Each step is independently shippable and reversible until step 4. **Step 2–4 are not done and need your go-ahead** because they change which tenant a PACS request is allowed to see.
+**Rehearsals:** `scripts/qa/imaging-uid-regression.mjs` drives the real router with real JWTs against a disposable local database copy (18/18: bridge, claims, cookie, legacy UUID cookie, retired uid, both-keys-must-match, worklist trigger); jest imaging/tenant suites pass; both migrations dry-run clean against production inside the checked runner.
+
+**One modelling note.** The old registry could in principle hold a *non-lab* "platform tenant" sharing an integer with a lab (only id 1 is ambiguous: 12 synthetic test rows, reviewed 2026-09-26 and assigned to the lab). With the lead's decision that imaging `tenant_id` is a lab id, that case is out of the model and its harness check was removed.

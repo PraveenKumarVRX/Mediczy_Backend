@@ -1316,31 +1316,6 @@
    "key": "clinical_alerts.tenant_id",
    "why": "tenant_id suggests tenants but the values do not all exist there (they fit: hospitals, labs, provider_clinics)",
    "rows": 4
-  },
-  {
-   "key": "display_devices.organization_id",
-   "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
-   "rows": 8
-  },
-  {
-   "key": "hospital_queue_entries.organization_id",
-   "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
-   "rows": 27
-  },
-  {
-   "key": "hospital_queue_token_sequences.organization_id",
-   "why": "organization_id suggests tenants but the values do not all exist there (they fit: hospitals)",
-   "rows": 5
-  },
-  {
-   "key": "hospital_uhid_sequences.organization_id",
-   "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
-   "rows": 5
-  },
-  {
-   "key": "kiosk_registration_invites.organization_id",
-   "why": "organization_id suggests tenants but the values do not all exist there (they fit: hospitals)",
-   "rows": 19
   }
  ]
 }
