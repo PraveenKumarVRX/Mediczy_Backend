@@ -54,7 +54,7 @@ const mainNavItems: SidebarItem[] = [
 ];
 
 const labWorkItems: SidebarItem[] = [
-  { icon: Activity, label: "Home Collection Ops", href: "/lab/home-collection", highlight: true },
+  { icon: Activity, label: "Collection Operations", href: "/lab/collection-ops", highlight: true },
   { icon: TestTube, label: "Sample Collection", href: "/lab/samples" },
   { icon: Microscope, label: "Processing", href: "/lab/processing" },
   { icon: CheckCircle, label: "Results Entry", href: "/lab/results" },

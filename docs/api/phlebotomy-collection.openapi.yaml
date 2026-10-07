@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: Mediczy collection platform (home and ward phlebotomy)
+  version: 0.1.0
+  description: |
+    Draft contract for the phlebotomist (mobile) API and the lab-portal operations API. Matches the implementation in
+    `server/routes/phlebotomy.router.js` and `server/routes/lab/collection.router.js`; the integration checks in
+    `server/scripts/ops/checks/lab-collection-platform.checks.mjs` exercise every path below.
+
+    **Mutations** require `Idempotency-Key` (8–128 of `A-Za-z0-9._:-`). Mobile mutations also require `X-Device-Id`
+    and a body `expectedVersion`. The same key with the same body replays the stored response
+    (`Idempotent-Replayed: true`); the same key with a different body is `422 idempotency_key_reuse`.
+    Actor, owner and worker are always derived from the token.
+servers:
+  - url: https://mediqzy.com/api
+tags:
+  - name: Phlebotomist session
+  - name: Phlebotomist tasks
+  - name: Lab portal
+security:
+  - bearerAuth: []
+paths:
+  /phlebotomy/auth/login:
+    post:
+      tags: [Phlebotomist session]
+      security: []
+      summary: Sign in
+      parameters: [{ $ref: '#/components/parameters/DeviceId' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [email, password], properties: { email: { type: string }, password: { type: string } } } } } }
+      responses:
+        '200': { description: Token pair, content: { application/json: { schema: { $ref: '#/components/schemas/SessionTokens' } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+        '403': { description: Correct password but the account cannot sign in (suspended, expired qualification, no active membership), content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /phlebotomy/auth/refresh:
+    post:
+      tags: [Phlebotomist session]
+      security: []
+      summary: Rotate the refresh token (the worker is re-checked)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [refreshToken], properties: { refreshToken: { type: string } } } } } }
+      responses:
+        '200': { description: New pair, content: { application/json: { schema: { $ref: '#/components/schemas/SessionTokens' } } } }
+        '401': { $ref: '#/components/responses/Problem' }
+  /phlebotomy/auth/logout:
+    post:
+      tags: [Phlebotomist session]
+      security: []
+      summary: Revoke the refresh token
+      requestBody: { content: { application/json: { schema: { type: object, properties: { refreshToken: { type: string } } } } } }
+      responses: { '200': { description: OK } }
+  /phlebotomy/auth/change-password:
+    post:
+      tags: [Phlebotomist session]
+      summary: Change password (required on first sign-in; revokes every session)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [currentPassword, newPassword], properties: { currentPassword: { type: string }, newPassword: { type: string, minLength: 10 } } } } } }
+      responses: { '200': { description: OK }, '401': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /phlebotomy/me:
+    get:
+      tags: [Phlebotomist session]
+      summary: Worker, memberships, capabilities, server time
+      responses: { '200': { description: OK } }
+  /phlebotomy/tasks:
+    get:
+      tags: [Phlebotomist tasks]
+      summary: Own assigned worklist (minimum projection; closed tasks stay for 2 days so a client can reconcile)
+      parameters:
+        - { name: mode, in: query, schema: { type: string, enum: [home, ward] } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        '200': { description: Page, content: { application/json: { schema: { type: object, properties: { tasks: { type: array, items: { $ref: '#/components/schemas/Task' } }, nextCursor: { type: string, nullable: true }, serverTime: { type: string, format: date-time } } } } } }
+        '403': { description: password_change_required | account_unavailable | wrong_account_type, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /phlebotomy/tasks/{id}:
+    get:
+      tags: [Phlebotomist tasks]
+      summary: Task detail with tests and specimens. 404 for any task not assigned to the caller. Address and phone appear only once accepted.
+      parameters: [{ $ref: '#/components/parameters/TaskId' }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } }
+  /phlebotomy/tasks/{id}/accept:
+    post: { tags: [Phlebotomist tasks], summary: Accept the current assignment, parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, assignmentVersion], properties: { expectedVersion: { type: integer }, assignmentVersion: { type: integer } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' }, '409': { $ref: '#/components/responses/Problem' } } }
+  /phlebotomy/tasks/{id}/decline:
+    post: { tags: [Phlebotomist tasks], summary: Decline (returns the task to the pool; raises declined_by_worker), parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, reason], properties: { expectedVersion: { type: integer }, reason: { type: string, maxLength: 300 } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+  /phlebotomy/tasks/{id}/depart:
+    post: { tags: [Phlebotomist tasks], summary: Home only. accepted → en_route, parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }], requestBody: { $ref: '#/components/requestBodies/VersionOnly' }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+  /phlebotomy/tasks/{id}/arrival:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Home only. en_route → arrived, with bounded evidence (no raw coordinates)
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion], properties: { expectedVersion: { type: integer }, evidence: { type: object, additionalProperties: false, properties: { method: { type: string, enum: [geo, manual, otp] }, withinRadius: { type: boolean }, accuracyM: { type: integer } } } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' } }
+  /phlebotomy/tasks/{id}/bedside:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Ward only. accepted → at_bedside. Rechecks the admission (409 source_changed if discharged or moved).
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, locationConfirmed], properties: { expectedVersion: { type: integer }, locationConfirmed: { type: boolean, enum: [true] } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' }, '409': { $ref: '#/components/responses/Problem' } }
+  /phlebotomy/tasks/{id}/verify-patient:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Two-identifier or wristband verification. A mismatch is recorded, raises identity_mismatch and does NOT advance (200, outcome "mismatch").
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, method, result, identifierTypes], properties: { expectedVersion: { type: integer }, method: { type: string, enum: [two_identifiers, wristband] }, result: { type: string, enum: [match, mismatch] }, identifierTypes: { type: array, items: { type: string }, description: 'Types checked (e.g. name, dob). Never the identifiers themselves. Two or more for two_identifiers.' } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' } }
+  /phlebotomy/tasks/{id}/consent:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Consent or refusal. A refusal closes the task as refused.
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, outcome, consentVersion, method, language], properties: { expectedVersion: { type: integer }, outcome: { type: string, enum: [granted, refused] }, consentVersion: { type: string }, method: { type: string, enum: [verbal, written, digital] }, language: { type: string }, givenBy: { type: string, enum: [patient, guardian, witnessed], default: patient } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' } }
+  /phlebotomy/tasks/{id}/specimens/scan:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Bind a barcode to required tests (same container type). Does not move the task. 409 duplicate_barcode if the owner has ever used it.
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, barcode, testIds], properties: { expectedVersion: { type: integer }, barcode: { type: string, pattern: '^[A-Za-z0-9._-]{4,64}$' }, testIds: { type: array, items: { type: string, format: uuid }, minItems: 1 } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' }, '409': { $ref: '#/components/responses/Problem' } }
+  /phlebotomy/tasks/{id}/collect:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Atomic collection. 409 specimens_incomplete until every required test is scanned. Ward isolation needs isolationAcknowledged; optional orderVersion guards a changed order.
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion], properties: { expectedVersion: { type: integer }, isolationAcknowledged: { type: boolean }, orderVersion: { type: integer } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' }, '409': { $ref: '#/components/responses/Problem' } }
+  /phlebotomy/tasks/{id}/start-transit:
+    post: { tags: [Phlebotomist tasks], summary: Home only. collected → in_transit, parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }], requestBody: { $ref: '#/components/requestBodies/VersionOnly' }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+  /phlebotomy/tasks/{id}/handoff:
+    post:
+      tags: [Phlebotomist tasks]
+      summary: Home in_transit → handed_over (to the lab). Ward collected → ward_handoff (lab or collection point).
+      parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }, { $ref: '#/components/parameters/DeviceIdRequired' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion, receiverKind], properties: { expectedVersion: { type: integer }, receiverKind: { type: string, enum: [lab, collection_point] }, receiverRef: { type: string, maxLength: 80 } } } } } }
+      responses: { '200': { $ref: '#/components/responses/TaskResult' } }
+
+  /lab/collection/ops:
+    get:
+      tags: [Lab portal]
+      summary: Dispatch board with SQL-computed summary
+      parameters:
+        - { name: mode, in: query, schema: { type: string, enum: [home, ward] } }
+        - { name: status, in: query, schema: { type: string }, description: comma separated }
+        - { name: assignedTo, in: query, schema: { type: string, format: uuid } }
+        - { name: overdue, in: query, schema: { type: boolean } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+      responses: { '200': { description: OK } }
+  /lab/collection/kpis: { get: { tags: [Lab portal], summary: Aggregates (window days, median collect→handoff), parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 365, default: 30 } }], responses: { '200': { description: OK } } } }
+  /lab/collection/partners: { get: { tags: [Lab portal], summary: Linked hospitals and the bookings/admissions that can become tasks now, responses: { '200': { description: OK } } } }
+  /lab/collection/export.csv: { get: { tags: [Lab portal], summary: Task export (formula-injection safe), responses: { '200': { description: text/csv } } } }
+  /lab/collection/tasks:
+    post:
+      tags: [Lab portal]
+      summary: Create a task from a linked hospital's booking, an admission, or manually (home). Home and ward fields are mutually exclusive; unknown fields are refused.
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateTask' } } } }
+      responses: { '201': { description: Created }, '403': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' }, '422': { $ref: '#/components/responses/Problem' } }
+  /lab/collection/tasks/{id}: { get: { tags: [Lab portal], summary: Task detail (tests, specimens), parameters: [{ $ref: '#/components/parameters/TaskId' }], responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' } } } }
+  /lab/collection/tasks/{id}/timeline: { get: { tags: [Lab portal], summary: Immutable task, custody, consent and verification timeline, parameters: [{ $ref: '#/components/parameters/TaskId' }], responses: { '200': { description: OK } } } }
+  /lab/collection/tasks/{id}/assign:
+    post: { tags: [Lab portal], summary: unassigned → assigned. 422 worker_not_eligible if inactive/unverified/expired/not a member/not enabled for the mode., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [phlebotomistId], properties: { expectedVersion: { type: integer }, phlebotomistId: { type: string, format: uuid } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+  /lab/collection/tasks/{id}/reassign:
+    post: { tags: [Lab portal], summary: Until collection only. Needs a reason; the new worker must accept the new assignment version., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [phlebotomistId, reason], properties: { expectedVersion: { type: integer }, phlebotomistId: { type: string, format: uuid }, reason: { type: string, maxLength: 300 } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+  /lab/collection/tasks/{id}/cancel:
+    post: { tags: [Lab portal], summary: Until collection only; a collected task cannot be cancelled., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [reason], properties: { expectedVersion: { type: integer }, reason: { type: string, maxLength: 300 } } } } } }, responses: { '200': { $ref: '#/components/responses/TaskResult' } } }
+  /lab/collection/tasks/{id}/redraw:
+    post: { tags: [Lab portal], summary: For a rejected_by_lab task, creates one linked urgent task for the rejected tests and resolves the exception. Repeating returns the same task., parameters: [{ $ref: '#/components/parameters/TaskId' }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { content: { application/json: { schema: { type: object, properties: { note: { type: string } } } } } }, responses: { '201': { description: Created }, '200': { description: Already requested } } }
+  /lab/collection/specimens/{id}/receive:
+    post:
+      tags: [Lab portal]
+      summary: Independent lab receipt. The task completes when every specimen is decided; any rejection closes it as rejected_by_lab. Repeating the same outcome is a replay.
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [outcome], properties: { outcome: { type: string, enum: [accepted, rejected] }, condition: { type: string, maxLength: 120 }, reason: { type: string, maxLength: 300, description: required when rejected } } } } } }
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Problem' }, '409': { $ref: '#/components/responses/Problem' } }
+  /lab/collection/exceptions: { get: { tags: [Lab portal], summary: Exception queue, parameters: [{ name: status, in: query, schema: { type: string, enum: [open, resolved] } }], responses: { '200': { description: OK } } } }
+  /lab/collection/exceptions/{id}/resolve: { post: { tags: [Lab portal], summary: Resolve with a note, parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }, { $ref: '#/components/parameters/IdempotencyKey' }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [resolution], properties: { resolution: { type: string, maxLength: 300 } } } } } }, responses: { '200': { description: OK } } } }
+  /lab/collection/phlebotomists:
+    get: { tags: [Lab portal], summary: Directory with workload and the server's eligibility verdict, responses: { '200': { description: OK } } }
+    post: { tags: [Lab portal], summary: Provision a verified collector (the lab attests identity and qualification), requestBody: { required: true, content: { application/json: { schema: { type: object, required: [displayName, email, password], properties: { displayName: { type: string }, email: { type: string }, phone: { type: string }, password: { type: string, minLength: 10 }, qualification: { type: string }, qualificationExpires: { type: string, format: date-time }, canHome: { type: boolean, default: true }, canWard: { type: boolean, default: false } } } } } }, responses: { '201': { description: Created }, '409': { description: email_in_use (same answer whether the person works for another lab), content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } } } }
+  /lab/collection/phlebotomists/{id}/membership: { patch: { tags: [Lab portal], summary: Suspend, reinstate or end the membership (revokes sessions when not active; returns openTasksToReassign), parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }], requestBody: { content: { application/json: { schema: { type: object, properties: { status: { type: string, enum: [active, suspended, ended] }, canHome: { type: boolean }, canWard: { type: boolean }, activeTo: { type: string, format: date-time, nullable: true } } } } } }, responses: { '200': { description: OK } } } }
+  /lab/collection/phlebotomists/{id}/reset-password: { post: { tags: [Lab portal], summary: Set a temporary password (forces change, revokes sessions), parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }], requestBody: { required: true, content: { application/json: { schema: { type: object, required: [password], properties: { password: { type: string, minLength: 10 } } } } } }, responses: { '200': { description: OK } } } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT, description: 'Phlebotomist token (aud mediczy-phlebotomy) for /phlebotomy; lab token (role lab) for /lab/collection. Neither is accepted on the other API.' }
+  parameters:
+    TaskId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, required: true, schema: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' } }
+    DeviceId: { name: X-Device-Id, in: header, schema: { type: string } }
+    DeviceIdRequired: { name: X-Device-Id, in: header, required: true, schema: { type: string, pattern: '^[A-Za-z0-9._:-]{8,128}$' } }
+  requestBodies:
+    VersionOnly: { required: true, content: { application/json: { schema: { type: object, required: [expectedVersion], properties: { expectedVersion: { type: integer } } } } } }
+  responses:
+    TaskResult: { description: Updated task (and tests), content: { application/json: { schema: { type: object, properties: { success: { type: boolean }, task: { $ref: '#/components/schemas/Task' }, tests: { type: array, items: { type: object } }, result: { type: object } } } } } }
+    Problem: { description: Error, content: { application/json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  schemas:
+    Problem:
+      type: object
+      properties:
+        success: { type: boolean, enum: [false] }
+        code: { type: string, description: 'validation_failed, not_found, forbidden, version_conflict (details.currentVersion), assignment_changed, invalid_transition, task_closed, actor_not_permitted, duplicate_barcode, test_already_scanned, specimens_incomplete, source_changed, order_changed, task_exists, already_decided, idempotency_key_reuse, invalid_credentials, account_unavailable, invalid_refresh_token, password_change_required, wrong_account_type' }
+        message: { type: string }
+        details: { type: object }
+    SessionTokens:
+      type: object
+      properties: { success: { type: boolean }, accessToken: { type: string }, refreshToken: { type: string }, mustChangePassword: { type: boolean }, worker: { type: object } }
+    Task:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mode: { type: string, enum: [home, ward] }
+        status: { type: string, enum: [unassigned, assigned, accepted, en_route, arrived, at_bedside, verified, consented, collected, in_transit, handed_over, ward_handoff, lab_received, rejected_by_lab, refused, cancelled] }
+        priority: { type: string, enum: [routine, urgent, stat] }
+        version: { type: integer }
+        assignmentVersion: { type: integer }
+        patient: { type: object, properties: { name: { type: string }, age: { type: integer }, gender: { type: string } } }
+        permittedCommands: { type: array, items: { type: string } }
+        home: { type: object, description: 'address and contactPhone only after accept (collector) — always for the lab' }
+        ward: { type: object }
+    CreateTask:
+      type: object
+      additionalProperties: false
+      properties:
+        mode: { type: string, enum: [home, ward], description: 'Defaults to home when bookingId is given' }
+        source: { type: string, enum: [manual, booking, admission] }
+        bookingId: { type: string }
+        patient: { type: object, additionalProperties: false, properties: { name: { type: string }, age: { type: integer }, gender: { type: string, enum: [male, female, other] }, uhid: { type: string } } }
+        tests: { type: array, items: { type: object, properties: { name: { type: string }, code: { type: string }, containerType: { type: string }, requiredVolumeMl: { type: number }, handling: { type: string }, priority: { type: string } } } }
+        priority: { type: string, enum: [routine, urgent, stat] }
+        scheduledStart: { type: string, format: date-time }
+        scheduledEnd: { type: string, format: date-time }
+        address: { type: object, description: home only }
+        contactPhone: { type: string, description: home only }
+        facilityUid: { type: string, description: ward only }
+        admissionRef: { type: string, description: ward only }
+        wardName: { type: string, description: ward only }
+        bedLabel: { type: string, description: ward only }
+        roundLabel: { type: string, description: ward only }
+        isolationRequired: { type: boolean, description: ward only }
