@@ -3,7 +3,7 @@
 - **Date:** 2026-10-07
 - **Status:** Implemented on branch `viveka-phlebotomy-collection` — **not applied, not merged, not deployed.** Phases 0, 3–6 of the plan are not part of this change (see §6).
 - **Plan:** [LAB_MODULE_PHLEBOTOMY_REQUIREMENTS_AVAILABILITY_AND_IMPLEMENTATION_PLAN_2026-10-07.md](../audits/LAB_MODULE_PHLEBOTOMY_REQUIREMENTS_AVAILABILITY_AND_IMPLEMENTATION_PLAN_2026-10-07.md)
-- **Contract:** [docs/api/phlebotomy-collection.openapi.yaml](../api/phlebotomy-collection.openapi.yaml)
+- **Contract:** [docs/api/phlebotomy-collection.openapi.yaml](../api/phlebotomy-collection.openapi.yaml) · **App integration guide:** [docs/api/PHLEBOTOMY_MOBILE_API_INTEGRATION.md](../api/PHLEBOTOMY_MOBILE_API_INTEGRATION.md)
 - **Migration:** `server/migrations/20261007000000-lab-collection-platform.sql` (checks: `server/scripts/ops/checks/lab-collection-platform.checks.mjs`)
 
 ## 1. Context — what was found while building

@@ -13,7 +13,7 @@ info:
     Actor, owner and worker are always derived from the token. A collector is identified everywhere by its registry uid
     (kind `phlebotomist`, prefix `F`, e.g. `F7K2PX`); no internal numeric id is exposed.
 servers:
-  - url: https://mediqzy.com/api
+  - url: https://app.mediqzy.com/api
 tags:
   - name: Phlebotomist session
   - name: Phlebotomist tasks
