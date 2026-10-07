@@ -103,6 +103,9 @@ const ROLE_PREFIX_MAP = {
   'ambulance_admin': 'B',
   'ohc': 'O',
   'ohc_admin': 'O',
+  // Corporate-portal clinical roles (decided by the lead, 2026-10-07): the CMO is a doctor, the OHC is a clinic.
+  'corporate_cmo': 'D',
+  'corporate_ohc': 'K',
   // Lab collection workers (lab_phlebotomists). Prefix chosen by the lead, 2026-10-07.
   'phlebotomist': 'F',
   'employee': 'E',

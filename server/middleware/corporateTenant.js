@@ -305,12 +305,24 @@ export const requireBrokerAccess = async (req, res, next) => {
     }
 
     const isNumeric = /^\d+$/.test(String(rawId));
+    // A re-issued broker uid keeps working: resolve_entity_uid() maps a retired uid to its replacement. Before the
+    // entity-uid migration exists (42883 undefined function / 42P01 undefined table) the raw value is used as before.
+    let lookupUid = String(rawId);
+    if (!isNumeric) {
+      try {
+        const [r] = await postgresSequelize.query('SELECT resolve_entity_uid(:uid) AS uid', { replacements: { uid: lookupUid }, type: QueryTypes.SELECT });
+        if (r?.uid) lookupUid = r.uid;
+      } catch (err) {
+        const code = err?.original?.code || err?.parent?.code || err?.code;
+        if (code !== '42883' && code !== '42P01') throw err;
+      }
+    }
     const [broker] = await postgresSequelize.query(
       isNumeric
         ? `SELECT id, broker_uid, broker_name, status FROM insurance_brokers WHERE id = :id LIMIT 1`
         : `SELECT id, broker_uid, broker_name, status FROM insurance_brokers WHERE broker_uid = :uid LIMIT 1`,
       {
-        replacements: isNumeric ? { id: parseInt(rawId, 10) } : { uid: String(rawId) },
+        replacements: isNumeric ? { id: parseInt(rawId, 10) } : { uid: lookupUid },
         type: QueryTypes.SELECT
       }
     );

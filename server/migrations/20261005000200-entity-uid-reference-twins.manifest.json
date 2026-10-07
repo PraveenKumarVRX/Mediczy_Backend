@@ -1323,11 +1323,6 @@
    "rows": 8
   },
   {
-   "key": "hg_dicom_instances.tenant_id",
-   "why": "423808 rows: too large to rewrite in a migration (already dual-keyed for imaging)",
-   "rows": 423808
-  },
-  {
    "key": "hospital_queue_entries.organization_id",
    "why": "organization_id suggests tenants but the values do not all exist there (they fit: no single table)",
    "rows": 27

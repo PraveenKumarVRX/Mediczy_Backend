@@ -10,10 +10,10 @@
  * issued again. The old -> new mapping is written to a CSV BEFORE the transaction commits, so the
  * correction is always reversible by reading it.
  *
- * Approved so far: provider_clinics (547 ids issued C… -- corporate's letter -- instead of K…).
- * labs (13 prefix-less ids from the old bulk import) and insurance_brokers (1 id issued B…, the
- * ambulance letter) are the same kind of correction but have NOT been approved; they are only
- * touched if you name them with --table.
+ * Approved: provider_clinics (547 ids issued C… -- corporate's letter -- instead of K…, done 2026-10-05) and,
+ * by the lead on 2026-10-07, labs (13 prefix-less ids from the old bulk import) and insurance_brokers (1 id
+ * issued B…, the ambulance letter). Apply order: migration 20261005000400 first (so every column that holds
+ * the old uid follows it), then this script.
  *
  * Needs migration 20261005000000 applied; refuses cleanly otherwise. One transaction; any failed
  * check rolls everything back.

@@ -143,3 +143,21 @@ Row-Level Security is less affected than expected: only **4** populated columns 
 Waves A–C are about 109 columns and ~60,000 rows, which is tractable in a handful of reviewed migrations.
 They are deliberately **not generated yet**: each `attach_uid_reference` adds a trigger and a column, and the
 targets for B and D need a human decision first.
+
+## 2026-10-07 — evidence on the five `organization_id` columns that mix id-spaces
+
+`display_devices`, `hospital_queue_entries`, `hospital_queue_token_sequences`, `hospital_uhid_sequences`, `kiosk_registration_invites`.
+
+The lead's answer was "directory hospital" (the `hospitals` network, not the tenant). Measured against production it does not describe the data, so **it has not been applied**:
+
+| `organization_id` | rows (5 tables) | is a `tenants` row | is a `hospitals` directory row |
+|---|---|---|---|
+| 1 | 2 | Apollo Hospitals Chennai | no (directory ids start at 4) |
+| 2 | 1 | Mediczy Test Clinic (a *clinic*) | no |
+| 3 | 7 | SmartHealth Clinic (a *clinic*) | no |
+| 4 | 13 | ACME Insurance Aggregator (an *aggregator*) | **#4 = Smart Hospital Bangalore, a different entity** |
+| 11 | 5 | Smart Hospital (tenant 11) | **#11 = Suretech Hospital, Nagpur, a different entity** |
+| 2368 | 9 | — (it is lab "Rado Labs"'s id) | #2368 Ruby Medical Centre (QA-looking) |
+| 11332 | 27 | — | #11332 QA General Hospital |
+
+The code writes `req.user.organization_id || req.user.tenant_id`, i.e. the logged-in user's tenant. Twinning these columns to the directory would silently move Smart Hospital's queue to Suretech Nagpur and an aggregator's queue to a Bangalore hospital. Only the directory rows `hospitals.tenant_id` links (#4↔tenant 11, #5↔tenant 2) bridge the two spaces. `hospital_id` columns stay twinned to `tenants`, as already decided.
