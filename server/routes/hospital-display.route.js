@@ -5,6 +5,7 @@ import Appointment from '../models/postgres/appointment.model.postgres.js';
 import { registerDisplaySSE, pushToZone, pushToAll, getSSEStats } from '../services/display-sse-broker.service.js';
 import * as queueService from '../services/hospital-queue.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
+import { listFloors, saveFloor, deleteFloor } from '../services/wayfinding.service.js';
 import {
   requireDisplayDevice,
   optionalDisplayDeviceOrDefaultOrg,
@@ -14,6 +15,8 @@ import {
 import { verifyHospitalToken } from '../middleware/hospitalAuth.middleware.js';
 
 const router = express.Router();
+const OT_PROCTOR_ROOM_PREFIX = 'display-ot-proctor-';
+const OT_PROCTOR_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 registerDisplaySSE(router, async (req, res) => {
   const result = await resolveOptionalDisplayOrg(req);
@@ -879,7 +882,11 @@ router.get('/floor-map', optionalDisplayDeviceOrDefaultOrg, async (req, res) => 
 router.post('/video/sessions', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const { sessionType, targetZone, bedId, patientId, role = 'patient' } = req.body;
-    const roomId = `display-${sessionType || 'consult'}-${Date.now()}`;
+    // OT proctoring rooms carry the organization so staff can only be issued a token for their own
+    // hospital's room (see /video/sessions/observer). Other session types keep the old opaque id.
+    const roomId = sessionType === 'ot-proctor'
+      ? `${OT_PROCTOR_ROOM_PREFIX}${req.organizationId}-${Date.now()}`
+      : `display-${sessionType || 'consult'}-${Date.now()}`;
     const join = await buildLiveKitJoinData({
       meetingId: roomId,
       identity: `${role}-${patientId || bedId || Date.now()}`,
@@ -897,12 +904,69 @@ router.post('/video/sessions', optionalDisplayDeviceOrDefaultOrg, async (req, re
   }
 });
 
+// POST /api/display/video/sessions/observer — a hospital specialist joins a live OT proctoring room
+// (subscribe-only). Staff of one hospital can only be issued tokens for rooms of their own organization,
+// which is enforced by the organization id embedded in the room name by /video/sessions.
+router.post('/video/sessions/observer', verifyHospitalToken, async (req, res) => {
+  try {
+    const { roomId } = req.body || {};
+    const prefix = `${OT_PROCTOR_ROOM_PREFIX}${req.hospitalOrgId}-`;
+    const startedAt = Number(String(roomId || '').slice(prefix.length));
+    if (!roomId || !String(roomId).startsWith(prefix) || !Number.isFinite(startedAt)) {
+      return res.status(403).json({ success: false, message: 'Not a proctoring room of your organization' });
+    }
+    if (Date.now() - startedAt > OT_PROCTOR_MAX_AGE_MS) {
+      return res.status(410).json({ success: false, message: 'This proctoring session has expired' });
+    }
+    const join = await buildLiveKitJoinData({
+      meetingId: roomId,
+      identity: `ot-observer-${req.userId ?? Date.now()}`,
+      name: 'Remote expert',
+      ttl: 60 * 60,
+      canPublish: false,
+      canSubscribe: true,
+    });
+    res.json({ success: true, roomId, join });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
 // POST /api/display/video/sessions/end — dismiss video overlay on zone displays
 router.post('/video/sessions/end', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const { targetZone, roomId } = req.body;
     pushToZone(targetZone || 'ward', 'video_session_end', { roomId, ts: Date.now() }, req.organizationId);
     res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// ─── Wayfinding floor maps (hospital staff) ──────────────────────────────
+
+router.get('/wayfinding/floors', verifyHospitalToken, async (req, res) => {
+  try {
+    res.json({ success: true, floors: await listFloors(req.hospitalOrgId) });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+router.put('/wayfinding/floors/:floorNumber', verifyHospitalToken, async (req, res) => {
+  try {
+    const out = await saveFloor(req.hospitalOrgId, req.userId, { ...req.body, floorNumber: Number(req.params.floorNumber) });
+    if (out.error) return res.status(400).json({ success: false, message: out.error });
+    res.json({ success: true, floor: out.floor });
+  } catch (e) {
+    res.status(500).json({ success: false, message: e.code === '42P01' ? 'Wayfinding is not set up yet (migration pending)' : e.message });
+  }
+});
+
+router.delete('/wayfinding/floors/:floorNumber', verifyHospitalToken, async (req, res) => {
+  try {
+    const removed = await deleteFloor(req.hospitalOrgId, Number(req.params.floorNumber));
+    res.status(removed ? 200 : 404).json({ success: removed });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
   }

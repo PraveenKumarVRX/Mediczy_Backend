@@ -13,6 +13,7 @@ import { assessKioskLiveness } from '../services/kiosk-liveness.service.js';
 import { parseAadhaarQrInput } from '../services/aadhaar-qr.service.js';
 import { decodeAadhaarFromImageBytes } from '../services/aadhaar-image-decode.service.js';
 import { requireDisplayDevice } from '../middleware/authDisplayDevice.middleware.js';
+import { answerQuery } from '../services/wayfinding.service.js';
 import {
   createRegistrationInvite,
   getInviteStatusForKiosk,
@@ -579,33 +580,25 @@ router.post('/liveness', async (req, res) => {
   }
 });
 
-// GET /api/display/kiosk/wayfinding — GAP-HOS-003 (text directions)
+// POST /api/display/kiosk/wayfinding — GAP-HOS-003 (text directions)
+// Answers only from the floor maps this device's organization has configured
+// (hospital_floor_maps); never invents a route.
 router.post('/wayfinding', async (req, res) => {
   try {
-    const { query, language = 'en' } = req.body;
+    const { query, language = 'en' } = req.body || {};
     if (!query || String(query).trim().length < 3) {
       return res.status(400).json({ success: false, message: 'query required' });
     }
-    const q = String(query).toLowerCase();
-    const destinations = [
-      { keys: ['opd', 'doctor', 'consult'], direction: 'Level 1 → OPD corridor → follow queue board tokens', zone: 'opd' },
-      { keys: ['lab', 'blood test'], direction: 'Level 1 → Diagnostics wing → Lab collection counter', zone: 'lab' },
-      { keys: ['pharmacy', 'medicine'], direction: 'Ground floor → Pharmacy counter near exit', zone: 'pharmacy' },
-      { keys: ['er', 'emergency'], direction: 'Ground floor → Red ER entrance (24×7)', zone: 'er' },
-      { keys: ['radiology', 'x-ray', 'scan'], direction: 'Level 1 → Imaging suite → RIS desk', zone: 'ris' },
-      { keys: ['billing', 'insurance'], direction: 'Level 1 → Front desk → Insurance & billing counter', zone: 'billing' },
-    ];
-    const match = destinations.find((d) => d.keys.some((k) => q.includes(k)));
-    res.json({
-      success: true,
-      query,
-      language,
-      direction: match?.direction || 'Please proceed to the main reception desk for assistance.',
-      zone: match?.zone || 'lobby',
-      aiAssisted: true,
+    const result = await answerQuery({
+      organizationId: req.organizationId,
+      deviceId: req.displayDevice?.id ?? null,
+      query: String(query),
+      language: String(language),
     });
+    res.json({ success: true, ...result });
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    console.error('[kiosk] wayfinding error:', e.message);
+    res.status(500).json({ success: false, message: 'Wayfinding unavailable. Please ask at the reception desk.' });
   }
 });
 
