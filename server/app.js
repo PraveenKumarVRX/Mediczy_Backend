@@ -64,6 +64,7 @@ import aiHealthRouter from "./routes/ai-health.route.js";
 import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import aiGovernanceRouter from "./routes/ai-governance.route.js";
+import aiGpuMetricsRouter from "./routes/ai-gpu-metrics.route.js";
 import clinicalKnowledgeFabricRouter from "./routes/clinical-knowledge-fabric.route.js";
 import hospitalBranchRouter from "./routes/hospital-branch.route.js";
 import careUnitsRouter from "./routes/care-units.route.js";
@@ -1421,6 +1422,7 @@ app.use("/api/activity-tracker", activityTrackerRouter); // Daily activity: step
 app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration for iOS
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
+app.use("/api/ai/gpu", authUser, aiGpuMetricsRouter); // GPU scheduler metrics (superadmin)
 app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
 app.use("/api/clinical-knowledge-fabric", clinicalKnowledgeFabricRouter); // Per-specialty CDSS/copilot knowledge base; draft rules gated behind medical-director approval
 // Care units (outreach clinics, medical centres, OHCs) and the OHC workspace. The corporate mount must precede the generic /api/corporate routers below.

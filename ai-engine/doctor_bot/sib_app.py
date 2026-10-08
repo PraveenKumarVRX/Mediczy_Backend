@@ -91,6 +91,11 @@ class ChatRequest(BaseModel):
     include_rag: bool = Field(True, description="Include retrieval-augmented context")
     skip_kb_rag: bool = Field(False, description="Skip knowledge-base RAG enrichment for this turn")
     patient_data: Optional[Dict[str, Any]] = Field(None, description="Patient health data")
+    # HAIS cognitive tier — routed from Node.js llm-provider:
+    #   'deep'     → BiMediX2-8B on RTX 3090 (clinical reasoning)
+    #   'standard' → GPT-OSS on RTX 3060 (general reasoning)
+    #   'reflex'   → GPT-OSS on RTX 3060 (fast ops)
+    cognitive_tier: Optional[str] = Field(None, description="HAIS cognitive tier: deep | standard | reflex")
 
 
 class QueryRequest(BaseModel):

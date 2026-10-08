@@ -21,6 +21,12 @@ import semanticCache from './semantic-cache.service.js';
 import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
 import { recordTelemetry } from './evaluation-engine.js';
 import { maskPhi } from '../../utils/phi-masker.js';
+import gpuScheduler, { slotForRequest } from './gpu-scheduler.service.js';
+
+// GPU scheduling (per-GPU concurrency, priority queue, circuit breaker) is opt-in. While the
+// iSHA nodes are healthy and traffic is low the plain cascade is enough; turn this on to
+// bound concurrent load on the 3090/3060 and fail fast when a node is down.
+const GPU_SCHEDULER_ENABLED = String(process.env.AI_GPU_SCHEDULER_ENABLED || '').toLowerCase() === 'true';
 
 function sanitizeMessagesForLlm(messages) {
   return (messages || []).map((m) => {
@@ -455,6 +461,8 @@ async function callSib(params) {
         // generation, etc.) never have a patient in the loop at all and were
         // being blocked by the same gate, which was the actual reported bug.
         is_patient_specific: Boolean(params.patientId),
+        // SIB routes deep -> node1 (3090) first, standard/reflex -> node2 (3060) first.
+        cognitive_tier: params.cognitive_tier || null,
         context: {
           source: 'llm-provider',
           model_hint: params.model,
@@ -677,7 +685,7 @@ async function callProvider(provider, params) {
   // third-party SDK request body. Groq/OpenAI reject unknown top-level
   // properties outright (verified: Groq 400s with "property 'patientId' is
   // unsupported"), so they must be stripped before reaching those SDKs.
-  const { patientId, userId, ...sdkParams } = params;
+  const { patientId, userId, cognitive_tier, ...sdkParams } = params;
 
   // Cap max_tokens for models with lower context limits
   let cappedParams = sdkParams;
@@ -699,7 +707,7 @@ async function callProvider(provider, params) {
   // scope the GDPR/DPDP consent gate, so pass the original params, not the
   // SDK-safe stripped copy.
   if (provider.useSib) {
-    return callSib({ ...finalParams, patientId, userId });
+    return callSib({ ...finalParams, patientId, userId, cognitive_tier });
   }
 
   // isha-inc.com: direct fetch to bypass Cloudflare OpenAI-SDK block
@@ -911,6 +919,7 @@ async function chat({
       max_tokens: maxTok,
       patientId,
       userId,
+      cognitive_tier: cognitiveTier || null,
     };
 
     if (tools && tools.length > 0) {
@@ -925,7 +934,16 @@ async function chat({
     const providerStart = Date.now();
     try {
       console.log(`[LLM] Trying ${provider.label} (model: ${params.model})...`);
-      response = await callProviderWithRetry(provider, params);
+      const slot = GPU_SCHEDULER_ENABLED
+        ? slotForRequest({ providerName: provider.name, cognitiveTier, messages })
+        : null;
+      response = slot
+        ? await gpuScheduler.schedule(
+            slot.gpu,
+            () => callProviderWithRetry(provider, params),
+            { priority: slot.priority, label: `${provider.name}/${cognitiveTier || 'default'}` }
+          )
+        : await callProviderWithRetry(provider, params);
 
       // Detect stub responses from any provider (e.g. iSHA returning 200 when model not loaded)
       const rawContent = response.choices[0]?.message?.content || '';
