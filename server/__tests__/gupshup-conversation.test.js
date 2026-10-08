@@ -39,7 +39,7 @@ jest.unstable_mockModule('../services/whatsapp-identity.service.js', () => ({
 }));
 jest.unstable_mockModule('../utils/chatStorage.js', () => ({ chatRooms: { has: async () => true },
   messages: { push: async () => {}, get: async () => [], set: async () => {} } }));
-const { default: router, handleIncomingWhatsApp, isAnswerFeedbackQuery, isGeneralHealthUpdateQuery, hasInternalContextMarker } = await import('../routes/whatsapp-production.route.js');
+const { default: router, handleIncomingWhatsApp, isAnswerFeedbackQuery, isGeneralHealthUpdateQuery, hasInternalContextMarker, detectBookingIntent, isSelfHarmRisk } = await import('../routes/whatsapp-production.route.js');
 const reqFor = text => ({ whatsappProvider: 'gupshup', body: { From: 'whatsapp:+919000000001', To: 'whatsapp:+918098998998', Body: text, MessageSid: 'wa-test', ProfileName: 'Test' } });
 const response = () => ({ status: jest.fn().mockReturnThis(), type: jest.fn().mockReturnThis(), end: jest.fn(), send: jest.fn() });
 beforeEach(() => {
@@ -60,6 +60,17 @@ it('recognizes feedback about an irrelevant answer', () => {
 it('detects internal retrieval markers before they can reach WhatsApp', () => {
   expect(hasInternalContextMarker('[PATIENT CONTEXT]\n- unrelated record')).toBe(true);
   expect(hasInternalContextMarker('Your latest report is ready.')).toBe(false);
+});
+it('routes psychology virtual-call requests into the deterministic booking flow', () => {
+  const intent = detectBookingIntent('Search for a psychology counselor and schedule a virtual call with them for me');
+  expect(intent.isBookingIntent).toBe(true);
+  expect(intent.mentalHealthIntent).toBe(true);
+  expect(intent.specialistType).toBe('psychologist');
+  expect(intent.consultationType).toBe('online');
+});
+it('keeps direct self-harm language on the crisis path', () => {
+  expect(isSelfHarmRisk('I want to hurt myself')).toBe(true);
+  expect(isSelfHarmRisk('I feel lonely after a breakup')).toBe(false);
 });
 it('answers a broad health-update request with a record-selection prompt', async () => {
   await handleIncomingWhatsApp(reqFor('Hi any updates on my health'), response());

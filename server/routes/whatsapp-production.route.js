@@ -64,6 +64,13 @@ const extractWhatsAppOtp = (text) => {
 
 const whatsappIdentityPrompt = () => 'Before I access your appointments, reports, prescriptions, health history, or book an appointment, please verify this WhatsApp number. Reply `VERIFY` and I’ll send a one-time code here.';
 
+// Keep crisis handling ahead of appointment routing. This intentionally targets
+// direct self-harm language; sadness, grief, and loneliness remain eligible for
+// a supportive counselling referral and normal booking flow.
+const isSelfHarmRisk = (text = '') => /\b(suicid(?:e|al)|kill\s+myself|end\s+my\s+life|take\s+my\s+life|hurt\s+myself|self[-\s]?harm|want\s+to\s+die|don['’]?t\s+want\s+to\s+live)\b/i.test(String(text));
+
+const crisisResponse = () => `I’m really sorry you’re going through this. Your immediate safety matters more than booking an appointment.\n\nIf you may hurt yourself or are in immediate danger, call *112* in India now or go to the nearest emergency department. Please stay with someone you trust and move away from anything you could use to hurt yourself.\n\nAre you in immediate danger right now? Reply *YES* or *NO*. I can help connect you with a qualified mental-health professional once you’re safe.`;
+
 const hasAuthoritativeAIConsent = async (patientId) => {
   if (!patientId) return false;
   try {
@@ -268,6 +275,8 @@ const detectBookingIntent = (message) => {
     /yes\s*(please\s*)?(book|schedule)/i,
     /book\s*now/i,
     /yes\s*i\s*want\s*(to\s*)?(book|see)/i,
+    /\b(book|schedule|arrange|find|search|connect|see|talk|speak)\b.{0,50}\b(psycholog(?:y|ist)|counsel(?:or|l?or)|therapist|mental\s+health|psychiatr(?:ist|y))\b/i,
+    /\b(schedule|book|arrange)\b.{0,40}\b(virtual|video|online)\b.{0,20}\b(call|consult(?:ation)?|appointment|session)\b/i,
     /health\s*checkup/i,
     /health\s*check\s*up/i,
     /corporate\s*health/i,
@@ -278,6 +287,10 @@ const detectBookingIntent = (message) => {
   
   const isBookingIntent = bookingPatterns.some(pattern => pattern.test(lowerMsg));
   const isHealthCheckupIntent = /(health\s*checkup|health\s*check\s*up|corporate\s*health|full\s*body\s*check|diagnostic\s*(test|check)|lab\s*(test|checkup|check\s*up)|master\s*health)/i.test(lowerMsg);
+  const mentalHealthIntent = /\b(psycholog(?:y|ist)|counsel(?:or|l?or)|therapist|mental\s+health|psychiatr(?:ist|y)|grief\s+counselling?)\b/i.test(lowerMsg)
+    && isBookingIntent;
+  const virtualConsultation = /\b(virtual|video|online)\b.{0,20}\b(call|consult(?:ation)?|appointment|session)\b/i.test(lowerMsg)
+    || /\b(call|consult(?:ation)?|appointment|session)\b.{0,20}\b(virtual|video|online)\b/i.test(lowerMsg);
   
   // Try to detect specialist type
   let specialistType = 'general_physician';
@@ -290,12 +303,16 @@ const detectBookingIntent = (message) => {
   else if (/\b(ent|ear|nose|throat)\b/i.test(lowerMsg)) specialistType = 'ent';
   else if (/\b(neuro|brain|headache)\b/i.test(lowerMsg)) specialistType = 'neurologist';
   else if (/\b(gynec|women|pregnancy)\b/i.test(lowerMsg)) specialistType = 'gynecologist';
+  else if (/\b(psychiatr|psychiatrist)\b/i.test(lowerMsg)) specialistType = 'psychiatrist';
+  else if (/\b(psycholog(?:y|ist)?|counsel(?:or|l?or)?|therap(?:y|ist)?|mental\s+health|grief)\b/i.test(lowerMsg)) specialistType = 'psychologist';
   else if (/\b(general|physician|gp)\b/i.test(lowerMsg)) specialistType = 'general_physician';
   
   return {
     isBookingIntent,
     specialistType,
-    bookingType: isHealthCheckupIntent ? 'health_checkup' : 'doctor_appointment'
+    bookingType: isHealthCheckupIntent ? 'health_checkup' : 'doctor_appointment',
+    mentalHealthIntent,
+    consultationType: virtualConsultation ? 'online' : undefined
   };
 };
 
@@ -1401,6 +1418,13 @@ export async function handleIncomingWhatsApp(req, res) {
       }
     }
 
+    // Self-harm language always takes priority over booking and model routing.
+    // No account verification is needed before giving immediate safety
+    // guidance, and this response discloses no patient information.
+    if (isSelfHarmRisk(Body)) {
+      return await incomingReply(req, res, crisisResponse());
+    }
+
     // A broad "health update" prompt only asks the user what category to
     // review; it does not disclose records and can remain a public prompt.
     const personalRequest = isPatientSpecificQuery(Body) && !isGeneralHealthUpdateQuery(Body);
@@ -1412,11 +1436,14 @@ export async function handleIncomingWhatsApp(req, res) {
     // Appointment execution stays in the deterministic, DB-backed state
     // machine. The language model may answer medical questions, but it never
     // invents a slot or writes an appointment record.
-    const { isBookingIntent, specialistType, bookingType } = detectBookingIntent(Body);
+    const { isBookingIntent, specialistType, bookingType, mentalHealthIntent, consultationType } = detectBookingIntent(Body);
 
     let bookingState = 'idle';
     let bookingService;
-    if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
+    // Mental-health booking stays inside the verified, database-backed flow
+    // even when generic AI auto-replies are disabled. This avoids forwarding
+    // sensitive specialty intent to the external n8n handoff path.
+    if ((AI_AUTO_REPLY_ENABLED || mentalHealthIntent) && Body && !MediaUrl0) {
       try {
         ({ default: bookingService } = await import('../services/whatsapp-agentic-booking.service.js'));
         const session = await bookingService.getSession(phoneNumber);
@@ -1430,7 +1457,7 @@ export async function handleIncomingWhatsApp(req, res) {
       return await incomingReply(req, res, whatsappIdentityPrompt());
     }
 
-    if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0 && (isBookingIntent || bookingState !== 'idle')) {
+    if ((AI_AUTO_REPLY_ENABLED || mentalHealthIntent) && Body && !MediaUrl0 && (isBookingIntent || bookingState !== 'idle')) {
       try {
         const bookingResult = await bookingService.processBookingIntent(phoneNumber, Body, userContext);
         if (bookingResult?.shouldReply) {
@@ -2010,5 +2037,5 @@ router.post('/sib/test', async (req, res) => {
   }
 });
 
-export { hasInternalContextMarker, isAnswerFeedbackQuery, isGeneralHealthUpdateQuery };
+export { hasInternalContextMarker, isAnswerFeedbackQuery, isGeneralHealthUpdateQuery, detectBookingIntent, isSelfHarmRisk };
 export default router;

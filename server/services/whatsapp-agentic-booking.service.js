@@ -259,6 +259,35 @@ class WhatsAppAgenticBookingService {
    */
   async handleIdleState(session, message, userName, userContext) {
     const lowerMessage = message.toLowerCase();
+
+    // Mental-health requests are handled as a real booking flow.  Previously
+    // these messages fell through to the general consultation menu, and the
+    // SIB response often redirected the patient to an external service.  Keep
+    // the provider search and appointment write deterministic, just like all
+    // other WhatsApp bookings.
+    const requestsMentalHealthBooking =
+      /(book|schedule|arrange|find|search|connect|see|talk|speak|consult)/i.test(lowerMessage) &&
+      /(psycholog|counsel+or|therapist|mental\s+health|psychiatr|grief|bereavement)/i.test(lowerMessage);
+
+    if (requestsMentalHealthBooking) {
+      session.state = BOOKING_STATES.GATHERING_DATE;
+      session.data.bookingType = 'doctor_appointment';
+      session.data.specialization = /psychiatr/i.test(lowerMessage) ? 'Psychiatry' : 'Psychology';
+      session.data.consultationType = 'online';
+      session.data.mentalHealth = true;
+      session.data.virtualRequested = true;
+
+      return {
+        success: true,
+        shouldReply: true,
+        response: `I can help with that. I’ll look for a qualified ${session.data.specialization === 'Psychiatry' ? 'psychiatrist' : 'psychology counsellor'} for a private virtual consultation.\n\n` +
+          `What date would you prefer? You can say “tomorrow”, “this Saturday”, or give a specific date. I’ll then show verified online slots for you to confirm.`,
+        isAgenticAction: true,
+        currentState: session.state,
+        specialty: session.data.specialization,
+        consultationType: session.data.consultationType
+      };
+    }
     
     // Detect what type of booking they want
     if (lowerMessage.includes('health check') || lowerMessage.includes('checkup') || lowerMessage.includes('full body')) {
@@ -515,10 +544,16 @@ class WhatsAppAgenticBookingService {
     const availableSlots = await this.findAvailableSlots(session.data);
     
     if (availableSlots.length === 0) {
+      const dateObj = session.data.preferredDate instanceof Date
+        ? session.data.preferredDate
+        : new Date(session.data.preferredDate);
+      const dateLabel = Number.isNaN(dateObj.getTime())
+        ? 'that date'
+        : dateObj.toLocaleDateString('en-IN');
       return {
         success: true,
         shouldReply: true,
-        response: `😔 Sorry, no slots available for that time on ${session.data.preferredDate.toLocaleDateString()}.\n\n` +
+        response: `😔 Sorry, no verified online slots are available for that time on ${dateLabel}.\n\n` +
           `Would you like to:\n` +
           `1️⃣ Try a different time\n` +
           `2️⃣ Check another date\n` +
@@ -640,9 +675,14 @@ class WhatsAppAgenticBookingService {
         }
         
         response += `\n*What's Next:*\n`;
-        response += `• You'll receive a confirmation SMS shortly\n`;
-        response += `• Please arrive 15 minutes early\n`;
-        response += `• Bring a valid ID and any previous reports\n\n`;
+        response += `• You'll receive a confirmation message shortly\n`;
+        if (session.data.consultationType === 'online' || session.data.virtualRequested) {
+          response += `• The secure video-call details will be shared before the appointment\n`;
+        } else {
+          response += `• Please arrive 15 minutes early\n`;
+          response += `• Bring a valid ID and any previous reports\n`;
+        }
+        response += `\n`;
         response += `Need to reschedule? Just say "reschedule my appointment"\n\n`;
         response += `Thank you for choosing Mediczy! 💙`;
         
@@ -772,11 +812,13 @@ class WhatsAppAgenticBookingService {
         appointmentDate: appointmentDate,
         appointmentTime: appointmentTime,
         consultationType: bookingData.bookingType === 'health_checkup' ? 'in-person' : 'online',
-        specialization: bookingData.specialization || 'General Medicine',
+        specialization: bookingData.selectedSlot?.specialization || bookingData.specialization || 'General Medicine',
         status: 'confirmed',
         reason: bookingData.bookingType === 'health_checkup' 
           ? `Health Checkup: ${bookingData.packageDetails?.name || 'General Checkup'}` 
-          : 'Doctor Consultation',
+          : bookingData.mentalHealth
+            ? 'Mental health counselling consultation'
+            : 'Doctor Consultation',
         notes: `Booked via WhatsApp. Package: ${bookingData.packageDetails?.name || 'N/A'}. Source: agentic-booking`,
         patientDetails: {
           bookedVia: 'whatsapp',
@@ -820,26 +862,118 @@ class WhatsAppAgenticBookingService {
   async findAvailableSlots(bookingData) {
     try {
       const { preferredDate, timePreference, specialization, bookingType } = bookingData;
+      const date = preferredDate instanceof Date ? preferredDate : new Date(preferredDate);
+      if (Number.isNaN(date.getTime())) return [];
       
       // Get day of week (0=Sunday, 6=Saturday)
-      const dayOfWeek = preferredDate.getDay();
+      const dayOfWeek = date.getDay();
       
       // For health checkups, check lab availability
       if (bookingType === 'health_checkup') {
-        return await this.findLabSlots(preferredDate, timePreference, bookingData.packageDetails);
+        return await this.findLabSlots(date, timePreference, bookingData.packageDetails);
       }
       
       // For consultations, check doctor availability from DB
-      return await this.findDoctorSlots(preferredDate, dayOfWeek, timePreference, specialization);
+      if (bookingData.mentalHealth || bookingData.virtualRequested || specialization === 'Psychology' || specialization === 'Psychiatry') {
+        return await this.findMentalHealthDoctorSlots(date, dayOfWeek, timePreference, specialization);
+      }
+      return await this.findDoctorSlots(date, dayOfWeek, timePreference, specialization);
       
     } catch (error) {
       console.error('Find slots error:', error);
+      if (bookingData?.mentalHealth || bookingData?.virtualRequested || bookingData?.specialization === 'Psychology' || bookingData?.specialization === 'Psychiatry') {
+        return [];
+      }
       // Return default slots on error
       return [
         { time: '10:00 AM', price: 500, note: 'Slot availability to be confirmed' },
         { time: '02:00 PM', price: 500, note: 'Slot availability to be confirmed' },
         { time: '05:00 PM', price: 500, note: 'Slot availability to be confirmed' }
       ];
+    }
+  }
+
+  /**
+   * Search only active mental-health providers and online-capable slots.
+   * Returning no slots is intentional: a fallback placeholder must never look
+   * like a real counsellor or create a booking that the database cannot honour.
+   */
+  async findMentalHealthDoctorSlots(preferredDate, dayOfWeek, timePreference, specialization) {
+    try {
+      const doctors = await doctorModel.findAll({
+        where: {
+          isActive: true,
+          [Op.or]: [
+            { specialization: { [Op.iLike]: '%psych%' } },
+            { specialization: { [Op.iLike]: '%counsel%' } },
+            { specialization: { [Op.iLike]: '%mental%' } },
+            { specialization: { [Op.iLike]: '%psychiatr%' } },
+            { specialization: { [Op.iLike]: '%therap%' } }
+          ]
+        },
+        limit: 25,
+        order: [['firstName', 'ASC'], ['lastName', 'ASC']]
+      });
+
+      if (!doctors?.length) return [];
+      const doctorIds = doctors.map(doctor => doctor.id);
+      const availabilities = await DoctorAvailability.findAll({
+        where: {
+          doctorId: { [Op.in]: doctorIds },
+          dayOfWeek,
+          isAvailable: true,
+          [Op.or]: [
+            { consultationType: 'online' },
+            { consultationType: 'both' }
+          ]
+        }
+      });
+      if (!availabilities?.length) return [];
+
+      const existingAppointments = await Appointment.findAll({
+        where: {
+          appointmentDate: preferredDate,
+          doctorId: { [Op.in]: doctorIds },
+          status: { [Op.notIn]: ['cancelled', 'rejected', 'no-show'] }
+        },
+        attributes: ['appointmentTime', 'doctorId']
+      });
+      const bookedSlots = existingAppointments.map(appointment => ({
+        time: appointment.appointmentTime,
+        doctorId: appointment.doctorId
+      }));
+      const availableSlots = [];
+
+      for (const availability of availabilities) {
+        const doctor = doctors.find(candidate => candidate.id === availability.doctorId);
+        if (!doctor) continue;
+        const startHour = parseInt(String(availability.startTime).split(':')[0], 10);
+        const endHour = parseInt(String(availability.endTime).split(':')[0], 10);
+        const slotDuration = availability.slotDuration || 30;
+        for (let hour = startHour; hour < endHour; hour += 1) {
+          for (let minute = 0; minute < 60; minute += slotDuration) {
+            const timeValue = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+            if (!this.matchesTimePreference(hour, timePreference)) continue;
+            if (bookedSlots.some(slot => slot.doctorId === doctor.id && String(slot.time).startsWith(timeValue))) continue;
+            availableSlots.push({
+              time: this.formatTimeDisplay(hour, minute),
+              timeValue,
+              doctorId: doctor.id,
+              doctorName: `${doctor.firstName} ${doctor.lastName}`.trim(),
+              specialization: doctor.specialization || specialization,
+              price: doctor.consultationFee || 500,
+              location: 'Virtual consultation',
+              type: 'consultation',
+              consultationType: 'online',
+              virtual: true
+            });
+          }
+        }
+      }
+      return availableSlots.sort((a, b) => a.timeValue.localeCompare(b.timeValue)).slice(0, 3);
+    } catch (error) {
+      console.error('Error finding mental-health doctor slots:', error);
+      return [];
     }
   }
 
@@ -1323,7 +1457,9 @@ class WhatsAppAgenticBookingService {
     const bookingKeywords = [
       'book', 'appointment', 'schedule', 'checkup', 'check-up', 'health check',
       'slot', 'available', 'doctor', 'consult', 'visit', 'clinic',
-      'tomorrow', 'next week', 'reschedule', 'cancel'
+      'tomorrow', 'next week', 'reschedule', 'cancel',
+      'psychology', 'psychologist', 'counselor', 'counsellor', 'therapist',
+      'mental health', 'psychiatrist', 'psychiatry', 'virtual', 'video call', 'online'
     ];
 
     if (lowerMessage.includes('status') || lowerMessage.includes('track')) {
