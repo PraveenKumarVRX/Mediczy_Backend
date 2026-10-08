@@ -8,6 +8,7 @@
 import bcrypt from 'bcrypt';
 import { CollectionError, notFound, forbidden, invalid } from '../collection/errors.js';
 import * as v from '../collection/validation.js';
+import { passwordProblem } from '../collection/phlebotomist.service.js';
 
 export const OHC_PORTAL = 'ohc';
 export const OHC_AUDIENCE = 'mediczy-ohc';
@@ -43,6 +44,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
       principal: {
         type: 'ohc_staff', id: u.id, uid: u.unique_id, ref: `ohc:${u.unique_id}`, role: u.role,
         displayName: `${u.firstName || ''} ${u.lastName || ''}`.trim(), registrationNumber: u.metadata?.registrationNumber || null,
+        mustChangePassword: u.metadata?.mustChangePassword === true,
         units: units.map((b) => ({ id: b.id, uid: b.unique_id, name: b.name, corporateUid: b.corporate_uid, corporateName: b.corporate_name, operatorUid: b.owner_uid, operatorName: b.operator_name, services: b.services || [] })),
       },
     };
@@ -62,7 +64,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     if (!principal) throw new CollectionError('account_unavailable', 403, 'This account cannot sign in. Contact your administrator.', { reason });
     await pool.query(`UPDATE users SET "lastLoginAt" = now(), "loginCount" = COALESCE("loginCount", 0) + 1 WHERE unique_id = $1`, [row.unique_id]);
     const pair = await tokens.issuePortalTokenPair(tokenPayload(principal), { portal: OHC_PORTAL, deviceFp: deviceId || null, accessTtl: '30m', refreshTtl: '7d' });
-    return { ...pair, worker: { uid: principal.uid, displayName: principal.displayName, role: principal.role }, units: principal.units };
+    return { ...pair, mustChangePassword: principal.mustChangePassword, worker: { uid: principal.uid, displayName: principal.displayName, role: principal.role }, units: principal.units };
   }
 
   async function refresh({ refreshToken, deviceId }) {
@@ -79,8 +81,21 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return { ok: true };
   }
 
+  /** Change the password (required on first sign-in). Revokes every session of this worker; they sign in again with the new one. */
+  async function changePassword(principal, input) {
+    const b = v.exactly(v.body(input), 'body', ['currentPassword', 'newPassword']);
+    const { rows } = await pool.query('SELECT password, email FROM users WHERE unique_id = $1', [principal.uid]);
+    if (!rows[0] || !(await bcrypt.compare(String(b.currentPassword || ''), rows[0].password))) throw new CollectionError('invalid_credentials', 401, 'Current password is incorrect');
+    const problem = passwordProblem(b.newPassword, rows[0].email);
+    if (problem) throw invalid(problem, { field: 'newPassword' });
+    if (await bcrypt.compare(b.newPassword, rows[0].password)) throw invalid('Choose a password you have not used', { field: 'newPassword' });
+    await pool.query(`UPDATE users SET password = $2, metadata = COALESCE(metadata, '{}'::jsonb) - 'mustChangePassword' WHERE unique_id = $1`, [principal.uid, await bcrypt.hash(b.newPassword, 12)]);
+    await tokens.revokeAllForUser(principal.uid, OHC_PORTAL);
+    return { ok: true };
+  }
+
   const me = (principal) => ({
-    worker: { uid: principal.uid, displayName: principal.displayName, role: principal.role, registrationNumberOnFile: Boolean(principal.registrationNumber), canSign: principal.role === 'ohc_doctor' && Boolean(principal.registrationNumber) },
+    worker: { uid: principal.uid, displayName: principal.displayName, role: principal.role, mustChangePassword: principal.mustChangePassword, registrationNumberOnFile: Boolean(principal.registrationNumber), canSign: principal.role === 'ohc_doctor' && Boolean(principal.registrationNumber) },
     units: principal.units, serverTime: now().toISOString(),
   });
 
@@ -158,5 +173,5 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return rows[0];
   }
 
-  return { loadPrincipal, login, refresh, logout, me, employees, issueCertificate, certificates, certificateById };
+  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, issueCertificate, certificates, certificateById };
 }

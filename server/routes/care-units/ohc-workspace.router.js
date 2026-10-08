@@ -13,6 +13,14 @@ export function buildOhcWorkspaceRouter({ ohc, authenticate, limiter = [], rende
   router.post('/auth/logout', handle(async (req, res) => res.json({ success: true, ...(await ohc.logout({ refreshToken: req.body?.refreshToken })) })));
 
   router.use(authenticate);   // sets req.ohc = principal (re-read from the database on every request)
+  // A worker on a temporary password can do nothing but read /me and change it.
+  router.use((req, res, next) => {
+    if (req.ohc.mustChangePassword && !['/auth/change-password', '/me'].includes(req.path)) {
+      return res.status(403).json({ success: false, code: 'password_change_required', message: 'Change your temporary password to continue' });
+    }
+    return next();
+  });
+  router.post('/auth/change-password', handle(async (req, res) => res.json({ success: true, ...(await ohc.changePassword(req.ohc, req.body)) })));
   router.get('/me', handle(async (req, res) => res.json({ success: true, ...ohc.me(req.ohc) })));
   router.get('/employees', handle(async (req, res) => res.json({ success: true, ...(await ohc.employees(req.ohc, req.query)) })));
   router.get('/certificates', handle(async (req, res) => res.json({ success: true, ...(await ohc.certificates(req.ohc, req.query)) })));

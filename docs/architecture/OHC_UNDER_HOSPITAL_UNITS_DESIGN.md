@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed — for the lead's review. Nothing here is built or applied. |
+| **Status** | **v2 (2026-10-08): decisions answered, backend and UI built on branch `viveka-ohc-units`, rehearsed (140/140 dry-run checks, 16 client tests). NOT applied, NOT merged, NOT deployed.** Sections 1–7 are the original proposal; §8 records the answers and where the build departs from it. |
 | **Date** | 2026-10-08 |
 | **Author's inputs (the lead, 2026-10-08)** | OHC = *Occupational Health Clinic within a company*, delivered under a hospital tenant **and** a corporate tenant. Under a hospital, OHCs sit **under its outreach clinics and medical centres**. Store the hierarchy by **extending the branch table**. OHC staff are **hospital-portal users assigned to the OHC unit**. |
 | **Related** | [ENTITY_UID_RULE.md](./ENTITY_UID_RULE.md) · `server/routes/hospital-branch.route.js` · `server/routes/clinic-occupational-health.route.js` · `server/routes/corporate-hmis.route.js` |
@@ -171,3 +171,32 @@ Credentials are generated at seed time, printed once to you, and never written t
 ## 7. Not in scope here
 
 OHC camps/scheduling, occupational-disease surveillance, statutory registers (e.g. Form 17), billing of corporate packages, and any change to the existing clinic/team certificate flows.
+
+---
+
+## 8. Decisions as answered (2026-10-08) and what was built
+
+| # | Answer | Effect on the design |
+|---|---|---|
+| D1 | Units get their own uid; prefix **J** | Entity kind `care_unit` (organisation-like), `hospital_branch` under the uid rule. |
+| D2 | "Clinic or hospital tenant" | The **operator** of a unit is a hospital **or** a clinic tenant (`owner_uid`, guard trigger). The base table is the singular `hospital_branch` (empty, already used for branch scoping); the 2 of 4 plural-table rows whose owner is a hospital/clinic are copied. |
+| D3 | One corporate per OHC | `corporate_uid` required for an OHC, immutable, and it must be a **company record in `corporates`** (not the corporate *tenant* that hosts it: uids like `CXFXJC` are refused). |
+| D4 | `ohc_doctor` (D) / `ohc_staff` (N) | Built. They are users of the operator, assigned to an OHC through `staff_branch_assignment`. They sign in through their own workspace (`/ohc/login`) rather than the general hospital APIs, so they do not get hospital-wide access; they are deliberately **not** added to the hospital staff-role lists. |
+| D5 | The corporate sees "clinic admin dashboard and all services and functions and staff linked to OHC" | Built: the corporate's OHC page shows contract, services, linked staff, volumes and **every certificate in full** (status, restrictions, remarks, doctor). Every corporate read, and every certificate issue, is recorded in an append-only access log both parties can read. **Individual clinical examination records do not exist yet**; when they are built they will sit behind an employee-consent gate (an employer reading medical records is a DPDP risk) — the lead chose "everything", this is the one qualification kept. |
+| D6 | Existing demo tenants | Demo operator **SmartHealth Clinic (KT5EUW)**; demo company **My SmartHealth (CMSHT1, 4 employees)**. (The earlier choice of "Reliance Industries" was a corporate *tenant* with no `corporates` record and no employees; it could not host an OHC.) |
+| D7 | Medical centre = co-branded, co-owned; branch = 100% owned | `ownership` (`owned` / `co_owned`); a medical centre requires `brand_name` and a `co_owner_uid` different from the operator. |
+| D8 | Keep `corporate_ohc`; OHC is usually set up by the corporate and outsourced to a clinic/hospital on contract | `corporate_ohc` unchanged. An OHC carries a **contract**: `initiated_by` (corporate or operator), `proposed` → `active` only when **both** sides accepted (operator by creating it, the company's super-HR/account owner in `/corporate/ohc`), either side can end it, and ending it stops the OHC's staff at the next request. |
+
+### Departures from the proposal
+* **Corporate-initiated requests**: a company cannot yet *request* an OHC from an operator inside the product (it cannot see the operator's units). The operator creates the unit and records `initiated_by = corporate`; the company accepts. A request flow is a follow-up.
+* **Operator staff creation** was not in the proposal and is required: the hospital/clinic admin creates OHC accounts (`POST /api/care-units/:uid/staff/new`); the temporary password is returned once, stored hashed, and **must be changed at first sign-in**.
+* **Legacy `hospital`-role tokens** work for administration; **legacy clinic accounts** (not `clinic_admin` users) are not supported yet.
+* Corporate-side access: `corporate`, `corporate_admin`, `corporate_cmo`, `corporate_ohc` can read; only `corporate` and `corporate_admin` can accept or end a contract; `hr_staff` sees nothing of the OHC.
+
+### Where it lives
+`server/migrations/20261008000000-care-units.sql` · `services/care-units/` · `routes/care-units*.js`, `routes/corporate-ohc.route.js`, `routes/ohc-workspace.route.js` · `client/src/pages/care-units/`, `pages/ohc/`, `pages/corporate/CorporateOhc.tsx` · demo: `server/scripts/ops/seed-ohc-demo.mjs`.
+
+### Apply order (each step needs the lead's go-ahead)
+1. Dry run (done): `apply-migration-checked.mjs --file migrations/20261008000000-care-units.sql --checks scripts/ops/checks/care-units-all.checks.mjs` → 140/140, rolled back.
+2. Apply the same command with `--apply`; then merge → reload API → build and install the client → `verify-entity-uid-rule.mjs` (must stay at 0 violations; the verifier reports drift until the migration is applied because the code already knows `care_unit`).
+3. Seed the demo: `seed-ohc-demo.mjs` (dry run first), `--apply`, optionally `--no-force-change`.

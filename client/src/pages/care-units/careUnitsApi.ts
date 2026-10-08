@@ -1,0 +1,61 @@
+/** React Query layer for hospital/clinic administration of care units and for the corporate's OHC view. Domain state lives on the server. */
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import api from "@/utils/api";
+import type { AccessEntry, CareUnit, CorporateDashboard, UnitStaff, ApiProblem } from "./types";
+
+export const keys = {
+  all: ["care-units"] as const,
+  list: ["care-units", "list"] as const,
+  unit: (uid: string) => ["care-units", "unit", uid] as const,
+  staff: (uid: string) => ["care-units", "staff", uid] as const,
+  log: (uid: string) => ["care-units", "log", uid] as const,
+  corporate: ["care-units", "corporate"] as const,
+  dashboard: (uid: string) => ["care-units", "corporate", uid] as const,
+};
+
+export function toProblem(err: unknown): ApiProblem {
+  const e = err as { response?: { status?: number; data?: { code?: string; message?: string; details?: Record<string, unknown> } } };
+  const d = e?.response?.data;
+  return {
+    status: e?.response?.status ?? 0,
+    code: typeof d?.code === "string" ? d.code : (e?.response ? "error" : "network_error"),
+    message: typeof d?.message === "string" ? d.message : (e?.response ? "The request failed." : "Could not reach the server."),
+    details: d?.details,
+  };
+}
+
+export const useUnits = () => useQuery({ queryKey: keys.list, queryFn: async () => (await api.get("/care-units")).data.units as CareUnit[] });
+export const useUnitStaff = (uid: string | null) =>
+  useQuery({ queryKey: keys.staff(uid ?? ""), enabled: Boolean(uid), queryFn: async () => (await api.get(`/care-units/${uid}/staff`)).data.staff as UnitStaff[] });
+export const useUnitLog = (uid: string | null) =>
+  useQuery({ queryKey: keys.log(uid ?? ""), enabled: Boolean(uid), queryFn: async () => (await api.get(`/care-units/${uid}/access-log`)).data.entries as AccessEntry[] });
+
+export async function searchCorporates(search: string) {
+  return ((await api.get("/care-units/corporates", { params: { search } })).data.corporates ?? []) as { uid: string; name: string }[];
+}
+export async function searchCoOwners(search: string) {
+  return ((await api.get("/care-units/co-owners", { params: { search } })).data.entities ?? []) as { uid: string; name: string; kind: string }[];
+}
+
+export function useUnitMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.all });
+  const useOp = <V, R = unknown>(fn: (v: V) => Promise<R>) => useMutation({ mutationFn: fn, onSettled: refresh });
+  return {
+    create: useOp((input: Record<string, unknown>) => api.post("/care-units", input).then((r) => r.data.unit as CareUnit)),
+    update: useOp((v: { uid: string; patch: Record<string, unknown> }) => api.patch(`/care-units/${v.uid}`, v.patch).then((r) => r.data.unit as CareUnit)),
+    createStaff: useOp((v: { uid: string; input: Record<string, unknown> }) =>
+      api.post(`/care-units/${v.uid}/staff/new`, v.input).then((r) => r.data as { staff: { uid: string; email: string; role: string }; tempPassword: string })),
+    removeStaff: useOp((v: { uid: string; userUid: string }) => api.delete(`/care-units/${v.uid}/staff/${v.userUid}`).then((r) => r.data)),
+    endContract: useOp((v: { uid: string; reason: string }) => api.post(`/care-units/${v.uid}/end-contract`, { reason: v.reason }).then((r) => r.data.unit as CareUnit)),
+    corporateAccept: useOp((uid: string) => api.post(`/corporate/ohc-units/${uid}/accept`).then((r) => r.data.unit as CareUnit)),
+    corporateEnd: useOp((v: { uid: string; reason: string }) => api.post(`/corporate/ohc-units/${v.uid}/end-contract`, { reason: v.reason }).then((r) => r.data.unit as CareUnit)),
+  };
+}
+
+export const useCorporateOhcs = () =>
+  useQuery({ queryKey: keys.corporate, queryFn: async () => (await api.get("/corporate/ohc-units")).data.units as CareUnit[] });
+export const useCorporateDashboard = (uid: string | null) =>
+  useQuery({ queryKey: keys.dashboard(uid ?? ""), enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}`)).data as CorporateDashboard });
+export const useCorporateLog = (uid: string | null) =>
+  useQuery({ queryKey: [...keys.dashboard(uid ?? ""), "log"], enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}/access-log`)).data.entries as AccessEntry[] });

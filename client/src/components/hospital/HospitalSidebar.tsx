@@ -75,7 +75,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: Bed, label: "Bed Management", href: "/hospital/beds/map", capability: "bed_management" },
   { icon: Users, label: "Patients", href: "/hospital/patients", capability: "patients" },
   { icon: Stethoscope, label: "Doctors", href: "/hospital/doctors", capability: "doctors" },
-  { icon: Network, label: "Branches & Clinics", href: "/hospital/branches", capability: "branches" },
+  { icon: Network, label: "Branches, Outreach & OHC", href: "/hospital/branches", capability: "branches" },
   { icon: Ambulance, label: "Ambulance", href: "/hospital/ambulance", capability: "ambulance" },
   { icon: Package, label: "Asset Tracking", href: "/hospital/asset-tracking", capability: "asset_tracking" },
   { icon: MessageSquare, label: "Communication Hub", href: "/hospital/communication", capability: "communication" },

@@ -73,13 +73,13 @@ export function createCareUnitService({ pool }) {
     const t = type ? v.oneOf(type, 'type', UNIT_TYPES) : null;
     const par = parent ? String(parent) : null;
     const { rows } = await pool.query(
-      `SELECT ${COLUMNS},
+      `SELECT ${COLUMNS}, cc."companyName" AS corporate_name,
               (SELECT count(*)::int FROM staff_branch_assignment s WHERE s.branch_id = b.id AND s.is_active) AS staff_count,
               (SELECT count(*)::int FROM hospital_branch k WHERE k.parent_unit_id = b.id) AS child_count
-         ${FROM} WHERE b.owner_uid = $1 AND ($2::text IS NULL OR b.unit_type = $2) AND ($3::text IS NULL OR p.unique_id = $3)
+         ${FROM} LEFT JOIN corporates cc ON cc.unique_id = b.corporate_uid WHERE b.owner_uid = $1 AND ($2::text IS NULL OR b.unit_type = $2) AND ($3::text IS NULL OR p.unique_id = $3)
         ORDER BY CASE b.unit_type WHEN 'main' THEN 0 WHEN 'branch' THEN 1 WHEN 'outreach_clinic' THEN 2 WHEN 'medical_centre' THEN 3 ELSE 4 END, b.name`,
       [p.ownerUid, t, par]);
-    return { units: rows.map((r) => ({ ...projectUnit(r), staffCount: r.staff_count, childCount: r.child_count })) };
+    return { units: rows.map((r) => ({ ...projectUnit(r), corporateName: r.corporate_name || undefined, staffCount: r.staff_count, childCount: r.child_count })) };
   }
 
   async function get(p, uid) {

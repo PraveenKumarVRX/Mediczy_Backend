@@ -158,6 +158,26 @@ export async function behaviour({ q, ok, bad, expectError, fillInsert }) {
   await q(`UPDATE users SET status = 'active' WHERE id = $1`, [doc.id]);
   r = await as(request(app).get('/api/ohc-workspace/me'));
   check('…and reinstating restores it', r.status === 200);
+  // a worker created by the administrator starts on a temporary password and can do nothing else until it is changed
+  const made = await units.createStaff(opClinic, ohc1.uid, { firstName: 'Fresh', lastName: 'Starter', email: `fresh.${crypto.randomUUID().slice(0, 6)}@probe.invalid`, role: 'ohc_staff' });
+  r = await request(app).post('/api/ohc-workspace/auth/login').send({ email: made.body.staff.email, password: made.body.tempPassword });
+  check('a newly created worker can sign in with the temporary password and is told to change it', r.status === 200 && r.body.mustChangePassword === true);
+  const fresh = r.body.accessToken;
+  const asF = (rq) => rq.set('Authorization', `Bearer ${fresh}`);
+  r = await asF(request(app).get('/api/ohc-workspace/employees'));
+  check('…and cannot use the workspace until they do (403 password_change_required)', r.status === 403 && r.body.code === 'password_change_required');
+  r = await asF(request(app).get('/api/ohc-workspace/me'));
+  check('…but can read /me', r.status === 200 && r.body.worker.mustChangePassword === true);
+  r = await asF(request(app).post('/api/ohc-workspace/auth/change-password')).send({ currentPassword: made.body.tempPassword, newPassword: 'weak' });
+  check('a weak new password is refused (422)', r.status === 422);
+  r = await asF(request(app).post('/api/ohc-workspace/auth/change-password')).send({ currentPassword: 'wrong-wrong-1', newPassword: 'Brand-new-2026a' });
+  check('a wrong current password is refused (401)', r.status === 401);
+  r = await asF(request(app).post('/api/ohc-workspace/auth/change-password')).send({ currentPassword: made.body.tempPassword, newPassword: 'Brand-new-2026a' });
+  check('changing the password succeeds', r.status === 200);
+  r = await request(app).post('/api/ohc-workspace/auth/login').send({ email: made.body.staff.email, password: 'Brand-new-2026a' });
+  check('the new password works and no longer forces a change', r.status === 200 && r.body.mustChangePassword === false);
+  r = await request(app).post('/api/ohc-workspace/auth/login').send({ email: made.body.staff.email, password: made.body.tempPassword });
+  check('the temporary password stops working', r.status === 401);
   await units.endContract(opClinic, ohc1.uid, { reason: 'Test: contract ended' });
   r = await as(request(app).get('/api/ohc-workspace/employees'));
   check('ending the contract cuts access immediately (403)', r.status === 403 && r.body.code === 'account_unavailable');

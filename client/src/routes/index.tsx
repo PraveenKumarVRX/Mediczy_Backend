@@ -391,7 +391,11 @@ const HospitalIPSheets                 = lazy(() => import("@/pages/hospital/Hos
 const HospitalDoctorsManagement        = lazy(() => import("@/pages/hospital/HospitalDoctorsManagement"));
 const HospitalCommunicationHub         = lazy(() => import("@/pages/hospital/HospitalCommunicationHub"));
 const HospitalAmbulance                = lazy(() => import("@/pages/hospital/HospitalAmbulance"));
-const HospitalBranchesClinic           = lazy(() => import("@/pages/hospital/HospitalBranchesClinic"));
+const HospitalCareUnits                = lazy(() => import("@/pages/care-units/HospitalCareUnits"));
+const ClinicCareUnits                  = lazy(() => import("@/pages/care-units/ClinicCareUnits"));
+const CorporateOhc                     = lazy(() => import("@/pages/corporate/CorporateOhc"));
+const OhcLogin                         = lazy(() => import("@/pages/ohc/OhcLogin"));
+const OhcWorkspace                     = lazy(() => import("@/pages/ohc/OhcWorkspace"));
 const HospitalTeamChat                 = lazy(() => import("@/pages/hospital/HospitalTeamChat"));
 const HospitalNotifications            = lazy(() => import("@/pages/hospital/HospitalNotifications"));
 
@@ -1171,7 +1175,7 @@ const AppRoutes = () => {
         <Route path="/hospital/communication"              element={<HospitalCommunicationHub />} />
         <Route path="/hospital/team-chat"                  element={<HospitalTeamChat />} />
         <Route path="/hospital/ambulance"                  element={<HospitalAmbulance />} />
-        <Route path="/hospital/branches"                   element={<HospitalBranchesClinic />} />
+        <Route path="/hospital/branches"                   element={<HospitalCareUnits />} />
         <Route path="/hospital/notifications"              element={<HospitalNotifications />} />
         <Route path="/hospital/settings"                   element={<HospitalSettingsPage />} />
         <Route path="/hospital/support"                    element={<HospitalSupportPage />} />
@@ -1196,6 +1200,7 @@ const AppRoutes = () => {
         <Route path="/clinic/:slug/login"   element={<ClinicLogin />} />
         <Route path="/clinic/register"      element={<ClinicRegister />} />
         <Route path="/clinic/dashboard"     element={<ClinicDashboard />} />
+        <Route path="/clinic/care-units"    element={<ClinicCareUnits />} />
         <Route path="/clinic/appointments"  element={<ClinicAppointmentsPage />} />
         <Route path="/clinic/patients"      element={<ClinicPatientsPage />} />
         <Route path="/clinic/queue"         element={<ClinicQueuePage />} />
@@ -1577,6 +1582,10 @@ const AppRoutes = () => {
         <Route path="/corporate/departments"             element={<CorporateDepartments />} />
         <Route path="/corporate/claims"                  element={<CorporateClaims />} />
         <Route path="/corporate/fitness-certificates"    element={<CorporateFitnessCertificates />} />
+        <Route path="/corporate/ohc"                     element={<CorporateOhc />} />
+        {/* Occupational Health Clinic doctors and staff: their own sign-in and workspace */}
+        <Route path="/ohc/login"                         element={<OhcLogin />} />
+        <Route path="/ohc"                               element={<OhcWorkspace />} />
         <Route path="/corporate/reports"                 element={<CorporateReports />} />
         <Route path="/corporate/complaints"              element={<CorporateComplaints />} />
         <Route path="/corporate/compliance"              element={<CorporateCompliance />} />

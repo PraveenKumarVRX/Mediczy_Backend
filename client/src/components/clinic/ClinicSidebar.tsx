@@ -43,6 +43,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: Users, label: "Patients", href: "/clinic/patients" },
   { icon: Clock, label: "Queue Management", href: "/clinic/queue" },
   { icon: Stethoscope, label: "Doctors", href: "/clinic/doctors" },
+  { icon: Users, label: "Outreach Clinics & OHC", href: "/clinic/care-units" },
 ];
 
 const clinicalItems: SidebarItem[] = [
