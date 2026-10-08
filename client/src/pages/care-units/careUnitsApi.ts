@@ -44,8 +44,8 @@ export function useUnitMutations() {
   return {
     create: useOp((input: Record<string, unknown>) => api.post("/care-units", input).then((r) => r.data.unit as CareUnit)),
     update: useOp((v: { uid: string; patch: Record<string, unknown> }) => api.patch(`/care-units/${v.uid}`, v.patch).then((r) => r.data.unit as CareUnit)),
-    createStaff: useOp((v: { uid: string; input: Record<string, unknown> }) =>
-      api.post(`/care-units/${v.uid}/staff/new`, v.input).then((r) => r.data as { staff: { uid: string; email: string; role: string }; tempPassword: string })),
+    createStaff: useOp<{ uid: string; input: Record<string, unknown> }, { staff: { uid: string; email: string; role: string }; tempPassword: string }>((v) =>
+      api.post(`/care-units/${v.uid}/staff/new`, v.input).then((r) => r.data)),
     removeStaff: useOp((v: { uid: string; userUid: string }) => api.delete(`/care-units/${v.uid}/staff/${v.userUid}`).then((r) => r.data)),
     endContract: useOp((v: { uid: string; reason: string }) => api.post(`/care-units/${v.uid}/end-contract`, { reason: v.reason }).then((r) => r.data.unit as CareUnit)),
     corporateAccept: useOp((uid: string) => api.post(`/corporate/ohc-units/${uid}/accept`).then((r) => r.data.unit as CareUnit)),

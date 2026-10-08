@@ -61,7 +61,7 @@ describe("CareUnitsManager", () => {
 
   it("opens an OHC: contract, staff with roles, access log; ending the contract needs a reason", async () => {
     serve([OUTREACH, OHC], [{ uid: "D11111", name: "Dr Asha Probe", email: "asha@x.example", role: "ohc_doctor", active: true }]);
-    post.mockResolvedValue({ data: { unit: { ...OHC, contract: { ...OHC.contract, status: "ended" } } } } as never);
+    post.mockResolvedValue({ data: { unit: { ...OHC, contract: { ...(OHC as unknown as { contract: object }).contract, status: "ended" } } } } as never);
     renderPage();
     fireEvent.click(await screen.findByRole("button", { name: /Test Corp OHC/ }));
     const sheet = await screen.findByRole("dialog");
