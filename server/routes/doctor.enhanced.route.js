@@ -1439,6 +1439,13 @@ router.post('/upload/:mediaType', authenticateDoctorUpload, upload.single('file'
       profileImage: mediaType === 'profilePicture' ? minioUrl : undefined,
     });
   } catch (error) {
+    if (error.code === 'AV_SCAN_UNAVAILABLE') {
+      return res.status(503).json({
+        success: false,
+        code: 'AV_SCAN_UNAVAILABLE',
+        message: 'Media scanning is temporarily unavailable. Please retry shortly.'
+      });
+    }
     if (error.code === 'MALWARE_DETECTED') {
       const detail = error.avResult?.detail || '';
       const threat = detail.replace(/^.*:\s*/, '').replace(/\s*FOUND\s*$/, '').trim() || 'Unknown threat';

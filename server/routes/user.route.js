@@ -1761,6 +1761,13 @@ router.post("/profile-picture", authUser, async (req, res) => {
       profileImage: user.profileImage
     });
   } catch (error) {
+    if (error.code === 'AV_SCAN_UNAVAILABLE') {
+      return res.status(503).json({
+        success: false,
+        code: 'AV_SCAN_UNAVAILABLE',
+        message: 'Profile picture scanning is temporarily unavailable. Please retry shortly.'
+      });
+    }
     if (error.code === 'MALWARE_DETECTED') {
       const detail = error.avResult?.detail || '';
       const threat = detail.replace(/^.*:\s*/, '').replace(/\s*FOUND\s*$/, '').trim() || 'Unknown threat';

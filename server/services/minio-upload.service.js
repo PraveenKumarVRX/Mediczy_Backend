@@ -19,6 +19,10 @@ import { getS3Client, getUploadsBucket, buildPublicFileUrl } from './s3-presign.
 
 const execFileAsync = promisify(execFile);
 const AV_ENABLED = process.env.AV_SCAN_ENABLED !== 'false'; // on by default
+// Scanner errors (daemon down, unreadable file, timeout) reject the upload unless
+// AV_SCAN_FAIL_OPEN=true, an explicit emergency-only override. Before 2026-10-08 every
+// scanner error was silently treated as "clean" and the flag in server/.env was ignored.
+const AV_SCAN_FAIL_OPEN = process.env.AV_SCAN_FAIL_OPEN === 'true';
 
 /**
  * Scan a file buffer or path with ClamAV daemon (clamdscan).
@@ -39,7 +43,9 @@ async function scanFile(bufferOrPath) {
 
     const scanPath = tmpPath || bufferOrPath;
 
-    const { stdout } = await execFileAsync('clamdscan', ['--no-summary', '--infected', scanPath], {
+    // --fdpass hands clamd an open descriptor, so it can scan files it has no
+    // permission to read by path (clamd runs as the clamav user; multer temp files are ours).
+    const { stdout } = await execFileAsync('clamdscan', ['--fdpass', '--no-summary', '--infected', scanPath], {
       timeout: 30000, // 30s max
     });
 
@@ -52,9 +58,18 @@ async function scanFile(bufferOrPath) {
       console.error(`🦠 AV ALERT: Infected file detected — ${detail}`);
       return { clean: false, detail };
     }
-    // Exit code 2 = error (daemon not running, etc.)
-    console.error('⚠️ AV scan error (allowing upload):', err.message);
-    return { clean: true, detail: `AV scan error: ${err.message}` };
+    // Exit code 2 / spawn failure / timeout = scanner could not give a verdict
+    if (AV_SCAN_FAIL_OPEN) {
+      console.error('⚠️ AV scan error (AV_SCAN_FAIL_OPEN override active, allowing upload):', err.message);
+      return { clean: true, detail: `AV scan error: ${err.message}` };
+    }
+    console.error('⚠️ AV scan unavailable (rejecting upload):', err.message);
+    throw Object.assign(new Error('Antivirus scanning is temporarily unavailable'), {
+      code: 'AV_SCAN_UNAVAILABLE',
+      status: 503,
+      statusCode: 503,
+      cause: err,
+    });
   } finally {
     // Clean up temp scan file
     if (tmpPath) {
