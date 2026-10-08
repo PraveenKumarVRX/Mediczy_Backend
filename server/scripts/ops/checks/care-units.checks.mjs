@@ -120,6 +120,17 @@ export async function behaviour({ q, ok, bad, expectError, fillInsert }) {
   const rm = await svc.removeStaff(opClinic, ohcUid, nurse.unique_id);
   check('removeStaff: deactivates the assignment', rm.body.removed === true && (await svc.listStaff(opClinic, ohcUid)).staff.find((s) => s.role === 'ohc_staff').active === false);
 
+  const ns = await svc.createStaff(opClinic, ohcUid, { firstName: 'New', lastName: 'Doctor', email: `new.doc.${crypto.randomUUID().slice(0, 6)}@probe.invalid`, role: 'ohc_doctor', registrationNumber: 'KA-9' });
+  const nsRow = (await q(`SELECT role, organization_uid, organization_type::text AS t, password, metadata FROM users WHERE unique_id = $1`, [ns.body.staff.uid])).rows[0];
+  check('createStaff: an OHC doctor of the operator is created and assigned; the password is returned once and stored hashed only',
+    ns.status === 201 && ns.body.tempPassword.length >= 12 && nsRow.role === 'ohc_doctor' && nsRow.organization_uid === CLINIC && nsRow.t === 'clinic'
+    && nsRow.password !== ns.body.tempPassword && nsRow.password.startsWith('$2') && nsRow.metadata.registrationNumber === 'KA-9');
+  await fails('createStaff: a duplicate email is refused', () => svc.createStaff(opClinic, ohcUid, { firstName: 'a', lastName: 'b', email: ns.body.staff.email, role: 'ohc_staff' }), 409, 'email_in_use');
+  await fails('createStaff: only for an OHC unit', () => svc.createStaff(opClinic, outUid, { firstName: 'a', lastName: 'b', email: 'x@probe.invalid', role: 'ohc_staff' }), 422);
+  await fails('createStaff: another operator cannot create staff in this OHC', () => svc.createStaff(opHospital, ohcUid, { firstName: 'a', lastName: 'b', email: 'y@probe.invalid', role: 'ohc_staff' }), 404);
+  check('lookupCorporates: finds active company records by name, uid and name only', (await svc.lookupCorporates(opClinic, 'test corporate')).corporates.some((c) => c.uid === CORP && Object.keys(c).length === 2));
+  check('lookupCoOwners: other hospitals/clinics and companies, never the operator itself', (await svc.lookupCoOwners(opClinic, 'smart')).entities.every((e) => e.uid !== CLINIC) && (await svc.lookupCoOwners(opClinic, 'smart')).entities.length > 0);
+
   console.log('\n  contract and the corporate\'s view:');
   await fails('acceptContract: another corporate cannot accept it', () => svc.acceptContract(corp2, ohcUid), 404, 'not_found');
   await fails('acceptContract: the operator cannot accept on the corporate\'s behalf', () => svc.acceptContract(opClinic, ohcUid), 403, 'forbidden');

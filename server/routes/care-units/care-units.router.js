@@ -7,12 +7,15 @@ export function buildCareUnitsRouter({ service, authenticate }) {
   router.use(authenticate);   // sets req.operator = { type: 'operator', ownerUid, ref }
   const P = (req) => req.operator;
 
+  router.get('/corporates', handle(async (req, res) => res.json({ success: true, ...(await service.lookupCorporates(P(req), req.query.search)) })));
+  router.get('/co-owners', handle(async (req, res) => res.json({ success: true, ...(await service.lookupCoOwners(P(req), req.query.search)) })));
   router.get('/', handle(async (req, res) => res.json({ success: true, ...(await service.list(P(req), req.query)) })));
   router.post('/', handle(async (req, res) => send(res, await service.createUnit(P(req), req.body))));
   router.get('/:uid', handle(async (req, res) => res.json({ success: true, ...(await service.get(P(req), req.params.uid)) })));
   router.patch('/:uid', handle(async (req, res) => send(res, await service.updateUnit(P(req), req.params.uid, req.body))));
   router.get('/:uid/staff', handle(async (req, res) => res.json({ success: true, ...(await service.listStaff(P(req), req.params.uid)) })));
   router.post('/:uid/staff', handle(async (req, res) => send(res, await service.assignStaff(P(req), req.params.uid, req.body))));
+  router.post('/:uid/staff/new', handle(async (req, res) => send(res, await service.createStaff(P(req), req.params.uid, req.body))));
   router.delete('/:uid/staff/:userUid', handle(async (req, res) => send(res, await service.removeStaff(P(req), req.params.uid, req.params.userUid))));
   router.post('/:uid/end-contract', handle(async (req, res) => send(res, await service.endContract(P(req), req.params.uid, req.body))));
   router.get('/:uid/access-log', handle(async (req, res) => res.json({ success: true, ...(await service.accessLog(P(req), req.params.uid, req.query)) })));

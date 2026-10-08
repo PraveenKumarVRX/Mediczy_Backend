@@ -8,6 +8,8 @@
  * The invariants (types, hierarchy, one corporate per OHC, contract acceptance, staff↔unit) are enforced by the database trigger
  * `care_unit_guard`; this layer validates input and turns a trigger refusal into a 4xx.
  */
+import crypto from 'node:crypto';
+import bcrypt from 'bcrypt';
 import { CollectionError, notFound, forbidden, invalid, conflict } from '../collection/errors.js';
 import * as v from '../collection/validation.js';
 
@@ -195,6 +197,55 @@ export function createCareUnitService({ pool }) {
     });
   }
 
+  /**
+   * Create an OHC doctor / OHC staff user for this operator and assign them to an OHC. The temporary password is generated here,
+   * returned ONCE to the administrator to hand over, and never stored in plaintext or logged; the user must change it (their next sign-in
+   * is through the OHC workspace, which re-reads their account each request).
+   */
+  function createStaff(p, uid, input) {
+    assertOperator(p);
+    const b = v.exactly(v.body(input), 'body', ['firstName', 'lastName', 'email', 'phone', 'role', 'registrationNumber']);
+    const role = v.oneOf(b.role, 'role', OHC_ROLES);
+    const email = v.str(b.email, 'email', { max: 160 }).toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+$/.test(email)) throw invalid('email is not valid', { field: 'email' });
+    const registration = b.registrationNumber === undefined ? null : v.str(b.registrationNumber, 'registrationNumber', { max: 60 });
+    if (registration && role !== 'ohc_doctor') throw invalid('A registration number belongs to an OHC doctor', { field: 'registrationNumber' });
+    const tempPassword = `Ohc${crypto.randomBytes(6).toString('base64url')}9a`;
+    return tx(async (c) => {
+      const unit = await loadOwned(c, p, uid, { lock: true });
+      if (unit.unit_type !== 'ohc') throw invalid('Staff accounts are created for an OHC unit', { field: 'uid' });
+      const owner = await one(c, `SELECT kind, source_id FROM entity_registry WHERE uid = $1`, [p.ownerUid]);
+      if (await one(c, 'SELECT 1 FROM users WHERE lower(email) = $1', [email])) throw conflict('email_in_use', 'A user with that email already exists');
+      const user = await one(c,
+        `INSERT INTO users ("firstName", "lastName", email, password, "phoneNumber", role, status, organization_type, organization_id, organization_uid, metadata)
+         VALUES ($1, $2, $3, $4, $5, $6, 'active', $7::enum_users_organization_type, $8, $9, $10::jsonb) RETURNING id, unique_id`,
+        [v.str(b.firstName, 'firstName', { max: 80 }), v.str(b.lastName, 'lastName', { max: 80 }), email, await bcrypt.hash(tempPassword, 10),
+          v.str(b.phone, 'phone', { max: 20, optional: true }) || '0000000000', role, owner.kind, owner.source_id, p.ownerUid,
+          JSON.stringify(registration ? { registrationNumber: registration, mustChangePassword: true } : { mustChangePassword: true })]);
+      await c.query(`INSERT INTO staff_branch_assignment (user_id, branch_id, role, is_active) VALUES ($1, $2, $3, true)`, [user.id, unit.id, role]);
+      return { status: 201, body: { staff: { uid: user.unique_id, email, role }, tempPassword } };
+    });
+  }
+
+  /** Active corporate companies by name (uid + name only), for choosing the company an OHC serves. */
+  async function lookupCorporates(p, search = '') {
+    assertOperator(p);
+    const term = `%${String(search).trim().toLowerCase().replace(/[%_]/g, '')}%`;
+    const { rows } = await pool.query(`SELECT unique_id, "companyName" FROM corporates WHERE status ILIKE 'active' AND lower("companyName") LIKE $1 ORDER BY "companyName" LIMIT 20`, [term]);
+    return { corporates: rows.map((r) => ({ uid: r.unique_id, name: r.companyName })) };
+  }
+
+  /** Possible co-owners of a medical centre: other hospitals/clinics and corporate companies (uid, name, kind). */
+  async function lookupCoOwners(p, search = '') {
+    assertOperator(p);
+    const term = `%${String(search).trim().toLowerCase().replace(/[%_]/g, '')}%`;
+    const { rows } = await pool.query(
+      `SELECT unique_id AS uid, name, type::text AS kind FROM tenants WHERE type::text IN ('hospital', 'clinic') AND unique_id <> $1 AND lower(name) LIKE $2
+       UNION ALL SELECT unique_id, "companyName", 'corporate' FROM corporates WHERE status ILIKE 'active' AND lower("companyName") LIKE $2
+       ORDER BY 2 LIMIT 20`, [p.ownerUid, term]);
+    return { entities: rows };
+  }
+
   // ── contract ──────────────────────────────────────────────────────────────
   /** The corporate accepts the OHC contract proposed by the operator. With both acceptances the contract becomes active. */
   function acceptContract(p, uid) {
@@ -286,5 +337,5 @@ export function createCareUnitService({ pool }) {
     return { entries: rows.map((r) => ({ actorKind: r.actor_kind, actor: r.actor_ref, action: r.action, subject: r.subject, at: r.at })) };
   }
 
-  return { list, get, createUnit, updateUnit, listStaff, assignStaff, removeStaff, acceptContract, endContract, corporateUnits, corporateUnitDashboard, accessLog };
+  return { list, get, createUnit, updateUnit, listStaff, assignStaff, createStaff, removeStaff, lookupCorporates, lookupCoOwners, acceptContract, endContract, corporateUnits, corporateUnitDashboard, accessLog };
 }
