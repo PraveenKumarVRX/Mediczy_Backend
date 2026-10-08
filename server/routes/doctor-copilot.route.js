@@ -95,6 +95,8 @@ router.post('/chat', authUser, requireDoctor, async (req, res) => {
       text,
       history,
       context,
+      language: req.body?.language || 'en',
+      pendingAction: req.body?.pendingAction || null,
     });
   } catch (error) {
     console.error('[DoctorCopilot] gateway error', { traceId, error: error.message });

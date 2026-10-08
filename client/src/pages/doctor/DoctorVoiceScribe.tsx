@@ -140,6 +140,7 @@ const DoctorVoiceScribe = () => {
   const [patientName, setPatientName] = useState('');
   const [patientAge, setPatientAge]   = useState('');
   const [patientGender, setPatientGender] = useState('');
+  const patientId = searchParams.get('patientId') || searchParams.get('patient_id') || '';
 
   // Processing
   const [processing, setProcessing] = useState(false);
@@ -224,6 +225,13 @@ const DoctorVoiceScribe = () => {
 
       fd.append('language', language);
       fd.append('document_type', docType);
+      if (patientId) fd.append('patient_id', patientId);
+      fd.append('patient_context', JSON.stringify({
+        patientId: patientId || undefined,
+        name: patientName.trim() || undefined,
+        age: patientAge.trim() || undefined,
+        gender: patientGender || undefined,
+      }));
       if (patientName.trim()) fd.append('patient_name', patientName.trim());
       if (patientAge.trim())  fd.append('patient_age', patientAge.trim());
       if (patientGender)      fd.append('patient_gender', patientGender);
@@ -250,7 +258,7 @@ const DoctorVoiceScribe = () => {
       setProcessing(false);
       setProgress('');
     }
-  }, [audioBlob, uploadedFile, language, docType, patientName, patientAge, patientGender, toast]);
+  }, [audioBlob, uploadedFile, language, docType, patientName, patientAge, patientGender, patientId, toast]);
 
   // ── Render ────────────────────────────────────────────────────────────────
   const hasAudio = !!(audioBlob || uploadedFile);

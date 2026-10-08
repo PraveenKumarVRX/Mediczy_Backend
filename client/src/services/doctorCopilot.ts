@@ -38,6 +38,10 @@ export interface DoctorCopilotChatRequest {
   sessionId?: string;
   language?: string;
   mode?: DoctorCopilotMode;
+  pendingAction?: {
+    action?: string | null;
+    parameters?: Record<string, unknown> | null;
+  } | null;
 }
 
 export interface DoctorCopilotChatResponse {
@@ -96,6 +100,7 @@ export const doctorCopilotService = {
       sessionId: payload.sessionId,
       language: payload.language || 'en',
       mode: payload.mode || 'auto',
+      pendingAction: payload.pendingAction || null,
     };
 
     try {
@@ -112,6 +117,8 @@ export const doctorCopilotService = {
         text: message,
         history: requestBody.history,
         context: requestBody.context,
+        language: requestBody.language,
+        pendingAction: requestBody.pendingAction,
       });
       return {
         ...data,

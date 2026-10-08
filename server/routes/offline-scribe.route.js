@@ -951,6 +951,7 @@ router.post('/full-pipeline', authUser, requireScribeAccess, upload.single('audi
         }
         patientContext = {
             ...patientContext,
+            patientId: patientContext.patientId || patientContext.patient_id || req.body.patient_id || '',
             name: patientContext.name || patientContext.patient_name || req.body.patient_name || '',
             age: patientContext.age || patientContext.patient_age || req.body.patient_age || '',
             gender: patientContext.gender || patientContext.patient_gender || req.body.patient_gender || ''

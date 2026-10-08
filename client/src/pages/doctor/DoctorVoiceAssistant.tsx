@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { MicVAD } from "@ricky0123/vad-web";
-import { Room } from "livekit-client";
+import { Room, RoomEvent } from "livekit-client";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import SiriOrb, { OrbState } from "@/components/SiriOrb";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,21 @@ interface Message {
   requiresConfirmation?: boolean;
   timestamp: Date;
 }
+
+const VOICE_LANGUAGES = [
+  { code: "en", label: "English", locale: "en-IN" },
+  { code: "hi", label: "हिन्दी", locale: "hi-IN" },
+  { code: "bn", label: "বাংলা", locale: "bn-IN" },
+  { code: "gu", label: "ગુજરાતી", locale: "gu-IN" },
+  { code: "kn", label: "ಕನ್ನಡ", locale: "kn-IN" },
+  { code: "ml", label: "മലയാളം", locale: "ml-IN" },
+  { code: "mr", label: "मराठी", locale: "mr-IN" },
+  { code: "pa", label: "ਪੰਜਾਬੀ", locale: "pa-IN" },
+  { code: "ta", label: "தமிழ்", locale: "ta-IN" },
+  { code: "te", label: "తెలుగు", locale: "te-IN" },
+  { code: "or", label: "ଓଡ଼ିଆ", locale: "or-IN" },
+  { code: "ur", label: "اردو", locale: "ur-IN" },
+];
 
 // Screen path map for navigation actions
 const SCREEN_PATHS: Record<string, string> = {
@@ -153,6 +168,7 @@ export default function DoctorVoiceAssistant() {
   const [vadRetry, setVadRetry]          = useState(0);       // bump to re-init VAD
   const [micVolume, setMicVolume]        = useState(0);       // 0-1 orb animation input
   const [sttMode, setSttMode]            = useState<'server' | 'browser'>('server'); // active transcription engine
+  const [voiceLanguage, setVoiceLanguage] = useState('en');
   const sttDownNotifiedRef               = useRef<number>(0); // throttle "STT down" feedback
   const noWakeNotifiedRef                = useRef<number>(0); // throttle "heard you, but no wake word" feedback
 
@@ -167,7 +183,7 @@ export default function DoctorVoiceAssistant() {
   const speakAbortRef    = useRef<AbortController | null>(null);
   const messagesEndRef   = useRef<HTMLDivElement>(null);
   const inputRef         = useRef<HTMLInputElement>(null);
-  // LiveKit room (future WebRTC use) + simple Audio element for TTS
+  // LiveKit room (agent audio subscription) + HTTP TTS audio element
   const livekitRoomRef   = useRef<Room | null>(null);
   const audioElRef       = useRef<HTMLAudioElement | null>(null);
   // Stable refs so VAD async callbacks always see latest values
@@ -199,6 +215,12 @@ export default function DoctorVoiceAssistant() {
       try {
         const { data } = await api.get('/voice-assistant/livekit-token');
         room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === 'audio') track.attach();
+        });
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (track.kind === 'audio') track.detach();
+        });
         await room.connect(data.url, data.token);
         livekitRoomRef.current = room;
         console.info('[iSHA] LiveKit room connected:', data.roomName);
@@ -272,8 +294,10 @@ export default function DoctorVoiceAssistant() {
       const utter = new SpeechSynthesisUtterance(clean);
       utter.rate = 1.05;
       const voices = synth.getVoices();
-      const preferred = voices.find(v => v.lang === "en-IN") || voices.find(v => v.lang.startsWith("en")) || voices[0];
+      const selectedLocale = VOICE_LANGUAGES.find(v => v.code === voiceLanguage)?.locale || 'en-IN';
+      const preferred = voices.find(v => v.lang.toLowerCase() === selectedLocale.toLowerCase()) || voices.find(v => v.lang.toLowerCase().startsWith(voiceLanguage)) || voices[0];
       if (preferred) utter.voice = preferred;
+      utter.lang = selectedLocale;
       utter.onstart = () => setIsSpeaking(true);
       utter.onend   = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); onEnd?.(); };
       utter.onerror = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); onEnd?.(); };
@@ -288,7 +312,7 @@ export default function DoctorVoiceAssistant() {
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
         },
-        body: JSON.stringify({ text: clean, model: "eleven_turbo_v2_5" }),
+        body: JSON.stringify({ text: clean, language: voiceLanguage, model: "eleven_multilingual_v2" }),
         signal: abortCtrl.signal,
       });
       if (!resp.ok) throw new Error("TTS " + resp.status);
@@ -331,7 +355,7 @@ export default function DoctorVoiceAssistant() {
       // ElevenLabs fetch failed or play() was blocked — fallback to browser TTS
       tryBrowserTTS();
     }
-  }, [ttsEnabled, stopSpeaking]);
+  }, [ttsEnabled, stopSpeaking, voiceLanguage]);
 
   // ── Keep speakRef / sendToAgentRef in sync ────────────────────────────────
   useEffect(() => { speakRef.current = speak; }, [speak]);
@@ -409,7 +433,7 @@ export default function DoctorVoiceAssistant() {
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = false;
-    rec.lang = 'en-IN';
+    rec.lang = VOICE_LANGUAGES.find(v => v.code === voiceLanguage)?.locale || 'en-IN';
 
     rec.onstart = () => { setVadReady(true); setVadError(null); };
     rec.onspeechstart = () => { if (!isSpeakingRef.current) setIsListening(true); };
@@ -441,7 +465,7 @@ export default function DoctorVoiceAssistant() {
     recognitionRef.current = rec;
     recognitionActiveRef.current = true;
     try { rec.start(); return true; } catch { return false; }
-  }, []);
+  }, [voiceLanguage]);
   useEffect(() => { startBrowserSttRef.current = startBrowserStt; }, [startBrowserStt]);
 
   // Auto-switch from server STT (VAD pipeline) to on-device browser STT.
@@ -482,6 +506,7 @@ export default function DoctorVoiceAssistant() {
       const wav = float32ToWav(audio);
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
+      form.append('language', voiceLanguage);
       // Auto language detection (Tamil/Telugu/Hindi/etc.) — forcing 'en' here was
       // tried to help wake-phrase capture, but a controlled Groq Whisper test
       // (same clip, forced-en vs auto, both with this prompt) transcribed "Hey
@@ -571,7 +596,7 @@ export default function DoctorVoiceAssistant() {
       stopSpeaking();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vadRetry]);
+  }, [vadRetry, voiceLanguage]);
 
   // ── Proactive briefing: poll every 2 min for urgent/high alerts ───────────
   const lastSpokenAlertRef = useRef<number>(0);
@@ -655,6 +680,7 @@ export default function DoctorVoiceAssistant() {
         message: text,
         history,
         context: copilotContext,
+        language: voiceLanguage,
         pendingAction: pendingAction
           ? { action: pendingAction.action, parameters: pendingAction.parameters }
           : null,
@@ -702,7 +728,7 @@ export default function DoctorVoiceAssistant() {
     } finally {
       setIsProcessing(false);
     }
-  }, [speak, executeAction, copilotContext, pendingAction]);
+  }, [speak, executeAction, copilotContext, pendingAction, voiceLanguage]);
 
   // Keep sendToAgentRef in sync
   useEffect(() => { sendToAgentRef.current = sendToAgent; }, [sendToAgent]);
@@ -792,6 +818,15 @@ export default function DoctorVoiceAssistant() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <select
+              aria-label="Voice language"
+              value={voiceLanguage}
+              onChange={(e) => setVoiceLanguage(e.target.value)}
+              className="h-8 rounded-md border border-slate-700 bg-slate-800 px-2 text-xs text-slate-200"
+              title="Voice language"
+            >
+              {VOICE_LANGUAGES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+            </select>
             {vadReady && !isListening && !isSpeaking && !isProcessing && (
               <Badge variant="secondary" className="gap-1 text-xs text-indigo-300 bg-indigo-950 border border-indigo-700 hidden sm:flex">
                 <Radio className="h-3 w-3 animate-pulse" /> {isAwoken ? "Ready" : "Standby"}

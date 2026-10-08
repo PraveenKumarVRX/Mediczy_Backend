@@ -884,10 +884,17 @@ async function executeCompleteTask(doctorId, { task_id, title }) {
       );
     } else if (title) {
       result = await pool.query(
-        `UPDATE doctor_tasks SET status = 'completed', updated_at = NOW()
-         WHERE doctor_id = $1 AND status = 'pending'
-           AND title ILIKE $2
-         ORDER BY created_at DESC LIMIT 1 RETURNING id, title`,
+        `WITH candidate AS (
+           SELECT id FROM doctor_tasks
+           WHERE doctor_id = $1 AND status = 'pending' AND title ILIKE $2
+           ORDER BY created_at DESC
+           LIMIT 1
+         )
+         UPDATE doctor_tasks AS task
+         SET status = 'completed', updated_at = NOW()
+         FROM candidate
+         WHERE task.id = candidate.id
+         RETURNING task.id, task.title`,
         [doctorId, `%${title}%`]
       );
     }
@@ -1142,13 +1149,14 @@ function tryConversationShortcuts(text, historyMessages) {
 // ─── POST /agent — Text → Intent + Action/Answer ─────────────────────────────
 
 router.post('/agent', authUser, requireDoctor, async (req, res) => {
-  const { text, context = {}, history = [] } = req.body;
+  const { text, context = {}, history = [], language = 'en', pendingAction = null } = req.body;
   if (!text || typeof text !== 'string' || !text.trim()) {
     return res.status(400).json({ error: 'text is required' });
   }
 
   const doctorId = req.user?.id || req.user?.doctorId;
   const enrichedContext = { ...context, doctorName: req.user?.firstName || req.user?.name };
+  const responseLanguage = String(language || 'en').trim().toLowerCase().slice(0, 12) || 'en';
   const systemPrompt = buildSystemPrompt(enrichedContext);
   const currentPatientId = context.currentPatient?.id || context.currentPatient?._id;
 
@@ -1168,6 +1176,7 @@ router.post('/agent', authUser, requireDoctor, async (req, res) => {
 
   // ── iSHA JSON intent prompt — sent to iSHA instead of function-calling ─────
   const ishaIntentPrompt = `You are iSHA, an AI medical assistant for Dr. ${enrichedContext.doctorName || 'Doctor'} on the SmartHealth platform.
+Respond in ${responseLanguage === 'en' ? 'English' : `the doctor's selected language (${responseLanguage})`} for all user-facing response text. Keep action names and JSON keys in English.
 Today: ${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}, ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}.${enrichedContext.currentPatient ? `\nActive patient: ${enrichedContext.currentPatient.name || 'Unknown'}.` : ''}
 
 You MUST respond ONLY with a valid JSON object — no extra text, no markdown fences. Format:
@@ -1215,6 +1224,37 @@ Rules:
 - For all other actions: write a 1-sentence spoken confirmation in "response"`;
 
   try {
+    if (pendingAction?.action === 'schedule_followup' && /^(yes|yeah|yep|confirm|confirmed|do it|go ahead|okay|ok)\b/i.test(text.trim())) {
+      const days = Math.max(1, Math.min(365, parseInt(pendingAction.parameters?.days, 10) || 7));
+      const followUpDate = new Date();
+      followUpDate.setDate(followUpDate.getDate() + days);
+      const patient = enrichedContext.currentPatient || context.currentPatient || {};
+      if (!patient.id && !patient.name) {
+        const msg = 'I need an active patient record before I can schedule the follow-up.';
+        return res.json({ intent: 'action', action: 'schedule_followup', parameters: pendingAction.parameters || {}, response: msg, speak: msg, requiresConfirmation: false, language: responseLanguage });
+      }
+      const patientId = patient.id || patient._id;
+      const patientRow = patientId
+        ? await pool.query('SELECT id, "firstName", "lastName", "phoneNumber" FROM users WHERE id = $1 LIMIT 1', [patientId]).catch(() => ({ rows: [] }))
+        : { rows: [] };
+      const patientName = patientRow.rows[0]
+        ? `${patientRow.rows[0].firstName || ''} ${patientRow.rows[0].lastName || ''}`.trim()
+        : patient.name;
+      const result = await executeBookAppointment(
+        doctorId,
+        enrichedContext.doctorName || 'Doctor',
+        patientName,
+        patientRow.rows[0]?.phoneNumber,
+        followUpDate.toISOString().slice(0, 10),
+        '09:00',
+        pendingAction.parameters?.reason || 'Follow-up consultation',
+        'in-person'
+      );
+      const msg = result.success
+        ? `Follow-up booked for ${result.patientName} on ${result.date} at ${result.time}.`
+        : `Could not book the follow-up: ${result.error}`;
+      return res.json({ intent: 'action', action: 'schedule_followup', parameters: pendingAction.parameters || {}, response: msg, speak: msg, data: result, requiresConfirmation: false, language: responseLanguage });
+    }
     // ── Step 1: Call central LLM router (SIB-first) for JSON intent ─────
     let toolName = shortcut?.shortcut || null;
     let args = shortcut?.parameters || {};

@@ -210,8 +210,8 @@ router.post("/speak", authUser, async (req, res) => {
  * POST /api/tts/stream
  * Streaming TTS. Uses ElevenLabs first, then streams OpenAI TTS fallback.
  */
-router.post("/stream", async (req, res) => {
-  const { text, voiceId, model = "eleven_turbo_v2_5" } = req.body;
+router.post("/stream", authUser, async (req, res) => {
+  const { text, voiceId, language = "en", model = "eleven_multilingual_v2" } = req.body;
 
   if (!text) return res.status(400).json({ error: "Text is required" });
 
