@@ -6,6 +6,10 @@ import { registerDisplaySSE, pushToZone, pushToAll, getSSEStats } from '../servi
 import * as queueService from '../services/hospital-queue.service.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 import { listFloors, saveFloor, deleteFloor } from '../services/wayfinding.service.js';
+import { getFloorMap } from '../services/floor-map.service.js';
+import {
+  OT_PROCTOR_ROOM_PREFIX, registerRoom, endRoom, listActiveRooms, checkObserverRoom,
+} from '../services/ot-proctor-rooms.js';
 import {
   requireDisplayDevice,
   optionalDisplayDeviceOrDefaultOrg,
@@ -15,8 +19,6 @@ import {
 import { verifyHospitalToken } from '../middleware/hospitalAuth.middleware.js';
 
 const router = express.Router();
-const OT_PROCTOR_ROOM_PREFIX = 'display-ot-proctor-';
-const OT_PROCTOR_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 registerDisplaySSE(router, async (req, res) => {
   const result = await resolveOptionalDisplayOrg(req);
@@ -804,70 +806,17 @@ router.get('/command', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   }
 });
 
-// GET /api/display/floor-map — digital twin occupancy overlay (GAP-HOS-002)
+// GET /api/display/floor-map — floor map of the organization's own configured departments, with occupancy
+// only where a real source exists (see services/floor-map.service.js). No configured floors => no nodes.
 router.get('/floor-map', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
-    const orgId = req.organizationId;
-    const floor = req.query.floor || 'all';
-
-    let twins = [];
-    try {
-      const { listTwins } = await import('../services/hypergrid-twins.service.js');
-      twins = await listTwins({ tenantId: orgId, twinType: 'asset', limit: 100 });
-    } catch (_) {}
-
-    const zones = [
-      { id: 'er', name: 'Emergency', floor: 'G', x: 12, y: 68, capacity: 12, type: 'er' },
-      { id: 'opd', name: 'OPD Waiting', floor: 'G', x: 45, y: 55, capacity: 80, type: 'opd' },
-      { id: 'icu', name: 'ICU', floor: '2', x: 72, y: 28, capacity: 6, type: 'icu' },
-      { id: 'ot', name: 'Operation Theatre', floor: '3', x: 55, y: 18, capacity: 5, type: 'ot' },
-      { id: 'ward-3b', name: 'Ward 3B', floor: '3', x: 28, y: 35, capacity: 24, type: 'ward' },
-      { id: 'pharmacy', name: 'Pharmacy', floor: 'G', x: 82, y: 72, capacity: 20, type: 'pharmacy' },
-    ].filter((z) => floor === 'all' || z.floor === floor);
-
-    const opdWaiting = await safeQueryOne(
-      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
-       WHERE organization_id = $1 AND department = 'opd' AND status IN ('waiting','called')
-         AND check_in_at::date = CURRENT_DATE`,
-      [orgId]
-    );
-    const erWaiting = await safeQueryOne(
-      `SELECT COUNT(*)::int AS c FROM hospital_queue_entries
-       WHERE organization_id = $1 AND department = 'er' AND status IN ('waiting','called')
-         AND check_in_at::date = CURRENT_DATE`,
-      [orgId]
-    );
-    const icuBeds = await safeQuery(`SELECT status FROM icu_beds WHERE active = true`);
-    const otRooms = await safeQuery(`SELECT status FROM ot_rooms WHERE active = true`);
-
-    const occupancy = {
-      er: erWaiting?.c || 0,
-      opd: opdWaiting?.c || 0,
-      icu: icuBeds.filter((b) => b.status !== 'available').length,
-      ot: otRooms.filter((r) => /progress|prep/i.test(r.status || '')).length,
-      'ward-3b': 18,
-      pharmacy: 3,
-    };
-
-    const nodes = zones.map((z) => {
-      const occ = occupancy[z.id] ?? 0;
-      const util = z.capacity ? Math.min(100, Math.round((occ / z.capacity) * 100)) : 0;
-      const twin = twins.find((t) => t.external_id === z.id);
-      return {
-        ...z,
-        occupied: occ,
-        utilizationPct: util,
-        status: util >= 90 ? 'critical' : util >= 70 ? 'busy' : util >= 40 ? 'moderate' : 'normal',
-        twinAttributes: twin?.attributes || null,
-      };
-    });
-
+    const floor = String(req.query.floor || 'all');
+    const map = await getFloorMap(req.organizationId, floor);
     res.json({
       success: true,
-      live: twins.length > 0 || (opdWaiting?.c || 0) > 0,
       floor,
-      nodes,
-      legend: { normal: '<40%', moderate: '40-70%', busy: '70-90%', critical: '>90%' },
+      ...map,
+      legend: { normal: '<40%', moderate: '40-70%', busy: '70-90%', critical: '>90%', unknown: 'no occupancy source' },
     });
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -892,6 +841,7 @@ router.post('/video/sessions', optionalDisplayDeviceOrDefaultOrg, async (req, re
       identity: `${role}-${patientId || bedId || Date.now()}`,
       name: role,
     });
+    if (sessionType === 'ot-proctor') registerRoom(req.organizationId, roomId);
     pushToZone(targetZone || 'ward', 'video_session_start', {
       roomId,
       sessionType,
@@ -904,20 +854,19 @@ router.post('/video/sessions', optionalDisplayDeviceOrDefaultOrg, async (req, re
   }
 });
 
+// GET /api/display/video/sessions/ot-proctor/active — live OT proctoring rooms of the caller's organization
+router.get('/video/sessions/ot-proctor/active', verifyHospitalToken, (req, res) => {
+  res.json({ success: true, rooms: listActiveRooms(req.hospitalOrgId) });
+});
+
 // POST /api/display/video/sessions/observer — a hospital specialist joins a live OT proctoring room
 // (subscribe-only). Staff of one hospital can only be issued tokens for rooms of their own organization,
 // which is enforced by the organization id embedded in the room name by /video/sessions.
 router.post('/video/sessions/observer', verifyHospitalToken, async (req, res) => {
   try {
     const { roomId } = req.body || {};
-    const prefix = `${OT_PROCTOR_ROOM_PREFIX}${req.hospitalOrgId}-`;
-    const startedAt = Number(String(roomId || '').slice(prefix.length));
-    if (!roomId || !String(roomId).startsWith(prefix) || !Number.isFinite(startedAt)) {
-      return res.status(403).json({ success: false, message: 'Not a proctoring room of your organization' });
-    }
-    if (Date.now() - startedAt > OT_PROCTOR_MAX_AGE_MS) {
-      return res.status(410).json({ success: false, message: 'This proctoring session has expired' });
-    }
+    const check = checkObserverRoom(req.hospitalOrgId, roomId);
+    if (!check.ok) return res.status(check.status).json({ success: false, message: check.message });
     const join = await buildLiveKitJoinData({
       meetingId: roomId,
       identity: `ot-observer-${req.userId ?? Date.now()}`,
@@ -936,6 +885,7 @@ router.post('/video/sessions/observer', verifyHospitalToken, async (req, res) =>
 router.post('/video/sessions/end', optionalDisplayDeviceOrDefaultOrg, async (req, res) => {
   try {
     const { targetZone, roomId } = req.body;
+    if (roomId) endRoom(req.organizationId, roomId);
     pushToZone(targetZone || 'ward', 'video_session_end', { roomId, ts: Date.now() }, req.organizationId);
     res.json({ success: true });
   } catch (e) {

@@ -105,11 +105,13 @@ export default function WayfindingAdminPage() {
             rows={8}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={'Pharmacy | medicine, chemist | Turn right after reception; Walk to the end of the corridor | green signboard'}
+            placeholder={'Emergency | casualty, er | Straight ahead from the entrance | red doors | 12,68 | 10 | er'}
           />
           <p className="text-muted-foreground">
-            One department per line: <code>Name | aliases, comma separated | steps, separated by ; | landmark</code>.
-            Only the name is required. Visitors see exactly the steps you write.
+            One department per line: <code>Name | aliases, comma separated | steps, separated by ; | landmark | x,y | capacity | zone</code>.
+            Only the name is required. Visitors see exactly the steps you write. <code>x,y</code> places the department on the
+            floor-map display (x 0-100, y 0-80); <code>zone</code> is er, opd, icu, ot, ward, pharmacy, lab, radiology or other,
+            and ER, OPD and OT show live occupancy.
           </p>
           <div className="flex items-center gap-3">
             <Button onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save floor'}</Button>

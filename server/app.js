@@ -65,6 +65,7 @@ import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import aiGovernanceRouter from "./routes/ai-governance.route.js";
 import aiGpuMetricsRouter from "./routes/ai-gpu-metrics.route.js";
+import { CORS_ALLOWED_HEADERS, CORS_EXPOSED_HEADERS } from "./config/cors.config.js";
 import clinicalKnowledgeFabricRouter from "./routes/clinical-knowledge-fabric.route.js";
 import hospitalBranchRouter from "./routes/hospital-branch.route.js";
 import careUnitsRouter from "./routes/care-units.route.js";
@@ -682,7 +683,8 @@ app.use(cors({
     return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cookie'],
+  allowedHeaders: CORS_ALLOWED_HEADERS,
+  exposedHeaders: CORS_EXPOSED_HEADERS,
   credentials: true,
   optionsSuccessStatus: 200,
   preflightContinue: false
@@ -696,7 +698,8 @@ app.options('*', (req, res) => {
   }
   res.header('Access-Control-Allow-Origin', origin || '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Headers', CORS_ALLOWED_HEADERS.join(', '));
+  res.header('Access-Control-Expose-Headers', CORS_EXPOSED_HEADERS.join(', '));
   res.header('Access-Control-Allow-Credentials', 'true');
   res.status(200).end();
 });

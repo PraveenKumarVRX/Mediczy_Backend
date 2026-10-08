@@ -67,6 +67,32 @@ describe('OT proctoring video', () => {
   });
 });
 
+describe('OT proctoring room list', () => {
+  it('lists live rooms only for the organization that started them, and drops ended ones', async () => {
+    const started = await request(display).post('/api/display/video/sessions').send({ sessionType: 'ot-proctor', targetZone: 'ot' });
+    const roomId = started.body.roomId;
+
+    hospitalOrg = 3;
+    const mine = await request(display).get('/api/display/video/sessions/ot-proctor/active');
+    expect(mine.body.rooms.map((r) => r.roomId)).toContain(roomId);
+
+    hospitalOrg = 4;
+    const other = await request(display).get('/api/display/video/sessions/ot-proctor/active');
+    expect(other.body.rooms.map((r) => r.roomId)).not.toContain(roomId);
+
+    hospitalOrg = 3;
+    await request(display).post('/api/display/video/sessions/end').send({ targetZone: 'ot', roomId });
+    const after = await request(display).get('/api/display/video/sessions/ot-proctor/active');
+    expect(after.body.rooms.map((r) => r.roomId)).not.toContain(roomId);
+  });
+
+  it('does not list non-OT display sessions', async () => {
+    const started = await request(display).post('/api/display/video/sessions').send({ sessionType: 'er-triage', targetZone: 'er' });
+    const list = await request(display).get('/api/display/video/sessions/ot-proctor/active');
+    expect(list.body.rooms.map((r) => r.roomId)).not.toContain(started.body.roomId);
+  });
+});
+
 describe('wayfinding floor-map admin', () => {
   it('lists only the caller organization', async () => {
     hospitalOrg = 11;

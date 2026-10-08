@@ -11,6 +11,7 @@ import pool from '../db/pgPool.js';
 
 const RECEPTION = 'Please proceed to the main reception desk for assistance.';
 const MAX_DEPARTMENTS_PER_FLOOR = 200;
+export const ZONES = new Set(['er', 'opd', 'icu', 'ot', 'ward', 'pharmacy', 'lab', 'radiology', 'other']);
 
 const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9ऀ-ॿ\s]/gi, ' ').replace(/\s+/g, ' ').trim();
 const tokens = (s) => norm(s).split(' ').filter((t) => t.length > 1);
@@ -116,13 +117,30 @@ export function validateFloor(input) {
   for (const d of departments) {
     const name = String(d?.name || '').trim();
     if (!name || name.length > 100) return { error: 'every department needs a name of 1-100 characters' };
-    clean.push({
+    const entry = {
       id: String(d.id || name).trim().slice(0, 60),
       name,
       aliases: (Array.isArray(d.aliases) ? d.aliases : []).map((a) => String(a).trim().slice(0, 60)).filter(Boolean).slice(0, 20),
       directions: (Array.isArray(d.directions) ? d.directions : []).map((a) => String(a).trim().slice(0, 200)).filter(Boolean).slice(0, 10),
       landmark: d.landmark ? String(d.landmark).trim().slice(0, 120) : undefined,
-    });
+    };
+    // Optional placement on the floor-map display (100 x 80 grid), expected capacity and zone type.
+    if (d.x !== undefined && d.x !== null && d.x !== '') {
+      const x = Number(d.x); const y = Number(d.y);
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 100 || y < 0 || y > 80) return { error: `${name}: x must be 0-100 and y 0-80` };
+      entry.x = x; entry.y = y;
+    }
+    if (d.capacity !== undefined && d.capacity !== null && d.capacity !== '') {
+      const cap = Number(d.capacity);
+      if (!Number.isInteger(cap) || cap < 1 || cap > 100000) return { error: `${name}: capacity must be a whole number of at least 1` };
+      entry.capacity = cap;
+    }
+    if (d.zone) {
+      const zone = String(d.zone).trim().toLowerCase();
+      if (!ZONES.has(zone)) return { error: `${name}: zone must be one of ${[...ZONES].join(', ')}` };
+      entry.zone = zone;
+    }
+    clean.push(entry);
   }
   const landmarks = Array.isArray(input?.landmarks) ? input.landmarks.slice(0, 50) : [];
   const floorName = input?.floorName ? String(input.floorName).trim().slice(0, 100) : null;

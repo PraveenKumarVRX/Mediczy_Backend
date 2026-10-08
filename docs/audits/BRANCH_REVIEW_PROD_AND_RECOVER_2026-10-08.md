@@ -41,3 +41,9 @@ Neither branch can be merged or rebased wholesale: `git merge-tree` reports conf
 | `ai-drug-interaction.service.js` duplicate-therapy and renal-dosing rules | **Needs governance** | diagnostic/decision-support output (Class IIb-III); needs `qualityGates`, `computeConfidenceScore`, an explanation, a gate-log row and a medical-director review. Also queries `lab_results` with a bare patient id |
 | careos / ADT / ICU / discharge / hospital-os service edits, Kafka consumers | **Needs rebase by owner** | 48 modified files across services main has since changed; conflicts in `adt.service`, `clinical-workspace.service` |
 | `FamilyCareUpdates.tsx` | **Port later** | additive UI, depends on the careos family-portal service edits above |
+
+## Follow-up the same day (2026-10-08, later)
+
+- **OT remote-expert console built.** Hospital OS > Telepresence now lists the hospital's live OT proctoring sessions and lets a specialist join subscribe-only (`GET /api/display/video/sessions/ot-proctor/active`, `POST .../observer`). The room list is in memory, so it is valid only while the API runs as one process.
+- **Floor map is no longer fabricated.** `/api/display/floor-map` builds nodes only from the hospital's own configured floors (Hospital OS > Wayfinding, now with `x,y | capacity | zone` per department). Occupancy comes from real sources only: ER and OPD from today's queue entries, OT from the organization's own `ot_rooms`; everything else shows "No live count". The previous version invented the layout and counts (e.g. Ward 3B = 18), read ICU occupancy from an `icu_beds` table that does not exist in production, and read `ot_rooms` across all tenants.
+- **CORS headers** for the phlebotomy app added (`server/config/cors.config.js`). The origin of a web build is still a deployment setting (`CORS_ORIGIN`).

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Video } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import OtExpertConsole from './OtExpertConsole';
 
 const LINKS = [
   { label: 'Bedside display + nurse video', href: '/display/bedside' },
@@ -27,6 +28,7 @@ export default function TelepresenceHubPage() {
           </Card>
         ))}
       </div>
+      <OtExpertConsole />
     </div>
   );
 }

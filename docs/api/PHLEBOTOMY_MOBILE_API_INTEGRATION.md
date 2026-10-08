@@ -1245,10 +1245,10 @@ The server enforces authorisation, minimum-necessary projection and audit. The a
 ## 11. Platform notes
 
 * **Native (Expo / React Native, Swift, Kotlin)** — works against the API as documented. Requests with no `Origin` header are accepted.
-* **Browser / PWA / Next.js (the prototype's stack)** — currently **blocked by CORS**, for two separate reasons:
-  1. The server only allows origins from an allow-list (production hosts, tenant sub-domains `*.mediqzy.com` / `*.mediczy.in`). Any other origin gets `403 CORS blocked`.
-  2. The CORS `Access-Control-Allow-Headers` list is `Content-Type, Authorization, X-Requested-With, Accept, Origin, Cookie`. A browser preflight for `Idempotency-Key`, `X-Device-Id`, `X-Correlation-Id` or `X-App-Version` therefore fails, and `Idempotent-Replayed` is not exposed to JavaScript.
-  A server change (allow those four headers, expose `Idempotent-Replayed`, add the app's origin) is required before a web build can work; it is not done. Also note a web build cannot use a secure token store — prefer native.
+* **Browser / PWA / Next.js (the prototype's stack)** — two things govern whether a web build can call the API:
+  1. **Headers (fixed 2026-10-08).** The CORS `Access-Control-Allow-Headers` list now includes `Idempotency-Key`, `X-Device-Id`, `X-Correlation-Id` and `X-App-Version` (alongside `Content-Type, Authorization, X-Requested-With, Accept, Origin, Cookie`), and `Idempotent-Replayed` is exposed to JavaScript (`server/config/cors.config.js`).
+  2. **Origin (needs a deployment setting).** The server only allows origins from an allow-list (production hosts, tenant sub-domains `*.mediqzy.com` / `*.mediczy.in`). Any other origin gets `403 CORS blocked`. To serve a web build from its own host, add that exact origin (scheme + host, no path) to `CORS_ORIGIN` (comma separated) in the production parameters and reload the API. Serving the build from a `*.mediqzy.com` sub-domain needs no change.
+  A web build still cannot use a secure token store — prefer native.
 * The prototype's analytics (`@vercel/analytics`) must not be included in a build that handles patient data.
 
 ---
@@ -1691,4 +1691,4 @@ HTTP 401
 
 ## Appendix E — Open items that affect the app
 
-These are decisions or work not yet done (see the ADR §4/§6): consent text/witness policy; arrival-evidence policy (mandatory or optional, photo or not); tube/volume catalogue and enforcement; offline retention period; push/SMS notification channel and SLA; a CORS change for web builds; collector-visible instructions/notes; label-replacement flow; QC fields at hand-off; a staging environment; a delta-sync endpoint.
+These are decisions or work not yet done (see the ADR §4/§6): consent text/witness policy; arrival-evidence policy (mandatory or optional, photo or not); tube/volume catalogue and enforcement; offline retention period; push/SMS notification channel and SLA; adding the web build's origin to `CORS_ORIGIN` (the header change is done); collector-visible instructions/notes; label-replacement flow; QC fields at hand-off; a staging environment; a delta-sync endpoint.
