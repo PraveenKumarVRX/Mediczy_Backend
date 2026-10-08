@@ -208,14 +208,15 @@ Rules:
       temperature: 0.5,
       cognitiveTier: 'standard',
       skipCache: false,
+      // Force JSON output on providers that support it (Groq, OpenAI).
+      // SIB ignores this field gracefully; it only affects cloud fallbacks.
+      responseFormat: { type: 'json_object' },
     });
 
-    // Parse LLM response — handle both string content and direct object
-    let parsed;
+    // Robust JSON extraction — LLMs sometimes wrap JSON in prose preamble.
+    // Strategy: try direct parse → strip fences → fish for {...} block → give up.
     const raw = typeof result.content === 'string' ? result.content.trim() : JSON.stringify(result.content);
-    // Strip markdown fences if present
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
-    parsed = JSON.parse(cleaned);
+    let parsed = _extractJson(raw);
 
     const appreciations = (parsed.appreciations || []).slice(0, 5);
     const hazards       = (parsed.hazards       || []).slice(0, 5);
@@ -225,6 +226,28 @@ Rules:
     console.warn('[HealthIntelligence] AI narrative error (non-fatal):', err.message);
     return { appreciations: [], hazards: [] };
   }
+}
+
+/**
+ * Extract the first valid JSON object from a string that may contain prose.
+ * Handles: plain JSON, markdown-fenced JSON, JSON embedded in conversational text.
+ * Throws SyntaxError if no valid JSON object can be found.
+ */
+function _extractJson(text) {
+  // 1. Try direct parse (happy path — LLM returned only JSON)
+  try { return JSON.parse(text); } catch (_) { /* fall through */ }
+
+  // 2. Strip markdown code fences and retry
+  const stripped = text.replace(/^```(?:json)?\s*/im, '').replace(/\s*```\s*$/im, '').trim();
+  try { return JSON.parse(stripped); } catch (_) { /* fall through */ }
+
+  // 3. Fish for first {...} block — handles "Here is the JSON:\n{...}" style responses
+  const match = text.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch (_) { /* fall through */ }
+  }
+
+  throw new SyntaxError(`No valid JSON found in LLM response (first 120 chars): ${text.slice(0, 120)}`);
 }
 
 

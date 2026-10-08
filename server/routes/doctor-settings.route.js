@@ -233,7 +233,11 @@ router.put('/appointment-config', authUser, [
       practiceLocations
     } = req.body;
 
-    if (inPersonConsultationEnabled === true && !hasGoogleVerifiedClinicLocation(doctor)) {
+    // Only enforce the Google Places check when the doctor is actively enabling in-person
+    // (transitioning from false → true). Saving other fields (e.g. slotDuration) while
+    // inPersonConsultationEnabled is already true must not be blocked by this guard.
+    const enablingInPerson = inPersonConsultationEnabled === true && !doctor.inPersonConsultationEnabled;
+    if (enablingInPerson && !hasGoogleVerifiedClinicLocation(doctor)) {
       return res.status(400).json({
         success: false,
         message: 'In-person consultation requires a clinic address verified by Google Places. Please select your clinic from Google autocomplete and save profile first.'
@@ -313,13 +317,13 @@ router.put('/appointment-config', authUser, [
       message: 'Appointment configuration updated successfully',
       config: {
         slotDuration: doctor.slotDuration,
-        weeklySchedule: doctor.weeklySchedule,
+        weeklySchedule: normalizeWeeklySchedule(doctor.weeklySchedule),
         offDays: doctor.offDays,
         onlineConsultationEnabled: doctor.onlineConsultationEnabled,
         inPersonConsultationEnabled: doctor.inPersonConsultationEnabled,
         onlineConsultationFee: doctor.onlineConsultationFee,
         inPersonConsultationFee: doctor.inPersonConsultationFee,
-        practiceLocations: doctor.practiceLocations
+        practiceLocations: normalizeJsonValue(doctor.practiceLocations, [])
       }
     });
   } catch (error) {

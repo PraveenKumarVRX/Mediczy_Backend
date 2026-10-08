@@ -124,13 +124,7 @@ router.post(
       );
 
       // Audit log
-      await auditLoginAttempt({
-        userId: aggregator.id,
-        userType: 'aggregator',
-        action: 'register',
-        ipAddress: req.ip,
-        success: true,
-      });
+      await auditLoginAttempt(req, aggregator.id, aggregator.email, true, 'Aggregator registered');
 
       res.status(201).json({
         success: true,
@@ -180,14 +174,7 @@ router.post(
       // Find aggregator by email
       const aggregator = await InsuranceBroker.findOne({ where: { email } });
       if (!aggregator) {
-        await auditLoginAttempt({
-          userEmail: email,
-          userType: 'aggregator',
-          action: 'login',
-          ipAddress: req.ip,
-          success: false,
-          reason: 'User not found',
-        });
+        await auditLoginAttempt(req, null, email, false, 'Aggregator not found');
         return res.status(401).json({
           success: false,
           message: 'Invalid email or password',
@@ -197,14 +184,7 @@ router.post(
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, aggregator.password);
       if (!isPasswordValid) {
-        await auditLoginAttempt({
-          userId: aggregator.id,
-          userType: 'aggregator',
-          action: 'login',
-          ipAddress: req.ip,
-          success: false,
-          reason: 'Invalid password',
-        });
+        await auditLoginAttempt(req, aggregator.id, email, false, 'Invalid password');
         return res.status(401).json({
           success: false,
           message: 'Invalid email or password',
@@ -213,30 +193,21 @@ router.post(
 
       // Account status guard (status + isActive + isVerified)
       if (aggregator.status !== 'active') {
-        await auditLoginAttempt({
-          userId: aggregator.id, userType: 'aggregator', action: 'login',
-          ipAddress: req.ip, success: false, reason: `Account status: ${aggregator.status}`,
-        });
+        await auditLoginAttempt(req, aggregator.id, email, false, `Account status: ${aggregator.status}`);
         return res.status(403).json({
           success: false,
           message: `Your account is currently ${aggregator.status}. Please contact support.`,
         });
       }
       if (aggregator.isActive === false) {
-        await auditLoginAttempt({
-          userId: aggregator.id, userType: 'aggregator', action: 'login',
-          ipAddress: req.ip, success: false, reason: 'Account disabled (isActive=false)',
-        });
+        await auditLoginAttempt(req, aggregator.id, email, false, 'Account disabled (isActive=false)');
         return res.status(403).json({
           success: false,
           message: 'Your account has been disabled. Contact support.',
         });
       }
       if (!aggregator.isVerified) {
-        await auditLoginAttempt({
-          userId: aggregator.id, userType: 'aggregator', action: 'login',
-          ipAddress: req.ip, success: false, reason: 'Account not verified',
-        });
+        await auditLoginAttempt(req, aggregator.id, email, false, 'Account not verified');
         return res.status(403).json({
           success: false,
           message: 'Your account is pending verification. Please wait for approval.',
@@ -253,13 +224,7 @@ router.post(
       );
 
       // Audit log
-      await auditLoginAttempt({
-        userId: aggregator.id,
-        userType: 'aggregator',
-        action: 'login',
-        ipAddress: req.ip,
-        success: true,
-      });
+      await auditLoginAttempt(req, aggregator.id, aggregator.email, true);
 
       res.status(200).json({
         success: true,
