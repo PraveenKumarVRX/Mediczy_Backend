@@ -78,6 +78,7 @@ const intentIcon = (intent?: string, action?: string | null) => {
   if (action === "get_today_summary")       return <Activity className="h-4 w-4" />;
   if (action === "list_appointments")       return <Calendar className="h-4 w-4" />;
   if (action === "get_patient_health")      return <Activity className="h-4 w-4" />;
+  if (action === "get_clinical_decision_support") return <Brain className="h-4 w-4" />;
   if (action === "book_appointment")        return <Calendar className="h-4 w-4" />;
   if (action === "cancel_appointment")      return <AlertTriangle className="h-4 w-4" />;
   if (action === "reschedule_appointment")  return <Calendar className="h-4 w-4" />;
@@ -147,7 +148,7 @@ export default function DoctorVoiceAssistant() {
     {
       id: "welcome",
       role: "assistant",
-      text: "iSHA ready. Ask me about appointments, patients, drugs, or navigate anywhere.",
+      text: "iSHA ready. Ask me about appointments, patients, conditions, CDSS, knowledge fabric, drugs, tasks, or navigation.",
 
       intent: "general",
       action: null,
@@ -703,6 +704,9 @@ export default function DoctorVoiceAssistant() {
       };
 
       setMessages(prev => [...prev, assistantMsg]);
+      if (pendingAction && /^(yes|yeah|yep|confirm|confirmed|do it|go ahead|okay|ok|please do|proceed)\b/i.test(text.trim()) && !data.requiresConfirmation) {
+        setPendingAction(null);
+      }
 
       if (data.requiresConfirmation) {
         speak(data.speak || responseText);
@@ -742,17 +746,11 @@ export default function DoctorVoiceAssistant() {
 
   const confirmAction = () => {
     if (!pendingAction) return;
-    executeAction(pendingAction.action ?? null, pendingAction.parameters ?? null);
-    setPendingAction(null);
-    const confirmMsg: Message = {
-      id: Date.now().toString(),
-      role: "assistant",
-      text: "Done! Action confirmed.",
-      intent: "general",
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, confirmMsg]);
-    speak("Done!");
+    // Write actions are executed by the server only after it receives an
+    // affirmative confirmation. Reuse the same path as a spoken "yes" so
+    // the button cannot create a client-only success message or duplicate a
+    // server-side mutation.
+    sendToAgentRef.current?.("yes");
   };
 
   const clearConversation = () => {

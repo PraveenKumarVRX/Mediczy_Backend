@@ -16,6 +16,10 @@ describe('Doctor copilot gateway', () => {
     expect(classifyDoctorCopilotPath('What are side effects of metformin?')).toBe('clinical');
   });
 
+  it('routes CDSS and knowledge-fabric requests to the governed agent action path', () => {
+    expect(classifyDoctorCopilotPath('Run CDSS using the knowledge fabric for this patient')).toBe('agent');
+  });
+
   it('enriches doctor context with patient and screen', () => {
     const ctx = enrichDoctorCopilotContext(
       { id: 7, firstName: 'Asha', role: 'doctor' },

@@ -6,7 +6,7 @@
 import crypto from 'crypto';
 import { getAiLayerMapSummary } from './ai-layer-map.service.js';
 
-const ACTION_QUERY_RE = /\b(appointment|appointments|schedule|reschedule|cancel|task|tasks|navigate|open|briefing|patient list|today'?s summary|book|follow.?up|remind me|my list)\b/i;
+const ACTION_QUERY_RE = /\b(appointment|appointments|schedule|reschedule|cancel|task|tasks|navigate|open|briefing|patient list|today'?s summary|book|follow.?up|remind me|my list|cdss|clinical decision support|knowledge fabric|knowledge base|guideline|differential|care plan|patient condition)\b/i;
 const CLINICAL_QUERY_RE = /\b(diagnos|treatment|dose|dosage|side effects?|contraindic|protocol|symptom|pathophys|differential|ddx|drug|medication|clinical|esi|triage|metformin|aspirin|warfarin)\b/i;
 
 export function buildCopilotSessionId(userId, sessionId) {

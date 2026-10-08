@@ -29,6 +29,8 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 import logger from '../config/logger.js';
 import pool from '../db/pgPool.js';
 import { getAIServiceConfig } from '../config/ai-services.config.js';
+import cdssService from '../services/cdss.service.js';
+import clinicalKnowledgeFabricService from '../services/clinical-knowledge-fabric.service.js';
 
 const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
@@ -182,6 +184,24 @@ const ASSISTANT_TOOLS = [
         properties: {
           query: { type: 'string', description: 'The clinical question' },
           context: { type: 'string', description: 'Relevant patient context if provided' }
+        },
+        required: ['query']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_clinical_decision_support',
+      description: 'Run governed clinical decision support using the SmartHealth CDSS and approved clinical knowledge fabric. Use for guidelines, differential diagnosis, treatment planning, protocols, red flags, or a patient-specific clinical question.',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'The clinical question or decision to support' },
+          specialty: { type: 'string', description: 'Clinical specialty/domain, e.g. cardiology, neurology, general' },
+          category: { type: 'string', description: 'diagnosis, treatment, guidelines, differential, lab-tests, dosage, or interactions' },
+          patient_name: { type: 'string', description: 'Active patient name if the question is patient-specific' },
+          patient_id: { type: 'string', description: 'Active patient ID if known' }
         },
         required: ['query']
       }
@@ -397,6 +417,7 @@ TOOL ROUTING (strict):
 | "confirm / accept / approve appointment (for X)" | accept_appointment |
 | "reschedule / move / shift / change appointment for X to DATE TIME" | reschedule_appointment (NOT list_appointments) |
 | "health / vitals / status of X" | get_patient_health |
+| "CDSS / guideline / protocol / differential / care plan / knowledge fabric" | get_clinical_decision_support |
 | "today's summary / how many patients today / appointment count" | get_today_summary (counts only — NOT for messages/alerts) |
 | "search patient X" | search_patient |
 | "open / go to / show [screen]" | navigate_to |
@@ -613,6 +634,81 @@ async function executeGetPatientHealth(doctorId, patientName, patientId) {
     logger.warn('[VoiceAssistant] get_patient_health error', { error: err.message });
     return null;
   }
+}
+
+function buildPatientClinicalContext(summary) {
+  if (!summary) return '';
+  const p = summary.patient || {};
+  const lines = [];
+  if (p.name) lines.push(`Patient: ${p.name}`);
+  if (p.gender) lines.push(`Gender: ${p.gender}`);
+  if (p.bloodGroup) lines.push(`Blood group: ${p.bloodGroup}`);
+  if (p.chronicConditions) lines.push(`Known conditions: ${Array.isArray(p.chronicConditions) ? p.chronicConditions.join(', ') : p.chronicConditions}`);
+  if (p.allergies) lines.push(`Allergies: ${Array.isArray(p.allergies) ? p.allergies.join(', ') : p.allergies}`);
+  if (p.currentMedications) lines.push(`Current medications: ${Array.isArray(p.currentMedications) ? p.currentMedications.join(', ') : p.currentMedications}`);
+  if (Array.isArray(summary.vitals) && summary.vitals.length) {
+    lines.push(`Latest vitals: ${summary.vitals.slice(0, 8).map(v => `${v.reading_type}: ${v.value} ${v.unit || ''}`.trim()).join('; ')}`);
+  }
+  if (summary.lastPrescription?.diagnosis) {
+    const diagnosis = Array.isArray(summary.lastPrescription.diagnosis)
+      ? summary.lastPrescription.diagnosis.join(', ')
+      : summary.lastPrescription.diagnosis;
+    lines.push(`Last recorded diagnosis: ${diagnosis}`);
+  }
+  return lines.join('\n');
+}
+
+async function executeClinicalDecisionSupport(doctorId, args, currentPatient) {
+  const patientName = args.patient_name || currentPatient?.name || currentPatient?.firstName || null;
+  const patientId = args.patient_id || currentPatient?.id || currentPatient?._id || null;
+  let patientSummary = null;
+
+  // Patient context is only loaded through the doctor-patient relationship
+  // guard in executeGetPatientHealth. Never pass arbitrary patient IDs to CDSS.
+  if (patientName || patientId) {
+    patientSummary = await executeGetPatientHealth(doctorId, patientName, patientId);
+  }
+
+  const patientContext = buildPatientClinicalContext(patientSummary);
+  const clinicalQuery = patientContext
+    ? `${args.query}\n\nPATIENT CONTEXT (verified doctor relationship):\n${patientContext}`
+    : args.query;
+  const specialty = String(args.specialty || 'general').slice(0, 80);
+  const category = String(args.category || 'diagnosis').slice(0, 40);
+
+  const [cdssResult, fabricRules] = await Promise.all([
+    cdssService.query(clinicalQuery, {
+      category,
+      specialty,
+      searchKnowledge: true,
+      searchCIMS: true,
+    }),
+    clinicalKnowledgeFabricService.getApplicableKnowledge({ specialty }).catch(() => []),
+  ]);
+
+  const data = cdssResult?.data || {};
+  const summary = data.summary || 'CDSS returned structured clinical guidance for review.';
+  const ruleCount = Array.isArray(fabricRules) ? fabricRules.length : 0;
+  const response = `${summary}${ruleCount ? ` Approved knowledge-fabric rules consulted: ${ruleCount}.` : ''} For reference only — apply clinical judgment.`;
+
+  return {
+    response,
+    data: {
+      ...data,
+      knowledgeFabric: (fabricRules || []).map(rule => ({
+        ruleType: rule.rule_type,
+        title: rule.title,
+        condition: rule.condition_text,
+        recommendation: rule.recommendation_text,
+        evidenceSource: rule.evidence_source,
+      })),
+      patientContextUsed: Boolean(patientSummary),
+      provider: cdssResult?.provider || 'cdss',
+      model: cdssResult?.model || null,
+      specialty,
+      category,
+    },
+  };
 }
 
 async function executeBookAppointment(doctorId, doctorName, patientName, patientPhone, date, time, reason, type = 'in-person') {
@@ -906,6 +1002,85 @@ async function executeCompleteTask(doctorId, { task_id, title }) {
   }
 }
 
+const CONFIRMABLE_ACTIONS = new Set([
+  'add_clinical_note',
+  'book_appointment',
+  'accept_appointment',
+  'cancel_appointment',
+  'reschedule_appointment',
+  'schedule_followup',
+  'add_task',
+  'complete_task',
+]);
+
+function isAffirmativeConfirmation(text) {
+  return /^(yes|yeah|yep|confirm|confirmed|do it|go ahead|okay|ok|please do|proceed)\b/i.test(String(text || '').trim());
+}
+
+async function executeConfirmedAction(doctorId, action, args, context = {}) {
+  const doctorName = context.doctorName || 'Doctor';
+  const patient = context.currentPatient || {};
+
+  if (action === 'add_clinical_note') {
+    const patientId = patient.id || patient._id;
+    const result = await executeAddClinicalNote(doctorId, patientId, args.note, args.category);
+    return {
+      success: result.success,
+      message: result.success ? 'Clinical note added to the patient record.' : `Could not add note: ${result.error}`,
+      data: result,
+    };
+  }
+  if (action === 'book_appointment') {
+    const result = await executeBookAppointment(doctorId, doctorName, args.patient_name, args.patient_phone, args.date, args.time, args.reason, args.type);
+    return {
+      success: result.success,
+      message: result.success ? `Appointment booked for ${result.patientName} on ${result.date} at ${result.time}.` : `Could not book appointment: ${result.error}`,
+      data: result,
+    };
+  }
+  if (action === 'accept_appointment') {
+    const result = await executeAcceptAppointment(doctorId, args.appointment_id, args.patient_name);
+    return {
+      success: result.success,
+      message: result.success ? `Confirmed appointment for ${result.confirmed?.[0]?.patientName || 'the patient'}.` : result.error,
+      data: result,
+    };
+  }
+  if (action === 'cancel_appointment') {
+    const result = await executeCancelAppointment(doctorId, args.appointment_id, args.patient_name, args.reason);
+    return {
+      success: result.success,
+      message: result.success ? `Appointment for ${result.cancelled?.[0]?.patientName || 'the patient'} has been cancelled.` : `Could not cancel appointment: ${result.error}`,
+      data: result,
+    };
+  }
+  if (action === 'reschedule_appointment') {
+    const result = await executeRescheduleAppointment(doctorId, args.appointment_id, args.patient_name, args.new_date, args.new_time);
+    return {
+      success: result.success,
+      message: result.success ? `Appointment rescheduled to ${result.newDate} at ${result.newTime}.` : `Could not reschedule: ${result.error}`,
+      data: result,
+    };
+  }
+  if (action === 'add_task') {
+    const result = await executeAddTask(doctorId, args);
+    return {
+      success: result.success,
+      message: result.success ? `Task added: "${args.title}".` : `Couldn't save task: ${result.error}`,
+      data: result.task || result,
+    };
+  }
+  if (action === 'complete_task') {
+    const result = await executeCompleteTask(doctorId, args);
+    return {
+      success: result.success,
+      message: result.success ? `Task "${result.task?.title || args.title || 'task'}" marked as completed.` : `Couldn't find that task: ${result.error || 'not found'}.`,
+      data: result.task || result,
+    };
+  }
+  return { success: false, message: 'This action cannot be confirmed here.', data: null };
+}
+
 async function answerMedicalQuery(query, context, extra = '') {
   const messages = [
     {
@@ -1119,6 +1294,20 @@ const CONFIRM_APPT_RE = /\b(confirm|accept|approve)\s+(the\s+)?(appointment|book
 function tryConversationShortcuts(text, historyMessages) {
   const trimmed = text.trim();
 
+  if (/\b(cdss|clinical\s+decision\s+support|knowledge\s+fabric|knowledge\s+base|guidelines?|protocol|differential|care\s+plan)\b/i.test(trimmed)) {
+    return {
+      shortcut: 'get_clinical_decision_support',
+      parameters: { query: trimmed },
+    };
+  }
+
+  if (/\b(?:patient|their)\s+(?:conditions?|health|status|history)\b|\bconditions?\s+(?:of|for)\s+(?:the\s+)?patient\b/i.test(trimmed)) {
+    return {
+      shortcut: 'get_patient_health',
+      parameters: { patient_name: '', patient_id: '' },
+    };
+  }
+
   if (CLARIFY_RE.test(trimmed) && historyMessages.length) {
     const lastAssistant = [...historyMessages].reverse().find(m => m.role === 'assistant' && m.content);
     if (lastAssistant) {
@@ -1193,6 +1382,7 @@ Available actions and their parameters:
 - "schedule_followup"       → {"days":7,"reason":""}
 - "search_patient"          → {"query":"name/phone/ID"}
 - "get_patient_health"      → {"patient_name":"","patient_id":""}
+- "get_clinical_decision_support" → {"query":"","specialty":"general","category":"diagnosis","patient_name":"","patient_id":""}
 - "navigate_to"             → {"screen":"appointments|patients|dashboard|prescriptions|billing|analytics|health-records|queue|staff|ai-assist|voice-scribe|calculators|templates|monitoring|er-dashboard|icu-dashboard"}
 - "add_clinical_note"       → {"note":"","category":"general|soap|assessment"}
 - "get_drug_info"           → {"drug":"","question":""}
@@ -1219,6 +1409,8 @@ Rules:
 - "how many patients / appointment count / today's summary" → get_today_summary
 - DRUG DOSE / SIDE EFFECTS / INDICATION / CONTRAINDICATION (e.g. "dose of metformin", "side effects of aspirin", "when to use lisinopril") → get_drug_info with {"drug":"<name>","question":"<specific aspect>"}
 - DRUG INTERACTIONS (e.g. "interaction between X and Y", "can I combine X with Y") → check_drug_interactions with {"drugs":["X","Y"]}
+- CDSS / guideline / protocol / differential / care plan / knowledge fabric → get_clinical_decision_support. Use the approved SmartHealth knowledge fabric and include the active patient's context when available.
+- PATIENT CONDITIONS / HEALTH / STATUS / HISTORY → get_patient_health. Use the active patient context and relationship-guarded records; if no patient is selected, ask the doctor to open one.
 - CLINICAL / MEDICAL QUESTION without a specific drug (diagnosis criteria, treatment protocol, symptoms, physiology) → medical_query with {"query":"<question>"}
 - NEVER use medical_query for appointment confirmation, briefing follow-ups, or "what do you mean" clarifications
 - For get_drug_info, check_drug_interactions, medical_query: write the full clinical answer directly in "response"
@@ -1256,6 +1448,26 @@ Rules:
         : `Could not book the follow-up: ${result.error}`;
       return res.json({ intent: 'action', action: 'schedule_followup', parameters: pendingAction.parameters || {}, response: msg, speak: msg, data: result, requiresConfirmation: false, language: responseLanguage });
     }
+
+    if (pendingAction?.action && CONFIRMABLE_ACTIONS.has(pendingAction.action) && isAffirmativeConfirmation(text)) {
+      const confirmed = await executeConfirmedAction(
+        doctorId,
+        pendingAction.action,
+        pendingAction.parameters || {},
+        enrichedContext
+      );
+      return res.json({
+        intent: 'action',
+        action: pendingAction.action,
+        parameters: pendingAction.parameters || {},
+        response: confirmed.message,
+        speak: confirmed.message,
+        data: confirmed.data,
+        requiresConfirmation: false,
+        language: responseLanguage,
+      });
+    }
+
     // ── Step 1: Call central LLM router (SIB-first) for JSON intent ─────
     let toolName = shortcut?.shortcut || null;
     let args = shortcut?.parameters || {};
@@ -1389,6 +1601,37 @@ Rules:
 
     // ── Step 3: Execute or relay ───────────────────────────────────────────
 
+    // Governed clinical decision support: use the SmartHealth CDSS and the
+    // approved knowledge fabric, with verified patient context when present.
+    if (toolName === 'get_clinical_decision_support') {
+      try {
+        const result = await executeClinicalDecisionSupport(doctorId, {
+          ...args,
+          query: args.query || text,
+        }, enrichedContext.currentPatient || context.currentPatient || null);
+        return res.json({
+          intent: 'clinical_decision_support',
+          action: 'get_clinical_decision_support',
+          parameters: args,
+          response: result.response,
+          speak: toSpokenText(result.response, 3),
+          data: result.data,
+          requiresConfirmation: false,
+        });
+      } catch (error) {
+        logger.warn('[VoiceAssistant] CDSS query failed', { error: error.message });
+        const msg = 'The governed CDSS and knowledge fabric are temporarily unavailable. Please retry, and verify any decision with clinical judgment.';
+        return res.status(503).json({
+          intent: 'clinical_decision_support',
+          action: 'get_clinical_decision_support',
+          parameters: args,
+          response: msg,
+          speak: msg,
+          requiresConfirmation: false,
+        });
+      }
+    }
+
     // medical_query — iSHA already answered in directContent; fall back to answerMedicalQuery
     if (toolName === 'medical_query') {
       // SIB sometimes misclassifies workflow questions as medical_query with a meta placeholder
@@ -1481,17 +1724,14 @@ Rules:
         const msg = 'No patient is currently selected. Please open a patient record first.';
         return res.json({ intent: 'action', action: 'add_clinical_note', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
       }
-      const result = await executeAddClinicalNote(doctorId, currentPatientId, args.note, args.category);
-      const msg = result.success
-        ? `Clinical note added: "${args.note}"`
-        : `Could not add note: ${result.error}`;
+      const msg = `Add this clinical note to the active patient record: "${args.note}"?`;
       return res.json({
         intent: 'action',
         action: 'add_clinical_note',
         parameters: args,
         response: msg,
         speak: msg,
-        requiresConfirmation: false,
+        requiresConfirmation: true,
       });
     }
 
@@ -1591,11 +1831,14 @@ Rules:
 
     // get_patient_health — execute server-side
     if (toolName === 'get_patient_health') {
-      const data = await executeGetPatientHealth(doctorId, args.patient_name, args.patient_id);
+      const activePatient = enrichedContext.currentPatient || context.currentPatient || {};
+      const patientName = args.patient_name || activePatient.name || activePatient.firstName;
+      const patientId = args.patient_id || activePatient.id || activePatient._id;
+      const data = await executeGetPatientHealth(doctorId, patientName, patientId);
       if (!data) {
-        const name = args.patient_name || args.patient_id || 'that patient';
+        const name = patientName || patientId || 'that patient';
         const msg = `No health records found for ${name}. They may not have visited you yet.`;
-        return res.json({ intent: 'action', action: 'get_patient_health', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
+        return res.json({ intent: 'action', action: 'get_patient_health', parameters: { ...args, patient_name: patientName || '', patient_id: patientId || '' }, response: msg, speak: msg, requiresConfirmation: false });
       }
       const parts = [];
       if (data.patient) {
@@ -1616,7 +1859,7 @@ Rules:
         if (rx.diagnosis) parts.push(`Last Diagnosis: ${Array.isArray(rx.diagnosis) ? rx.diagnosis.join(', ') : rx.diagnosis}`);
       }
       const msg = parts.join('\n') || 'Health summary retrieved.';
-      return res.json({ intent: 'action', action: 'get_patient_health', parameters: args, response: msg, speak: msg, data, requiresConfirmation: false });
+      return res.json({ intent: 'action', action: 'get_patient_health', parameters: { ...args, patient_name: patientName || '', patient_id: patientId || '' }, response: msg, speak: msg, data, requiresConfirmation: false });
     }
 
     // book_appointment — execute server-side
@@ -1625,47 +1868,27 @@ Rules:
         const msg = 'To book an appointment I need the patient name, date, and time. Please provide these details.';
         return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
       }
-      const doctorDisplayName = enrichedContext.doctorName || 'Doctor';
-      const result = await executeBookAppointment(doctorId, doctorDisplayName, args.patient_name, args.patient_phone, args.date, args.time, args.reason, args.type);
-      const msg = result.success
-        ? `Appointment booked for ${result.patientName} on ${result.date} at ${result.time}. ID: ${result.appointmentId}.`
-        : `Could not book appointment: ${result.error}`;
-      return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+      const msg = `Book an appointment for ${args.patient_name} on ${args.date} at ${args.time}${args.reason ? ` for ${args.reason}` : ''}?`;
+      return res.json({ intent: 'action', action: 'book_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: true });
     }
 
     // accept_appointment — confirm pending patient request
     if (toolName === 'accept_appointment') {
-      const result = await executeAcceptAppointment(doctorId, args.appointment_id, args.patient_name);
-      let msg;
-      if (result.success) {
-        const c = result.confirmed[0];
-        const dateStr = c.appointmentDate ? new Date(c.appointmentDate).toLocaleDateString('en-IN') : '';
-        msg = `Confirmed appointment for ${c.patientName}${dateStr ? ` on ${dateStr}` : ''}${c.appointmentTime ? ` at ${String(c.appointmentTime).slice(0, 5)}` : ''}.`;
-      } else {
-        msg = result.error || 'Could not confirm the appointment.';
-      }
+      const msg = `Confirm the pending appointment${args.patient_name ? ` for ${args.patient_name}` : ''}?`;
       return res.json({
         intent: 'action',
         action: 'accept_appointment',
         parameters: args,
         response: msg,
         speak: msg,
-        data: result,
-        requiresConfirmation: false,
+        requiresConfirmation: true,
       });
     }
 
     // cancel_appointment — execute server-side
     if (toolName === 'cancel_appointment') {
-      const result = await executeCancelAppointment(doctorId, args.appointment_id, args.patient_name, args.reason);
-      let msg;
-      if (result.success) {
-        const c = result.cancelled[0];
-        msg = `Appointment for ${c.patientName} on ${new Date(c.appointmentDate).toLocaleDateString('en-IN')} at ${c.appointmentTime} has been cancelled.`;
-      } else {
-        msg = `Could not cancel appointment: ${result.error}`;
-      }
-      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+      const msg = `Cancel the appointment${args.patient_name ? ` for ${args.patient_name}` : ''}${args.reason ? ` because ${args.reason}` : ''}?`;
+      return res.json({ intent: 'action', action: 'cancel_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: true });
     }
 
     // reschedule_appointment — execute server-side
@@ -1674,15 +1897,8 @@ Rules:
         const msg = 'Please provide the new date and time for rescheduling.';
         return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: false });
       }
-      const result = await executeRescheduleAppointment(doctorId, args.appointment_id, args.patient_name, args.new_date, args.new_time);
-      let msg;
-      if (result.success) {
-        const r = result.rescheduled;
-        msg = `Appointment for ${r.patientName} has been rescheduled to ${result.newDate} at ${result.newTime}.`;
-      } else {
-        msg = `Could not reschedule: ${result.error}`;
-      }
-      return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: args, response: msg, speak: msg, data: result, requiresConfirmation: false });
+      const msg = `Reschedule the appointment${args.patient_name ? ` for ${args.patient_name}` : ''} to ${args.new_date} at ${args.new_time}?`;
+      return res.json({ intent: 'action', action: 'reschedule_appointment', parameters: args, response: msg, speak: msg, requiresConfirmation: true });
     }
 
     // get_doctor_briefing — execute server-side
@@ -1732,13 +1948,10 @@ Rules:
 
     // add_task — create a doctor task from voice
     if (toolName === 'add_task') {
-      const result = await executeAddTask(doctorId, args);
       const dueStr = args.due_date ? ` for ${args.due_date}` : ' for today';
       const patientStr = args.patient_name ? ` regarding ${args.patient_name}` : '';
-      const msg = result.success
-        ? `Task added: "${args.title}"${patientStr}${dueStr}.`
-        : `Couldn't save task: ${result.error}`;
-      return res.json({ intent: 'action', action: 'add_task', parameters: args, response: msg, speak: msg, data: result.task || null, requiresConfirmation: false });
+      const msg = `Add task "${args.title}"${patientStr}${dueStr}?`;
+      return res.json({ intent: 'action', action: 'add_task', parameters: args, response: msg, speak: msg, requiresConfirmation: true });
     }
 
     // list_tasks — show pending tasks
@@ -1761,11 +1974,8 @@ Rules:
 
     // complete_task — mark task done
     if (toolName === 'complete_task') {
-      const result = await executeCompleteTask(doctorId, args);
-      const msg = result.success
-        ? `Done! Task "${result.task?.title || args.title || 'task'}" marked as completed.`
-        : `Couldn't find that task. Try saying "show my tasks" to see what's pending.`;
-      return res.json({ intent: 'action', action: 'complete_task', parameters: args, response: msg, speak: msg, data: result.task || null, requiresConfirmation: false });
+      const msg = `Mark task${args.title ? ` "${args.title}"` : args.task_id ? ` #${args.task_id}` : ''} as completed?`;
+      return res.json({ intent: 'action', action: 'complete_task', parameters: args, response: msg, speak: msg, requiresConfirmation: true });
     }
 
     // Unknown tool — fallback
