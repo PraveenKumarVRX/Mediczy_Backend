@@ -9,6 +9,19 @@ import express from 'express';
 import fetch from 'node-fetch';
 import { authUser } from '../middleware/auth.middleware.js';
 
+// The global ring-fencing middleware intentionally allows /api/tts for
+// emergency/public callers. Doctor voice streaming is PHI-adjacent, so this
+// route must still require a resolved authenticated user even when that
+// global allow-list bypasses auth.
+const requireAuthenticatedTtsUser = (req, res, next) => {
+  authUser(req, res, () => {
+    if (!req.user?.id && !req.user?.userId) {
+      return res.status(401).json({ success: false, code: 'unauthenticated', message: 'Authentication required' });
+    }
+    return next();
+  });
+};
+
 const router = express.Router();
 
 // Eleven Labs configuration
@@ -210,7 +223,7 @@ router.post("/speak", authUser, async (req, res) => {
  * POST /api/tts/stream
  * Streaming TTS. Uses ElevenLabs first, then streams OpenAI TTS fallback.
  */
-router.post("/stream", authUser, async (req, res) => {
+router.post("/stream", requireAuthenticatedTtsUser, async (req, res) => {
   const { text, voiceId, language = "en", model = "eleven_multilingual_v2" } = req.body;
 
   if (!text) return res.status(400).json({ error: "Text is required" });
