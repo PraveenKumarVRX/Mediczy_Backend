@@ -243,7 +243,9 @@ const HospitalInsuranceBilling = () => {
 
     // Connect to WebSocket server
     const newSocket = io(getSocketUrl(), {
-      transports: ['websocket', 'polling'],
+      // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
+      // polling establishes over plain HTTP and upgrades when it can (single server process).
+      transports: ['polling', 'websocket'],
       auth: { token }
     });
 

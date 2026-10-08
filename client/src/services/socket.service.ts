@@ -24,7 +24,9 @@ class SocketService {
     if (import.meta.env.DEV) console.log('🔌 Connecting to Socket.IO server:', SOCKET_URL);
     
     this.socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
+      // polling establishes over plain HTTP and upgrades when it can (single server process).
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
       reconnectionDelay: 1000,

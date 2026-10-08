@@ -98,7 +98,9 @@ const NurseChat: React.FC = () => {
     if (!nurseToken || !nurseId) return;
 
     const sock = io(getSocketUrl(), {
-      transports: ['websocket', 'polling'],
+      // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
+      // polling establishes over plain HTTP and upgrades when it can (single server process).
+      transports: ['polling', 'websocket'],
       path: '/socket.io',
       query: { userId: nurseId, userType: 'nurse' },
     });

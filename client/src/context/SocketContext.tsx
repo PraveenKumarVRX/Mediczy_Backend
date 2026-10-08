@@ -30,7 +30,9 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Connect to socket server
     socketRef.current = io(getSocketUrl(), {
-      transports: ['websocket', 'polling'],
+      // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
+      // polling establishes over plain HTTP and upgrades when it can (single server process).
+      transports: ['polling', 'websocket'],
       path: '/socket.io',
       query: {
         userId: currentId,
