@@ -43,6 +43,12 @@ const appointmentPhrases = [
   { phrase: "consult with a doctor", action: "visit", priority: 7 },
   { phrase: "doctor consultation", action: "visit", priority: 6 },
   { phrase: "online consultation", action: "book", priority: 8 },  // Added
+  { phrase: "schedule a virtual call", action: "book", priority: 10 },
+  { phrase: "book a virtual call", action: "book", priority: 10 },
+  { phrase: "search for a psychology counselor", action: "find", priority: 10 },
+  { phrase: "find a psychology counselor", action: "find", priority: 10 },
+  { phrase: "book a therapist", action: "book", priority: 10 },
+  { phrase: "schedule counseling", action: "book", priority: 10 },
   { phrase: "meet with doctor", action: "visit", priority: 6 }
 ];
 
@@ -56,6 +62,7 @@ const specializationKeywords = [
   { spec: "Orthopedist", keywords: ["bone", "joint", "ortho", "fracture", "spine", "back pain", "knee", "hip"] },
   { spec: "Pediatrician", keywords: ["child", "kid", "baby", "infant", "pediatric", "children"] },
   { spec: "Gynecologist", keywords: ["pregnancy", "pregnant", "women", "menstrual", "gynec", "period", "fertility"] },
+  { spec: "Psychologist", keywords: ["psychologist", "psychology", "counselor", "counsellor", "therapist", "therapy", "counselling"] },
   { spec: "Psychiatrist", keywords: ["mental", "depression", "anxiety", "stress", "psychiatric", "psychology", "mood"] },
   { spec: "Ophthalmologist", keywords: ["eye", "vision", "opthal", "glasses", "sight", "cataract", "glaucoma"] },
   { spec: "ENT Specialist", keywords: ["ear", "nose", "throat", "ent", "hearing", "sinus", "tonsil"] },
@@ -80,6 +87,13 @@ export const detectAppointmentIntent = (text = "") => {
   const matches = appointmentPhrases.filter(({ phrase }) => 
     normalized.includes(phrase)
   );
+
+  // Catch natural-language variants and keep them inside My SmartHealth's
+  // provider and appointment flow instead of sending users to another app.
+  const mentalHealthBooking = /\b(book|schedule|arrange|find|search|connect|see|talk|speak)\b.{0,60}\b(psycholog(?:y|ist)|counsel(?:or|l?or)|therap(?:y|ist)|mental\s+health|psychiatr(?:ist|y))\b/i.test(normalized);
+  if (mentalHealthBooking && !matches.some(match => match.action === 'book' || match.action === 'find')) {
+    matches.push({ phrase: 'mental-health provider booking', action: 'book', priority: 10 });
+  }
   
   if (!matches.length) {
     return {

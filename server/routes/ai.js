@@ -6,6 +6,7 @@ import rateLimit from 'express-rate-limit';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import detectAppointmentIntent from '../utils/appointmentIntent.js';
 
 // Load environment variables
 dotenv.config();
@@ -830,6 +831,89 @@ ${recentHistory}
           hasHistory
         },
         session_id: sessionId
+      });
+    }
+
+    // Appointment requests are product actions, not open-ended medical
+    // questions. Route them to My SmartHealth's verified provider network
+    // before calling SIB so the model cannot recommend an outside app.
+    const appointmentIntent = detectAppointmentIntent(query);
+    const internalAppointmentRequest = appointmentIntent.matched
+      && ['book', 'schedule', 'find', 'visit'].includes(appointmentIntent.action);
+
+    if (internalAppointmentRequest) {
+      const isMentalHealthRequest = ['Psychologist', 'Psychiatrist'].includes(appointmentIntent.specialization)
+        || /\b(psycholog|counsel|therap|mental\s+health|psychiatr)\b/i.test(query);
+      const virtualRequested = /\b(virtual|online|video|telehealth|telemedicine)\b/i.test(query);
+      const requestedSpecialty = appointmentIntent.specialization || (isMentalHealthRequest ? 'Psychologist' : 'General Medicine');
+      let availableDoctors = [];
+
+      try {
+        const doctorModel = await import('../models/doctor.model.intelligent.js');
+        const doctors = await doctorModel.default.findAll({
+          where: { isActive: true, isVerified: true },
+          attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationTypes', 'languages'],
+          limit: 25,
+          order: [['createdAt', 'DESC']]
+        });
+
+        availableDoctors = doctors.map(doc => {
+          const docData = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+          return {
+            id: docData.id,
+            name: `Dr. ${docData.firstName} ${docData.lastName}`.trim(),
+            specialization: docData.specialization,
+            availableFor: {
+              online: docData.consultationTypes?.online?.available || false,
+              walkIn: docData.consultationTypes?.walkIn?.available || false,
+              homeVisit: docData.consultationTypes?.homeVisit?.available || false
+            },
+            languages: docData.languages || ['English']
+          };
+        }).filter(doctor => {
+          if (!isMentalHealthRequest) return true;
+          return /(psych|counsel|mental|psychiatr|therap)/i.test(doctor.specialization || '');
+        }).filter(doctor => {
+          return !virtualRequested || doctor.availableFor.online;
+        }).slice(0, 5);
+      } catch (doctorError) {
+        console.error('Error fetching internal appointment providers:', doctorError);
+      }
+
+      const specialtyLabel = isMentalHealthRequest
+        ? 'a psychology/mental-health professional'
+        : `a ${requestedSpecialty}`;
+      const internalBookingResponse = language === 'hi'
+        ? `मैं My SmartHealth के अंदर ${specialtyLabel} खोजकर आपका ऑनलाइन अपॉइंटमेंट बुक करने में मदद कर सकता हूँ। कोई बाहरी ऐप इस्तेमाल करने की ज़रूरत नहीं है। “अपॉइंटमेंट बुक करें” चुनें या अपनी पसंद की तारीख और समय बताएं।`
+        : availableDoctors.length > 0
+          ? `I can help you book this inside My SmartHealth. I found verified ${specialtyLabel} providers${virtualRequested ? ' who offer online visits' : ''}. Choose “Book Appointment” to continue, or tell me your preferred date and time. No outside app is needed.`
+          : `I can help you book this inside My SmartHealth. I’ll search our verified ${specialtyLabel} network for an available slot. Choose “Book Appointment” to continue, or tell me your preferred date and time. No outside app is needed.`;
+
+      await healthDiaryService.logAIConsultation(userId, query, internalBookingResponse, {
+        sessionId,
+        language,
+        intentType: 'appointment',
+        specialization: requestedSpecialty,
+        internalBooking: true,
+        availableDoctors
+      });
+
+      return res.json({
+        status: 'success',
+        primary_response: internalBookingResponse,
+        intentType: 'appointment',
+        redirectUrl: `/patient/appointments?specialty=${encodeURIComponent(requestedSpecialty)}&consultationType=online`,
+        specialization: requestedSpecialty,
+        suggestedSpecialist: isMentalHealthRequest ? 'Psychologist' : requestedSpecialty,
+        needs_appointment: true,
+        available_doctors: availableDoctors,
+        can_book_now: availableDoctors.length > 0,
+        bookingProvider: 'my-smarthealth',
+        coordinated_by: 'Dr. iSHA',
+        session_id: sessionId,
+        timestamp: new Date().toISOString(),
+        language,
+        user_id: userId
       });
     }
 
