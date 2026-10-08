@@ -5,11 +5,13 @@ import { normalizeGupshupPhone, statusKey } from './gupshup-whatsapp.service.js'
 const invalid = (message, statusCode = 400) => Object.assign(new Error(message), { statusCode });
 export function authorizeGupshup(req, env = process.env) {
   const secret = env.GUPSHUP_WEBHOOK_SECRET;
+  const headerName = String(env.GUPSHUP_WEBHOOK_HEADER_NAME || 'x-gupshup-webhook-secret').trim();
   const allowedIps = String(env.GUPSHUP_WEBHOOK_ALLOWED_IPS || '').split(',').map(x => x.trim()).filter(Boolean);
   if (!secret && !allowedIps.length) throw invalid('Gupshup webhook authentication is not configured', 503);
   if (secret) {
     if (secret.length < 32) throw invalid('Gupshup webhook secret must contain at least 32 characters', 503);
-    const actual = String(req.get('x-gupshup-webhook-secret') || '');
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(headerName)) throw invalid('Gupshup webhook header name is invalid', 503);
+    const actual = String(req.get(headerName) || '');
     const hash = x => crypto.createHash('sha256').update(x).digest();
     if (!crypto.timingSafeEqual(hash(actual), hash(secret))) throw invalid('Invalid webhook credentials', 403);
   }

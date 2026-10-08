@@ -75,6 +75,14 @@ it('acknowledges a non-message v2 setup probe while Gupshup is not active', asyn
     (await import('../services/whatsapp-production.service.js')).default.provider = previousProvider;
   }
 });
+it('acknowledges a non-message v2 setup probe while Gupshup is active', async () => {
+  const app = express(); app.use(express.json()); app.use('/api/whatsapp-production', router);
+  const result = await request(app).post('/api/whatsapp-production/webhook/gupshup').send({
+    app: 'TestApp', version: 2, type: 'user-event', payload: { type: 'sandbox-start' },
+  });
+  expect(result.status).toBe(200); expect(result.text).toBe('');
+  expect(enqueue).not.toHaveBeenCalled();
+});
 it('acknowledges a dashboard metadata probe while Gupshup is not active', async () => {
   const app = express(); app.use(express.json()); app.use('/api/whatsapp-production', router);
   const previousProvider = (await import('../services/whatsapp-production.service.js')).default.provider;
@@ -95,4 +103,18 @@ it('queues a signed Gupshup event through the legacy URL as well as the explicit
     expect(r.status).toBe(200); expect(r.text).toBe('');
   }
   expect(enqueue).toHaveBeenCalledTimes(2); expect(sendText).not.toHaveBeenCalled();
+});
+it('accepts the configured Gupshup subscription header name', async () => {
+  const app = express(); app.use(express.json()); app.use('/api/whatsapp-production', router);
+  const previousHeader = process.env.GUPSHUP_WEBHOOK_HEADER_NAME;
+  process.env.GUPSHUP_WEBHOOK_HEADER_NAME = 'sk_test-webhook-header';
+  try {
+    const result = await request(app).post('/api/whatsapp-production/webhook/gupshup')
+      .set('sk_test-webhook-header', process.env.GUPSHUP_WEBHOOK_SECRET)
+      .send({ app: 'TestApp', version: 2, type: 'message', payload: { id: 'wa-custom-header', source: '919000000001', type: 'text', payload: { text: 'hi' } } });
+    expect(result.status).toBe(200); expect(result.text).toBe('');
+  } finally {
+    if (previousHeader === undefined) delete process.env.GUPSHUP_WEBHOOK_HEADER_NAME;
+    else process.env.GUPSHUP_WEBHOOK_HEADER_NAME = previousHeader;
+  }
 });

@@ -1033,7 +1033,11 @@ router.post('/webhook/gupshup', (req, res) => {
   if (!req.body || (typeof req.body === 'object' && !Array.isArray(req.body) && Object.keys(req.body).length === 0)) {
     return validateGupshupWebhookUrl(req, res);
   }
-  if (whatsappProductionService.provider !== 'gupshup' && isGupshupSetupProbe(req)) {
+  // Gupshup validates an active subscription with an unauthenticated setup
+  // or metadata probe. These payloads contain no message or delivery event,
+  // so acknowledge them regardless of provider state; real events still go
+  // through receiveGupshup and webhook authentication below.
+  if (isGupshupSetupProbe(req)) {
     return validateGupshupWebhookUrl(req, res);
   }
   return receiveGupshup(req, res);
