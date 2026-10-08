@@ -18,6 +18,7 @@ describe('Doctor copilot gateway', () => {
 
   it('routes CDSS and knowledge-fabric requests to the governed agent action path', () => {
     expect(classifyDoctorCopilotPath('Run CDSS using the knowledge fabric for this patient')).toBe('agent');
+    expect(classifyDoctorCopilotPath("Show the patient's current condition and protocol" )).toBe('agent');
   });
 
   it('enriches doctor context with patient and screen', () => {
