@@ -1010,9 +1010,34 @@ const receiveGupshup = createGupshupWebhook({ enqueue: enqueueGupshupInbound, sa
 // Keep this probe unauthenticated and side-effect free; event delivery remains
 // protected by createGupshupWebhook (secret/IP allow-list + v2 validation).
 const validateGupshupWebhookUrl = (_req, res) => res.status(200).end();
+const isGupshupSetupProbe = req => {
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return false;
+  // A few dashboard versions post URL/form metadata rather than a v2 event.
+  // There is nothing to enqueue in that shape, so treat it as validation too.
+  if (typeof body.app !== 'string' || typeof body.type !== 'string') return true;
+  // Gupshup sends v2 user/system/template events while checking a callback.
+  // These events carry no inbound message or delivery status and are safe to
+  // acknowledge during a provider migration. Never bypass a real message or
+  // message-event: those continue through the authenticated handler below.
+  return Number(body.version) === 2
+    && typeof body.type === 'string'
+    && !['message', 'message-event'].includes(body.type);
+};
 router.get('/webhook/gupshup', validateGupshupWebhookUrl);
 router.head('/webhook/gupshup', validateGupshupWebhookUrl);
-router.post('/webhook/gupshup', receiveGupshup);
+router.post('/webhook/gupshup', (req, res) => {
+  // Some Gupshup dashboard versions validate by sending an empty POST before
+  // the provider is activated. A blank probe has no event to authenticate or
+  // enqueue; acknowledge it without weakening authentication for real events.
+  if (!req.body || (typeof req.body === 'object' && !Array.isArray(req.body) && Object.keys(req.body).length === 0)) {
+    return validateGupshupWebhookUrl(req, res);
+  }
+  if (whatsappProductionService.provider !== 'gupshup' && isGupshupSetupProbe(req)) {
+    return validateGupshupWebhookUrl(req, res);
+  }
+  return receiveGupshup(req, res);
+});
 router.post('/webhook', (req, res, next) => {
   if (whatsappProductionService.provider === 'gupshup' || (req.body?.app && req.body?.type)) return receiveGupshup(req, res);
   req.skipAuth = true;

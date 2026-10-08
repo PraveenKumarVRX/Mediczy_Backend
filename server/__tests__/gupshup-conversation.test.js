@@ -57,7 +57,35 @@ it('answers Gupshup dashboard URL validation probes without processing an event'
     expect(result.status).toBe(200);
     if (method === 'get') expect(result.text).toBe('');
   }
+  const postProbe = await request(app).post('/api/whatsapp-production/webhook/gupshup').send({});
+  expect(postProbe.status).toBe(200); expect(postProbe.text).toBe('');
   expect(enqueue).not.toHaveBeenCalled();
+});
+it('acknowledges a non-message v2 setup probe while Gupshup is not active', async () => {
+  const app = express(); app.use(express.json()); app.use('/api/whatsapp-production', router);
+  const previousProvider = (await import('../services/whatsapp-production.service.js')).default.provider;
+  (await import('../services/whatsapp-production.service.js')).default.provider = 'twilio';
+  try {
+    const result = await request(app).post('/api/whatsapp-production/webhook/gupshup').send({
+      app: 'TestApp', version: 2, type: 'user-event', payload: { type: 'sandbox-start' },
+    });
+    expect(result.status).toBe(200); expect(result.text).toBe('');
+    expect(enqueue).not.toHaveBeenCalled();
+  } finally {
+    (await import('../services/whatsapp-production.service.js')).default.provider = previousProvider;
+  }
+});
+it('acknowledges a dashboard metadata probe while Gupshup is not active', async () => {
+  const app = express(); app.use(express.json()); app.use('/api/whatsapp-production', router);
+  const previousProvider = (await import('../services/whatsapp-production.service.js')).default.provider;
+  (await import('../services/whatsapp-production.service.js')).default.provider = 'twilio';
+  try {
+    const result = await request(app).post('/api/whatsapp-production/webhook/gupshup').send({ url: 'https://example.invalid' });
+    expect(result.status).toBe(200); expect(result.text).toBe('');
+    expect(enqueue).not.toHaveBeenCalled();
+  } finally {
+    (await import('../services/whatsapp-production.service.js')).default.provider = previousProvider;
+  }
 });
 it('queues a signed Gupshup event through the legacy URL as well as the explicit URL', async () => {
   const app = express(); app.use(express.json()); app.use('/api/whatsapp-production', router);

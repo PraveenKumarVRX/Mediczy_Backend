@@ -40,7 +40,7 @@ Callback: `https://app.mediqzy.com/api/whatsapp-production/webhook/gupshup`.
 In `apps.gupshup.io/whatsapp/dashboard` → `Mediqzy` → `Webhooks`, configure:
 
 1. Select **Gupshup format (v2)**. The adapter consumes the documented v2 envelope (`app`, `version: 2`, `type`, and nested `payload`); do not select Meta format (v3).
-2. Set the callback URL to `https://app.mediqzy.com/api/whatsapp-production/webhook/gupshup`. The app answers the dashboard's GET/HEAD URL-validation probe with an empty 200 response; deploy that route change before saving the webhook. Event POSTs remain protected and are accepted only in Gupshup format v2.
+2. Set the callback URL to `https://app.mediqzy.com/api/whatsapp-production/webhook/gupshup`. The app answers the dashboard's GET/HEAD and empty-POST URL-validation probes with an empty 200 response; deploy that route change before saving the webhook. Non-empty event POSTs remain protected and are accepted only in Gupshup format v2.
 3. Enable inbound `message` and outbound `message-event` callbacks.
 4. The optional **Include BSUID in webhook payloads** setting is compatible with the adapter; it may remain enabled or disabled because BSUID is ignored.
 5. Obtain Gupshup's source IPs from support and put the exact addresses in `GUPSHUP_WEBHOOK_ALLOWED_IPS`, or place a trusted ingress in front of the endpoint that validates those IPs and injects `x-gupshup-webhook-secret`. The application intentionally fails closed when neither control is configured.
