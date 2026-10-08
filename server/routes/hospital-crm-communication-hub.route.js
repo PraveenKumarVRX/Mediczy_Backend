@@ -1,6 +1,7 @@
 import express from 'express';
 import { authCRM } from '../middleware/crm.middleware.js';
 import { CRM_CAPABILITY_ROLES, hasCRMCapability } from '../config/crm-roles.config.js';
+import { chatwootBridge } from '../services/chatwoot-bridge.service.js';
 import {
   acknowledgeCommunicationHubAlert,
   createCommunicationHubCampaign,
@@ -48,6 +49,8 @@ const action = (handler, capability = 'communication:read') => async (req, res) 
 };
 
 router.get('/dashboard', action((req, tenantId) => getCommunicationHubDashboard(tenantId, req.query)));
+router.get('/chatwoot', action((req, tenantId) => chatwootBridge.status(tenantId)));
+router.get('/chatwoot/health', action((req, tenantId) => chatwootBridge.checkHealth(tenantId)));
 router.get('/campaigns', action((req, tenantId) => listCommunicationHubCampaigns(tenantId, req.query)));
 router.post('/campaigns', action((req, tenantId) => createCommunicationHubCampaign({ ...req.body, tenantId }, req.crmUser.id), 'communication:write'));
 router.patch('/campaigns/:id/status', action((req, tenantId) => updateCommunicationHubCampaignStatus(tenantId, req.params.id, req.body.status, req.crmUser.id), 'communication:write'));
@@ -60,6 +63,12 @@ router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeComm
 router.post('/send', action((req) => sendCrmMessage({ ...req.body, userId: req.crmUser.id }), 'communication:write'));
 router.get('/calls', action((req) => listCrmCallActivity(req.query)));
 router.get('/log', action((req) => listCrmCommunicationLog(req.query)));
-router.get('/conversations/:id', action((req, tenantId) => getConversationThread(tenantId, req.params.id)));
+router.get('/conversations/:id', action(async (req, tenantId) => {
+  const thread = await getConversationThread(tenantId, req.params.id);
+  if (thread.conversation.metadata?.provider === 'chatwoot') {
+    thread.conversation.agentUrl = await chatwootBridge.conversationLink(tenantId, req.params.id);
+  }
+  return thread;
+}));
 
 export default router;

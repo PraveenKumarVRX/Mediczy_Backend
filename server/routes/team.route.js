@@ -1784,7 +1784,7 @@ router.get('/communications/provider-health', authTeam, requirePermission('Corpo
   try {
     const email = await getEmailProviderStatus();
     const smsReady = Boolean(process.env.SMS_API_KEY);
-    const whatsappReady = Boolean(whatsappProductionService?.twilioConfigured || process.env.WHATSAPP_ACCESS_TOKEN);
+    const whatsappReady = Boolean(whatsappProductionService?.configured || process.env.WHATSAPP_ACCESS_TOKEN);
 
     return res.json({
       success: true,
@@ -1792,7 +1792,7 @@ router.get('/communications/provider-health', authTeam, requirePermission('Corpo
       whatsapp: {
         configured: whatsappReady,
         healthy: whatsappReady,
-        provider: whatsappProductionService?.twilioConfigured ? 'twilio' : (process.env.WHATSAPP_ACCESS_TOKEN ? 'meta' : 'none'),
+        provider: whatsappProductionService?.configured ? whatsappProductionService.provider : (process.env.WHATSAPP_ACCESS_TOKEN ? 'meta' : 'none'),
         error: whatsappReady ? null : 'WhatsApp provider is not configured',
       },
       sms: {
@@ -2032,7 +2032,7 @@ router.post('/communications/send', authTeam, requirePermission('Corporate Manag
       }
 
       // Prefer Twilio WhatsApp (existing production path), then fallback to Meta Graph API.
-      if (whatsappProductionService?.twilioConfigured) {
+      if (whatsappProductionService?.configured) {
         const results = [];
         for (const normalizedTo of phoneRecipients) {
           try {

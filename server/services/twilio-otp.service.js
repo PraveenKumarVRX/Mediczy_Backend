@@ -1,3 +1,4 @@
+import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
 import axios from 'axios';
 import nodemailer from 'nodemailer';
 
@@ -27,6 +28,8 @@ class TwilioOTPService {
     this.alertEmail = process.env.OTP_FAILURE_ALERT_EMAIL || 'sk@mysmarthealth.in';
     this.maxRetries = 2; // up to 3 total attempts
     
+    if (whatsappProvider() === 'gupshup') return;
+
     if (!this.accountSid || !this.authToken) {
       if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
         this.disabled = true;
@@ -134,6 +137,15 @@ class TwilioOTPService {
       return { success: false, error: 'OTP must be exactly 6 digits', message: 'Invalid OTP' };
     }
 
+    if (whatsappProvider() === 'gupshup') {
+      try {
+        const sent = await gupshup.sendTemplate({ to: phone, templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otp] });
+        return { success: true, message: 'WhatsApp OTP submitted', sid: sent.sid, status: sent.status,
+          phone: sent.to.replace('whatsapp:', ''), attempts: 1, submittedAt: new Date().toISOString() };
+      } catch (error) {
+        return { success: false, error: error.code || 'GUPSHUP_NOT_CONFIGURED', message: error.message, attempts: 1 };
+      }
+    }
     const formattedPhone = this.formatPhoneNumber(phone);
 
     // Build fallback freeform text (used when no template SID)

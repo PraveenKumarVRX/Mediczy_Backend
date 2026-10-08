@@ -5,11 +5,12 @@
 
 import crypto from 'crypto';
 import axios from 'axios';
+import { GupshupWhatsAppService } from './gupshup-whatsapp.service.js';
 
 class WhatsAppService {
   constructor() {
     this.config = {
-      provider: 'twilio', // twilio, facebook, infobip, messagebird, gupshup, karix
+      provider: process.env.WHATSAPP_PROVIDER || 'twilio', // twilio, facebook, infobip, messagebird, gupshup, karix
       settings: {
         enableIncomingMessages: true,
         enableOutgoingMessages: true,
@@ -90,7 +91,7 @@ class WhatsAppService {
         },
         gupshup: {
           name: 'Gupshup WhatsApp Business (India)',
-          enabled: false,
+          enabled: process.env.WHATSAPP_PROVIDER === 'gupshup',
           supported: true,
           settings: {
             apiKey: process.env.GUPSHUP_API_KEY || '',
@@ -532,16 +533,17 @@ class WhatsAppService {
   }
 
   async sendGupshupMessage(messageData, providerConfig) {
-    const data = {
-      channel: 'whatsapp',
-      source: providerConfig.settings.sourceNumber,
-      destination: messageData.to,
-      message: messageData.content,
-      apikey: providerConfig.settings.apiKey,
-      messageId: `gup_${Date.now()}`
-    };
-    console.log('Gupshup WhatsApp message sent to:', messageData.to);
-    return data;
+    const sender = new GupshupWhatsAppService({ config: providerConfig.settings });
+    if (messageData.from && String(messageData.from).replace(/\D/g, '').slice(-10) !==
+        String(providerConfig.settings.sourceNumber).replace(/\D/g, '').slice(-10)) {
+      throw new Error('Gupshup sender does not match the selected number');
+    }
+    if (messageData.type === 'template') {
+      return sender.sendTemplate({ to: messageData.to, templateId: messageData.templateId,
+        params: messageData.templateParams });
+    }
+    if (messageData.type && messageData.type !== 'text') throw new Error('Unsupported Gupshup message type');
+    return sender.sendText({ to: messageData.to, body: messageData.content });
   }
 
   async sendKarixMessage(messageData, providerConfig) {
@@ -642,15 +644,10 @@ class WhatsAppService {
   }
 
   async testGupshupConnection(config) {
-    if (!config.settings.apiKey) {
-      throw new Error('Gupshup API key not configured');
-    }
-    return { 
-      success: true, 
-      message: 'Gupshup configuration valid - Best for India',
-      estimatedCost: 'From ₹0.35 per message',
-      features: ['Indian company', 'Local support', 'Cost effective']
-    };
+    const sender = new GupshupWhatsAppService({ config: config.settings });
+    if (!sender.configured) throw new Error('Gupshup API key, app name and source number are required');
+    return { success: true, configured: true, verified: false,
+      message: 'Configuration present; provider connectivity and delivery have not been verified' };
   }
 
   async testKarixConnection(config) {

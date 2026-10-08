@@ -1,3 +1,4 @@
+import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
 import OTP from '../models/otp.model.intelligent.js';
 import { sendTransactionalEmail } from './welcome-email.service.js';
 import emailService from './emailService.js';
@@ -269,6 +270,11 @@ class SignupVerificationService {
    * Retries up to 2 times. Falls back to Email and sends admin alert on failure.
    */
   async sendOTPViaWhatsApp(account, otpCode) {
+    if (whatsappProvider() === 'gupshup') {
+      try { return await gupshup.sendTemplate({ to: account.phoneNumber,
+        templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode] }); }
+      catch { return await this.sendOTPViaEmail(account, otpCode); }
+    }
     // If Twilio is not configured, fallback to email
     if (!this.twilioClient || !this.twilioConfigured) {
       console.warn('⚠️  Twilio WhatsApp not available - falling back to Email OTP');

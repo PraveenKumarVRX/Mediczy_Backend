@@ -234,7 +234,7 @@ router.get('/notify-health', async (req, res) => {
     }
     res.json({
       success: true,
-      whatsappConfigured: !!wa?.twilioConfigured,
+      whatsappConfigured: !!wa?.configured,
       kioskRegisterTemplate: !!status.kioskRegister,
       kioskRegisterStyle: status.kioskRegisterStyle || null,
       kioskRegisterSid: status.kioskRegisterSid

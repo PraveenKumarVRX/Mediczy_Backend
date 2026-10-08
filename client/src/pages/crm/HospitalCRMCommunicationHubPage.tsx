@@ -5,6 +5,7 @@ import {
   ShieldCheck, Smartphone, Sparkles, Users, X, XCircle, Zap,
 } from 'lucide-react';
 import api from '@/utils/api';
+import ChatwootWorkspace from '@/components/communication/ChatwootWorkspace';
 import { CRMLayout } from './CRMModulePages';
 
 const headers = () => {
@@ -107,6 +108,8 @@ export default function HospitalCRMCommunicationHubPage() {
         <button className={button} onClick={refresh} title="Refresh monitoring data"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
         <button className={primary} onClick={() => { setTab('campaigns'); setShowCampaignForm(true); }}><Plus className="h-4 w-4" /> New campaign</button>
       </header>
+
+      <div className="text-slate-200"><ChatwootWorkspace endpoint="/crm/communication-hub/chatwoot" token={localStorage.getItem('crmToken')} /></div>
 
       {error && <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
 
@@ -409,11 +412,17 @@ function ConversationThreadModal({ conversationId, onClose }: { conversationId: 
           )) : <Empty text="No messages in this thread yet." />}
       </div>
       <div className="p-4 border-t border-white/[0.06] space-y-2">
+        {thread?.conversation?.metadata?.provider === 'chatwoot' ? (
+          thread.conversation.agentUrl ? <a href={thread.conversation.agentUrl} target="_blank" rel="noopener noreferrer" className={primary}>
+            <ArrowUpRight className="h-4 w-4" /> Reply in Chatwoot
+          </a> : <p className="text-xs text-slate-500">Agent workspace pending</p>
+        ) : <>
         {result && <div className="rounded-lg px-3 py-2 text-xs bg-red-500/10 text-red-300">{result.text}</div>}
         <div className="flex gap-2">
           <input className={`${input} flex-1`} placeholder="Reply…" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && reply()} />
-          <button className={primary} disabled={sending || !message.trim()} onClick={reply}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+          <button className={primary} title="Send reply" aria-label="Send reply" disabled={sending || !message.trim() || !thread?.conversation?.legacy_lead_id} onClick={reply}>{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
         </div>
+        </>}
       </div>
     </div>
   </div>;

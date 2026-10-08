@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import twilio from 'twilio';
+import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
 
 dotenv.config();
 
@@ -32,23 +33,39 @@ class WhatsAppProductionService {
     
     this.fromNumber = process.env.TWILIO_WHATSAPP_NUMBER;
     this.templates = {
-      appointmentConfirmation: process.env.WHATSAPP_TEMPLATE_APPOINTMENT_CONFIRMATION,
-      appointmentReminder: process.env.WHATSAPP_TEMPLATE_APPOINTMENT_REMINDER,
-      healthReport: process.env.WHATSAPP_TEMPLATE_HEALTH_REPORT,
-      prescription: process.env.WHATSAPP_TEMPLATE_PRESCRIPTION,
-      otp: process.env.WHATSAPP_TEMPLATE_OTP,
-      checkupReminder: process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER,
-      membershipRenewalReminder: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER,
-      membershipRenewalPayment: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT,
-      membershipPlanActivated: process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED,
+      appointmentConfirmation: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_APPOINTMENT_CONFIRMATION : process.env.WHATSAPP_TEMPLATE_APPOINTMENT_CONFIRMATION),
+      appointmentReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_APPOINTMENT_REMINDER : process.env.WHATSAPP_TEMPLATE_APPOINTMENT_REMINDER),
+      healthReport: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_HEALTH_REPORT : process.env.WHATSAPP_TEMPLATE_HEALTH_REPORT),
+      prescription: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_PRESCRIPTION : process.env.WHATSAPP_TEMPLATE_PRESCRIPTION),
+      otp: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_OTP : process.env.WHATSAPP_TEMPLATE_OTP),
+      checkupReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_CHECKUP_REMINDER : process.env.WHATSAPP_TEMPLATE_CHECKUP_REMINDER),
+      membershipRenewalReminder: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_REMINDER),
+      membershipRenewalPayment: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_RENEWAL_PAYMENT),
+      membershipPlanActivated: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED : process.env.WHATSAPP_TEMPLATE_MEMBERSHIP_PLAN_ACTIVATED),
       /** UTILITY template for kiosk WhatsApp registration invites (business-initiated) */
-      kioskRegister: process.env.WHATSAPP_TEMPLATE_KIOSK_REGISTER,
+      kioskRegister: (whatsappProvider() === 'gupshup' ? process.env.GUPSHUP_TEMPLATE_KIOSK_REGISTER : process.env.WHATSAPP_TEMPLATE_KIOSK_REGISTER),
     };
     /**
      * text = body vars {{1}} hospital, {{2}} minutes, {{3}} full URL
      * cta  = body vars {{1}} hospital, {{2}} minutes + URL button path {{3}} = token only
      */
     this.kioskRegisterStyle = String(process.env.WHATSAPP_TEMPLATE_KIOSK_REGISTER_STYLE || 'text').toLowerCase();
+  }
+
+  get provider() { return whatsappProvider(); }
+  get configured() { return this.provider === 'gupshup' ? gupshup.configured : this.provider === 'twilio' && this.twilioConfigured; }
+
+  async sendMessageParams(params, templateKey) {
+    if (!this.configured) throw new Error('Selected WhatsApp provider is not configured');
+    if (this.provider === 'gupshup') {
+      // Business-initiated sends must use this provider's approved template, never a freeform fallback.
+      const suffix = templateKey.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase();
+      const templateId = process.env[`GUPSHUP_TEMPLATE_${suffix}`];
+      const vars = JSON.parse(params.contentVariables || '{}');
+      return gupshup.sendTemplate({ to: params.to, templateId,
+        params: Object.keys(vars).sort((a, b) => Number(a) - Number(b)).map(k => vars[k]) });
+    }
+    return this.client.messages.create(params);
   }
 
   whatsappFrom() {
@@ -61,8 +78,13 @@ class WhatsAppProductionService {
    * Send appointment confirmation
    */
   async sendAppointmentConfirmation({ to, patientName, doctorName, date, time, location, isHealthCheckup = false }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
+    }
+
+    if (this.provider === 'gupshup' && isHealthCheckup) {
+      return gupshup.sendTemplate({ to, templateId: process.env.GUPSHUP_TEMPLATE_HEALTH_CHECKUP,
+        params: [patientName, date, time, location] });
     }
 
     const messageParams = {
@@ -94,15 +116,15 @@ class WhatsAppProductionService {
       messageParams.body = `*Appointment Confirmation* ✅\n\nDear ${patientName},\n\nYour appointment has been confirmed!${doctorLine}\n📍 ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early. For rescheduling or queries, contact us via this chat.\n\n_Team SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'appointmentConfirmation');
   }
 
   /**
    * Send appointment reminder
    */
   async sendAppointmentReminder({ to, patientName, doctorName, time, location }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
@@ -116,15 +138,15 @@ class WhatsAppProductionService {
       messageParams.body = `*Appointment Reminder* 🩺\n\nHello ${patientName}, this is a reminder for your appointment with ${doctorName} at ${time}.\n\n📍 Location: ${location}\n\nPlease arrive 15 minutes early. Reply YES to confirm or NO to reschedule.\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'appointmentReminder');
   }
 
   /**
    * Send health report notification with optional download URL
    */
   async sendHealthReportReady({ to, patientName, reportUrl }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
@@ -137,15 +159,15 @@ class WhatsAppProductionService {
       messageParams.body = `Health Check up Reports\n\nHello ${patientName}\n\nYour Health Check Up reports are ready. Kindly download the reports from the below link.${urlLine}\n\nTeam SmartHealth`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'healthReport');
   }
 
   /**
    * Send prescription notification
    */
   async sendPrescriptionReady({ to, patientName, doctorName, prescriptionUrl, medications, followUpDate }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
@@ -159,15 +181,15 @@ class WhatsAppProductionService {
       messageParams.body = `*Prescription Ready* 💊\n\nHi ${patientName}, your prescription from ${doctorName} is ready.\n\n💊 Medications: ${medications}\n📅 Follow-up: ${followUpDate}\n🔗 Download: ${prescriptionUrl}\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'prescription');
   }
 
   /**
    * Send OTP for verification
    */
   async sendOTP({ to, otp }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
@@ -179,15 +201,15 @@ class WhatsAppProductionService {
       messageParams.body = `Your SmartHealth verification code is *${otp}*. This code expires in 10 minutes. Do not share this code with anyone.`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'otp');
   }
 
   /**
    * Send health checkup reminder
    */
   async sendCheckupReminder({ to, patientName }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
@@ -199,7 +221,7 @@ class WhatsAppProductionService {
       messageParams.body = `*Health Checkup Reminder* 🏥\n\nDear ${patientName}, it's time for your routine health checkup. Regular checkups help detect health issues early.\n\nBook your appointment today!\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'checkupReminder');
   }
 
   /**
@@ -209,7 +231,7 @@ class WhatsAppProductionService {
    * Variables: 1=name 2=planName 3=expiryDate 4=daysRemaining 5=rzpLinkSuffix
    */
   async sendMembershipRenewalReminder({ to, name, planName, expiryDate, daysRemaining, renewalUrl }) {
-    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) throw new Error('Selected WhatsApp provider is not configured');
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
 
@@ -225,7 +247,7 @@ class WhatsAppProductionService {
         `Renew now: ${renewalUrl}\n\n_Team SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'membershipRenewalReminder');
   }
 
   /**
@@ -234,7 +256,7 @@ class WhatsAppProductionService {
    * Variables: 1=name 2=planName 3=amount(string) 4=rzpLinkSuffix
    */
   async sendMembershipPaymentLink({ to, name, planName, amount, renewalUrl }) {
-    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) throw new Error('Selected WhatsApp provider is not configured');
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
 
@@ -249,7 +271,7 @@ class WhatsAppProductionService {
         `Complete payment here: ${renewalUrl}\n\n_Team SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'membershipRenewalPayment');
   }
 
   /**
@@ -258,7 +280,7 @@ class WhatsAppProductionService {
    * Variables: 1=name 2=planName 3=startDate 4=endDate
    */
   async sendMembershipPlanActivated({ to, name, planName, startDate, endDate }) {
-    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) throw new Error('Selected WhatsApp provider is not configured');
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
 
@@ -274,7 +296,7 @@ class WhatsAppProductionService {
         `Enjoy all your health benefits.\n\n_Team SmartHealth_`;
     }
 
-    return await this.client.messages.create(messageParams);
+    return await this.sendMessageParams(messageParams, 'membershipPlanActivated');
   }
 
   /**
@@ -284,13 +306,13 @@ class WhatsAppProductionService {
    * Style cta: {{1}} hospital, {{2}} minutes, {{3}} token (URL button suffix)
    */
   async sendKioskRegistrationInvite({ to, hospitalName, expiresMin, registerUrl, token }) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
     const contentSid = this.templates.kioskRegister;
     if (!contentSid) {
       throw new Error(
-        'WHATSAPP_TEMPLATE_KIOSK_REGISTER is not set — create/approve the MediQzy kiosk registration template in Twilio'
+        'The selected provider kiosk registration template is not configured'
       );
     }
 
@@ -307,12 +329,12 @@ class WhatsAppProductionService {
         ? { '1': hospital, '2': minutes, '3': pathToken }
         : { '1': hospital, '2': minutes, '3': url };
 
-    return await this.client.messages.create({
-      from: this.whatsappFrom(),
+    return await this.sendMessageParams({
+      from: this.provider === 'gupshup' ? process.env.GUPSHUP_SOURCE_NUMBER : this.whatsappFrom(),
       to: `whatsapp:${phoneNumber}`,
       contentSid,
       contentVariables: JSON.stringify(contentVariables),
-    });
+    }, 'kioskRegister');
   }
 
   /**
@@ -320,6 +342,7 @@ class WhatsAppProductionService {
    * Use this for replies to user-initiated conversations
    */
   async sendSessionMessage({ to, body }) {
+    if (this.provider === 'gupshup') return gupshup.sendText({ to, body });
     // Trim phone number to remove any spaces
     const phoneNumber = String(to || '').trim();
     
@@ -341,8 +364,8 @@ class WhatsAppProductionService {
       ? "I'm here to help. Please share a bit more detail so I can assist you." 
       : normalizedBody;
 
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
 
     // Add timeout to prevent hanging
@@ -373,8 +396,9 @@ class WhatsAppProductionService {
   /**
    * Send media message (image, document, audio, video)
    */
-  async sendMediaMessage({ to, mediaUrl, caption = '' }) {
-    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+  async sendMediaMessage({ to, mediaUrl, caption = '', mediaType }) {
+    if (this.provider === 'gupshup') return gupshup.sendMedia({ to, mediaUrl, caption, mediaType });
+    if (!this.configured) throw new Error('Selected WhatsApp provider is not configured');
     const params = {
       from: this.fromNumber,
       to: `whatsapp:${to}`,
@@ -388,8 +412,9 @@ class WhatsAppProductionService {
    * Get message status
    */
   async getMessageStatus(messageSid) {
-    if (!this.twilioConfigured) {
-      throw new Error('Twilio WhatsApp is not configured');
+    if (this.provider === 'gupshup') return gupshup.getMessageStatus(messageSid);
+    if (!this.configured) {
+      throw new Error('Selected WhatsApp provider is not configured');
     }
     
     return await this.client.messages(messageSid).fetch();
@@ -429,7 +454,7 @@ class WhatsAppProductionService {
     }
     const status = String(last?.status || 'unknown').toLowerCase();
     // Still in flight (queued/sent/accepted) — Twilio accepted it; treat as soft-success
-    const inflight = ['queued', 'accepted', 'scheduled', 'sending', 'sent'].includes(status);
+    const inflight = ['submitted', 'enqueued', 'queued', 'accepted', 'scheduled', 'sending', 'sent'].includes(status);
     return {
       ok: inflight,
       status,

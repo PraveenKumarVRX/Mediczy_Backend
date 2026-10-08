@@ -105,7 +105,7 @@ export async function getCommunicationHubDashboard(tenant, query = {}) {
     `, [id]),
     sharedPool.query(`
       SELECT c.id, c.channel, c.status, c.last_message_at, c.lead_id,
-        COALESCE(p.display_name, 'Unknown patient') AS contact_name,
+        COALESCE(p.display_name, c.metadata->>'customer_name', 'Unknown patient') AS contact_name,
         last_event.body_preview AS last_message,
         last_event.direction AS last_direction,
         last_event.status AS last_event_status
@@ -349,10 +349,13 @@ export async function findOrCreateConversation({ tenantId, leadId, channel }) {
 /** Full message history for one thread, plus who it's with — for the Communication Hub's conversation inbox reply view. */
 export async function getConversationThread(tenantId, conversationId) {
   const { rows: convRows } = await sharedPool.query(
-    `SELECT c.id, c.channel, c.status, c.lead_id, lv.legacy_lead_id, ct.name AS contact_name, ct.email, ct.phone_e164 AS phone
+    `SELECT c.id, c.channel, c.status, c.lead_id, c.metadata, lv.legacy_lead_id,
+       COALESCE(ct.name, c.metadata->>'customer_name') AS contact_name,
+       COALESCE(ct.email, CASE WHEN c.channel = 'email' THEN c.metadata->>'customer_id' END) AS email,
+       COALESCE(ct.phone_e164, CASE WHEN c.channel IN ('whatsapp', 'sms') THEN c.metadata->>'customer_id' END) AS phone
      FROM crm_conversations c
-     LEFT JOIN crm_leads_v2 lv ON lv.id = c.lead_id
-     LEFT JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id
+     LEFT JOIN crm_leads_v2 lv ON lv.id = c.lead_id AND lv.tenant_id = c.tenant_id
+     LEFT JOIN crm_contacts_v2 ct ON ct.id = lv.contact_id AND ct.tenant_id = c.tenant_id
      WHERE c.tenant_id = $1 AND c.id = $2`,
     [tenantId, conversationId]
   );
@@ -431,13 +434,13 @@ export async function dispatchToChannel({ channel, to, subject, message }) {
 
   if (safeChannel === 'whatsapp') {
     const phone = _normalizePhone(to);
-    if (!phone || phone.length < 10) return { success: false, provider: 'twilio', error: 'Invalid WhatsApp number' };
-    if (whatsappProductionService?.twilioConfigured) {
+    if (!phone || phone.length < 10) return { success: false, provider: whatsappProductionService.provider, error: 'Invalid WhatsApp number' };
+    if (whatsappProductionService?.configured) {
       try {
         const response = await whatsappProductionService.sendSessionMessage({ to: phone, body: safeMessage.slice(0, 4096) });
-        return { success: true, provider: 'twilio', recipient: phone, providerMessageId: response?.sid };
+        return { success: true, provider: whatsappProductionService.provider, recipient: phone, providerMessageId: response?.sid };
       } catch (err) {
-        return { success: false, provider: 'twilio', recipient: phone, error: err?.message || 'WhatsApp send failed' };
+        return { success: false, provider: whatsappProductionService.provider, recipient: phone, error: err?.message || 'WhatsApp send failed' };
       }
     }
     const accessToken = process.env.FACEBOOK_ACCESS_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
@@ -509,7 +512,7 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
   if (safeChannel === 'whatsapp') {
     const to = _normalizePhone(recipient.phone);
     if (!to || to.length < 10) throw Object.assign(new Error(`${recipientLabel} has no valid WhatsApp number on file`), { statusCode: 400 });
-    if (whatsappProductionService?.twilioConfigured) {
+    if (whatsappProductionService?.configured) {
       try {
         const response = await whatsappProductionService.sendSessionMessage({ to, body: safeMessage.slice(0, 4096) });
         await _logCrmCommunication({ ...logBase, channel: 'whatsapp', recipientLabel, status: 'sent', provider: 'twilio', providerMessageId: response?.sid });

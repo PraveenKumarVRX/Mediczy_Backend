@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import api from '@/lib/api';
+import ChatwootWorkspace from '@/components/communication/ChatwootWorkspace';
 import {
   MessageSquare, Mail, Send, Phone, Video, Smartphone, Settings,
   BarChart3, Users, CheckCircle, XCircle, Clock, RefreshCw,
@@ -549,6 +550,7 @@ const HospitalCommunicationHub = () => {
 
   return (
     <HospitalLayout title="Communication Hub" subtitle="WhatsApp, Email, SMS & Voice communication with patients">
+      <div className="mb-4"><ChatwootWorkspace endpoint="/hospital/communication/chatwoot" token={localStorage.getItem('hospitalToken')} /></div>
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <TabsList className="bg-slate-100 dark:bg-slate-800">

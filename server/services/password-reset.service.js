@@ -1,3 +1,4 @@
+import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
 import crypto from 'crypto';
 import { sendTransactionalEmail } from './welcome-email.service.js';
 import OTP from '../models/otp.model.intelligent.js';
@@ -301,6 +302,11 @@ class PasswordResetService {
     }
 
     try {
+      if (whatsappProvider() === 'gupshup') {
+        const sent = await gupshup.sendTemplate({ to: account.phone || account.phoneNumber,
+          templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode] });
+        return { messageSid: sent.sid, status: sent.status };
+      }
       // Check if Twilio client is initialized and configured
       if (!this.twilioClient || !this.twilioConfigured) {
         console.warn('⚠️  Twilio WhatsApp not available for password reset - falling back to Email OTP');

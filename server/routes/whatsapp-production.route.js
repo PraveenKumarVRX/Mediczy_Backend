@@ -1,4 +1,7 @@
 import express from 'express';
+import { createGupshupWebhook } from '../services/gupshup-webhook.service.js';
+import { enqueueGupshupInbound, recordGupshupStatus, startGupshupInboundWorker } from '../services/gupshup-inbound-queue.service.js';
+import gupshup from '../services/gupshup-whatsapp.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
@@ -27,6 +30,7 @@ import { detectServiceIntent, createAutoTicket } from '../services/autoTicketSer
 import axios from 'axios';
 import sharedPool from '../db/pgPool.js';
 import { bridgeInboundWhatsAppToCrm } from '../services/crm-inbound-bridge.service.js';
+import { handleChatwootTwilioInbound } from '../services/chatwoot-bridge.service.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -602,7 +606,9 @@ router.get('/conversations/:phoneNumber/messages', async (req, res) => {
     }
 
     const rawMessages = (row && Array.isArray(row.messages)) ? row.messages : [];
-    const ourNumber = process.env.TWILIO_WHATSAPP_NUMBER || '+14155238886';
+    const ourNumber = whatsappProductionService.provider === 'gupshup'
+      ? `whatsapp:+${process.env.GUPSHUP_SOURCE_NUMBER}`
+      : process.env.TWILIO_WHATSAPP_NUMBER || '+14155238886';
     const dbPhone = cleanPhoneWithPlus;
 
     const dbNormalized = rawMessages.map((msg, idx) => ({
@@ -999,15 +1005,43 @@ const twimlReply = (text) => {
  * ⚠️ PRODUCTION: Twilio POSTs here WITHOUT auth headers
  * This endpoint must be fully public (no JWT required)
  */
+const receiveGupshup = createGupshupWebhook({ enqueue: enqueueGupshupInbound, saveStatus: recordGupshupStatus });
+// Gupshup's dashboard probes the callback URL before it saves a webhook.
+// Keep this probe unauthenticated and side-effect free; event delivery remains
+// protected by createGupshupWebhook (secret/IP allow-list + v2 validation).
+const validateGupshupWebhookUrl = (_req, res) => res.status(200).end();
+router.get('/webhook/gupshup', validateGupshupWebhookUrl);
+router.head('/webhook/gupshup', validateGupshupWebhookUrl);
+router.post('/webhook/gupshup', receiveGupshup);
 router.post('/webhook', (req, res, next) => {
-  // Bypass any auth middleware for Twilio webhooks
-  console.log('🔓 [WhatsApp Webhook] Setting skipAuth=true');
+  if (whatsappProductionService.provider === 'gupshup' || (req.body?.app && req.body?.type)) return receiveGupshup(req, res);
   req.skipAuth = true;
-  req.user = { id: 'twilio-webhook', role: 'webhook' };
-  req.userRole = 'webhook';
-  console.log('✅ [WhatsApp Webhook] Auth bypass set, calling next()');
-  next();
-}, async (req, res) => {
+  return handleIncomingWhatsApp(req, res).catch(next);
+});
+
+async function sendIncomingGupshup(req, text) {
+  if (req.gupshupReplyAttempted) throw new Error('Reply already attempted; reconcile before retrying');
+  req.gupshupReplyAttempted = true;
+  try { return await gupshup.sendText({ to: req.body.From, body: text }); }
+  catch (error) { req.gupshupDeliveryError = error; throw error; }
+}
+
+async function incomingReply(req, res, text = '') {
+  if (req.whatsappProvider === 'gupshup') {
+    if (text) await sendIncomingGupshup(req, text);
+    return res.status(200).end();
+  }
+  return res.type('text/xml').status(200).send(text ? twimlReply(text) : '<Response></Response>');
+}
+
+export async function handleIncomingWhatsApp(req, res) {
+  try {
+    const bridge = req.whatsappProvider === 'gupshup' ? { handled: false } : await handleChatwootTwilioInbound(req);
+    if (bridge.handled) return res.type('text/xml').send('<Response></Response>');
+  } catch (error) {
+    return res.status(error.statusCode || 503).json({ success: false,
+      message: error.statusCode ? error.message : 'Tenant agent bridge is unavailable' });
+  }
   try {
     let pendingTwimlReply = null; // Set when AI sendSessionMessage fails; carried to final TwiML response
     console.log('📱 [WhatsApp Webhook] Handler called, req.skipAuth=', req.skipAuth);
@@ -1172,7 +1206,7 @@ router.post('/webhook', (req, res, next) => {
           phoneNumber,
           teamMember: teamMemberRequested
         });
-        return res.type('text/xml').status(200).send(twimlReply(teamAckMsg));
+        return await incomingReply(req, res, teamAckMsg);
       } catch (error) {
         logger.error('Error forwarding to the agent workspace:', error.message);
       }
@@ -1184,7 +1218,7 @@ router.post('/webhook', (req, res, next) => {
         phoneNumber,
         reason: handoffState.reason
       });
-      return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      return await incomingReply(req, res);
     }
     
     // 3. CHECK FOR APPOINTMENT BOOKING INTENT
@@ -1237,7 +1271,7 @@ bookingType === 'health_checkup'
   ? `✅ Our team will contact you shortly to confirm your health checkup slot.\n\n📱 You'll receive a confirmation message with:\n• Lab name & location\n• Date & time options\n• Package/fee details`
   : `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`
 }\n\nIs there anything else I can help you with? 💙`;
-      return res.type('text/xml').status(200).send(twimlReply(apptBody));
+      return await incomingReply(req, res, apptBody);
     }
 
     // 4. SERVICE REQUEST AUTO-TICKET
@@ -1265,7 +1299,7 @@ bookingType === 'health_checkup'
 
           // Acknowledge customer on WhatsApp via TwiML (single reply)
           const ticketAckMsg = `🎫 ${serviceIntent.replyHint}\n\n_A support ticket has been created. Our team will be in touch shortly._`;
-          return res.type('text/xml').status(200).send(twimlReply(ticketAckMsg));
+          return await incomingReply(req, res, ticketAckMsg);
         }
       } catch (atErr) {
         logger.error('[autoTicket/WA] Error:', atErr.message);
@@ -1300,7 +1334,7 @@ bookingType === 'health_checkup'
           logger.info('✅ Using STATIC greeting response', { response: greetingResponse });
           const greetMsg = sanitizeReply(greetingResponse);
           responseSent = true;
-          return res.type('text/xml').status(200).send(twimlReply(greetMsg));
+          return await incomingReply(req, res, greetMsg);
         }
 
         // Thank you / appreciation response
@@ -1314,7 +1348,7 @@ bookingType === 'health_checkup'
           logger.info('✅ Using STATIC thanks+goodbye response', { response: combinedResponse });
           const thanksGoodbyeMsg = sanitizeReply(combinedResponse);
           responseSent = true;
-          return res.type('text/xml').status(200).send(twimlReply(thanksGoodbyeMsg));
+          return await incomingReply(req, res, thanksGoodbyeMsg);
         }
 
         if (isThanks) {
@@ -1322,7 +1356,7 @@ bookingType === 'health_checkup'
           logger.info('✅ Using STATIC thanks response', { response: thanksResponse });
           const thanksMsg = sanitizeReply(thanksResponse);
           responseSent = true;
-          return res.type('text/xml').status(200).send(twimlReply(thanksMsg));
+          return await incomingReply(req, res, thanksMsg);
         }
 
         // Goodbye response
@@ -1333,7 +1367,7 @@ bookingType === 'health_checkup'
           logger.info('✅ Using STATIC goodbye response', { response: goodbyeResponse });
           const goodbyeMsg = sanitizeReply(goodbyeResponse);
           responseSent = true;
-          return res.type('text/xml').status(200).send(twimlReply(goodbyeMsg));
+          return await incomingReply(req, res, goodbyeMsg);
         }
 
         // ALL other messages (including appointment status, medical queries, etc.)
@@ -1406,9 +1440,10 @@ bookingType === 'health_checkup'
           // Try sending via API; TwiML at the end of the handler also carries the reply as fallback
           let aiReplySentViaApi = false;
           try {
-            await whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: sanitizedReply });
+            await (req.whatsappProvider === 'gupshup' ? sendIncomingGupshup(req, sanitizedReply) : whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: sanitizedReply }));
             aiReplySentViaApi = true;
           } catch (sendErr) {
+            if (req.whatsappProvider === 'gupshup') throw sendErr;
             logger.warn('⚠️ sendSessionMessage failed (will use TwiML):', sendErr.message);
           }
           pendingTwimlReply = aiReplySentViaApi ? null : sanitizedReply;
@@ -1487,24 +1522,34 @@ bookingType === 'health_checkup'
           }
         }
       } catch (aiError) {
+        if (req.whatsappProvider === 'gupshup') throw aiError;
         logger.error('AI auto-reply error (non-fatal):', { error: aiError.message });
         // Do not send a fallback reply here to avoid duplicate error messages
       }
     }
     
     // Return TwiML response — with reply text if API send failed, otherwise empty
-    res.type('text/xml');
-    res.status(200).send(
-      pendingTwimlReply
-        ? twimlReply(pendingTwimlReply)
-        : '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
-    );
+    return await incomingReply(req, res, pendingTwimlReply || '');
   } catch (error) {
+    if (req.whatsappProvider === 'gupshup') throw error;
     logger.error('❌ Webhook error:', { error: error.message, stack: error.stack });
     // Return empty TwiML even on error to prevent Twilio from triggering fallback
     res.type('text/xml');
     res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   }
+}
+
+startGupshupInboundWorker(async event => {
+  if (event.unsupportedMedia) {
+    await gupshup.sendText({ to: event.message.From, body: 'Please send your request as text. Attachments are not supported on this channel yet.' });
+    return;
+  }
+  const req = { body: event.message, whatsappProvider: 'gupshup', skipAuth: true,
+    user: { id: 'gupshup-webhook', role: 'webhook' }, get: () => undefined };
+  const res = { status() { return this; }, type() { return this; }, end() {}, send() {},
+    json() { throw new Error('Inbound processing failed'); } };
+  await handleIncomingWhatsApp(req, res);
+  if (req.gupshupDeliveryError) throw req.gupshupDeliveryError;
 });
 
 /**

@@ -112,6 +112,9 @@ import hospitalCrmWorldclassRouter from './routes/hospital-crm-worldclass.route.
 import hospitalCrmGrowthRouter from './routes/hospital-crm-growth.route.js';
 import hospitalCrmSpecialtyRouter from './routes/hospital-crm-specialty.route.js';
 import hospitalCrmCommunicationHubRouter from './routes/hospital-crm-communication-hub.route.js';
+import chatwootWebhookRouter from './routes/chatwoot-webhook.route.js';
+import hospitalChatwootRouter from './routes/hospital-chatwoot.route.js';
+import { startChatwootWorker } from './services/chatwoot-bridge.service.js';
 import crmSegmentsRouter from './routes/crm-segments.route.js';
 import crmAutomationsRouter from './routes/crm-automations.route.js';
 import crmUnderwritingRouter from './routes/crm-underwriting.route.js';
@@ -862,7 +865,7 @@ app.use(express.json({
   limit: '50mb',
   verify: (req, _res, buf) => {
     // The WhatsApp webhook is HMAC-signed by Meta over the exact bytes it sent, so the raw body is required to verify it.
-    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook') {
+    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook' || req.originalUrl.split('?')[0] === '/api/chatwoot/webhook') {
       req.rawBody = buf.toString('utf8');
     }
   }
@@ -1035,6 +1038,8 @@ app.use((req, res, next) => {
       req.path.startsWith('/api/whatsapp-production/fallback') ||
       req.path.startsWith('/api/whatsapp-production/status-callback') ||
       req.path.startsWith('/api/support/webhook/whatsapp') ||
+      req.path === '/api/chatwoot/webhook' ||
+      req.path === '/api/chatwoot/channels/twilio' ||
       req.path === '/api/payments/webhook' ||
       req.path === '/api/hospital/billing/pgi/webhook' ||
       req.path === '/api/hospital/billing/refunds/webhook' ||
@@ -1076,6 +1081,9 @@ app.use('/api/procurement', procurementRouter);
 app.use('/api/scm', scmRouter);
 app.use('/api/queue', deptQueueRouter);
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
+// Provider callbacks verify their own signatures before accepting any message.
+app.use('/api/chatwoot', chatwootWebhookRouter);
+startChatwootWorker();
 app.use(ringFencingMiddleware);
 
 // Error handling middleware (must be last)
@@ -1745,6 +1753,7 @@ import ngoAuthRouter from './routes/ngo/auth.routes.js';
 app.use('/api/ngo', ngoAuthRouter); // NGO authentication (login, logout, verify)
 
 // Communication Module Routes (Email, SMS, WhatsApp) - Available for all user types
+app.use('/api/hospital/communication/chatwoot', hospitalChatwootRouter);
 app.use('/api/hospital/communication', communicationRouter); // Hospital communication
 app.use('/api/tpa/communication', communicationRouter); // TPA communication
 app.use('/api/broker/communication', communicationRouter); // Insurance Broker communication

@@ -1,3 +1,4 @@
+import { closeGupshupInbound } from '../services/gupshup-inbound-queue.service.js';
 /**
  * Shutdown Controller
  * Manages graceful shutdown of all services
@@ -95,6 +96,7 @@ class ShutdownController {
       const orchestrator = this.initializationController?.getOrchestrator();
 
       const results = await Promise.allSettled([
+        withTimeout('Gupshup inbound', closeGupshupInbound),
         withTimeout('BullMQ workers', shutdownWorkers),
         withTimeout('BullMQ queues', shutdownQueues),
         withTimeout('Database connections (orchestrator)', () => orchestrator ? orchestrator.closeAll() : Promise.resolve()),
