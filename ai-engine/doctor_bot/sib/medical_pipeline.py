@@ -800,7 +800,7 @@ Thank you for sharing your health concern with me.
     
     # ==================== Component 6: Safety Filter ====================
     
-    def apply_safety_filter(self, response: str) -> Tuple[str, List[Dict], bool]:
+    def apply_safety_filter(self, response: str, query: Optional[str] = None) -> Tuple[str, List[Dict], bool]:
         """
         Apply safety filter to response
         
@@ -808,8 +808,25 @@ Thank you for sharing your health concern with me.
             Tuple of (filtered_response, alerts, is_emergency)
         """
         try:
-            from utils.safety_filter import safety_check
+            from utils.safety_filter import safety_check, detect_emergencies
             result = safety_check(response)
+            # Emergency status must come from the patient's message, not from
+            # an educational answer that mentions conditions such as stroke.
+            # Keep dosage/prescription filtering on the generated response,
+            # while preventing false emergency alerts for ordinary education.
+            if query is not None:
+                query_emergencies = detect_emergencies(query)
+                result["alerts"] = [
+                    alert for alert in result["alerts"]
+                    if alert.get("category") != "emergency_symptom"
+                ]
+                result["alerts"].extend({
+                    "level": alert.level.value,
+                    "category": alert.category,
+                    "message": alert.message,
+                    "recommendation": alert.recommendation,
+                } for alert in query_emergencies)
+                result["is_emergency"] = bool(query_emergencies)
             return result["filtered_text"], result["alerts"], result["is_emergency"]
         except Exception as e:
             logger.warning(f"⚠️ Safety filter failed: {e}")
@@ -851,7 +868,8 @@ Thank you for sharing your health concern with me.
     def process(self, query: str, patient_data: Optional[Dict] = None,
                 include_risk: bool = True, include_retrieval: bool = True,
                 language: str = "en", fast_mode: bool = True, use_rag: bool = False,
-                conversation_history: Optional[List[Dict]] = None) -> PipelineResult:
+                conversation_history: Optional[List[Dict]] = None,
+                context_override: Optional[List[str]] = None) -> PipelineResult:
         """
         Run medical AI pipeline with TinyLlama routing
         
@@ -863,6 +881,12 @@ Thank you for sharing your health concern with me.
         RAG-Enhanced Flow (use_rag=True):
         - Qwen retrieves patient context from FAISS
         - Generates personalized responses using RAG
+
+        ``context_override`` is supplied by the production unified retriever.
+        When present it is used verbatim (with source labels) and the legacy
+        FAISS retrieval is skipped. This lets the API combine knowledge-fabric
+        documents with consent-scoped EHR chunks without changing the older
+        pipeline callers.
         
         Full Flow (fast_mode=False):
         1. TinyLlama routing
@@ -929,7 +953,7 @@ Thank you for sharing your health concern with me.
                     response=routing_decision.quick_response,
                     entities=[],
                     risk_assessment={},
-                    context_chunks=[],
+                    context_chunks=list(context_override or []),
                     safety_alerts=[],
                     provider="local-tinyllama",
                     latency_ms=round(latency, 2),
@@ -947,14 +971,23 @@ Thank you for sharing your health concern with me.
         # FAST PATH: Skip NER/FAISS for simple medical queries (~2s)
         # ═══════════════════════════════════════════════════════════════
         if fast_mode and intent in ("symptom_check", "medical_query", "medication_info"):
-            logger.info("⚡ Fast path: Direct API call (skipping NER/FAISS)")
-            
-            # Call iSHA API directly
-            response = self._call_isha(query, None, patient_data, conversation_history=conversation_history)
+            logger.info("⚡ Fast path: Direct routed provider call (skipping NER/FAISS)")
+
+            # Keep the fast path aligned with the configured provider order.
+            # Previously this called iSHA directly, which meant changing the
+            # SIB provider configuration could never select OpenAI for normal
+            # symptom/medical questions.
+            response, provider = self.generate_response_routed(
+                query,
+                context=context_override,
+                patient_data=patient_data,
+                preferred_backend=preferred_backend,
+                conversation_history=conversation_history,
+            )
             
             if response:
                 # Quick safety check
-                filtered_response, safety_alerts, is_emergency = self.apply_safety_filter(response)
+                filtered_response, safety_alerts, is_emergency = self.apply_safety_filter(response, query=query)
                 latency = (time.time() - start_time) * 1000
                 
                 return PipelineResult(
@@ -963,7 +996,7 @@ Thank you for sharing your health concern with me.
                     risk_assessment={},
                     context_chunks=[],
                     safety_alerts=safety_alerts,
-                    provider="isha-fast",
+                    provider=provider,
                     latency_ms=round(latency, 2),
                     is_emergency=is_emergency
                 )
@@ -987,8 +1020,8 @@ Thank you for sharing your health concern with me.
             risk_assessment = self.assess_risk(patient_data)
         
         # Step 4: FAISS retrieval
-        context_chunks = []
-        if include_retrieval:
+        context_chunks = list(context_override or [])
+        if include_retrieval and context_override is None:
             retrieved = self.retrieve_context(query, k=5)
             context_chunks = [r["text"] for r in retrieved]
         
@@ -1004,7 +1037,7 @@ Thank you for sharing your health concern with me.
         )
         
         # Step 6: Safety filter
-        filtered_response, safety_alerts, is_emergency = self.apply_safety_filter(response)
+        filtered_response, safety_alerts, is_emergency = self.apply_safety_filter(response, query=query)
         
         # Add risk info to response if high risk detected
         if risk_assessment.get("CardioRisk") == 1:
@@ -1050,6 +1083,17 @@ Thank you for sharing your health concern with me.
         }
         
         backends = backend_order.get(preferred_backend, backend_order["isha"])
+
+        # SIB_PRIMARY_PROVIDER is an explicit deployment switch. It lets the
+        # operator choose OpenAI (or another configured backend) as the first
+        # conversational provider without changing the local intent router or
+        # the safety/consent gates. The default remains the historical iSHA
+        # order until the parameter is deliberately enabled.
+        primary_provider = os.environ.get("SIB_PRIMARY_PROVIDER", "").strip().lower()
+        if primary_provider in backend_order:
+            backends = [primary_provider] + [
+                backend for backend in backends if backend != primary_provider
+            ]
         
         for backend in backends:
             try:
@@ -1139,10 +1183,23 @@ Thank you for sharing your health concern with me.
         logger.warning("%s unavailable, cooling down for %ss: %s", provider, _PROVIDER_COOLDOWN_SECONDS, reason)
 
     def _build_messages(self, query: str, context: Optional[List[str]],
-                        conversation_history: Optional[List[Dict]] = None) -> List[Dict[str, str]]:
+                        conversation_history: Optional[List[Dict]] = None,
+                        patient_data: Optional[Dict] = None) -> List[Dict[str, str]]:
         system_prompt = self.DR_ISHA_PERSONA
         if context:
-            system_prompt += "\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:2])
+            system_prompt += (
+                "\n\nRETRIEVED MEDICAL CONTEXT (use only when relevant; do not invent facts):\n"
+                + "\n".join(context[:6])
+            )
+        if patient_data:
+            patient_context = self._build_patient_context(patient_data)
+            if patient_context:
+                system_prompt += (
+                    "\n\nCONSENT-VERIFIED PATIENT RECORD CONTEXT (private; use only for this patient):\n"
+                    + patient_context
+                    + "\nEND CONSENT-VERIFIED PATIENT RECORD CONTEXT.\n"
+                    "If the record does not contain the requested fact, say that it is not available."
+                )
 
         messages = [{"role": "system", "content": system_prompt}]
         if conversation_history:
@@ -1192,7 +1249,7 @@ Thank you for sharing your health concern with me.
                 },
                 json={
                     "model": model,
-                    "messages": self._build_messages(query, context, conversation_history),
+                    "messages": self._build_messages(query, context, conversation_history, patient_data),
                     "max_tokens": 300,
                     "temperature": 0.5,
                     "stream": False,
@@ -1228,7 +1285,7 @@ Thank you for sharing your health concern with me.
             client = OpenAI(api_key=self.openai_api_key)
             response = client.chat.completions.create(
                 model=os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo"),
-                messages=self._build_messages(query, context, conversation_history),
+                messages=self._build_messages(query, context, conversation_history, patient_data),
                 max_tokens=300,
                 temperature=0.5,
             )
@@ -1259,7 +1316,7 @@ Thank you for sharing your health concern with me.
                 logger.debug("iSHA token unavailable, skipping iSHA backend")
                 return None
             
-            messages = self._build_messages(query, context, conversation_history)
+            messages = self._build_messages(query, context, conversation_history, patient_data)
             
             isha_url = _normalize_provider_url(os.environ.get("ISHA_AI_URL", ""), "https://ai.isha.buzz")
             # Use the correct endpoint with agent_type
@@ -1301,19 +1358,7 @@ Thank you for sharing your health concern with me.
                 return None
             
             # Build system prompt from canonical Dr. iSHA persona
-            system_prompt = self.DR_ISHA_PERSONA
-            if context:
-                system_prompt += f"\n\nRELEVANT MEDICAL CONTEXT (use if directly applicable):\n" + "\n".join(context[:1])
-            
-            # Build messages array: system + last 6 history turns + current user message
-            messages = [{"role": "system", "content": system_prompt}]
-            if conversation_history:
-                for turn in conversation_history[-6:]:
-                    role = turn.get("role", "user")
-                    content = turn.get("content", "")
-                    if role in ("user", "assistant") and content:
-                        messages.append({"role": role, "content": content})
-            messages.append({"role": "user", "content": query})
+            messages = self._build_messages(query, context, conversation_history, patient_data)
             
             client = Groq(api_key=self.groq_api_key)
             

@@ -31,19 +31,111 @@ import axios from 'axios';
 import sharedPool from '../db/pgPool.js';
 import { bridgeInboundWhatsAppToCrm } from '../services/crm-inbound-bridge.service.js';
 import { handleChatwootTwilioInbound } from '../services/chatwoot-bridge.service.js';
+import whatsAppIdentityService, { genericLinkMessage } from '../services/whatsapp-identity.service.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
+
+// Patient history is only sent to SIB for an explicit personal-record request
+// and after the authoritative consent_records check succeeds. Generic symptom
+// questions still receive knowledge-fabric guidance, but no EHR data leaves
+// this service.
+const isPatientSpecificQuery = (text) => {
+  const normalized = String(text || '').toLowerCase();
+  if (/\bwhat\s+do\s+you\s+know\s+about\s+me\b/i.test(normalized)) return true;
+  // Require an explicit personal reference before treating a medical term as
+  // a request for PHI. General questions about medicines, reports, or family
+  // history remain available through knowledge-fabric guidance.
+  return /\b(my|mine|me)\b.{0,40}\b(health|history|medical\s+record|records?|prescriptions?|medications?|allergies|lab\s+results?|reports?|appointments?|visits?|diagnos(?:is|es)|symptoms?|vitals?|blood\s+pressure|glucose|sugar)\b/i.test(normalized)
+    || /\b(upcoming|previous|past|latest|recent)\b.{0,30}\b(my|mine|me)\b/i.test(normalized)
+    || /\b(my|mine|me)\b.{0,30}\b(upcoming|previous|past|latest|recent)\b/i.test(normalized);
+};
+
+const isWhatsAppLinkRequest = (text) => {
+  const normalized = String(text || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return /^(verify|verify me|verify my account|link|link account|connect my account|secure this chat|authenticate me|confirm my number)$/.test(normalized)
+    || /\b(link|connect|verify|authenticate)\b.{0,24}\b(account|number|whatsapp|chat)\b/.test(normalized);
+};
+
+const extractWhatsAppOtp = (text) => {
+  const match = String(text || '').match(/^(?:otp|code|verification\s+code)?\s*[:#-]?\s*(\d{6})$/i);
+  return match?.[1] || null;
+};
+
+const whatsappIdentityPrompt = () => 'Before I access your appointments, reports, prescriptions, health history, or book an appointment, please verify this WhatsApp number. Reply `VERIFY` and I’ll send a one-time code here.';
+
+const hasAuthoritativeAIConsent = async (patientId) => {
+  if (!patientId) return false;
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT 1
+         FROM consent_records
+        WHERE patient_id::text = $1
+          AND purpose = 'ai_analysis'
+          AND status = 'active'
+          AND (expires_at IS NULL OR expires_at > NOW())
+        LIMIT 1`,
+      [patientId]
+    );
+    return rows.length > 0;
+  } catch (error) {
+    logger.warn('[whatsapp] AI consent check failed closed:', error.message);
+    return false;
+  }
+};
+
+const buildConsentScopedPatientContext = (context) => {
+  const user = context?.user || {};
+  const pickAppointment = (appointment = {}) => ({
+    id: appointment.id,
+    doctorName: appointment.doctorName || appointment.doctor_name,
+    specialization: appointment.specialization,
+    appointmentDate: appointment.appointmentDate || appointment.appointment_date,
+    appointmentTime: appointment.appointmentTime || appointment.appointment_time,
+    status: appointment.status,
+    consultationType: appointment.consultationType || appointment.consultation_type,
+    reason: appointment.reason
+  });
+  const pickPrescription = (prescription = {}) => ({
+    id: prescription.id,
+    prescriptionId: prescription.prescriptionId,
+    doctorName: prescription.doctorName || prescription.doctor_name,
+    diagnosis: prescription.diagnosis,
+    medications: prescription.medications,
+    followUpDate: prescription.followUpDate || prescription.follow_up_date,
+    status: prescription.status,
+    createdAt: prescription.createdAt || prescription.created_at
+  });
+  return {
+    user: {
+      id: user.id,
+      name: user.name,
+      age: user.age,
+      gender: user.gender,
+      bloodGroup: user.bloodGroup,
+      city: user.city
+    },
+    appointments: {
+      recent: (context?.appointments?.recent || []).slice(0, 5).map(pickAppointment),
+      upcoming: (context?.appointments?.upcoming || []).slice(0, 5).map(pickAppointment)
+    },
+    prescriptions: {
+      recent: (context?.prescriptions?.recent || []).slice(0, 5).map(pickPrescription)
+    },
+    activeMedications: (context?.activeMedications || []).slice(0, 10),
+    summary: context?.summary
+  };
+};
 
 /**
  * Upsert a WhatsApp contact into whatsapp_contacts on every inbound message.
  * Creates on first contact; updates name, patient link, and last_contact_at on repeat.
  */
-async function upsertWhatsAppContact({ phone, profileName, userContext }) {
+async function upsertWhatsAppContact({ phone, profileName, userContext, identityVerified = false }) {
   try {
-    const isKnownPatient = !!userContext?.isKnownUser;
-    const patientId = userContext?.user?.id || null;
-    const name = (userContext?.isKnownUser && userContext?.user?.name)
+    const isKnownPatient = Boolean(identityVerified && userContext?.isKnownUser);
+    const patientId = isKnownPatient ? userContext?.user?.id : null;
+    const name = (isKnownPatient && userContext?.user?.name)
       ? userContext.user.name
       : (profileName || null);
 
@@ -91,6 +183,28 @@ const compactWhatsAppReply = (text) => {
   }
   return `${shortened}…`;
 };
+
+// Broad status questions do not contain enough information for a clinical
+// answer. Keep them out of the medical pipeline, which may otherwise treat
+// the word "health" as a symptom query or retrieve an unrelated record.
+const isGeneralHealthUpdateQuery = (text) => {
+  const normalized = String(text || '').toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalized || !/\b(health|medical|wellbeing|well-being)\b/.test(normalized)) return false;
+  if (!/\b(update|updates|status|latest|recent)\b/.test(normalized) && !/\bhow\s+is\s+my\s+health\b/.test(normalized)) return false;
+  // A symptom-specific question should still receive clinical triage.
+  return !/\b(pain|ache|fever|cough|headache|rash|nausea|vomit|bleed|breath|symptom|diagnos|medicine|medication)\b/.test(normalized);
+};
+
+const isAnswerFeedbackQuery = (text) => {
+  const normalized = String(text || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  return /\b(irrelevant|unrelated|wrong answer|wrong response|not what i asked|didn t answer|did not answer)\b/.test(normalized)
+    || /\bwhy\s+(?:are|r)\s+you\s+sending\b/.test(normalized);
+};
+
+const hasInternalContextMarker = (text) => /(?:\[\s*(?:PATIENT\s+CONTEXT|RECENT\s+CONVERSATION|CURRENT\s+MESSAGE)\s*\]|===\s*PATIENT\s+CONTEXT)/i.test(String(text || ''));
+
+const GENERAL_HEALTH_UPDATE_REPLY = 'I can check your appointments, prescriptions, reports, or recent health information. Which one would you like to review?';
+const ANSWER_FEEDBACK_REPLY = 'You’re right — that response did not match your question. I can check your appointments, prescriptions, reports, or recent health information. Which one would you like to review?';
 
 const HANDOFF_KEY_PREFIX = 'whatsapp:handoff:';
 const HANDOFF_TTL_SECONDS = parseInt(process.env.WHATSAPP_HANDOFF_TTL || '86400', 10);
@@ -1096,18 +1210,28 @@ export async function handleIncomingWhatsApp(req, res) {
     
     // 1. IDENTIFY USER - Check if phone number exists in database
     const userContext = await whatsAppUserContextService.getFullUserContext(phoneNumber);
+    // A phone match is only a candidate account association.  The sender must
+    // complete the WhatsApp OTP link before we use the account identity in a
+    // response or perform an appointment action.
+    const whatsappIdentity = await whatsAppIdentityService.getSession(phoneNumber);
+    const whatsappIdentityVerified = Boolean(
+      whatsappIdentity
+      && userContext.isKnownUser
+      && String(whatsappIdentity.userId) === String(userContext.user?.id)
+    );
     
     logger.info('👤 User identification', {
       phoneNumber,
       isKnownUser: userContext.isKnownUser,
-      userId: userContext.user?.id,
-      userName: userContext.user?.name,
+      whatsappIdentityVerified,
+      userId: whatsappIdentityVerified ? userContext.user?.id : undefined,
+      userName: whatsappIdentityVerified ? userContext.user?.name : undefined,
       hasAppointments: userContext.appointments?.recent?.length > 0,
       hasPrescriptions: userContext.prescriptions?.recent?.length > 0
     });
 
     // Persist contact to whatsapp_contacts (fire-and-forget, non-blocking)
-    upsertWhatsAppContact({ phone: phoneNumber, profileName: ProfileName, userContext });
+    upsertWhatsAppContact({ phone: phoneNumber, profileName: ProfileName, userContext, identityVerified: whatsappIdentityVerified });
     
     // Import chat rooms storage from chatStorage.js (Redis-backed)
     const { chatRooms, messages } = await import('../utils/chatStorage.js');
@@ -1128,8 +1252,8 @@ export async function handleIncomingWhatsApp(req, res) {
     // Create enhanced message object with user context
     const messageObj = {
       id: MessageSid,
-      userId: userContext.isKnownUser ? `user_${userContext.user.id}` : `whatsapp_${phoneNumber}`,
-      userName: userContext.isKnownUser 
+      userId: whatsappIdentityVerified ? `user_${userContext.user.id}` : `whatsapp_${phoneNumber}`,
+      userName: whatsappIdentityVerified
         ? `📱 ${userContext.user.name}` 
         : `📱 ${customerName}`,
       userRole: 'customer',
@@ -1142,11 +1266,12 @@ export async function handleIncomingWhatsApp(req, res) {
       phoneNumber: phoneNumber,
       // Enhanced user context
       userContext: {
-        isKnownUser: userContext.isKnownUser,
-        patientId: userContext.user?.id,
-        patientName: userContext.user?.name,
-        upcomingAppointments: userContext.appointments?.upcoming?.length || 0,
-        activeMedications: userContext.activeMedications?.length || 0
+        isKnownUser: whatsappIdentityVerified,
+        whatsappIdentityVerified,
+        patientId: whatsappIdentityVerified ? userContext.user?.id : undefined,
+        patientName: whatsappIdentityVerified ? userContext.user?.name : undefined,
+        upcomingAppointments: whatsappIdentityVerified ? (userContext.appointments?.upcoming?.length || 0) : 0,
+        activeMedications: whatsappIdentityVerified ? (userContext.activeMedications?.length || 0) : 0
       }
     };
     
@@ -1157,8 +1282,8 @@ export async function handleIncomingWhatsApp(req, res) {
     logger.info('✅ WhatsApp message added to WhatsApp room (Redis)', {
       roomId: WHATSAPP_ROOM_ID,
       messageId: MessageSid,
-      from: userContext.isKnownUser ? userContext.user.name : customerName,
-      isKnownUser: userContext.isKnownUser,
+      from: whatsappIdentityVerified ? userContext.user.name : customerName,
+      isKnownUser: whatsappIdentityVerified,
       messageCount: currentMessages.length
     });
     
@@ -1169,7 +1294,7 @@ export async function handleIncomingWhatsApp(req, res) {
       phoneNumber,
       customerName,
       Body || '[Media Message]',
-      userContext.isKnownUser ? userContext.user : null
+      whatsappIdentityVerified ? userContext.user : null
     ).then(r => {
       logger.info('✅ WhatsApp message synced to RC livechat', { roomId: r?.roomId });
     }).catch(err => {
@@ -1177,7 +1302,7 @@ export async function handleIncomingWhatsApp(req, res) {
     });
 
     // Also keep posting to #general for the team chat room visibility
-    const rcMessage = `📱 **WhatsApp Message from ${userContext.isKnownUser ? userContext.user.name + ' (Patient ID: ' + userContext.user.id + ')' : customerName}** (${phoneNumber})\n\n${Body || '[Media Message]'}`;
+    const rcMessage = `📱 **WhatsApp Message from ${whatsappIdentityVerified ? userContext.user.name + ' (verified Mediczy account)' : customerName}** (${phoneNumber})\n\n${Body || '[Media Message]'}`;
     
     agentRelay.sendMessage('GENERAL', rcMessage).then(() => {
       logger.info('✅ WhatsApp message mirrored to the agent workspace support thread');
@@ -1192,7 +1317,9 @@ export async function handleIncomingWhatsApp(req, res) {
       // Also emit user context update for real-time dashboard
       global.io.to(WHATSAPP_ROOM_ID).emit('user_context', {
         phoneNumber,
-        ...userContext,
+        isKnownUser: whatsappIdentityVerified,
+        whatsappIdentityVerified,
+        user: whatsappIdentityVerified ? userContext.user : null,
         timestamp: new Date().toISOString()
       });
       
@@ -1249,13 +1376,73 @@ export async function handleIncomingWhatsApp(req, res) {
       });
       return await incomingReply(req, res);
     }
-    
+
+    // WhatsApp identity commands are handled before booking or AI.  This keeps
+    // the one-time code out of the model prompt and makes linking independent
+    // of provider/model availability.
+    const otpCode = extractWhatsAppOtp(Body);
+    if (otpCode) {
+      const verification = await whatsAppIdentityService.verifyLink(phoneNumber, otpCode);
+      if (verification.success) {
+        const linkedName = userContext.user?.name ? `, ${userContext.user.name}` : '';
+        return await incomingReply(req, res, `This WhatsApp number is now securely linked to your Mediczy account${linkedName}. I can help with your records and appointments, subject to your privacy consent.`);
+      }
+      return await incomingReply(req, res, verification.message);
+    }
+
+    if (isWhatsAppLinkRequest(Body)) {
+      try {
+        const linkResult = await whatsAppIdentityService.requestLink(phoneNumber);
+        return await incomingReply(req, res, linkResult.message || genericLinkMessage);
+      } catch (error) {
+        logger.warn('[whatsapp] identity link request failed:', error.message);
+        // Do not disclose account existence or provider details.
+        return await incomingReply(req, res, 'I could not send a verification code right now. Please try again in a few minutes.');
+      }
+    }
+
+    // A broad "health update" prompt only asks the user what category to
+    // review; it does not disclose records and can remain a public prompt.
+    const personalRequest = isPatientSpecificQuery(Body) && !isGeneralHealthUpdateQuery(Body);
+    if (personalRequest && !whatsappIdentityVerified) {
+      return await incomingReply(req, res, whatsappIdentityPrompt());
+    }
+
     // 3. CHECK FOR APPOINTMENT BOOKING INTENT
-    // NOTE: When AI auto-reply is enabled, the SIB FastAPI handles appointment booking
-    // conversationally (can search for specific doctors, confirm names, etc.).
-    // The canned n8n flow here is only used as a fallback when AI is disabled.
+    // Appointment execution stays in the deterministic, DB-backed state
+    // machine. The language model may answer medical questions, but it never
+    // invents a slot or writes an appointment record.
     const { isBookingIntent, specialistType, bookingType } = detectBookingIntent(Body);
-    if (isBookingIntent && userContext.isKnownUser && !AI_AUTO_REPLY_ENABLED) {
+
+    let bookingState = 'idle';
+    let bookingService;
+    if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
+      try {
+        ({ default: bookingService } = await import('../services/whatsapp-agentic-booking.service.js'));
+        const session = await bookingService.getSession(phoneNumber);
+        bookingState = session?.state || 'idle';
+      } catch (error) {
+        logger.warn('[whatsapp] booking session lookup failed:', error.message);
+      }
+    }
+
+    if ((isBookingIntent || bookingState !== 'idle') && !whatsappIdentityVerified) {
+      return await incomingReply(req, res, whatsappIdentityPrompt());
+    }
+
+    if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0 && (isBookingIntent || bookingState !== 'idle')) {
+      try {
+        const bookingResult = await bookingService.processBookingIntent(phoneNumber, Body, userContext);
+        if (bookingResult?.shouldReply) {
+          return await incomingReply(req, res, sanitizeReply(bookingResult.response));
+        }
+      } catch (error) {
+        logger.error('[whatsapp] deterministic booking flow failed:', error.message);
+        return await incomingReply(req, res, "I couldn't complete that appointment request right now. Please try again with the specialty and preferred date.");
+      }
+    }
+
+    if (isBookingIntent && whatsappIdentityVerified && !AI_AUTO_REPLY_ENABLED) {
       logger.info('📅 Appointment booking intent detected via WhatsApp', {
         phoneNumber,
         specialistType,
@@ -1356,7 +1543,7 @@ bookingType === 'health_checkup'
         const isSimpleGreeting = /^(hi|hello|hey|namaste|vanakkam)$/i.test(Body.trim());
         if (isSimpleGreeting) {
           const timeGreeting = getTimeBasedGreeting();
-          const greetingResponse = userContext.isKnownUser && userContext.user?.name
+          const greetingResponse = whatsappIdentityVerified && userContext.user?.name
             ? `${timeGreeting} ${userContext.user.name}! 👋 How can I help you today?`
             : `${timeGreeting}! I'm Dr. iSHA. How can I help you today?`;
           
@@ -1371,7 +1558,7 @@ bookingType === 'health_checkup'
         const isGoodbye = /(^|\b)(bye|goodbye|good\s*bye|see\s*you|take\s*care|gotta\s*go|gtg)($|\b)/i.test(Body.trim());
 
         if (isThanks && isGoodbye) {
-          const combinedResponse = userContext.isKnownUser && userContext.user?.name
+          const combinedResponse = whatsappIdentityVerified && userContext.user?.name
             ? `You're welcome, ${userContext.user.name}. Take care and feel free to message me anytime you need help. 💙`
             : "You're welcome. Take care and feel free to message me anytime you need help. 💙";
           logger.info('✅ Using STATIC thanks+goodbye response', { response: combinedResponse });
@@ -1390,13 +1577,28 @@ bookingType === 'health_checkup'
 
         // Goodbye response
         if (isGoodbye) {
-          const goodbyeResponse = userContext.isKnownUser && userContext.user?.name
+          const goodbyeResponse = whatsappIdentityVerified && userContext.user?.name
             ? `Take care, ${userContext.user.name}! Feel free to reach out anytime you need health assistance. Stay healthy! 💙`
             : "Take care! Feel free to reach out anytime you need health assistance. Stay healthy! 💙";
           logger.info('✅ Using STATIC goodbye response', { response: goodbyeResponse });
           const goodbyeMsg = sanitizeReply(goodbyeResponse);
           responseSent = true;
           return await incomingReply(req, res, goodbyeMsg);
+        }
+
+        // A broad request for a personal health update is a records/status
+        // request, not a symptom description. Ask what record the patient
+        // wants to review instead of sending it through clinical RAG.
+        if (isGeneralHealthUpdateQuery(Body)) {
+          const healthUpdateMsg = sanitizeReply(GENERAL_HEALTH_UPDATE_REPLY);
+          responseSent = true;
+          return await incomingReply(req, res, healthUpdateMsg);
+        }
+
+        if (isAnswerFeedbackQuery(Body)) {
+          const feedbackMsg = sanitizeReply(ANSWER_FEEDBACK_REPLY);
+          responseSent = true;
+          return await incomingReply(req, res, feedbackMsg);
         }
 
         // ALL other messages (including appointment status, medical queries, etc.)
@@ -1408,22 +1610,24 @@ bookingType === 'health_checkup'
         });
         
         const startTime = Date.now();
+        const patientSpecific = whatsappIdentityVerified && userContext.isKnownUser && personalRequest;
+        const consentVerified = patientSpecific
+          ? await hasAuthoritativeAIConsent(userContext.user?.id)
+          : false;
+        const consentScopedContext = consentVerified
+          ? buildConsentScopedPatientContext(userContext)
+          : {};
         
         // Call SIB FastAPI directly with 15-second timeout (medical LLM queries via Groq typically take 6-12s)
         const aiResponse = await axios.post(`${SIB_URL}/chat`, {
             message: Body,
             phone_number: phoneNumber,
             session_id: `whatsapp:${phoneNumber}`,
-            patient_id: String(userContext.user?.id || `whatsapp_${phoneNumber}`),
-            user_context: {
-              is_known_user: userContext.isKnownUser,
-              patient_id: userContext.user?.id,
-              patient_name: userContext.user?.name,
-              phone_number: phoneNumber,
-              profile_name: ProfileName,
-              appointments: userContext.appointments,
-              prescriptions: userContext.prescriptions
-            }
+            patient_id: patientSpecific ? String(userContext.user?.id) : undefined,
+            user_id: patientSpecific ? String(userContext.user?.id) : undefined,
+            is_patient_specific: patientSpecific,
+            patient_context: consentScopedContext,
+            retrieval_mode: 'knowledge_fabric_plus_consent_scoped_ehr'
           }, {
             timeout: 15000,
             headers: { 'Content-Type': 'application/json' }
@@ -1448,14 +1652,24 @@ bookingType === 'health_checkup'
               data: error.response?.data,
               code: error.code
             });
+            const consentBlocked = error.response?.status === 403 &&
+              (error.response?.data?.error === 'Consent required' || error.response?.data?.code === 'consent_required');
             return {
               shouldReply: true,
-              response: "I'm here to help with appointments, health checkups, reports, and prescriptions. Tell me what you'd like to do.",
-              provider: 'fallback'
+              response: consentBlocked
+                ? "I can help with your personal records after AI health-history consent is enabled in Privacy settings. For a general health question, tell me your symptoms and I can guide you without using your records."
+                : "I'm here to help with appointments, health checkups, reports, and prescriptions. Tell me what you'd like to do.",
+              provider: consentBlocked ? 'consent-gate' : 'fallback'
             };
           });
         const rawResponseText = String(aiResponse?.response || '').trim();
-        const compactResponseText = compactWhatsAppReply(rawResponseText);
+        // Never expose retrieval/prompt scaffolding to a patient. This also
+        // protects the channel if an upstream provider returns a context
+        // block instead of a natural-language answer.
+        const safeResponseText = hasInternalContextMarker(rawResponseText)
+          ? GENERAL_HEALTH_UPDATE_REPLY
+          : rawResponseText;
+        const compactResponseText = compactWhatsAppReply(safeResponseText);
         const normalizedResponseText = rawResponseText.toLowerCase();
         const isGenericErrorReply = normalizedResponseText.includes('there was an error processing your request');
 
@@ -1531,7 +1745,7 @@ bookingType === 'health_checkup'
             try {
               await agentRelay.sendMessage(
                 'GENERAL',
-                `🚨 *HUMAN HANDOFF ACTIVATED*\n👤 Customer: ${customerName} (+${phoneNumber})\n${userContext.isKnownUser ? `🆔 Patient: ${userContext.user.name}\n` : ''}📋 Department: ${department}\n📝 Reason: ${reason}\n💬 Trigger: "${Body}"\n⏰ Time: ${new Date().toLocaleString()}\n\n⚡ *Bot responses paused* - Human agent please respond`
+                `🚨 *HUMAN HANDOFF ACTIVATED*\n👤 Customer: ${customerName} (+${phoneNumber})\n${whatsappIdentityVerified ? `🆔 Verified Mediczy account\n` : ''}📋 Department: ${department}\n📝 Reason: ${reason}\n💬 Trigger: "${Body}"\n⏰ Time: ${new Date().toLocaleString()}\n\n⚡ *Bot responses paused* - Human agent please respond`
               );
               logger.info('🚨 Human handoff activated', { phoneNumber, department, reason });
             } catch (rcError) {
@@ -1543,7 +1757,7 @@ bookingType === 'health_checkup'
           if (aiResponse.isEmergency && global.io) {
             global.io.emit('emergency_alert', {
               phoneNumber,
-              userName: userContext.isKnownUser ? userContext.user.name : customerName,
+              userName: whatsappIdentityVerified ? userContext.user.name : customerName,
               message: Body,
               userContext: userContext.summary,
               timestamp: new Date().toISOString()
@@ -1796,4 +2010,5 @@ router.post('/sib/test', async (req, res) => {
   }
 });
 
+export { hasInternalContextMarker, isAnswerFeedbackQuery, isGeneralHealthUpdateQuery };
 export default router;

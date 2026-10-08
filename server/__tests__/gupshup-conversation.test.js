@@ -4,6 +4,8 @@ import request from 'supertest';
 const sendText = jest.fn();
 const ai = jest.fn();
 const enqueue = jest.fn();
+const identityRequest = jest.fn();
+const identityVerify = jest.fn();
 const userContext = { isKnownUser: false, user: null, appointments: {}, prescriptions: {}, summary: '' };
 process.env.WHATSAPP_AI_AUTO_REPLY = 'true';
 process.env.WHATSAPP_PROVIDER = 'gupshup';
@@ -21,18 +23,61 @@ jest.unstable_mockModule('../services/whatsapp-user-context.service.js', () => (
 jest.unstable_mockModule('../services/support-chat-provider.service.js', () => ({ default: { postTicketNote: async () => ({}) } }));
 jest.unstable_mockModule('../services/n8n.service.js', () => ({ default: {} }));
 jest.unstable_mockModule('../services/whatsapp-sib-brain.service.js', () => ({ default: { processMessage: ai } }));
-jest.unstable_mockModule('../db/redis.js', () => ({ cache: { get: async () => null, set: async () => {}, del: async () => {} } }));
+jest.unstable_mockModule('../db/redis.js', () => ({ connectRedis: jest.fn(), cache: { get: async () => null, set: async () => {}, setNX: async () => 'OK', del: async () => {} } }));
 jest.unstable_mockModule('../config/logger.js', () => ({ default: { info() {}, warn() {}, error() {} } }));
 jest.unstable_mockModule('../services/autoTicketService.js', () => ({ detectServiceIntent: () => null, createAutoTicket: jest.fn() }));
 jest.unstable_mockModule('../db/pgPool.js', () => ({ default: { query: async () => ({ rows: [] }) } }));
 jest.unstable_mockModule('../services/crm-inbound-bridge.service.js', () => ({ bridgeInboundWhatsAppToCrm: async () => {} }));
 jest.unstable_mockModule('../services/chatwoot-bridge.service.js', () => ({ handleChatwootTwilioInbound: jest.fn() }));
+jest.unstable_mockModule('../services/whatsapp-identity.service.js', () => ({
+  default: {
+    getSession: async () => null,
+    requestLink: identityRequest,
+    verifyLink: identityVerify,
+  },
+  genericLinkMessage: 'If this WhatsApp number is linked to a Mediczy account, I’ll send a verification code here.'
+}));
 jest.unstable_mockModule('../utils/chatStorage.js', () => ({ chatRooms: { has: async () => true },
   messages: { push: async () => {}, get: async () => [], set: async () => {} } }));
-const { default: router, handleIncomingWhatsApp } = await import('../routes/whatsapp-production.route.js');
+const { default: router, handleIncomingWhatsApp, isAnswerFeedbackQuery, isGeneralHealthUpdateQuery, hasInternalContextMarker } = await import('../routes/whatsapp-production.route.js');
 const reqFor = text => ({ whatsappProvider: 'gupshup', body: { From: 'whatsapp:+919000000001', To: 'whatsapp:+918098998998', Body: text, MessageSid: 'wa-test', ProfileName: 'Test' } });
 const response = () => ({ status: jest.fn().mockReturnThis(), type: jest.fn().mockReturnThis(), end: jest.fn(), send: jest.fn() });
-beforeEach(() => { sendText.mockReset().mockResolvedValue({ sid: 'gs-1', status: 'submitted' }); enqueue.mockReset().mockResolvedValue(undefined); });
+beforeEach(() => {
+  sendText.mockReset().mockResolvedValue({ sid: 'gs-1', status: 'submitted' });
+  enqueue.mockReset().mockResolvedValue(undefined);
+  identityRequest.mockReset().mockResolvedValue({ success: true, message: 'If this WhatsApp number is linked to a Mediczy account, I’ll send a verification code here.' });
+  identityVerify.mockReset().mockResolvedValue({ success: false, message: 'That verification code is invalid or expired.' });
+});
+it('recognizes broad health-update requests without treating them as symptoms', () => {
+  expect(isGeneralHealthUpdateQuery('Hi any updates on my health')).toBe(true);
+  expect(isGeneralHealthUpdateQuery('Any updates on my headache?')).toBe(false);
+  expect(isGeneralHealthUpdateQuery('I have a headache')).toBe(false);
+});
+it('recognizes feedback about an irrelevant answer', () => {
+  expect(isAnswerFeedbackQuery('Why r u sending irrelevant answers')).toBe(true);
+  expect(isAnswerFeedbackQuery('I have a headache')).toBe(false);
+});
+it('detects internal retrieval markers before they can reach WhatsApp', () => {
+  expect(hasInternalContextMarker('[PATIENT CONTEXT]\n- unrelated record')).toBe(true);
+  expect(hasInternalContextMarker('Your latest report is ready.')).toBe(false);
+});
+it('answers a broad health-update request with a record-selection prompt', async () => {
+  await handleIncomingWhatsApp(reqFor('Hi any updates on my health'), response());
+  expect(sendText).toHaveBeenCalledWith(expect.objectContaining({
+    body: expect.stringContaining('appointments, prescriptions, reports')
+  }));
+});
+it('requires WhatsApp identity linking before personal records are discussed', async () => {
+  await handleIncomingWhatsApp(reqFor('show my medical history'), response());
+  expect(sendText).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('Reply `VERIFY`') }));
+  expect(ai).not.toHaveBeenCalled();
+});
+it('handles the WhatsApp verification command before AI processing', async () => {
+  await handleIncomingWhatsApp(reqFor('VERIFY'), response());
+  expect(identityRequest).toHaveBeenCalledWith('+919000000001');
+  expect(sendText).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('verification code') }));
+  expect(ai).not.toHaveBeenCalled();
+});
 it('sends a legacy static greeting through Gupshup instead of returning TwiML', async () => {
   const res = response();
   await handleIncomingWhatsApp(reqFor('hi'), res);

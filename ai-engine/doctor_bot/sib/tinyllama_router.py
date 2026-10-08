@@ -264,6 +264,14 @@ class TinyLlamaRouter:
         "non_medical": {
             "en": "I'm Dr. iSHA, focused on health topics. Do you have any health-related questions?",
             "hi": "मैं Dr. iSHA हूं, स्वास्थ्य विषयों में। कोई स्वास्थ्य संबंधी सवाल है?"
+        },
+        "my_health": {
+            "en": "I can help review your appointments, prescriptions, reports, or recent health information. Which one would you like to check?",
+            "hi": "मैं आपके अपॉइंटमेंट, प्रिस्क्रिप्शन, रिपोर्ट या हाल की स्वास्थ्य जानकारी देखने में मदद कर सकती हूं। आप क्या देखना चाहते हैं?"
+        },
+        "patient_history": {
+            "en": "I can help review your appointments, prescriptions, reports, or recent health information. Which one would you like to check?",
+            "hi": "मैं आपके अपॉइंटमेंट, प्रिस्क्रिप्शन, रिपोर्ट या हाल की स्वास्थ्य जानकारी देखने में मदद कर सकती हूं। आप क्या देखना चाहते हैं?"
         }
     }
     
@@ -796,17 +804,19 @@ Return JSON with:
 
         backend = self.INTENT_ROUTING.get(intent, "isha")
 
-        # Auto-enable RAG for personal health queries
+        # Personal-health requests use the safe local clarification response.
+        # Retrieval is intentionally not enabled here because a raw context
+        # block is not a patient-facing answer.
         if intent in ("my_health", "patient_history"):
-            use_rag = True
-            logger.info(f"Auto-enabling RAG for personal health query: {intent}")
+            logger.info(f"Using local clarification for personal health query: {intent}")
 
         # ─── Local intents: return static response (no Qwen inference) ──────
         quick_response: Optional[str] = None
         if backend == "local":
-            # For my_health: try pgvector RAG first
-            if use_rag:
-                quick_response = self.generate_with_rag(query, patient_id, language)
+            # Do not expose a raw retrieval context block as a patient reply.
+            # Personal-health requests stay on the safe local clarification
+            # response unless an explicitly consented, scoped answer path is
+            # added later.
 
             # Static responses for conversational intents (crisp, professional)
             if not quick_response:

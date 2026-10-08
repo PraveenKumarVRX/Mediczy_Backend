@@ -270,6 +270,47 @@ class AppState:
 app_state = AppState()
 
 
+async def _retrieve_unified_context(query: str, patient_id: Optional[str] = None,
+                                    k: int = 6) -> tuple:
+    """Retrieve knowledge-fabric context and, only when authorized, EHR chunks.
+
+    The production SIB process owns the asyncpg pool.  Reusing that pool keeps
+    retrieval cheap and makes the patient-id filter explicit at the boundary.
+    ``UnifiedRAGRetriever`` itself refuses EHR retrieval without a patient id.
+    """
+    try:
+        pool = getattr(app_state.db, "pg_pool", None) if app_state.db else None
+        from sib.retrieval.unified_rag import get_unified_rag
+        retriever = get_unified_rag(pool)
+        chunks = await retriever.retrieve(query, patient_id=patient_id, k=k)
+        return chunks, retriever.to_context_string(chunks)
+    except Exception as exc:
+        logger.warning("Unified RAG unavailable: %s", exc)
+        return [], ""
+
+
+async def _has_authoritative_ai_consent(user_id: Optional[str]) -> bool:
+    """Check the platform consent table; never trust a request flag for PHI."""
+    if not user_id or not app_state.db or not getattr(app_state.db, "pg_pool", None):
+        return False
+    try:
+        async with app_state.db.pg_pool.acquire(timeout=5) as conn:
+            granted = await conn.fetchval(
+                """SELECT 1
+                   FROM consent_records
+                  WHERE patient_id::text = $1
+                    AND purpose = 'ai_analysis'
+                    AND status = 'active'
+                    AND (expires_at IS NULL OR expires_at > NOW())
+                  LIMIT 1""",
+                str(user_id),
+            )
+        return bool(granted)
+    except Exception as exc:
+        logger.warning("Authoritative AI consent check failed: %s", exc)
+        return False
+
+
 # ==================== Lifespan ====================
 
 @asynccontextmanager
@@ -634,6 +675,8 @@ async def chat(request: Dict[str, Any]):
     user_id = request.get("user_id")  # Mediczy user ID from auth
     include_risk = request.get("include_risk", False)
     declared_lang = request.get("language", "en")  # Language declared by frontend
+    supplied_patient_context = request.get("patient_context") or request.get("user_context") or {}
+    consent_verified = False
 
     # ── GDPR/DPDP Consent Gate ──────────────────────────────────────────────
     # AI medical consultation requires explicit user consent — but only for
@@ -645,16 +688,10 @@ async def chat(request: Dict[str, Any]):
     # Without this scoping, EVERY call was being rejected, not just patient ones.
     is_patient_specific = request.get("is_patient_specific", False)
     if is_patient_specific:
-        # Node.js backend sets consent_verified=True after checking users.consent_ai_consultation.
-        # Without this gate a patient could be processed without consent (GDPR Art. 7 violation).
-        consent_verified = request.get("consent_verified", False)
-        # In production with auth: verify consent from DB; for backward compat accept flag from caller
-        if not consent_verified and user_id and app_state.db:
-            try:
-                profile = await app_state.db.get_patient_context(str(user_id))
-                consent_verified = bool(profile.get("consent_ai_consultation", False))
-            except Exception:
-                consent_verified = True  # non-blocking: proceed if DB check fails
+        # The request flag is intentionally ignored.  Consent must be checked
+        # against the authoritative platform table inside SIB before any PHI
+        # can reach a model or the EHR retriever.
+        consent_verified = await _has_authoritative_ai_consent(str(user_id) if user_id else None)
         if not consent_verified:
             from fastapi.responses import JSONResponse
             return JSONResponse(status_code=403, content={
@@ -742,6 +779,15 @@ async def chat(request: Dict[str, Any]):
             "turn_count": 1,
             "conversation_id": patient_id
         }
+
+    patient_data = supplied_patient_context if (is_patient_specific and consent_verified) else None
+    ehr_patient_id = str(user_id or patient_id) if patient_data else None
+    rag_chunks, rag_context = await _retrieve_unified_context(
+        message,
+        patient_id=ehr_patient_id,
+        k=int(request.get("rag_k", 6) or 6),
+    )
+    unified_context = [rag_context] if rag_context else None
     
     # Try full medical pipeline first (MedSpaCy + NER)
     try:
@@ -751,9 +797,11 @@ async def chat(request: Dict[str, Any]):
         
         result = pipeline.process(
             message,
+            patient_data=patient_data,
             include_risk=include_risk,
             include_retrieval=True,
-            conversation_history=conversation_history
+            conversation_history=conversation_history,
+            context_override=unified_context,
         )
         
         logger.info(f"✅ Medical pipeline completed: {len(result.entities)} entities extracted")
@@ -846,7 +894,12 @@ async def chat(request: Dict[str, Any]):
             "is_emergency": result.is_emergency,
             "pipeline": "medspacy-clinicalbert-pgvector-bayesian-llm",
             "user_context_loaded": bool(user_context),
-            "language": patient_lang
+            "language": patient_lang,
+            "retrieval": {
+                "count": len(rag_chunks),
+                "sources": sorted({chunk.source for chunk in rag_chunks}),
+                "patient_history_used": bool(patient_data and any(chunk.source == "ehr" for chunk in rag_chunks)),
+            }
         }
     except Exception as pipeline_error:
         logger.warning(f"⚠️ Medical pipeline failed: {pipeline_error}")
@@ -854,14 +907,19 @@ async def chat(request: Dict[str, Any]):
         # Fallback: Hybrid RAG (BM25 + dense + re-rank) → LLM
         # Uses the world-class retrieval pipeline instead of basic dense-only search
         try:
-            from utils.pgvector_store import retrieve_and_rerank
-            retrieved = await retrieve_and_rerank(
-                message, k=10, patient_filter=str(user_id) if user_id else None, rerank_top_k=5
-            )
-            rag_context = "\n\n".join(
-                f"[{r.get('section','General')} | score={r.get('rerank_score', r.get('score',0)):.2f}] {r['text']}"
-                for r in retrieved
-            )
+            if ehr_patient_id:
+                from utils.pgvector_store import retrieve_and_rerank
+                retrieved = await retrieve_and_rerank(
+                    message, k=10, patient_filter=ehr_patient_id, rerank_top_k=5
+                )
+                rag_context = "\n\n".join(
+                    f"[{r.get('section','General')} | score={r.get('rerank_score', r.get('score',0)):.2f}] {r['text']}"
+                    for r in retrieved
+                )
+            # With no consented patient id, use only the already-filtered
+            # knowledge-fabric context. Never query sib_embeddings globally.
+            else:
+                rag_context = rag_context or ""
             llm_result = generate_answer(message, use_biomedix=False, include_context=bool(rag_context),
                                          context_override=rag_context if rag_context else None)
         except Exception as _rag_err:
@@ -912,7 +970,12 @@ async def chat(request: Dict[str, Any]):
             "latency_ms": round(total_latency, 2),
             "pipeline": "rag-fallback",
             "user_context_loaded": bool(user_context),
-            "language": patient_lang
+            "language": patient_lang,
+            "retrieval": {
+                "count": len(rag_chunks),
+                "sources": sorted({chunk.source for chunk in rag_chunks}),
+                "patient_history_used": bool(patient_data and any(chunk.source == "ehr" for chunk in rag_chunks)),
+            }
         }
 
 

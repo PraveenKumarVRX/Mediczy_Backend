@@ -150,7 +150,10 @@ class UnifiedRAGRetriever:
         self, vec, k: int, patient_id: Optional[str]
     ) -> List[RAGChunk]:
         """Query sib_embeddings via sync psycopg2 in a thread (Bio_ClinicalBERT)."""
-        if vec is None:
+        # Never search all patient embeddings.  A patient id is mandatory for
+        # EHR retrieval; knowledge-fabric retrieval remains available without
+        # one.  This is a hard privacy boundary for generic chat requests.
+        if vec is None or not patient_id:
             return []
         try:
             vec_list = vec.tolist()

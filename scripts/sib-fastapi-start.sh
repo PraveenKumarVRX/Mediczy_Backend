@@ -8,6 +8,31 @@ PORT=8001
 APP_DIR="/home/ubuntu/Mediczy/ai-engine/doctor_bot"
 VENV_UVICORN="$APP_DIR/venv/bin/uvicorn"
 
+# Keep provider configuration in SSM across reboots and PM2 restarts. The
+# OpenAI key is exported only to this process; it is never printed.
+if command -v aws >/dev/null 2>&1; then
+    SSM_REGION="${AWS_REGION:-ap-south-1}"
+    SSM_PATH="${SSM_PARAM_PATH:-/mediczy/prod}"
+    load_ssm_value() {
+        aws ssm get-parameter \
+            --region "$SSM_REGION" \
+            --name "$SSM_PATH/$1" \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text 2>/dev/null || true
+    }
+
+    OPENAI_API_KEY_SSM="$(load_ssm_value OPENAI_API_KEY)"
+    OPENAI_MODEL_SSM="$(load_ssm_value OPENAI_MODEL)"
+    SIB_PRIMARY_PROVIDER_SSM="$(load_ssm_value SIB_PRIMARY_PROVIDER)"
+
+    [ -n "$OPENAI_API_KEY_SSM" ] && export OPENAI_API_KEY="$OPENAI_API_KEY_SSM"
+    [ -n "$OPENAI_MODEL_SSM" ] && export OPENAI_MODEL="$OPENAI_MODEL_SSM"
+    [ -n "$SIB_PRIMARY_PROVIDER_SSM" ] && export SIB_PRIMARY_PROVIDER="$SIB_PRIMARY_PROVIDER_SSM"
+
+    unset OPENAI_API_KEY_SSM OPENAI_MODEL_SSM SIB_PRIMARY_PROVIDER_SSM
+fi
+
 # Wait for port to be available (with timeout)
 MAX_WAIT=30
 WAIT_COUNT=0
