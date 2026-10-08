@@ -66,6 +66,9 @@ import aiScribeRouter from "./routes/ai-scribe.route.js";
 import aiGovernanceRouter from "./routes/ai-governance.route.js";
 import clinicalKnowledgeFabricRouter from "./routes/clinical-knowledge-fabric.route.js";
 import hospitalBranchRouter from "./routes/hospital-branch.route.js";
+import careUnitsRouter from "./routes/care-units.route.js";
+import corporateOhcRouter from "./routes/corporate-ohc.route.js";
+import ohcWorkspaceRouter from "./routes/ohc-workspace.route.js";
 import assetTrackingRouter from "./routes/asset-tracking.route.js";
 import dmsRouter from "./routes/dms.route.js";
 import housekeepingRouter from "./routes/housekeeping.route.js";
@@ -1412,6 +1415,10 @@ app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai-governance", authUser, aiGovernanceRouter); // SaMD governance: model cards, PCCP, drift, quality gates
 app.use("/api/clinical-knowledge-fabric", clinicalKnowledgeFabricRouter); // Per-specialty CDSS/copilot knowledge base; draft rules gated behind medical-director approval
+// Care units (outreach clinics, medical centres, OHCs) and the OHC workspace. The corporate mount must precede the generic /api/corporate routers below.
+app.use("/api/care-units", careUnitsRouter);
+app.use("/api/corporate/ohc-units", corporateOhcRouter);
+app.use("/api/ohc-workspace", ohcWorkspaceRouter);
 app.use("/api/hospital-branch", hospitalBranchRouter); // Multi-branch architecture Phase 1: branches, staff assignment, tariff overrides
 app.use("/api/asset-tracking", assetTrackingRouter); // Asset Tracking: software scaffolding for RFID/IoT — manual-entry only, no reader hardware connected yet
 app.use("/api/dms", dmsRouter); // Document Management System: policies, SOPs, consent forms, NABH/HR documents — administrative, not SaMD

@@ -462,6 +462,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/specialty-ot',  // module route (RBAC enforced per route)
       '/api/clinical-knowledge-fabric',  // module route (RBAC enforced per route)
       '/api/hospital-branch',  // module route (RBAC enforced per route)
+      '/api/care-units',  // outreach clinics, medical centres and OHCs (administrator-only inside the router)
       '/api/corporate-account',  // module route (RBAC enforced per route)
       '/api/asset-tracking',  // module route (RBAC enforced per route)
       '/api/dms',  // module route (RBAC enforced per route)
@@ -512,6 +513,7 @@ const USER_TYPE_PERMISSIONS = {
     allowedPaths: [
       '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/clinic',
+      '/api/care-units',  // outreach clinics, medical centres and OHCs (administrator-only inside the router)
       '/api/clinic/dashboard',
       '/api/clinic/appointments',
       '/api/clinic/patients',
@@ -524,6 +526,11 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hypergrid',  // DICOMweb
     ],
     tokenField: 'clinicId'
+  },
+  // OHC staff (ohc_doctor / ohc_staff): hospital- or clinic-portal users confined to the OHC workspace API.
+  ohc: {
+    allowedPaths: ['/api/ohc-workspace'],
+    tokenField: 'id'
   },
   // Collection field workers (lab phlebotomists). Their token is confined to the phlebotomy API: even if some other
   // portal's middleware were to accept a token carrying their id, ring-fencing refuses the path first.
@@ -895,6 +902,9 @@ const PUBLIC_ENDPOINTS = [
   '/api/pharmacy/medicines', // Public medicine search from master database
   // Phlebotomist session endpoints: a worker has no token yet at login/refresh; every other /api/phlebotomy route
   // is authenticated by authPhlebotomist inside the router.
+  '/api/ohc-workspace/auth/login',    // OHC staff session endpoints: no token yet at login/refresh; the rest is authenticated inside the router
+  '/api/ohc-workspace/auth/refresh',
+  '/api/ohc-workspace/auth/logout',
   '/api/phlebotomy/auth/login',
   '/api/phlebotomy/auth/refresh',
   '/api/phlebotomy/auth/logout',

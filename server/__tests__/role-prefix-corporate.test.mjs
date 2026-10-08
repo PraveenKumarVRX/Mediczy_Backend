@@ -14,3 +14,10 @@ test('corporate_admin stays C, and the phlebotomist kind is F', () => {
   assert.equal(getPrefixForRole('phlebotomist'), 'F');
   assert.equal(ENTITY_KIND_PREFIXES.phlebotomist, 'F');
 });
+
+test('OHC staff (hospital/clinic side) are D and N, care units are J', () => {
+  assert.equal(getPrefixForRole('ohc_doctor'), 'D');
+  assert.equal(getPrefixForRole('ohc_staff'), 'N');
+  assert.equal(ENTITY_KIND_PREFIXES.care_unit, 'J');
+  assert.match(generateUniqueId('ohc_doctor'), /^D[A-Z0-9]{5}$/);
+});

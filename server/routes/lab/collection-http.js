@@ -2,18 +2,25 @@
 import { CollectionError, invalid } from '../../services/collection/errors.js';
 
 /** Map any thrown error to a stable JSON body. Unknown errors become a generic 500 with no internals. */
+function fail(req, res, err) {
+  if (err instanceof CollectionError) {
+    return res.status(err.status).json({ success: false, code: err.code, message: err.message, ...(err.details && Object.keys(err.details).length ? { details: err.details } : {}) });
+  }
+  // Postgres invalid-text-representation on a malformed id etc. should never reach here (ids are validated), but never leak SQL.
+  console.error(`[collection] ${req.method} ${req.originalUrl}:`, err.message);
+  return res.status(500).json({ success: false, code: 'internal_error', message: 'Something went wrong' });
+}
+
 export function handle(fn) {
   return async (req, res) => {
-    try {
-      await fn(req, res);
-    } catch (err) {
-      if (err instanceof CollectionError) {
-        return res.status(err.status).json({ success: false, code: err.code, message: err.message, ...(err.details && Object.keys(err.details).length ? { details: err.details } : {}) });
-      }
-      // Postgres invalid-text-representation on a malformed id etc. should never reach here (ids are validated), but never leak SQL.
-      console.error(`[collection] ${req.method} ${req.originalUrl}:`, err.message);
-      return res.status(500).json({ success: false, code: 'internal_error', message: 'Something went wrong' });
-    }
+    try { await fn(req, res); } catch (err) { fail(req, res, err); }
+  };
+}
+
+/** Same error mapping for a middleware: `fn(req, res, next)` may throw a CollectionError. */
+export function mw(fn) {
+  return async (req, res, next) => {
+    try { await fn(req, res, next); } catch (err) { fail(req, res, err); }
   };
 }
 

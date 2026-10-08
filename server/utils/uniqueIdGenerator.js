@@ -106,6 +106,9 @@ const ROLE_PREFIX_MAP = {
   // Corporate-portal clinical roles (decided by the lead, 2026-10-07): the CMO is a doctor, the OHC is a clinic.
   'corporate_cmo': 'D',
   'corporate_ohc': 'K',
+  // Hospital/clinic OHC staff (decided by the lead, 2026-10-08): a doctor is D, other staff N.
+  'ohc_doctor': 'D',
+  'ohc_staff': 'N',
   // Lab collection workers (lab_phlebotomists). Prefix chosen by the lead, 2026-10-07.
   'phlebotomist': 'F',
   'employee': 'E',
@@ -285,7 +288,7 @@ export const ENTITY_KIND_PREFIXES = Object.freeze({
   homecare: 'M', diagnostic_centre: 'Y', ngo: 'G', tpa: 'X', insurance_company: 'I', broker: 'V',
   wellness_company: 'W', psu: 'S', aggregator: 'Z',
   user: 'U', patient: 'U', doctor: 'D', nurse: 'N', assistant: 'A', team: 'T',
-  corporate_employee: 'E', ohc: 'O', phlebotomist: 'F', admin: 'R',
+  corporate_employee: 'E', ohc: 'O', phlebotomist: 'F', care_unit: 'J', admin: 'R',
 });
 
 export default {
