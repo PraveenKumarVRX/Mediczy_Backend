@@ -202,7 +202,7 @@ Core capabilities:
 Behavioural rules:
 - Always address the user as "Doctor"
 - Be concise and direct — this is a real-time voice interface
-- Respond in plain spoken English — no markdown, asterisks, or bullet symbols
+- Respond in the selected language in plain spoken speech — no markdown, asterisks, or bullet symbols
 - Keep responses under 120 words for general queries; for differential diagnosis or drug
   interaction questions, use up to 200 words — never truncate clinically critical information
 - If you cannot help with something, say so clearly and briefly
@@ -246,8 +246,9 @@ Safety:
 class IshaVoiceAgent(Agent):
     """Dr Isha — medical voice assistant."""
 
-    def __init__(self, doctor_id: str = "unknown", room_name: str = "unknown", patient_context: str = "") -> None:
-        prompt = SYSTEM_PROMPT
+    def __init__(self, doctor_id: str = "unknown", room_name: str = "unknown", patient_context: str = "", language: str = "en") -> None:
+        self.language = language
+        prompt = f"{SYSTEM_PROMPT}\n\nSelected response language: {language}. Reply in this language unless the doctor asks to switch."
         if patient_context:
             prompt = f"{SYSTEM_PROMPT}\n\n===== CURRENT PATIENT CONTEXT =====\n{patient_context}\n====================================="
         super().__init__(instructions=prompt)
@@ -285,6 +286,14 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Room name format: "isha-assistant-<doctorId>" or "isha-assistant-<doctorId>-<patientId>"
     room_name = ctx.room.name
+    metadata = {}
+    try:
+        metadata = json.loads(ctx.job.metadata or "{}")
+    except (TypeError, json.JSONDecodeError):
+        logger.warning("Invalid LiveKit dispatch metadata; using English defaults")
+    language = str(metadata.get("language") or "en").strip().lower()[:12] or "en"
+    # Whisper expects short language codes while the UI may send locale-like values.
+    whisper_language = language.split("-")[0].split("_")[0]
     parts = room_name.replace("isha-assistant-", "", 1).split("-") if room_name.startswith("isha-assistant-") else []
     doctor_id  = parts[0] if parts else "unknown"
     patient_id = parts[1] if len(parts) > 1 else "unknown"
@@ -325,7 +334,7 @@ async def entrypoint(ctx: JobContext) -> None:
             base_url=GROQ_BASE_URL,
             api_key=GROQ_API_KEY,
             model="whisper-large-v3-turbo",
-            language="en",
+            language=whisper_language,
         ),
         # LLM: Bimedix (medical AI) or Groq fallback
         llm=llm,
@@ -333,12 +342,12 @@ async def entrypoint(ctx: JobContext) -> None:
         tts=elevenlabs.TTS(
             api_key=ELEVENLABS_API_KEY,
             voice_id=ELEVENLABS_VOICE_ID,
-            model="eleven_turbo_v2_5",
+            model="eleven_multilingual_v2",
             auto_mode=True,
         ),
     )
 
-    agent = IshaVoiceAgent(doctor_id=doctor_id, room_name=room_name, patient_context=patient_context)
+    agent = IshaVoiceAgent(doctor_id=doctor_id, room_name=room_name, patient_context=patient_context, language=language)
 
     await session.start(
         agent=agent,

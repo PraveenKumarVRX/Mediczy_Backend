@@ -1069,6 +1069,7 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
     }
 
     const doctorId = req.user?.id || req.user?.userId || 'unknown';
+    const language = String(req.query?.language || 'en').trim().toLowerCase().slice(0, 12) || 'en';
     const roomName = `isha-assistant-${doctorId}`;
     const identity = `doctor-${doctorId}`;
 
@@ -1093,7 +1094,7 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
       const httpUrl = wsUrl.replace('wss://', 'https://').replace('ws://', 'http://');
       const dispatchClient = new AgentDispatchClient(httpUrl, apiKey, apiSecret);
       await dispatchClient.createDispatch(roomName, 'dr-isha', {
-        metadata: JSON.stringify({ doctorId }),
+        metadata: JSON.stringify({ doctorId, language }),
       });
     } catch (dispatchErr) {
       logger.warn('[VoiceAssistant] Agent dispatch failed (agent may not be running)', {
@@ -1101,7 +1102,7 @@ router.get('/livekit-token', authUser, requireDoctor, async (req, res) => {
       });
     }
 
-    return res.json({ token: jwt, url: wsUrl, roomName });
+    return res.json({ token: jwt, url: wsUrl, roomName, language });
   } catch (err) {
     logger.error('[VoiceAssistant] LiveKit token error', { error: err.message });
     return res.status(500).json({ error: err.message });

@@ -213,7 +213,7 @@ export default function DoctorVoiceAssistant() {
     let room: Room | null = null;
     const connect = async () => {
       try {
-        const { data } = await api.get('/voice-assistant/livekit-token');
+        const { data } = await api.get('/voice-assistant/livekit-token', { params: { language: voiceLanguage } });
         room = new Room();
         room.on(RoomEvent.TrackSubscribed, (track) => {
           if (track.kind === 'audio') track.attach();
@@ -234,7 +234,7 @@ export default function DoctorVoiceAssistant() {
       livekitRoomRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [voiceLanguage]);
 
   // ── ElevenLabs TTS → HTMLAudioElement playback ──────────────────────────────
   const stopSpeaking = useCallback(() => {
