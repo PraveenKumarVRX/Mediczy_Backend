@@ -2522,6 +2522,21 @@ function safeParseJsonObject(value) {
   }
 }
 
+async function ensureCorporateNetworkAssignmentsTable() {
+  await postgresSequelize.query(`
+    CREATE TABLE IF NOT EXISTS corporate_network_assignments (
+      id SERIAL PRIMARY KEY,
+      corporate_id INTEGER NOT NULL,
+      partner_id INTEGER NOT NULL,
+      partner_type VARCHAR(20) NOT NULL,
+      employee_ids JSONB DEFAULT '"all"',
+      assigned_by INTEGER,
+      assigned_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE (corporate_id, partner_id, partner_type)
+    )
+  `);
+}
+
 function createWelcomeDraftToken() {
   return crypto.randomBytes(32).toString('base64url');
 }
@@ -5962,6 +5977,12 @@ router.delete('/corporate-plans/:planId', authUser, requireRole(['admin', 'team'
 router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
     const corporateId = parseInt(req.params.corporateId, 10);
+    if (!corporateId || Number.isNaN(corporateId)) {
+      return res.status(400).json({ success: false, message: 'Invalid corporate ID' });
+    }
+
+    await ensureCorporateNetworkAssignmentsTable();
+
     const available = req.query.available === 'true'; // true = return UNassigned partners
     const searchTerm = (req.query.search || '').trim(); // optional search filter
     const HOSPITAL_LIMIT = 500; // cap for large tables
@@ -6059,9 +6080,9 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
     });
 
     const normalizedLabs = labs.map((lab) => {
-      const address = typeof lab.address === 'string' ? JSON.parse(lab.address) : lab.address;
-      const testCatalog = typeof lab.testCatalog === 'string' ? JSON.parse(lab.testCatalog) : lab.testCatalog;
-      const metadata = typeof lab.metadata === 'string' ? JSON.parse(lab.metadata) : lab.metadata;
+      const address = safeParseJsonObject(lab.address);
+      const testCatalog = safeParseJsonObject(lab.testCatalog);
+      const metadata = safeParseJsonObject(lab.metadata);
       const testsAvailable = testCatalog
         ? Object.values(testCatalog).reduce((count, group) => count + (Array.isArray(group) ? group.length : 0), 0)
         : 0;
@@ -6080,7 +6101,7 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
 
     const normalizedHospitals = hospitals.map((hospital) => {
       const specializations = typeof hospital.specializations === 'string'
-        ? JSON.parse(hospital.specializations)
+        ? safeParseJsonObject(hospital.specializations)
         : hospital.specializations || [];
 
       return {
@@ -6096,7 +6117,7 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
     });
 
     const normalizedClinics = clinics.map((clinic) => {
-      const location = typeof clinic.location === 'string' ? JSON.parse(clinic.location) : (clinic.location || {});
+      const location = safeParseJsonObject(clinic.location);
       return {
         id: clinic.id,
         name: clinic.name,
@@ -6186,21 +6207,8 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
       previousAssignments = prev.filter((r) => wanted.has(`${r.partner_type}:${r.partner_id}`));
     } catch { /* table may not exist yet on first use */ }
 
-    // Upsert the assignment record — graceful if table doesn't exist
     try {
-      // Ensure table exists
-      await postgresSequelize.query(`
-        CREATE TABLE IF NOT EXISTS corporate_network_assignments (
-          id SERIAL PRIMARY KEY,
-          corporate_id INTEGER NOT NULL,
-          partner_id INTEGER NOT NULL,
-          partner_type VARCHAR(20) NOT NULL,
-          employee_ids JSONB DEFAULT '"all"',
-          assigned_by INTEGER,
-          assigned_at TIMESTAMPTZ DEFAULT NOW(),
-          UNIQUE (corporate_id, partner_id, partner_type)
-        )
-      `);
+      await ensureCorporateNetworkAssignmentsTable();
       for (const partner of normalizedPartners) {
         await postgresSequelize.query(`
           INSERT INTO corporate_network_assignments (corporate_id, partner_id, partner_type, employee_ids, assigned_by, assigned_at)
@@ -6221,7 +6229,12 @@ router.post('/corporate-network-assignments', authUser, requireRole(['admin', 't
         });
       }
     } catch (dbErr) {
-      console.warn('corporate_network_assignments persistence failed (non-fatal):', dbErr.message);
+      console.error('corporate_network_assignments persistence failed:', dbErr);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to save corporate network assignment',
+        error: dbErr.message
+      });
     }
 
     await auditAction({ module: 'corporate', entityType: 'network_assignment', entityId: corporateId, action: 'assign_partners', actor: req.user?.id, details: { partners: normalizedPartners, employeeScope: employeeIds || 'all', previous: previousAssignments, role: req.user?.role } });

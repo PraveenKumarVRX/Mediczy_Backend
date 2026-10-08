@@ -7,6 +7,8 @@
 **Production environment:** `mediczy-prod`, AWS `ap-south-1`, PostgreSQL 18  
 **Expected program duration:** 8-12 weeks, followed by recurring control validation  
 
+**Related application architecture remediation:** [Multi-app HMIS findings and solution fix plan (7 October 2026)](MULTI_APP_BFF_SOLUTION_FIX_PLAN_2026-10-07.md). Its tenant-context, migration, audit and connection work depends on this plan's existing gates; the companion does not change their approval or completion status.
+
 This document defines the complete implementation sequence. Creating this plan does not authorize database DDL, data correction, secret rotation, AWS resource changes, backup deletion, production deployment, or cutover. Each production phase requires the approvals and gates defined below.
 
 ## 1. Purpose and required outcomes

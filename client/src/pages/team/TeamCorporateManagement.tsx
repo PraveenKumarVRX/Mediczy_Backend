@@ -179,6 +179,11 @@ interface ClinicPartner {
 }
 
 type AddNetworkPartnerType = 'lab' | 'hospital' | 'clinic';
+type NetworkPartnerSelectionKey = `${AddNetworkPartnerType}:${number}`;
+
+const getNetworkPartnerKey = (type: AddNetworkPartnerType, id: number): NetworkPartnerSelectionKey =>
+  `${type}:${id}` as NetworkPartnerSelectionKey;
+
 type SearchableNetworkPartner = {
   name?: string | null;
   city?: string | null;
@@ -933,7 +938,7 @@ const TeamCorporateManagement = () => {
   const [bulkAssigning, setBulkAssigning] = useState(false);
   const [showAssignNetworkDialog, setShowAssignNetworkDialog] = useState(false);
   const [assigningNetworks, setAssigningNetworks] = useState<{ id: number; name: string; type: 'lab' | 'hospital' | 'clinic'; city?: string }[]>([]);
-  const [selectedNetworkPartnerIds, setSelectedNetworkPartnerIds] = useState<number[]>([]);
+  const [selectedNetworkPartnerIds, setSelectedNetworkPartnerIds] = useState<NetworkPartnerSelectionKey[]>([]);
   const [labSearch, setLabSearch] = useState('');
   const [hospitalSearch, setHospitalSearch] = useState('');
   const [clinicSearch, setClinicSearch] = useState('');
@@ -5414,9 +5419,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
 
   const handleBulkAssignNetworks = () => {
     const allPartners = [
-      ...labPartners.filter(p => selectedNetworkPartnerIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, type: 'lab' as const, city: p.city })),
-      ...hospitalPartners.filter(p => selectedNetworkPartnerIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, type: 'hospital' as const, city: p.city })),
-      ...clinicPartners.filter(p => selectedNetworkPartnerIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, type: 'clinic' as const, city: p.city })),
+      ...labPartners.filter(p => selectedNetworkPartnerIds.includes(getNetworkPartnerKey('lab', p.id))).map(p => ({ id: p.id, name: p.name, type: 'lab' as const, city: p.city })),
+      ...hospitalPartners.filter(p => selectedNetworkPartnerIds.includes(getNetworkPartnerKey('hospital', p.id))).map(p => ({ id: p.id, name: p.name, type: 'hospital' as const, city: p.city })),
+      ...clinicPartners.filter(p => selectedNetworkPartnerIds.includes(getNetworkPartnerKey('clinic', p.id))).map(p => ({ id: p.id, name: p.name, type: 'clinic' as const, city: p.city })),
     ];
     if (allPartners.length === 0) return;
     setAssigningNetworks(allPartners);
@@ -5442,8 +5447,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
       ? selectedCorporate.employeeCount || employees.length
       : (resolvedEmployeeIds as string[]).length;
     const token = localStorage.getItem('teamToken');
-    // Fire one POST per partner (graceful on error)
-    await Promise.allSettled(assigningNetworks.map(partner =>
+    const results = await Promise.allSettled(assigningNetworks.map(partner =>
       api.post('/admin/corporate-network-assignments', {
         corporateId: selectedCorporate.id,
         partnerId: partner.id,
@@ -5451,6 +5455,17 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         employeeIds: resolvedEmployeeIds,
       }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
     ));
+    const failures = results.filter((result) =>
+      result.status === 'rejected' || result.value?.data?.success === false
+    );
+    if (failures.length > 0) {
+      toast({
+        title: 'Network Assignment Failed',
+        description: `${failures.length} of ${assigningNetworks.length} partner assignment${assigningNetworks.length !== 1 ? 's' : ''} could not be saved. Please retry.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     const partnerCount = assigningNetworks.length;
     toast({
       title: partnerCount > 1 ? `${partnerCount} Network Partners Assigned` : 'Network Partner Assigned',
@@ -8108,7 +8123,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           l.pincode?.toLowerCase().includes(labSearch.toLowerCase()) ||
                           l.address?.toLowerCase().includes(labSearch.toLowerCase())
                         );
-                        const allFilteredSelected = filteredLabs.length > 0 && filteredLabs.every(l => selectedNetworkPartnerIds.includes(l.id));
+                        const filteredLabKeys = filteredLabs.map(l => getNetworkPartnerKey('lab', l.id));
+                        const allFilteredSelected = filteredLabKeys.length > 0 && filteredLabKeys.every(key => selectedNetworkPartnerIds.includes(key));
                         return (
                           <>
                             <div className="flex items-center gap-2 mb-3">
@@ -8127,7 +8143,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                   <button
                                     type="button"
                                     className="text-xs text-primary hover:underline whitespace-nowrap"
-                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredLabs.map(l => l.id)])])}
+                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredLabKeys])])}
                                   >
                                     Select all {filteredLabs.length} matching
                                   </button>
@@ -8141,10 +8157,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                     <Checkbox
                                       checked={allFilteredSelected}
                                       onCheckedChange={(v) => {
-                                        const ids = filteredLabs.map(l => l.id);
                                         setSelectedNetworkPartnerIds(v
-                                          ? [...new Set([...selectedNetworkPartnerIds, ...ids])]
-                                          : selectedNetworkPartnerIds.filter(id => !ids.includes(id))
+                                          ? [...new Set([...selectedNetworkPartnerIds, ...filteredLabKeys])]
+                                          : selectedNetworkPartnerIds.filter(key => !filteredLabKeys.includes(key))
                                         );
                                       }}
                                     />
@@ -8165,14 +8180,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                     </TableCell>
                                   </TableRow>
                                 ) : (
-                                  filteredLabs.map((lab) => (
-                                    <TableRow key={lab.id} className={selectedNetworkPartnerIds.includes(lab.id) ? 'bg-primary/5' : ''}>
+                                  filteredLabs.map((lab) => {
+                                    const selectionKey = getNetworkPartnerKey('lab', lab.id);
+                                    return (
+                                    <TableRow key={lab.id} className={selectedNetworkPartnerIds.includes(selectionKey) ? 'bg-primary/5' : ''}>
                                       <TableCell>
                                         <Checkbox
-                                          checked={selectedNetworkPartnerIds.includes(lab.id)}
+                                          checked={selectedNetworkPartnerIds.includes(selectionKey)}
                                           onCheckedChange={(v) => setSelectedNetworkPartnerIds(v
-                                            ? [...selectedNetworkPartnerIds, lab.id]
-                                            : selectedNetworkPartnerIds.filter(id => id !== lab.id)
+                                            ? [...selectedNetworkPartnerIds, selectionKey]
+                                            : selectedNetworkPartnerIds.filter(key => key !== selectionKey)
                                           )}
                                         />
                                       </TableCell>
@@ -8198,7 +8215,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                         </div>
                                       </TableCell>
                                     </TableRow>
-                                  ))
+                                    );
+                                  })
                                 )}
                               </TableBody>
                             </Table>
@@ -8217,7 +8235,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           h.address?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
                           h.specialities?.toLowerCase().includes(hospitalSearch.toLowerCase())
                         );
-                        const allFilteredSelected = filteredHospitals.length > 0 && filteredHospitals.every(h => selectedNetworkPartnerIds.includes(h.id));
+                        const filteredHospitalKeys = filteredHospitals.map(h => getNetworkPartnerKey('hospital', h.id));
+                        const allFilteredSelected = filteredHospitalKeys.length > 0 && filteredHospitalKeys.every(key => selectedNetworkPartnerIds.includes(key));
                         return (
                           <>
                             <div className="flex items-center gap-2 mb-3">
@@ -8236,7 +8255,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                   <button
                                     type="button"
                                     className="text-xs text-primary hover:underline whitespace-nowrap"
-                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredHospitals.map(h => h.id)])])}
+                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredHospitalKeys])])}
                                   >
                                     Select all {filteredHospitals.length} matching
                                   </button>
@@ -8250,10 +8269,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                     <Checkbox
                                       checked={allFilteredSelected}
                                       onCheckedChange={(v) => {
-                                        const ids = filteredHospitals.map(h => h.id);
                                         setSelectedNetworkPartnerIds(v
-                                          ? [...new Set([...selectedNetworkPartnerIds, ...ids])]
-                                          : selectedNetworkPartnerIds.filter(id => !ids.includes(id))
+                                          ? [...new Set([...selectedNetworkPartnerIds, ...filteredHospitalKeys])]
+                                          : selectedNetworkPartnerIds.filter(key => !filteredHospitalKeys.includes(key))
                                         );
                                       }}
                                     />
@@ -8274,14 +8292,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                     </TableCell>
                                   </TableRow>
                                 ) : (
-                                  filteredHospitals.map((hospital) => (
-                                    <TableRow key={hospital.id} className={selectedNetworkPartnerIds.includes(hospital.id) ? 'bg-primary/5' : ''}>
+                                  filteredHospitals.map((hospital) => {
+                                    const selectionKey = getNetworkPartnerKey('hospital', hospital.id);
+                                    return (
+                                    <TableRow key={hospital.id} className={selectedNetworkPartnerIds.includes(selectionKey) ? 'bg-primary/5' : ''}>
                                       <TableCell>
                                         <Checkbox
-                                          checked={selectedNetworkPartnerIds.includes(hospital.id)}
+                                          checked={selectedNetworkPartnerIds.includes(selectionKey)}
                                           onCheckedChange={(v) => setSelectedNetworkPartnerIds(v
-                                            ? [...selectedNetworkPartnerIds, hospital.id]
-                                            : selectedNetworkPartnerIds.filter(id => id !== hospital.id)
+                                            ? [...selectedNetworkPartnerIds, selectionKey]
+                                            : selectedNetworkPartnerIds.filter(key => key !== selectionKey)
                                           )}
                                         />
                                       </TableCell>
@@ -8307,7 +8327,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                         </div>
                                       </TableCell>
                                     </TableRow>
-                                  ))
+                                    );
+                                  })
                                 )}
                               </TableBody>
                             </Table>
@@ -8326,7 +8347,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                           c.address?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
                           c.type?.toLowerCase().includes(clinicSearch.toLowerCase())
                         );
-                        const allFilteredSelected = filteredClinics.length > 0 && filteredClinics.every(c => selectedNetworkPartnerIds.includes(c.id));
+                        const filteredClinicKeys = filteredClinics.map(c => getNetworkPartnerKey('clinic', c.id));
+                        const allFilteredSelected = filteredClinicKeys.length > 0 && filteredClinicKeys.every(key => selectedNetworkPartnerIds.includes(key));
                         return (
                           <>
                             <div className="flex items-center gap-2 mb-3">
@@ -8345,7 +8367,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                   <button
                                     type="button"
                                     className="text-xs text-primary hover:underline whitespace-nowrap"
-                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredClinics.map(c => c.id)])])}
+                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredClinicKeys])])}
                                   >
                                     Select all {filteredClinics.length} matching
                                   </button>
@@ -8359,10 +8381,9 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                     <Checkbox
                                       checked={allFilteredSelected}
                                       onCheckedChange={(v) => {
-                                        const ids = filteredClinics.map(c => c.id);
                                         setSelectedNetworkPartnerIds(v
-                                          ? [...new Set([...selectedNetworkPartnerIds, ...ids])]
-                                          : selectedNetworkPartnerIds.filter(id => !ids.includes(id))
+                                          ? [...new Set([...selectedNetworkPartnerIds, ...filteredClinicKeys])]
+                                          : selectedNetworkPartnerIds.filter(key => !filteredClinicKeys.includes(key))
                                         );
                                       }}
                                     />
@@ -8383,14 +8404,16 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                     </TableCell>
                                   </TableRow>
                                 ) : (
-                                  filteredClinics.map((clinic) => (
-                                    <TableRow key={clinic.id} className={selectedNetworkPartnerIds.includes(clinic.id) ? 'bg-primary/5' : ''}>
+                                  filteredClinics.map((clinic) => {
+                                    const selectionKey = getNetworkPartnerKey('clinic', clinic.id);
+                                    return (
+                                    <TableRow key={clinic.id} className={selectedNetworkPartnerIds.includes(selectionKey) ? 'bg-primary/5' : ''}>
                                       <TableCell>
                                         <Checkbox
-                                          checked={selectedNetworkPartnerIds.includes(clinic.id)}
+                                          checked={selectedNetworkPartnerIds.includes(selectionKey)}
                                           onCheckedChange={(v) => setSelectedNetworkPartnerIds(v
-                                            ? [...selectedNetworkPartnerIds, clinic.id]
-                                            : selectedNetworkPartnerIds.filter(id => id !== clinic.id)
+                                            ? [...selectedNetworkPartnerIds, selectionKey]
+                                            : selectedNetworkPartnerIds.filter(key => key !== selectionKey)
                                           )}
                                         />
                                       </TableCell>
@@ -8416,7 +8439,8 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                                         </div>
                                       </TableCell>
                                     </TableRow>
-                                  ))
+                                    );
+                                  })
                                 )}
                               </TableBody>
                             </Table>

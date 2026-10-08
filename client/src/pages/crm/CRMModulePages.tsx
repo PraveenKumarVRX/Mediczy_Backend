@@ -180,18 +180,18 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
       <aside className={`hidden lg:flex flex-col fixed left-0 top-0 bottom-0 bg-[#0d1120]/80 backdrop-blur-xl border-r border-white/[0.06] z-40 transition-all duration-300 ${sidebarCollapsed ? 'w-[72px]' : 'w-[240px]'}`}>
         <SidebarContent />
       </aside>
-      <div className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-[240px]'}`}>
+      <div className={`min-w-0 flex-1 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-[240px]'}`}>
         <header className="sticky top-0 z-30 h-16 bg-[#0a0e1a]/80 backdrop-blur-xl border-b border-white/[0.04] flex items-center justify-between px-6">
-          <div className="flex items-center gap-4">
+          <div className="min-w-0 flex items-center gap-2 sm:gap-4">
             <button onClick={() => { if (window.innerWidth < 1024) setMobileSidebarOpen(true); else setSidebarCollapsed(!sidebarCollapsed); }}
               className="p-2 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition-colors">
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
               </svg>
             </button>
-            <h1 className="text-lg font-bold text-white">{title}</h1>
+            <h1 className="min-w-0 text-base sm:text-lg font-bold text-white">{title}</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <button onClick={() => setPaletteOpen(true)} className="hidden sm:flex items-center gap-2 h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] text-slate-500 hover:text-slate-300 text-xs transition-colors">
               <Search className="h-3.5 w-3.5" /> Search <kbd className="text-[10px] text-slate-600 border border-white/10 rounded px-1">⌘K</kbd>
             </button>
