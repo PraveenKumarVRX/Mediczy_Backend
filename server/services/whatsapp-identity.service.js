@@ -31,7 +31,7 @@ function pendingKey(phone) { return `${PREFIX}pending:${phone}`; }
 function sessionKey(phone) { return `${PREFIX}session:${phone}`; }
 function cooldownKey(phone) { return `${PREFIX}otp-cooldown:${phone}`; }
 
-const genericLinkMessage = 'If this WhatsApp number is linked to a Mediczy account, I’ll send a verification code here. Reply with `OTP 123456` when it arrives. The code expires in 10 minutes.';
+const genericLinkMessage = 'If this WhatsApp number is linked to a Mediczy account, I’ll send a 6-digit verification code here. Reply with the code when it arrives. The code expires in 10 minutes.';
 
 class WhatsAppIdentityService {
   normalize(phone) { return normalizedPhone(phone); }

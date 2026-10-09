@@ -87,6 +87,7 @@ it('handles the WhatsApp verification command before AI processing', async () =>
   await handleIncomingWhatsApp(reqFor('VERIFY'), response());
   expect(identityRequest).toHaveBeenCalledWith('+919000000001');
   expect(sendText).toHaveBeenCalledWith(expect.objectContaining({ body: expect.stringContaining('verification code') }));
+  expect(sendText.mock.calls[0][0].body).not.toContain('OTP 123456');
   expect(ai).not.toHaveBeenCalled();
 });
 it('sends a legacy static greeting through Gupshup instead of returning TwiML', async () => {
