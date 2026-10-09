@@ -1410,6 +1410,10 @@ export async function handleIncomingWhatsApp(req, res) {
     if (isWhatsAppLinkRequest(Body)) {
       try {
         const linkResult = await whatsAppIdentityService.requestLink(phoneNumber);
+        // The OTP transport already sent the code as a separate session
+        // message. Do not send a second generic prompt after successful
+        // delivery; it races the code and makes the flow look broken.
+        if (linkResult?.sent) return await incomingReply(req, res);
         return await incomingReply(req, res, linkResult.message || genericLinkMessage);
       } catch (error) {
         logger.warn('[whatsapp] identity link request failed', {

@@ -90,6 +90,11 @@ it('handles the WhatsApp verification command before AI processing', async () =>
   expect(sendText.mock.calls[0][0].body).not.toContain('OTP 123456');
   expect(ai).not.toHaveBeenCalled();
 });
+it('does not send a redundant reply after the identity service has dispatched the OTP', async () => {
+  identityRequest.mockResolvedValueOnce({ success: true, sent: true, message: 'ignored after dispatch' });
+  await handleIncomingWhatsApp(reqFor('VERIFY'), response());
+  expect(sendText).not.toHaveBeenCalled();
+});
 it('sends a legacy static greeting through Gupshup instead of returning TwiML', async () => {
   const res = response();
   await handleIncomingWhatsApp(reqFor('hi'), res);
