@@ -160,7 +160,11 @@ describe('production sender provider migration', () => {
   it('continues supporting Twilio when explicitly selected', async () => {
     process.env.WHATSAPP_PROVIDER = 'twilio';
     service.fromNumber = 'whatsapp:+14155550000';
-    await service.sendOTP({ to: '+919000000001', otp: '123456' });
+    await service.sendOTP({ to: '919000000001', otp: '123456' });
     expect(twilioSend).toHaveBeenCalledTimes(1); expect(post).not.toHaveBeenCalled();
+    expect(twilioSend.mock.calls[0][0]).toEqual(expect.objectContaining({
+      from: 'whatsapp:+14155550000',
+      to: 'whatsapp:+919000000001'
+    }));
   });
 });

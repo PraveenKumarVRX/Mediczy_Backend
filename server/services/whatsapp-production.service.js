@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import twilio from 'twilio';
-import gupshup, { whatsappProvider } from './gupshup-whatsapp.service.js';
+import gupshup, { normalizeGupshupPhone, whatsappProvider } from './gupshup-whatsapp.service.js';
 
 dotenv.config();
 
@@ -65,13 +65,25 @@ class WhatsAppProductionService {
       return gupshup.sendTemplate({ to: params.to, templateId,
         params: Object.keys(vars).sort((a, b) => Number(a) - Number(b)).map(k => vars[k]) });
     }
-    return this.client.messages.create(params);
+    // Twilio requires WhatsApp addresses in `whatsapp:+<E.164>`.  The
+    // identity-link flow deliberately passes the canonical provider number
+    // without a plus (for Gupshup), so normalize at this transport boundary
+    // instead of making every caller know Twilio's address syntax.
+    return this.client.messages.create({
+      ...params,
+      from: this.whatsappFrom(),
+      to: this.twilioWhatsAppAddress(params.to)
+    });
+  }
+
+  twilioWhatsAppAddress(value) {
+    return `whatsapp:+${normalizeGupshupPhone(value)}`;
   }
 
   whatsappFrom() {
     const raw = String(this.fromNumber || '').trim();
     if (!raw) throw new Error('TWILIO_WHATSAPP_NUMBER is not set');
-    return raw.startsWith('whatsapp:') ? raw : `whatsapp:${raw}`;
+    return this.twilioWhatsAppAddress(raw);
   }
 
   /**
@@ -373,7 +385,7 @@ class WhatsAppProductionService {
     // Business-initiated invites need an approved Content template (contentSid).
     const sendPromise = this.client.messages.create({
       from: this.whatsappFrom(),
-      to: `whatsapp:${phoneNumber}`,
+      to: this.twilioWhatsAppAddress(phoneNumber),
       body: safeBody
     });
 
@@ -400,8 +412,8 @@ class WhatsAppProductionService {
     if (this.provider === 'gupshup') return gupshup.sendMedia({ to, mediaUrl, caption, mediaType });
     if (!this.configured) throw new Error('Selected WhatsApp provider is not configured');
     const params = {
-      from: this.fromNumber,
-      to: `whatsapp:${to}`,
+      from: this.whatsappFrom(),
+      to: this.twilioWhatsAppAddress(to),
       mediaUrl: [mediaUrl]
     };
     if (caption?.trim()) params.body = caption.trim();
