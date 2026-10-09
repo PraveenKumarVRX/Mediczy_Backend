@@ -1412,7 +1412,10 @@ export async function handleIncomingWhatsApp(req, res) {
         const linkResult = await whatsAppIdentityService.requestLink(phoneNumber);
         return await incomingReply(req, res, linkResult.message || genericLinkMessage);
       } catch (error) {
-        logger.warn('[whatsapp] identity link request failed:', error.message);
+        logger.warn('[whatsapp] identity link request failed', {
+          code: error?.code || 'unknown',
+          message: String(error?.message || 'unknown').slice(0, 200)
+        });
         // Do not disclose account existence or provider details.
         return await incomingReply(req, res, 'I could not send a verification code right now. Please try again in a few minutes.');
       }

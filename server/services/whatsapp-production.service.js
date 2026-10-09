@@ -199,9 +199,21 @@ class WhatsAppProductionService {
   /**
    * Send OTP for verification
    */
-  async sendOTP({ to, otp }) {
+  async sendOTP({ to, otp, session = false }) {
     if (!this.configured) {
       throw new Error('Selected WhatsApp provider is not configured');
+    }
+
+    // Identity linking is initiated by an inbound WhatsApp message.  Within
+    // that customer-care window a session text is valid and does not depend
+    // on a separately approved business OTP template.  Keep the default
+    // template-only behavior for signup/password-reset and other
+    // business-initiated callers.
+    if (session) {
+      return this.sendSessionMessage({
+        to,
+        body: `Your SmartHealth verification code is *${otp}*. This code expires in 10 minutes. Do not share this code with anyone.`
+      });
     }
 
     const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };

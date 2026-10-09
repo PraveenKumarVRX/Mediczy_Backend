@@ -148,6 +148,14 @@ describe('production sender provider migration', () => {
     await service.sendOTP({ to: '9000000001', otp: '123456' });
     expect(JSON.parse(new URLSearchParams(post.mock.calls[0][1]).get('template'))).toEqual({ id: 'gup-otp', params: ['123456'] });
   });
+  it('sends identity-link OTP through the active session when no template is needed', async () => {
+    delete process.env.GUPSHUP_TEMPLATE_OTP;
+    await service.sendOTP({ to: '9000000001', otp: '123456', session: true });
+    expect(post).toHaveBeenCalledTimes(1);
+    const form = new URLSearchParams(post.mock.calls[0][1]);
+    expect(form.get('message')).toContain('123456');
+    expect(form.get('template')).toBeNull();
+  });
   it('preserves appointment variable order', async () => {
     await service.sendAppointmentConfirmation({ to: '9000000001', patientName: 'Patient', doctorName: 'Doctor', date: '2026-10-08', time: '10:00', location: 'Clinic' });
     expect(JSON.parse(new URLSearchParams(post.mock.calls[0][1]).get('template')).params).toEqual(['Patient', 'Doctor', '2026-10-08', '10:00', 'Clinic']);

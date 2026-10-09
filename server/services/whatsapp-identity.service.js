@@ -75,7 +75,10 @@ class WhatsAppIdentityService {
         userId: String(user.id),
         requestedAt: new Date().toISOString()
       }, OTP_TTL_MINUTES * 60);
-      await whatsAppProductionService.sendOTP({ to: normalized, otp: generated.code });
+      // This request is triggered by the user's VERIFY message, so send the
+      // code in the active session. It must not require a business OTP
+      // template, which is a separate provider configuration concern.
+      await whatsAppProductionService.sendOTP({ to: normalized, otp: generated.code, session: true });
       return { success: true, sent: true, message: genericLinkMessage };
     } catch (error) {
       await cache.del(cooldownKey(normalized)).catch(() => {});
