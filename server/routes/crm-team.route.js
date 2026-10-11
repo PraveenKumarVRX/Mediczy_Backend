@@ -110,7 +110,12 @@ router.post('/users', [
       tenant_id: tenantId || null,
       department: department || 'CRM',
       designation: designation || 'CRM User',
-      metadata: JSON.stringify({
+      // A plain object, not JSON.stringify(...): Sequelize serializes a JSONB attribute itself,
+      // so pre-stringifying double-encodes it into a jsonb STRING SCALAR — `metadata->>'x'` in any
+      // raw SQL query (e.g. the business-head dashboard) then reads NULL for every field, even
+      // though the ORM's own JSON.parse(user.metadata) round-trip in parseMetadata() above masks
+      // it when reading through this file.
+      metadata: {
         isCRM: true,
         crmRole,
         crmPermissions: crmPermissionsForRole(crmRole),
@@ -120,7 +125,7 @@ router.post('/users', [
         managerUserId: manager.set ? manager.value : null,
         createdBy: req.crmUser.id,
         createdAt: new Date().toISOString(),
-      }),
+      },
     });
 
     // Send the new team member a password-setup OTP through the existing
@@ -179,7 +184,7 @@ router.patch('/users/:id', [
       department: department ?? target.department,
       designation: designation ?? target.designation,
       status: status || target.status,
-      metadata: JSON.stringify(nextMetadata),
+      metadata: nextMetadata,
     });
 
     return res.json({ success: true, data: serializeTeamUser(target) });
