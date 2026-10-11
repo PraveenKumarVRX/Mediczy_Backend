@@ -36,13 +36,17 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     if (!u) return { reason: 'unknown_user' };
     if (u.status !== 'active') return { reason: `user_${u.status}` };
     if (!OHC_ROLES.includes(u.role)) return { reason: 'not_an_ohc_role' };
-    const unitParams = [u.id, u.organization_uid, u.role];
-    const unitScope = u.role === 'corporate_cmo'
+    const isCmo = u.role === 'corporate_cmo';
+    // Each branch's param list must hold exactly the placeholders its own SQL text references —
+    // passing an extra bound value Postgres can't see used anywhere leaves it untyped ("could not
+    // determine data type of parameter $1").
+    const unitParams = isCmo ? [u.organization_uid] : [u.id, u.organization_uid, u.role];
+    const unitScope = isCmo
       ? `FROM hospital_branch b`
       : `FROM staff_branch_assignment s
          JOIN hospital_branch b ON b.id = s.branch_id`;
-    const unitWhere = u.role === 'corporate_cmo'
-      ? `WHERE b.corporate_uid = $2`
+    const unitWhere = isCmo
+      ? `WHERE b.corporate_uid = $1`
       : `WHERE s.user_id = $1 AND s.is_active AND s.role = $3 AND b.owner_uid = $2`;
     const { rows: units } = await pool.query(
       `SELECT b.id, b.unique_id, b.name, b.corporate_uid, b.owner_uid, b.services, c."companyName" AS corporate_name, o.name AS operator_name
