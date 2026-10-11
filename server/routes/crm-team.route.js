@@ -107,6 +107,7 @@ router.post('/users', [
       role: 'team',
       isTeam: true,
       status: 'active',
+      tenant_id: tenantId || null,
       department: department || 'CRM',
       designation: designation || 'CRM User',
       metadata: JSON.stringify({
