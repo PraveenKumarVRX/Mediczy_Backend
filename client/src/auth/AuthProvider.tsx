@@ -172,10 +172,19 @@ export const AuthProvider = ({ children }) => {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       return;
     }
-    
+
+    // Phlebotomist self-service pages carve themselves out of the lab-admin guard below:
+    // they're signed in with their own collector token (phleboAccessToken), never labToken,
+    // and each page already checks its own session via hasSession() in phleboClient.ts.
+    const isLabPhlebotomistRoute = location.pathname.startsWith('/lab/phlebotomist');
+    if (isLabPhlebotomistRoute) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
     // Check if it's an assistant route - assistant routes have their own auth flow
     const isAssistantRoute = location.pathname.startsWith('/assistant');
-    
+
     // Check for portal-specific routes that have their own auth
     // Matches: /hospital-insurance/* AND /hospital/:slug/insurance/*
     const isHospitalInsuranceRoute =
