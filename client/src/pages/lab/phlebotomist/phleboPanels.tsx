@@ -10,7 +10,6 @@ import { useState } from "react";
 import {
   CheckCircle2, Car, MapPin, BedDouble, UserCheck, ClipboardCheck, ScanBarcode, Syringe, Truck, PackageCheck, XCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +21,15 @@ import { useToast } from "@/hooks/use-toast";
 import type { ApiProblem, Task, Test } from "./types";
 
 const IDENTIFIER_TYPES = ["name", "dob", "phone", "photo_id"];
+const CONTAINER_DOT: Record<string, string> = {
+  edta: "bg-[#a581c2]", serum: "bg-[#d9ad54]", plasma_heparin: "bg-[#d9ad54]", citrate: "bg-[#7fa7c9]",
+};
+const CARD_CONTENT = "rounded-[24px] border border-[#dce9e7]";
+const TITLE = "text-[#17333a]";
+const DESC = "text-[#71868b]";
+const BTN_PRIMARY = "flex items-center justify-center gap-1.5 rounded-xl bg-[#0e6f69] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#0b5e59] disabled:cursor-not-allowed disabled:bg-[#b4c8c9]";
+const BTN_OUTLINE = "flex items-center justify-center gap-1.5 rounded-xl border border-[#dce8e7] bg-white px-4 py-2.5 text-xs font-semibold text-[#526c72]";
+const BTN_DANGER = "flex items-center justify-center gap-1.5 rounded-xl bg-[#c75e43] px-4 py-2.5 text-xs font-semibold text-white transition hover:bg-[#b24e36] disabled:cursor-not-allowed disabled:bg-[#e3b3a4]";
 
 type CommandFn = (command: string, body?: Record<string, unknown>) => Promise<void>;
 
@@ -37,10 +45,10 @@ function DeclineDialog({ open, onOpenChange, onCommand }: { open: boolean; onOpe
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Decline this task</DialogTitle><DialogDescription>The task returns to dispatch's unassigned pool.</DialogDescription></DialogHeader>
+      <DialogContent className={`max-w-md ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Decline this task</DialogTitle><DialogDescription className={DESC}>The task returns to dispatch's unassigned pool.</DialogDescription></DialogHeader>
         <div className="space-y-1.5"><Label htmlFor="decline-reason">Reason</Label><Textarea id="decline-reason" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} /></div>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button variant="destructive" disabled={busy || reason.trim().length < 2} onClick={submit}>{busy ? "Declining…" : "Decline task"}</Button></DialogFooter>
+        <DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button><button type="button" disabled={busy || reason.trim().length < 2} onClick={submit} className={BTN_DANGER}>{busy ? "Declining…" : "Decline task"}</button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -71,8 +79,8 @@ function ArrivalDialog({ open, onOpenChange, onCommand }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Confirm arrival</DialogTitle><DialogDescription>Evidence is bounded — the app never sends raw coordinates.</DialogDescription></DialogHeader>
+      <DialogContent className={`max-w-md ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Confirm arrival</DialogTitle><DialogDescription className={DESC}>Evidence is bounded — the app never sends raw coordinates.</DialogDescription></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5">
             <Label>How are you confirming arrival?</Label>
@@ -82,10 +90,10 @@ function ArrivalDialog({ open, onOpenChange, onCommand }: { open: boolean; onOpe
               <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="otp" />Confirmed by OTP with the patient</label>
             </RadioGroup>
           </div>
-          {method === "geo" && <p className="text-xs text-muted-foreground">{accuracyM != null ? `Location captured (±${accuracyM}m).` : "Requesting device location…"}</p>}
+          {method === "geo" && <p className="text-xs text-[#71868b]">{accuracyM != null ? `Location captured (±${accuracyM}m).` : "Requesting device location…"}</p>}
           <label className="flex items-center gap-2 text-sm"><Checkbox checked={withinRadius} onCheckedChange={(c) => setWithinRadius(c === true)} />Within the service radius of the address</label>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy} onClick={submit}>{busy ? "Saving…" : "Confirm arrival"}</Button></DialogFooter>
+        <DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button><button type="button" disabled={busy} onClick={submit} className={BTN_PRIMARY}>{busy ? "Saving…" : "Confirm arrival"}</button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -102,9 +110,9 @@ function BedsideDialog({ open, onOpenChange, onCommand }: { open: boolean; onOpe
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>At the bedside</DialogTitle><DialogDescription>Confirm you are at the correct ward and bed. The server rechecks the admission — a discharged or moved patient will raise an exception instead.</DialogDescription></DialogHeader>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy} onClick={submit}>{busy ? "Confirming…" : "Confirm location"}</Button></DialogFooter>
+      <DialogContent className={`max-w-sm ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>At the bedside</DialogTitle><DialogDescription className={DESC}>Confirm you are at the correct ward and bed. The server rechecks the admission — a discharged or moved patient will raise an exception instead.</DialogDescription></DialogHeader>
+        <DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button><button type="button" disabled={busy} onClick={submit} className={BTN_PRIMARY}>{busy ? "Confirming…" : "Confirm location"}</button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -130,8 +138,8 @@ function VerifyPatientDialog({ open, onOpenChange, onCommand }: { open: boolean;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Verify patient identity</DialogTitle><DialogDescription>Record which identifiers you checked — never the identifiers themselves.</DialogDescription></DialogHeader>
+      <DialogContent className={`max-w-md ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Verify patient identity</DialogTitle><DialogDescription className={DESC}>Record which identifiers you checked — never the identifiers themselves.</DialogDescription></DialogHeader>
         <div className="space-y-3">
           <RadioGroup value={method} onValueChange={(v) => { setMethod(v as typeof method); setTypes([]); }} className="gap-2">
             <label className="flex items-center gap-2 text-sm"><RadioGroupItem value="two_identifiers" />Two identifiers</label>
@@ -144,9 +152,9 @@ function VerifyPatientDialog({ open, onOpenChange, onCommand }: { open: boolean;
           </div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" disabled={busy || types.length < minTypes} onClick={() => run("mismatch")}>Mismatch</Button>
-          <Button disabled={busy || types.length < minTypes} onClick={() => run("match")}>{busy ? "Saving…" : "Confirms match"}</Button>
+          <button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button>
+          <button type="button" disabled={busy || types.length < minTypes} onClick={() => run("mismatch")} className={BTN_DANGER}>Mismatch</button>
+          <button type="button" disabled={busy || types.length < minTypes} onClick={() => run("match")} className={BTN_PRIMARY}>{busy ? "Saving…" : "Confirms match"}</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -171,8 +179,8 @@ function ConsentDialog({ open, onOpenChange, onCommand }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Patient consent</DialogTitle><DialogDescription>A refusal closes the task and notifies dispatch.</DialogDescription></DialogHeader>
+      <DialogContent className={`max-w-md ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Patient consent</DialogTitle><DialogDescription className={DESC}>A refusal closes the task and notifies dispatch.</DialogDescription></DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="consent-method">How was consent given?</Label>
@@ -185,9 +193,9 @@ function ConsentDialog({ open, onOpenChange, onCommand }: { open: boolean; onOpe
           <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="consent-lang">Language</Label><Input id="consent-lang" value={language} maxLength={40} onChange={(e) => setLanguage(e.target.value)} /></div>
         </div>
         <DialogFooter className="gap-2">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant="destructive" disabled={busy} onClick={() => run("refused")}>Patient refused</Button>
-          <Button disabled={busy} onClick={() => run("granted")}>{busy ? "Saving…" : "Consent granted"}</Button>
+          <button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button>
+          <button type="button" disabled={busy} onClick={() => run("refused")} className={BTN_DANGER}>Patient refused</button>
+          <button type="button" disabled={busy} onClick={() => run("granted")} className={BTN_PRIMARY}>{busy ? "Saving…" : "Consent granted"}</button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -216,13 +224,13 @@ function ScanDialog({ open, onOpenChange, tests, onCommand }: { open: boolean; o
   };
 
   if (required.length === 0) return (
-    <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>Scan tube</DialogTitle><DialogDescription>Every test already has a specimen.</DialogDescription></DialogHeader><DialogFooter><Button onClick={() => onOpenChange(false)}>Close</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className={`max-w-sm ${CARD_CONTENT}`}><DialogHeader><DialogTitle className={TITLE}>Scan tube</DialogTitle><DialogDescription className={DESC}>Every test already has a specimen.</DialogDescription></DialogHeader><DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Close</button></DialogFooter></DialogContent></Dialog>
   );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader><DialogTitle>Scan tube</DialogTitle><DialogDescription>Each barcode must cover tests of one container type only.</DialogDescription></DialogHeader>
+      <DialogContent className={`max-w-md ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Scan tube</DialogTitle><DialogDescription className={DESC}>Each barcode must cover tests of one container type only.</DialogDescription></DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1.5"><Label htmlFor="scan-barcode">Barcode</Label><Input id="scan-barcode" value={barcode} maxLength={80} onChange={(e) => setBarcode(e.target.value)} autoFocus /></div>
           {containerTypes.length > 1 && (
@@ -234,11 +242,15 @@ function ScanDialog({ open, onOpenChange, tests, onCommand }: { open: boolean; o
           <div className="space-y-1.5">
             <Label>Tests on this tube</Label>
             {group.map((t) => (
-              <label key={t.id} className="flex items-center gap-2 text-sm"><Checkbox checked={testIds.includes(t.id)} onCheckedChange={() => toggle(t.id)} />{t.name}{t.code ? ` (${t.code})` : ""}</label>
+              <label key={t.id} className="flex items-center gap-2 rounded-xl border border-[#e4eceb] bg-white p-2.5 text-sm">
+                <span className={`size-3 shrink-0 rounded-full ${CONTAINER_DOT[t.containerType] ?? "bg-[#9aa7ad]"}`} />
+                <Checkbox checked={testIds.includes(t.id)} onCheckedChange={() => toggle(t.id)} />
+                {t.name}{t.code ? ` (${t.code})` : ""}
+              </label>
             ))}
           </div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button><Button disabled={busy || !barcode.trim() || testIds.length === 0} onClick={submit}>{busy ? "Scanning…" : "Scan"}</Button></DialogFooter>
+        <DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Close</button><button type="button" disabled={busy || !barcode.trim() || testIds.length === 0} onClick={submit} className={BTN_PRIMARY}>{busy ? "Scanning…" : "Scan"}</button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -257,10 +269,10 @@ function CollectDialog({ open, onOpenChange, task, onCommand }: { open: boolean;
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Mark collection complete</DialogTitle><DialogDescription>Every required test must already have a scanned tube.</DialogDescription></DialogHeader>
+      <DialogContent className={`max-w-sm ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Mark collection complete</DialogTitle><DialogDescription className={DESC}>Every required test must already have a scanned tube.</DialogDescription></DialogHeader>
         {needsIsolationAck && <label className="flex items-center gap-2 text-sm"><Checkbox checked={ack} onCheckedChange={(c) => setAck(c === true)} />I acknowledge isolation precautions for this bed</label>}
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy || (needsIsolationAck && !ack)} onClick={submit}>{busy ? "Saving…" : "Collected"}</Button></DialogFooter>
+        <DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button><button type="button" disabled={busy || (needsIsolationAck && !ack)} onClick={submit} className={BTN_PRIMARY}>{busy ? "Saving…" : "Collected"}</button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -280,15 +292,15 @@ function HandoffDialog({ open, onOpenChange, task, onCommand }: { open: boolean;
   };
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader><DialogTitle>Hand off specimens</DialogTitle></DialogHeader>
+      <DialogContent className={`max-w-sm ${CARD_CONTENT}`}>
+        <DialogHeader><DialogTitle className={TITLE}>Hand off specimens</DialogTitle></DialogHeader>
         <div className="space-y-3">
           {options.length > 1 && (
             <div className="space-y-1.5"><Label htmlFor="ho-kind">Receiver</Label><Select value={receiverKind} onValueChange={setReceiverKind}><SelectTrigger id="ho-kind"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="lab">Lab</SelectItem><SelectItem value="collection_point">Collection point</SelectItem></SelectContent></Select></div>
           )}
           <div className="space-y-1.5"><Label htmlFor="ho-ref">Receiver name (optional)</Label><Input id="ho-ref" value={receiverRef} maxLength={80} placeholder="e.g. Front desk" onChange={(e) => setReceiverRef(e.target.value)} /></div>
         </div>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy} onClick={submit}>{busy ? "Saving…" : "Hand off"}</Button></DialogFooter>
+        <DialogFooter><button type="button" onClick={() => onOpenChange(false)} className={BTN_OUTLINE}>Cancel</button><button type="button" disabled={busy} onClick={submit} className={BTN_PRIMARY}>{busy ? "Saving…" : "Hand off"}</button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -323,7 +335,7 @@ export function TaskActions({ task, tests, onCommand }: { task: Task; tests: Tes
     finally { setFiring(null); }
   };
 
-  if (task.permittedCommands.length === 0) return <p className="text-sm text-muted-foreground">No further action — this task is closed.</p>;
+  if (task.permittedCommands.length === 0) return <p className="text-sm text-[#71868b]">No further action — this task is closed.</p>;
 
   return (
     <>
@@ -331,12 +343,12 @@ export function TaskActions({ task, tests, onCommand }: { task: Task; tests: Tes
         {task.permittedCommands.map((cmd) => {
           if (SIMPLE[cmd]) {
             const { label, icon: Icon } = SIMPLE[cmd];
-            return <Button key={cmd} size="sm" disabled={firing === cmd} onClick={() => fireSimple(cmd)}><Icon className="mr-1.5 size-4" aria-hidden />{firing === cmd ? "Working…" : label}</Button>;
+            return <button key={cmd} type="button" disabled={firing === cmd} onClick={() => fireSimple(cmd)} className={BTN_PRIMARY}><Icon className="size-4" aria-hidden />{firing === cmd ? "Working…" : label}</button>;
           }
           const meta = DIALOG_META[cmd];
           if (!meta) return null;
           const { label, icon: Icon, variant } = meta;
-          return <Button key={cmd} size="sm" variant={variant} onClick={() => setOpenDialog(cmd)}><Icon className="mr-1.5 size-4" aria-hidden />{label}</Button>;
+          return <button key={cmd} type="button" onClick={() => setOpenDialog(cmd)} className={variant === "destructive" ? BTN_DANGER : BTN_PRIMARY}><Icon className="size-4" aria-hidden />{label}</button>;
         })}
       </div>
       <DeclineDialog open={openDialog === "decline"} onOpenChange={(o) => setOpenDialog(o ? "decline" : null)} onCommand={onCommand} />
