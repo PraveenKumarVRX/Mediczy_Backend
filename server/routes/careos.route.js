@@ -3,11 +3,14 @@
  */
 import { Router } from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authDoctorOrOhcReferrer } from '../middleware/ohcClinicianAuth.middleware.js';
 import careos from '../services/careos/index.js';
 
 const router = Router();
 const clinical = [authUser, requireRole(['doctor', 'nurse', 'admin', 'assistant', 'hospital'])];
 const doctorOnly = [authUser, requireRole(['doctor', 'admin'])];
+// Only the two referral routes below also accept an ohc_doctor/corporate_cmo identity — every other
+// `doctorOnly` route (teams, pathway, MDT, platform/developer endpoints, etc.) is untouched.
 
 function orgId(req) {
   return req.user?.organization_id || req.user?.tenant_id || req.hospitalId || 1;
@@ -501,10 +504,10 @@ router.get('/expand/imaging/study/:studyUID', ...clinical, async (req, res) => {
 router.get('/network/referrals', ...clinical, async (req, res) => {
   res.json({ success: true, data: await careos.listReferrals({ orgId: req.query.orgNetworkId ? Number(req.query.orgNetworkId) : undefined, patientId: req.query.patientId ? Number(req.query.patientId) : undefined, status: req.query.status, direction: req.query.direction }) });
 });
-router.post('/network/referrals', ...doctorOnly, async (req, res) => {
+router.post('/network/referrals', ...authDoctorOrOhcReferrer, async (req, res) => {
   res.json({ success: true, data: await careos.createReferral({ fromOrgId: req.body.fromOrgId, toOrgId: req.body.toOrgId, patientId: req.body.patientId, reason: req.body.reason, urgency: req.body.urgency, clinicalSummary: req.body.clinicalSummary, referredBy: req.user.id, passportShareId: req.body.passportShareId }) });
 });
-router.post('/network/referrals/:id/accept', ...doctorOnly, async (req, res) => {
+router.post('/network/referrals/:id/accept', ...authDoctorOrOhcReferrer, async (req, res) => {
   res.json({ success: true, data: await careos.acceptReferral(Number(req.params.id), req.user.id) });
 });
 router.get('/network/documents/:patientId', ...clinical, async (req, res) => {

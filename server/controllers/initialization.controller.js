@@ -228,6 +228,10 @@ class InitializationController {
       await runOhcWorkplaceEmergenciesMigration().catch(e =>
         console.warn('⚠️  OHC workplace emergencies migration skipped:', e.message)
       );
+      const { runOhcClinicianDoctorLinkMigration } = await import('../migrations/ohc-clinician-doctor-link.migration.js');
+      await runOhcClinicianDoctorLinkMigration().catch(e =>
+        console.warn('⚠️  OHC clinician doctor-link migration skipped:', e.message)
+      );
       const { runCorporateBenefitTiersMigration } = await import('../migrations/corporate-benefit-tiers.migration.js');
       await runCorporateBenefitTiersMigration().catch(e =>
         console.warn('⚠️  corporate-benefit-tiers migration skipped:', e.message)

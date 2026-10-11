@@ -5,6 +5,7 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import * as revocation from '../token-revocation.service.js';
 import { createCareUnitService } from './care-unit.service.js';
 import { createOhcService, OHC_PORTAL } from './ohc.service.js';
+import { createOhcClinicianService } from './ohc-clinician.service.js';
 
 const tokens = {
   issuePortalTokenPair: revocation.issuePortalTokenPair,

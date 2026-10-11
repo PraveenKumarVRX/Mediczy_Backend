@@ -440,7 +440,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/chat',  // Allow chat functionality
       '/api/hr',  // HR super-user / sub-user portal (facility/branch/location-scoped)
       '/api/v1/occupational-health',  // Corporate OHC/CMO — fitness certs, return-to-work
-      '/api/v1/corporate'  // Same corporate-hmis router — referrals, eligibility checks
+      '/api/v1/corporate',  // Same corporate-hmis router — referrals, eligibility checks
+      '/api/prescriptions',  // corporate_cmo, once auto-provisioned a linked Doctor identity — ohcClinicianAuth.middleware.js
+      '/api/careos/network/referrals'  // corporate_cmo, same linked identity — clinical referral federation
     ],
     tokenField: 'corporateId'
   },
@@ -527,9 +529,11 @@ const USER_TYPE_PERMISSIONS = {
     ],
     tokenField: 'clinicId'
   },
-  // OHC staff (ohc_doctor / ohc_staff): hospital- or clinic-portal users confined to the OHC workspace API.
+  // OHC staff (ohc_doctor / ohc_staff): hospital- or clinic-portal users confined to the OHC workspace API,
+  // plus (ohc_doctor only, via ohcClinicianAuth.middleware.js's auto-provisioned linked Doctor identity)
+  // the real prescription and clinical-referral routes.
   ohc: {
-    allowedPaths: ['/api/ohc-workspace'],
+    allowedPaths: ['/api/ohc-workspace', '/api/prescriptions', '/api/careos/network/referrals'],
     tokenField: 'id'
   },
   // Collection field workers (lab phlebotomists). Their token is confined to the phlebotomy API: even if some other
