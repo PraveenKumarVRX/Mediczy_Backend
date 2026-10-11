@@ -84,7 +84,7 @@ export async function listHrTeam(corporateId) {
   return rows;
 }
 
-export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, lastName, email, phoneNumber, role = 'hr_staff' }) {
+export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, lastName, email, phoneNumber, registrationNumber, role = 'hr_staff' }) {
   await requireActiveSuperAdmin(corporateId, invitedByUserId);
 
   if (!INVITABLE_ROLES.includes(role)) {
@@ -123,6 +123,7 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
     hr_staff: ['HR', 'Staff'],
   };
   const roleLabel = ROLE_LABELS[role];
+  const medicalRegistration = role === 'corporate_cmo' && registrationNumber ? String(registrationNumber).trim().slice(0, 60) : null;
 
   const tempPassword = genTempPassword();
   const created = await User.create({
@@ -138,6 +139,7 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
     organization_id: corporateId,
     status: 'active',
     invited_by: invitedByUserId,
+    ...(medicalRegistration ? { metadata: { registrationNumber: medicalRegistration } } : {}),
   });
   // organization_id above stays the corporates id this service has always written; the UID is what
   // names the corporate unambiguously, and what the sign-in gate and the team queries use.
@@ -146,6 +148,10 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
   let emailStatus = 'skipped';
   try {
     const frontendUrl = process.env.FRONTEND_URL || 'https://app.mediqzy.com';
+    // Every corporate-portal role (hr_staff, corporate_cmo, corporate_ohc) signs in at the same
+    // corporate login — corporate_cmo's separate /ohc/login was retired so the CMO has one login,
+    // not two; /ohc/login is for ohc_doctor/ohc_staff, who have no corporate account at all.
+    const primaryLoginUrl = `${frontendUrl}/corporate/login`;
     await welcomeEmailService.sendTransactionalEmail({
       to: normalizedEmail,
       subject: `You've been added as ${roleLabel} for ${corporate.companyName}`,
@@ -153,13 +159,13 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
         <h2 style="color:#0f766e;margin:0 0 12px;">Welcome, ${firstName || 'there'}!</h2>
         <p>You've been added as ${roleLabel} for <b>${corporate.companyName}</b> on the Mediqzy corporate wellness portal.</p>
         <div style="background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;padding:16px;margin:16px 0;">
-          <p style="margin:4px 0;"><strong>Login URL:</strong> <a href="${frontendUrl}/corporate/login">${frontendUrl}/corporate/login</a></p>
+          <p style="margin:4px 0;"><strong>Login URL:</strong> <a href="${primaryLoginUrl}">${primaryLoginUrl}</a></p>
           <p style="margin:4px 0;"><strong>Email:</strong> ${normalizedEmail}</p>
           <p style="margin:4px 0;"><strong>Temporary password:</strong> ${tempPassword}</p>
         </div>
         <p style="color:#64748b;font-size:13px;">Please change your password after your first login.</p>
       </div>`,
-      text: `Welcome! You've been added as ${roleLabel} for ${corporate.companyName}. Login: ${frontendUrl}/corporate/login  Email: ${normalizedEmail}  Temporary password: ${tempPassword}`,
+      text: `Welcome! You've been added as ${roleLabel} for ${corporate.companyName}. Login: ${primaryLoginUrl}  Email: ${normalizedEmail}  Temporary password: ${tempPassword}`,
       fromName: 'Mediqzy Corporate Wellness',
     });
     emailStatus = 'sent';

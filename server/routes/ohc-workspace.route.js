@@ -1,4 +1,4 @@
-/** /api/ohc-workspace — sign-in and workspace for ohc_doctor / ohc_staff. */
+/** /api/ohc-workspace — sign-in and workspace for hospital OHC staff and corporate CMO super-admins. */
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { isTokenRevoked } from '../services/token-revocation.service.js';
 import { createAuthOhc } from '../middleware/ohcAuth.middleware.js';

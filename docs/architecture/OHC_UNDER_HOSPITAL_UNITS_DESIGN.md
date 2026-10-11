@@ -13,7 +13,7 @@
 
 | Area | State |
 |---|---|
-| **Corporate side** | Roles `corporate_ohc` (OHC Staff) and `corporate_cmo` are invitable by a corporate's super-HR (HR Team → Invite) and sign in at `/corporate/login`. They can issue fitness certificates / return-to-work and decide claims. **No user holds either role in production.** |
+| **Corporate side** | Roles `corporate_ohc` (OHC Staff) and `corporate_cmo` are invitable by a corporate's super-HR. A `corporate_cmo` signs in at the normal `/corporate/login` (their only login — the earlier separate `/ohc/login` path for this role was retired) and operates as the corporate-side OHC administrator from `/corporate/ohc`: full oversight of every active OHC unit serving that corporate, issuing certificates, triaging workplace emergencies, and deactivating/reactivating existing OHC staff. The OHC unit itself remains owned and operated by its hospital/clinic tenant; the CMO cannot create OHC staff accounts or change the tenant, contract, or staff assignments beyond that toggle. `/ohc/login` is for `ohc_doctor`/`ohc_staff` only, who have no corporate account. |
 | **Clinic side** | `/api/clinic/occupational-health` lets a *clinic doctor* issue fitness certificates for an employer's employees. It is a doctor flow, not an OHC unit. |
 | **Mediqzy team** | `team-occupational-health.route.js`: Mediqzy's own clinicians running on-site camps. |
 | **Hospital side** | **Nothing OHC-specific.** Department logins (asset, blood bank, consent, …) have no OHC entry. |

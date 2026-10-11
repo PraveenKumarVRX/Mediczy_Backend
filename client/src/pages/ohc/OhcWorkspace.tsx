@@ -4,23 +4,19 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { FileDown, LogOut, ShieldCheck, Stethoscope } from "lucide-react";
+import { AlertTriangle, LogOut, ShieldCheck, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineError } from "@/components/ui/inline-error";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { FITNESS_LABEL, formatDate } from "../care-units/format";
-import type { Employee, OhcMe } from "../care-units/types";
-import { OhcError, changePassword, downloadCertificate, getCertificates, getEmployees, getMe, hasSession, issueCertificate, logout } from "./ohcClient";
-
-type Cert = { id: number; patient_name: string | null; employee_id: string | null; fitness_status: string; restrictions: string | null; valid_until: string | null; created_at: string };
+import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, StaffList } from "../care-units/ohcPanels";
+import type { Employee, OhcMe, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "../care-units/types";
+import { OhcError, changePassword, downloadCertificate, getCertificates, getEmployees, getEmergencies, getMe, getStaff, hasSession, issueCertificate, logout, reportEmergency, updateEmergency } from "./ohcClient";
 
 function ChangePassword({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
@@ -46,73 +42,26 @@ function ChangePassword({ onDone }: { onDone: () => void }) {
   );
 }
 
-function IssueDialog({ employee, unit, open, onOpenChange, onIssued }: { employee: Employee | null; unit: string; open: boolean; onOpenChange: (o: boolean) => void; onIssued: () => void }) {
-  const { toast } = useToast();
-  const [status, setStatus] = useState("fit");
-  const [job, setJob] = useState("");
-  const [restrictions, setRestrictions] = useState("");
-  const [from, setFrom] = useState("");
-  const [until, setUntil] = useState("");
-  const [remarks, setRemarks] = useState("");
-  const [busy, setBusy] = useState(false);
-  const needsNote = status !== "fit";
-
-  const submit = async () => {
-    if (!employee) return;
-    setBusy(true);
-    try {
-      const r = await issueCertificate({
-        unit, employeeUserId: employee.id, fitnessStatus: status, jobDescription: job.trim() || undefined, restrictions: restrictions.trim() || undefined,
-        validFrom: from || undefined, validUntil: until || undefined, remarks: remarks.trim() || undefined,
-      });
-      toast({ title: "Certificate issued", description: `${employee.name} · ${FITNESS_LABEL[status]}${r.pdfUrl ? "" : " (PDF could not be generated; reissue the download later)"}` });
-      setJob(""); setRestrictions(""); setFrom(""); setUntil(""); setRemarks(""); setStatus("fit");
-      onOpenChange(false); onIssued();
-    } catch (err) { toast({ variant: "destructive", title: "Could not issue the certificate", description: (err as OhcError).message }); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
-        <DialogHeader><DialogTitle>Fitness certificate</DialogTitle><DialogDescription>{employee?.name}{employee?.employeeId ? ` · ${employee.employeeId}` : ""}{employee?.department ? ` · ${employee.department}` : ""}</DialogDescription></DialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="ic-status">Result</Label>
-            <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger id="ic-status"><SelectValue /></SelectTrigger>
-              <SelectContent>{Object.entries(FITNESS_LABEL).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-job">Job role assessed</Label><Input id="ic-job" value={job} maxLength={300} onChange={(e) => setJob(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label htmlFor="ic-from">Valid from</Label><Input id="ic-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label htmlFor="ic-until">Valid until</Label><Input id="ic-until" type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></div>
-          {needsNote && <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-res">Restrictions</Label><Textarea id="ic-res" value={restrictions} maxLength={500} onChange={(e) => setRestrictions(e.target.value)} /></div>}
-          <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-rem">Remarks</Label><Textarea id="ic-rem" value={remarks} maxLength={1000} onChange={(e) => setRemarks(e.target.value)} /></div>
-        </div>
-        <p className="text-xs text-muted-foreground">Your company will see this certificate in full, including these remarks. Do not put clinical findings that should not reach the employer.</p>
-        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy || (needsNote && !restrictions.trim())} onClick={submit}>{busy ? "Signing…" : "Sign and issue"}</Button></DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function OhcWorkspace() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   const [me, setMe] = useState<OhcMe | null>(null);
   const [error, setError] = useState<OhcError | null>(null);
-  const [tab, setTab] = useState<"employees" | "certificates">("employees");
+  const [tab, setTab] = useState<"employees" | "certificates" | "staff" | "emergencies">("employees");
   const [search, setSearch] = useState("");
   const [employees, setEmployees] = useState<Employee[] | null>(null);
-  const [certs, setCerts] = useState<Cert[] | null>(null);
+  const [certs, setCerts] = useState<WorkspaceCertificate[] | null>(null);
+  const [staff, setStaff] = useState<OhcStaffMember[] | null>(null);
+  const [emergencies, setEmergencies] = useState<WorkplaceEmergency[] | null>(null);
   const [listError, setListError] = useState(false);
   const [issueFor, setIssueFor] = useState<Employee | null>(null);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
+  const [activeUnitUid, setActiveUnitUid] = useState("");
 
-  const unit = me?.units[0];
+  const unit = me?.units.find((u) => u.uid === activeUnitUid) || me?.units[0];
   const load = useCallback(async () => {
     try { setMe(await getMe()); setError(null); } catch (e) { setError(e as OhcError); }
   }, []);
+  useEffect(() => { if (me?.units.length && !me.units.some((u) => u.uid === activeUnitUid)) setActiveUnitUid(me.units[0].uid); }, [me, activeUnitUid]);
   useEffect(() => { if (!hasSession()) { navigate("/ohc/login", { replace: true }); return; } load(); }, [load, navigate]);
   useEffect(() => { if (error && (error.status === 401 || error.code === "account_unavailable")) navigate("/ohc/login", { replace: true }); }, [error, navigate]);
 
@@ -122,9 +71,11 @@ export default function OhcWorkspace() {
   }, [unit, search]);
   const loadCerts = useCallback(async () => {
     if (!unit) return;
-    try { setCerts((await getCertificates(unit.uid)).certificates as unknown as Cert[]); setListError(false); } catch { setListError(true); }
+    try { setCerts((await getCertificates(unit.uid)).certificates as unknown as WorkspaceCertificate[]); setListError(false); } catch { setListError(true); }
   }, [unit]);
-  useEffect(() => { if (tab === "employees") { const t = setTimeout(loadEmployees, 250); return () => clearTimeout(t); } loadCerts(); return undefined; }, [tab, loadEmployees, loadCerts]);
+  const loadStaff = useCallback(async () => { if (!unit) return; try { setStaff((await getStaff(unit.uid)).staff); setListError(false); } catch { setListError(true); } }, [unit]);
+  const loadEmergencies = useCallback(async () => { if (!unit) return; try { setEmergencies((await getEmergencies(unit.uid)).emergencies); setListError(false); } catch { setListError(true); } }, [unit]);
+  useEffect(() => { if (tab === "employees") { const t = setTimeout(loadEmployees, 250); return () => clearTimeout(t); } if (tab === "certificates") { loadCerts(); return undefined; } if (tab === "staff") { loadStaff(); return undefined; } loadEmergencies(); return undefined; }, [tab, loadEmployees, loadCerts, loadStaff, loadEmergencies]);
 
   const signOut = async () => { await logout(); navigate("/ohc/login", { replace: true }); };
 
@@ -139,20 +90,20 @@ export default function OhcWorkspace() {
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
             <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground"><Stethoscope className="size-4" aria-hidden /></span>
-            <div><p className="font-semibold leading-tight">{unit.name}</p><p className="text-xs text-muted-foreground">for {unit.corporateName ?? "your company"} · operated by {unit.operatorName ?? "your hospital/clinic"}</p></div>
+            <div><p className="font-semibold leading-tight">{unit.name}</p><p className="text-xs text-muted-foreground">for {unit.corporateName ?? "your company"} · operated by {unit.operatorName ?? "your hospital/clinic"}</p>{me.units.length > 1 && <Select value={unit.uid} onValueChange={setActiveUnitUid}><SelectTrigger className="mt-1 h-8 w-64 text-xs"><SelectValue /></SelectTrigger><SelectContent>{me.units.map((u) => <SelectItem key={u.uid} value={u.uid}>{u.name} · {u.operatorName ?? "operator"}</SelectItem>)}</SelectContent></Select>}</div>
           </div>
-          <div className="flex items-center gap-3 text-sm"><span className="text-right"><span className="block font-medium">{me.worker.displayName}</span><span className="block text-xs text-muted-foreground">{me.worker.role === "ohc_doctor" ? "OHC doctor" : "OHC staff"}</span></span>
+          <div className="flex items-center gap-3 text-sm"><span className="text-right"><span className="block font-medium">{me.worker.displayName}</span><span className="block text-xs text-muted-foreground">{me.worker.role === "corporate_cmo" ? "Chief Medical Officer · corporate OHC admin" : me.worker.role === "ohc_doctor" ? "OHC doctor" : "OHC staff"}</span></span>
             <Button variant="outline" size="sm" onClick={signOut}><LogOut className="mr-2 size-4" aria-hidden />Sign out</Button></div>
         </div>
       </header>
       <main className="mx-auto max-w-5xl space-y-4 px-4 py-5">
         {!canSign && (
           <p className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-            {me.worker.role === "ohc_doctor" ? "Your medical registration number is not on file, so you cannot sign certificates yet. Ask your administrator to add it." : "Only an OHC doctor can sign a fitness certificate. You can look up employees here."}
+            {me.worker.role === "ohc_doctor" || me.worker.role === "corporate_cmo" ? "Your medical registration number is not on file, so you cannot sign certificates yet. Ask your administrator to add it." : "Only an OHC doctor can sign a fitness certificate; a corporate CMO can also sign once registered. You can look up employees here."}
           </p>
         )}
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList><TabsTrigger value="employees">Employees</TabsTrigger><TabsTrigger value="certificates">Certificates issued</TabsTrigger></TabsList>
+          <TabsList><TabsTrigger value="employees">Employees</TabsTrigger><TabsTrigger value="certificates">Certificates issued</TabsTrigger><TabsTrigger value="staff">Clinic staff</TabsTrigger><TabsTrigger value="emergencies">Emergencies</TabsTrigger></TabsList>
         </Tabs>
 
         {tab === "employees" && (
@@ -176,28 +127,27 @@ export default function OhcWorkspace() {
 
         {tab === "certificates" && (
           <section aria-label="Certificates issued">
-            {listError && <InlineError message="Could not load certificates." onRetry={loadCerts} />}
-            {certs === null && !listError && <Skeleton className="h-24" />}
-            {certs?.length === 0 && <EmptyState icon={ShieldCheck} title="No certificates yet" description="Certificates you issue for the company's employees appear here." />}
-            {certs && certs.length > 0 && (
-              <div className="overflow-x-auto rounded-lg border bg-card">
-                <table className="w-full text-left text-sm">
-                  <thead className="bg-muted/50 text-xs text-muted-foreground"><tr><th className="p-3">Employee</th><th>Result</th><th>Valid until</th><th>Issued</th><th><span className="sr-only">PDF</span></th></tr></thead>
-                  <tbody>{certs.map((c) => (
-                    <tr key={c.id} className="border-t">
-                      <td className="p-3">{c.patient_name}<span className="block text-xs text-muted-foreground">{c.employee_id}</span></td>
-                      <td>{FITNESS_LABEL[c.fitness_status] ?? c.fitness_status}{c.restrictions ? <span className="block text-xs text-muted-foreground">{c.restrictions}</span> : null}</td>
-                      <td>{formatDate(c.valid_until)}</td><td>{formatDate(c.created_at)}</td>
-                      <td className="pr-3 text-right"><Button size="sm" variant="outline" onClick={() => downloadCertificate(c.id).catch((e) => toast({ variant: "destructive", title: "PDF unavailable", description: (e as OhcError).message }))}><FileDown className="mr-1 size-4" aria-hidden />PDF</Button></td>
-                    </tr>))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            <CertificatesTable certs={certs} listError={listError} onRetry={loadCerts} onDownload={downloadCertificate} />
+          </section>
+        )}
+        {tab === "staff" && (
+          <section aria-label="Clinic staff" className="space-y-3">
+            <h2 className="text-base font-semibold">Clinic staff</h2>
+            <StaffList staff={staff} listError={listError} onRetry={loadStaff} />
+          </section>
+        )}
+        {tab === "emergencies" && (
+          <section aria-label="Workplace emergencies" className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div><h2 className="text-base font-semibold">Workplace emergencies</h2><p className="text-sm text-muted-foreground">Triage and track medical events reported at the corporate workplace.</p></div>
+              <Button onClick={() => setEmergencyOpen(true)}><AlertTriangle className="mr-2 size-4" aria-hidden />Report emergency</Button>
+            </div>
+            <EmergenciesPanel emergencies={emergencies} listError={listError} onRetry={loadEmergencies} onAdvance={async (id, status) => { await updateEmergency(id, { unit: unit.uid, status }); loadEmergencies(); }} />
           </section>
         )}
       </main>
-      <IssueDialog employee={issueFor} unit={unit.uid} open={issueFor !== null} onOpenChange={(o) => !o && setIssueFor(null)} onIssued={() => { loadCerts(); }} />
+      <IssueCertificateDialog employee={issueFor} open={issueFor !== null} onOpenChange={(o) => !o && setIssueFor(null)} onIssue={(input) => issueCertificate({ ...input, unit: unit.uid })} onIssued={loadCerts} />
+      <EmergencyReportDialog employees={employees || []} open={emergencyOpen} onOpenChange={setEmergencyOpen} onReport={(input) => reportEmergency({ ...input, unit: unit.uid })} onReported={loadEmergencies} />
     </div>
   );
 }

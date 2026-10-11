@@ -4,7 +4,7 @@
  * issued, and who has accessed this data. All data comes from /api/corporate/ohc-units.
  */
 import { useState } from "react";
-import { Building2, ShieldCheck, Stethoscope, Users } from "lucide-react";
+import { AlertTriangle, Building2, ShieldCheck, Stethoscope, Users } from "lucide-react";
 import CorporateLayout from "@/components/corporate/CorporateLayout";
 import CorporatePageHeader from "@/components/corporate/CorporatePageHeader";
 import { Button } from "@/components/ui/button";
@@ -12,12 +12,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineError } from "@/components/ui/inline-error";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { toProblem, useCorporateDashboard, useCorporateLog, useCorporateOhcs, useUnitMutations } from "../care-units/careUnitsApi";
+import {
+  downloadCorporateCertificate, toProblem, useCorporateDashboard, useCorporateLog, useCorporateOhcCertificates,
+  useCorporateOhcEmergencies, useCorporateOhcEmployees, useCorporateOhcMutations, useCorporateOhcs, useUnitMutations,
+} from "../care-units/careUnitsApi";
+import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, StaffList } from "../care-units/ohcPanels";
 import { CONTRACT_LABEL, CONTRACT_TONE, FITNESS_LABEL, formatDate } from "../care-units/format";
-import type { CareUnit } from "../care-units/types";
+import type { CareUnit, Employee } from "../care-units/types";
 
 const card = "rounded-xl border border-white/[0.06] bg-slate-900/60 p-4";
 
@@ -28,6 +33,17 @@ function Dashboard({ uid }: { uid: string }) {
   const { toast } = useToast();
   const [ending, setEnding] = useState(false);
   const [reason, setReason] = useState("");
+  const isCmo = Boolean(dash.data?.cmo);
+  const cmo = dash.data?.cmo;
+
+  const [empSearch, setEmpSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [issueFor, setIssueFor] = useState<Employee | null>(null);
+  const [emergencyOpen, setEmergencyOpen] = useState(false);
+  const employeesQuery = useCorporateOhcEmployees(isCmo ? uid : null, empSearch);
+  const certsQuery = useCorporateOhcCertificates(isCmo ? uid : null);
+  const emergenciesQuery = useCorporateOhcEmergencies(isCmo ? uid : null);
+  const ops = useCorporateOhcMutations(uid);
 
   if (dash.isLoading) return <div className="space-y-3" aria-busy="true"><Skeleton className="h-24" /><Skeleton className="h-40" /></div>;
   if (dash.isError || !dash.data) return <InlineError message="Could not load this OHC." onRetry={() => dash.refetch()} />;
@@ -81,7 +97,14 @@ function Dashboard({ uid }: { uid: string }) {
         </section>
         <section className={card} aria-labelledby="sf">
           <h3 id="sf" className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><Users className="size-4" aria-hidden />Staff linked to this OHC</h3>
-          {staff.length ? (
+          {isCmo ? (
+            <StaffList
+              staff={staff}
+              listError={false}
+              onRetry={() => dash.refetch()}
+              onToggleActive={async (staffUid, active) => { await ops.setStaffActive.mutateAsync({ staffUid, active }); dash.refetch(); }}
+            />
+          ) : staff.length ? (
             <ul className="divide-y divide-white/[0.06] text-sm">
               {staff.map((s) => <li key={s.uid} className="flex items-center justify-between py-2"><span className="text-slate-200">{s.name}</span><span className="text-xs text-slate-400">{s.role === "ohc_doctor" ? "OHC doctor" : "OHC staff"}{s.active ? "" : " · removed"}</span></li>)}
             </ul>
@@ -89,9 +112,40 @@ function Dashboard({ uid }: { uid: string }) {
         </section>
       </div>
 
+      {isCmo && cmo && !cmo.registrationNumberOnFile && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+          Your medical registration number is not on file, so you cannot sign certificates yet. Ask your administrator to add it.
+        </p>
+      )}
+
       <section className={card} aria-labelledby="fc">
-        <h3 id="fc" className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><ShieldCheck className="size-4" aria-hidden />Fitness certificates issued by this OHC</h3>
-        {certificates.length === 0 ? <p className="text-sm text-slate-500">None yet.</p> : (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 id="fc" className="flex items-center gap-2 text-sm font-semibold text-white"><ShieldCheck className="size-4" aria-hidden />Fitness certificates issued by this OHC</h3>
+          {isCmo && <Button size="sm" disabled={!cmo?.canSign} onClick={() => setPickerOpen((o) => !o)}>Issue certificate</Button>}
+        </div>
+        {isCmo && pickerOpen && (
+          <div className="mb-3 mt-2 space-y-2 rounded-lg border border-white/[0.06] bg-slate-950/40 p-3">
+            <Label htmlFor="emp-search" className="text-xs text-slate-400">Find an employee</Label>
+            <Input id="emp-search" value={empSearch} placeholder="Name or employee id" onChange={(e) => setEmpSearch(e.target.value)} />
+            <ul className="divide-y divide-white/[0.06]">
+              {(employeesQuery.data ?? []).map((e) => (
+                <li key={e.id} className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-slate-200">{e.name}<span className="block text-xs text-slate-500">{[e.employeeId, e.department].filter(Boolean).join(" · ")}</span></span>
+                  <Button size="sm" disabled={!cmo?.canSign} onClick={() => setIssueFor(e)}>Issue</Button>
+                </li>
+              ))}
+              {employeesQuery.data?.length === 0 && <li className="py-2 text-sm text-slate-500">No employees found.</li>}
+            </ul>
+          </div>
+        )}
+        {isCmo ? (
+          <CertificatesTable
+            certs={certsQuery.data ?? null}
+            listError={certsQuery.isError}
+            onRetry={() => certsQuery.refetch()}
+            onDownload={(id) => downloadCorporateCertificate(uid, id)}
+          />
+        ) : certificates.length === 0 ? <p className="text-sm text-slate-500">None yet.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead className="text-xs text-slate-500"><tr><th className="py-2 pr-3">Employee</th><th className="pr-3">Result</th><th className="pr-3">Restrictions / remarks</th><th className="pr-3">Valid until</th><th>Doctor</th></tr></thead>
@@ -111,6 +165,23 @@ function Dashboard({ uid }: { uid: string }) {
         )}
       </section>
 
+      {isCmo && (
+        <section className={card} aria-labelledby="em">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="em" className="flex items-center gap-2 text-sm font-semibold text-white"><AlertTriangle className="size-4" aria-hidden />Workplace emergencies</h3>
+            <Button size="sm" onClick={() => setEmergencyOpen(true)}>Report emergency</Button>
+          </div>
+          <div className="mt-2">
+            <EmergenciesPanel
+              emergencies={emergenciesQuery.data ?? null}
+              listError={emergenciesQuery.isError}
+              onRetry={() => emergenciesQuery.refetch()}
+              onAdvance={async (id, status) => { await ops.updateEmergency.mutateAsync({ id, patch: { status } }); emergenciesQuery.refetch(); }}
+            />
+          </div>
+        </section>
+      )}
+
       <section className={card} aria-labelledby="al">
         <h3 id="al" className="mb-1 text-sm font-semibold text-white">Who has accessed this OHC's data</h3>
         <p className="mb-2 text-xs text-slate-500">Every time your company views this page or the operator's staff issue a certificate, it is recorded here and cannot be changed.</p>
@@ -127,6 +198,25 @@ function Dashboard({ uid }: { uid: string }) {
           <DialogFooter><Button variant="outline" onClick={() => setEnding(false)}>Keep it</Button><Button variant="destructive" disabled={!reason.trim() || corporateEnd.isPending} onClick={end}>End contract</Button></DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {isCmo && (
+        <>
+          <IssueCertificateDialog
+            employee={issueFor}
+            open={issueFor !== null}
+            onOpenChange={(o) => !o && setIssueFor(null)}
+            onIssue={(input) => ops.issueCertificate.mutateAsync(input)}
+            onIssued={() => { certsQuery.refetch(); setPickerOpen(false); setIssueFor(null); }}
+          />
+          <EmergencyReportDialog
+            employees={employeesQuery.data ?? []}
+            open={emergencyOpen}
+            onOpenChange={setEmergencyOpen}
+            onReport={(input) => ops.reportEmergency.mutateAsync(input)}
+            onReported={() => emergenciesQuery.refetch()}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -224,6 +224,10 @@ class InitializationController {
       await runCorporateClaimsCmoAdjudicationMigration().catch(e =>
         console.warn('⚠️  corporate-claims-cmo-adjudication migration skipped:', e.message)
       );
+      const { runOhcWorkplaceEmergenciesMigration } = await import('../migrations/ohc-workplace-emergencies.migration.js');
+      await runOhcWorkplaceEmergenciesMigration().catch(e =>
+        console.warn('⚠️  OHC workplace emergencies migration skipped:', e.message)
+      );
       const { runCorporateBenefitTiersMigration } = await import('../migrations/corporate-benefit-tiers.migration.js');
       await runCorporateBenefitTiersMigration().catch(e =>
         console.warn('⚠️  corporate-benefit-tiers migration skipped:', e.message)

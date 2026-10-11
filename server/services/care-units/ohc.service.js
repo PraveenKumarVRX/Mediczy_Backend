@@ -1,9 +1,11 @@
 /**
- * The OHC workspace: what an `ohc_doctor` / `ohc_staff` (a hospital- or clinic-portal user assigned to an OHC unit) can do.
+ * The OHC workspace: what an `ohc_doctor` / `ohc_staff` (a hospital- or clinic-portal user assigned to an OHC unit),
+ * or the corporate CMO (corporate-side super-admin of the OHC services serving their company), can do.
  *
- * The unit and the corporate are NEVER taken from a request. Every call re-reads, from the database, that the user is active, still has
- * an active assignment to an OHC whose contract is active, and that the operator is still the user's organisation; suspending the user,
- * unassigning them or ending the contract stops the next request, not the token's expiry.
+ * The unit and the corporate are NEVER taken from a request. Every call re-reads, from the database, that the user is active and the
+ * OHC contract is active. Hospital/clinic staff must still have an active assignment owned by their operator; a corporate CMO is scoped
+ * to OHC units serving the CMO's corporate. The OHC remains owned by the hospital/clinic tenant (`owner_uid`); CMO access never changes
+ * that ownership or grants tenant-level unit/contract administration. Suspending the user, unassigning staff or ending a contract stops the next request.
  */
 import bcrypt from 'bcrypt';
 import { CollectionError, notFound, forbidden, invalid } from '../collection/errors.js';
@@ -13,6 +15,9 @@ import { passwordProblem } from '../collection/phlebotomist.service.js';
 export const OHC_PORTAL = 'ohc';
 export const OHC_AUDIENCE = 'mediczy-ohc';
 const FITNESS = ['fit', 'fit_with_restrictions', 'temporarily_unfit', 'unfit'];
+const OHC_ROLES = ['ohc_doctor', 'ohc_staff', 'corporate_cmo'];
+const EMERGENCY_SEVERITIES = ['low', 'medium', 'high', 'critical'];
+const EMERGENCY_STATUSES = ['open', 'triaged', 'resolved', 'transferred', 'closed'];
 const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 
 export function createOhcService({ pool, tokens, now = () => new Date() }) {
@@ -30,15 +35,23 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     const u = us[0];
     if (!u) return { reason: 'unknown_user' };
     if (u.status !== 'active') return { reason: `user_${u.status}` };
-    if (!['ohc_doctor', 'ohc_staff'].includes(u.role)) return { reason: 'not_an_ohc_role' };
+    if (!OHC_ROLES.includes(u.role)) return { reason: 'not_an_ohc_role' };
+    const unitParams = [u.id, u.organization_uid, u.role];
+    const unitScope = u.role === 'corporate_cmo'
+      ? `FROM hospital_branch b`
+      : `FROM staff_branch_assignment s
+         JOIN hospital_branch b ON b.id = s.branch_id`;
+    const unitWhere = u.role === 'corporate_cmo'
+      ? `WHERE b.corporate_uid = $2`
+      : `WHERE s.user_id = $1 AND s.is_active AND s.role = $3 AND b.owner_uid = $2`;
     const { rows: units } = await pool.query(
-      `SELECT b.id, b.unique_id, b.name, b.corporate_uid, b.owner_uid, b.services, s.role AS assigned_role, c."companyName" AS corporate_name, o.name AS operator_name
-         FROM staff_branch_assignment s
-         JOIN hospital_branch b ON b.id = s.branch_id AND b.unit_type = 'ohc' AND b.is_active AND b.contract_status = 'active'
-              AND (b.contract_end IS NULL OR b.contract_end >= CURRENT_DATE) AND b.owner_uid = $2
+      `SELECT b.id, b.unique_id, b.name, b.corporate_uid, b.owner_uid, b.services, c."companyName" AS corporate_name, o.name AS operator_name
+         ${unitScope}
          LEFT JOIN corporates c ON c.unique_id = b.corporate_uid
          LEFT JOIN tenants o ON o.unique_id = b.owner_uid
-        WHERE s.user_id = $1 AND s.is_active AND s.role = $3`, [u.id, u.organization_uid, u.role]);
+        ${unitWhere}
+          AND b.unit_type = 'ohc' AND b.is_active AND b.contract_status = 'active'
+          AND (b.contract_end IS NULL OR b.contract_end >= CURRENT_DATE)`, unitParams);
     if (!units.length) return { reason: 'no_active_ohc_assignment' };
     return {
       principal: {
@@ -95,7 +108,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
   }
 
   const me = (principal) => ({
-    worker: { uid: principal.uid, displayName: principal.displayName, role: principal.role, mustChangePassword: principal.mustChangePassword, registrationNumberOnFile: Boolean(principal.registrationNumber), canSign: principal.role === 'ohc_doctor' && Boolean(principal.registrationNumber) },
+    worker: { uid: principal.uid, displayName: principal.displayName, role: principal.role, mustChangePassword: principal.mustChangePassword, registrationNumberOnFile: Boolean(principal.registrationNumber), canSign: ['ohc_doctor', 'corporate_cmo'].includes(principal.role) && Boolean(principal.registrationNumber), isSuperAdmin: principal.role === 'corporate_cmo', canManage: principal.role === 'corporate_cmo' },
     units: principal.units, serverTime: now().toISOString(),
   });
 
@@ -126,10 +139,10 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
   }
 
   const CERT_KEYS = ['unit', 'employeeUserId', 'jobDescription', 'examinationDate', 'fitnessStatus', 'restrictions', 'validFrom', 'validUntil', 'remarks', 'certificateType'];
-  /** Issue a fitness certificate. Only an ohc_doctor with a registration number on file; the employee must belong to the unit's corporate. */
+  /** Issue a fitness certificate. Only an OHC doctor or corporate CMO with a registration number on file; the employee must belong to the unit's corporate. */
   function issueCertificate(principal, input) {
     const b = v.exactly(v.body(input), 'body', CERT_KEYS);
-    if (principal.role !== 'ohc_doctor') throw forbidden('Only an OHC doctor can sign a fitness certificate');
+    if (!['ohc_doctor', 'corporate_cmo'].includes(principal.role)) throw forbidden('Only an OHC doctor or corporate CMO can sign a fitness certificate');
     if (!principal.registrationNumber) throw new CollectionError('registration_missing', 422, 'Your medical registration number is not on file. Ask your administrator to add it.');
     const u = unitOf(principal, b.unit);
     const status = v.oneOf(b.fitnessStatus, 'fitnessStatus', FITNESS);
@@ -154,7 +167,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
           b.examinationDate ? v.date(b.examinationDate, 'examinationDate').toISOString().slice(0, 10) : null, status,
           v.str(b.restrictions, 'restrictions', { max: 500, optional: true }), validFrom, validUntil, v.str(b.remarks, 'remarks', { max: 1000, optional: true }),
           JSON.stringify({ source: 'ohc', unitUid: u.uid, issuedByUserUid: principal.uid }), u.uid, principal.id]);
-      await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, 'ohc_staff', $2, 'certificate.issue', $3)`, [u.uid, principal.ref, String(ins.rows[0].id)]);
+      await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, $2, $3, 'certificate.issue', $4)`, [u.uid, principal.role === 'corporate_cmo' ? 'corporate_cmo' : 'ohc_staff', principal.ref, String(ins.rows[0].id)]);
       return { status: 201, body: { certificate: ins.rows[0] } };
     });
   }
@@ -166,6 +179,68 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return { unit: { uid: u.uid }, certificates: rows };
   }
 
+  async function staff(principal, { unit } = {}) {
+    const u = unitOf(principal, unit);
+    const { rows } = await pool.query(
+      `SELECT us.unique_id AS uid, us."firstName", us."lastName", us.email, s.role, s.is_active, us.status::text AS user_status
+         FROM staff_branch_assignment s JOIN users us ON us.id = s.user_id
+        WHERE s.branch_id = (SELECT id FROM hospital_branch WHERE unique_id = $1) ORDER BY s.role, us."firstName"`, [u.uid]);
+    return { unit: { uid: u.uid }, staff: rows.map((r) => ({ uid: r.uid, name: `${r.firstName || ''} ${r.lastName || ''}`.trim(), email: r.email, role: r.role, active: r.is_active && r.user_status === 'active' })) };
+  }
+
+  async function emergencies(principal, { unit, status, limit = 50 } = {}) {
+    const u = unitOf(principal, unit);
+    const lim = v.int(limit, 'limit', { min: 1, max: 200 });
+    const params = [u.uid];
+    const where = ['e.unit_uid = $1'];
+    if (status) { where.push(`e.status = $${params.length + 1}`); params.push(v.oneOf(status, 'status', EMERGENCY_STATUSES)); }
+    params.push(lim);
+    const { rows } = await pool.query(
+      `SELECT e.*, COALESCE(u."firstName" || ' ' || u."lastName", '') AS employee_name, u.unique_id AS employee_uid
+         FROM ohc_workplace_emergencies e LEFT JOIN users u ON u.id = e.employee_user_id
+        WHERE ${where.join(' AND ')} ORDER BY e.occurred_at DESC, e.id DESC LIMIT $${params.length}`, params);
+    return { unit: { uid: u.uid }, emergencies: rows };
+  }
+
+  function createEmergency(principal, input) {
+    const b = v.exactly(v.body(input), 'body', ['unit', 'employeeUserId', 'incidentType', 'severity', 'description', 'location', 'occurredAt']);
+    const u = unitOf(principal, b.unit);
+    const severity = v.oneOf(b.severity || 'medium', 'severity', EMERGENCY_SEVERITIES);
+    const incidentType = v.str(b.incidentType || 'medical_emergency', 'incidentType', { max: 80 });
+    const description = v.str(b.description, 'description', { min: 2, max: 2000 });
+    const location = v.str(b.location, 'location', { max: 200, optional: true });
+    const occurredAt = b.occurredAt ? v.date(b.occurredAt, 'occurredAt').toISOString() : null;
+    const employeeUserId = b.employeeUserId == null ? null : v.int(b.employeeUserId, 'employeeUserId', { min: 1 });
+    return tx(async (c) => {
+      if (employeeUserId) {
+        const employee = await c.query(`SELECT 1 FROM corporate_employees WHERE "userId" = $1 AND corporate_uid = $2 AND "isActive"`, [employeeUserId, u.corporateUid]);
+        if (!employee.rowCount) throw notFound('Employee');
+      }
+      const { rows } = await c.query(
+        `INSERT INTO ohc_workplace_emergencies (unit_uid, corporate_uid, employee_user_id, incident_type, severity, description, location, occurred_at, reported_by_user_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8::timestamptz, now()),$9) RETURNING *`,
+        [u.uid, u.corporateUid, employeeUserId, incidentType, severity, description, location, occurredAt, principal.id]);
+      await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, $2, $3, 'emergency.create', $4)`, [u.uid, principal.role === 'corporate_cmo' ? 'corporate_cmo' : 'ohc_staff', principal.ref, String(rows[0].id)]);
+      return { status: 201, body: { emergency: rows[0] } };
+    });
+  }
+
+  function updateEmergency(principal, id, input) {
+    const b = v.exactly(v.body(input), 'body', ['unit', 'status', 'triageNotes', 'resolution']);
+    const u = unitOf(principal, b.unit);
+    const status = b.status === undefined ? null : v.oneOf(b.status, 'status', EMERGENCY_STATUSES);
+    const triageNotes = b.triageNotes === undefined ? null : v.str(b.triageNotes, 'triageNotes', { max: 2000, optional: true });
+    const resolution = b.resolution === undefined ? null : v.str(b.resolution, 'resolution', { max: 2000, optional: true });
+    return tx(async (c) => {
+      const { rows } = await c.query(
+        `UPDATE ohc_workplace_emergencies SET status = COALESCE($1, status), triage_notes = COALESCE($2, triage_notes), resolution = COALESCE($3, resolution), resolved_at = CASE WHEN $1 IN ('resolved','closed') THEN now() ELSE resolved_at END, updated_at = now()
+          WHERE id = $4 AND unit_uid = $5 RETURNING *`, [status, triageNotes, resolution, v.int(id, 'id', { min: 1 }), u.uid]);
+      if (!rows.length) throw notFound('Emergency');
+      await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, $2, $3, 'emergency.update', $4)`, [u.uid, principal.role === 'corporate_cmo' ? 'corporate_cmo' : 'ohc_staff', principal.ref, String(rows[0].id)]);
+      return rows[0];
+    });
+  }
+
   async function certificateById(principal, id) {
     const n = v.int(id, 'id', { min: 1 });
     const { rows } = await pool.query(`SELECT * FROM fitness_certificates WHERE id = $1 AND issued_by_unit_uid = ANY($2::text[])`, [n, principal.units.map((x) => x.uid)]);
@@ -173,5 +248,5 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return rows[0];
   }
 
-  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, issueCertificate, certificates, certificateById };
+  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, staff, emergencies, createEmergency, updateEmergency, issueCertificate, certificates, certificateById };
 }

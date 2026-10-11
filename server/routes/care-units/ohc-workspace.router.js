@@ -1,4 +1,4 @@
-/** The OHC workspace API for ohc_doctor / ohc_staff. Mounted at /api/ohc-workspace. Pure factory: services, auth and limiter injected. */
+/** The OHC workspace API for hospital OHC staff and the corporate CMO super-admin. Mounted at /api/ohc-workspace. */
 import express from 'express';
 import { handle, send } from '../lab/collection-http.js';
 
@@ -23,6 +23,13 @@ export function buildOhcWorkspaceRouter({ ohc, authenticate, limiter = [], rende
   router.post('/auth/change-password', handle(async (req, res) => res.json({ success: true, ...(await ohc.changePassword(req.ohc, req.body)) })));
   router.get('/me', handle(async (req, res) => res.json({ success: true, ...ohc.me(req.ohc) })));
   router.get('/employees', handle(async (req, res) => res.json({ success: true, ...(await ohc.employees(req.ohc, req.query)) })));
+  router.get('/staff', handle(async (req, res) => res.json({ success: true, ...(await ohc.staff(req.ohc, req.query)) })));
+  router.get('/emergencies', handle(async (req, res) => res.json({ success: true, ...(await ohc.emergencies(req.ohc, req.query)) })));
+  router.post('/emergencies', handle(async (req, res) => {
+    const result = await ohc.createEmergency(req.ohc, req.body);
+    send(res, result);
+  }));
+  router.patch('/emergencies/:id', handle(async (req, res) => res.json({ success: true, emergency: await ohc.updateEmergency(req.ohc, req.params.id, req.body) })));
   router.get('/certificates', handle(async (req, res) => res.json({ success: true, ...(await ohc.certificates(req.ohc, req.query)) })));
   router.post('/certificates', handle(async (req, res) => {
     const result = await ohc.issueCertificate(req.ohc, req.body);

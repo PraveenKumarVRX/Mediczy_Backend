@@ -62,8 +62,8 @@ const CorporateHrTeam = () => {
   const [actionLoading, setActionLoading] = useState(false);
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState<{ firstName: string; lastName: string; email: string; phoneNumber: string; role: 'hr_staff' | 'corporate_cmo' | 'corporate_ohc' }>({
-    firstName: '', lastName: '', email: '', phoneNumber: '', role: 'hr_staff',
+  const [inviteForm, setInviteForm] = useState<{ firstName: string; lastName: string; email: string; phoneNumber: string; registrationNumber: string; role: 'hr_staff' | 'corporate_cmo' | 'corporate_ohc' }>({
+    firstName: '', lastName: '', email: '', phoneNumber: '', registrationNumber: '', role: 'hr_staff',
   });
   const [tempCredential, setTempCredential] = useState<{ email: string; password: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -98,7 +98,7 @@ const CorporateHrTeam = () => {
     return admin ? fullName(admin) : null;
   }, [team]);
 
-  const resetInviteForm = () => setInviteForm({ firstName: '', lastName: '', email: '', phoneNumber: '', role: 'hr_staff' });
+  const resetInviteForm = () => setInviteForm({ firstName: '', lastName: '', email: '', phoneNumber: '', registrationNumber: '', role: 'hr_staff' });
 
   const submitInvite = async () => {
     if (!inviteForm.email.trim()) {
@@ -353,7 +353,7 @@ const CorporateHrTeam = () => {
             <DialogTitle>Add Team Member</DialogTitle>
             <DialogDescription>
               {inviteForm.role === 'corporate_cmo'
-                ? "They'll get portal access as Chief Medical Officer — able to scrutinize and approve/reject insurance claims and wallet authorizations on the corporate's behalf, but not manage the HR team."
+                ? "They'll get portal access as Chief Medical Officer and OHC super-admin — able to run the corporate-linked clinic workspace, triage workplace emergencies, issue certificates when a medical registration is on file, and scrutinize claims."
                 : inviteForm.role === 'corporate_ohc'
                 ? "They'll get portal access as OHC Staff — able to issue fitness certificates and return-to-work clearances, manage employee health records, and process health claims/wallet authorizations, but not manage the HR team."
                 : "They'll get portal access as HR Staff — able to manage employees and reports, but not the HR team itself."}
@@ -368,7 +368,7 @@ const CorporateHrTeam = () => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="hr_staff">HR Staff</SelectItem>
-                  <SelectItem value="corporate_cmo">Chief Medical Officer (claims scrutiny)</SelectItem>
+                  <SelectItem value="corporate_cmo">Chief Medical Officer (OHC super-admin)</SelectItem>
                   <SelectItem value="corporate_ohc">OHC Staff (on-site clinic)</SelectItem>
                 </SelectContent>
               </Select>
@@ -389,6 +389,7 @@ const CorporateHrTeam = () => {
               <Label htmlFor="hr-phone">Phone (optional)</Label>
               <Input id="hr-phone" value={inviteForm.phoneNumber} onChange={(e) => setInviteForm((f) => ({ ...f, phoneNumber: e.target.value }))} />
             </div>
+            {inviteForm.role === 'corporate_cmo' && <div className="col-span-2 space-y-1.5"><Label htmlFor="hr-registration">Medical registration number (optional)</Label><Input id="hr-registration" value={inviteForm.registrationNumber} placeholder="Required before signing fitness certificates" onChange={(e) => setInviteForm((f) => ({ ...f, registrationNumber: e.target.value }))} /></div>}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setInviteOpen(false)}>Cancel</Button>

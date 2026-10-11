@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { login, OhcError } from "./ohcClient";
 
-/** /ohc/login — sign-in for OHC doctors and OHC staff (accounts are created by the hospital or clinic that operates the OHC). */
+/** /ohc/login — sign-in for tenant OHC doctors/staff. The corporate CMO now signs in at the corporate portal (/corporate/login). */
 export default function OhcLogin() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
@@ -35,6 +35,7 @@ export default function OhcLogin() {
         <div className="space-y-1.5"><Label htmlFor="ohc-pw">Password</Label><Input id="ohc-pw" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} /></div>
         {error && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         <Button type="submit" className="w-full" disabled={busy || !email || !password}>{busy ? "Signing in…" : "Sign in"}</Button>
+        <p className="text-center text-xs text-muted-foreground">Chief Medical Officer? Sign in at the <a href="/corporate/login" className="underline">corporate portal</a>.</p>
       </form>
     </main>
   );

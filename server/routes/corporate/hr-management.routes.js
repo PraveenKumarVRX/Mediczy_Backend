@@ -40,6 +40,7 @@ router.post('/team', authCorporate, wrap((req) => hrManagement.inviteHrStaff({
   lastName: req.body.lastName,
   email: req.body.email,
   phoneNumber: req.body.phoneNumber,
+  registrationNumber: req.body.registrationNumber,
   role: req.body.role,
 })));
 

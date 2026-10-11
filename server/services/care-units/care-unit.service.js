@@ -198,6 +198,30 @@ export function createCareUnitService({ pool }) {
   }
 
   /**
+   * The corporate CMO deactivates or reactivates an EXISTING ohc_doctor/ohc_staff's assignment to
+   * one of their OHCs. This never creates, deletes or re-owns a `users` row — only
+   * `staff_branch_assignment.is_active` — so it does not grant the corporate any tenant-level
+   * administration over the operator's own accounts; creating new OHC staff stays with the operator
+   * (`createStaff`, `authOperatorAdmin`-gated).
+   */
+  function setStaffActiveForCorporate(p, uid, staffUid, active) {
+    assertCorporate(p);
+    const on = v.bool(active, 'active', { optional: false });
+    return tx(async (c) => {
+      const unit = await one(c, `SELECT id FROM hospital_branch WHERE unique_id = $1 AND corporate_uid = $2 AND unit_type = 'ohc' FOR UPDATE`, [uid, p.corporateUid]);
+      if (!unit) throw notFound('OHC');
+      const r = await c.query(
+        `UPDATE staff_branch_assignment s SET is_active = $1 FROM users u
+          WHERE s.user_id = u.id AND u.unique_id = $2 AND s.branch_id = $3 AND s.role IN ('ohc_doctor', 'ohc_staff')`,
+        [on, v.str(staffUid, 'staffUid', { max: 12 }), unit.id]);
+      if (!r.rowCount) throw notFound('Assignment');
+      await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, 'corporate_cmo', $2, $3, $4)`,
+        [uid, p.ref, on ? 'staff.reactivate' : 'staff.deactivate', staffUid]);
+      return { status: 200, body: { active: on } };
+    });
+  }
+
+  /**
    * Create an OHC doctor / OHC staff user for this operator and assign them to an OHC. The temporary password is generated here,
    * returned ONCE to the administrator to hand over, and never stored in plaintext or logged; the user must change it (their next sign-in
    * is through the OHC workspace, which re-reads their account each request).
@@ -337,5 +361,5 @@ export function createCareUnitService({ pool }) {
     return { entries: rows.map((r) => ({ actorKind: r.actor_kind, actor: r.actor_ref, action: r.action, subject: r.subject, at: r.at })) };
   }
 
-  return { list, get, createUnit, updateUnit, listStaff, assignStaff, createStaff, removeStaff, lookupCorporates, lookupCoOwners, acceptContract, endContract, corporateUnits, corporateUnitDashboard, accessLog };
+  return { list, get, createUnit, updateUnit, listStaff, assignStaff, createStaff, removeStaff, setStaffActiveForCorporate, lookupCorporates, lookupCoOwners, acceptContract, endContract, corporateUnits, corporateUnitDashboard, accessLog };
 }

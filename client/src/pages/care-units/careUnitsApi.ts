@@ -1,7 +1,7 @@
 /** React Query layer for hospital/clinic administration of care units and for the corporate's OHC view. Domain state lives on the server. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/utils/api";
-import type { AccessEntry, CareUnit, CorporateDashboard, UnitStaff, ApiProblem } from "./types";
+import type { AccessEntry, CareUnit, CorporateDashboard, Employee, UnitStaff, WorkplaceEmergency, WorkspaceCertificate, ApiProblem } from "./types";
 
 export const keys = {
   all: ["care-units"] as const,
@@ -59,3 +59,31 @@ export const useCorporateDashboard = (uid: string | null) =>
   useQuery({ queryKey: keys.dashboard(uid ?? ""), enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}`)).data as CorporateDashboard });
 export const useCorporateLog = (uid: string | null) =>
   useQuery({ queryKey: [...keys.dashboard(uid ?? ""), "log"], enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}/access-log`)).data.entries as AccessEntry[] });
+
+// ── CMO clinical operations on /corporate/ohc-units (reuses the OHC workspace's own endpoints) ──
+export const useCorporateOhcEmployees = (uid: string | null, search: string) =>
+  useQuery({ queryKey: [...keys.dashboard(uid ?? ""), "employees", search], enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}/employees`, { params: { search } })).data.employees as Employee[] });
+export const useCorporateOhcCertificates = (uid: string | null) =>
+  useQuery({ queryKey: [...keys.dashboard(uid ?? ""), "certificates"], enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}/certificates`)).data.certificates as WorkspaceCertificate[] });
+export const useCorporateOhcEmergencies = (uid: string | null) =>
+  useQuery({ queryKey: [...keys.dashboard(uid ?? ""), "emergencies"], enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}/emergencies`)).data.emergencies as WorkplaceEmergency[] });
+
+export async function downloadCorporateCertificate(uid: string, id: number) {
+  const res = await api.get(`/corporate/ohc-units/${uid}/certificates/${id}/pdf`, { responseType: "blob" });
+  const url = URL.createObjectURL(res.data as Blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `fitness-certificate-${id}.pdf`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export function useCorporateOhcMutations(uid: string | null) {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: keys.dashboard(uid ?? "") });
+  const useOp = <V, R = unknown>(fn: (v: V) => Promise<R>) => useMutation({ mutationFn: fn, onSettled: refresh });
+  return {
+    issueCertificate: useOp((input: Record<string, unknown>) => api.post(`/corporate/ohc-units/${uid}/certificates`, input).then((r) => r.data as { certificate: { id: number }; pdfUrl: string | null })),
+    reportEmergency: useOp((input: Record<string, unknown>) => api.post(`/corporate/ohc-units/${uid}/emergencies`, input).then((r) => r.data.emergency as WorkplaceEmergency)),
+    updateEmergency: useOp((v: { id: number; patch: Record<string, unknown> }) => api.patch(`/corporate/ohc-units/${uid}/emergencies/${v.id}`, v.patch).then((r) => r.data.emergency as WorkplaceEmergency)),
+    setStaffActive: useOp((v: { staffUid: string; active: boolean }) => api.patch(`/corporate/ohc-units/${uid}/staff/${v.staffUid}`, { active: v.active }).then((r) => r.data)),
+  };
+}

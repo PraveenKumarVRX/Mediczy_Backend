@@ -29,15 +29,25 @@ export interface Certificate {
 export interface CorporateDashboard {
   unit: CareUnit; staff: UnitStaff[]; services: string[]; certificates: Certificate[];
   stats: { total: number; last_30d: number; fit: number; restricted: number; unfit: number };
+  /** Present only for the signed-in corporate_cmo: their clinical capability on this OHC. */
+  cmo?: { canSign: boolean; registrationNumberOnFile: boolean };
 }
 
 export interface AccessEntry { actorKind: string; actor: string; action: string; subject: string | null; at: string }
 
 export interface OhcUnit { uid: string; name: string; corporateUid: string; corporateName: string | null; operatorUid: string; operatorName: string | null; services: string[] }
 export interface OhcMe {
-  worker: { uid: string; displayName: string; role: "ohc_doctor" | "ohc_staff"; mustChangePassword: boolean; registrationNumberOnFile: boolean; canSign: boolean };
+  worker: { uid: string; displayName: string; role: "ohc_doctor" | "ohc_staff" | "corporate_cmo"; mustChangePassword: boolean; registrationNumberOnFile: boolean; canSign: boolean; isSuperAdmin?: boolean; canManage?: boolean };
   units: OhcUnit[]; serverTime: string;
 }
 export interface Employee { id: number; uid: string; name: string; employeeId: string | null; department: string | null; designation: string | null }
+export interface OhcStaffMember { uid: string; name: string; email: string | null; role: string; active: boolean }
+/** Raw row from /api/ohc-workspace/certificates and /api/corporate/ohc-units/:uid/certificates (ohcService.certificates — not the camelCase CorporateDashboard.certificates). */
+export interface WorkspaceCertificate { id: number; patient_name: string | null; employee_id: string | null; fitness_status: string; restrictions: string | null; valid_until: string | null; created_at: string }
+export interface WorkplaceEmergency {
+  id: number; unit_uid: string; corporate_uid: string; employee_user_id: number | null; employee_name?: string; employee_uid?: string;
+  incident_type: string; severity: "low" | "medium" | "high" | "critical"; description: string; location: string | null;
+  occurred_at: string; status: "open" | "triaged" | "resolved" | "transferred" | "closed"; triage_notes: string | null; resolution: string | null;
+}
 
 export interface ApiProblem { status: number; code: string; message: string; details?: Record<string, unknown> }

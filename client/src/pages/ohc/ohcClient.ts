@@ -5,7 +5,7 @@
  * Browser storage is the best a web build can do; a native shell should keep these in the platform secure store.
  */
 import api from "@/utils/api";
-import type { ApiProblem, Employee, OhcMe } from "../care-units/types";
+import type { ApiProblem, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency } from "../care-units/types";
 
 const ACCESS = "ohcAccessToken";
 const REFRESH = "ohcRefreshToken";
@@ -72,8 +72,14 @@ export const changePassword = (currentPassword: string, newPassword: string) => 
 export const getMe = () => request<OhcMe & { success: boolean }>("GET", "/me");
 export const getEmployees = (unit: string, search: string) =>
   request<{ employees: Employee[] }>("GET", `/employees?unit=${encodeURIComponent(unit)}&search=${encodeURIComponent(search)}`);
+export const getStaff = (unit: string) =>
+  request<{ staff: OhcStaffMember[] }>("GET", `/staff?unit=${encodeURIComponent(unit)}`);
 export const getCertificates = (unit: string) => request<{ certificates: Record<string, unknown>[] }>("GET", `/certificates?unit=${encodeURIComponent(unit)}`);
 export const issueCertificate = (input: Record<string, unknown>) => request<{ certificate: { id: number }; pdfUrl: string | null }>("POST", "/certificates", input);
+export const getEmergencies = (unit: string, status = "") =>
+  request<{ emergencies: WorkplaceEmergency[] }>("GET", `/emergencies?unit=${encodeURIComponent(unit)}${status ? `&status=${encodeURIComponent(status)}` : ""}`);
+export const reportEmergency = (input: Record<string, unknown>) => request<{ emergency: WorkplaceEmergency }>("POST", "/emergencies", input);
+export const updateEmergency = (id: number, input: Record<string, unknown>) => request<{ emergency: WorkplaceEmergency }>("PATCH", `/emergencies/${id}`, input);
 
 /** Fetch the certificate PDF with the session token and hand it to the browser as a download. */
 export async function downloadCertificate(id: number) {

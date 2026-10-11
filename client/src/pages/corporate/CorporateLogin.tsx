@@ -60,7 +60,9 @@ const CorporateLogin = () => {
     const token = localStorage.getItem('corporateToken');
     if (token) {
       console.log('✅ Corporate already authenticated, redirecting...');
-      navigate('/corporate/dashboard');
+      let role: string | undefined;
+      try { role = JSON.parse(localStorage.getItem('corporateData') || '{}').role; } catch { /* ignore */ }
+      navigate(role === 'corporate_cmo' ? '/corporate/ohc' : '/corporate/dashboard');
       return;
     }
 
@@ -96,6 +98,7 @@ const CorporateLogin = () => {
                 contactPerson: data.corporate.contactPerson,
                 type: data.corporate.packageType,
                 packageType: data.corporate.packageType,
+                role: data.user?.role,
               })
             );
           }
@@ -112,7 +115,9 @@ const CorporateLogin = () => {
             });
           }, 500);
           
-          navigate("/corporate/dashboard");
+          // The Chief Medical Officer's whole job is the OHC; land them there directly instead of
+          // the general corporate dashboard they have no particular use for.
+          navigate(data?.user?.role === "corporate_cmo" ? "/corporate/ohc" : "/corporate/dashboard");
         },
         onError: (error) => {
           if ((error as any)?.response?.data?.pending) { setIsPending(true); return; }
