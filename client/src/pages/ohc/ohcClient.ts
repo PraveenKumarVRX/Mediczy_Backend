@@ -5,7 +5,7 @@
  * Browser storage is the best a web build can do; a native shell should keep these in the platform secure store.
  */
 import api from "@/utils/api";
-import type { ApiProblem, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency } from "../care-units/types";
+import type { ApiProblem, ClinicalPrescription, ClinicalReferral, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency } from "../care-units/types";
 
 const ACCESS = "ohcAccessToken";
 const REFRESH = "ohcRefreshToken";
@@ -23,10 +23,16 @@ const base = () => String(api.defaults.baseURL || "/api").replace(/\/$/, "");
 let refreshing: Promise<boolean> | null = null;
 
 async function raw(method: string, path: string, body?: unknown, auth = true): Promise<Response> {
+  return rawAt(`/ohc-workspace${path}`, method, body, auth);
+}
+
+/** Same OHC access token, but against a full path outside /ohc-workspace — the real prescription and
+ * careos referral routes an ohc_doctor can now also reach (ohcClinicianAuth.middleware.js, server-side). */
+async function rawAt(fullPath: string, method: string, body?: unknown, auth = true): Promise<Response> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = read(ACCESS);
   if (auth && token) headers.Authorization = `Bearer ${token}`;
-  return fetch(`${base()}/ohc-workspace${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  return fetch(`${base()}${fullPath}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
 }
 
 async function refresh(): Promise<boolean> {
@@ -45,8 +51,12 @@ async function refresh(): Promise<boolean> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  let res = await raw(method, path, body);
-  if (res.status === 401 && (await res.clone().json().catch(() => ({}))).code === "token_expired" && (await refresh())) res = await raw(method, path, body);
+  return requestAt<T>(`/ohc-workspace${path}`, method, body);
+}
+
+async function requestAt<T>(fullPath: string, method: string, body?: unknown): Promise<T> {
+  let res = await rawAt(fullPath, method, body);
+  if (res.status === 401 && (await res.clone().json().catch(() => ({}))).code === "token_expired" && (await refresh())) res = await rawAt(fullPath, method, body);
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     if (res.status === 401 || json.code === "account_unavailable") signOutLocal();
@@ -80,6 +90,15 @@ export const getEmergencies = (unit: string, status = "") =>
   request<{ emergencies: WorkplaceEmergency[] }>("GET", `/emergencies?unit=${encodeURIComponent(unit)}${status ? `&status=${encodeURIComponent(status)}` : ""}`);
 export const reportEmergency = (input: Record<string, unknown>) => request<{ emergency: WorkplaceEmergency }>("POST", "/emergencies", input);
 export const updateEmergency = (id: number, input: Record<string, unknown>) => request<{ emergency: WorkplaceEmergency }>("PATCH", `/emergencies/${id}`, input);
+
+// ── The real hospital prescription + clinical-referral systems (ohcClinicianAuth.middleware.js) ──
+export const getMyPrescriptions = () => requestAt<{ count: number; prescriptions: ClinicalPrescription[] }>("/prescriptions/doctor", "GET");
+export const createPrescription = (input: Record<string, unknown>) =>
+  requestAt<{ prescription: { id: number; patientName: string | null; diagnosis: string | null; medicationsCount: number; status: string; createdAt: string } }>("/prescriptions", "POST", input);
+// GET /network/referrals (listing) is role-gated separately (requireRole(['doctor','nurse','admin',
+// 'assistant','hospital'])) and was not extended to ohc_doctor/corporate_cmo — only create+accept are
+// reachable with this identity, so there is no "list my referrals" call here.
+export const createReferral = (input: Record<string, unknown>) => requestAt<{ success: boolean; data: ClinicalReferral }>("/careos/network/referrals", "POST", input);
 
 /** Fetch the certificate PDF with the session token and hand it to the browser as a download. */
 export async function downloadCertificate(id: number) {

@@ -4,7 +4,7 @@
  * issued, and who has accessed this data. All data comes from /api/corporate/ohc-units.
  */
 import { useState } from "react";
-import { AlertTriangle, Building2, ShieldCheck, Stethoscope, Users } from "lucide-react";
+import { AlertTriangle, Building2, Pill, ShieldCheck, Stethoscope, Users } from "lucide-react";
 import CorporateLayout from "@/components/corporate/CorporateLayout";
 import CorporatePageHeader from "@/components/corporate/CorporatePageHeader";
 import { Button } from "@/components/ui/button";
@@ -17,10 +17,10 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
-  downloadCorporateCertificate, toProblem, useCorporateDashboard, useCorporateLog, useCorporateOhcCertificates,
-  useCorporateOhcEmergencies, useCorporateOhcEmployees, useCorporateOhcMutations, useCorporateOhcs, useUnitMutations,
+  downloadCorporateCertificate, toProblem, useClinicianMutations, useCorporateDashboard, useCorporateLog, useCorporateOhcCertificates,
+  useCorporateOhcEmergencies, useCorporateOhcEmployees, useCorporateOhcMutations, useCorporateOhcs, useMyPrescriptions, useUnitMutations,
 } from "../care-units/careUnitsApi";
-import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, StaffList } from "../care-units/ohcPanels";
+import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, PrescriptionDialog, PrescriptionsTable, ReferralDialog, StaffList } from "../care-units/ohcPanels";
 import { CONTRACT_LABEL, CONTRACT_TONE, FITNESS_LABEL, formatDate } from "../care-units/format";
 import type { CareUnit, Employee } from "../care-units/types";
 
@@ -39,11 +39,15 @@ function Dashboard({ uid }: { uid: string }) {
   const [empSearch, setEmpSearch] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [issueFor, setIssueFor] = useState<Employee | null>(null);
+  const [prescribeFor, setPrescribeFor] = useState<Employee | null>(null);
+  const [referFor, setReferFor] = useState<Employee | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const employeesQuery = useCorporateOhcEmployees(isCmo ? uid : null, empSearch);
   const certsQuery = useCorporateOhcCertificates(isCmo ? uid : null);
   const emergenciesQuery = useCorporateOhcEmergencies(isCmo ? uid : null);
+  const prescriptionsQuery = useMyPrescriptions(isCmo);
   const ops = useCorporateOhcMutations(uid);
+  const clinician = useClinicianMutations();
 
   if (dash.isLoading) return <div className="space-y-3" aria-busy="true"><Skeleton className="h-24" /><Skeleton className="h-40" /></div>;
   if (dash.isError || !dash.data) return <InlineError message="Could not load this OHC." onRetry={() => dash.refetch()} />;
@@ -121,7 +125,7 @@ function Dashboard({ uid }: { uid: string }) {
       <section className={card} aria-labelledby="fc">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 id="fc" className="flex items-center gap-2 text-sm font-semibold text-white"><ShieldCheck className="size-4" aria-hidden />Fitness certificates issued by this OHC</h3>
-          {isCmo && <Button size="sm" disabled={!cmo?.canSign} onClick={() => setPickerOpen((o) => !o)}>Issue certificate</Button>}
+          {isCmo && <Button size="sm" disabled={!cmo?.canSign} onClick={() => setPickerOpen((o) => !o)}>Employee actions</Button>}
         </div>
         {isCmo && pickerOpen && (
           <div className="mb-3 mt-2 space-y-2 rounded-lg border border-white/[0.06] bg-slate-950/40 p-3">
@@ -129,9 +133,13 @@ function Dashboard({ uid }: { uid: string }) {
             <Input id="emp-search" value={empSearch} placeholder="Name or employee id" onChange={(e) => setEmpSearch(e.target.value)} />
             <ul className="divide-y divide-white/[0.06]">
               {(employeesQuery.data ?? []).map((e) => (
-                <li key={e.id} className="flex items-center justify-between py-2 text-sm">
+                <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                   <span className="text-slate-200">{e.name}<span className="block text-xs text-slate-500">{[e.employeeId, e.department].filter(Boolean).join(" · ")}</span></span>
-                  <Button size="sm" disabled={!cmo?.canSign} onClick={() => setIssueFor(e)}>Issue</Button>
+                  <div className="flex gap-1.5">
+                    <Button size="sm" variant="outline" disabled={!cmo?.canSign} onClick={() => setIssueFor(e)}>Certificate</Button>
+                    <Button size="sm" variant="outline" disabled={!cmo?.canSign} onClick={() => setPrescribeFor(e)}>Prescribe</Button>
+                    <Button size="sm" variant="outline" disabled={!cmo?.canSign} onClick={() => setReferFor(e)}>Refer</Button>
+                  </div>
                 </li>
               ))}
               {employeesQuery.data?.length === 0 && <li className="py-2 text-sm text-slate-500">No employees found.</li>}
@@ -182,6 +190,14 @@ function Dashboard({ uid }: { uid: string }) {
         </section>
       )}
 
+      {isCmo && (
+        <section className={card} aria-labelledby="rx">
+          <h3 id="rx" className="mb-2 flex items-center gap-2 text-sm font-semibold text-white"><Pill className="size-4" aria-hidden />Prescriptions</h3>
+          <p className="mb-2 text-xs text-slate-500">Issued through the hospital's own prescription system. Use "Employee actions" above, then "Prescribe".</p>
+          <PrescriptionsTable prescriptions={prescriptionsQuery.data ?? null} listError={prescriptionsQuery.isError} onRetry={() => prescriptionsQuery.refetch()} />
+        </section>
+      )}
+
       <section className={card} aria-labelledby="al">
         <h3 id="al" className="mb-1 text-sm font-semibold text-white">Who has accessed this OHC's data</h3>
         <p className="mb-2 text-xs text-slate-500">Every time your company views this page or the operator's staff issue a certificate, it is recorded here and cannot be changed.</p>
@@ -214,6 +230,20 @@ function Dashboard({ uid }: { uid: string }) {
             onOpenChange={setEmergencyOpen}
             onReport={(input) => ops.reportEmergency.mutateAsync(input)}
             onReported={() => emergenciesQuery.refetch()}
+          />
+          <PrescriptionDialog
+            employee={prescribeFor}
+            open={prescribeFor !== null}
+            onOpenChange={(o) => !o && setPrescribeFor(null)}
+            onIssue={(input) => clinician.issuePrescription.mutateAsync(input)}
+            onIssued={() => prescriptionsQuery.refetch()}
+          />
+          <ReferralDialog
+            employee={referFor}
+            open={referFor !== null}
+            onOpenChange={(o) => !o && setReferFor(null)}
+            onRefer={(input) => clinician.createReferral.mutateAsync(input)}
+            onReferred={() => undefined}
           />
         </>
       )}

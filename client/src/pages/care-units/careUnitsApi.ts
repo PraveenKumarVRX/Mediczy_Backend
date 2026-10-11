@@ -1,7 +1,7 @@
 /** React Query layer for hospital/clinic administration of care units and for the corporate's OHC view. Domain state lives on the server. */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/utils/api";
-import type { AccessEntry, CareUnit, CorporateDashboard, Employee, UnitStaff, WorkplaceEmergency, WorkspaceCertificate, ApiProblem } from "./types";
+import type { AccessEntry, CareUnit, ClinicalPrescription, CorporateDashboard, Employee, UnitStaff, WorkplaceEmergency, WorkspaceCertificate, ApiProblem } from "./types";
 
 export const keys = {
   all: ["care-units"] as const,
@@ -85,5 +85,23 @@ export function useCorporateOhcMutations(uid: string | null) {
     reportEmergency: useOp((input: Record<string, unknown>) => api.post(`/corporate/ohc-units/${uid}/emergencies`, input).then((r) => r.data.emergency as WorkplaceEmergency)),
     updateEmergency: useOp((v: { id: number; patch: Record<string, unknown> }) => api.patch(`/corporate/ohc-units/${uid}/emergencies/${v.id}`, v.patch).then((r) => r.data.emergency as WorkplaceEmergency)),
     setStaffActive: useOp((v: { staffUid: string; active: boolean }) => api.patch(`/corporate/ohc-units/${uid}/staff/${v.staffUid}`, { active: v.active }).then((r) => r.data)),
+  };
+}
+
+// ── The real hospital prescription + clinical-referral systems, reached directly (not through the
+// /corporate/ohc-units proxy) — ohcClinicianAuth.middleware.js accepts this same corporate bearer
+// token on /api/prescriptions and /api/careos/network/referrals, same as it does the OHC-login token. ──
+// `enabled` matters here, not just as an optimization: a corporate_admin/hr_staff token is NOT
+// corporate_cmo, so ohcClinicianAuth.middleware.js falls through to the real authDoctor — which looks
+// up a `doctors` row by the caller's own numeric id. Never fire this call for a non-CMO corporate role.
+export const useMyPrescriptions = (enabled: boolean) =>
+  useQuery({ queryKey: ["clinician", "prescriptions"], enabled, queryFn: async () => (await api.get("/prescriptions/doctor")).data.prescriptions as ClinicalPrescription[] });
+
+export function useClinicianMutations() {
+  const qc = useQueryClient();
+  const useOp = <V, R = unknown>(fn: (v: V) => Promise<R>) => useMutation({ mutationFn: fn, onSettled: () => qc.invalidateQueries({ queryKey: ["clinician", "prescriptions"] }) });
+  return {
+    issuePrescription: useOp((input: Record<string, unknown>) => api.post("/prescriptions", input).then((r) => r.data)),
+    createReferral: useOp((input: Record<string, unknown>) => api.post("/careos/network/referrals", input).then((r) => r.data)),
   };
 }

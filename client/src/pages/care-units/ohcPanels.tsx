@@ -6,7 +6,7 @@
  * props rather than this file importing either API client.
  */
 import { useState } from "react";
-import { AlertTriangle, FileDown, ShieldCheck } from "lucide-react";
+import { AlertTriangle, FileDown, Pill, Send, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { FITNESS_LABEL, formatDate } from "./format";
-import type { ApiProblem, Employee, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "./types";
+import type { ApiProblem, ClinicalPrescription, Employee, Medication, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "./types";
 
 const NEXT_STATUS: Record<WorkplaceEmergency["status"], WorkplaceEmergency["status"] | null> = {
   open: "triaged", triaged: "resolved", resolved: "closed", closed: null, transferred: null,
@@ -175,5 +175,135 @@ export function StaffList({ staff, listError, onRetry, onToggleActive }: {
         </div>
       ))}
     </div>
+  );
+}
+
+const EMPTY_MED: Medication = { name: "", dosage: "", frequency: "", duration: "" };
+
+/** Issues through the hospital's real prescription system (not an OHC-only record) — see
+ * ohcClinicianAuth.middleware.js. `onIssue` is called only once registrationNumberOnFile is true. */
+export function PrescriptionDialog({ employee, open, onOpenChange, onIssue, onIssued }: {
+  employee: Employee | null; open: boolean; onOpenChange: (o: boolean) => void;
+  onIssue: (input: Record<string, unknown>) => Promise<unknown>; onIssued: () => void;
+}) {
+  const { toast } = useToast();
+  const [diagnosis, setDiagnosis] = useState("");
+  const [meds, setMeds] = useState<Medication[]>([{ ...EMPTY_MED }]);
+  const [notes, setNotes] = useState("");
+  const [busy, setBusy] = useState(false);
+  const updateMed = (i: number, patch: Partial<Medication>) => setMeds((m) => m.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+  const removeMed = (i: number) => setMeds((m) => (m.length > 1 ? m.filter((_, idx) => idx !== i) : m));
+  const valid = diagnosis.trim().length > 0 && meds.every((m) => m.name.trim());
+
+  const submit = async () => {
+    if (!employee || !valid) return;
+    setBusy(true);
+    try {
+      await onIssue({
+        patientId: employee.id, diagnosis: diagnosis.trim(),
+        medications: meds.map((m) => ({ name: m.name.trim(), dosage: m.dosage.trim() || "As directed", frequency: m.frequency.trim() || "As directed", duration: m.duration.trim() || "As directed" })),
+        notes: notes.trim() || undefined,
+      });
+      toast({ title: "Prescription issued", description: employee.name });
+      setDiagnosis(""); setMeds([{ ...EMPTY_MED }]); setNotes("");
+      onOpenChange(false); onIssued();
+    } catch (err) { toast({ variant: "destructive", title: "Could not issue the prescription", description: (err as ApiProblem).message }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
+        <DialogHeader><DialogTitle>Prescription</DialogTitle><DialogDescription>{employee?.name}{employee?.employeeId ? ` · ${employee.employeeId}` : ""}{employee?.department ? ` · ${employee.department}` : ""}</DialogDescription></DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5"><Label htmlFor="rx-diagnosis">Diagnosis</Label><Input id="rx-diagnosis" value={diagnosis} maxLength={300} onChange={(e) => setDiagnosis(e.target.value)} /></div>
+          <div className="space-y-2">
+            <Label>Medications</Label>
+            {meds.map((m, i) => (
+              <div key={i} className="grid grid-cols-2 gap-2 rounded-md border p-2">
+                <Input placeholder="Medicine name" value={m.name} maxLength={120} className="col-span-2" onChange={(e) => updateMed(i, { name: e.target.value })} />
+                <Input placeholder="Dosage (e.g. 500mg)" value={m.dosage} maxLength={60} onChange={(e) => updateMed(i, { dosage: e.target.value })} />
+                <Input placeholder="Frequency (e.g. Twice daily)" value={m.frequency} maxLength={60} onChange={(e) => updateMed(i, { frequency: e.target.value })} />
+                <Input placeholder="Duration (e.g. 5 days)" value={m.duration} maxLength={60} onChange={(e) => updateMed(i, { duration: e.target.value })} />
+                {meds.length > 1 && <Button type="button" variant="ghost" size="sm" onClick={() => removeMed(i)}>Remove</Button>}
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={() => setMeds((m) => [...m, { ...EMPTY_MED }])}>+ Add medication</Button>
+          </div>
+          <div className="space-y-1.5"><Label htmlFor="rx-notes">Notes (optional)</Label><Textarea id="rx-notes" value={notes} maxLength={1000} onChange={(e) => setNotes(e.target.value)} /></div>
+        </div>
+        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy || !valid} onClick={submit}>{busy ? "Issuing…" : "Issue prescription"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function PrescriptionsTable({ prescriptions, listError, onRetry }: {
+  prescriptions: ClinicalPrescription[] | null; listError: boolean; onRetry: () => void;
+}) {
+  if (listError) return <InlineError message="Could not load prescriptions." onRetry={onRetry} />;
+  if (prescriptions === null) return <Skeleton className="h-24" />;
+  if (prescriptions.length === 0) return <EmptyState icon={Pill} title="No prescriptions yet" description="Prescriptions issued for employees appear here." />;
+  return (
+    <div className="overflow-x-auto rounded-lg border bg-card">
+      <table className="w-full text-left text-sm">
+        <thead className="bg-muted/50 text-xs text-muted-foreground"><tr><th className="p-3">Patient</th><th>Diagnosis</th><th>Medications</th><th>Issued</th></tr></thead>
+        <tbody>{prescriptions.map((p) => (
+          <tr key={p.id} className="border-t">
+            <td className="p-3">{p.patientName || "—"}</td>
+            <td>{p.diagnosis || "—"}</td>
+            <td>{(p.medications || []).map((m) => m.name).filter(Boolean).join(", ") || "—"}</td>
+            <td>{formatDate(p.createdAt)}</td>
+          </tr>))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Creates a real `healthos_referrals` row via the careos federation. There is no network-org
+ * directory lookup wired for this identity yet — the receiving org id must be known already. */
+export function ReferralDialog({ employee, open, onOpenChange, onRefer, onReferred }: {
+  employee: Employee | null; open: boolean; onOpenChange: (o: boolean) => void;
+  onRefer: (input: Record<string, unknown>) => Promise<unknown>; onReferred: () => void;
+}) {
+  const { toast } = useToast();
+  const [toOrgId, setToOrgId] = useState("");
+  const [reason, setReason] = useState("");
+  const [urgency, setUrgency] = useState("routine");
+  const [busy, setBusy] = useState(false);
+  const valid = toOrgId.trim().length > 0 && reason.trim().length >= 2;
+
+  const submit = async () => {
+    if (!employee || !valid) return;
+    setBusy(true);
+    try {
+      await onRefer({ toOrgId: Number(toOrgId), patientId: employee.id, reason: reason.trim(), urgency });
+      toast({ title: "Referral sent", description: employee.name });
+      setToOrgId(""); setReason(""); setUrgency("routine");
+      onOpenChange(false); onReferred();
+    } catch (err) { toast({ variant: "destructive", title: "Could not create the referral", description: (err as ApiProblem).message }); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader><DialogTitle>Refer to another hospital</DialogTitle><DialogDescription>{employee?.name}{employee?.employeeId ? ` · ${employee.employeeId}` : ""}</DialogDescription></DialogHeader>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5"><Label htmlFor="ref-org">Receiving organisation id</Label><Input id="ref-org" type="number" min="1" value={toOrgId} onChange={(e) => setToOrgId(e.target.value)} placeholder="Network org id" /></div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ref-urgency">Urgency</Label>
+            <Select value={urgency} onValueChange={setUrgency}>
+              <SelectTrigger id="ref-urgency"><SelectValue /></SelectTrigger>
+              <SelectContent>{["routine", "urgent", "emergency"].map((v) => <SelectItem key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ref-reason">Reason / clinical summary</Label><Textarea id="ref-reason" value={reason} maxLength={2000} onChange={(e) => setReason(e.target.value)} /></div>
+        </div>
+        <p className="text-xs text-muted-foreground">Ask your administrator for the receiving hospital's network organisation id — there is no directory lookup for this yet.</p>
+        <DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy || !valid} onClick={submit}><Send className="mr-2 size-4" aria-hidden />{busy ? "Sending…" : "Send referral"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

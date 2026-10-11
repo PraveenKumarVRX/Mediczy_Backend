@@ -14,9 +14,9 @@ import { InlineError } from "@/components/ui/inline-error";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, StaffList } from "../care-units/ohcPanels";
-import type { Employee, OhcMe, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "../care-units/types";
-import { OhcError, changePassword, downloadCertificate, getCertificates, getEmployees, getEmergencies, getMe, getStaff, hasSession, issueCertificate, logout, reportEmergency, updateEmergency } from "./ohcClient";
+import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, PrescriptionDialog, PrescriptionsTable, ReferralDialog, StaffList } from "../care-units/ohcPanels";
+import type { ClinicalPrescription, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "../care-units/types";
+import { OhcError, changePassword, createPrescription, createReferral, downloadCertificate, getCertificates, getEmployees, getEmergencies, getMe, getMyPrescriptions, getStaff, hasSession, issueCertificate, logout, reportEmergency, updateEmergency } from "./ohcClient";
 
 function ChangePassword({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
@@ -46,14 +46,17 @@ export default function OhcWorkspace() {
   const navigate = useNavigate();
   const [me, setMe] = useState<OhcMe | null>(null);
   const [error, setError] = useState<OhcError | null>(null);
-  const [tab, setTab] = useState<"employees" | "certificates" | "staff" | "emergencies">("employees");
+  const [tab, setTab] = useState<"employees" | "certificates" | "prescriptions" | "staff" | "emergencies">("employees");
   const [search, setSearch] = useState("");
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [certs, setCerts] = useState<WorkspaceCertificate[] | null>(null);
+  const [prescriptions, setPrescriptions] = useState<ClinicalPrescription[] | null>(null);
   const [staff, setStaff] = useState<OhcStaffMember[] | null>(null);
   const [emergencies, setEmergencies] = useState<WorkplaceEmergency[] | null>(null);
   const [listError, setListError] = useState(false);
   const [issueFor, setIssueFor] = useState<Employee | null>(null);
+  const [prescribeFor, setPrescribeFor] = useState<Employee | null>(null);
+  const [referFor, setReferFor] = useState<Employee | null>(null);
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [activeUnitUid, setActiveUnitUid] = useState("");
 
@@ -73,9 +76,16 @@ export default function OhcWorkspace() {
     if (!unit) return;
     try { setCerts((await getCertificates(unit.uid)).certificates as unknown as WorkspaceCertificate[]); setListError(false); } catch { setListError(true); }
   }, [unit]);
+  const loadPrescriptions = useCallback(async () => { try { setPrescriptions((await getMyPrescriptions()).prescriptions); setListError(false); } catch { setListError(true); } }, []);
   const loadStaff = useCallback(async () => { if (!unit) return; try { setStaff((await getStaff(unit.uid)).staff); setListError(false); } catch { setListError(true); } }, [unit]);
   const loadEmergencies = useCallback(async () => { if (!unit) return; try { setEmergencies((await getEmergencies(unit.uid)).emergencies); setListError(false); } catch { setListError(true); } }, [unit]);
-  useEffect(() => { if (tab === "employees") { const t = setTimeout(loadEmployees, 250); return () => clearTimeout(t); } if (tab === "certificates") { loadCerts(); return undefined; } if (tab === "staff") { loadStaff(); return undefined; } loadEmergencies(); return undefined; }, [tab, loadEmployees, loadCerts, loadStaff, loadEmergencies]);
+  useEffect(() => {
+    if (tab === "employees") { const t = setTimeout(loadEmployees, 250); return () => clearTimeout(t); }
+    if (tab === "certificates") { loadCerts(); return undefined; }
+    if (tab === "prescriptions") { loadPrescriptions(); return undefined; }
+    if (tab === "staff") { loadStaff(); return undefined; }
+    loadEmergencies(); return undefined;
+  }, [tab, loadEmployees, loadCerts, loadPrescriptions, loadStaff, loadEmergencies]);
 
   const signOut = async () => { await logout(); navigate("/ohc/login", { replace: true }); };
 
@@ -103,7 +113,7 @@ export default function OhcWorkspace() {
           </p>
         )}
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList><TabsTrigger value="employees">Employees</TabsTrigger><TabsTrigger value="certificates">Certificates issued</TabsTrigger><TabsTrigger value="staff">Clinic staff</TabsTrigger><TabsTrigger value="emergencies">Emergencies</TabsTrigger></TabsList>
+          <TabsList><TabsTrigger value="employees">Employees</TabsTrigger><TabsTrigger value="certificates">Certificates issued</TabsTrigger><TabsTrigger value="prescriptions">Prescriptions</TabsTrigger><TabsTrigger value="staff">Clinic staff</TabsTrigger><TabsTrigger value="emergencies">Emergencies</TabsTrigger></TabsList>
         </Tabs>
 
         {tab === "employees" && (
@@ -117,7 +127,11 @@ export default function OhcWorkspace() {
                 {employees.map((e) => (
                   <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                     <span><span className="font-medium">{e.name}</span><span className="block text-xs text-muted-foreground">{[e.employeeId, e.department, e.designation].filter(Boolean).join(" · ")}</span></span>
-                    <Button size="sm" disabled={!canSign} onClick={() => setIssueFor(e)}>Issue certificate</Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setIssueFor(e)}>Certificate</Button>
+                      <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setPrescribeFor(e)}>Prescribe</Button>
+                      <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setReferFor(e)}>Refer</Button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -128,6 +142,12 @@ export default function OhcWorkspace() {
         {tab === "certificates" && (
           <section aria-label="Certificates issued">
             <CertificatesTable certs={certs} listError={listError} onRetry={loadCerts} onDownload={downloadCertificate} />
+          </section>
+        )}
+        {tab === "prescriptions" && (
+          <section aria-label="Prescriptions" className="space-y-3">
+            <div><h2 className="text-base font-semibold">Prescriptions</h2><p className="text-sm text-muted-foreground">Issued through the hospital's own prescription system — use "Prescribe" on the Employees tab to write a new one.</p></div>
+            <PrescriptionsTable prescriptions={prescriptions} listError={listError} onRetry={loadPrescriptions} />
           </section>
         )}
         {tab === "staff" && (
@@ -148,6 +168,8 @@ export default function OhcWorkspace() {
       </main>
       <IssueCertificateDialog employee={issueFor} open={issueFor !== null} onOpenChange={(o) => !o && setIssueFor(null)} onIssue={(input) => issueCertificate({ ...input, unit: unit.uid })} onIssued={loadCerts} />
       <EmergencyReportDialog employees={employees || []} open={emergencyOpen} onOpenChange={setEmergencyOpen} onReport={(input) => reportEmergency({ ...input, unit: unit.uid })} onReported={loadEmergencies} />
+      <PrescriptionDialog employee={prescribeFor} open={prescribeFor !== null} onOpenChange={(o) => !o && setPrescribeFor(null)} onIssue={createPrescription} onIssued={loadPrescriptions} />
+      <ReferralDialog employee={referFor} open={referFor !== null} onOpenChange={(o) => !o && setReferFor(null)} onRefer={createReferral} onReferred={() => undefined} />
     </div>
   );
 }

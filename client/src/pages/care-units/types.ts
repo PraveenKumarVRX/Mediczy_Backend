@@ -51,3 +51,17 @@ export interface WorkplaceEmergency {
 }
 
 export interface ApiProblem { status: number; code: string; message: string; details?: Record<string, unknown> }
+
+/** The real hospital prescription/referral systems, now reachable by ohc_doctor/corporate_cmo via an
+ * auto-provisioned linked Doctor identity (ohcClinicianAuth.middleware.js, server-side) — not an
+ * OHC-only copy. Shapes match /api/prescriptions and /api/careos/network/referrals exactly. */
+export interface Medication { name: string; composition?: string; dosage: string; frequency: string; duration: string; quantity?: string; instructions?: string }
+export interface ClinicalPrescription {
+  id: number; patientName: string | null; diagnosis: string | null; medications: Medication[] | null;
+  doctorName: string | null; status: string; createdAt: string;
+}
+/** Raw row from healthos_referrals (RETURNING *) — snake_case, not the camelCase request body. */
+export interface ClinicalReferral {
+  id: number; from_org_id: number; to_org_id: number; patient_id: number; reason: string; urgency: string;
+  clinical_summary: string | null; status: string; referred_by: number | null; created_at: string;
+}
