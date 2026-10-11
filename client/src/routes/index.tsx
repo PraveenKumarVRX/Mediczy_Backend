@@ -465,6 +465,8 @@ const LabAppointmentsPage  = lazyNamed(_LabModulePages, "LabAppointmentsPage");
 const LabQueuePage         = lazyNamed(_LabModulePages, "LabQueuePage");
 const LabQmsPage           = lazyNamed(_LabModulePages, "LabQmsPage");
 const CollectionOpsPage = lazy(() => import("@/pages/lab/collection/CollectionOpsPage"));
+const PhlebotomistLogin = lazy(() => import("@/pages/lab/phlebotomist/PhlebotomistLogin"));
+const PhlebotomistDashboard = lazy(() => import("@/pages/lab/phlebotomist/PhlebotomistDashboard"));
 const HospitalQmsPage = lazy(() => import("@/pages/hospital/HospitalQmsPage"));
 const LabSamplesPage       = lazyNamed(_LabModulePages, "LabSamplesPage");
 const LabProcessingPage    = lazyNamed(_LabModulePages, "LabProcessingPage");
@@ -1241,6 +1243,8 @@ const AppRoutes = () => {
         <Route path="/lab/queue/new"       element={<LabQueuePage />} />
         <Route path="/lab/qms"             element={<LabQmsPage />} />
         <Route path="/lab/collection-ops"  element={<CollectionOpsPage />} />
+        <Route path="/lab/phlebotomist/login" element={<PhlebotomistLogin />} />
+        <Route path="/lab/phlebotomist"    element={<PhlebotomistDashboard />} />
         {/* Old URL kept for bookmarks and the sidebar of cached sessions; the demo page behind it was removed. */}
         <Route path="/lab/home-collection" element={<Navigate to="/lab/collection-ops?mode=home" replace />} />
         <Route path="/lab/samples"         element={<LabSamplesPage />} />
