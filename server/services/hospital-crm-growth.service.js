@@ -313,12 +313,14 @@ export async function getGrowthDashboard(tenant, { from, to } = {}) {
   const id = tenantId(tenant);
   const start = from || '1970-01-01';
   const end = to || '2999-12-31';
-  const [summary, campaigns, recovery, landing, tiers] = await Promise.all([
+  const [summary, campaigns, recovery, landing, tiers, bySource] = await Promise.all([
     sharedPool.query(`SELECT COUNT(*)::int AS leads, COUNT(*) FILTER (WHERE lifecycle_stage = 'qualified')::int AS qualified, COUNT(*) FILTER (WHERE lifecycle_stage = 'appointment_booked')::int AS appointments, COUNT(*) FILTER (WHERE lifecycle_stage IN ('visited', 'consulted'))::int AS visits, COUNT(*) FILTER (WHERE lifecycle_stage IN ('procedure_advised', 'admission_advised', 'won'))::int AS admissions, COALESCE(SUM(actual_revenue), 0)::numeric AS revenue, AVG(score)::numeric(10,2) AS average_score FROM crm_leads_v2 WHERE tenant_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz`, [id, start, end]),
     sharedPool.query(`SELECT c.id, c.name, c.source, c.medium, COALESCE((SELECT SUM(amount) FROM crm_campaign_costs cc WHERE cc.tenant_id = c.tenant_id AND cc.campaign_id = c.id AND cc.cost_date >= $2::date AND cc.cost_date < $3::date), 0)::numeric AS spend, (SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = c.tenant_id AND l.campaign_id = c.id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz)::int AS leads, (SELECT COUNT(*) FROM crm_appointment_links a JOIN crm_leads_v2 l ON l.id = a.lead_id AND l.tenant_id = a.tenant_id WHERE a.tenant_id = c.tenant_id AND l.campaign_id = c.id AND a.scheduled_at >= $2::timestamptz AND a.scheduled_at < $3::timestamptz)::int AS appointments, COALESCE((SELECT SUM(r.net_amount) FROM crm_revenue_events r JOIN crm_leads_v2 l ON l.id = r.lead_id AND l.tenant_id = r.tenant_id WHERE r.tenant_id = c.tenant_id AND l.campaign_id = c.id AND r.revenue_date >= $2::date AND r.revenue_date < $3::date), 0)::numeric AS revenue FROM crm_campaigns_unified c WHERE c.tenant_id = $1 AND c.deleted_at IS NULL ORDER BY revenue DESC, leads DESC LIMIT 100`, [id, start, end]),
     sharedPool.query(`SELECT case_type, status, COUNT(*)::int AS count FROM crm_growth_recovery_cases WHERE tenant_id = $1 GROUP BY case_type, status ORDER BY case_type, status`, [id]),
     sharedPool.query(`SELECT event_type, COUNT(*)::int AS count FROM crm_landing_page_events WHERE tenant_id = $1 AND event_at >= $2::timestamptz AND event_at < $3::timestamptz GROUP BY event_type ORDER BY event_type`, [id, start, end]),
     sharedPool.query(`SELECT CASE WHEN score >= 80 THEN 'hot' WHEN score >= 50 THEN 'warm' ELSE 'cold' END AS tier, COUNT(*)::int AS count FROM crm_leads_v2 WHERE tenant_id = $1 AND created_at >= $2::timestamptz AND created_at < $3::timestamptz GROUP BY tier ORDER BY tier`, [id, start, end]),
+    // Lead generation by channel (social/referral/partner/paid/organic/...), for the business-head's marketing-ROI view.
+    sharedPool.query(`SELECT COALESCE(st.channel, 'unknown') AS channel, COUNT(*)::int AS leads, COUNT(*) FILTER (WHERE l.converted_at IS NOT NULL OR l.lifecycle_stage IN ('won', 'billing_completed'))::int AS converted_leads, COALESCE(SUM(l.actual_revenue), 0)::numeric AS revenue FROM crm_leads_v2 l LEFT JOIN crm_source_taxonomy st ON st.id = l.source_taxonomy_id WHERE l.tenant_id = $1 AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz GROUP BY channel ORDER BY leads DESC`, [id, start, end]),
   ]);
   const row = summary.rows[0] || {};
   const totalSpend = campaigns.rows.reduce((sum, item) => sum + Number(item.spend || 0), 0);
@@ -329,5 +331,6 @@ export async function getGrowthDashboard(tenant, { from, to } = {}) {
     recovery: recovery.rows,
     landingFunnel: landing.rows,
     scoreTiers: tiers.rows,
+    bySource: bySource.rows.map((item) => ({ ...item, conversion_rate: Number(item.leads) ? (Number(item.converted_leads) / Number(item.leads)) * 100 : null })),
   };
 }

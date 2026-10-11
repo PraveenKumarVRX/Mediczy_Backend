@@ -617,6 +617,7 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
            tm.role_key,
            COALESCE(ep.designation, NULLIF(tm.metadata->>'designation', '')) AS designation,
            COALESCE(ep.employee_code, NULLIF(tm.metadata->>'employeeCode', '')) AS employee_code,
+           COALESCE(ep.manager_user_id, (tm.metadata->>'managerUserId')::bigint) AS manager_user_id,
            COALESCE((SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::int AS leads,
            COALESCE((SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND l.lifecycle_stage = 'qualified' AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::int AS qualified_leads,
            COALESCE((SELECT COUNT(*) FROM crm_leads_v2 l WHERE l.tenant_id = $1 AND l.owner_user_id = tm.user_id AND (l.converted_at IS NOT NULL OR l.lifecycle_stage IN ('won', 'billing_completed')) AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz), 0)::int AS converted_leads,
@@ -685,6 +686,44 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
     return groups;
   }, {})).sort((a, b) => b.leads - a.leads);
 
+  // Reporting lines (users.metadata.managerUserId / crm_employee_profiles.manager_user_id):
+  // who each field marketing/telecaller reports to, coordinated as one team per manager.
+  const managerIds = [...new Set(members.map((row) => intOrNull(row.manager_user_id)).filter(Boolean))];
+  let managerNames = {};
+  if (managerIds.length) {
+    const { rows } = await sharedPool.query(
+      `SELECT id, "firstName" AS first_name, "lastName" AS last_name, email,
+              COALESCE(NULLIF(metadata->>'crmRole', ''), 'admin') AS role_key
+         FROM users WHERE id = ANY($1::bigint[]) AND tenant_id = $2`,
+      [managerIds, tenant]);
+    managerNames = Object.fromEntries(rows.map((r) => [r.id, {
+      name: [r.first_name, r.last_name].filter(Boolean).join(' ') || r.email || `User ${r.id}`,
+      role: r.role_key,
+    }]));
+  }
+  const teamGroups = members.reduce((groups, row) => {
+    const managerId = intOrNull(row.manager_user_id);
+    const key = managerId ?? 'unassigned';
+    const info = managerId ? managerNames[managerId] : null;
+    const current = groups[key] || {
+      managerUserId: managerId,
+      managerName: info?.name ?? (managerId ? `User ${managerId}` : 'Unassigned'),
+      managerRole: info?.role ?? null,
+      members: [],
+      totals: { members: 0, leads: 0, converted_leads: 0, revenue: 0, tasks: 0, overdue_tasks: 0 },
+    };
+    current.members.push({ userId: row.user_id, name: row.employee_name, role: row.role, leads: numberOrZero(row.leads), converted_leads: numberOrZero(row.converted_leads), revenue: numberOrZero(row.revenue), tasks: numberOrZero(row.tasks), overdue_tasks: numberOrZero(row.overdue_tasks) });
+    current.totals.members += 1;
+    current.totals.leads += numberOrZero(row.leads);
+    current.totals.converted_leads += numberOrZero(row.converted_leads);
+    current.totals.revenue += numberOrZero(row.revenue);
+    current.totals.tasks += numberOrZero(row.tasks);
+    current.totals.overdue_tasks += numberOrZero(row.overdue_tasks);
+    groups[key] = current;
+    return groups;
+  }, {});
+  const teamHierarchy = Object.values(teamGroups).sort((a, b) => (a.managerUserId == null) - (b.managerUserId == null) || b.totals.revenue - a.totals.revenue);
+
   return {
     period: { from: start, to: end },
     filters: { role: roleFilter || null, search: searchFilter || null },
@@ -704,6 +743,7 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
       task_completion_rate: totalTasks ? (total('completed_tasks') / totalTasks) * 100 : null,
     },
     role_breakdown: roleBreakdown,
+    team_hierarchy: teamHierarchy,
     members,
     trend: trendResult.rows.map((row) => ({ ...row, revenue: numberOrZero(row.revenue) })),
   };

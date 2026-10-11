@@ -1238,6 +1238,7 @@ interface CRMTeamMember {
   crmRole: string;
   department: string | null;
   designation: string | null;
+  managerUserId: number | null;
   status: string;
   lastLoginAt: string | null;
   createdAt: string;
@@ -1251,7 +1252,8 @@ export function CRMTeamPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '', managerUserId: '' });
+  const managers = members.filter((m) => m.crmRole === CRM_ROLES.BUSINESS_HEAD || m.crmRole === CRM_ROLES.MARKETING_HEAD);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -1284,9 +1286,9 @@ export function CRMTeamPage() {
     setError('');
     setNotice('');
     try {
-      const { data } = await api.post('/crm/team/users', form, { headers: authHeaders() });
+      const { data } = await api.post('/crm/team/users', { ...form, managerUserId: form.managerUserId || null }, { headers: authHeaders() });
       setNotice(data.message || 'CRM login created.');
-      setForm({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '' });
+      setForm({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '', managerUserId: '' });
       setShowForm(false);
       await loadMembers();
     } catch (e: any) {
@@ -1303,6 +1305,16 @@ export function CRMTeamPage() {
       await loadMembers();
     } catch (e: any) {
       setError(e.response?.data?.message || 'Unable to update role.');
+    }
+  };
+
+  const handleManagerChange = async (id: number, managerUserId: string) => {
+    setError('');
+    try {
+      await api.patch(`/crm/team/users/${id}`, { managerUserId: managerUserId || null }, { headers: authHeaders() });
+      await loadMembers();
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Unable to update reporting manager.');
     }
   };
 
@@ -1380,6 +1392,16 @@ export function CRMTeamPage() {
               <Input value={form.designation} onChange={(e) => setForm({ ...form, designation: e.target.value })}
                 placeholder="e.g. Telecaller — OPD" className="mt-1 border-white/10 bg-black/20 text-white placeholder:text-slate-600" />
             </div>
+            <div>
+              <Label className="text-xs text-slate-400">Reports to</Label>
+              <select value={form.managerUserId} onChange={(e) => setForm({ ...form, managerUserId: e.target.value })}
+                className="mt-1 h-10 w-full rounded-md border border-white/10 bg-[#111827] px-3 text-sm text-white">
+                <option value="">No manager</option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>{m.firstName} {m.lastName} ({CRM_ROLE_LABELS[m.crmRole]})</option>
+                ))}
+              </select>
+            </div>
             <div className="sm:col-span-2 flex items-center justify-between rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs text-slate-500">
               No password is set here — a password-setup email is sent to the new login automatically.
             </div>
@@ -1399,6 +1421,7 @@ export function CRMTeamPage() {
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Email</th>
                 <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Reports to</th>
                 <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Last login</th>
@@ -1415,6 +1438,15 @@ export function CRMTeamPage() {
                       className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
                       {CRM_ROLE_LIST.map((role) => (
                         <option key={role} value={role}>{CRM_ROLE_LABELS[role]}</option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select value={m.managerUserId ?? ''} onChange={(e) => handleManagerChange(m.id, e.target.value)}
+                      className="h-8 rounded-md border border-white/10 bg-[#111827] px-2 text-xs text-white">
+                      <option value="">No manager</option>
+                      {managers.filter((mgr) => mgr.id !== m.id).map((mgr) => (
+                        <option key={mgr.id} value={mgr.id}>{mgr.firstName} {mgr.lastName}</option>
                       ))}
                     </select>
                   </td>

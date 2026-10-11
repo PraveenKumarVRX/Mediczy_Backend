@@ -23,10 +23,26 @@ function serializeTeamUser(user) {
     crmRole: metadata.crmRole || 'sales_rep',
     department: metadata.department || user.department || null,
     designation: metadata.designation || user.designation || null,
+    managerUserId: metadata.managerUserId ?? null,
     status: user.status || 'active',
     lastLoginAt: user.lastLoginAt || null,
     createdAt: user.createdAt,
   };
+}
+
+/** The manager must be an existing CRM login in the same tenant, and not the member itself. */
+async function resolveManager(managerUserId, tenantId, selfId) {
+  if (managerUserId === undefined) return { set: false };
+  if (managerUserId === null || managerUserId === '') return { set: true, value: null };
+  const id = Number(managerUserId);
+  if (!Number.isInteger(id) || id < 1) throw Object.assign(new Error('managerUserId must be a valid user id'), { statusCode: 400 });
+  if (selfId != null && id === Number(selfId)) throw Object.assign(new Error('A CRM user cannot report to themself'), { statusCode: 400 });
+  const manager = await userModel.findOne({ where: { id, isTeam: true } });
+  const metadata = manager ? parseMetadata(manager) : {};
+  if (!manager || metadata.isCRM !== true || String(metadata.tenantId || '') !== String(tenantId || '')) {
+    throw Object.assign(new Error('The selected manager is not a CRM user in this hospital'), { statusCode: 400 });
+  }
+  return { set: true, value: id };
 }
 
 // List CRM users in the caller's tenant.
@@ -61,6 +77,7 @@ router.post('/users', [
   body('crmRole').isIn(CRM_ROLE_LIST).withMessage(`Role must be one of: ${CRM_ROLE_LIST.join(', ')}`),
   body('department').optional().isString(),
   body('designation').optional().isString(),
+  body('managerUserId').optional({ nullable: true }).isInt().withMessage('managerUserId must be a valid user id'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -76,6 +93,8 @@ router.post('/users', [
     if (existing) {
       return res.status(400).json({ success: false, message: 'A user with this email already exists' });
     }
+
+    const manager = await resolveManager(req.body.managerUserId, tenantId, null);
 
     const placeholderPassword = randomBytes(32).toString('hex');
 
@@ -97,6 +116,7 @@ router.post('/users', [
         tenantId,
         department: department || 'CRM',
         designation: designation || 'CRM User',
+        managerUserId: manager.set ? manager.value : null,
         createdBy: req.crmUser.id,
         createdAt: new Date().toISOString(),
       }),
@@ -114,15 +134,17 @@ router.post('/users', [
       data: serializeTeamUser(newUser),
     });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
     console.error('[CRM Team] Create error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to create CRM login' });
   }
 });
 
-// Update a CRM user's role, department, designation, or active status.
+// Update a CRM user's role, department, designation, manager, or active status.
 router.patch('/users/:id', [
   body('crmRole').optional().isIn(CRM_ROLE_LIST).withMessage(`Role must be one of: ${CRM_ROLE_LIST.join(', ')}`),
   body('status').optional().isIn(['active', 'inactive']).withMessage('Status must be active or inactive'),
+  body('managerUserId').optional({ nullable: true }).isInt().withMessage('managerUserId must be a valid user id'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -140,12 +162,14 @@ router.patch('/users/:id', [
     }
 
     const { crmRole, department, designation, status } = req.body;
+    const manager = await resolveManager(req.body.managerUserId, tenantId, target.id);
     const nextMetadata = {
       ...metadata,
       crmRole: crmRole || metadata.crmRole,
       crmPermissions: crmRole ? crmPermissionsForRole(crmRole) : metadata.crmPermissions,
       department: department ?? metadata.department,
       designation: designation ?? metadata.designation,
+      managerUserId: manager.set ? manager.value : (metadata.managerUserId ?? null),
       updatedBy: req.crmUser.id,
       updatedAt: new Date().toISOString(),
     };
@@ -159,6 +183,7 @@ router.patch('/users/:id', [
 
     return res.json({ success: true, data: serializeTeamUser(target) });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, message: error.message });
     console.error('[CRM Team] Update error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to update CRM user' });
   }
