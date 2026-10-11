@@ -124,8 +124,8 @@ export function HospitalCRMPeoplePage() {
       const [team, growthRes, digitalRes, referralsRes] = await Promise.all([
         api.get('/crm/worldclass/dashboards/business-head/team', { headers: authHeaders(), params: { ...params, role: role || undefined, search: search || undefined } }),
         api.get('/crm/growth/dashboard', { headers: authHeaders(), params }),
-        api.get('/crm/specialty/digital/overview', { headers: authHeaders(), params }),
-        api.get('/crm/specialty/digital/referrals', { headers: authHeaders() }),
+        api.get('/crm/growth/digital/overview', { headers: authHeaders(), params }),
+        api.get('/crm/growth/digital/referrals', { headers: authHeaders() }),
       ]);
       setDashboard(team.data?.data || null);
       setGrowth(growthRes.data?.data || null);

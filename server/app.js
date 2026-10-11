@@ -108,6 +108,7 @@ import fcmRouter from './routes/fcm.route.js';
 import callNotificationRouter from './routes/call-notification.route.js';
 import firebaseStatusRouter from './routes/firebase-status.route.js';
 import crmRouter from './routes/crm.route.js';
+import crmTeamRouter from './routes/crm-team.route.js';
 import rfqRouter from './routes/rfq.route.js';
 import hospitalCrmV2Router from './routes/hospital-crm-v2.route.js';
 import hospitalCrmWorldclassRouter from './routes/hospital-crm-worldclass.route.js';
@@ -1484,6 +1485,7 @@ app.use('/api/assistant', assistantRouter);
 app.use('/api/patients', patientRouter); // Patient registration by multiple roles
 app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
+app.use('/api/crm/team', crmTeamRouter); // CRM login/role administration (create/update team logins, reporting manager)
 app.use('/api/rfq', rfqRouter); // RFQ/insurance module — extracted off /api/crm 2026-09-11, Team-only
 app.use('/api/crm/v2', hospitalCrmV2Router);
 app.use('/api/crm/worldclass', hospitalCrmWorldclassRouter);
