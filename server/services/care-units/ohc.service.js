@@ -252,13 +252,15 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return rows[0];
   }
 
-  /** The signing doctor's own title/specialty for the certificate letterhead, when their OHC login is
-   * linked to a real `doctors` profile (`linked_user_uid`). Most ohc_doctor/corporate_cmo accounts have
-   * no such link, so this is `{}` for them — the template already renders fine with those blank. */
+  /** The signing doctor's own qualifications/title for the certificate letterhead, when their OHC login
+   * is linked to a real `doctors` profile (`linked_user_uid`). Most ohc_doctor/corporate_cmo accounts
+   * have no such link, so this is `{}` for them — the template already renders fine with those blank.
+   * `metadata.title` (e.g. "Chief Medical Officer") takes the specialty line when set, since a clinic
+   * leadership title is more useful on a certificate than the doctor's personal specialization. */
   async function doctorLetterhead(principal) {
-    const { rows } = await pool.query(`SELECT qualification, specialization FROM doctors WHERE linked_user_uid = $1 LIMIT 1`, [principal.uid]);
+    const { rows } = await pool.query(`SELECT qualification, specialization, metadata FROM doctors WHERE linked_user_uid = $1 LIMIT 1`, [principal.uid]);
     const d = rows[0];
-    return d ? { doctorQualifications: d.qualification || undefined, doctorSpecialty: d.specialization || undefined } : {};
+    return d ? { doctorQualifications: d.qualification || undefined, doctorSpecialty: d.metadata?.title || d.specialization || undefined } : {};
   }
 
   return { loadPrincipal, login, refresh, logout, changePassword, me, employees, staff, emergencies, createEmergency, updateEmergency, issueCertificate, certificates, certificateById, doctorLetterhead };
