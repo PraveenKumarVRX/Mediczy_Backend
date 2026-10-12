@@ -182,6 +182,16 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
+    // OHC worker/CMO self-service pages (ohc_doctor, ohc_staff, corporate_cmo via /ohc/login) have
+    // no entry anywhere in this guard — /ohc/login was falling through to the generic patient login
+    // because it's absent from isPublicRoute below. They manage their own session via ohcClient.ts's
+    // own token, independent of this provider, same as /lab/phlebotomist.
+    const isOhcWorkerRoute = location.pathname.startsWith('/ohc');
+    if (isOhcWorkerRoute) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
     // Check if it's an assistant route - assistant routes have their own auth flow
     const isAssistantRoute = location.pathname.startsWith('/assistant');
 
