@@ -270,11 +270,13 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
    * ohc_doctor/corporate_cmo accounts have no such link, so those fields are simply blank for them —
    * the template already renders fine without them. */
   async function certificateLetterhead(principal, unit) {
-    const { rows } = await pool.query(`SELECT qualification, specialization, metadata FROM doctors WHERE linked_user_uid = $1 LIMIT 1`, [principal.uid]);
+    const { rows } = await pool.query(`SELECT id, qualification, specialization, metadata FROM doctors WHERE linked_user_uid = $1 LIMIT 1`, [principal.uid]);
     const d = rows[0];
     const clinicName = unit.operatorName || unit.name;
     return {
-      doctorId: principal.id,
+      // The signature file convention (doctor-signature.service.js) keys off the REAL doctors.id, not
+      // this OHC login's own users.id — they're different rows even when linked_user_uid connects them.
+      doctorId: d?.id || undefined,
       clinicName,
       tenantId: unit.operatorId || undefined,
       clinicAddress: formatClinicAddress(unit.operatorAddress) || undefined,
