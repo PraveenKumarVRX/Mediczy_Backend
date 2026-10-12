@@ -46,6 +46,7 @@
         .doc-title h1 { font-size: 18px; font-weight: 700; margin: 0; color: #0f172a; }
         .doc-title .subtitle { font-size: 11.5px; color: #78716c; margin-top: 2px; }
         .doc-title .cert-no { font-size: 10px; color: #a8a29e; margin-top: 4px; }
+        .doc-title .issue-date { font-size: 12.5px; font-weight: 600; color: #0f766e; margin-top: 3px; }
 
         .meta-row {
             display: flex;
@@ -84,18 +85,6 @@
         .section { margin-top: 16px; }
         .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #0f766e; margin-bottom: 6px; }
         .box-text { padding: 8px 10px; background: #fafaf9; border-left: 3px solid #0f766e; border-radius: 3px; font-size: 12.5px; }
-
-        .validity-row {
-            margin-top: 18px;
-            display: flex;
-            justify-content: space-between;
-            font-size: 12px;
-            color: #57534e;
-            padding: 10px 12px;
-            background: #f0fdfa;
-            border-radius: 6px;
-        }
-        .validity-row .value { font-weight: 700; color: #0f172a; }
 
         .footer { margin-top: 38px; }
         .signature-row { display: flex; justify-content: flex-end; }
@@ -142,6 +131,7 @@
             <div class="doctor-block">
                 <p class="doctor-name">Dr. {{doctorName}}</p>
                 <div class="doctor-quals">{{doctorQualifications}}</div>
+                <div class="doctor-specialty">{{doctorSpecialty}}</div>
                 <div class="doctor-reg">Reg No. {{doctorRegNo}}</div>
             </div>
         </div>
@@ -149,7 +139,8 @@
         <div class="doc-title">
             <h1>Medical Examination Report</h1>
             <div class="subtitle">General Fitness Certificate</div>
-            <div class="cert-no">Certificate No. FC-{{certificateId}} · Issued {{issuedDate}}</div>
+            <div class="cert-no">Certificate No. FC-{{certificateId}}</div>
+            <div class="issue-date">Issued on {{issuedDate}}</div>
         </div>
 
         <div class="meta-row">
@@ -180,11 +171,6 @@
         </div>
         {{/remarks}}
 
-        <div class="validity-row">
-            <span>Valid from <span class="value">{{validFrom}}</span></span>
-            <span>Valid until <span class="value">{{validUntil}}</span></span>
-        </div>
-
         <div class="footer">
             <div class="signature-row">
                 <div class="signature-block">
@@ -192,6 +178,7 @@
                     <div class="doctor-stamp">
                         <div class="stamp-name">Dr. {{doctorName}}</div>
                         <div class="stamp-line">{{doctorQualifications}}</div>
+                        <div class="stamp-line">{{doctorSpecialty}}</div>
                         <div class="stamp-line">Reg No. {{doctorRegNo}}</div>
                     </div>
                 </div>

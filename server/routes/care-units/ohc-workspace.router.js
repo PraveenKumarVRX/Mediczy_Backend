@@ -38,7 +38,7 @@ export function buildOhcWorkspaceRouter({ ohc, authenticate, limiter = [], rende
     if (renderPdf) {
       try {
         const unit = req.ohc.units.find((u) => u.uid === cert.issued_by_unit_uid) || req.ohc.units[0];
-        await renderPdf(cert, { doctorId: req.ohc.id, clinicName: unit.name, doctorQualifications: undefined });
+        await renderPdf(cert, { doctorId: req.ohc.id, clinicName: unit.operatorName || unit.name, ...(await ohc.doctorLetterhead(req.ohc)) });
         pdfUrl = `/api/ohc-workspace/certificates/${cert.id}/pdf`;
       } catch (err) { console.error('[ohc] certificate pdf failed:', err.message); }
     }

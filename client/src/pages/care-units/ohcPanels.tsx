@@ -33,8 +33,6 @@ export function IssueCertificateDialog({ employee, open, onOpenChange, onIssue, 
   const [status, setStatus] = useState("fit");
   const [job, setJob] = useState("");
   const [restrictions, setRestrictions] = useState("");
-  const [from, setFrom] = useState("");
-  const [until, setUntil] = useState("");
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const needsNote = status !== "fit";
@@ -45,10 +43,10 @@ export function IssueCertificateDialog({ employee, open, onOpenChange, onIssue, 
     try {
       const r = await onIssue({
         employeeUserId: employee.id, fitnessStatus: status, jobDescription: job.trim() || undefined, restrictions: restrictions.trim() || undefined,
-        validFrom: from || undefined, validUntil: until || undefined, remarks: remarks.trim() || undefined,
+        remarks: remarks.trim() || undefined,
       });
       toast({ title: "Certificate issued", description: `${employee.name} · ${FITNESS_LABEL[status]}${r.pdfUrl ? "" : " (PDF could not be generated; reissue the download later)"}` });
-      setJob(""); setRestrictions(""); setFrom(""); setUntil(""); setRemarks(""); setStatus("fit");
+      setJob(""); setRestrictions(""); setRemarks(""); setStatus("fit");
       onOpenChange(false); onIssued();
     } catch (err) { toast({ variant: "destructive", title: "Could not issue the certificate", description: (err as ApiProblem).message }); }
     finally { setBusy(false); }
@@ -67,8 +65,6 @@ export function IssueCertificateDialog({ employee, open, onOpenChange, onIssue, 
             </Select>
           </div>
           <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-job">Job role assessed</Label><Input id="ic-job" value={job} maxLength={300} onChange={(e) => setJob(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label htmlFor="ic-from">Valid from</Label><Input id="ic-from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div className="space-y-1.5"><Label htmlFor="ic-until">Valid until</Label><Input id="ic-until" type="date" value={until} onChange={(e) => setUntil(e.target.value)} /></div>
           {needsNote && <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-res">Restrictions</Label><Textarea id="ic-res" value={restrictions} maxLength={500} onChange={(e) => setRestrictions(e.target.value)} /></div>}
           <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-rem">Remarks</Label><Textarea id="ic-rem" value={remarks} maxLength={1000} onChange={(e) => setRemarks(e.target.value)} /></div>
         </div>
