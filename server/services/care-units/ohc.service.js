@@ -49,7 +49,8 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
       ? `WHERE b.corporate_uid = $1`
       : `WHERE s.user_id = $1 AND s.is_active AND s.role = $3 AND b.owner_uid = $2`;
     const { rows: units } = await pool.query(
-      `SELECT b.id, b.unique_id, b.name, b.corporate_uid, b.owner_uid, b.services, c."companyName" AS corporate_name, o.name AS operator_name
+      `SELECT b.id, b.unique_id, b.name, b.corporate_uid, b.owner_uid, b.services, c."companyName" AS corporate_name,
+              o.id AS operator_id, o.name AS operator_name, o.address AS operator_address, o.phone AS operator_phone
          ${unitScope}
          LEFT JOIN corporates c ON c.unique_id = b.corporate_uid
          LEFT JOIN tenants o ON o.unique_id = b.owner_uid
@@ -62,7 +63,11 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
         type: 'ohc_staff', id: u.id, uid: u.unique_id, ref: `ohc:${u.unique_id}`, role: u.role,
         displayName: `${u.firstName || ''} ${u.lastName || ''}`.trim(), registrationNumber: u.metadata?.registrationNumber || null,
         mustChangePassword: u.metadata?.mustChangePassword === true,
-        units: units.map((b) => ({ id: b.id, uid: b.unique_id, name: b.name, corporateUid: b.corporate_uid, corporateName: b.corporate_name, operatorUid: b.owner_uid, operatorName: b.operator_name, services: b.services || [] })),
+        units: units.map((b) => ({
+          id: b.id, uid: b.unique_id, name: b.name, corporateUid: b.corporate_uid, corporateName: b.corporate_name,
+          operatorUid: b.owner_uid, operatorId: b.operator_id, operatorName: b.operator_name,
+          operatorAddress: b.operator_address || null, operatorPhone: b.operator_phone || null, services: b.services || [],
+        })),
       },
     };
   }
@@ -252,16 +257,33 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     return rows[0];
   }
 
-  /** The signing doctor's own qualifications/title for the certificate letterhead, when their OHC login
-   * is linked to a real `doctors` profile (`linked_user_uid`). Most ohc_doctor/corporate_cmo accounts
-   * have no such link, so this is `{}` for them — the template already renders fine with those blank.
-   * `metadata.title` (e.g. "Chief Medical Officer") takes the specialty line when set, since a clinic
-   * leadership title is more useful on a certificate than the doctor's personal specialization. */
-  async function doctorLetterhead(principal) {
-    const { rows } = await pool.query(`SELECT qualification, specialization, metadata FROM doctors WHERE linked_user_uid = $1 LIMIT 1`, [principal.uid]);
-    const d = rows[0];
-    return d ? { doctorQualifications: d.qualification || undefined, doctorSpecialty: d.metadata?.title || d.specialization || undefined } : {};
+  function formatClinicAddress(address) {
+    if (!address || typeof address !== 'object') return '';
+    return [address.street, address.city, address.state, address.pincode].filter(Boolean).join(', ');
   }
 
-  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, staff, emergencies, createEmergency, updateEmergency, issueCertificate, certificates, certificateById, doctorLetterhead };
+  /** Everything the certificate PDF needs about the issuing clinic and doctor, besides what's already
+   * stored flat on the `fitness_certificates` row. `unit` is the OHC unit (from `principal.units`) the
+   * certificate was issued through — its operator tenant supplies the clinic's logo/address/phone, and
+   * its city becomes the certificate's "place of issue". The signing doctor's qualifications/title come
+   * from a real `doctors` profile when their OHC login is linked to one (`linked_user_uid`); most
+   * ohc_doctor/corporate_cmo accounts have no such link, so those fields are simply blank for them —
+   * the template already renders fine without them. */
+  async function certificateLetterhead(principal, unit) {
+    const { rows } = await pool.query(`SELECT qualification, specialization, metadata FROM doctors WHERE linked_user_uid = $1 LIMIT 1`, [principal.uid]);
+    const d = rows[0];
+    const clinicName = unit.operatorName || unit.name;
+    return {
+      doctorId: principal.id,
+      clinicName,
+      tenantId: unit.operatorId || undefined,
+      clinicAddress: formatClinicAddress(unit.operatorAddress) || undefined,
+      clinicPhone: unit.operatorPhone || undefined,
+      issuePlace: unit.operatorAddress?.city || clinicName,
+      doctorQualifications: d?.qualification || undefined,
+      doctorSpecialty: d?.metadata?.title || d?.specialization || undefined,
+    };
+  }
+
+  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, staff, emergencies, createEmergency, updateEmergency, issueCertificate, certificates, certificateById, certificateLetterhead };
 }

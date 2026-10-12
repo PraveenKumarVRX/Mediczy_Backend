@@ -91,6 +91,7 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
     '{{clinicName}}': letterhead.clinicName || 'Mediqzy',
     '{{clinicAddress}}': letterhead.clinicAddress || '',
     '{{clinicPhone}}': letterhead.clinicPhone || '',
+    '{{issuePlace}}': letterhead.issuePlace || '',
     '{{generatedDateTime}}': new Date().toLocaleString('en-IN'),
   };
   for (const [token, value] of Object.entries(replacements)) {
@@ -98,6 +99,8 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
   }
   html = renderConditionalBlock(html, 'restrictions', cert.restrictions);
   html = renderConditionalBlock(html, 'remarks', cert.remarks);
+  html = renderConditionalBlock(html, 'clinicAddress', letterhead.clinicAddress);
+  html = renderConditionalBlock(html, 'clinicPhone', letterhead.clinicPhone);
 
   const puppeteer = await import('puppeteer');
   const browser = await puppeteer.default.launch({

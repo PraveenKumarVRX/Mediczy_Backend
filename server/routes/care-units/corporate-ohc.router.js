@@ -45,7 +45,7 @@ export function buildCorporateOhcRouter({ service, ohcService, authenticate, res
     if (renderPdf) {
       try {
         const unit = ohc.units.find((u) => u.uid === cert.issued_by_unit_uid) || ohc.units[0];
-        await renderPdf(cert, { doctorId: ohc.id, clinicName: unit.operatorName || unit.name, ...(await ohcService.doctorLetterhead(ohc)) });
+        await renderPdf(cert, await ohcService.certificateLetterhead(ohc, unit));
         pdfUrl = `/api/corporate/ohc-units/${req.params.uid}/certificates/${cert.id}/pdf`;
       } catch (err) { console.error('[corporate-ohc] certificate pdf failed:', err.message); }
     }

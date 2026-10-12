@@ -13,12 +13,30 @@
             margin: 0;
             padding: 0;
             font-size: 13px;
+            background: #f4f8f7;
         }
         .sheet {
+            position: relative;
             max-width: 210mm;
             margin: 0 auto;
             padding: 16mm 14mm;
+            background: #ffffff;
+            border-radius: 14px;
+            box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+            overflow: hidden;
         }
+        .sheet::before {
+            content: '';
+            position: absolute;
+            top: -120px;
+            right: -120px;
+            width: 320px;
+            height: 320px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(15, 118, 110, 0.07), rgba(15, 118, 110, 0) 70%);
+            pointer-events: none;
+        }
+        .sheet-content { position: relative; }
 
         /* ---- Letterhead (shared with prescription-template.html — keep in sync) ---- */
         .letterhead {
@@ -29,10 +47,21 @@
             padding-bottom: 14px;
             border-bottom: 2.5px solid #0f766e;
         }
-        .brand { display: flex; align-items: center; gap: 12px; }
-        .brand-mark { flex-shrink: 0; }
-        .brand-logo-img { height: 52px; width: 52px; object-fit: contain; display: block; }
+        .brand { display: flex; align-items: center; gap: 14px; }
+        .brand-mark {
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 58px;
+            height: 58px;
+            border-radius: 50%;
+            background: #f0fdfa;
+            border: 1px solid #ccfbf1;
+        }
+        .brand-logo-img { height: 42px; width: 42px; object-fit: contain; display: block; }
         .brand-text .clinic-name { font-size: 22px; font-weight: 700; color: #0f172a; letter-spacing: 0.2px; margin: 0; }
+        .brand-text .clinic-tagline { font-size: 10.5px; color: #0f766e; font-weight: 600; letter-spacing: 0.4px; text-transform: uppercase; margin-top: 2px; }
         .doctor-block { text-align: right; }
         .doctor-block .doctor-name { font-size: 15px; font-weight: 700; color: #0f172a; margin: 0; }
         .doctor-block .doctor-quals { font-size: 11px; color: #57534e; margin-top: 1px; }
@@ -41,26 +70,36 @@
 
         .doc-title {
             text-align: center;
-            margin-top: 20px;
+            margin-top: 22px;
         }
-        .doc-title h1 { font-size: 18px; font-weight: 700; margin: 0; color: #0f172a; }
+        .doc-title h1 { font-size: 18px; font-weight: 700; margin: 0; color: #0f172a; letter-spacing: 0.2px; }
         .doc-title .subtitle { font-size: 11.5px; color: #78716c; margin-top: 2px; }
-        .doc-title .cert-no { font-size: 10px; color: #a8a29e; margin-top: 4px; }
-        .doc-title .issue-date { font-size: 12.5px; font-weight: 600; color: #0f766e; margin-top: 3px; }
+        .doc-title .cert-no { font-size: 10px; color: #a8a29e; margin-top: 6px; }
+        .doc-title .issue-line {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            padding: 4px 12px;
+            background: #f0fdfa;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #0f766e;
+        }
 
-        .meta-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px 28px;
-            padding: 14px 0;
-            margin-top: 16px;
-            border-top: 1px solid #e7e5e4;
-            border-bottom: 1px solid #e7e5e4;
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px 24px;
+            padding: 14px 16px;
+            margin-top: 18px;
+            background: #fafaf9;
+            border-radius: 8px;
             font-size: 12.5px;
         }
-        .meta-row .field { white-space: nowrap; }
-        .meta-row .field .label { color: #78716c; margin-right: 4px; }
-        .meta-row .field .value { font-weight: 600; color: #1c1917; }
+        .meta-grid .field .label { display: block; color: #78716c; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.3px; margin-bottom: 1px; }
+        .meta-grid .field .value { font-weight: 600; color: #1c1917; }
 
         .body-text {
             margin-top: 20px;
@@ -118,6 +157,7 @@
 </head>
 <body>
     <div class="sheet">
+    <div class="sheet-content">
 
         <div class="letterhead">
             <div class="brand">
@@ -126,6 +166,7 @@
                 </div>
                 <div class="brand-text">
                     <p class="clinic-name">{{clinicName}}</p>
+                    <div class="clinic-tagline">Occupational Health Services</div>
                 </div>
             </div>
             <div class="doctor-block">
@@ -140,14 +181,16 @@
             <h1>Medical Examination Report</h1>
             <div class="subtitle">General Fitness Certificate</div>
             <div class="cert-no">Certificate No. FC-{{certificateId}}</div>
-            <div class="issue-date">Issued on {{issuedDate}}</div>
+            <div class="issue-line">Issued at {{issuePlace}} on {{issuedDate}}</div>
         </div>
 
-        <div class="meta-row">
-            <div class="field"><span class="label">Name:</span><span class="value">{{patientName}}</span></div>
-            <div class="field"><span class="label">Employee ID:</span><span class="value">{{employeeId}}</span></div>
-            <div class="field"><span class="label">Employer:</span><span class="value">{{employerName}}</span></div>
-            <div class="field"><span class="label">Role:</span><span class="value">{{jobDescription}}</span></div>
+        <div class="meta-grid">
+            <div class="field"><span class="label">Name</span><span class="value">{{patientName}}</span></div>
+            <div class="field"><span class="label">Employee ID</span><span class="value">{{employeeId}}</span></div>
+            <div class="field"><span class="label">Employer</span><span class="value">{{employerName}}</span></div>
+            <div class="field"><span class="label">Role</span><span class="value">{{jobDescription}}</span></div>
+            <div class="field"><span class="label">Examination Date</span><span class="value">{{examinationDate}}</span></div>
+            <div class="field"><span class="label">Place of Examination</span><span class="value">{{issuePlace}}</span></div>
         </div>
 
         <div class="body-text">
@@ -186,14 +229,15 @@
 
             <div class="clinic-footer">
                 <div class="fline1">{{clinicName}}</div>
-                <div>{{clinicAddress}}</div>
-                <div>{{clinicPhone}}</div>
+                {{#clinicAddress}}<div>{{clinicAddress}}</div>{{/clinicAddress}}
+                {{#clinicPhone}}<div>Ph: {{clinicPhone}}</div>{{/clinicPhone}}
             </div>
             <div class="disclaimer">
                 This certificate reflects findings at the time of examination only and is not a diagnosis. Certificate No. FC-{{certificateId}} · Generated {{generatedDateTime}}
             </div>
         </div>
 
+    </div>
     </div>
 </body>
 </html>
