@@ -32,6 +32,7 @@ export function IssueCertificateDialog({ employee, open, onOpenChange, onIssue, 
   const { toast } = useToast();
   const [status, setStatus] = useState("fit");
   const [job, setJob] = useState("");
+  const [examinationDate, setExaminationDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [restrictions, setRestrictions] = useState("");
   const [remarks, setRemarks] = useState("");
   const [busy, setBusy] = useState(false);
@@ -42,11 +43,11 @@ export function IssueCertificateDialog({ employee, open, onOpenChange, onIssue, 
     setBusy(true);
     try {
       const r = await onIssue({
-        employeeUserId: employee.id, fitnessStatus: status, jobDescription: job.trim() || undefined, restrictions: restrictions.trim() || undefined,
-        remarks: remarks.trim() || undefined,
+        employeeUserId: employee.id, fitnessStatus: status, jobDescription: job.trim() || undefined, examinationDate: examinationDate || undefined,
+        restrictions: restrictions.trim() || undefined, remarks: remarks.trim() || undefined,
       });
       toast({ title: "Certificate issued", description: `${employee.name} · ${FITNESS_LABEL[status]}${r.pdfUrl ? "" : " (PDF could not be generated; reissue the download later)"}` });
-      setJob(""); setRestrictions(""); setRemarks(""); setStatus("fit");
+      setJob(""); setExaminationDate(new Date().toISOString().slice(0, 10)); setRestrictions(""); setRemarks(""); setStatus("fit");
       onOpenChange(false); onIssued();
     } catch (err) { toast({ variant: "destructive", title: "Could not issue the certificate", description: (err as ApiProblem).message }); }
     finally { setBusy(false); }
@@ -64,7 +65,8 @@ export function IssueCertificateDialog({ employee, open, onOpenChange, onIssue, 
               <SelectContent>{Object.entries(FITNESS_LABEL).map(([k, l]) => <SelectItem key={k} value={k}>{l}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-job">Job role assessed</Label><Input id="ic-job" value={job} maxLength={300} onChange={(e) => setJob(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label htmlFor="ic-job">Job role assessed</Label><Input id="ic-job" value={job} maxLength={300} onChange={(e) => setJob(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label htmlFor="ic-exam">Examination date</Label><Input id="ic-exam" type="date" value={examinationDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setExaminationDate(e.target.value)} /></div>
           {needsNote && <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-res">Restrictions</Label><Textarea id="ic-res" value={restrictions} maxLength={500} onChange={(e) => setRestrictions(e.target.value)} /></div>}
           <div className="space-y-1.5 sm:col-span-2"><Label htmlFor="ic-rem">Remarks</Label><Textarea id="ic-rem" value={remarks} maxLength={1000} onChange={(e) => setRemarks(e.target.value)} /></div>
         </div>
