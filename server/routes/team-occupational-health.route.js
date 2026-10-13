@@ -41,7 +41,7 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const teamUser = req.teamUser;
     const {
       organizationId, patientId, patientName, employeeId, employerName, jobDescription,
-      examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks, doctorName, doctorRegNo,
+      examinationDate, examinationPlace, fitnessStatus, restrictions, remarks, doctorName, doctorRegNo,
       doctorQualifications, doctorSpecialty,
     } = req.body;
 
@@ -63,8 +63,8 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const cert = await issueFitnessCertificate({
       organizationId, patientId, certificateType: 'camp_general_fitness',
       issuedBy, doctorRegNo: cmo?.doctorRegNo || doctorRegNo, patientName, employeeId, employerName, jobDescription,
-      examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks,
-      certificateData: { issuedByTeamUserId: teamUser.id, source: 'health_camp' },
+      examinationDate, fitnessStatus, restrictions, remarks,
+      certificateData: { issuedByTeamUserId: teamUser.id, source: 'health_camp', examinationPlace: examinationPlace || undefined },
     });
 
     const letterhead = cmo || { ...(await getMySmartHealthLetterhead()), tenantId: MYSMARTHEALTH_TENANT_ID };

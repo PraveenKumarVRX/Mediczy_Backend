@@ -147,7 +147,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     };
   }
 
-  const CERT_KEYS = ['unit', 'employeeUserId', 'jobDescription', 'examinationDate', 'fitnessStatus', 'restrictions', 'validFrom', 'validUntil', 'remarks', 'certificateType'];
+  const CERT_KEYS = ['unit', 'employeeUserId', 'jobDescription', 'examinationDate', 'examinationPlace', 'fitnessStatus', 'restrictions', 'validFrom', 'validUntil', 'remarks', 'certificateType'];
   /** Issue a fitness certificate. Only an OHC doctor or corporate CMO with a registration number on file; the employee must belong to the unit's corporate. */
   function issueCertificate(principal, input) {
     const b = v.exactly(v.body(input), 'body', CERT_KEYS);
@@ -175,7 +175,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
           `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), emp.employeeId, emp.companyName, v.str(b.jobDescription, 'jobDescription', { max: 300, optional: true }),
           b.examinationDate ? v.date(b.examinationDate, 'examinationDate').toISOString().slice(0, 10) : null, status,
           v.str(b.restrictions, 'restrictions', { max: 500, optional: true }), validFrom, validUntil, v.str(b.remarks, 'remarks', { max: 1000, optional: true }),
-          JSON.stringify({ source: 'ohc', unitUid: u.uid, issuedByUserUid: principal.uid }), u.uid, principal.id]);
+          JSON.stringify({ source: 'ohc', unitUid: u.uid, issuedByUserUid: principal.uid, examinationPlace: v.str(b.examinationPlace, 'examinationPlace', { max: 200, optional: true }) || undefined }), u.uid, principal.id]);
       await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, $2, $3, 'certificate.issue', $4)`, [u.uid, principal.role === 'corporate_cmo' ? 'corporate_cmo' : 'ohc_staff', principal.ref, String(ins.rows[0].id)]);
       return { status: 201, body: { certificate: ins.rows[0] } };
     });
@@ -264,8 +264,11 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
 
   /** Everything the certificate PDF needs about the issuing clinic and doctor, besides what's already
    * stored flat on the `fitness_certificates` row. `unit` is the OHC unit (from `principal.units`) the
-   * certificate was issued through — its operator tenant supplies the clinic's logo/address/phone, and
-   * its city becomes the certificate's "place of issue". The signing doctor's qualifications/title come
+   * certificate was issued through — its operator tenant supplies the clinic's logo/address/phone. Its
+   * city is only a fallback "place of issue" for certificates with no manual examinationPlace on file
+   * (fitness-certificate-pdf.service.js prefers the manual value); the actual exam can happen anywhere
+   * (e.g. a camp on the corporate's own premises), so the clinic's registered city is not assumed to be
+   * where the doctor actually examined the employee. The signing doctor's qualifications/title come
    * from a real `doctors` profile when their OHC login is linked to one (`linked_user_uid`); most
    * ohc_doctor/corporate_cmo accounts have no such link, so those fields are simply blank for them —
    * the template already renders fine without them. */

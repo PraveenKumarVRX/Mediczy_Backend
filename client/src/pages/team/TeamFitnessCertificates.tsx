@@ -19,7 +19,7 @@ interface Employee { id: number; firstName: string; lastName: string; email: str
 interface MappedCmo { doctorName: string; doctorRegNo?: string; clinicName: string; }
 interface Certificate {
   id: number; patient_name: string; employee_id: string; fitness_status: string;
-  examination_date: string; valid_from: string; valid_until: string; signed_at: string;
+  examination_date: string; signed_at: string;
 }
 
 const STATUS_OPTIONS = [
@@ -30,7 +30,6 @@ const STATUS_OPTIONS = [
 ];
 
 const today = () => new Date().toISOString().slice(0, 10);
-const plusOneYear = () => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); };
 
 const TeamFitnessCertificates = () => {
   const { toast } = useToast();
@@ -48,8 +47,8 @@ const TeamFitnessCertificates = () => {
   const [employee, setEmployee] = useState<Employee | null>(null);
 
   const [form, setForm] = useState({
-    employeeCode: '', jobDescription: '', examinationDate: today(),
-    fitnessStatus: 'fit', restrictions: '', validFrom: today(), validUntil: plusOneYear(),
+    employeeCode: '', jobDescription: '', examinationDate: today(), examinationPlace: '',
+    fitnessStatus: 'fit', restrictions: '',
     remarks: '', doctorName: '', doctorRegNo: '',
   });
   const [issuing, setIssuing] = useState(false);
@@ -131,10 +130,9 @@ const TeamFitnessCertificates = () => {
         employerName: corporate.companyName,
         jobDescription: form.jobDescription || undefined,
         examinationDate: form.examinationDate,
+        examinationPlace: form.examinationPlace.trim() || undefined,
         fitnessStatus: form.fitnessStatus,
         restrictions: form.restrictions || undefined,
-        validFrom: form.validFrom,
-        validUntil: form.validUntil,
         remarks: form.remarks || undefined,
         doctorName: form.doctorName || undefined,
         doctorRegNo: form.doctorRegNo || undefined,
@@ -256,6 +254,10 @@ const TeamFitnessCertificates = () => {
                   <Input type="date" value={form.examinationDate} onChange={(e) => setForm((f) => ({ ...f, examinationDate: e.target.value }))} />
                 </div>
                 <div>
+                  <Label className="text-xs">Place of examination</Label>
+                  <Input placeholder="e.g. Ninjacart office, Whitefield, Bengaluru" value={form.examinationPlace} onChange={(e) => setForm((f) => ({ ...f, examinationPlace: e.target.value }))} />
+                </div>
+                <div>
                   <Label className="text-xs">Fitness status</Label>
                   <Select value={form.fitnessStatus} onValueChange={(v) => setForm((f) => ({ ...f, fitnessStatus: v }))}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
@@ -267,14 +269,6 @@ const TeamFitnessCertificates = () => {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-                <div>
-                  <Label className="text-xs">Valid from</Label>
-                  <Input type="date" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} />
-                </div>
-                <div>
-                  <Label className="text-xs">Valid until</Label>
-                  <Input type="date" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} />
                 </div>
               </div>
               <div>
@@ -346,7 +340,7 @@ const TeamFitnessCertificates = () => {
                     <div key={c.id} className="py-2.5 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium">FC-{c.id} — {STATUS_OPTIONS.find((s) => s.value === c.fitness_status)?.label || c.fitness_status}</p>
-                        <p className="text-xs text-muted-foreground">Examined {new Date(c.examination_date).toLocaleDateString()} · Valid until {c.valid_until ? new Date(c.valid_until).toLocaleDateString() : '—'}</p>
+                        <p className="text-xs text-muted-foreground">Examined {new Date(c.examination_date).toLocaleDateString()}</p>
                       </div>
                       <Button size="sm" variant="outline" onClick={() => download(c.id)}>
                         <FileDown className="h-3.5 w-3.5 mr-1" /> PDF

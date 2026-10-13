@@ -56,6 +56,8 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
 
   let html = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
+  const certData = typeof cert.certificate_data === 'string' ? JSON.parse(cert.certificate_data) : (cert.certificate_data || {});
+
   const signatureDataUri = getDoctorSignatureDataUri(letterhead.doctorId);
   const signatureSlot = signatureDataUri
     ? `<img src="${signatureDataUri}" class="signature-img" alt="Signature" />`
@@ -91,7 +93,11 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
     '{{clinicName}}': letterhead.clinicName || 'Mediqzy',
     '{{clinicAddress}}': letterhead.clinicAddress || '',
     '{{clinicPhone}}': letterhead.clinicPhone || '',
-    '{{issuePlace}}': letterhead.issuePlace || '',
+    // The place the examination/issuance actually happened is a manual entry on the certificate
+    // (certData.examinationPlace) — it can differ from the clinic's registered address (e.g. a
+    // camp held on-site at the corporate's own premises). Fall back to the clinic-derived value
+    // only for older certificates issued before this field existed.
+    '{{issuePlace}}': certData.examinationPlace || letterhead.issuePlace || '',
     '{{generatedDateTime}}': new Date().toLocaleString('en-IN'),
   };
   for (const [token, value] of Object.entries(replacements)) {
