@@ -287,5 +287,44 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     };
   }
 
-  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, staff, emergencies, createEmergency, updateEmergency, issueCertificate, certificates, certificateById, certificateLetterhead };
+  /** The real CMO/ohc_doctor mapped to this corporate's active OHC contract, for callers outside the
+   * OHC workspace itself (the Team camp-issuance flow) that need to credit the actual clinician rather
+   * than whoever is operating the tool. `corporateId` is the NUMERIC `corporates.id` such callers hold;
+   * returns null when the corporate has no active OHC unit or no staff assigned to it yet — callers
+   * must not silently substitute the operator's own identity in that case. */
+  async function resolveCmoForCorporate(corporateId) {
+    const { rows: units } = await pool.query(
+      `SELECT b.unique_id, b.name, o.id AS operator_id, o.name AS operator_name, o.address AS operator_address, o.phone AS operator_phone
+         FROM hospital_branch b JOIN corporates c ON c.unique_id = b.corporate_uid
+         LEFT JOIN tenants o ON o.unique_id = b.owner_uid
+        WHERE c.id = $1 AND b.unit_type = 'ohc' AND b.is_active AND b.contract_status = 'active'
+          AND (b.contract_end IS NULL OR b.contract_end >= CURRENT_DATE)
+        ORDER BY b.created_at LIMIT 1`, [corporateId]);
+    const unit = units[0];
+    if (!unit) return null;
+    const { rows: staff } = await pool.query(
+      `SELECT us.unique_id, us."firstName", us."lastName", us.metadata,
+              d.id AS doctor_id, d.qualification, d.specialization, d.metadata AS doctor_metadata, d."registrationNumber" AS doctor_reg_no
+         FROM staff_branch_assignment s JOIN users us ON us.id = s.user_id
+         LEFT JOIN doctors d ON d.linked_user_uid = us.unique_id
+        WHERE s.branch_id = (SELECT id FROM hospital_branch WHERE unique_id = $1) AND s.role = 'ohc_doctor' AND s.is_active
+        ORDER BY d.id NULLS LAST LIMIT 1`, [unit.unique_id]);
+    const w = staff[0];
+    if (!w) return null;
+    const clinicName = unit.operator_name || unit.name;
+    return {
+      doctorId: w.doctor_id || undefined,
+      doctorName: `${w.firstName || ''} ${w.lastName || ''}`.trim(),
+      doctorRegNo: w.doctor_reg_no || w.metadata?.registrationNumber || undefined,
+      doctorQualifications: w.qualification || undefined,
+      doctorSpecialty: w.doctor_metadata?.title || w.specialization || undefined,
+      clinicName,
+      tenantId: unit.operator_id || undefined,
+      clinicAddress: formatClinicAddress(unit.operator_address) || undefined,
+      clinicPhone: unit.operator_phone || undefined,
+      issuePlace: unit.operator_address?.city || clinicName,
+    };
+  }
+
+  return { loadPrincipal, login, refresh, logout, changePassword, me, employees, staff, emergencies, createEmergency, updateEmergency, issueCertificate, certificates, certificateById, certificateLetterhead, resolveCmoForCorporate };
 }

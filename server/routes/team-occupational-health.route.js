@@ -11,6 +11,7 @@ import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { issueFitnessCertificate, getFitnessCertificatesByPatient } from '../services/corporate-hmis.service.js';
 import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
+import { ohcService } from '../services/care-units/index.js';
 
 const router = express.Router();
 
@@ -40,7 +41,7 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const teamUser = req.teamUser;
     const {
       organizationId, patientId, patientName, employeeId, employerName, jobDescription,
-      examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks, doctorRegNo,
+      examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks, doctorName, doctorRegNo,
       doctorQualifications, doctorSpecialty,
     } = req.body;
 
@@ -48,21 +49,29 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
       return res.status(400).json({ success: false, message: 'organizationId, patientId and fitnessStatus are required' });
     }
 
-    const issuedBy = `${teamUser.firstName || ''} ${teamUser.lastName || ''}`.trim() || teamUser.email;
+    // The corporate's real, mapped CMO/ohc_doctor (if their OHC contract is active) is who gets
+    // credited — never the team member operating this tool, who may not be a clinician at all.
+    // Without that mapping, the caller must name the doctor explicitly; silently falling back to
+    // teamUser's own identity is exactly the bug this replaced (a non-clinical staff name ending up
+    // as the signing doctor on a medical certificate).
+    const cmo = await ohcService.resolveCmoForCorporate(Number(organizationId));
+    if (!cmo && !doctorName) {
+      return res.status(422).json({ success: false, code: 'doctor_required', message: "This corporate has no mapped CMO on file. Enter the examining doctor's name to continue." });
+    }
+    const issuedBy = cmo?.doctorName || doctorName;
 
     const cert = await issueFitnessCertificate({
       organizationId, patientId, certificateType: 'camp_general_fitness',
-      issuedBy, doctorRegNo, patientName, employeeId, employerName, jobDescription,
+      issuedBy, doctorRegNo: cmo?.doctorRegNo || doctorRegNo, patientName, employeeId, employerName, jobDescription,
       examinationDate, fitnessStatus, restrictions, validFrom, validUntil, remarks,
       certificateData: { issuedByTeamUserId: teamUser.id, source: 'health_camp' },
     });
 
-    const letterhead = await getMySmartHealthLetterhead();
+    const letterhead = cmo || { ...(await getMySmartHealthLetterhead()), tenantId: MYSMARTHEALTH_TENANT_ID };
     await generateFitnessCertificatePdf(cert, {
       ...letterhead,
-      tenantId: MYSMARTHEALTH_TENANT_ID,
-      doctorQualifications: doctorQualifications || '',
-      doctorSpecialty: doctorSpecialty || 'Occupational Health',
+      doctorQualifications: letterhead.doctorQualifications || doctorQualifications || '',
+      doctorSpecialty: letterhead.doctorSpecialty || doctorSpecialty || 'Occupational Health',
     });
 
     return res.status(201).json({
@@ -73,6 +82,18 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
   } catch (err) {
     console.error('[team-occupational-health] issue error:', err);
     return res.status(400).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/team/occupational-health/cmo/:organizationId — the corporate's mapped CMO/ohc_doctor, if
+// their OHC contract is active, so the issuing screen can show who will actually be credited before
+// the team member commits to issuing (and ask for a name explicitly when nothing is mapped).
+router.get('/cmo/:organizationId', authTeam, requirePermission('Doctor Management'), async (req, res) => {
+  try {
+    const cmo = await ohcService.resolveCmoForCorporate(parseInt(req.params.organizationId));
+    return res.json({ success: true, cmo });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 

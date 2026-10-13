@@ -16,6 +16,7 @@ import api from '@/utils/api';
 
 interface Corporate { id: number; companyName: string; }
 interface Employee { id: number; firstName: string; lastName: string; email: string; phoneNumber?: string; }
+interface MappedCmo { doctorName: string; doctorRegNo?: string; clinicName: string; }
 interface Certificate {
   id: number; patient_name: string; employee_id: string; fitness_status: string;
   examination_date: string; valid_from: string; valid_until: string; signed_at: string;
@@ -37,6 +38,9 @@ const TeamFitnessCertificates = () => {
   const [corporates, setCorporates] = useState<Corporate[]>([]);
   const [corporate, setCorporate] = useState<Corporate | null>(null);
   const [corpSearch, setCorpSearch] = useState('');
+  const [mappedCmo, setMappedCmo] = useState<MappedCmo | null>(null);
+  const [cmoLoading, setCmoLoading] = useState(false);
+  const [cmoChecked, setCmoChecked] = useState(false);
 
   const [empSearch, setEmpSearch] = useState('');
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -65,6 +69,15 @@ const TeamFitnessCertificates = () => {
 
   const filteredCorporates = corporates.filter((c) =>
     !corpSearch || c.companyName.toLowerCase().includes(corpSearch.toLowerCase()));
+
+  useEffect(() => {
+    if (!corporate) { setMappedCmo(null); setCmoChecked(false); return; }
+    setCmoLoading(true); setCmoChecked(false);
+    api.get(`/team/occupational-health/cmo/${corporate.id}`)
+      .then((r) => setMappedCmo(r.data.cmo || null))
+      .catch(() => setMappedCmo(null))
+      .finally(() => { setCmoLoading(false); setCmoChecked(true); });
+  }, [corporate]);
 
   const searchEmployees = async (q: string) => {
     setEmpSearch(q);
@@ -123,10 +136,11 @@ const TeamFitnessCertificates = () => {
         validFrom: form.validFrom,
         validUntil: form.validUntil,
         remarks: form.remarks || undefined,
+        doctorName: form.doctorName || undefined,
         doctorRegNo: form.doctorRegNo || undefined,
       });
       setLastIssued({ id: data.certificate.id, pdfUrl: data.pdfUrl });
-      toast({ title: 'Certificate issued', description: `MER for ${employee.firstName} ${employee.lastName}` });
+      toast({ title: 'Certificate issued', description: `MER for ${employee.firstName} ${employee.lastName} · signed by Dr. ${data.certificate.issued_by}` });
       loadHistory(employee);
     } catch (e: any) {
       console.error('Issue failed', e);
@@ -262,10 +276,30 @@ const TeamFitnessCertificates = () => {
                   <Label className="text-xs">Valid until</Label>
                   <Input type="date" value={form.validUntil} onChange={(e) => setForm((f) => ({ ...f, validUntil: e.target.value }))} />
                 </div>
-                <div>
-                  <Label className="text-xs">Examining doctor's registration no.</Label>
-                  <Input value={form.doctorRegNo} onChange={(e) => setForm((f) => ({ ...f, doctorRegNo: e.target.value }))} />
-                </div>
+              </div>
+              <div>
+                {cmoLoading && <p className="text-xs text-muted-foreground">Checking this corporate's mapped CMO…</p>}
+                {cmoChecked && mappedCmo && (
+                  <div className="flex items-center gap-2 rounded-md border border-green-200 bg-green-50 p-2.5 text-xs text-green-900 dark:border-green-900 dark:bg-green-950 dark:text-green-200">
+                    <Stethoscope className="size-4 shrink-0" />
+                    <span>Will be signed by <strong>Dr. {mappedCmo.doctorName}</strong> — the mapped CMO at {mappedCmo.clinicName}. No action needed.</span>
+                  </div>
+                )}
+                {cmoChecked && !mappedCmo && (
+                  <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950">
+                    <p className="text-xs text-amber-900 dark:text-amber-200">This corporate has no mapped CMO on file. Enter the examining doctor's details for this certificate.</p>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <Label className="text-xs">Examining doctor's name</Label>
+                        <Input value={form.doctorName} onChange={(e) => setForm((f) => ({ ...f, doctorName: e.target.value }))} placeholder="e.g. Nandita Agarwal" />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Doctor's registration no.</Label>
+                        <Input value={form.doctorRegNo} onChange={(e) => setForm((f) => ({ ...f, doctorRegNo: e.target.value }))} />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
               {(form.fitnessStatus === 'fit_with_restrictions' || form.fitnessStatus === 'temporarily_unfit' || form.fitnessStatus === 'unfit') && (
                 <div>
@@ -278,7 +312,7 @@ const TeamFitnessCertificates = () => {
                 <Textarea rows={2} value={form.remarks} onChange={(e) => setForm((f) => ({ ...f, remarks: e.target.value }))} />
               </div>
 
-              <Button onClick={issue} disabled={issuing} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              <Button onClick={issue} disabled={issuing || (cmoChecked && !mappedCmo && !form.doctorName.trim())} className="bg-emerald-600 hover:bg-emerald-700 text-white">
                 {issuing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Stethoscope className="h-4 w-4 mr-2" />}
                 Issue Certificate
               </Button>
