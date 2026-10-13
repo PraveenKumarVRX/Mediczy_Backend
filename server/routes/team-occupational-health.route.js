@@ -41,7 +41,7 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const teamUser = req.teamUser;
     const {
       organizationId, patientId, patientName, employeeId, employerName, jobDescription,
-      examinationDate, examinationPlace, fitnessStatus, restrictions, remarks, doctorName, doctorRegNo,
+      examinationDate, examinationPlace, issuedDate, fitnessStatus, restrictions, remarks, doctorName, doctorRegNo,
       doctorQualifications, doctorSpecialty,
     } = req.body;
 
@@ -63,7 +63,7 @@ router.post('/fitness-certificate', authTeam, requirePermission('Doctor Manageme
     const cert = await issueFitnessCertificate({
       organizationId, patientId, certificateType: 'camp_general_fitness',
       issuedBy, doctorRegNo: cmo?.doctorRegNo || doctorRegNo, patientName, employeeId, employerName, jobDescription,
-      examinationDate, fitnessStatus, restrictions, remarks,
+      examinationDate, issuedDate, fitnessStatus, restrictions, remarks,
       certificateData: { issuedByTeamUserId: teamUser.id, source: 'health_camp', examinationPlace: examinationPlace || undefined },
     });
 

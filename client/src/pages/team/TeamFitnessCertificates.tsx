@@ -48,7 +48,7 @@ const TeamFitnessCertificates = () => {
   const [employee, setEmployee] = useState<Employee | null>(null);
 
   const [form, setForm] = useState({
-    employeeCode: '', jobDescription: '', examinationDate: today(), examinationPlace: '',
+    employeeCode: '', jobDescription: '', examinationDate: today(), examinationPlace: '', issuedDate: today(),
     fitnessStatus: 'fit', restrictions: '',
     remarks: '', doctorName: '', doctorRegNo: '',
   });
@@ -132,6 +132,7 @@ const TeamFitnessCertificates = () => {
         jobDescription: form.jobDescription || undefined,
         examinationDate: form.examinationDate,
         examinationPlace: form.examinationPlace.trim() || undefined,
+        issuedDate: form.issuedDate || undefined,
         fitnessStatus: form.fitnessStatus,
         restrictions: form.restrictions || undefined,
         remarks: form.remarks || undefined,
@@ -265,8 +266,12 @@ const TeamFitnessCertificates = () => {
                   <Input type="date" value={form.examinationDate} onChange={(e) => setForm((f) => ({ ...f, examinationDate: e.target.value }))} />
                 </div>
                 <div>
-                  <Label className="text-xs">Place of examination</Label>
-                  <Input placeholder="e.g. Ninjacart office, Whitefield, Bengaluru" value={form.examinationPlace} onChange={(e) => setForm((f) => ({ ...f, examinationPlace: e.target.value }))} />
+                  <Label className="text-xs">City</Label>
+                  <Input placeholder="e.g. Bengaluru" value={form.examinationPlace} onChange={(e) => setForm((f) => ({ ...f, examinationPlace: e.target.value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs">Issue date</Label>
+                  <Input type="date" value={form.issuedDate} onChange={(e) => setForm((f) => ({ ...f, issuedDate: e.target.value }))} />
                 </div>
                 <div>
                   <Label className="text-xs">Fitness status</Label>

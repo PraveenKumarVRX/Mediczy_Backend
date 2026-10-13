@@ -147,7 +147,7 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
     };
   }
 
-  const CERT_KEYS = ['unit', 'employeeUserId', 'jobDescription', 'examinationDate', 'examinationPlace', 'fitnessStatus', 'restrictions', 'validFrom', 'validUntil', 'remarks', 'certificateType'];
+  const CERT_KEYS = ['unit', 'employeeUserId', 'jobDescription', 'examinationDate', 'examinationPlace', 'issuedDate', 'fitnessStatus', 'restrictions', 'validFrom', 'validUntil', 'remarks', 'certificateType'];
   /** Issue a fitness certificate. Only an OHC doctor or corporate CMO with a registration number on file; the employee must belong to the unit's corporate. */
   function issueCertificate(principal, input) {
     const b = v.exactly(v.body(input), 'body', CERT_KEYS);
@@ -166,16 +166,17 @@ export function createOhcService({ pool, tokens, now = () => new Date() }) {
       const validFrom = b.validFrom ? v.date(b.validFrom, 'validFrom').toISOString().slice(0, 10) : null;
       const validUntil = b.validUntil ? v.date(b.validUntil, 'validUntil').toISOString().slice(0, 10) : null;
       if (validFrom && validUntil && validUntil < validFrom) throw invalid('validUntil must not be before validFrom', { field: 'validUntil' });
+      const issuedDate = b.issuedDate ? v.date(b.issuedDate, 'issuedDate').toISOString() : null;
       const ins = await c.query(
         `INSERT INTO fitness_certificates
            (organization_id, patient_id, certificate_type, issued_by, doctor_reg_no, patient_name, employee_id, employer_name, job_description, examination_date,
             fitness_status, restrictions, valid_from, valid_until, remarks, certificate_data, signed_at, issued_by_unit_uid, issued_by_user_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::date, CURRENT_DATE), $11, $12, $13, $14, $15, $16::jsonb, now(), $17, $18) RETURNING *`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10::date, CURRENT_DATE), $11, $12, $13, $14, $15, $16::jsonb, COALESCE($19::timestamptz, now()), $17, $18) RETURNING *`,
         [emp.corporate_id, emp.id, b.certificateType ? v.str(b.certificateType, 'certificateType', { max: 60 }) : 'ohc_fitness', principal.displayName, principal.registrationNumber,
           `${emp.firstName || ''} ${emp.lastName || ''}`.trim(), emp.employeeId, emp.companyName, v.str(b.jobDescription, 'jobDescription', { max: 300, optional: true }),
           b.examinationDate ? v.date(b.examinationDate, 'examinationDate').toISOString().slice(0, 10) : null, status,
           v.str(b.restrictions, 'restrictions', { max: 500, optional: true }), validFrom, validUntil, v.str(b.remarks, 'remarks', { max: 1000, optional: true }),
-          JSON.stringify({ source: 'ohc', unitUid: u.uid, issuedByUserUid: principal.uid, examinationPlace: v.str(b.examinationPlace, 'examinationPlace', { max: 200, optional: true }) || undefined }), u.uid, principal.id]);
+          JSON.stringify({ source: 'ohc', unitUid: u.uid, issuedByUserUid: principal.uid, examinationPlace: v.str(b.examinationPlace, 'examinationPlace', { max: 200, optional: true }) || undefined }), u.uid, principal.id, issuedDate]);
       await c.query(`INSERT INTO ohc_access_log (unit_uid, actor_kind, actor_ref, action, subject) VALUES ($1, $2, $3, 'certificate.issue', $4)`, [u.uid, principal.role === 'corporate_cmo' ? 'corporate_cmo' : 'ohc_staff', principal.ref, String(ins.rows[0].id)]);
       return { status: 201, body: { certificate: ins.rows[0] } };
     });

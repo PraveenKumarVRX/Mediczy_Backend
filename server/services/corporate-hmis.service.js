@@ -213,7 +213,7 @@ export async function issueFitnessCertificate(data) {
   const {
     organizationId, patientId, admissionId, certificateType, issuedBy,
     doctorRegNo, patientName, employeeId, employerName, jobDescription,
-    examinationDate, fitnessStatus, restrictions, validFrom, validUntil,
+    examinationDate, issuedDate, fitnessStatus, restrictions, validFrom, validUntil,
     remarks, certificateData
   } = data;
 
@@ -227,7 +227,7 @@ export async function issueFitnessCertificate(data) {
        :orgId, :patientId, :admId, :type, :by,
        :regNo, :name, :empId, :employer, :job,
        :examDate, :status, :restrictions, :from, :until,
-       :remarks, :data::jsonb, NOW()
+       :remarks, :data::jsonb, COALESCE(:signedAt::timestamptz, NOW())
      ) RETURNING *`,
     {
       replacements: {
@@ -237,7 +237,7 @@ export async function issueFitnessCertificate(data) {
         employer: employerName || null, job: jobDescription || null,
         examDate: examinationDate || new Date(), status: fitnessStatus,
         restrictions: restrictions || null, from: validFrom || null, until: validUntil || null,
-        remarks: remarks || null, data: JSON.stringify(certificateData || {})
+        remarks: remarks || null, data: JSON.stringify(certificateData || {}), signedAt: issuedDate || null
       },
       type: QueryTypes.INSERT
     }
