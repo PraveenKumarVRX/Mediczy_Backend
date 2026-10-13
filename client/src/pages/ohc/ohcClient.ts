@@ -100,13 +100,10 @@ export const createPrescription = (input: Record<string, unknown>) =>
 // reachable with this identity, so there is no "list my referrals" call here.
 export const createReferral = (input: Record<string, unknown>) => requestAt<{ success: boolean; data: ClinicalReferral }>("/careos/network/referrals", "POST", input);
 
-/** Fetch the certificate PDF with the session token and hand it to the browser as a download. */
-export async function downloadCertificate(id: number) {
+/** Fetch the certificate PDF with the session token, as a Blob the caller can preview/download/share. */
+export async function fetchCertificatePdfBlob(id: number): Promise<Blob> {
   let res = await raw("GET", `/certificates/${id}/pdf`);
   if (res.status === 401 && (await refresh())) res = await raw("GET", `/certificates/${id}/pdf`);
   if (!res.ok) throw new OhcError(res.status, "pdf_unavailable", "The PDF is not available for this certificate.");
-  const url = URL.createObjectURL(await res.blob());
-  const a = document.createElement("a");
-  a.href = url; a.download = `fitness-certificate-${id}.pdf`; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return res.blob();
 }

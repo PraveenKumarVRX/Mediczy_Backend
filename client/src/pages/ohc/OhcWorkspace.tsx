@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, PrescriptionDialog, PrescriptionsTable, ReferralDialog, StaffList } from "../care-units/ohcPanels";
 import type { ClinicalPrescription, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "../care-units/types";
-import { OhcError, changePassword, createPrescription, createReferral, downloadCertificate, getCertificates, getEmployees, getEmergencies, getMe, getMyPrescriptions, getStaff, hasSession, issueCertificate, logout, reportEmergency, updateEmergency } from "./ohcClient";
+import { OhcError, changePassword, createPrescription, createReferral, fetchCertificatePdfBlob, getCertificates, getEmployees, getEmergencies, getMe, getMyPrescriptions, getStaff, hasSession, issueCertificate, logout, reportEmergency, updateEmergency } from "./ohcClient";
 
 function ChangePassword({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
@@ -141,7 +141,7 @@ export default function OhcWorkspace() {
 
         {tab === "certificates" && (
           <section aria-label="Certificates issued">
-            <CertificatesTable certs={certs} listError={listError} onRetry={loadCerts} onDownload={downloadCertificate} />
+            <CertificatesTable certs={certs} listError={listError} onRetry={loadCerts} onFetchPdf={fetchCertificatePdfBlob} />
           </section>
         )}
         {tab === "prescriptions" && (

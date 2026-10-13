@@ -6,7 +6,8 @@
  * props rather than this file importing either API client.
  */
 import { useState } from "react";
-import { AlertTriangle, FileDown, Pill, Send, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Eye, FileDown, Pill, Send, Share2, ShieldCheck } from "lucide-react";
+import { downloadPdfBlob, previewPdfBlob, sharePdfBlob } from "@/utils/pdfActions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -124,23 +125,51 @@ export function EmergenciesPanel({ emergencies, listError, onRetry, onAdvance }:
   );
 }
 
-export function CertificatesTable({ certs, listError, onRetry, onDownload }: {
-  certs: WorkspaceCertificate[] | null; listError: boolean; onRetry: () => void; onDownload: (id: number) => Promise<void>;
+export function CertificatesTable({ certs, listError, onRetry, onFetchPdf }: {
+  certs: WorkspaceCertificate[] | null; listError: boolean; onRetry: () => void; onFetchPdf: (id: number) => Promise<Blob>;
 }) {
   const { toast } = useToast();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const withCert = async (c: WorkspaceCertificate, action: "preview" | "download" | "share", win?: Window | null) => {
+    const key = `${c.id}:${action}`;
+    setBusy(key);
+    const filename = `fitness-certificate-${c.id}.pdf`;
+    try {
+      const blob = await onFetchPdf(c.id);
+      if (action === "preview") previewPdfBlob(blob, win ?? null, filename);
+      else if (action === "download") downloadPdfBlob(blob, filename);
+      else {
+        const outcome = await sharePdfBlob(blob, filename, `Fitness certificate — ${c.patient_name}`);
+        if (outcome === "downloaded") toast({ title: "Downloaded", description: "Sharing isn't supported on this device — the PDF was downloaded instead." });
+      }
+    } catch (e) {
+      win?.close();
+      toast({ variant: "destructive", title: "PDF unavailable", description: (e as ApiProblem).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   if (listError) return <InlineError message="Could not load certificates." onRetry={onRetry} />;
   if (certs === null) return <Skeleton className="h-24" />;
   if (certs.length === 0) return <EmptyState icon={ShieldCheck} title="No certificates yet" description="Certificates issued for the company's employees appear here." />;
   return (
     <div className="overflow-x-auto rounded-lg border bg-card">
       <table className="w-full text-left text-sm">
-        <thead className="bg-muted/50 text-xs text-muted-foreground"><tr><th className="p-3">Employee</th><th>Result</th><th>Valid until</th><th>Issued</th><th><span className="sr-only">PDF</span></th></tr></thead>
+        <thead className="bg-muted/50 text-xs text-muted-foreground"><tr><th className="p-3">Employee</th><th>Result</th><th>Valid until</th><th>Issued</th><th><span className="sr-only">PDF actions</span></th></tr></thead>
         <tbody>{certs.map((c) => (
           <tr key={c.id} className="border-t">
             <td className="p-3">{c.patient_name}<span className="block text-xs text-muted-foreground">{c.employee_id}</span></td>
             <td>{FITNESS_LABEL[c.fitness_status] ?? c.fitness_status}{c.restrictions ? <span className="block text-xs text-muted-foreground">{c.restrictions}</span> : null}</td>
             <td>{formatDate(c.valid_until)}</td><td>{formatDate(c.created_at)}</td>
-            <td className="pr-3 text-right"><Button size="sm" variant="outline" onClick={() => onDownload(c.id).catch((e) => toast({ variant: "destructive", title: "PDF unavailable", description: (e as ApiProblem).message }))}><FileDown className="mr-1 size-4" aria-hidden />PDF</Button></td>
+            <td className="pr-3 text-right">
+              <div className="inline-flex gap-1.5">
+                <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => { const win = window.open("", "_blank"); void withCert(c, "preview", win); }}><Eye className="mr-1 size-4" aria-hidden />Preview</Button>
+                <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void withCert(c, "download")}><FileDown className="mr-1 size-4" aria-hidden />Download</Button>
+                <Button size="sm" variant="outline" disabled={busy !== null} onClick={() => void withCert(c, "share")}><Share2 className="mr-1 size-4" aria-hidden />Share</Button>
+              </div>
+            </td>
           </tr>))}
         </tbody>
       </table>

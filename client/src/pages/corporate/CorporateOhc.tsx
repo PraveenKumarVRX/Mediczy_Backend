@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
-  downloadCorporateCertificate, toProblem, useClinicianMutations, useCorporateDashboard, useCorporateLog, useCorporateOhcCertificates,
+  fetchCorporateCertificatePdfBlob, toProblem, useClinicianMutations, useCorporateDashboard, useCorporateLog, useCorporateOhcCertificates,
   useCorporateOhcEmergencies, useCorporateOhcEmployees, useCorporateOhcMutations, useCorporateOhcs, useMyPrescriptions, useUnitMutations,
 } from "../care-units/careUnitsApi";
 import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, PrescriptionDialog, PrescriptionsTable, ReferralDialog, StaffList } from "../care-units/ohcPanels";
@@ -151,7 +151,7 @@ function Dashboard({ uid }: { uid: string }) {
             certs={certsQuery.data ?? null}
             listError={certsQuery.isError}
             onRetry={() => certsQuery.refetch()}
-            onDownload={(id) => downloadCorporateCertificate(uid, id)}
+            onFetchPdf={(id) => fetchCorporateCertificatePdfBlob(uid, id)}
           />
         ) : certificates.length === 0 ? <p className="text-sm text-slate-500">None yet.</p> : (
           <div className="overflow-x-auto">

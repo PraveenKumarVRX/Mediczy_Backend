@@ -68,12 +68,9 @@ export const useCorporateOhcCertificates = (uid: string | null) =>
 export const useCorporateOhcEmergencies = (uid: string | null) =>
   useQuery({ queryKey: [...keys.dashboard(uid ?? ""), "emergencies"], enabled: Boolean(uid), queryFn: async () => (await api.get(`/corporate/ohc-units/${uid}/emergencies`)).data.emergencies as WorkplaceEmergency[] });
 
-export async function downloadCorporateCertificate(uid: string, id: number) {
+export async function fetchCorporateCertificatePdfBlob(uid: string, id: number): Promise<Blob> {
   const res = await api.get(`/corporate/ohc-units/${uid}/certificates/${id}/pdf`, { responseType: "blob" });
-  const url = URL.createObjectURL(res.data as Blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = `fitness-certificate-${id}.pdf`; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return res.data as Blob;
 }
 
 export function useCorporateOhcMutations(uid: string | null) {

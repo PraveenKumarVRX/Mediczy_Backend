@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/components/ui/use-toast';
 import {
-  Stethoscope, Search, Building2, User, Loader2, CheckCircle2, FileDown,
+  Stethoscope, Search, Building2, User, Loader2, CheckCircle2, FileDown, Eye, Share2,
   ShieldCheck, AlertTriangle, XCircle, History,
 } from 'lucide-react';
 import api from '@/utils/api';
+import { downloadPdfBlob, previewPdfBlob, sharePdfBlob } from '@/utils/pdfActions';
 
 interface Corporate { id: number; companyName: string; }
 interface Employee { id: number; firstName: string; lastName: string; email: string; phoneNumber?: string; }
@@ -148,18 +149,28 @@ const TeamFitnessCertificates = () => {
     }
   };
 
-  const download = (id: number) => {
-    api.get(`/team/occupational-health/fitness-certificate/${id}/pdf`, { responseType: 'blob' })
-      .then((res) => {
-        const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-        const a = document.createElement('a');
-        a.href = url; a.download = `fitness-certificate-${id}.pdf`; a.click();
-        URL.revokeObjectURL(url);
-      })
-      .catch((e) => {
-        console.error('Download failed', e);
-        toast({ title: 'Download failed', variant: 'destructive' });
-      });
+  const [pdfBusy, setPdfBusy] = useState<string | null>(null);
+  const pdfAction = async (id: number, action: 'preview' | 'download' | 'share', win?: Window | null) => {
+    const key = `${id}:${action}`;
+    setPdfBusy(key);
+    const filename = `fitness-certificate-${id}.pdf`;
+    try {
+      const res = await api.get(`/team/occupational-health/fitness-certificate/${id}/pdf`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      if (action === 'preview') previewPdfBlob(blob, win ?? null, filename);
+      else if (action === 'download') downloadPdfBlob(blob, filename);
+      else {
+        const title = employee ? `Fitness certificate — ${employee.firstName} ${employee.lastName}` : 'Fitness certificate';
+        const outcome = await sharePdfBlob(blob, filename, title);
+        if (outcome === 'downloaded') toast({ title: 'Downloaded', description: "Sharing isn't supported on this device — the PDF was downloaded instead." });
+      }
+    } catch (e) {
+      console.error(`${action} failed`, e);
+      win?.close();
+      toast({ title: `Failed to ${action} the certificate`, variant: 'destructive' });
+    } finally {
+      setPdfBusy(null);
+    }
   };
 
   return (
@@ -315,8 +326,14 @@ const TeamFitnessCertificates = () => {
                 <div className="flex items-center gap-3 p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5">
                   <CheckCircle2 className="h-5 w-5 text-emerald-500" />
                   <span className="text-sm flex-1">Certificate FC-{lastIssued.id} issued.</span>
-                  <Button size="sm" variant="outline" onClick={() => download(lastIssued.id)}>
-                    <FileDown className="h-4 w-4 mr-1" /> Download PDF
+                  <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => { const win = window.open('', '_blank'); void pdfAction(lastIssued.id, 'preview', win); }}>
+                    <Eye className="h-4 w-4 mr-1" /> Preview
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => void pdfAction(lastIssued.id, 'download')}>
+                    <FileDown className="h-4 w-4 mr-1" /> Download
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => void pdfAction(lastIssued.id, 'share')}>
+                    <Share2 className="h-4 w-4 mr-1" /> Share
                   </Button>
                 </div>
               )}
@@ -342,9 +359,17 @@ const TeamFitnessCertificates = () => {
                         <p className="text-sm font-medium">FC-{c.id} — {STATUS_OPTIONS.find((s) => s.value === c.fitness_status)?.label || c.fitness_status}</p>
                         <p className="text-xs text-muted-foreground">Examined {new Date(c.examination_date).toLocaleDateString()}</p>
                       </div>
-                      <Button size="sm" variant="outline" onClick={() => download(c.id)}>
-                        <FileDown className="h-3.5 w-3.5 mr-1" /> PDF
-                      </Button>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => { const win = window.open('', '_blank'); void pdfAction(c.id, 'preview', win); }}>
+                          <Eye className="h-3.5 w-3.5 mr-1" /> Preview
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => void pdfAction(c.id, 'download')}>
+                          <FileDown className="h-3.5 w-3.5 mr-1" /> PDF
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => void pdfAction(c.id, 'share')}>
+                          <Share2 className="h-3.5 w-3.5 mr-1" /> Share
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
