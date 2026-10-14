@@ -454,7 +454,8 @@ const PLATFORM_FEATURE_LABEL_ALIASES = {
 };
 
 function tagBenefitCategory(b) {
-  return ['ipd', 'maternity'].includes(String(b.category || b.name || '').toLowerCase()) ? 'insurance' : 'wellness';
+  const text = typeof b === 'string' ? b : String(b?.category || b?.name || '');
+  return /\b(ipd|maternity)\b/i.test(text) ? 'insurance' : 'wellness';
 }
 
 function extractPlatformFeatures(rawFeatures) {
@@ -595,10 +596,15 @@ router.get('/my-benefits', authUser, async (req, res) => {
       validFrom: userPlan?.startDate || null,
       validTo: userPlan?.endDate || null,
       planType: planRecord?.tier ? String(planRecord.tier) : (planRecord?.planType || 'Standard'),
-      benefits: (planRecord?.benefits || planRecord?.metadata?.benefits || []).map((b) => ({
-        ...b,
-        benefitCategory: tagBenefitCategory(b),
-      })),
+      // membership_plans.benefits is a plain array of description strings (e.g. "10 GP
+      // teleconsultations/year"), unlike subscription_plans' metadata.benefits objects below --
+      // spreading a string with {...b} explodes it into numeric-indexed characters, so the two
+      // shapes are normalized to the same { category, description, benefitCategory } the UI reads.
+      benefits: (planRecord?.benefits || planRecord?.metadata?.benefits || []).map((b) => (
+        typeof b === 'string'
+          ? { category: b, description: '', benefitCategory: tagBenefitCategory(b) }
+          : { ...b, benefitCategory: tagBenefitCategory(b) }
+      )),
       features: planRecord?.features || {},
       platformFeatures: extractPlatformFeatures(planRecord?.features),
       coverage: planRecord?.metadata?.coverage || {},
@@ -881,40 +887,63 @@ router.get('/health-checkups', authUser, async (req, res) => {
       }
     }
 
-    if (!corporateId) {
-      return res.json({ success: true, linkedPlan: false, checkups: [], data: { checkups: [] } });
+    if (corporateId) {
+      const [planRows] = await postgresSequelize.query(
+        `SELECT metadata FROM subscription_plans
+          WHERE type = 'CORPORATE' AND is_active = true AND (metadata->>'corporateId')::int = :corporateId
+          ORDER BY created_at DESC LIMIT 1`,
+        { replacements: { corporateId } }
+      );
+      const benefits = planRows[0]?.metadata?.benefits;
+      const checkupBenefit = Array.isArray(benefits)
+        ? benefits.find((b) => b.isIncluded && /health.*check|checkup/i.test(`${b.name || ''} ${b.category || ''}`))
+        : null;
+
+      if (checkupBenefit) {
+        const checkups = [{
+          id: 'plan-annual-checkup',
+          name: checkupBenefit.name || 'Annual Health Checkup',
+          description: checkupBenefit.description || 'Included as part of your corporate health plan.',
+          limit: checkupBenefit.limit || null,
+          validFrom: enrollment?.validFrom ? new Date(enrollment.validFrom).toISOString().slice(0, 10) : null,
+          validTo: enrollment?.validTo ? new Date(enrollment.validTo).toISOString().slice(0, 10) : null,
+        }];
+        return res.json({ success: true, linkedPlan: true, checkups, data: { checkups } });
+      }
+      if (planRows[0]) {
+        return res.json({ success: true, linkedPlan: true, checkups: [], data: { checkups: [] } });
+      }
     }
 
-    const [planRows] = await postgresSequelize.query(
-      `SELECT metadata FROM subscription_plans
-        WHERE type = 'CORPORATE' AND is_active = true AND (metadata->>'corporateId')::int = :corporateId
-        ORDER BY created_at DESC LIMIT 1`,
-      { replacements: { corporateId } }
-    );
-    const benefits = planRows[0]?.metadata?.benefits;
-    const checkupBenefit = Array.isArray(benefits)
-      ? benefits.find((b) => b.isIncluded && /health.*check|checkup/i.test(`${b.name || ''} ${b.category || ''}`))
-      : null;
-
-    if (!checkupBenefit) {
-      return res.json({ success: true, linkedPlan: Boolean(planRows[0]), checkups: [], data: { checkups: [] } });
+    // No corporate-linked plan (user_associations + subscription_plans) was found -- but an
+    // employee can also hold a personal plan directly (membership_plans via getActiveUserPlan,
+    // the same source /my-benefits reads), independently of that corporate link. Without this
+    // fallback, a user with a real active plan sees linkedPlan: true on /my-benefits and
+    // linkedPlan: false here, for the same account at the same time.
+    if (!isCorporateSession && Number.isInteger(parseInt(req.user.id))) {
+      let activePlan = null;
+      try {
+        activePlan = await getActiveUserPlan(req.user.id);
+      } catch (error) {
+        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
+      }
+      const planBenefits = activePlan?.plan?.benefits || activePlan?.plan?.metadata?.benefits;
+      if (Array.isArray(planBenefits)) {
+        const textOf = (b) => (typeof b === 'string' ? b : `${b?.name || ''} ${b?.category || ''}`);
+        const hit = planBenefits.find((b) => (typeof b === 'string' || b.isIncluded) && /health.*check|checkup/i.test(textOf(b)));
+        const checkups = hit ? [{
+          id: 'plan-annual-checkup',
+          name: typeof hit === 'string' ? hit : (hit.name || 'Annual Health Checkup'),
+          description: typeof hit === 'string' ? 'Included as part of your health plan.' : (hit.description || 'Included as part of your health plan.'),
+          limit: typeof hit === 'string' ? null : (hit.limit || null),
+          validFrom: activePlan?.startDate ? new Date(activePlan.startDate).toISOString().slice(0, 10) : null,
+          validTo: activePlan?.endDate ? new Date(activePlan.endDate).toISOString().slice(0, 10) : null,
+        }] : [];
+        return res.json({ success: true, linkedPlan: true, checkups, data: { checkups } });
+      }
     }
 
-    const checkups = [{
-      id: 'plan-annual-checkup',
-      name: checkupBenefit.name || 'Annual Health Checkup',
-      description: checkupBenefit.description || 'Included as part of your corporate health plan.',
-      limit: checkupBenefit.limit || null,
-      validFrom: enrollment?.validFrom ? new Date(enrollment.validFrom).toISOString().slice(0, 10) : null,
-      validTo: enrollment?.validTo ? new Date(enrollment.validTo).toISOString().slice(0, 10) : null,
-    }];
-
-    res.json({
-      success: true,
-      linkedPlan: true,
-      checkups,
-      data: { checkups }
-    });
+    return res.json({ success: true, linkedPlan: false, checkups: [], data: { checkups: [] } });
   } catch (error) {
     console.error('Error fetching corporate health checkups:', error);
     res.status(500).json({
