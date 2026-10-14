@@ -260,6 +260,18 @@ export async function getFitnessCertificateById(id) {
   return rows[0] || null;
 }
 
+/** Hard delete — no soft-delete column exists on this table. Callers must check the certificate
+ * belongs to the actor's organization before calling this; this function does not re-check.
+ * Uses RETURNING id (read back via SELECT query type) rather than relying on a raw DELETE's
+ * affected-row count, whose shape is inconsistent across Sequelize query types. */
+export async function deleteFitnessCertificate(id) {
+  const rows = await sequelize.query(
+    `DELETE FROM fitness_certificates WHERE id = :id RETURNING id`,
+    { replacements: { id }, type: QueryTypes.SELECT }
+  );
+  return rows.length > 0;
+}
+
 /** A clinic doctor's own recently-issued certificates, across whichever employer each patient works for. */
 export async function getFitnessCertificatesIssuedByClinicStaff(clinicStaffId, limit = 50) {
   return sequelize.query(

@@ -9,7 +9,7 @@ import express from 'express';
 import fs from 'fs';
 import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
-import { issueFitnessCertificate, getFitnessCertificatesByPatient } from '../services/corporate-hmis.service.js';
+import { issueFitnessCertificate, getFitnessCertificatesByPatient, getFitnessCertificateById, deleteFitnessCertificate } from '../services/corporate-hmis.service.js';
 import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 import { ohcService } from '../services/care-units/index.js';
 
@@ -118,6 +118,35 @@ router.get('/fitness-certificate/:id/pdf', authTeam, requirePermission('Doctor M
     }
     return res.download(filePath, `fitness-certificate-${req.params.id}.pdf`);
   } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/team/occupational-health/fitness-certificate/:id — a team operator cleaning up a
+// duplicate or mis-issued certificate (e.g. double-submitted, or issued before a data fix). Hard
+// delete: this table has no soft-delete column. organizationId is required and checked against the
+// certificate's own organization_id so a team member cannot delete another corporate's certificate
+// by guessing an id — the same scoping every other route on this file already requires.
+router.delete('/fitness-certificate/:id', authTeam, requirePermission('Doctor Management'), async (req, res) => {
+  try {
+    const { organizationId } = req.query;
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'organizationId is required' });
+    }
+    const cert = await getFitnessCertificateById(req.params.id);
+    if (!cert || Number(cert.organization_id) !== Number(organizationId)) {
+      return res.status(404).json({ success: false, message: 'Certificate not found' });
+    }
+    const deleted = await deleteFitnessCertificate(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ success: false, message: 'Certificate not found' });
+    }
+    const filePath = fitnessCertificatePdfPath(req.params.id);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.log(`[team-occupational-health] FC-${req.params.id} (${cert.patient_name}, org ${organizationId}) deleted by team user ${req.teamUser.id}`);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[team-occupational-health] delete error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
 });

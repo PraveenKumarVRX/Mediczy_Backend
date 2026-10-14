@@ -7,9 +7,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useToast } from '@/components/ui/use-toast';
 import {
-  Stethoscope, Search, Building2, User, Loader2, CheckCircle2, FileDown, Eye, Share2,
+  Stethoscope, Search, Building2, User, Loader2, CheckCircle2, FileDown, Eye, Share2, Trash2,
   ShieldCheck, AlertTriangle, XCircle, History,
 } from 'lucide-react';
 import api from '@/utils/api';
@@ -105,6 +109,25 @@ const TeamFitnessCertificates = () => {
       console.error('Failed to load history', e);
     } finally {
       setHistoryLoading(false);
+    }
+  };
+
+  const [deleteTarget, setDeleteTarget] = useState<Certificate | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const confirmDelete = async () => {
+    if (!deleteTarget || !corporate) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/team/occupational-health/fitness-certificate/${deleteTarget.id}`, {
+        params: { organizationId: corporate.id },
+      });
+      setHistory((h) => h.filter((c) => c.id !== deleteTarget.id));
+      toast({ title: 'Certificate deleted', description: `FC-${deleteTarget.id} removed.` });
+      setDeleteTarget(null);
+    } catch (e: any) {
+      toast({ title: 'Failed to delete certificate', description: e?.response?.data?.message, variant: 'destructive' });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -374,6 +397,9 @@ const TeamFitnessCertificates = () => {
                         <Button size="sm" variant="outline" disabled={pdfBusy !== null} onClick={() => void pdfAction(c.id, 'share')}>
                           <Share2 className="h-3.5 w-3.5 mr-1" /> Share
                         </Button>
+                        <Button size="sm" variant="outline" className="text-red-600 hover:text-red-700 hover:bg-red-50" onClick={() => setDeleteTarget(c)}>
+                          <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -383,6 +409,24 @@ const TeamFitnessCertificates = () => {
           </Card>
         )}
       </div>
+
+      <AlertDialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete certificate FC-{deleteTarget?.id}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently removes the certificate and its PDF for {deleteTarget?.patient_name}. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={deleting} onClick={(e) => { e.preventDefault(); void confirmDelete(); }} className="bg-red-600 hover:bg-red-700">
+              {deleting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </MainLayout>
   );
 };
