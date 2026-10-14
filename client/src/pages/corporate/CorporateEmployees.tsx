@@ -360,8 +360,10 @@ const CorporateEmployees: React.FC = () => {
 
       setIsUpsertDialogOpen(false);
     } catch (error: any) {
+      const status = error?.response?.status;
+      const duplicate = status === 409 || error?.response?.data?.code === 'duplicate_employee';
       toast({
-        title: 'Failed to save employee',
+        title: duplicate ? 'Employee already exists' : 'Failed to save employee',
         description: error?.response?.data?.message || 'Please check the form and try again.',
         variant: 'destructive',
       });

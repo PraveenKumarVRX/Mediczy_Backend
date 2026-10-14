@@ -1501,6 +1501,45 @@ router.post('/employees', authCorporate, async (req, res) => {
   try {
     const normalizedEmployeeId = String(employeeId).trim();
     const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+
+    // Creating an employee must not mutate an existing roster row: an existing
+    // employee ID/email is a duplicate, and the explicit PUT endpoint remains
+    // the only update path.
+    const [existingById] = await postgresSequelize.query(
+      `SELECT "employeeId" FROM corporate_employees
+        WHERE corporate_id = :corporateId
+          AND LOWER("employeeId") = LOWER(:employeeId)
+        LIMIT 1`,
+      { replacements: { corporateId, employeeId: normalizedEmployeeId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (existingById) {
+      return res.status(409).json({
+        success: false,
+        code: 'duplicate_employee',
+        field: 'employeeId',
+        message: `Employee ID ${normalizedEmployeeId} already exists in this corporate`,
+      });
+    }
+
+    if (normalizedEmail) {
+      const [existingByEmail] = await postgresSequelize.query(
+        `SELECT ce."employeeId" FROM corporate_employees ce
+          LEFT JOIN users u ON u.id = ce."userId"
+          WHERE ce.corporate_id = :corporateId
+            AND LOWER(COALESCE(NULLIF(ce.email, ''), u.email)) = :email
+          LIMIT 1`,
+        { replacements: { corporateId, email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (existingByEmail) {
+        return res.status(409).json({
+          success: false,
+          code: 'duplicate_employee',
+          field: 'email',
+          message: `Employee email ${normalizedEmail} already exists in this corporate`,
+        });
+      }
+    }
+
     const [firstName, ...lastNameParts] = String(name).trim().split(/\s+/);
     const metadata = JSON.stringify({
       firstName,
@@ -1511,21 +1550,7 @@ router.post('/employees', authCorporate, async (req, res) => {
 
     await postgresSequelize.query(
       `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
-       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
-         email=COALESCE(:email, corporate_employees.email),
-         business_unit=:businessUnit,
-         department=:department,
-         designation=:designation,
-         "joiningDate"=:joiningDate,
-         metadata=CASE
-           WHEN corporate_employees."userId" IS NOT NULL
-             THEN COALESCE(corporate_employees.metadata, '{}'::jsonb)
-                  || jsonb_build_object('profileActivation', 'active')
-           ELSE CAST(:metadata AS JSONB)
-         END,
-         "isActive"=true,
-         "updatedAt"=NOW()`,
+       VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())`,
       { replacements: { corporateId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
     );
 
@@ -1533,6 +1558,14 @@ router.post('/employees', authCorporate, async (req, res) => {
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
     console.error('[corporate] POST /employees error:', err.message);
+    const databaseCode = err?.original?.code || err?.parent?.code || err?.code;
+    if (databaseCode === '23505') {
+      return res.status(409).json({
+        success: false,
+        code: 'duplicate_employee',
+        message: 'An employee with this ID already exists in this corporate',
+      });
+    }
     return res.status(500).json({ success: false, message: 'Failed to create employee' });
   }
 });
@@ -1622,25 +1655,36 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         activatedAt: null,
       });
 
-      // Upsert corporate_employees record
+      // Insert a new corporate_employees record; duplicates are reported per row.
       const normalizedEmail = emp.email ? String(emp.email).trim().toLowerCase() : null;
+      const [existingById] = await postgresSequelize.query(
+        `SELECT "employeeId" FROM corporate_employees
+          WHERE corporate_id = :corporateId
+            AND LOWER("employeeId") = LOWER(:employeeId)
+          LIMIT 1`,
+        { replacements: { corporateId, employeeId: generatedEmployeeId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (existingById) {
+        errors.push({ row: index + 1, employee: emp, error: `Employee ID ${generatedEmployeeId} already exists in this corporate` });
+        continue;
+      }
+      if (normalizedEmail) {
+        const [existingByEmail] = await postgresSequelize.query(
+          `SELECT ce."employeeId" FROM corporate_employees ce
+            LEFT JOIN users u ON u.id = ce."userId"
+            WHERE ce.corporate_id = :corporateId
+              AND LOWER(COALESCE(NULLIF(ce.email, ''), u.email)) = :email
+            LIMIT 1`,
+          { replacements: { corporateId, email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        if (existingByEmail) {
+          errors.push({ row: index + 1, employee: emp, error: `Employee email ${normalizedEmail} already exists in this corporate` });
+          continue;
+        }
+      }
       await postgresSequelize.query(
         `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
-         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
-           email=COALESCE(:email, corporate_employees.email),
-           business_unit=:businessUnit,
-           department=:department,
-           designation=:designation,
-           "joiningDate"=:joiningDate,
-           metadata=CASE
-             WHEN corporate_employees."userId" IS NOT NULL
-               THEN COALESCE(corporate_employees.metadata, '{}'::jsonb)
-                    || jsonb_build_object('profileActivation', 'active')
-             ELSE CAST(:metadata AS JSONB)
-           END,
-           "isActive"=true,
-           "updatedAt"=NOW()`,
+         VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())`,
         { replacements: { corporateId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
       );
 
