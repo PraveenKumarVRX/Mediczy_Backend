@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { addEmployeeOnce } from './employeeList';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -353,7 +354,7 @@ const CorporateEmployees: React.FC = () => {
         const payload = { ...form };
         const { data } = await api.post('/corporate/employees', payload);
         const created = (data as any)?.data?.employee as Employee | undefined;
-        if (created) setEmployees((prev) => [created, ...prev]);
+        if (created) setEmployees((prev) => addEmployeeOnce(prev, created));
         else await loadEmployees();
         toast({ title: 'Employee added', description: 'Employee created successfully.' });
       }

@@ -12,6 +12,7 @@ import {
 } from '../controller/corporate.controller.js';
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { createCorporateEmployee, EmployeeConflictError } from '../services/corporate-employee-create.service.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import {
   generateCorporateMisReport,
@@ -1489,39 +1490,15 @@ router.post('/employees', authCorporate, async (req, res) => {
   }
 
   try {
-    const normalizedEmployeeId = String(employeeId).trim();
-    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
-    const [firstName, ...lastNameParts] = String(name).trim().split(/\s+/);
-    const metadata = JSON.stringify({
-      firstName,
-      lastName: lastNameParts.join(' '),
-      profileActivation: 'inactive',
-      activatedAt: null,
-    });
-
-    await postgresSequelize.query(
-      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-       VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
-       ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
-         email=COALESCE(:email, corporate_employees.email),
-         business_unit=:businessUnit,
-         department=:department,
-         designation=:designation,
-         "joiningDate"=:joiningDate,
-         metadata=CASE
-           WHEN corporate_employees."userId" IS NOT NULL
-             THEN COALESCE(corporate_employees.metadata, '{}'::jsonb)
-                  || jsonb_build_object('profileActivation', 'active')
-           ELSE CAST(:metadata AS JSONB)
-         END,
-         "isActive"=true,
-         "updatedAt"=NOW()`,
-      { replacements: { corporateId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
+    const created = await createCorporateEmployee(
+      (sql, replacements) => postgresSequelize.query(sql, { replacements }),
+      { corporateId, employeeId, name, email, businessUnit, department, designation, joiningDate }
     );
-
-    const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: normalizedEmail || '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan', appStatus: 'not_invited' };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
+    if (err instanceof EmployeeConflictError) {
+      return res.status(409).json({ success: false, code: err.code, message: err.message });
+    }
     console.error('[corporate] POST /employees error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to create employee' });
   }
