@@ -201,10 +201,16 @@ export async function up() {
       ADD COLUMN IF NOT EXISTS organization_id INTEGER;
     ALTER TABLE IF EXISTS "Mortuaries"
       ADD COLUMN IF NOT EXISTS organization_id INTEGER;
-    CREATE INDEX IF NOT EXISTS idx_infection_controls_org
-      ON "InfectionControls" (organization_id);
-    CREATE INDEX IF NOT EXISTS idx_mortuaries_org
-      ON "Mortuaries" (organization_id);
+    DO $$ BEGIN
+      IF to_regclass('public."InfectionControls"') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS idx_infection_controls_org
+          ON "InfectionControls" (organization_id);
+      END IF;
+      IF to_regclass('public."Mortuaries"') IS NOT NULL THEN
+        CREATE INDEX IF NOT EXISTS idx_mortuaries_org
+          ON "Mortuaries" (organization_id);
+      END IF;
+    END $$;
   `);
   console.log('[migration] infection-control and mortuary workflows ready');
 }
