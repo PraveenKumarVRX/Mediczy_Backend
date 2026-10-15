@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS display_zones (
         registered_at TIMESTAMPTZ DEFAULT NOW()
       );
     
-ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER
+ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER;
 
       CREATE TABLE IF NOT EXISTS emergency_broadcasts (
         id SERIAL PRIMARY KEY,
@@ -43,7 +43,7 @@ ALTER TABLE display_devices ADD COLUMN IF NOT EXISTS organization_id INTEGER
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     
-ALTER TABLE emergency_broadcasts ADD COLUMN IF NOT EXISTS organization_id INTEGER
+ALTER TABLE emergency_broadcasts ADD COLUMN IF NOT EXISTS organization_id INTEGER;
 
       CREATE TABLE IF NOT EXISTS checkin_tokens (
         id SERIAL PRIMARY KEY,
