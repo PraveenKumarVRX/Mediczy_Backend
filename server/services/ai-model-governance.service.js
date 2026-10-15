@@ -481,6 +481,50 @@ export const MODEL_CARDS = {
     changeControlPlan:   'Prompt changes require governanceService.proposeChange() and medical director approval.',
     lastValidatedAt:     null,
     regulatoryNotes:     'The rag-pipeline.js patient-scoping fix this component depends on is a security fix with implications beyond this one feature — any other caller of search()/agenticRetrieve() that handles patient-specific data should confirm it passes patientId where appropriate.'
+  },
+
+  'prescription-safety-gate-v1': {
+    componentName:      'Prescription Sign-off Safety Gate',
+    version:            'v1-deterministic+delegated',
+    regulatoryClass:    'Class III SaMD (high risk) — prescribing decision support',
+    intendedUse:        'Gate a prescriber\'s sign-off by running the deterministic drug-interaction/allergy/condition layer first, surfacing contraindicated and major interactions, and requiring an explicit, reasoned acknowledgement before a contraindicated order can proceed. Decision support only — a licensed prescriber reviews and acts on every output.',
+    notIntendedFor:     'Autonomous prescribing; pediatric dosing calculations; complete pharmacovigilance; replacing clinical pharmacist review for complex polypharmacy.',
+    inputFeatures:      ['Ordered medication list (structured)', 'patientId (for allergy/condition rules)', 'Acknowledgement flag + free-text reason (≥10 chars to override a hard stop)'],
+    outputDescription:  'status (allowed | blocked | acknowledged), requiresAcknowledgement flag, contraindicated[] and major[] interactions, the delegated qualityGate result, and an audit row in drug_safety_signoffs.',
+    modelType:          'Deterministic rule layer (always executed first) wrapping drug-interaction-checker-v1; optional LLM long-tail analysis only when no deterministic hard stop exists and ≥2 medications are present.',
+    delegatesTo:        'drug-interaction-checker-v1 (the LLM path\'s quality gate and limitations are inherited from it)',
+    trainingDataSource: 'No training data — deterministic acknowledgement/severity logic over drug-interaction-checker-v1.',
+    validationStatus:   'Deterministic logic reviewed; LLM long-tail inherits drug-interaction-checker-v1\'s (pending) validation. External clinical validation pending.',
+    knownLimitations: [
+      'Inherits every limitation of drug-interaction-checker-v1 (≈50-pair curated DB, regex drug-name matching, no pharmacokinetic modeling)',
+      'The acknowledgement override is a human action — it is audited but not itself clinically validated',
+      'A contraindication is never silently cleared, but an acknowledged override still lets the order proceed on the prescriber\'s responsibility'
+    ],
+    changeControlPlan: 'Any change to severity thresholds, the acknowledgement rule, or the delegated model requires governanceService.proposeChange() and medical-director/pharmacist approval — never applied autonomously.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'A blocked (contraindicated) result requires an explicit acknowledgement with a ≥10-character reason, and both the block and any override are written to drug_safety_signoffs for audit.'
+  },
+
+  'multilingual-triage-v1': {
+    componentName:      'Multilingual Triage Normalization',
+    version:            'v1-deterministic-phrase',
+    regulatoryClass:    'Class III SaMD (high risk) — preprocessor feeding ESI triage',
+    intendedUse:        'Normalize regional-language red-flag symptom phrases (chest pain, breathing difficulty, unresponsive, stroke signs, self-harm) into canonical English concepts that augment — never replace — the patient\'s original symptom text before the governed Emergency Triage (ESI) service assigns acuity. The original text is always retained for audit.',
+    notIntendedFor:     'General translation; standalone triage or acuity assignment; diagnosis; languages or phrasings outside the fixed vocabulary.',
+    inputFeatures:      ['Free-text symptom description (regional language or romanization)', 'Requested language (or auto-detect by script)'],
+    outputDescription:  'Delegates acuity to emergency-triage-esi-v1 and adds: detected language, matchedConcepts[], and a per-concept rule explanation. It does not itself emit an ESI level.',
+    modelType:          'Fixed, reviewable regex phrase vocabulary (Hindi, Tamil, Telugu, Kannada, Bengali, Marathi, Gujarati, Malayalam, Punjabi) + Unicode-script language inference; acuity is delegated to emergency-triage-esi-v1.',
+    delegatesTo:        'emergency-triage-esi-v1 (LIME attribution, quality gate and confidence are inherited from it)',
+    trainingDataSource: 'No training data — a hand-authored, intentionally small high-risk phrase list; not a translation corpus.',
+    validationStatus:   'Phrase vocabulary reviewed; acuity validation inherits emergency-triage-esi-v1 (pending). External clinical validation pending.',
+    knownLimitations: [
+      'Covers only the listed red-flag phrases — paraphrases, misspellings and unlisted symptoms are passed through unchanged (no false reassurance: absence of a match never lowers acuity)',
+      'Script-based language inference is heuristic and does not handle mixed-script (Hinglish) beyond the listed romanizations',
+      'Does not reduce emergency-triage-esi-v1\'s general "no non-English validation" limitation — it only addresses this bounded phrase set'
+    ],
+    changeControlPlan: 'Adding or changing any phrase/pattern requires governanceService.proposeChange() and medical-director sign-off — never applied autonomously.',
+    lastValidatedAt:   null,
+    regulatoryNotes:   'Partially addresses emergency-triage-esi-v1\'s known limitation on non-English inputs, for the enumerated phrases only. Must run in front of the governed triage service, never as a substitute for it.'
   }
 };
 

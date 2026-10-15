@@ -26,6 +26,80 @@ const MANIFEST = [
   { id: 'audit-remediation', cmd: 'node', args: ['migrations/20260926000003-audit-remediation.migration.js'], cwd: SERVER },
   { id: 'health-checkup-bookings', cmd: 'node', args: ['migrations/20261015006000-health-checkup-bookings.migration.js'], cwd: SERVER },
   { id: 'crm-brightbean-chat-adoption', cmd: 'node', args: ['migrations/20261015006900-crm-brightbean-chat-adoption.migration.js'], cwd: SERVER },
+  { id: 'crm-social-content', cmd: 'node', args: ['migrations/20261015007000-crm-social-content.migration.js'], cwd: SERVER },
+];
+
+// 2026-Q4 wave — migrations committed in the Oct 2026 build that were not yet in the
+// manifest. Run via import+up() (arity-aware) rather than a child `node <file>` because
+// 11 of them have no direct-run block. Idempotent (IF NOT EXISTS); re-running is safe.
+const NEW_MIGRATIONS_2026Q4 = [
+  '20261015000100-lab-quality-control.migration.js',
+  '20261015000200-department-schema-hardening.migration.js',
+  '20261015000300-blood-bank-schema-hardening.migration.js',
+  '20261015000400-scm-inventory-traceability.migration.js',
+  '20261015000500-lab-result-release-governance.migration.js',
+  '20261015000600-scm-inventory-movements.migration.js',
+  '20261015000700-blood-crossmatch-transfusion.migration.js',
+  '20261015000800-hospital-queue-schema-hardening.migration.js',
+  '20261015000900-hospital-os-event-envelope.migration.js',
+  '20261015001000-hospital-queue-checkin-idempotency.migration.js',
+  '20261015001100-biomedical-pm-cold-chain.migration.js',
+  '20261015001200-pharmacy-dispense-governance.migration.js',
+  '20261015001300-emar-safety-governance.migration.js',
+  '20261015001400-infection-mortuary-workflows.migration.js',
+  '20261015001500-finance-clinical-charge-ledger.migration.js',
+  '20261015001600-pharmacy-inventory-governance.migration.js',
+  '20261015001700-auth-session-revocation.migration.js',
+  '20261015001800-mfa-step-up.migration.js',
+  '20261015001900-hospital-billing-suite.migration.js',
+  '20261015002000-hospital-tariff-master.migration.js',
+  '20261015002100-hrms-schema.migration.js',
+  '20261015002200-hrms-qualifications-privileges.migration.js',
+  '20261015002300-payroll-schema.migration.js',
+  '20261015002400-payroll-finance-link.migration.js',
+  '20261015002500-hospital-auth-support-schema.migration.js',
+  '20261015002600-daily-activity-schema.migration.js',
+  '20261015002700-prems-feedback.migration.js',
+  '20261015002800-discharge-planning.migration.js',
+  '20261015002900-ot-safety-governance.migration.js',
+  '20261015003000-operative-notes-governance.migration.js',
+  '20261015003100-discharge-readiness-governance.migration.js',
+  '20261015003200-ot-consumables-governance.migration.js',
+  '20261015003300-nabh-jci-compliance-governance.migration.js',
+  '20261015003400-nursing-echart-governance.migration.js',
+  '20261015003500-tpa-claims-lifecycle-governance.migration.js',
+  '20261015003600-ris-imaging-governance.migration.js',
+  '20261015003700-crm-core-governance.migration.js',
+  '20261015003800-crm-campaigns-governance.migration.js',
+  '20261015003900-crm-extensions-governance.migration.js',
+  '20261015004000-team-workspace-governance.migration.js',
+  '20261015004100-provider-network-chatbot-governance.migration.js',
+  '20261015004200-display-kiosk-governance.migration.js',
+  '20261015004300-abdm-hfr-hpr-governance.migration.js',
+  '20261015004400-corporate-hmis-governance.migration.js',
+  '20261015004500-imaging-evidence-governance.migration.js',
+  '20261015004600-imaging-ops-governance.migration.js',
+  '20261015004700-enterprise-fhir-governance.migration.js',
+  '20261015004800-rwe-export-governance.migration.js',
+  '20261015004900-admin-portal-governance.migration.js',
+  '20261015005000-ai-governance.migration.js',
+  '20261015005100-clinical-billing-governance.migration.js',
+  '20261015005200-clinical-services-governance.migration.js',
+  '20261015005300-crm-growth-governance.migration.js',
+  '20261015005400-hmis-workflows-governance.migration.js',
+  '20261015005500-iso27001-governance.migration.js',
+  '20261015005600-lab-collection-instructions.migration.js',
+  '20261015005700-lab-collection-label-replacement.migration.js',
+  '20261015005800-lab-collection-incidents.migration.js',
+  '20261015006100-medcore-adoption.migration.js',
+  '20261015006200-crm-agentic-operator.migration.js',
+  '20261015006300-crm-flow-builder.migration.js',
+  '20261015006400-crm-social-growth.migration.js',
+  '20261015006500-crm-entity-uid-hardening.migration.js',
+  '20261015006600-medcore-tenant-delivery.migration.js',
+  '20261015006700-crm-agent-tenant-uid.migration.js',
+  '20261015006800-crm-agent-corporate-scope.migration.js',
+  '20261016000000-crm-legacy-tenancy.migration.js',
 ];
 
 function runStep(step) {
@@ -66,12 +140,44 @@ async function runHmisExtended() {
   }
 }
 
+// Run the 2026-Q4 wave. up() comes in three shapes in this wave; dispatch by arity:
+//   up()                        -> pg-style, uses its own pgPool import         (length 0; also covers up(db = pool))
+//   up(pool)                    -> pg-style, expects the shared pg pool          (length 1)
+//   up(queryInterface, Sequelize) -> Sequelize-style                            (length 2)
+async function runNew2026Migrations() {
+  const { Sequelize } = await import('sequelize');
+  const { postgresSequelize: sequelize } = await import('../db/postgres-sequelize.js');
+  const { default: pgPool } = await import('../db/pgPool.js');
+  const qi = sequelize.getQueryInterface();
+  for (const name of NEW_MIGRATIONS_2026Q4) {
+    const file = path.join(SERVER, 'migrations', name);
+    if (!fs.existsSync(file)) { console.warn(`  Missing (skip): ${name}`); continue; }
+    try {
+      const mod = await import(file);
+      if (typeof mod.up !== 'function') { console.warn(`  Skipped (no up): ${name}`); continue; }
+      console.log(`  Migrating: ${name}...`);
+      if (mod.up.length >= 2) await mod.up(qi, Sequelize);
+      else if (mod.up.length === 1) await mod.up(pgPool);
+      else await mod.up();
+      console.log(`  Done: ${name}`);
+    } catch (e) {
+      if (/already exists|duplicate|exists/i.test(e.message || '')) console.log(`  Skipped (exists): ${name}`);
+      else throw e;
+    }
+  }
+}
+
 const cmd = process.argv[2] || 'up';
 
 if (cmd === 'status') {
   console.log('Migration manifest (GAP-MIG-001):');
   for (const m of MANIFEST) console.log(`  - ${m.id}`);
   console.log('  - hmis-extended (er_visits, charge_master, pharmacy_dispense_queue)');
+  console.log(`\n2026-Q4 wave (${NEW_MIGRATIONS_2026Q4.length} migrations, run via import+up):`);
+  for (const name of NEW_MIGRATIONS_2026Q4) {
+    const present = fs.existsSync(path.join(SERVER, 'migrations', name));
+    console.log(`  ${present ? '-' : '! MISSING'} ${name}`);
+  }
   const hmisRunner = path.join(SERVER, 'run-hmis-migrations.js');
   console.log(fs.existsSync(hmisRunner) ? '\nHMIS runner: OK' : '\nHMIS runner: MISSING');
   process.exit(0);
@@ -84,4 +190,6 @@ for (const step of MANIFEST) {
 }
 console.log('\n==> hmis-extended');
 await runHmisExtended();
+console.log('\n==> 2026-Q4 wave');
+await runNew2026Migrations();
 console.log('\n[migrate-all] All steps completed.');
