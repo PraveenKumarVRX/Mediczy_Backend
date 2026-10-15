@@ -8,6 +8,7 @@
  */
 import pool from '../db/pgPool.js';
 import { dispatchTrigger } from './crm-social-growth.service.js';
+import { runFlow } from './crm-flow-builder.service.js';
 
 const CHANNELS = new Set(['instagram', 'facebook', 'whatsapp', 'sms', 'email']);
 const RULE_MATCH_TYPES = new Set(['keyword', 'event', 'status', 'label']);
@@ -231,7 +232,11 @@ export async function applyInboxRules(tenantUid, event, user) {
       if (action.close === true) await setConversationStatus(tenantUid, event.conversationId, 'closed');
       if (action.pause === true) await takeoverConversation(tenantUid, event.conversationId, `Inbox rule: ${rule.name}`, user);
     }
-    if (action.flowId && event.triggerKey) await dispatchTrigger(tenantUid, { triggerType: event.eventType, channel: event.channel, triggerKey: event.triggerKey, conversationId: event.conversationId, payload: event }, user);
+    if (action.flowId) {
+      await runFlow(tenantUid, action.flowId, { ...event, conversationId: event.conversationId || null, trigger: { type: 'inbox_rule', ruleId: rule.id } }, { dryRun: false, user });
+    } else if (event.eventType !== 'message' && event.triggerKey) {
+      await dispatchTrigger(tenantUid, { triggerType: event.eventType, channel: event.channel, triggerKey: event.triggerKey, conversationId: event.conversationId, payload: event }, user);
+    }
   }
   return matched;
 }
@@ -284,13 +289,22 @@ export async function processNormalizedWebhook(payload) {
   const events = normalizeInboundEvent(payload);
   const results = [];
   for (const event of events) {
-    if (event.eventType === 'message') {
-      results.push({ event, matched: false, reason: 'message stored by inbox adapter' });
-      continue;
-    }
     const tenantUid = await resolveSocialAccountTenant(event.channel, event.accountId);
     if (!tenantUid) {
       results.push({ event, matched: false, reason: 'unregistered social account' });
+      continue;
+    }
+    if (event.eventType === 'message' && event.externalUserId) {
+      const conversation = await pool.query(`
+        SELECT id FROM social_inbox_conversations
+         WHERE tenant_uid=$1 AND channel=$2 AND external_user_id=$3
+         ORDER BY updated_at DESC LIMIT 1
+      `, [tenantUid, event.channel, event.externalUserId]);
+      event.conversationId = conversation.rows[0]?.id || null;
+    }
+    if (event.eventType === 'message') {
+      const rules = await applyInboxRules(tenantUid, event, { id: 0, crmRole: 'system', isAdmin: true });
+      results.push({ event, tenantUid, matched: rules.length > 0, rules });
       continue;
     }
     const trigger = await dispatchTrigger(tenantUid, {

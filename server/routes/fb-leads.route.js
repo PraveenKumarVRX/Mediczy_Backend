@@ -96,13 +96,6 @@ router.post(
 
     if (payload.object !== 'page' && payload.object !== 'instagram') return;
 
-    // Normalize comment/story/follow events through the tenant-scoped CRM
-    // trigger engine. Unknown social accounts are ignored until an operator
-    // registers their accountId in Social Growth settings.
-    processNormalizedWebhook(payload).catch((err) =>
-      console.error('[Social Growth] normalized webhook processing failed:', err.message)
-    );
-
     for (const entry of payload.entry || []) {
       // Lead Ads (Page object only) — existing CRM lead capture pipeline
       for (const change of entry.changes || []) {
@@ -118,8 +111,15 @@ router.post(
       // Messenger (Page object) / Instagram Direct — Team Social Inbox
       if (Array.isArray(entry.messaging) && entry.messaging.length) {
         const channel = payload.object === 'instagram' ? 'instagram' : 'facebook';
-        resolveSocialAccountTenant(channel, entry.id).then((tenantUid) => handleSocialMessagingEntry(entry, channel, tenantUid)).catch((err) =>
-          console.error('[Social Inbox] handleSocialMessagingEntry error:', err.message)
+        resolveSocialAccountTenant(channel, entry.id)
+          .then((tenantUid) => handleSocialMessagingEntry(entry, channel, tenantUid))
+          // Normalize after storage so message rules can resolve the scoped
+          // conversation id before applying labels, assignment or flows.
+          .then(() => processNormalizedWebhook({ object: payload.object, entry: [entry] }))
+          .catch((err) => console.error('[Social Inbox] handleSocialMessagingEntry error:', err.message));
+      } else {
+        processNormalizedWebhook({ object: payload.object, entry: [entry] }).catch((err) =>
+          console.error('[Social Growth] normalized webhook processing failed:', err.message)
         );
       }
     }
