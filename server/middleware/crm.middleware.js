@@ -3,6 +3,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel from '../models/user.model.intelligent.js';
 import sharedPool from '../db/pgPool.js';
 import { DEFAULT_CRM_ROLE, hasCRMCapability } from '../config/crm-roles.config.js';
+import organizationUid from '../services/organization-uid.service.js';
 
 /**
  * Verify CRM member authentication.
@@ -41,7 +42,7 @@ export const authCRM = async (req, res, next) => {
     // DB status re-check
     const user = await userModel.findOne({
       where: { id: decoded.id },
-      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'firstName', 'lastName', 'metadata', 'organization_id', 'tenant_id']
+      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'firstName', 'lastName', 'metadata', 'organization_id', 'tenant_id', 'organization_uid']
     });
 
     if (!user) {
@@ -77,6 +78,24 @@ export const authCRM = async (req, res, next) => {
     let metadata = {};
     try { metadata = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { metadata = {}; }
 
+    // A CRM tenant may be a hospital/clinic (in `tenants`) or a corporate (in `corporates`), and those
+    // two tables SHARE integer ids — so a bare integer tenantId is ambiguous (CLAUDE.md entity-uid rule).
+    // Resolve the UNAMBIGUOUS entity uid (which encodes the kind via its prefix) + the kind, and attach
+    // both. tenantId is kept for backward-compat; new/fixed code must scope by tenantUid.
+    const tenantIdInt = metadata.tenantId || user.tenant_id || user.organization_id || decoded.tenantId || decoded.tenant_id || null;
+    let tenantUidResolved = user.organization_uid || null;
+    let tenantKind = null;
+    try {
+      if (!tenantUidResolved && user.tenant_id) tenantUidResolved = await organizationUid.tenantUid(user.tenant_id);
+      if (!tenantUidResolved && tenantIdInt) {
+        tenantUidResolved = (await organizationUid.tenantUid(tenantIdInt)) || (await organizationUid.corporateUid(tenantIdInt));
+      }
+      if (tenantUidResolved) {
+        const reg = await sharedPool.query('SELECT kind FROM entity_registry WHERE uid = $1', [tenantUidResolved]);
+        tenantKind = reg.rows[0]?.kind || null;
+      }
+    } catch (_) { /* resolution failure must not break auth; uid-scoped reads then fail closed (empty) */ }
+
     req.crmUser = {
       id: user.id,
       email: user.email,
@@ -85,7 +104,9 @@ export const authCRM = async (req, res, next) => {
       role: decoded.role || 'crm',
       isCRM: true,
       isAdmin: user.isAdmin || decoded.isAdmin || false,
-      tenantId: metadata.tenantId || user.tenant_id || user.organization_id || decoded.tenantId || decoded.tenant_id || null,
+      tenantId: tenantIdInt,
+      tenantUid: tenantUidResolved,     // unambiguous entity uid — scope CRM data by THIS
+      tenantKind,                       // 'hospital' | 'clinic' | 'corporate' | 'broker' | … (from entity_registry)
       permissions: metadata.crmPermissions || decoded.crmPermissions || [],
       crmRole: metadata.crmRole || decoded.crmRole || DEFAULT_CRM_ROLE,
     };
