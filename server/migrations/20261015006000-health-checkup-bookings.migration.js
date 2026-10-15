@@ -1,7 +1,7 @@
 /** Patient health-checkup booking persistence. */
-import pg from 'pg';
-
-const { Client } = pg;
+// Use the shared SSM-aware pool so direct-run migrations receive production
+// credentials and TLS exactly like the application and other migrations.
+import sharedPool from '../db/pgPool.js';
 
 export async function up(pool) {
   await pool.query(`
@@ -40,10 +40,10 @@ export async function up(pool) {
 export async function down(pool) { await pool.query('DROP TABLE IF EXISTS health_checkup_bookings CASCADE;'); }
 
 if (process.argv[1] && process.argv[1].endsWith('20261015006000-health-checkup-bookings.migration.js')) {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  client.connect()
-    .then(() => up(client))
+  const db = sharedPool.pool || sharedPool;
+  db.connect()
+    .then((client) => up(client).finally(() => client.release()))
     .then(() => console.log('health-checkup-bookings migration applied'))
     .catch((error) => { console.error(error); process.exitCode = 1; })
-    .finally(() => client.end());
+    .finally(() => db.end());
 }

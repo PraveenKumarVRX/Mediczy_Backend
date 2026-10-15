@@ -11,6 +11,11 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// RDS production requires TLS. Honor the same flag used by the shared pg pool;
+// local/non-TLS runs remain unchanged.
+const postgresSslSetting = String(process.env.POSTGRES_SSL || process.env.PGSSLMODE || '').toLowerCase();
+const usePostgresSsl = postgresSslSetting === 'true' || postgresSslSetting === 'require';
+
 const sequelize = new Sequelize(
   process.env.POSTGRES_PRIMARY_DATABASE || process.env.POSTGRES_DATABASE || 'mediczy_ai',
   process.env.POSTGRES_PRIMARY_USER || process.env.POSTGRES_USER || 'mediczy_helper',
@@ -19,7 +24,8 @@ const sequelize = new Sequelize(
     host: process.env.POSTGRES_PRIMARY_HOST || process.env.POSTGRES_HOST || '127.0.0.1',
     port: parseInt(process.env.POSTGRES_PRIMARY_PORT || process.env.POSTGRES_PORT || '5432', 10),
     dialect: 'postgres',
-    logging: false
+    logging: false,
+    ...(usePostgresSsl ? { dialectOptions: { ssl: { rejectUnauthorized: false } } } : {})
   }
 );
 

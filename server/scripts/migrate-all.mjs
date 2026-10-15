@@ -130,8 +130,11 @@ async function runHmisExtended() {
   ];
   for (const file of extra) {
     const name = path.basename(file);
+    // Resolve from the server root; this orchestrator itself runs from
+    // server/scripts, so './migrations/...' points at a non-existent folder.
+    const migrationFile = path.join(SERVER, 'migrations', name);
     console.log(`  Migrating: ${name}...`);
-    const mod = await import(file);
+    const mod = await import(migrationFile);
     await mod.up(qi, Sequelize).catch((e) => {
       if (e.message?.includes('already exists')) console.log(`  Skipped (exists): ${name}`);
       else throw e;
