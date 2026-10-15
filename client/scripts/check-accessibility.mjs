@@ -136,7 +136,10 @@ for (const file of walk(SRC)) {
       // mouse shortcut; keyboard users dismiss via the dialog's focus trap / close
       // button / Escape. Requiring role=button on every backdrop would add ~100
       // noisy findings the team would learn to ignore — worse than documenting it.
-      if (/\b(bg-black\/|backdrop-blur|fixed inset-0)/.test(t.attrs)) continue;
+      // NOTE: `src` here is noise-stripped (string contents blanked), so test the
+      // exemption against the raw source at the same offset (1:1 line mapping).
+      const rawAttrs = raw.slice(t.index, t.index + 400);
+      if (/\b(bg-black\/|backdrop-blur|fixed inset-0)/.test(rawAttrs)) continue;
       const hasRole = /\brole=/.test(t.attrs);
       const hasKey = /\b(tabIndex|onKey(Down|Up|Press))=/.test(t.attrs);
       if (!hasRole || !hasKey) add('clickable-no-keyboard', file, lineOf(src, t.index), t.attrs);

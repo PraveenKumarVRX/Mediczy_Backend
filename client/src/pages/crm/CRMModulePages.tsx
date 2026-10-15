@@ -369,7 +369,7 @@ export function CRMLeadsPage() {
           <div className="flex gap-2 flex-1 flex-wrap">
             <div className="relative flex-1 min-w-[160px] max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
-              <input placeholder="Search leads..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+              <input aria-label="Search leads" placeholder="Search leads..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                 className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
             </div>
             <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
@@ -572,7 +572,7 @@ export function CRMDealsPage() {
           <div className="flex gap-2 flex-1">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
-              <input placeholder="Search deals..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+              <input aria-label="Search deals" placeholder="Search deals..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
                 className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
             </div>
             <select value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(1); }}
@@ -731,7 +731,7 @@ export function CRMContactsPage() {
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
-            <input placeholder="Search contacts..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+            <input aria-label="Search contacts" placeholder="Search contacts..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
               className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
           </div>
           <Button onClick={() => { setEditContact(null); setForm({ name: '', email: '', phone: '', company: '', designation: '', city: '', state: '', notes: '' }); setShowForm(true); }}
