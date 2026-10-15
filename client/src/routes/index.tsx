@@ -80,6 +80,7 @@ const ConnectionDiagnostic  = lazy(() => import("@/pages/ConnectionDiagnostic"))
 const HealthIntelligence    = lazy(() => import("@/pages/HealthIntelligence"));
 const SIBControlDashboard   = lazy(() => import("@/pages/SIBControlDashboard"));
 const AgentConsole          = lazy(() => import("@/pages/AgentConsole"));
+const MedCoreWorkbench      = lazy(() => import("@/pages/MedCoreWorkbench"));
 const UserHealthRiskAssessment = lazy(() => import("@/pages/UserHealthRiskAssessment"));
 const OrderTasks            = lazy(() => import("@/pages/OrderTasks"));
 const MyPrograms            = lazy(() => import("@/pages/MyPrograms"));
@@ -1424,6 +1425,8 @@ const AppRoutes = () => {
           element={<TeamGuard><TeamDashboard /></TeamGuard>} />
         <Route path="/team/copilot"
           element={<TeamGuard><AdminCopilot layout="team" /></TeamGuard>} />
+        <Route path="/team/medcore"
+          element={<TeamGuard><MainLayout><MedCoreWorkbench /></MainLayout></TeamGuard>} />
         <Route path="/team/email-inbox"
           element={<TeamGuard><TeamDashboard initialTab="emails" /></TeamGuard>} />
         <Route path="/team/profile"
@@ -1998,6 +2001,8 @@ const AppRoutes = () => {
         <Route path="/health-diary"          element={<MainLayout><HealthDiary /></MainLayout>} />
         <Route path="/health-intelligence"   element={<MainLayout><HealthIntelligence /></MainLayout>} />
         <Route path="/agent-console"          element={<MainLayout><AgentConsole /></MainLayout>} />
+        <Route path="/medcore"                element={<MainLayout><MedCoreWorkbench /></MainLayout>} />
+        <Route path="/medcore/workbench"      element={<MainLayout><MedCoreWorkbench /></MainLayout>} />
         <Route path="/sib-control"           element={<AdminRoute><MainLayout><SIBControlDashboard /></MainLayout></AdminRoute>} />
         <Route path="/consultation"          element={<MainLayout><Consultation /></MainLayout>} />
         <Route path="/doctors"               element={<DoctorListBooking />} />
