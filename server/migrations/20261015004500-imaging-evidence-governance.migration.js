@@ -1,6 +1,8 @@
 import pool from '../db/pgPool.js';
 
 /** Migration-owned imaging evidence, validation, knowledge and provenance schema. */
+const EMBEDDING_DIM = Number.parseInt(process.env.PGVECTOR_DIMENSION || '768', 10);
+
 export async function up() {
   await pool.query(`
 CREATE TABLE IF NOT EXISTS imaging_evidence_facts (
