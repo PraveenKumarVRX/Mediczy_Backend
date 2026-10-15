@@ -6,6 +6,7 @@ import { up as growthUp } from '../migrations/20260908000002-hospital-crm-growth
 import { up as specialtyDigitalUp } from "../migrations/20260909000000-hospital-crm-specialty-diagnostic-digital.migration.js";
 import { up as communicationHubUp } from '../migrations/20260909000002-hospital-crm-communication-hub.migration.js';
 import { up as chatwootUp } from '../migrations/20261003000000-chatwoot-bridge.migration.js';
+import { up as crmSocialContentUp } from '../migrations/20261015007000-crm-social-content.migration.js';
 
 const client = await pool.connect();
 try {
@@ -22,6 +23,7 @@ try {
   await specialtyDigitalUp(client);
   await communicationHubUp(client);
   await chatwootUp(client);
+  await crmSocialContentUp(client);
   await client.query('COMMIT');
   console.log('Hospital CRM migrations completed');
 } catch (error) {

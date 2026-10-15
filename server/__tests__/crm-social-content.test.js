@@ -106,4 +106,10 @@ describe('CRM social content workflow', () => {
     expect(route).toContain("router.post('/posts/:id/approve', authCRM, requireCRMCapability('foundation:write')");
     expect(route).toContain("router.get('/posts', authCRM, requireCRMCapability('foundation:read')");
   });
+
+  test('production CRM migration runner applies the social content schema', () => {
+    const runner = read('scripts/migrate-crm-all.mjs');
+    expect(runner).toContain("import { up as crmSocialContentUp } from '../migrations/20261015007000-crm-social-content.migration.js'");
+    expect(runner).toContain('await crmSocialContentUp(client)');
+  });
 });
