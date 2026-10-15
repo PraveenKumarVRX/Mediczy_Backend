@@ -114,8 +114,8 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
       await sharedPool.query(
         `UPDATE crm_leads_v2 SET lifecycle_stage = $1, status = $2, priority = $3, score = $4,
            source_taxonomy_id = $5, updated_at = NOW()
-         WHERE id = $6`,
-        [lifecycleStage, status, priority, score, sourceTaxonomyId, existingV2.rows[0].id]
+         WHERE id = $6 AND tenant_id = $7`,
+        [lifecycleStage, status, priority, score, sourceTaxonomyId, existingV2.rows[0].id, tenantId]
       );
       return existingV2.rows[0].id;
     }
