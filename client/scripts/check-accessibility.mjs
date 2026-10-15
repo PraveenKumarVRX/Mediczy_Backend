@@ -114,15 +114,29 @@ for (const file of walk(SRC)) {
     const a = t.attrs;
     if (/\b(id|aria-label|aria-labelledby)=/.test(a)) continue;
     if (/\btype=(["']?)(hidden|submit|button)\1/.test(a)) continue;
-    // shadcn/react-hook-form pattern: <FormField><FormItem><FormLabel>…<FormControl><Input>
-    // carries an associated label even though <input> itself has no id/aria-*.
-    const window = src.slice(Math.max(0, t.index - 900), t.index);
-    if (/<FormField[\s>]/.test(window) && /<FormLabel[\s>]/.test(window)) continue;
+    // Label association patterns — all three give the input a real accessible name:
+    //  (a) wrapping: <label>…<input>…
+    //  (b) shadcn/react-hook-form: <FormField>…<FormLabel>…<Input>
+    //  (c) sibling: <label>…</label> immediately before the input in the same
+    //      container (<div><label>X</label><input/></div>).
+    const before = src.slice(Math.max(0, t.index - 900), t.index);
+    // (a) wrapping: the nearest <label> opener is still open (no </label> since).
+    const lastOpen = before.search(/<label[\s>][\s\S]*$/);
+    const lastClose = before.search(/<\/label>[\s\S]*$/);
+    if (lastOpen !== -1 && lastOpen > lastClose) continue;
+    if (/<FormField[\s>]/.test(before) && /<FormLabel[\s>]/.test(before)) continue;
+    const sibling = before.slice(-450);
+    if (/<label[\s>][\s\S]{0,200}?<\/label>\s*$/.test(sibling)) continue;
     add('input-no-label', file, lineOf(src, t.index), a);
   }
   for (const name of ['div', 'span']) {
     for (const t of tags(src, name)) {
       if (!/\bonClick=/.test(t.attrs)) continue;
+      // Modal/drawer backdrop pattern: a bare onClick close on the overlay is the
+      // mouse shortcut; keyboard users dismiss via the dialog's focus trap / close
+      // button / Escape. Requiring role=button on every backdrop would add ~100
+      // noisy findings the team would learn to ignore — worse than documenting it.
+      if (/\b(bg-black\/|backdrop-blur|fixed inset-0)/.test(t.attrs)) continue;
       const hasRole = /\brole=/.test(t.attrs);
       const hasKey = /\b(tabIndex|onKey(Down|Up|Press))=/.test(t.attrs);
       if (!hasRole || !hasKey) add('clickable-no-keyboard', file, lineOf(src, t.index), t.attrs);

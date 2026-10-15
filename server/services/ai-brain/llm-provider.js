@@ -176,6 +176,49 @@ async function callIshaInc(params) {
   }
 }
 
+// Sarvam AI — OpenAI-compatible chat completions (Indic / multilingual). Direct fetch
+// (no Cloudflare block). Same contract as callIshaInc: returns the raw OpenAI-shaped JSON.
+async function callSarvam(params) {
+  if (cbCheck(_sarvamOpenUntil)) throw new Error('sarvam circuit open');
+
+  const baseURL = normalizeProviderUrl(getProviderEnv('SARVAM_URL'), 'https://api.sarvam.ai') + '/v1/chat/completions';
+  const apiKey  = getProviderEnv('SARVAM_API_KEY');
+  if (!apiKey) throw new Error('SARVAM_API_KEY not configured');
+
+  const timeoutMs  = getProviderIntEnv(['SARVAM_TIMEOUT_MS'], 20_000, { min: 2_000, max: 60_000 });
+  const controller = new AbortController();
+  const timeoutId  = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(baseURL, {
+      method:  'POST',
+      headers: {
+        'Content-Type':          'application/json',
+        'Accept':                'application/json',
+        // Sarvam's OpenAI-compatible endpoint accepts a Bearer token; its native
+        // header is api-subscription-key. Send both so auth works either way.
+        'Authorization':         `Bearer ${apiKey}`,
+        'api-subscription-key':  apiKey,
+      },
+      body:   JSON.stringify(params),
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`sarvam ${res.status}: ${body.substring(0, 200)}`);
+    }
+    const data = await res.json();
+    _sarvamFailures = 0;
+    return data;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    cbFail(() => _sarvamFailures, v => { _sarvamFailures = v; }, () => _sarvamOpenUntil, v => { _sarvamOpenUntil = v; }, 'sarvam');
+    if (err.name === 'AbortError') throw new Error(`sarvam request timed out (${Math.round(timeoutMs / 1000)}s)`);
+    throw err;
+  }
+}
+
 async function callIsha(params) {
   if (cbCheck(_ishaOpenUntil)) throw new Error('isha circuit open');
 
@@ -315,6 +358,7 @@ const STUB_RESPONSE_MARKERS = [
 // In-memory circuit breakers for iSHA and isha-inc (same pattern as SIB)
 let _ishaFailures = 0, _ishaOpenUntil = 0;
 let _ishaIncFailures = 0, _ishaIncOpenUntil = 0;
+let _sarvamFailures = 0, _sarvamOpenUntil = 0;
 // Keyed by provider.name, NOT a shared scalar — callLocalSLM now serves more
 // than one Ollama-protocol endpoint (this server's cloud qwen2:1.5b AND a
 // workstation GGUF model over the WireGuard tunnel). A failure on one must
@@ -534,6 +578,9 @@ const MEDIQZY_AI_PRIMARY_PROVIDER = String(getProviderEnv('MEDIQZY_AI_PRIMARY_PR
 const ISHA_LLM_AGENT_TYPE = getProviderEnv('ISHA_LLM_AGENT_TYPE') || getProviderEnv('ISHA_AGENT_TYPE') || 'Claims';
 const ISHA_PRIMARY_ENABLED = MEDIQZY_AI_PRIMARY_PROVIDER === 'isha' && ISHA_DIRECT_ENABLED;
 const GROQ_CHAT_MODEL = getProviderEnv('GROQ_MODEL') || getProviderEnv('GROQ_CHAT_MODEL') || 'openai/gpt-oss-20b';
+// Sarvam AI — opt-in Indic/multilingual fallback. Inert unless SARVAM_ENABLED=true AND a key is set.
+const SARVAM_MODEL = getProviderEnv('SARVAM_MODEL') || 'sarvam-m';
+const SARVAM_ENABLED = String(getProviderEnv('SARVAM_ENABLED') || '').toLowerCase() === 'true' && Boolean(getProviderEnv('SARVAM_API_KEY'));
 
 const PROVIDERS = [
   {
@@ -550,6 +597,16 @@ const PROVIDERS = [
     model: GROQ_CHAT_MODEL,
     getClient: getGroqClient,
     priority: ISHA_PRIMARY_ENABLED ? 20 : 1,
+  },
+  {
+    name: 'sarvam',
+    label: 'Sarvam AI (Indic/multilingual, OpenAI-compatible fallback)',
+    model: SARVAM_MODEL,
+    getClient: () => ({ available: true }),
+    useFetchSarvam: true,
+    // Tertiary fallback: after SIB and Groq. Inert unless SARVAM_ENABLED + key set.
+    priority: 30,
+    disabled: !SARVAM_ENABLED,
   },
   {
     name: 'openai',
@@ -713,6 +770,11 @@ async function callProvider(provider, params) {
   // isha-inc.com: direct fetch to bypass Cloudflare OpenAI-SDK block
   if (provider.useFetchIshaInc) {
     return callIshaInc(finalParams);
+  }
+
+  // Sarvam AI: direct fetch, OpenAI-compatible (Indic / multilingual)
+  if (provider.useFetchSarvam) {
+    return callSarvam(finalParams);
   }
 
   // iSHA.buzz: direct fetch with JWT auth
