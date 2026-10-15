@@ -6,7 +6,7 @@
  */
 
 import express from 'express';
-import { authCRM } from '../middleware/crm.middleware.js';
+import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import {
   scoreLead,
@@ -34,10 +34,11 @@ import { runCrmAgent, applyCrmAgentAction } from '../services/crm-agent/index.js
 const router = express.Router();
 
 // ─── Agentic CRM operator (WS-A) ─────────────────────────────────────────────
-// A1: read-only tools. A2: write tools that the agent can only PROPOSE; the proposals come back as
+// A1 read tools and A2 guarded writes. Write tools can only PROPOSE; proposals come back as
 // `pendingActions` and are applied only via /agent/confirm below, after explicit human confirmation.
-// Feature-flagged off by default. See docs/architecture/CRM_COMMS_HUB_UPGRADE_PLAN.md.
-router.post('/agent', authCRM, async (req, res) => {
+// Feature-flagged so rollout can be controlled per environment. Production is enabled
+// through the managed SSM parameters; authentication and capability checks still apply.
+router.post('/agent', authCRM, requireCRMCapability('foundation:read'), async (req, res) => {
   if (process.env.CRM_AGENT_ENABLED !== 'true') {
     return res.status(503).json({ success: false, message: 'The CRM agent is not enabled on this environment.' });
   }
@@ -62,7 +63,7 @@ router.post('/agent', authCRM, async (req, res) => {
 
 // Apply ONE staged write proposal after the human confirms it in the UI. The body echoes the
 // { tool, args } from a `pendingActions` entry. RBAC is re-checked and the change is audited as applied.
-router.post('/agent/confirm', authCRM, async (req, res) => {
+router.post('/agent/confirm', authCRM, requireCRMCapability('foundation:write'), async (req, res) => {
   if (process.env.CRM_AGENT_ENABLED !== 'true') {
     return res.status(503).json({ success: false, message: 'The CRM agent is not enabled on this environment.' });
   }
@@ -70,13 +71,16 @@ router.post('/agent/confirm', authCRM, async (req, res) => {
     if (!req.crmUser?.tenantId) {
       return res.status(400).json({ success: false, message: 'No tenant context on this session.' });
     }
-    const { tool, args } = req.body || {};
+    const { proposalId, tool, args } = req.body || {};
+    if (!proposalId || typeof proposalId !== 'string') {
+      return res.status(400).json({ success: false, code: 'proposal_id_required', message: '`proposalId` is required. Confirm a proposal returned by /agent.' });
+    }
     if (!tool || typeof tool !== 'string') {
       return res.status(400).json({ success: false, message: '`tool` (string) is required.' });
     }
-    const result = await applyCrmAgentAction({ crmUser: req.crmUser, toolName: tool, args: args || {} });
+    const result = await applyCrmAgentAction({ crmUser: req.crmUser, proposalId, toolName: tool, args: args || {} });
     if (result?.error) {
-      const code = result.error === 'permission_denied' ? 403 : (result.error === 'not_found' ? 404 : 400);
+      const code = result.error === 'permission_denied' ? 403 : (result.error === 'not_found' || result.error === 'proposal_not_found' ? 404 : 400);
       return res.status(code).json({ success: false, ...result });
     }
     return res.json({ success: true, ...result });
@@ -84,6 +88,27 @@ router.post('/agent/confirm', authCRM, async (req, res) => {
     console.error('[crm-ai] agent confirm error:', err);
     return res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// Explicit memory endpoints keep the UI useful even when the model does not select a memory tool.
+router.get('/agent/memory', authCRM, requireCRMCapability('foundation:read'), async (req, res) => {
+  try {
+    if (!req.crmUser?.tenantUid || !Number.isFinite(Number(req.crmUser.id))) return res.status(400).json({ success: false, code: 'tenant_context_required' });
+    const { rows } = await sharedPool.query(
+      `SELECT memory_key AS "key", category, value, source, updated_at AS "updatedAt"
+         FROM crm_agent_memories WHERE tenant_uid=$1 AND actor_user_id=$2 ORDER BY updated_at DESC LIMIT 100`,
+      [req.crmUser.tenantUid, Number(req.crmUser.id)]);
+    return res.json({ success: true, memories: rows });
+  } catch (err) { return res.status(500).json({ success: false, code: 'memory_unavailable', message: err.message }); }
+});
+
+router.delete('/agent/memory/:key', authCRM, requireCRMCapability('foundation:write'), async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(
+      `DELETE FROM crm_agent_memories WHERE tenant_uid=$1 AND actor_user_id=$2 AND memory_key=$3`,
+      [req.crmUser.tenantUid, Number(req.crmUser.id), req.params.key]);
+    return res.json({ success: true, deleted: rowCount > 0 });
+  } catch (err) { return res.status(500).json({ success: false, code: 'memory_unavailable', message: err.message }); }
 });
 
 // ─── helpers ─────────────────────────────────────────────────────────────────

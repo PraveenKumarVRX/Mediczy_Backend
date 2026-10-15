@@ -64,6 +64,7 @@ const ConsultationBooking   = lazy(() => import("@/pages/ConsultationBooking"));
 const MyQueueToken          = lazy(() => import("@/pages/MyQueueToken"));
 const NurseBooking          = lazy(() => import("@/pages/NurseBooking"));
 const LabBooking            = lazy(() => import("@/pages/LabBooking"));
+const HealthCheckupBooking  = lazy(() => import("@/pages/HealthCheckupBooking"));
 const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
 const HealthFeedPage        = lazy(() => import("@/pages/HealthFeedPage"));
 const MyPlans               = lazy(() => import("@/pages/MyPlans"));
@@ -78,6 +79,7 @@ const VideoConsultation     = lazy(() => import("@/pages/VideoConsultation"));
 const ConnectionDiagnostic  = lazy(() => import("@/pages/ConnectionDiagnostic"));
 const HealthIntelligence    = lazy(() => import("@/pages/HealthIntelligence"));
 const SIBControlDashboard   = lazy(() => import("@/pages/SIBControlDashboard"));
+const AgentConsole          = lazy(() => import("@/pages/AgentConsole"));
 const UserHealthRiskAssessment = lazy(() => import("@/pages/UserHealthRiskAssessment"));
 const OrderTasks            = lazy(() => import("@/pages/OrderTasks"));
 const MyPrograms            = lazy(() => import("@/pages/MyPrograms"));
@@ -278,6 +280,9 @@ const CRMPipelinePage   = lazyNamed(_CRMModulePages, "CRMPipelinePage");
 const CRMReportsPage    = lazyNamed(_CRMModulePages, "CRMReportsPage");
 const CRMSettingsPage   = lazyNamed(_CRMModulePages, "CRMSettingsPage");
 const CRMTeamPage       = lazyNamed(_CRMModulePages, "CRMTeamPage");
+const CRMOperatorPage   = lazy(() => import("@/pages/crm/CRMOperatorPage"));
+const CRMFlowBuilderPage = lazy(() => import("@/pages/crm/CRMFlowBuilderPage"));
+const CRMSocialGrowthPage = lazy(() => import("@/pages/crm/CRMSocialGrowthPage"));
 
 // Insurance RFQ / distribution — moved to the Team module (2026-09-10):
 // these aren't hospital-CRM functions, see TeamInsuranceLayout.tsx's header comment.
@@ -464,6 +469,7 @@ const LabPatientsPage      = lazyNamed(_LabModulePages, "LabPatientsPage");
 const LabAppointmentsPage  = lazyNamed(_LabModulePages, "LabAppointmentsPage");
 const LabQueuePage         = lazyNamed(_LabModulePages, "LabQueuePage");
 const LabQmsPage           = lazyNamed(_LabModulePages, "LabQmsPage");
+const LabQcPage            = lazy(() => import("@/pages/lab/LabQcPage"));
 const CollectionOpsPage = lazy(() => import("@/pages/lab/collection/CollectionOpsPage"));
 const PhlebotomistLogin = lazy(() => import("@/pages/lab/phlebotomist/PhlebotomistLogin"));
 const PhlebotomistDashboard = lazy(() => import("@/pages/lab/phlebotomist/PhlebotomistDashboard"));
@@ -1242,6 +1248,7 @@ const AppRoutes = () => {
         <Route path="/lab/queue"           element={<LabQueuePage />} />
         <Route path="/lab/queue/new"       element={<LabQueuePage />} />
         <Route path="/lab/qms"             element={<LabQmsPage />} />
+        <Route path="/lab/qc"              element={<LabQcPage />} />
         <Route path="/lab/collection-ops"  element={<CollectionOpsPage />} />
         <Route path="/lab/phlebotomist/login" element={<PhlebotomistLogin />} />
         <Route path="/lab/phlebotomist"    element={<PhlebotomistDashboard />} />
@@ -1374,6 +1381,9 @@ const AppRoutes = () => {
         <Route path="/crm/commissions"    element={<Navigate to="/team/commissions" replace />} />
         <Route path="/crm/corporate-plans" element={<Navigate to="/team/corporate-plans" replace />} />
         <Route path="/crm/dashboard"     element={<CRMDashboard />} />
+        <Route path="/crm/agent"          element={<CRMOperatorPage />} />
+        <Route path="/crm/flow-builder"   element={<CRMFlowBuilderPage />} />
+        <Route path="/crm/social-growth"  element={<CRMSocialGrowthPage />} />
         <Route path="/crm/hospital"       element={<HospitalCRMFoundationPage />} />
         <Route path="/crm/hospital/command-center" element={<HospitalCRMWorldclassPage />} />
         <Route path="/crm/hospital/communication-hub" element={<HospitalCRMCommunicationHubPage />} />
@@ -1985,6 +1995,7 @@ const AppRoutes = () => {
         <Route path="/health-tracker"        element={<MainLayout><HealthTracker /></MainLayout>} />
         <Route path="/health-diary"          element={<MainLayout><HealthDiary /></MainLayout>} />
         <Route path="/health-intelligence"   element={<MainLayout><HealthIntelligence /></MainLayout>} />
+        <Route path="/agent-console"          element={<MainLayout><AgentConsole /></MainLayout>} />
         <Route path="/sib-control"           element={<AdminRoute><MainLayout><SIBControlDashboard /></MainLayout></AdminRoute>} />
         <Route path="/consultation"          element={<MainLayout><Consultation /></MainLayout>} />
         <Route path="/doctors"               element={<DoctorListBooking />} />
@@ -2000,6 +2011,7 @@ const AppRoutes = () => {
         <Route path="/nurse-booking/:nurseId" element={<NurseBooking />} />
         <Route path="/lab-booking"            element={<LabBooking />} />
         <Route path="/lab-booking/:labId"     element={<LabBooking />} />
+        <Route path="/health-checkups"         element={<HealthCheckupBooking />} />
         <Route path="/homecare-booking/:homecareId" element={<HomecareBooking />} />
         <Route path="/my-bookings"           element={<Navigate to="/appointments" replace />} />
         <Route path="/appointments"          element={<Appointments />} />

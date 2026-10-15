@@ -1,8 +1,8 @@
 /**
- * CRM agent runner — WS-A Phase A1.
+ * CRM agent runner — WS-A AgenticCRM operator.
  *
  * Runs a bounded tool-calling loop: the LLM (via mediqzy's mandated gateway, ai-brain/llm-provider.js)
- * decides which read-only CRM tool to call; the runner executes it with the caller's RBAC scope,
+ * decides which tenant-scoped CRM tool to call; the runner executes it with the caller's RBAC scope,
  * audits every call to crm_audit_log, feeds the result back, and loops until the model answers or a
  * guardrail trips.
  *
@@ -15,23 +15,33 @@ import pool from '../../db/pgPool.js';
 import llmProvider from '../ai-brain/llm-provider.js';
 import { hasCRMCapability } from '../../config/crm-roles.config.js';
 import { TOOLS, toolDefinitions } from './tool-registry.js';
-
-const MAX_ITERATIONS = 5;
-const MAX_TOOL_FAILURES = 3;
+import { MAX_ITERATIONS, MAX_TOOL_FAILURES, PROPOSAL_TTL_MS, proposalMatches, isProposalExpired } from './guardrails.js';
 const MAX_TOOL_RESULT_CHARS = 8000;
 
 const SYSTEM_PROMPT = `You are the Mediqzy CRM assistant operating a healthcare provider's CRM.
-You can read lead and contact data, and PROPOSE changes, by calling the provided tools. Rules:
+You can read tenant-scoped lead, contact, deal, task and conversation data, and PROPOSE changes, by calling the provided tools. Rules:
 - Use tools to look up real data; never invent leads, contacts, numbers or statuses.
-- Read tools return data directly. Write tools (assign/status/stage) only PREPARE a change — they do
+- Read tools return data directly. Write tools only PREPARE a change — they do
   not apply it. Tell the user exactly what you have prepared and that they must confirm it; never
-  claim a change was made.
+  claim a change was made. Each proposal has an expiry and must be confirmed by its proposalId.
+- Memory is for non-sensitive workflow preferences only; never store patient identifiers, credentials or clinical data.
 - You operate the administrative CRM only. Never give clinical, diagnostic, triage or treatment advice.
 - Be concise. When you have enough from the tools, answer directly and stop calling tools.`;
 
 const toInt = (v) => { const n = Number.parseInt(v, 10); return Number.isFinite(n) ? n : null; };
 
-async function audit({ tenantId, tenantUid, crmUser }, { action, toolName, args, ok, resultSummary }) {
+async function persistProposal(ctx, { toolName, args, preview }) {
+  const actor = toInt(ctx.crmUser?.id);
+  if (actor === null) return { error: 'actor_id_required' };
+  const { rows } = await pool.query(
+    `INSERT INTO crm_agent_proposals (tenant_uid, corporate_uid, actor_user_id, tool_name, args, preview, expires_at)
+     VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,NOW() + INTERVAL '15 minutes')
+     RETURNING id, expires_at`,
+    [ctx.tenantUid, ctx.corporateUid || null, actor, toolName, JSON.stringify(args || {}), JSON.stringify(preview || {})]);
+  return rows[0];
+}
+
+async function audit({ pool: auditPool = pool, tenantId, tenantUid, corporateUid, crmUser }, { action, toolName, args, ok, resultSummary }) {
   const reasons = {
     read: 'agentic CRM operator — read',
     preview: 'agentic CRM operator — proposed change (not applied)',
@@ -40,18 +50,27 @@ async function audit({ tenantId, tenantUid, crmUser }, { action, toolName, args,
   // crm_audit_log.tenant_id/entity_id/actor_user_id are bigint — only numeric ids go there. The
   // unambiguous tenant_uid is recorded too (text column); the tool name lives in event_type + metadata.
   const tid = toInt(tenantId);
-  if (tid === null) { console.error('[crm-agent] audit skipped — non-numeric tenantId'); return; }
-  const entityId = toInt(args?.leadId ?? args?.id);
+  if (tid === null) {
+    const error = new Error('CRM audit requires a numeric tenant id');
+    error.code = 'CRM_AUDIT_WRITE_FAILED';
+    throw error;
+  }
+  const entityId = toInt(args?.leadId ?? args?.dealId ?? args?.taskId ?? args?.conversationId ?? args?.id);
+  const entityType = args?.dealId != null ? 'crm_deal' : (args?.taskId != null ? 'crm_task' : (args?.conversationId != null ? 'crm_conversation' : (entityId !== null ? 'crm_lead' : 'crm_agent')));
   try {
-    await pool.query(
-      `INSERT INTO crm_audit_log (tenant_id, tenant_uid, entity_type, entity_id, event_type, actor_user_id, actor_role, new_value, reason, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10::jsonb)`,
-      [tid, tenantUid || null, entityId !== null ? 'crm_lead' : 'crm_agent', entityId, `agent.${action}.${toolName}`,
+    await auditPool.query(
+      `INSERT INTO crm_audit_log (tenant_id, tenant_uid, corporate_uid, entity_type, entity_id, event_type, actor_user_id, actor_role, new_value, reason, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11::jsonb)`,
+      [tid, tenantUid || null, corporateUid || null, entityType, entityId, `agent.${action}.${toolName}`,
         toInt(crmUser.id), crmUser.role || null, JSON.stringify(args || {}),
         reasons[action] || 'agentic CRM operator', JSON.stringify({ tool: toolName, ok, resultSummary })]);
   } catch (err) {
-    // Audit must never break the agent turn; a failed audit is logged to stderr only.
-    console.error(`[crm-agent] audit write failed for tool ${toolName}: ${err.message}`);
+    // Audit is part of the operation's transaction. If it cannot be written, propagate the error
+    // so reads fail closed and confirmed writes roll back instead of becoming unaudited changes.
+    const error = new Error(`CRM audit write failed for ${toolName}: ${err.message}`);
+    error.code = 'CRM_AUDIT_WRITE_FAILED';
+    error.cause = err;
+    throw error;
   }
 }
 
@@ -63,7 +82,7 @@ async function audit({ tenantId, tenantUid, crmUser }, { action, toolName, args,
  */
 export async function runCrmAgent({ crmUser, messages }) {
   if (!crmUser?.tenantUid) throw new Error('crmUser.tenantUid is required (CRM data is scoped by the unambiguous entity uid)');
-  const ctx = { pool, tenantUid: crmUser.tenantUid, tenantId: crmUser.tenantId, crmUser };
+  const ctx = { pool, tenantUid: crmUser.tenantUid, tenantId: crmUser.tenantId, corporateUid: crmUser.corporateUid || null, crmUser };
   const tools = toolDefinitions();
 
   const convo = [{ role: 'system', content: SYSTEM_PROMPT }, ...messages];
@@ -103,8 +122,12 @@ export async function runCrmAgent({ crmUser, messages }) {
         try {
           const p = await tool.preview(args, ctx);
           if (p?.ok) {
-            pendingActions.push({ tool: name, args, preview: p });
-            result = { staged: true, ...p, note: 'PREPARED, NOT APPLIED. The user must confirm this change before it takes effect.' };
+            const proposal = await persistProposal(ctx, { toolName: name, args, preview: p });
+            if (proposal?.error) result = proposal;
+            else {
+              pendingActions.push({ proposalId: proposal.id, tool: name, args, preview: p, expiresAt: proposal.expires_at });
+              result = { staged: true, proposalId: proposal.id, expiresAt: proposal.expires_at, ...p, note: 'PREPARED, NOT APPLIED. Confirm this proposal before it takes effect.' };
+            }
           } else {
             result = p || { error: 'preview_failed' };
           }
@@ -132,7 +155,8 @@ export async function runCrmAgent({ crmUser, messages }) {
 
       if (failures >= MAX_TOOL_FAILURES) {
         return { reply: 'I hit repeated tool errors and stopped. Please try again or narrow the request.',
-          toolTrace, pendingActions, iterations: i + 1, stopReason: 'circuit_breaker', provider: res.provider };
+          toolTrace, pendingActions, iterations: i + 1, stopReason: 'circuit_breaker',
+          escalation: { required: true, reason: 'tool_failure_threshold_reached' }, provider: res.provider };
       }
     }
   }
@@ -151,20 +175,57 @@ export async function runCrmAgent({ crmUser, messages }) {
  * @param {string} opts.toolName  - a write tool name
  * @param {object} opts.args      - the same args that were previewed
  */
-export async function applyCrmAgentAction({ crmUser, toolName, args }) {
+export async function applyCrmAgentAction({ crmUser, proposalId, toolName, args }) {
   if (!crmUser?.tenantUid) throw new Error('crmUser.tenantUid is required');
+  if (!proposalId) return { error: 'proposal_id_required' };
   const tool = TOOLS[toolName];
   if (!tool || !tool.write) return { error: 'not_a_write_tool', tool: toolName };
   if (!hasCRMCapability(crmUser, tool.capability)) return { error: 'permission_denied', capability: tool.capability };
 
-  const ctx = { pool, tenantUid: crmUser.tenantUid, tenantId: crmUser.tenantId, crmUser };
-  let result;
+  const client = await pool.connect();
+  const ctx = { pool: client, tenantUid: crmUser.tenantUid, tenantId: crmUser.tenantId, corporateUid: crmUser.corporateUid || null, crmUser };
+  const actor = toInt(crmUser.id);
   try {
-    result = await tool.apply(args || {}, ctx);
-  } catch (err) {
-    result = { error: 'tool_failed', message: err.message };
+    await client.query('BEGIN');
+    if (actor === null) { await client.query('ROLLBACK'); return { error: 'actor_id_required' }; }
+    const { rows: proposalRows } = await client.query(
+      `UPDATE crm_agent_proposals
+          SET status='confirmed', confirmed_at=NOW(), updated_at=NOW()
+        WHERE id=$1 AND tenant_uid=$2 AND corporate_uid IS NOT DISTINCT FROM $3 AND actor_user_id=$4 AND tool_name=$5 AND args=$6::jsonb AND status='pending' AND expires_at>NOW()
+        RETURNING id, tenant_uid, actor_user_id, tool_name, args, preview, status, expires_at`,
+      [proposalId, ctx.tenantUid, ctx.corporateUid || null, actor, toolName, JSON.stringify(args || {})]);
+    const proposal = proposalRows[0];
+    if (!proposal) {
+      const { rows: existing } = await client.query(`SELECT status, expires_at, tool_name, args, corporate_uid FROM crm_agent_proposals WHERE id=$1 AND tenant_uid=$2 AND corporate_uid IS NOT DISTINCT FROM $3 AND actor_user_id=$4 FOR UPDATE`, [proposalId, ctx.tenantUid, ctx.corporateUid || null, actor]);
+      if (!existing[0]) { await client.query('ROLLBACK'); return { error: 'proposal_not_found' }; }
+      if (existing[0].status === 'pending' && isProposalExpired(existing[0])) {
+        await client.query(`UPDATE crm_agent_proposals SET status='expired', updated_at=NOW() WHERE id=$1`, [proposalId]);
+        await client.query('COMMIT');
+        return { error: 'proposal_expired' };
+      }
+      await client.query('ROLLBACK');
+      if (existing[0].status === 'pending' && (existing[0].tool_name !== toolName || !proposalMatches(existing[0], { tenantUid: ctx.tenantUid, corporateUid: ctx.corporateUid, actorUserId: actor, toolName, args }))) return { error: 'proposal_mismatch' };
+      return { error: 'proposal_not_pending', status: existing[0].status };
+    }
+    if (proposal.tool_name !== toolName || !proposalMatches(proposal, { tenantUid: ctx.tenantUid, corporateUid: ctx.corporateUid, actorUserId: actor, toolName, args })) {
+      await client.query('ROLLBACK');
+      return { error: 'proposal_mismatch' };
+    }
+    let result;
+    try {
+      result = await tool.apply(args || {}, ctx);
+    } catch (err) {
+      result = { error: 'tool_failed', message: err.message };
+    }
+    const ok = !result?.error;
+    await audit(ctx, { action: 'apply', toolName, args, ok, resultSummary: ok ? Object.keys(result) : result.error });
+    await client.query(`UPDATE crm_agent_proposals SET status=$2, applied_at=CASE WHEN $2='applied' THEN NOW() ELSE applied_at END, updated_at=NOW() WHERE id=$1`, [proposalId, ok ? 'applied' : 'confirmed']);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-  const ok = !result?.error;
-  await audit(ctx, { action: 'apply', toolName, args, ok, resultSummary: ok ? Object.keys(result) : result.error });
-  return result;
 }

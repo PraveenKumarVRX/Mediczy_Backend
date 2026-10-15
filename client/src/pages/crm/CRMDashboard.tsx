@@ -5,7 +5,7 @@ import {
   ArrowUpRight, TrendingUp,
   Phone, Mail, Calendar, Briefcase,
   PieChart, Zap, IndianRupee,
-  Sparkles, Timer, CheckCheck,
+  Sparkles, Timer, CheckCheck, Bot, GitBranch, MessageCircle,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { CRMLayout } from './CRMModulePages';
@@ -109,6 +109,45 @@ const CRMDashboard = () => {
             Open Copilot <Sparkles className="h-4 w-4 group-hover:scale-110 transition-transform" />
           </div>
         </Link>
+
+        {/* ── Agentic CRM + clean-room growth tools ─────────────────── */}
+        <section className="grid gap-4 md:grid-cols-3" aria-label="CRM automation tools">
+          {[
+            {
+              to: '/crm/agent', icon: Bot, title: 'Agentic CRM operator',
+              detail: 'Search CRM data and prepare audited actions for confirmation.',
+              card: 'border-violet-500/20 bg-violet-500/[0.06] hover:border-violet-400/50 hover:bg-violet-500/[0.1]',
+              iconWrap: 'bg-violet-500/15', iconColor: 'text-violet-300',
+            },
+            {
+              to: '/crm/flow-builder', icon: GitBranch, title: 'Visual flow builder',
+              detail: 'Create versioned automation graphs and run safe dry-runs.',
+              card: 'border-emerald-500/20 bg-emerald-500/[0.06] hover:border-emerald-400/50 hover:bg-emerald-500/[0.1]',
+              iconWrap: 'bg-emerald-500/15', iconColor: 'text-emerald-300',
+            },
+            {
+              to: '/crm/social-growth', icon: MessageCircle, title: 'Social growth',
+              detail: 'Manage social triggers, identities and human handoff controls.',
+              card: 'border-cyan-500/20 bg-cyan-500/[0.06] hover:border-cyan-400/50 hover:bg-cyan-500/[0.1]',
+              iconWrap: 'bg-cyan-500/15', iconColor: 'text-cyan-300',
+            },
+          ].map(({ to, icon: Icon, title, detail, card, iconWrap, iconColor }) => (
+            <Link
+              key={to}
+              to={to}
+              className={`group rounded-2xl border p-4 transition ${card}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className={`rounded-xl p-2 ${iconWrap}`}><Icon className={`h-5 w-5 ${iconColor}`} /></div>
+                <div>
+                  <h2 className="text-sm font-semibold text-white">{title}</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{detail}</p>
+                  <span className={`mt-2 inline-block text-[11px] font-medium ${iconColor}`}>Open workspace →</span>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </section>
 
         {/* ── Row 1: Hero KPI Cards ─────────────────────────────────── */}
         <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">

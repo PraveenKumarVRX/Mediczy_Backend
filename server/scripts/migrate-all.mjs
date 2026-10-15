@@ -24,6 +24,8 @@ const MANIFEST = [
   { id: 'chatwoot-tenant-bridge', cmd: 'node', args: ['migrations/20261003000000-chatwoot-bridge.migration.js'], cwd: SERVER },
   { id: 'phase1-foundations', cmd: 'node', args: ['migrations/20260926000002-phase1-foundations.migration.js'], cwd: SERVER },
   { id: 'audit-remediation', cmd: 'node', args: ['migrations/20260926000003-audit-remediation.migration.js'], cwd: SERVER },
+  { id: 'health-checkup-bookings', cmd: 'node', args: ['migrations/20261015006000-health-checkup-bookings.migration.js'], cwd: SERVER },
+  { id: 'crm-brightbean-chat-adoption', cmd: 'node', args: ['migrations/20261015006900-crm-brightbean-chat-adoption.migration.js'], cwd: SERVER },
 ];
 
 function runStep(step) {

@@ -134,6 +134,9 @@ import crmEmailRouter from './routes/crmEmail.route.js';
 import crmCampaignsRouter from './routes/crmCampaigns.route.js';
 import crmCampaignAnalyticsRouter from './routes/crmCampaignAnalytics.route.js';
 import crmAIRouter from './routes/crm-ai.route.js';
+import crmFlowBuilderRouter from './routes/crm-flow-builder.route.js';
+import crmSocialGrowthRouter from './routes/crm-social-growth.route.js';
+import crmBrightbeanChatRouter from './routes/crm-brightbean-chat.route.js';
 import crmAnalysisRouter from './routes/crm-analysis.route.js';
 import './workers/crm-campaign.worker.js';
 import './workers/crm-segment-blast.worker.js';
@@ -180,6 +183,7 @@ import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
 import cartRouter from './routes/cart.route.js';
 import employeeNetworkRouter from './routes/employee-network.route.js';
 import corporateBookingsRouter from './routes/corporate-bookings.route.js';
+import healthCheckupRouter from './routes/health-checkup.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
@@ -280,6 +284,7 @@ import aiBrainRouter from './routes/ai-brain.route.js';
 import aiIntelligenceRouter from './routes/ai-intelligence.route.js';
 import aiAnalyticsRouter from './routes/ai-analytics.route.js';
 import aiDeepTechRouter from './routes/ai-deeptech.route.js';
+import medcoreAdoptionRouter from './routes/medcore-adoption.route.js';
 
 // SIB AI Guard — universal safety middleware for all AI routes
 import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middleware.js';
@@ -1397,6 +1402,7 @@ app.use("/api/appointments", appointmentRouter);
 mountLabRoutes(app, 'catalog'); // lab routes — see routes/lab/registry.js
 app.use("/api/employee", employeeNetworkRouter); // Corporate employee network (my-labs, my-hospitals, my-clinics)
 app.use("/api/corporate-bookings", corporateBookingsRouter); // Team member books corporate health checkups + notifies employees
+app.use("/api/health-checkups", healthCheckupRouter); // Patient individual/corporate health-checkup booking flow
 app.use("/api/cart", cartRouter); // Lab test cart management
 app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
@@ -1456,6 +1462,7 @@ app.use("/api/v3/hospital-os", sibAIGuard, attachAIReporter, hospitalOsRouter); 
 app.use("/api/v3/rwe", authUser, rwePlatformRouter); // Real-world evidence platform (Wave 4)
 app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
 app.use("/api/emergency", authUser, aiIntelligenceRouter); // Emergency alias (triage/assess, risk-score)
+app.use('/api/medcore-adoption', medcoreAdoptionRouter); // Clean-room MedCore capability adoption
 app.use("/api/v3/ai-analytics", authUser, aiAnalyticsRouter); // AI analytics dashboard (LLM ops, quality, tools, population health)
 app.use("/api/v3/ai-deeptech", authUser, aiDeepTechRouter); // DeepTech: HIS, Clinical NLP, Pre-auth, Multi-agent Context, Federated Learning
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
@@ -1499,6 +1506,8 @@ app.use('/api/crm/emails', crmEmailRouter); // CRM email inbox with SMTP/IMAP se
 app.use('/api/crm/campaigns', crmCampaignsRouter); // CRM marketing campaigns
 app.use('/api/crm/campaign-analytics', crmCampaignAnalyticsRouter); // CRM marketing analytics
 app.use('/api/crm/ai', crmAIRouter); // CRM AI — scoring, prediction, insights, forecast
+app.use('/api/crm/flows', crmFlowBuilderRouter); // Clean-room visual CRM flow builder
+app.use('/api/crm/social', crmSocialGrowthRouter); // Tenant-scoped social growth controls over Meta inbox
 app.use('/api/rfq/analysis', crmAnalysisRouter); // RFQ retrospective/prospective analysis + quote engine — isolated from /api/crm; Team-only (authTeam)
 app.use('/api/fcm', fcmRouter);
 app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
@@ -1531,6 +1540,7 @@ app.use('/api/video-config', videoConfigRouter); // Video configuration manageme
 app.use('/api/public', marketingLeadsRouter); // Public marketing lead capture
 app.use('/api/fb-leads', fbLeadsRouter);    // Facebook Lead Ads webhook (public — no auth)
 app.use('/api/social-inbox', socialInboxRouter); // Instagram/Facebook Messenger Team inbox (authTeam)
+app.use('/api/crm/brightbean-chat', crmBrightbeanChatRouter); // Clean-room BrightBean-style CRM chat automation
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
 app.use('/api/whatsapp', whatsappRouter); // WhatsApp templates, campaigns & messaging
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
@@ -1770,7 +1780,9 @@ app.use('/api/admin/communication', communicationRouter); // Admin communication
 
 // Token Management Routes (refresh, revoke)
 import authTokenRouter from './routes/auth.token.route.js';
+import authMfaRouter from './routes/auth.mfa.route.js';
 app.use('/api/auth', authTokenRouter); // Token refresh and revocation endpoints
+app.use('/api/auth/mfa', authMfaRouter); // TOTP enrollment and privileged step-up authentication
 
 import dataExportRouter from './routes/data-export.route.js';
 app.use('/api/users/data', dataExportRouter);     // DPDPA data export & erasure
@@ -1995,6 +2007,18 @@ cron.schedule('30 2 * * 1', async () => {
 
 // ============== Hospital Billing Nightly Cron (02:00 IST) ==============
 import { runNightlyBilling } from './services/hospital-billing-cron.service.js';
+
+// Biomedical CMMS: mark overdue PM/calibration schedules and block clinical use until completion.
+import biomedicalEquipment from './services/biomedical-equipment.service.js';
+cron.schedule('30 0 * * *', async () => {
+  if (!(await cronBeginJob('biomedical_pm_overdue'))) return;
+  try {
+    const result = await biomedicalEquipment.markPreventiveMaintenanceOverdue();
+    cronTick('biomedical_pm_overdue', result);
+  } catch (err) {
+    cronTickError('biomedical_pm_overdue', err.message);
+  }
+});
 
 cron.schedule('0 2 * * *', async () => {
   if (!(await cronBeginJob('hospital_billing_nightly'))) return;   // the service also holds its own lease (hospital-billing-nightly)

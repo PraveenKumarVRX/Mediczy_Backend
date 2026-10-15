@@ -7,6 +7,7 @@ import {
   runPostCaptureAutomation,
 } from '../services/crm-lead-automation.service.js';
 import { handleSocialMessagingEntry } from '../services/social-inbox.service.js';
+import { processNormalizedWebhook, resolveSocialAccountTenant } from '../services/crm-brightbean-chat.service.js';
 
 const router = express.Router();
 
@@ -95,6 +96,13 @@ router.post(
 
     if (payload.object !== 'page' && payload.object !== 'instagram') return;
 
+    // Normalize comment/story/follow events through the tenant-scoped CRM
+    // trigger engine. Unknown social accounts are ignored until an operator
+    // registers their accountId in Social Growth settings.
+    processNormalizedWebhook(payload).catch((err) =>
+      console.error('[Social Growth] normalized webhook processing failed:', err.message)
+    );
+
     for (const entry of payload.entry || []) {
       // Lead Ads (Page object only) — existing CRM lead capture pipeline
       for (const change of entry.changes || []) {
@@ -110,7 +118,7 @@ router.post(
       // Messenger (Page object) / Instagram Direct — Team Social Inbox
       if (Array.isArray(entry.messaging) && entry.messaging.length) {
         const channel = payload.object === 'instagram' ? 'instagram' : 'facebook';
-        handleSocialMessagingEntry(entry, channel).catch((err) =>
+        resolveSocialAccountTenant(channel, entry.id).then((tenantUid) => handleSocialMessagingEntry(entry, channel, tenantUid)).catch((err) =>
           console.error('[Social Inbox] handleSocialMessagingEntry error:', err.message)
         );
       }

@@ -43,29 +43,29 @@ The focused AgenticCRM and CRM schema suites passed (11/11), the AI gold suite p
 client TypeScript check passed. Code-level and database-level findings from the prior audit are
 closed. The remaining items are controlled rollout or broader product-scope work:
 
-- `CRM_FLOW_BUILDER_ENABLED`, `CRM_SOCIAL_GROWTH_ENABLED` and `MEDCORE_ADOPTION_ENABLED` default to
-  `false` in the environment template; production flag values and deployment of the latest application
-  code were not verified in this audit.
+- `CRM_FLOW_BUILDER_ENABLED` and `CRM_SOCIAL_GROWTH_ENABLED` are enabled in the production SSM
+  parameter store and in the environment template. `MEDCORE_ADOPTION_ENABLED` remains separately
+  controlled. The latest frontend bundle is built and served from the configured client dist root.
 - Authenticated API-level UAT was not run because `CRM_UAT_BASE_URL`, `CRM_EMAIL` and
   `CRM_PASSWORD` were not supplied. The UAT harness covers auth verification, proposal confirmation,
   expiry, audit-row creation, A3 bulk confirmation, and optional least-privilege denial when those
   credentials are supplied. Meta/Instagram test-account credentials are also required for social
   workstream UAT.
-- The flow-builder screen currently edits a starter graph and supports save/publish/dry-run; it is
-  not yet a full drag-and-drop React Flow canvas. `http_request` nodes intentionally fail closed
+- The flow-builder screen now supports a Mediqzy-authored drag/drop node canvas, node inspector,
+  graph editing, versioned save/publish and dry-run. `http_request` nodes intentionally fail closed
   until an approved connector is configured.
-- Social trigger registration/dispatch, identity resolution, pause/resume, scheduling, provider
-  error recording and opt-out suppression are implemented. Official webhook normalization for
-  comment/story/follow events, inbox rules/reminders, WhatsApp template lifecycle and contact
-  erasure are still outstanding.
+- Social trigger registration/dispatch, identity resolution, normalized comment/story/follow/message
+  events, pause/resume, inbox rules, reminders, scheduling, provider error recording, WhatsApp
+  template lifecycle and opt-out/erasure suppression are implemented. External provider UAT remains
+  dependent on Meta/WhatsApp credentials.
 - AgenticCRM-specific recheck: the registry/runner suite passed 7/7 and 2/2, and the production
   schema UAT passed with `crossTenantRows: 0`. The authenticated portion remains pending the
   dedicated CRM operator credentials; it will verify the real `/agent` proposal flow,
   `/agent/confirm`, RBAC denial, expiry, audit rows, and A3 bulk dry-run/apply.
-- `CRM_AGENT_ENABLED` is `false` in the environment template, and the production SSM parameter is
-  currently absent (therefore the effective production default is disabled). A public unauthenticated
-  probe returned HTTP 401 for `/api/crm/ai/agent`, confirming the route is deployed; the exact
-  application revision and authenticated production flag behavior remain unverified.
+- `CRM_AGENT_ENABLED` is enabled in the production SSM parameter store and in the environment template.
+  A public unauthenticated probe returns HTTP 401 for `/api/crm/ai/agent`, confirming the deployed route
+  is protected by CRM authentication rather than disabled. Authenticated proposal/confirmation UAT still
+  requires a dedicated CRM operator test account.
 - Agent audit writes now fail closed: the runner propagates audit failures, and proposal application
   runs the CRM mutation, audit row, and proposal status update in one transaction so an audit failure
   rolls the mutation back.
@@ -79,6 +79,16 @@ closed. The remaining items are controlled rollout or broader product-scope work
 - The Entity-UID verifier is green (`0` violations, `0` warnings). Four orphaned
   `corporate_employees` registry rows were retired; `hospital_billing_charges.hospital_uid` was
   added; ambiguous legacy `individual` user organization links remain intentionally unguessed.
+
+- BrightBean Chat capability completion slice is implemented clean-room in
+  `server/services/crm-brightbean-chat.service.js` and
+  `server/routes/crm-brightbean-chat.route.js`, with migration
+  `20261015006900-crm-brightbean-chat-adoption.migration.js`. It adds tenant-scoped shared-inbox
+  assignment/status/labels, bounded inbox rules, human takeover/release, operator reminders,
+  normalized Meta comment/story/follow/message events, WhatsApp template draft/submission/approval
+  lifecycle, and auditable social-identity erasure. The Social Growth screen exposes trigger, rule,
+  template, reminder and identity controls. The route is mounted at `/api/crm/brightbean-chat` and
+  remains behind `CRM_SOCIAL_GROWTH_ENABLED` plus CRM capability checks.
 
 **Tenant-scope release decision — approved 2026-10-15:** the current tenant-isolation audit scope
 and the documented legacy `tenant_id` compatibility paths are accepted as a release exception for
@@ -223,7 +233,7 @@ starter templates.
 
 **Current implementation:** versioned tenant-scoped graph tables, graph validation, publish/dry-run
 endpoints, an independently authored builder screen, bounded graph execution and run-event auditing
-are implemented behind `CRM_FLOW_BUILDER_ENABLED=false`. Delay, branching, field updates, human
+are implemented behind `CRM_FLOW_BUILDER_ENABLED=true` in production. Delay, branching, field updates, human
 handoff and consent-aware message nodes execute through the shared scheduler; unapproved HTTP actions
 fail closed. A real test segment still requires CRM operator credentials before production sends.
 
@@ -255,7 +265,7 @@ C3 comment-to-DM + story-mention triggers → C4 shared-inbox takeover/scheduled
 
 **Current implementation:** tenant-scoped social identity resolution, trigger registration/dispatch,
 conversation pause/resume, scheduled-reply records/UI, row-locked scheduled delivery, provider error
-recording and opt-out suppression are implemented behind `CRM_SOCIAL_GROWTH_ENABLED=false`; the
+recording and opt-out suppression are implemented behind `CRM_SOCIAL_GROWTH_ENABLED=true` in production; the
 existing official Meta webhook/inbox adapter is reused. A real IG comment-to-DM test account and
 provider credentials are still required for connector UAT.
 
