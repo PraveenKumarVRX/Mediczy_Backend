@@ -1,0 +1,2961 @@
+{
+  "findings": [
+    {
+      "rule": "button-no-accessible-name",
+      "file": "auth/AuthProvider.tsx",
+      "line": 627,
+      "excerpt": "\n              onClick={handleStaySignedIn}\n              disabled={refreshingSession}\n             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/dept/DietaryLogin.tsx",
+      "line": 303,
+      "excerpt": "\n                      type=\"        \"\n                      {...form.register(\"        \")}\n        "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "auth/DocRegister.tsx",
+      "line": 276,
+      "excerpt": "\n          onClick={() => inputRef.current?.click()}\n          onDragOver={(e) => { e.preventDefault"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/DocRegister.tsx",
+      "line": 288,
+      "excerpt": " ref={inputRef} type=\"    \" accept={accept} className=\"      \"\n        onChange={(e) => { const f = "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "auth/DocRegister.tsx",
+      "line": 365,
+      "excerpt": " type=\"      \" onClick={onSend} disabled={otp.sending}\n          className=\"                        "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/DocRegister.tsx",
+      "line": 1369,
+      "excerpt": " {...field} placeholder=\"                      \" className=\"                                        "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/DocRegister.tsx",
+      "line": 1379,
+      "excerpt": " {...field} placeholder=\"                         \" className=\"                                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/DocRegister.tsx",
+      "line": 1389,
+      "excerpt": " {...field} placeholder=\"                            \" className=\"                                  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/DocRegister.tsx",
+      "line": 1399,
+      "excerpt": " {...field} placeholder=\"                         \" className=\"                                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "auth/DocRegister.tsx",
+      "line": 1453,
+      "excerpt": "\n                              value={placeInput}\n                              onChange={(e) => onP"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "auth/DocRegister.tsx",
+      "line": 1880,
+      "excerpt": " type=\"      \" onClick={handleSubmit} disabled={isSubmitting || docRegister.isPending}\n             "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/admin/ChatDashboard.tsx",
+      "line": 529,
+      "excerpt": "\n                          key={conversation.id}\n                          className={`             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/ChatDashboard.tsx",
+      "line": 926,
+      "excerpt": " type=\"    \" required value={ticketForm.title}\n                  onChange={e => setTicketForm({ ...t"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/ChatDashboard.tsx",
+      "line": 965,
+      "excerpt": " type=\"    \" required value={ticketForm.requesterName}\n                    onChange={e => setTicketF"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/ChatDashboard.tsx",
+      "line": 972,
+      "excerpt": " type=\"     \" value={ticketForm.requesterEmail}\n                    onChange={e => setTicketForm({ ."
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 145,
+      "excerpt": "\n                  type=\"    \"\n                  required\n                  value={formData.device_i"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 159,
+      "excerpt": "\n                  type=\"    \"\n                  required\n                  value={formData.device_n"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 189,
+      "excerpt": "\n                  type=\"    \"\n                  required\n                  value={formData.imei}\n  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 204,
+      "excerpt": "\n                  type=\"    \"\n                  value={formData.sim_number}\n                  onCha"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 217,
+      "excerpt": "\n                  type=\"   \"\n                  value={formData.phone_number}\n                  onCh"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 233,
+      "excerpt": "\n                  key={plan.value}\n                  className={`                                  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/admin/DeviceRegistrationForm.tsx",
+      "line": 245,
+      "excerpt": "\n                          type=\"     \"\n                          name=\"                 \"\n         "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/AIScribeConsultation.tsx",
+      "line": 401,
+      "excerpt": "\n            ref={inputRef}\n            type=\"    \"\n            value={manualInput}\n            onCh"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/AIScribeConsultation.tsx",
+      "line": 418,
+      "excerpt": "\n                  key={`                                              `}\n                  onClick="
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/biomedical/BiomedicalAIAssistant.tsx",
+      "line": 168,
+      "excerpt": " onClick={copy} className=\"                                                                         "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/chat/ChatApplet.tsx",
+      "line": 656,
+      "excerpt": "\n                        type=\"    \"\n                        ref={fileInputRef}\n                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 96,
+      "excerpt": "\n          className=\"                                                                              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 102,
+      "excerpt": "\n          className=\"                                                                              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 108,
+      "excerpt": "\n          className=\"                                                                              "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 142,
+      "excerpt": " onClick={copy} className=\"                                                                       \""
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 217,
+      "excerpt": "\n        className=\"                                                                                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 232,
+      "excerpt": "\n              type=\"        \"\n              checked={(form as any)[key]}\n              onChange={e "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 243,
+      "excerpt": "\n        className=\"                                                                                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/consent/ConsentAIAssistant.tsx",
+      "line": 356,
+      "excerpt": "\n              type=\"      \"\n              min=\" \"\n              className=\"                        "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/ConsultationRecordingPlayer.tsx",
+      "line": 219,
+      "excerpt": "\n                type=\"     \"\n                min=\" \"\n                max={duration || 0}\n          "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/ConsultationRecordingPlayer.tsx",
+      "line": 324,
+      "excerpt": "\n                  key={recording.id}\n                  onClick={() => setSelectedRecording(recordin"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/corporate/CorporateLayout.tsx",
+      "line": 106,
+      "excerpt": "\n                placeholder=\"             \"\n                className=\"                            "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/dietary/DietaryAIAssistant.tsx",
+      "line": 344,
+      "excerpt": " onClick={copyOrder} className=\"                                                                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/display/KioskAadhaarScanner.tsx",
+      "line": 515,
+      "excerpt": "\n        ref={photoRef}\n        type=\"    \"\n        accept=\"       \"\n        capture=\"           \"\n "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/display/KioskQrScanner.tsx",
+      "line": 232,
+      "excerpt": "\n        ref={fileRef}\n        type=\"    \"\n        accept=\"       \"\n        capture=\"           \"\n  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 92,
+      "excerpt": " key={i} ref={refs[i]} type=\"    \" inputMode=\"       \" maxLength={1}\n          value={value[i] || \"\""
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 166,
+      "excerpt": " {...props} className={`                                                                            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 495,
+      "excerpt": " type=\"     \" value={form.email} onChange={e => set(\"     \", e.target.value)} placeholder=\"         "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 509,
+      "excerpt": " type={showPass ? \"    \" : \"        \"} value={form.password} onChange={e => set(\"        \", e.target"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 519,
+      "excerpt": " type={showConfirm ? \"    \" : \"        \"} value={form.confirmPassword} onChange={e => set(\"         "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 528,
+      "excerpt": " type=\"    \" name=\"   \" autoComplete=\"   \" tabIndex={-1} defaultValue=\"\" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 605,
+      "excerpt": " type=\"   \" value={form.phone} onChange={e => set(\"     \", e.target.value.replace(/\\D/g, \"\").slice(0"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 630,
+      "excerpt": " ref={addressRef} type=\"    \" value={form.address} autoComplete=\"   \"\n                        onChan"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 702,
+      "excerpt": " onClick={() => contactIdCardRef.current?.click()}\n                          className=\"            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 709,
+      "excerpt": " ref={contactIdCardRef} type=\"    \" accept=\"                          \" className=\"      \"\n         "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 755,
+      "excerpt": " type=\"      \" onClick={sendPhoneOtp} disabled={phoneOtpLoading}\n                    className=\"    "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 800,
+      "excerpt": " onDragOver={e => { e.preventDefault(); setIsDragging(true); }}\n                  onDragLeave={() =>"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 808,
+      "excerpt": " ref={fileInputRef} type=\"    \" multiple accept=\"                          \" className=\"      \" onCh"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 912,
+      "excerpt": " className={`                                                                                       "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/EntityRegisterWizard.tsx",
+      "line": 918,
+      "excerpt": " className=\"                                      \" onClick={() => setAgreedToTerms(v => !v)}"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/features/VideoPlayer.tsx",
+      "line": 63,
+      "excerpt": " \n        className=\"                                    \" \n        onClick={() => setIsFullscreen(t"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/HospitalInsuranceDashboard.tsx",
+      "line": 16,
+      "excerpt": "\n            type=\"    \"\n            className=\"            \"\n            placeholder=\"             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/imaging/ImagingPlatformPanels.tsx",
+      "line": 97,
+      "excerpt": " value={label} onChange={(e) => setLabel(e.target.value)} className=\"                               "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/imaging/ImagingPlatformPanels.tsx",
+      "line": 98,
+      "excerpt": " value={sizeMm} onChange={(e) => setSizeMm(e.target.value)} className=\"                             "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/lab/DicomViewer.tsx",
+      "line": 54,
+      "excerpt": "\n    title={title}\n    onClick={onClick}\n    className={`                                           "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/lab/DicomViewer.tsx",
+      "line": 405,
+      "excerpt": "\n            type=\"     \"\n            min={1}\n            max={totalFrames}\n            value={frame"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/layout/MainLayoutdoctor.tsx",
+      "line": 485,
+      "excerpt": "\n          className=\"                                        \"\n          onClick={toggleSidebar}\n  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/layout/Sidebar.tsx",
+      "line": 517,
+      "excerpt": "\n          className=\"                                        \"\n          onClick={() => setIsOpen(f"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/membership/MembershipCard.tsx",
+      "line": 303,
+      "excerpt": "\n        className=\"                                          \"\n        style={{ perspective: '     "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/parking/ParkingLots.tsx",
+      "line": 348,
+      "excerpt": " className=\"          \" onClick={(e) => e.stopPropagation()}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/qms/PortalQmsPage.tsx",
+      "line": 795,
+      "excerpt": "\n                type=\"        \"\n                checked={form.notifyOptIn}\n                onChange"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 659,
+      "excerpt": " ref={fileInputRef} type=\"    \" multiple className=\"      \" onChange={e => handleFileAdd(e.target.fi"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 781,
+      "excerpt": "\n                type=\"    \"\n                placeholder=\"              \"\n                value={sea"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 824,
+      "excerpt": "\n                    key={email.id}\n                    onClick={() => selectEmail(email)}\n         "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 926,
+      "excerpt": " type=\"    \" value={composerTo} onChange={e => setComposerTo(e.target.value)}\n                    pl"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 936,
+      "excerpt": " type=\"    \" value={composerCc} onChange={e => setComposerCc(e.target.value)}\n                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 941,
+      "excerpt": " type=\"    \" value={composerBcc} onChange={e => setComposerBcc(e.target.value)}\n                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 948,
+      "excerpt": " type=\"    \" value={composerSubject} onChange={e => setComposerSubject(e.target.value)}\n            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1170,
+      "excerpt": " type=\"    \" value={composerCc} onChange={e => setComposerCc(e.target.value)}\n                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1175,
+      "excerpt": " type=\"    \" value={composerBcc} onChange={e => setComposerBcc(e.target.value)}\n                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1334,
+      "excerpt": " type=\"    \" value={composerCc} onChange={e => setComposerCc(e.target.value)}\n                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1339,
+      "excerpt": " type=\"    \" value={composerBcc} onChange={e => setComposerBcc(e.target.value)}\n                    "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1368,
+      "excerpt": "\n                    type=\"      \"\n                    onClick={generateAITicket}\n                  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1395,
+      "excerpt": " type=\"    \" required value={ticketForm.title}\n                    onChange={e => setTicketForm({ .."
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1425,
+      "excerpt": " type=\"    \" required value={ticketForm.requesterName}\n                      onChange={e => setTicke"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1431,
+      "excerpt": " type=\"     \" required value={ticketForm.requesterEmail}\n                      onChange={e => setTic"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1495,
+      "excerpt": "\n                        key={t.id}\n                        className={`                            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1527,
+      "excerpt": "\n                    type=\"    \"\n                    value={tmplForm.name}\n                    onCha"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1539,
+      "excerpt": "\n                      type=\"    \"\n                      value={tmplForm.subject}\n                  "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "components/team/EmailInbox.tsx",
+      "line": 1583,
+      "excerpt": "\n                    onClick={saveTemplate}\n                    disabled={tmplSaveLoading}\n         "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "components/ui/input.tsx",
+      "line": 8,
+      "excerpt": "\n        type={type}\n        className={cn(\n          \"                                             "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "components/wallet/PurchaseCoinsDialog.tsx",
+      "line": 343,
+      "excerpt": "\n                key={index}\n                onClick={() => {\n                  setSelectedPackage(i"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1116,
+      "excerpt": "\n                          key={room.id}\n                          className={`                     "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1169,
+      "excerpt": "\n                          key={room.id}\n                          className={`                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1945,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1956,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1967,
+      "excerpt": " type=\"        \" className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1978,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 1989,
+      "excerpt": " type=\"        \" className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2000,
+      "excerpt": " type=\"        \" className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2021,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2029,
+      "excerpt": " type=\"        \" className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2037,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2045,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2126,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2134,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2142,
+      "excerpt": " type=\"        \" defaultChecked className=\"       \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2179,
+      "excerpt": " \n                        type=\"        \" \n                        checked={chatBotEnabled}\n        "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2188,
+      "excerpt": " type=\"        \" defaultChecked className=\"      \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2192,
+      "excerpt": " type=\"        \" defaultChecked className=\"      \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AdminChatDashboard.tsx",
+      "line": 2196,
+      "excerpt": " type=\"        \" defaultChecked className=\"      \" "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/admin/AdminTenantManagement.tsx",
+      "line": 706,
+      "excerpt": "\n                        key={tier.id}\n                        onClick={() => setFormData({ ...formD"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AmbulanceManagement.tsx",
+      "line": 630,
+      "excerpt": "\n                            type=\"        \"\n                            checked={newService.ambulan"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/AmbulanceManagement.tsx",
+      "line": 648,
+      "excerpt": "\n                            type=\"        \"\n                            checked={newService.certifi"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/BrokerManagement.tsx",
+      "line": 631,
+      "excerpt": "\n                          type=\"        \"\n                          checked={brokerForm.is_verified"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/CorporateQuoteCalculator.tsx",
+      "line": 237,
+      "excerpt": " type=\"     \" checked={tier.isDefault} onChange={() => updateTier(tier.key, { isDefault: true })} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/DeviceManagement.tsx",
+      "line": 190,
+      "excerpt": "\n                type=\"    \"\n                placeholder=\"                                   \"\n     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HospitalsManagement.tsx",
+      "line": 1104,
+      "excerpt": "\n                            type=\"        \"\n                            checked={newHospital.specia"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 437,
+      "excerpt": " className=\"                                  \" placeholder=\"               \" value={registration.eq"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 438,
+      "excerpt": " className=\"                                  \" placeholder=\"           \" value={registration.device"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 439,
+      "excerpt": " className=\"                                  \" placeholder=\"            \" value={registration.manuf"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 440,
+      "excerpt": " className=\"                                  \" placeholder=\"     \" value={registration.model} onCha"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 441,
+      "excerpt": " className=\"                                  \" placeholder=\"             \" value={registration.seri"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 442,
+      "excerpt": " className=\"                                  \" placeholder=\"          \" value={registration.departm"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 443,
+      "excerpt": " className=\"                                  \" placeholder=\"        \" value={registration.location}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 444,
+      "excerpt": " className=\"                                  \" placeholder=\"        \" value={registration.protocol}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/HyperGridIoTView.tsx",
+      "line": 445,
+      "excerpt": " className=\"                                  \" placeholder=\"                \" value={registration.o"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/LabsManagement.tsx",
+      "line": 977,
+      "excerpt": "\n                  type=\"    \"\n                  accept=\"             \"\n                  onChange={"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/admin/SimpleAdminDashboard.tsx",
+      "line": 116,
+      "excerpt": " \n            onClick={fetchDashboardStats}\n            disabled={loading}\n            style={{ \n   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/TeamManagement.tsx",
+      "line": 976,
+      "excerpt": "\n                            type=\"        \"\n                            checked={newUser.permission"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/TicketManagement.tsx",
+      "line": 873,
+      "excerpt": " type=\"        \" defaultChecked className=\"      \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/TicketManagement.tsx",
+      "line": 877,
+      "excerpt": " type=\"        \" defaultChecked className=\"      \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/TicketManagement.tsx",
+      "line": 881,
+      "excerpt": " type=\"        \" className=\"      \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/admin/WearablesDashboard.tsx",
+      "line": 170,
+      "excerpt": "\n                type=\"    \"\n                placeholder=\"                 \"\n                value={"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/admin/WearablesDashboard.tsx",
+      "line": 216,
+      "excerpt": "\n                key={wearable.id}\n                className=\"                                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/AiDoctor.tsx",
+      "line": 1094,
+      "excerpt": "\n                  ref={fileInputRef}\n                  type=\"    \"\n                  className=\"   "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/assistant/AssistantMessages.tsx",
+      "line": 231,
+      "excerpt": "\n                      key={conv.patientId}\n                      className={`                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/billing/OrderCheckout.tsx",
+      "line": 223,
+      "excerpt": " type=\"     \" name=\"       \" value=\"        \" checked={paymentGateway === '        '} onChange={(e) "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/chat/VideoChat.tsx",
+      "line": 480,
+      "excerpt": "\n                          key={conversation._id}\n                          className={`            "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/chat/VideoChat.tsx",
+      "line": 533,
+      "excerpt": "\n      key={recipient._id}\n      className={`                                                       "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/chat/VideoChatdoctor.tsx",
+      "line": 529,
+      "excerpt": "\n                          key={conversation._id}\n                          className={`            "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/chat/VideoChatdoctor.tsx",
+      "line": 583,
+      "excerpt": "\n                      key={recipient._id}\n                      className={`                       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicLogin.tsx",
+      "line": 189,
+      "excerpt": "\n                    type=\"     \"\n                    placeholder=\"                  \"\n             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicLogin.tsx",
+      "line": 204,
+      "excerpt": "\n                    type={showPassword ? '    ' : '        '}\n                    placeholder=\"    "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/clinic/ClinicLogin.tsx",
+      "line": 223,
+      "excerpt": "\n                type=\"      \"\n                disabled={loading}\n                className=\"       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 77,
+      "excerpt": "\n          key={i}\n          ref={inputRefs[i]}\n          type=\"    \"\n          inputMode=\"       \"\n"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 163,
+      "excerpt": "\n        {...props}\n        className={`                                                            "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 188,
+      "excerpt": " type=\"      \" {...props}\n      className={`                                                        "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 532,
+      "excerpt": "\n                        type=\"     \" value={form.email}\n                        onChange={e => set("
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 558,
+      "excerpt": "\n                        type={showPass ? \"    \" : \"        \"}\n                        value={form.p"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 573,
+      "excerpt": "\n                        type={showConfirm ? \"    \" : \"        \"}\n                        value={for"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 588,
+      "excerpt": " type=\"    \" name=\"   \" autoComplete=\"   \" tabIndex={-1} defaultValue=\"\" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 685,
+      "excerpt": "\n                          type=\"   \" value={form.phone}\n                          onChange={e => se"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 719,
+      "excerpt": "\n                        ref={addressRef}\n                        type=\"    \"\n                      "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 804,
+      "excerpt": " onClick={() => doctorIdCardRef.current?.click()}\n                        className=\"               "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 811,
+      "excerpt": " ref={doctorIdCardRef} type=\"    \" accept=\"                          \" className=\"      \"\n          "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 859,
+      "excerpt": " type=\"      \" onClick={sendPhoneOtp} disabled={phoneOtpLoading}\n                    className=\"w-fu"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 926,
+      "excerpt": "\n                  onDragOver={e => { e.preventDefault(); setIsDragging(true); }}\n                  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 936,
+      "excerpt": " ref={fileInputRef} type=\"    \" multiple accept=\"                          \" className=\"      \" onCh"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/clinic/ClinicRegister.tsx",
+      "line": 970,
+      "excerpt": " type=\"      \" onClick={handleSubmit} disabled={loading}\n                    className=\"            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/ConsultationBooking.tsx",
+      "line": 614,
+      "excerpt": "\n                        type=\"        \"\n                        className=\"    \"\n                  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/corporate/CorporateWellnessCalendar.tsx",
+      "line": 702,
+      "excerpt": "\n                        key={day.toISOString()}\n                        className={cn(\n            "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/corporate/CorporateWellnessCalendar.tsx",
+      "line": 720,
+      "excerpt": "\n                                key={act.id}\n                                className={cn('       "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/corporate/CorporateWellnessCalendar.tsx",
+      "line": 757,
+      "excerpt": "\n                          key={activity.id}\n                          className=\"                  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/corporate/CorporateWellnessCalendar.tsx",
+      "line": 824,
+      "excerpt": "\n                            key={activity.id}\n                            className=\"              "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/corporate/CorporateWellnessCalendar.tsx",
+      "line": 1400,
+      "excerpt": " \n                      key={index}\n                      className={cn(\n                        '  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/CorporateBenefits.tsx",
+      "line": 1750,
+      "excerpt": "\n                      type=\"    \"\n                      placeholder=\"                         \"\n   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/CorporateBenefits.tsx",
+      "line": 2004,
+      "excerpt": "\n                    type=\"    \"\n                    value={bookingDetails.preferredDate}\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/CorporateBenefits.tsx",
+      "line": 2049,
+      "excerpt": "\n                    type=\"    \"\n                    value={bookingDetails.location}\n               "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/CorporateDashboard.tsx",
+      "line": 968,
+      "excerpt": "\n                    type=\"    \"\n                    placeholder=\"                   \"\n             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/CorporateDashboard.tsx",
+      "line": 1166,
+      "excerpt": "\n                    type=\"    \"\n                    placeholder=\"                      \"\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMAIInsightsPage.tsx",
+      "line": 453,
+      "excerpt": " className={inputCls} placeholder=\"                                                      \" value={to"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMAIInsightsPage.tsx",
+      "line": 454,
+      "excerpt": " className={inputCls} placeholder=\"        \" value={audience} onChange={e => setAudience(e.target.va"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 532,
+      "excerpt": " onClick={sendEmail} disabled={sendLoading}\n          className={`                                  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 589,
+      "excerpt": " ref={fileInputRef} type=\"    \" multiple className=\"      \" onChange={e => handleFileAdd(e.target.fi"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 655,
+      "excerpt": " type=\"    \" placeholder=\"              \" value={searchTerm}\n                onChange={e => { setSea"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 687,
+      "excerpt": " key={email.id} onClick={() => selectEmail(email)}\n                    className={`                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 759,
+      "excerpt": " type=\"    \" value={composerTo} onChange={e => setComposerTo(e.target.value)}\n                    pl"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 767,
+      "excerpt": " type=\"    \" value={composerCc} onChange={e => setComposerCc(e.target.value)}\n                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 773,
+      "excerpt": " type=\"    \" value={composerSubject} onChange={e => setComposerSubject(e.target.value)}\n            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 877,
+      "excerpt": " type=\"    \" value={composerCc} onChange={e => setComposerCc(e.target.value)}\n                      "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 966,
+      "excerpt": " key={s.id}\n                        className={`                                                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1018,
+      "excerpt": " value={settingsForm.display_name} onChange={e => setSettingsForm(f => ({ ...f, display_name: e.targ"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1023,
+      "excerpt": " type=\"     \" value={settingsForm.email} onChange={e => setSettingsForm(f => ({ ...f, email: e.targe"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1034,
+      "excerpt": " value={settingsForm.smtp_host} onChange={e => setSettingsForm(f => ({ ...f, smtp_host: e.target.val"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1039,
+      "excerpt": " type=\"      \" value={settingsForm.smtp_port} onChange={e => setSettingsForm(f => ({ ...f, smtp_port"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1046,
+      "excerpt": " value={settingsForm.smtp_username} onChange={e => setSettingsForm(f => ({ ...f, smtp_username: e.ta"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1052,
+      "excerpt": " type={showPasswords ? '    ' : '        '} value={settingsForm.smtp_password}\n                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1064,
+      "excerpt": " type=\"        \" checked={settingsForm.smtp_secure} onChange={e => setSettingsForm(f => ({ ...f, smt"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1076,
+      "excerpt": " value={settingsForm.imap_host} onChange={e => setSettingsForm(f => ({ ...f, imap_host: e.target.val"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1081,
+      "excerpt": " type=\"      \" value={settingsForm.imap_port} onChange={e => setSettingsForm(f => ({ ...f, imap_port"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1088,
+      "excerpt": " value={settingsForm.imap_username} onChange={e => setSettingsForm(f => ({ ...f, imap_username: e.ta"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1094,
+      "excerpt": " type={showPasswords ? '    ' : '        '} value={settingsForm.imap_password}\n                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1109,
+      "excerpt": " type=\"        \" checked={settingsForm.is_default} onChange={e => setSettingsForm(f => ({ ...f, is_d"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1121,
+      "excerpt": " onClick={saveSettings} disabled={settingsSaving}\n                    className=\"                   "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1161,
+      "excerpt": " key={t.id} onClick={() => editTemplate(t)}\n                        className={`                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1181,
+      "excerpt": " value={tmplForm.name} onChange={e => setTmplForm(p => ({ ...p, name: e.target.value }))}\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1187,
+      "excerpt": " value={tmplForm.subject} onChange={e => setTmplForm(p => ({ ...p, subject: e.target.value }))}\n    "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/CRMEmailPage.tsx",
+      "line": 1213,
+      "excerpt": " onClick={saveTemplate} disabled={tmplSaving}\n                    className=\"                       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMFlowBuilderPage.tsx",
+      "line": 59,
+      "excerpt": " className=\"                                                                                  \" valu"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMFlowBuilderPage.tsx",
+      "line": 59,
+      "excerpt": " className=\"                                                                                  \" valu"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMFlowBuilderPage.tsx",
+      "line": 60,
+      "excerpt": " className=\"                                                                                  \" valu"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 78,
+      "excerpt": " className={`               `} placeholder=\"                 \" value={search} onChange={(e) => setSe"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 337,
+      "excerpt": " className={inp} placeholder=\"                    \" value={form.name} onChange={(e) => f('    ', e.t"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 354,
+      "excerpt": " className={`             `} placeholder=\"        \" value={tagInput} onChange={(e) => setTagInput(e."
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 367,
+      "excerpt": " className={inp} type=\"     \" placeholder=\"                      \" value={form.reply_to_address} onC"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 385,
+      "excerpt": " className={inp} placeholder=\"                                           \" value={form.subject} onCh"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 389,
+      "excerpt": " className={inp} placeholder=\"                            \" value={form.preheader} onChange={(e) => "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 395,
+      "excerpt": " type=\"        \" checked={form.ab_test_enabled} onChange={(e) => f('               ', e.target.check"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 402,
+      "excerpt": " className={inp} placeholder=\"                      \" value={form.ab_test_subject_b} onChange={(e) ="
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 406,
+      "excerpt": " type=\"     \" min={10} max={90} step={5} className=\"                        \" value={form.ab_test_sp"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 471,
+      "excerpt": " className={inp} placeholder={ph} value={form[key] || ''} onChange={(e) => f(key, e.target.value)} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 499,
+      "excerpt": " type=\"        \" className=\"                 \" checked={(form.list_ids || []).includes(l.id)} onChan"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 521,
+      "excerpt": " type=\"        \" className=\"              \" checked={(form.exclude_list_ids || []).includes(l.id)} o"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 627,
+      "excerpt": " type=\"              \" className={`             `} value={form.scheduled_at} onChange={(e) => f('   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 731,
+      "excerpt": " className={`               `} placeholder=\"             \" value={search} onChange={(e) => setSearch"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 733,
+      "excerpt": " className={`           `} placeholder=\"             \" value={name} onChange={(e) => setName(e.targe"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 798,
+      "excerpt": " className={`               `} placeholder=\"               \" value={search} onChange={(e) => setSear"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 802,
+      "excerpt": " hidden type=\"    \" accept=\"               \" onChange={(e) => upload(e.target.files?.[0])} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 895,
+      "excerpt": " className={inp} placeholder=\"             \" value={form.name} onChange={(e) => setForm({ ...form, n"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 896,
+      "excerpt": " className={inp} placeholder=\"               \" value={form.subject} onChange={(e) => setForm({ ...fo"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 950,
+      "excerpt": " className={inp} placeholder=\"           \" value={form.name} onChange={(e) => setForm({ ...form, nam"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 951,
+      "excerpt": " className={inp} type=\"     \" placeholder=\"                     \" value={form.email} onChange={(e) ="
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 952,
+      "excerpt": " className={inp} type=\"     \" placeholder=\"                                  \" value={form.reply_to}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 954,
+      "excerpt": " type=\"        \" className=\"                 \" checked={form.is_default} onChange={(e) => setForm({ "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 1048,
+      "excerpt": " className={`                           `} type=\"     \" placeholder=\"                 \" value={form."
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 1055,
+      "excerpt": " className={`                           `} placeholder=\"                \" value={form.notes} onChang"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 1062,
+      "excerpt": " className={`               `} placeholder=\"              \" value={search} onChange={(e) => setSearc"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMMarketingPages.tsx",
+      "line": 1068,
+      "excerpt": " hidden type=\"    \" accept=\"    \" onChange={(e) => importCsv(e.target.files?.[0])} "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 178,
+      "excerpt": " className=\"                                             \" onClick={() => setMobileSidebarOpen(false"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 371,
+      "excerpt": " placeholder=\"               \" value={search} onChange={e => { setSearch(e.target.value); setPage(1)"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 411,
+      "excerpt": " type={type || '    '} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.tar"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 440,
+      "excerpt": " value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder=\"       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 574,
+      "excerpt": " placeholder=\"               \" value={search} onChange={e => { setSearch(e.target.value); setPage(1)"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 607,
+      "excerpt": " type={type || '    '} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.tar"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 620,
+      "excerpt": " value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder=\"       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 733,
+      "excerpt": " placeholder=\"                  \" value={search} onChange={e => { setSearch(e.target.value); setPage"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 760,
+      "excerpt": " type={type || '    '} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.tar"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 766,
+      "excerpt": " value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder=\"       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 903,
+      "excerpt": " value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder=\"       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 908,
+      "excerpt": " type=\"              \" value={form.scheduled_at} onChange={e => setForm({ ...form, scheduled_at: e.t"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMModulePages.tsx",
+      "line": 913,
+      "excerpt": " value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placehol"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 299,
+      "excerpt": " type=\"        \" checked={form.platforms.includes(value)} onChange={() => togglePlatform(value)} cla"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 307,
+      "excerpt": " type=\"              \" value={form.plannedAt} onChange={(event) => setForm({ ...form, plannedAt: eve"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 308,
+      "excerpt": " maxLength={80} value={form.category} onChange={(event) => setForm({ ...form, category: event.target"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 311,
+      "excerpt": " value={form.tags} onChange={(event) => setForm({ ...form, tags: event.target.value })} className=\" "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 312,
+      "excerpt": " disabled={saving || form.platforms.length === 0} className=\"                                       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 336,
+      "excerpt": " maxLength={1000} value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} cla"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 337,
+      "excerpt": " type=\"              \" value={planAt} onChange={(event) => setPlanAt(event.target.value)} className="
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialContentPage.tsx",
+      "line": 342,
+      "excerpt": " maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} className=\"  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 64,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 64,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 65,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 65,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 65,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 66,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/CRMSocialGrowthPage.tsx",
+      "line": 66,
+      "excerpt": " className=\"                                                                      \" placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 211,
+      "excerpt": " className={`               `} placeholder=\"               \" value={form.name} onChange={(e) => set("
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 225,
+      "excerpt": " className={`               `} placeholder=\"                                             \" value={fo"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 226,
+      "excerpt": " className={`               `} type=\"      \" placeholder=\"               \" value={form.score} onChan"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 227,
+      "excerpt": " className={`               `} placeholder=\"                               \" value={form.source} onC"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 228,
+      "excerpt": " className={`               `} type=\"      \" placeholder=\"                  \" value={form.days} onCh"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 232,
+      "excerpt": " className={`               `} type=\"      \" min=\" \" value={form.delayMinutes} onChange={(e) => set("
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 245,
+      "excerpt": " className={`               `} placeholder=\"       \" value={form.subject} onChange={(e) => set({ sub"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 248,
+      "excerpt": " className={`               `} placeholder=\"          \" value={form.tag} onChange={(e) => set({ tag:"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 257,
+      "excerpt": " className={primary} disabled={saving || !form.name.trim()} onClick={save}"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 295,
+      "excerpt": " className=\"                                                                    \" onClick={() => set"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 296,
+      "excerpt": " className={`                                                   `} onClick={(e) => e.stopPropagation"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMAutomationsPage.tsx",
+      "line": 306,
+      "excerpt": " className={`                    `} placeholder=\"                                     \" value={runQu"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 175,
+      "excerpt": " className={`                    `} placeholder={`                                                 `"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 243,
+      "excerpt": " className={`               `} placeholder=\"       \" value={subject} onChange={(e) => setSubject(e.t"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 246,
+      "excerpt": " className={`                                `} disabled={!selected || !message.trim() || sending} o"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 309,
+      "excerpt": " className={`                                `} disabled={!outcome.trim() || logging} onClick={logCa"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 346,
+      "excerpt": " className={input} placeholder=\"             \" value={form.name} onChange={(e) => setForm({ ...form,"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 346,
+      "excerpt": " className={input} placeholder=\"                  \" value={form.audienceRef} onChange={(e) => setFor"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 346,
+      "excerpt": " className={input} placeholder=\"                  \" value={form.templateRef} onChange={(e) => setFor"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 346,
+      "excerpt": " className={input} type=\"      \" placeholder=\"            \" value={form.budgetAmount} onChange={(e) "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 396,
+      "excerpt": " className=\"                                                                    \" onClick={onClose}"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 397,
+      "excerpt": " className={`                                                                `} onClick={(e) => e.st"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 422,
+      "excerpt": " className={`               `} placeholder=\"      \" value={message} onChange={(e) => setMessage(e.ta"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 432,
+      "excerpt": " className={input} placeholder=\"             \" value={form.name} onChange={(e) => setForm({ ...form,"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 432,
+      "excerpt": " className={input} placeholder=\"        \" value={form.category} onChange={(e) => setForm({ ...form, "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMCommunicationHubPage.tsx",
+      "line": 432,
+      "excerpt": " className={`                      `} placeholder=\"                  \" value={form.subject} onChange"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 149,
+      "excerpt": " className={`               `} placeholder=\"            \" value={name} onChange={(e) => setName(e.ta"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 160,
+      "excerpt": " className={`                             `} placeholder=\"     \" value={c.value} onChange={(e) => up"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 166,
+      "excerpt": " className={primary} disabled={saving || !name.trim()} onClick={create}"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 203,
+      "excerpt": " className=\"                                                                    \" onClick={() => set"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 204,
+      "excerpt": " className={`                                                   `} onClick={(e) => e.stopPropagation"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 217,
+      "excerpt": " className={`               `} placeholder=\"       \" value={sendSubject} onChange={(e) => setSendSub"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/HospitalCRMSegmentsPage.tsx",
+      "line": 220,
+      "excerpt": " className={`                                `} disabled={sending || !sendMessage.trim()} onClick={s"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/shared/CommandPalette.tsx",
+      "line": 76,
+      "excerpt": " className=\"                                                                               \" onClick"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/shared/CommandPalette.tsx",
+      "line": 77,
+      "excerpt": " className=\"                                                                                        "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/shared/CommandPalette.tsx",
+      "line": 80,
+      "excerpt": "\n          ref={inputRef} value={query} onChange={(e) => { setQuery(e.target.value); setActiveIndex("
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/shared/LeadDetailDrawer.tsx",
+      "line": 63,
+      "excerpt": " className=\"                                               \" onClick={onClose}"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/crm/shared/LeadDetailDrawer.tsx",
+      "line": 64,
+      "excerpt": " className=\"                                                                            \" onClick={("
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/shared/LeadDetailDrawer.tsx",
+      "line": 106,
+      "excerpt": " className=\"                                                                                        "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/crm/shared/LeadDetailDrawer.tsx",
+      "line": 109,
+      "excerpt": " disabled={sending || !message.trim()} onClick={send} className=\"                                   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/crm/shared/LeadPicker.tsx",
+      "line": 72,
+      "excerpt": "\n        className=\"                                                                                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/dept/BiomedicalMonitoringPage.tsx",
+      "line": 489,
+      "excerpt": "\n            value={search} onChange={e => setSearch(e.target.value)}\n            placeholder=\"     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/dept/BloodBankDonorsPage.tsx",
+      "line": 841,
+      "excerpt": " type=\"        \" checked={selectedDonors.includes(d.id)}\n                              onChange={e ="
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/display/BedsideDisplay.tsx",
+      "line": 48,
+      "excerpt": "\n      onClick={handleCall}\n      className={`                                                      "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/display/BedsideDisplay.tsx",
+      "line": 242,
+      "excerpt": " key={item} className=\"                                                                             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/DisplayAdminPage.tsx",
+      "line": 207,
+      "excerpt": "\n                    className=\"                                                 \"\n                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/DisplayAdminPage.tsx",
+      "line": 213,
+      "excerpt": "\n                    className=\"                                                 \"\n                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/DisplayAdminPage.tsx",
+      "line": 291,
+      "excerpt": "\n                    className=\"                                                        \"\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/ERTriageKiosk.tsx",
+      "line": 121,
+      "excerpt": "\n              className=\"                                                        \"\n              pl"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/ERTriageKiosk.tsx",
+      "line": 127,
+      "excerpt": "\n              className=\"                                                        \"\n              pl"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/ERTriageKiosk.tsx",
+      "line": 141,
+      "excerpt": "\n                type=\"     \"\n                min={0}\n                max={10}\n                value"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/ERTriageKiosk.tsx",
+      "line": 151,
+      "excerpt": " type=\"        \" checked={consent} onChange={(e) => setConsent(e.target.checked)} className=\"    \" "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/display/ERTriageKiosk.tsx",
+      "line": 155,
+      "excerpt": "\n              type=\"      \"\n              onClick={submitTriage}\n              disabled={loading}\n "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/FamilyVideoKiosk.tsx",
+      "line": 50,
+      "excerpt": "\n          className=\"                                                             \"\n          place"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/FamilyVideoKiosk.tsx",
+      "line": 56,
+      "excerpt": "\n          className=\"                                                             \"\n          place"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/display/FamilyVideoKiosk.tsx",
+      "line": 67,
+      "excerpt": "\n          type=\"      \"\n          onClick={startSession}\n          disabled={status === '          "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/display/OTProctorDisplay.tsx",
+      "line": 39,
+      "excerpt": "\n          type=\"      \"\n          onClick={startProctor}\n          disabled={starting}\n          cl"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 711,
+      "excerpt": "\n        className=\"                                                                        \"\n      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1182,
+      "excerpt": "\n                  type=\"        \"\n                  checked={regForm.isCorporate}\n                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1206,
+      "excerpt": "\n                  type=\"        \"\n                  className=\"    \"\n                  checked={con"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1215,
+      "excerpt": "\n                  type=\"        \"\n                  className=\"    \"\n                  checked={not"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1270,
+      "excerpt": "\n              type=\"    \"\n              inputMode=\"       \"\n              maxLength={6}\n           "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1383,
+      "excerpt": "\n                  type=\"        \"\n                  className=\"    \"\n                  checked={con"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1392,
+      "excerpt": "\n                  type=\"        \"\n                  className=\"    \"\n                  checked={not"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/SelfCheckinKiosk.tsx",
+      "line": 1635,
+      "excerpt": "\n        type={type}\n        inputMode={inputMode}\n        placeholder={placeholder}\n        classNa"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/display/WayfindingKiosk.tsx",
+      "line": 50,
+      "excerpt": "\n          className=\"                                                      \"\n          placeholder="
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/display/WayfindingKiosk.tsx",
+      "line": 57,
+      "excerpt": "\n          type=\"      \"\n          onClick={ask}\n          disabled={loading || query.trim().length "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorAssist.tsx",
+      "line": 1465,
+      "excerpt": "\n                      ref={fileInputRef}\n                      type=\"    \"\n                      ac"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorAssist.tsx",
+      "line": 1536,
+      "excerpt": "\n                        key={source.id}\n                        className={cn(\n                    "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorAssist.tsx",
+      "line": 1865,
+      "excerpt": "\n                            key={i}\n                            className=\"                        "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorContact.tsx",
+      "line": 159,
+      "excerpt": "\n                        key={message.id}\n                        className={`                      "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorImaging.tsx",
+      "line": 151,
+      "excerpt": "\n              className={cn(\n                \"                                                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorImaging.tsx",
+      "line": 175,
+      "excerpt": " ref={fileRef} type=\"    \" className=\"      \"\n                accept=\"image                         "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorImaging.tsx",
+      "line": 843,
+      "excerpt": "\n                  key={study.id}\n                  onClick={() => setLightboxIdx(idx)}\n            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorImaging3D.tsx",
+      "line": 692,
+      "excerpt": "\n                              type=\"        \"\n                              checked={certify}\n     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorMessaging.tsx",
+      "line": 758,
+      "excerpt": "\n              ref={fileInputRef}\n              type=\"    \"\n              className=\"      \"\n       "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/doctor/DoctorMobileHome.tsx",
+      "line": 599,
+      "excerpt": " className={cn(\n                              \"                                                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorSettings.tsx",
+      "line": 596,
+      "excerpt": "\n                      ref={profilePhotoInputRef}\n                      type=\"    \"\n                "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorSettings.tsx",
+      "line": 795,
+      "excerpt": "\n                      className=\"                                                                  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorSettings.tsx",
+      "line": 807,
+      "excerpt": "\n                    ref={signatureInputRef}\n                    type=\"    \"\n                    acc"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorSettings.tsx",
+      "line": 860,
+      "excerpt": "\n                        className=\"                                                                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 225,
+      "excerpt": "\n                        type=\"    \"\n                        ref={logoInputRef}\n                    "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 268,
+      "excerpt": "\n                          className=\"                                                              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 298,
+      "excerpt": "\n                            type=\"     \"\n                            value={settings.headerColor}\n "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 399,
+      "excerpt": "\n                        type=\"    \"\n                        ref={signatureInputRef}\n               "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 437,
+      "excerpt": "\n                          className=\"                                                              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 470,
+      "excerpt": "\n                        type=\"    \"\n                        ref={sealInputRef}\n                    "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorTemplateSettings.tsx",
+      "line": 508,
+      "excerpt": "\n                          className=\"                                                              "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/DoctorTriage.tsx",
+      "line": 1958,
+      "excerpt": "\n                            key={caseItem.id}\n                            onClick={() => setSelecte"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/doctor/DoctorVoiceScribe.tsx",
+      "line": 336,
+      "excerpt": "\n                    ref={fileInputRef}\n                    type=\"    \"\n                    accept=\""
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/PatientEMR.tsx",
+      "line": 558,
+      "excerpt": "\n                        key={patient.id}\n                        onClick={() => setSelectedPatient("
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/RemoteHealthMonitoring.tsx",
+      "line": 1026,
+      "excerpt": "\n                      key={patient.id}\n                      className=\"                           "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/RemoteHealthMonitoring.tsx",
+      "line": 1921,
+      "excerpt": " key={patient.id} onClick={() => setSelectedPatient(patient)} className=\"              \""
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/RemoteHealthMonitoring.tsx",
+      "line": 2023,
+      "excerpt": "\n                            key={patient.id}\n                            className=\"               "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/doctor/RemoteHealthMonitoring.tsx",
+      "line": 2115,
+      "excerpt": "\n                          key={patient.id}\n                          className=\"                   "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/HealthDiary.tsx",
+      "line": 787,
+      "excerpt": "\n                          className={cn(\n                            '                             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/AIOperationsHub.tsx",
+      "line": 299,
+      "excerpt": "\n                    type=\"    \"\n                    placeholder=\"                  \"\n              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/AIOperationsHub.tsx",
+      "line": 309,
+      "excerpt": " type=\"        \" checked={bedForm.requiresIsolation} onChange={e => setBedForm(f => ({ ...f, require"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/AIOperationsHub.tsx",
+      "line": 313,
+      "excerpt": " type=\"        \" checked={bedForm.requiresIcu} onChange={e => setBedForm(f => ({ ...f, requiresIcu: "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/AIRevenueIntelligence.tsx",
+      "line": 256,
+      "excerpt": "\n                    type=\"    \"\n                    placeholder=\"                                 \""
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/BedsideReference.tsx",
+      "line": 153,
+      "excerpt": "\n          type=\"    \"\n          value={q}\n          onChange={e => setQ(e.target.value)}\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/BedsideReference.tsx",
+      "line": 215,
+      "excerpt": "\n          type=\"    \"\n          value={q}\n          onChange={e => setQ(e.target.value)}\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/ClinicalCalculators.tsx",
+      "line": 338,
+      "excerpt": "\n          type=\"        \"\n          className=\"                                                  \"\n"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/ClinicalCalculators.tsx",
+      "line": 374,
+      "excerpt": "\n        type=\"      \"\n        step=\"   \"\n        className=\"                                       "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/hmis/ClinicalCalculators.tsx",
+      "line": 445,
+      "excerpt": "\n            onClick={run}\n            disabled={loading}\n            className=\"                   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hmis/FollowUpManagement.tsx",
+      "line": 284,
+      "excerpt": " type=\"     \" min=\" \" max=\"  \" value={checkIn.pain_score} onChange={e => setCheckIn(c => ({ ...c, pa"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/DocumentManagement.tsx",
+      "line": 311,
+      "excerpt": " className=\"               \" onClick={(e) => e.stopPropagation()}"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalCommunicationHub.tsx",
+      "line": 798,
+      "excerpt": "\n                        key={patient.id}\n                        onClick={() => selectPatient(patie"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalDischargeSummary.tsx",
+      "line": 545,
+      "excerpt": "\n                          key={patient.id}\n                          onClick={() => setSelectedPati"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalImagingOrder.tsx",
+      "line": 374,
+      "excerpt": "\n                          key={patient.id}\n                          className={`                  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalIPSheets.tsx",
+      "line": 367,
+      "excerpt": "\n                    key={patient.id}\n                    onClick={() => {\n                      set"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalLabOrder.tsx",
+      "line": 333,
+      "excerpt": "\n                          key={patient.id}\n                          className={`                  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalPrescriptionCreator.tsx",
+      "line": 461,
+      "excerpt": "\n                          key={patient.id}\n                          className={`                  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalPrescriptionCreator.tsx",
+      "line": 539,
+      "excerpt": "\n                          key={med.id}\n                          className={`                      "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalProcedureAdder.tsx",
+      "line": 436,
+      "excerpt": "\n                          key={patient.id}\n                          className={`                  "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/hospital/HospitalProcedureAdder.tsx",
+      "line": 511,
+      "excerpt": "\n                          key={proc.id}\n                          className={`                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hospital/HospitalVoiceAssistantPage.tsx",
+      "line": 55,
+      "excerpt": "\n              className=\"                                          \"\n              placeholder=\"   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/hr/HRModulePages.tsx",
+      "line": 2176,
+      "excerpt": " type=\"        \" checked={hrUserForm.locationIds.includes(String(location.id))} onChange={() => togg"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/icu/ICUDashboard.tsx",
+      "line": 108,
+      "excerpt": " key={p.admissionId}\n                          onClick={() => navigate('             ')}\n           "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/Index.tsx",
+      "line": 2220,
+      "excerpt": "\n                              key={device.id}\n                              onClick={() => pairDevi"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/insurance-desk/InsuranceDeskEmailInbox.tsx",
+      "line": 344,
+      "excerpt": " key={email.id} onClick={() => openEmail(email)}\n                      className={`                 "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/insurance-desk/InsuranceDeskMessages.tsx",
+      "line": 137,
+      "excerpt": " key={t.id} onClick={() => openThread(t)}\n                        className={`                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/insurance-desk/NewClaimWizard.tsx",
+      "line": 336,
+      "excerpt": " type=\"    \" className=\"      \" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadDoc(f"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 423,
+      "excerpt": "\n                ref={fileRef}\n                type=\"    \"\n                accept=\"                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 504,
+      "excerpt": "\n                      type=\"    \"\n                      inputMode=\"       \"\n                      a"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 535,
+      "excerpt": "\n                      type=\"    \"\n                      inputMode=\"    \"\n                      auto"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 574,
+      "excerpt": "\n                            type=\"        \"\n                            className=\"                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 601,
+      "excerpt": "\n                                type=\"    \"\n                                inputMode=\"       \"\n   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 648,
+      "excerpt": "\n                  type=\"        \"\n                  className=\"                                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 657,
+      "excerpt": "\n                  type=\"        \"\n                  className=\"                                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/kiosk/KioskSecureRegister.tsx",
+      "line": 706,
+      "excerpt": "\n        type={type}\n        autoComplete={autoComplete}\n        className=\"                        "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/lab/LabPacsDevices.tsx",
+      "line": 710,
+      "excerpt": " className=\"                   \" onClick={(e) => e.stopPropagation()}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabPacsDevices.tsx",
+      "line": 826,
+      "excerpt": "\n                                  type=\"        \"\n                                  checked={checke"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 611,
+      "excerpt": "\n            onClick={() => fileRef.current?.click()}\n            className=\"                       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 632,
+      "excerpt": "\n              ref={fileRef}\n              type=\"    \"\n              hidden\n              multiple\n "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 646,
+      "excerpt": " className={inputCls} placeholder=\"         \" {...F('           ')} required "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 650,
+      "excerpt": " type=\"    \" className={inputCls} {...F('          ')} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 673,
+      "excerpt": " className={inputCls} placeholder=\"            \" {...F('        ')} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 677,
+      "excerpt": " type=\"    \" className={inputCls} {...F('         ')} required "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 689,
+      "excerpt": " className={inputCls} placeholder=\"                           \" {...F('                ')} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 693,
+      "excerpt": " className={inputCls} placeholder=\"           \" {...F('                  ')} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 703,
+      "excerpt": " className={inputCls} placeholder=\"         \" type=\"      \" {...F('                 ')} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 707,
+      "excerpt": " className={inputCls} placeholder=\"             \" {...F('                   ')} "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 895,
+      "excerpt": "\n              value={criticalDueMinutes}\n              onChange={e => setCriticalDueMinutes(e.targe"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 908,
+      "excerpt": "\n              value={reagentLotNumber}\n              onChange={e => setReagentLotNumber(e.target.va"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 917,
+      "excerpt": "\n              value={calibrationReference}\n              onChange={e => setCalibrationReference(e.t"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 954,
+      "excerpt": "\n            value={criticalReason}\n            onChange={e => setCriticalReason(e.target.value)}\n  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 1355,
+      "excerpt": "\n              className=\"                                                                          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 1381,
+      "excerpt": " type=\"    \" className={inputCls} value={filterFrom} onChange={e => setFilterFrom(e.target.value)} t"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 1382,
+      "excerpt": " type=\"    \" className={inputCls} value={filterTo}   onChange={e => setFilterTo(e.target.value)}   t"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 1435,
+      "excerpt": "\n              key={study.id}\n              onClick={(e) => {\n                                      "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 1478,
+      "excerpt": " className=\"                                                 \" onClick={e => e.stopPropagation()}"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/LabRIS.tsx",
+      "line": 1697,
+      "excerpt": "\n                          onClick={verifyDicomwebApi}\n                          disabled={verifying"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/phleboPanels.tsx",
+      "line": 51,
+      "excerpt": " type=\"      \" disabled={busy || reason.trim().length < 2} onClick={submit} className={BTN_DANGER}"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/phleboPanels.tsx",
+      "line": 96,
+      "excerpt": " type=\"      \" disabled={busy} onClick={submit} className={BTN_PRIMARY}"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/phleboPanels.tsx",
+      "line": 115,
+      "excerpt": " type=\"      \" disabled={busy} onClick={submit} className={BTN_PRIMARY}"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/phleboPanels.tsx",
+      "line": 253,
+      "excerpt": " type=\"      \" disabled={busy || !barcode.trim() || testIds.length === 0} onClick={submit} className"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/phleboPanels.tsx",
+      "line": 275,
+      "excerpt": " type=\"      \" disabled={busy || (needsIsolationAck && !ack)} onClick={submit} className={BTN_PRIMAR"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/phleboPanels.tsx",
+      "line": 303,
+      "excerpt": " type=\"      \" disabled={busy} onClick={submit} className={BTN_PRIMARY}"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/PhlebotomistDashboard.tsx",
+      "line": 105,
+      "excerpt": " type=\"      \" disabled={busy || !cur || next.length < 10} className=\"                              "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/lab/phlebotomist/PhlebotomistLogin.tsx",
+      "line": 44,
+      "excerpt": " type=\"      \" disabled={busy || !email || !password} className=\"                                   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/mrd/MRDDashboard.tsx",
+      "line": 102,
+      "excerpt": "\n            value={search}\n            onChange={(e) => setSearch(e.target.value)}\n            plac"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/mrd/MRDDashboard.tsx",
+      "line": 208,
+      "excerpt": " key={r.ref} className=\"                                                                            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/OrderTasks.tsx",
+      "line": 148,
+      "excerpt": "\n              placeholder=\"         \"\n              value={it.name}\n              onChange={e => up"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/OrderTasks.tsx",
+      "line": 153,
+      "excerpt": "\n              type=\"      \"\n              min={1}\n              value={it.quantity}\n              o"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/OrderTasks.tsx",
+      "line": 182,
+      "excerpt": "\n                  placeholder=\"          \"\n                  value={taskDrafts[order.id]?.title || "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/OrderTasks.tsx",
+      "line": 187,
+      "excerpt": "\n                  placeholder=\"           \"\n                  value={taskDrafts[order.id]?.descript"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/OrderTasks.tsx",
+      "line": 214,
+      "excerpt": "\n                        placeholder=\"        \"\n                        value={noteDrafts[task.id] |"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/AIReportScanner.tsx",
+      "line": 240,
+      "excerpt": "\n                ref={cameraInputRef}\n                type=\"    \"\n                accept=\"       \"\n "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/AIReportScanner.tsx",
+      "line": 248,
+      "excerpt": "\n                ref={fileInputRef}\n                type=\"    \"\n                accept=\"            "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/AISymptomTriage.tsx",
+      "line": 312,
+      "excerpt": "\n                        type=\"      \"\n                        placeholder=\"  \"\n                    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/AISymptomTriage.tsx",
+      "line": 331,
+      "excerpt": "\n                      type=\"    \"\n                      placeholder=\"      \"\n                      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/AISymptomTriage.tsx",
+      "line": 349,
+      "excerpt": "\n                        type=\"      \"\n                        step=\"   \"\n                        pl"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/AISymptomTriage.tsx",
+      "line": 370,
+      "excerpt": "\n                        type=\"      \"\n                        placeholder=\"  \"\n                    "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/patient/EmployeeGamification.tsx",
+      "line": 548,
+      "excerpt": "\n                        key={challenge.id}\n                        onClick={() => setSelectedChalle"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/patient/EmployeeWellnessCalendar.tsx",
+      "line": 581,
+      "excerpt": " \n                          key={event.id}\n                          className=\"                    "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/patient/EmployeeWellnessCalendar.tsx",
+      "line": 823,
+      "excerpt": "\n                          key={day.toISOString()}\n                          onClick={() => setSelec"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/patient/EmployeeWellnessCalendar.tsx",
+      "line": 852,
+      "excerpt": " \n                                  key={evt.id} \n                                  className={cn(' "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/patient/EmployeeWellnessCalendar.tsx",
+      "line": 895,
+      "excerpt": "\n                                key={event.id}\n                                className=\"         "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/patient/MyInsurancePolicies.tsx",
+      "line": 434,
+      "excerpt": "\n                  className={`                                                                     "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/MyInsurancePolicies.tsx",
+      "line": 468,
+      "excerpt": " ref={fileRef} type=\"    \" accept=\"            \" className=\"      \"\n                  onChange={e =>"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/patient/UploadedDocuments.tsx",
+      "line": 215,
+      "excerpt": " type=\"    \" className=\"      \" accept=\"                                \" onChange={e => setUploadFi"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/ProfileEnhanced.tsx",
+      "line": 530,
+      "excerpt": " ref={fileInputRef} type=\"    \" accept=\"       \" className=\"      \" onChange={handleImageUpload} "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/ProfileEnhanced.tsx",
+      "line": 1081,
+      "excerpt": "\n                        type=\"      \"\n                        onClick={handleForgotCurrentPassword}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/Reposts.tsx",
+      "line": 188,
+      "excerpt": "\n                  type=\"    \"\n                  className=\"      \"\n                  accept=\"      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/CorporateHealthBooking.tsx",
+      "line": 1138,
+      "excerpt": " type=\"        \" className=\"                         \" checked={sendEmail} onChange={e => setSendEma"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/CorporateHealthBooking.tsx",
+      "line": 1142,
+      "excerpt": " type=\"        \" className=\"                         \" checked={sendWhatsapp} onChange={e => setSend"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/team/CorporateHealthBooking.tsx",
+      "line": 1371,
+      "excerpt": "\n                        className=\"                                                                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/CorporateHealthBooking.tsx",
+      "line": 1379,
+      "excerpt": "\n                          ref={fileInputRef}\n                          type=\"    \"\n                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/CorporateHealthBooking.tsx",
+      "line": 1429,
+      "excerpt": " type=\"        \" className=\"                          \" checked={rptSendEmail} onChange={e => setRpt"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/CorporateHealthBooking.tsx",
+      "line": 1433,
+      "excerpt": " type=\"        \" className=\"                          \" checked={rptSendWA} onChange={e => setRptSen"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/RFQUnderwritingTab.tsx",
+      "line": 398,
+      "excerpt": "\n              value={searchTerm}\n              onChange={e => setSearchTerm(e.target.value)}\n      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/RFQUnderwritingTab.tsx",
+      "line": 810,
+      "excerpt": "\n                value={chatInput}\n                onChange={e => setChatInput(e.target.value)}\n    "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 179,
+      "excerpt": " placeholder=\"                \" value={search} onChange={e => { setSearch(e.target.value); setPage(1"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 209,
+      "excerpt": " type={type || '    '} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.tar"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 229,
+      "excerpt": " value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder=\"       "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 240,
+      "excerpt": " onClick={handleSave} className=\"                                                                   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 555,
+      "excerpt": " placeholder=\"                  \" value={search} onChange={e => { setSearch(e.target.value); setPage"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 587,
+      "excerpt": " type={type || '    '} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.tar"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 610,
+      "excerpt": " onClick={handleSave} className=\"                                                                   "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 897,
+      "excerpt": " placeholder=\"                             \" value={search} onChange={e => { setSearch(e.target.valu"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1251,
+      "excerpt": " placeholder=\"                              \" value={search} onChange={e => { setSearch(e.target.val"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1301,
+      "excerpt": " value={form.corporateName} onChange={e => handleFormChange('             ', e.target.value)}\n      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1314,
+      "excerpt": " value={form.displayName} onChange={e => handleFormChange('           ', e.target.value)}\n          "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1327,
+      "excerpt": " value={form.planGrade} onChange={e => handleFormChange('         ', e.target.value)}\n              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1333,
+      "excerpt": " type=\"      \" value={form.employeeHeadcount} onChange={e => handleFormChange('                 ', e"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1339,
+      "excerpt": " type=\"      \" value={form.negotiatedPricePerEmp} onChange={e => handleFormChange('                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1345,
+      "excerpt": " type=\"      \" min={0} max={100} value={form.corporateShare} onChange={e => handleFormChange('      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1350,
+      "excerpt": " type=\"      \" min={0} max={100} value={form.employeeShare} onChange={e => handleFormChange('       "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1355,
+      "excerpt": " type=\"    \" value={form.startDate} onChange={e => handleFormChange('         ', e.target.value)}\n  "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1360,
+      "excerpt": " type=\"    \" value={form.endDate} onChange={e => handleFormChange('       ', e.target.value)}\n      "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1365,
+      "excerpt": " value={form.notes} onChange={e => handleFormChange('     ', e.target.value)} placeholder=\"         "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/team/insurance/TeamInsuranceDistributionPages.tsx",
+      "line": 1385,
+      "excerpt": " onClick={handleSave} className=\"                                                                   "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/team/insurance/TeamInsuranceLayout.tsx",
+      "line": 114,
+      "excerpt": " className=\"                                             \" onClick={() => setMobileSidebarOpen(false"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 298,
+      "excerpt": " className=\"        \" onClick={e => e.stopPropagation()}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 486,
+      "excerpt": " ref={fileRef} type=\"    \" accept=\"                                     \" multiple onChange={handleU"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 1068,
+      "excerpt": " ref={fileRef} type=\"    \" accept=\"          \" onChange={handleMemberUpload} className=\"      \" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 1069,
+      "excerpt": " ref={claimsFileRef} type=\"    \" accept=\"               \" onChange={handleClaimsUpload} className=\" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 1070,
+      "excerpt": " ref={reparseFileRef} type=\"    \" accept=\"                                     \" multiple onChange={"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 2972,
+      "excerpt": "\n                onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}\n                onDr"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/insurance/TeamRFQPages.tsx",
+      "line": 2982,
+      "excerpt": "\n                  ref={fileInputRef}\n                  type=\"    \"\n                  multiple\n     "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/team/TeamCorporateManagement.tsx",
+      "line": 5943,
+      "excerpt": " className=\"                                   \" onClick={(e) => e.stopPropagation()}"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/TeamModulePages.tsx",
+      "line": 846,
+      "excerpt": "\n                  type=\"    \"\n                  value={startDate}\n                  onChange={e => "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/TeamModulePages.tsx",
+      "line": 853,
+      "excerpt": "\n                  type=\"    \"\n                  value={endDate}\n                  onChange={e => { "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/team/WhatsAppCommunication.tsx",
+      "line": 235,
+      "excerpt": "\n                      key={conv.id}\n                      onClick={() => setActiveConversation(conv"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/WhatsAppInbox.tsx",
+      "line": 387,
+      "excerpt": "\n                type=\"    \"\n                placeholder=\"                        \"\n                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/WhatsAppInbox.tsx",
+      "line": 703,
+      "excerpt": "\n                              autoFocus\n                              placeholder=\"       \"\n       "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/team/WhatsAppInbox.tsx",
+      "line": 761,
+      "excerpt": "\n                    onClick={handleSend}\n                    disabled={!replyText.trim() || sending"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/team/WhatsAppInbox.tsx",
+      "line": 862,
+      "excerpt": "\n                      type=\"    \"\n                      placeholder=\"            \"\n                "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/tpa/TPAECardPage.tsx",
+      "line": 89,
+      "excerpt": "\n                value={memberId}\n                onChange={(event) => setMemberId(event.target.valu"
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/tpa/TPAECardPage.tsx",
+      "line": 95,
+      "excerpt": "\n                onClick={loadECard}\n                disabled={loading}\n                className=\" "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/tpa/TPAHospitalsPage.tsx",
+      "line": 72,
+      "excerpt": " value={search} onChange={(e) => setSearch(e.target.value)} className=\"                             "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/tpa/TPAHospitalsPage.tsx",
+      "line": 73,
+      "excerpt": " value={city} onChange={(e) => setCity(e.target.value)} className=\"                                 "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/tpa/TPAHospitalsPage.tsx",
+      "line": 74,
+      "excerpt": " value={specialty} onChange={(e) => setSpecialty(e.target.value)} className=\"                       "
+    },
+    {
+      "rule": "button-no-accessible-name",
+      "file": "pages/tpa/TPAHospitalsPage.tsx",
+      "line": 75,
+      "excerpt": " onClick={loadHospitals} disabled={loading} className=\"                                             "
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/user/MyMembershipCard.tsx",
+      "line": 557,
+      "excerpt": "\n              ref={cardRef}\n              className=\"                                              "
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/UserHealthRiskAssessment.tsx",
+      "line": 1251,
+      "excerpt": " type=\"        \" checked={clinicalInputs[key]}\n                            onChange={(e) => setClini"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/UserHealthRiskAssessment.tsx",
+      "line": 1269,
+      "excerpt": " type=\"        \" checked={clinicalInputs[key]}\n                            onChange={(e) => setClini"
+    },
+    {
+      "rule": "clickable-no-keyboard",
+      "file": "pages/UserHealthRiskAssessment.tsx",
+      "line": 1415,
+      "excerpt": "\n                                      key={option.id}\n                                      classNa"
+    },
+    {
+      "rule": "input-no-label",
+      "file": "pages/UserHealthRiskAssessment.tsx",
+      "line": 1429,
+      "excerpt": "\n                                        type=\"     \"\n                                        name={"
+    }
+  ],
+  "counts": {
+    "button-no-accessible-name": 49,
+    "input-no-label": 345,
+    "clickable-no-keyboard": 98
+  }
+}

@@ -186,6 +186,21 @@ schema, fixtures, datasets, translations or prompts were copied or translated.
 The accompanying safety record is [`MEDCORE_ADOPTION_MODEL_CARD.md`](./MEDCORE_ADOPTION_MODEL_CARD.md);
 its approval checklist remains a release gate.
 
+### 3.2 Build-gap tranche completed (2026-10-16)
+
+The following implementation gaps identified during the MedCore comparison are now closed in the
+repository:
+
+| Gap | Implementation | Verification |
+|---|---|---|
+| Accessibility checks were present but absent from CI | `client/scripts/check-accessibility.mjs` and its calibrated `accessibility-baseline.json` are exposed as `npm run test:a11y` and run in the client CI job. The gate fails on a new finding. | `npm run test:a11y` → baseline 492, new 0; client production build passes. |
+| ICD-10 suggestions could be stored without a catalog validation step | `server/services/icd10-catalog.service.js` centralizes bounded search and canonical validation against the imported `icd10_codes` catalog. `GET /api/doctor/clinical-workflow/icd10/search` now uses the service and doctors can call `POST /api/doctor/clinical-workflow/icd10/validate` before persistence/billing. | Dedicated Jest tests cover normalization, bounded search and valid/invalid classification. |
+| Prescription safety audit writes were best-effort | `prescription-safety-gate.service.js` now fails closed when the audit row cannot be written; the adoption route returns `503 safety_audit_unavailable` and never reports a sign-off as allowed. | Dedicated Jest regression test covers database failure; clinical route regression tests pass. |
+
+This tranche does not claim completion of capabilities that require licensed terminology, government or
+provider credentials, real gateway validation, clinician-authored translations/rules, or an external
+audit. Those remain release dependencies listed below and must not be represented as live features.
+
 ### Deployment and clinical release gates
 
 1. Run `cd server && npm run migrate:all` (or apply migration `20261015006100-medcore-adoption.migration.js`).

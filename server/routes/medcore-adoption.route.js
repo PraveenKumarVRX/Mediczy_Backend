@@ -62,6 +62,9 @@ router.post('/drug-safety/signoff', authUser, async (req, res) => {
   try {
     if (!Array.isArray(req.body?.medications) || req.body.medications.length === 0) return res.status(422).json({ success: false, code: 'validation_failed', message: 'medications is required' });
     const result = await evaluatePrescriptionSignoff({ ...req.body, actorId: actorId(req), tenantUid: tenantUid(req) });
+    if (result.status === 'audit_unavailable') {
+      return res.status(503).json({ success: false, code: 'safety_audit_unavailable', result });
+    }
     res.status(result.allowed ? 200 : 409).json({ success: result.allowed, code: result.allowed ? undefined : 'contraindicated_requires_acknowledgement', result });
   } catch (error) {
     res.status(500).json({ success: false, code: 'drug_safety_failed', message: error.message });

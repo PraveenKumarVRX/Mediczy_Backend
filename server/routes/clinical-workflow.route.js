@@ -10,6 +10,7 @@ import llmProvider from '../services/ai-brain/llm-provider.js';
 import { connectPostgres } from '../db/postgres.js';
 import { createCodingSuggestions } from '../services/clinical-intelligence.service.js';
 import { draftSoapNote } from '../services/healthcare-ai-opportunity.service.js';
+import { searchIcd10, validateIcd10Codes } from '../services/icd10-catalog.service.js';
 import {
   createClinicalNote,
   listClinicalNotesForDoctor,
@@ -290,34 +291,28 @@ router.post('/notes/:id/sign', authDoctor, async (req, res) => {
 // ICD-10 Code Search (real database - 72,750 codes from HuggingFace)
 router.get('/icd10/search', authDoctor, async (req, res) => {
   try {
-    const { q } = req.query;
-    if (!q || q.trim().length < 2) {
-      return res.json({ success: true, data: [] });
-    }
-
-    const pool = await connectPostgres();
-    const searchTerm = q.trim();
-
-    // Use full-text search with fallback to ILIKE
-    const result = await pool.query(`
-      SELECT code, description, category
-      FROM icd10_codes
-      WHERE search_vector @@ plainto_tsquery('english', $1)
-         OR code ILIKE $2
-         OR description ILIKE $3
-      ORDER BY
-        CASE WHEN code ILIKE $2 THEN 0 ELSE 1 END,
-        ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
-      LIMIT 20
-    `, [searchTerm, `${searchTerm}%`, `%${searchTerm}%`]);
-
-    res.json({
-      success: true,
-      data: result.rows
-    });
+    const data = await searchIcd10({ query: req.query.q, limit: req.query.limit });
+    res.json({ success: true, data });
   } catch (error) {
     console.error('[ICD-10 Search]', error.message);
     res.status(500).json({ success: false, message: 'Search failed' });
+  }
+});
+
+// Validate codes before they are persisted to a clinical note or sent to billing.
+router.post('/icd10/validate', authDoctor, async (req, res) => {
+  try {
+    if (!Array.isArray(req.body?.codes)) {
+      return res.status(422).json({ success: false, code: 'validation_failed', message: 'codes must be an array' });
+    }
+    if (req.body.codes.length > 100) {
+      return res.status(422).json({ success: false, code: 'validation_failed', message: 'a maximum of 100 codes may be validated' });
+    }
+    const data = await validateIcd10Codes(req.body.codes);
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[ICD-10 Validate]', error.message);
+    res.status(500).json({ success: false, code: 'validation_unavailable', message: 'ICD-10 validation is unavailable' });
   }
 });
 

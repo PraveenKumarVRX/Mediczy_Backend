@@ -35,9 +35,22 @@ export async function evaluatePrescriptionSignoff({ medications = [], patientId 
       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)
     `, [tenantUid, patientId, actorId, JSON.stringify(medications), JSON.stringify(result.interactions || []), status, acknowledgementReason || null]);
   } catch (error) {
-    // The API remains usable during a migration window, but never silently
-    // treats a contraindication as cleared.
+    // A safety decision without an audit row cannot be trusted. Fail closed so
+    // an outage or migration cannot turn a clinically significant decision
+    // into an apparently safe sign-off.
     console.error('[PrescriptionSafetyGate] audit insert failed:', error.message);
+    return {
+      allowed: false,
+      status: 'audit_unavailable',
+      code: 'safety_audit_unavailable',
+      requiresAcknowledgement: contraindicated.length > 0,
+      contraindicated,
+      major,
+      interactions: result.interactions || [],
+      qualityGate: result.qualityGate || null,
+      auditAvailable: false,
+      audit: payload,
+    };
   }
   return {
     allowed: status !== 'blocked',
@@ -47,6 +60,7 @@ export async function evaluatePrescriptionSignoff({ medications = [], patientId 
     major,
     interactions: result.interactions || [],
     qualityGate: result.qualityGate || null,
+    auditAvailable: true,
     audit: payload,
   };
 }

@@ -12,6 +12,7 @@
     "build:low-mem": "NODE_OPTIONS='--max-old-space-size=2048' vite build",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:a11y": "node scripts/check-accessibility.mjs",
     "test:watch": "vitest",
     "preview": "vite preview",
     "deploy": "../deploy-production.sh",
