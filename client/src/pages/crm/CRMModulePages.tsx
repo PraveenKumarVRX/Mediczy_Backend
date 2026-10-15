@@ -17,6 +17,7 @@ import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
 import LeadDetailDrawer from './shared/LeadDetailDrawer';
 import CommandPalette from './shared/CommandPalette';
+import CRMChannelSettings from './CRMChannelSettings';
 
 // ─── Shared sidebar nav config ─────────────────────────────────────────────────
 // Items with a `cap` are visible only to CRM roles that hold that capability
@@ -66,7 +67,7 @@ const sidebarNav = [
   { section: 'INSIGHTS', items: [
     { icon: Brain,    label: 'AI Insights', path: '/crm/ai-insights' },
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
-    { icon: Settings, label: 'Settings', path: '/crm/settings' },
+    { icon: Settings, label: 'Settings & Channels', path: '/crm/settings' },
   ]},
   { section: 'ADMIN', items: [
     { icon: UserPlus, label: 'Team', path: '/crm/team', cap: 'team:manage' },
@@ -1202,8 +1203,8 @@ export function CRMSettingsPage() {
   }, [navigate]);
 
   return (
-    <CRMLayout title="Settings">
-      <div className="max-w-2xl">
+    <CRMLayout title="Settings & Channels">
+      <div className="max-w-6xl">
         <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
           <h3 className="text-base font-semibold text-white mb-5">CRM Profile</h3>
           {crmUser ? (
@@ -1227,6 +1228,7 @@ export function CRMSettingsPage() {
             </div>
           )}
         </div>
+        <CRMChannelSettings crmUser={crmUser} />
       </div>
     </CRMLayout>
   );

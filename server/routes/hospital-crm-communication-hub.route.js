@@ -16,6 +16,11 @@ import {
   sendCrmMessage,
   updateCommunicationHubCampaignStatus,
 } from '../services/hospital-crm-communication-hub.service.js';
+import {
+  listCrmChannelIntegrations,
+  upsertCrmChannelIntegration,
+  testCrmChannelIntegration,
+} from '../services/crm-channel-integrations.service.js';
 
 const router = express.Router();
 router.use(authCRM);
@@ -30,9 +35,9 @@ function tenant(req, res) {
 }
 
 function fail(res, error) {
-  return res.status(error.statusCode || (error.code === '42P01' ? 503 : 500)).json({
+  return res.status(error.statusCode || (['42P01', '42703'].includes(error.code) ? 503 : 500)).json({
     success: false,
-    message: error.code === '42P01' ? 'Communication hub migration is not applied yet' : error.message,
+    message: ['42P01', '42703'].includes(error.code) ? 'Communication hub/channel settings migration is not applied yet' : error.message,
   });
 }
 
@@ -56,6 +61,11 @@ router.post('/campaigns', action((req, tenantId) => createCommunicationHubCampai
 router.patch('/campaigns/:id/status', action((req, tenantId) => updateCommunicationHubCampaignStatus(tenantId, req.params.id, req.body.status, req.crmUser.id), 'communication:write'));
 router.get('/templates', action((req, tenantId) => listCommunicationHubTemplates(tenantId, req.query)));
 router.post('/templates', action((req, tenantId) => createCommunicationHubTemplate({ ...req.body, tenantId }, req.crmUser.id), 'communication:write'));
+// Tenant-owned provider settings. Secret values are accepted only on writes,
+// encrypted at rest, and never included in list/test responses.
+router.get('/integrations', action((req, tenantId) => listCrmChannelIntegrations(tenantId)));
+router.put('/integrations/:channel', action((req, tenantId) => upsertCrmChannelIntegration(tenantId, req.params.channel, req.body, req.crmUser.id), 'communication:write'));
+router.post('/integrations/:channel/test', action((req, tenantId) => testCrmChannelIntegration(tenantId, req.params.channel), 'communication:write'));
 router.patch('/integrations/:id/health', action((req, tenantId) => recordCommunicationIntegrationHealth({ ...req.body, tenantId, integrationId: req.params.id }, req.crmUser.id), 'communication:write'));
 router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id), 'communication:write'));
 
