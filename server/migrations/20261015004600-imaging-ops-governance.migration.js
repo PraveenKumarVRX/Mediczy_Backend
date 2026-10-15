@@ -1,6 +1,4 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS imaging_clinical_claims (
@@ -67,8 +65,8 @@ const statements = [
 ];
 
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     for (const statement of statements) await client.query(statement);
@@ -77,13 +75,13 @@ export async function up() {
     await client.query('ROLLBACK');
     throw error;
   } finally {
-    await client.end();
+    client.release();
   }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query('DROP TABLE IF EXISTS pacs_minio_archive_log CASCADE');
@@ -95,7 +93,7 @@ export async function down() {
     await client.query('ROLLBACK');
     throw error;
   } finally {
-    await client.end();
+    client.release();
   }
 }
 
