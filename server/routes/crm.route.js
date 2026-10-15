@@ -23,434 +23,49 @@ const REFRESH_SCOPE = 'crm';
 const LOCKOUT_WINDOW_MIN = 15;
 const LOCKOUT_MAX_ATTEMPTS = 10;
 
-// ─── Ensure required tables exist ────────────────────────────────────────────
-;(async () => {
-  try {
-    const pool = sharedPool;
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
-        id             BIGSERIAL   PRIMARY KEY,
-        jti            UUID        NOT NULL UNIQUE,
-        user_id        INTEGER     NOT NULL,
-        role           VARCHAR(50) NOT NULL,
-        token_hash     VARCHAR(64) NOT NULL,
-        expires_at     TIMESTAMPTZ NOT NULL,
-        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
-        revoked_at     TIMESTAMPTZ,
-        replaced_by_jti UUID,
-        ip_address     TEXT,
-        user_agent     TEXT,
-        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
+// ─── Schema readiness ─────────────────────────────────────────────────────────
+// CRM tables are deployment-owned. Requests fail closed until the registered
+// migration has run; this route never creates or alters tables at import time.
+const CRM_SCHEMA_TABLES = ['api_v2_refresh_tokens', 'crm_refresh_tokens', 'crm_login_attempts', 'crm_leads', 'crm_deals', 'crm_activities', 'crm_contacts', 'crm_rfqs', 'crm_rfq_members', 'crm_quotes', 'crm_rfq_claims', 'crm_rfq_files', 'crm_rfq_audit_log', 'crm_product_tc_master', 'crm_agencies', 'crm_agents', 'crm_commissions', 'crm_corporate_health_plans'];
+let crmSchemaPromise = null;
 
-      CREATE TABLE IF NOT EXISTS crm_refresh_tokens (
-        id         BIGSERIAL   PRIMARY KEY,
-        jti        UUID        NOT NULL UNIQUE,
-        user_id    INTEGER     NOT NULL,
-        token_hash VARCHAR(64) NOT NULL,
-        issued_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at TIMESTAMPTZ NOT NULL,
-        revoked    BOOLEAN     NOT NULL DEFAULT FALSE,
-        revoked_at TIMESTAMPTZ,
-        device_fp  VARCHAR(64),
-        ip_address VARCHAR(45)
-      );
-      CREATE INDEX IF NOT EXISTS idx_crt_jti     ON crm_refresh_tokens(jti);
-      CREATE INDEX IF NOT EXISTS idx_crt_user_id ON crm_refresh_tokens(user_id);
-
-      CREATE TABLE IF NOT EXISTS crm_login_attempts (
-        id         BIGSERIAL    PRIMARY KEY,
-        email      VARCHAR(255) NOT NULL,
-        ip_address VARCHAR(45),
-        succeeded  BOOLEAN      NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_cla_email_ts
-        ON crm_login_attempts(email, created_at);
-
-      CREATE TABLE IF NOT EXISTS crm_leads (
-        id              BIGSERIAL    PRIMARY KEY,
-        name            VARCHAR(255) NOT NULL,
-        email           VARCHAR(255),
-        phone           VARCHAR(50),
-        company         VARCHAR(255),
-        designation     VARCHAR(255),
-        source          VARCHAR(100) DEFAULT 'manual',
-        status          VARCHAR(50)  NOT NULL DEFAULT 'new',
-        priority        VARCHAR(20)  DEFAULT 'medium',
-        assigned_to     INTEGER,
-        notes           TEXT,
-        tags            JSONB        DEFAULT '[]'::jsonb,
-        custom_fields   JSONB        DEFAULT '{}'::jsonb,
-        last_contacted  TIMESTAMPTZ,
-        next_followup   TIMESTAMPTZ,
-        converted_at    TIMESTAMPTZ,
-        deal_id         BIGINT,
-        created_by      INTEGER      NOT NULL,
-        created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_leads_status      ON crm_leads(status);
-      CREATE INDEX IF NOT EXISTS idx_leads_assigned     ON crm_leads(assigned_to);
-      CREATE INDEX IF NOT EXISTS idx_leads_source       ON crm_leads(source);
-      CREATE INDEX IF NOT EXISTS idx_leads_next_followup ON crm_leads(next_followup);
-
-      ALTER TABLE crm_leads ADD COLUMN IF NOT EXISTS score INTEGER DEFAULT 0;
-      CREATE INDEX IF NOT EXISTS idx_leads_score ON crm_leads(score);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_leadgen_id
-        ON crm_leads ((custom_fields->>'leadgen_id'))
-        WHERE custom_fields->>'leadgen_id' IS NOT NULL AND custom_fields->>'leadgen_id' != '';
-
-      CREATE TABLE IF NOT EXISTS crm_deals (
-        id              BIGSERIAL    PRIMARY KEY,
-        title           VARCHAR(255) NOT NULL,
-        lead_id         BIGINT,
-        value           NUMERIC(15,2) DEFAULT 0,
-        currency        VARCHAR(10)  DEFAULT 'INR',
-        stage           VARCHAR(50)  NOT NULL DEFAULT 'qualification',
-        probability     INTEGER      DEFAULT 10 CHECK (probability >= 0 AND probability <= 100),
-        expected_close  DATE,
-        assigned_to     INTEGER,
-        contact_name    VARCHAR(255),
-        contact_email   VARCHAR(255),
-        contact_phone   VARCHAR(50),
-        company         VARCHAR(255),
-        notes           TEXT,
-        tags            JSONB        DEFAULT '[]'::jsonb,
-        won_at          TIMESTAMPTZ,
-        lost_at         TIMESTAMPTZ,
-        lost_reason     TEXT,
-        created_by      INTEGER      NOT NULL,
-        created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_deals_stage     ON crm_deals(stage);
-      CREATE INDEX IF NOT EXISTS idx_deals_assigned  ON crm_deals(assigned_to);
-      CREATE INDEX IF NOT EXISTS idx_deals_lead      ON crm_deals(lead_id);
-
-      CREATE TABLE IF NOT EXISTS crm_activities (
-        id           BIGSERIAL    PRIMARY KEY,
-        type         VARCHAR(50)  NOT NULL,
-        title        VARCHAR(255) NOT NULL,
-        description  TEXT,
-        lead_id      BIGINT,
-        deal_id      BIGINT,
-        scheduled_at TIMESTAMPTZ,
-        completed_at TIMESTAMPTZ,
-        outcome      VARCHAR(100),
-        created_by   INTEGER      NOT NULL,
-        created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_activities_lead ON crm_activities(lead_id);
-      CREATE INDEX IF NOT EXISTS idx_activities_deal ON crm_activities(deal_id);
-      CREATE INDEX IF NOT EXISTS idx_activities_type ON crm_activities(type);
-
-      CREATE TABLE IF NOT EXISTS crm_contacts (
-        id           BIGSERIAL    PRIMARY KEY,
-        name         VARCHAR(255) NOT NULL,
-        email        VARCHAR(255),
-        phone        VARCHAR(50),
-        company      VARCHAR(255),
-        designation  VARCHAR(255),
-        address      TEXT,
-        city         VARCHAR(100),
-        state        VARCHAR(100),
-        tags         JSONB        DEFAULT '[]'::jsonb,
-        notes        TEXT,
-        lead_id      BIGINT,
-        created_by   INTEGER      NOT NULL,
-        created_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_contacts_email   ON crm_contacts(email);
-      CREATE INDEX IF NOT EXISTS idx_contacts_company  ON crm_contacts(company);
-    `);
-    // ─── RFQ tables ────────────────────────────────────────────────────────
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS crm_rfqs (
-        id                BIGSERIAL    PRIMARY KEY,
-        rfq_number        VARCHAR(50)  NOT NULL UNIQUE,
-        status            VARCHAR(30)  NOT NULL DEFAULT 'received',
-        broker_name       VARCHAR(255),
-        broker_company    VARCHAR(255),
-        broker_email      VARCHAR(255),
-        broker_phone      VARCHAR(50),
-        insured_name      VARCHAR(500) NOT NULL,
-        insured_address   TEXT,
-        policy_type       VARCHAR(100) DEFAULT 'Group Mediclaim',
-        product_type      VARCHAR(100) DEFAULT 'OPD',
-        existing_insurer  VARCHAR(255),
-        existing_tpa      VARCHAR(255),
-        policy_start      DATE,
-        policy_end        DATE,
-        premium_paid      NUMERIC(15,2),
-        lives_at_inception JSONB DEFAULT '{}'::jsonb,
-        lives_at_renewal   JSONB DEFAULT '{}'::jsonb,
-        coverage_scope    JSONB DEFAULT '{}'::jsonb,
-        special_conditions JSONB DEFAULT '[]'::jsonb,
-        exclusions        TEXT,
-        terms_and_conditions TEXT,
-        notes             TEXT,
-        existing_coverages TEXT,
-        required_coverages TEXT,
-        member_count      INTEGER DEFAULT 0,
-        sum_insured_slabs JSONB DEFAULT '[]'::jsonb,
-        deal_id           BIGINT,
-        lead_id           BIGINT,
-        assigned_to       INTEGER,
-        created_by        INTEGER NOT NULL,
-        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        slip_file_key     TEXT,
-        lost_reason       TEXT,
-        industry          VARCHAR(100),
-        ai_quote_data     JSONB
-      );
-      CREATE INDEX IF NOT EXISTS idx_rfqs_status ON crm_rfqs(status);
-      CREATE INDEX IF NOT EXISTS idx_rfqs_number ON crm_rfqs(rfq_number);
-      CREATE INDEX IF NOT EXISTS idx_rfqs_insured ON crm_rfqs(insured_name);
-
-      CREATE TABLE IF NOT EXISTS crm_rfq_members (
-        id            BIGSERIAL PRIMARY KEY,
-        rfq_id        BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-        sr_no         INTEGER,
-        emp_code      VARCHAR(50),
-        relationship  VARCHAR(50),
-        relation_type VARCHAR(50),
-        gender        VARCHAR(10),
-        dob           DATE,
-        age           INTEGER,
-        si_expiring   NUMERIC(12,2) DEFAULT 0,
-        si_proposed   NUMERIC(12,2) DEFAULT 0,
-        designation   VARCHAR(255),
-        band          VARCHAR(20),
-        doj           DATE,
-        employee_name VARCHAR(255),
-        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_rfq_members_rfq ON crm_rfq_members(rfq_id);
-      CREATE INDEX IF NOT EXISTS idx_rfq_members_emp ON crm_rfq_members(emp_code);
-
-      CREATE TABLE IF NOT EXISTS crm_quotes (
-        id              BIGSERIAL PRIMARY KEY,
-        rfq_id          BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-        quote_number    VARCHAR(50) NOT NULL UNIQUE,
-        status          VARCHAR(30) NOT NULL DEFAULT 'draft',
-        version         INTEGER DEFAULT 1,
-        valid_until     DATE,
-        total_premium   NUMERIC(15,2) DEFAULT 0,
-        total_lives     INTEGER DEFAULT 0,
-        per_life_cost   NUMERIC(12,2) DEFAULT 0,
-        per_family_cost NUMERIC(12,2) DEFAULT 0,
-        pricing_model   VARCHAR(50) DEFAULT 'per_family',
-        commission_pct  NUMERIC(5,2) DEFAULT 0,
-        gst_pct         NUMERIC(5,2) DEFAULT 18,
-        discount_pct    NUMERIC(5,2) DEFAULT 0,
-        coverage_details JSONB DEFAULT '{}'::jsonb,
-        slab_pricing    JSONB DEFAULT '[]'::jsonb,
-        terms           TEXT,
-        sent_at         TIMESTAMPTZ,
-        notes           TEXT,
-        created_by      INTEGER NOT NULL,
-        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_quotes_rfq ON crm_quotes(rfq_id);
-      CREATE INDEX IF NOT EXISTS idx_quotes_status ON crm_quotes(status);
-
-      CREATE TABLE IF NOT EXISTS crm_rfq_claims (
-        id              BIGSERIAL PRIMARY KEY,
-        rfq_id          BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-        claim_number    VARCHAR(200),
-        emp_code        VARCHAR(50),
-        employee_name   VARCHAR(255),
-        relationship    VARCHAR(50),
-        gender          VARCHAR(10),
-        age             INTEGER,
-        claim_date      DATE,
-        service_type    VARCHAR(100),
-        service_category VARCHAR(100),
-        diagnosis       VARCHAR(500),
-        provider_name   VARCHAR(255),
-        provider_type   VARCHAR(100),
-        claimed_amount  NUMERIC(12,2) DEFAULT 0,
-        approved_amount NUMERIC(12,2) DEFAULT 0,
-        paid_amount     NUMERIC(12,2) DEFAULT 0,
-        icd_code        VARCHAR(20),
-        rejection_reason VARCHAR(255),
-        claim_status    VARCHAR(100),
-        policy_year     VARCHAR(50),
-        si_amount       NUMERIC(12,2) DEFAULT 0,
-        band            VARCHAR(100),
-        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_rfq_claims_rfq ON crm_rfq_claims(rfq_id);
-      CREATE INDEX IF NOT EXISTS idx_rfq_claims_emp ON crm_rfq_claims(emp_code);
-      CREATE INDEX IF NOT EXISTS idx_rfq_claims_svc ON crm_rfq_claims(service_type);
-      CREATE INDEX IF NOT EXISTS idx_rfq_claims_date ON crm_rfq_claims(claim_date);
-
-      CREATE TABLE IF NOT EXISTS crm_rfq_files (
-        id            BIGSERIAL PRIMARY KEY,
-        rfq_id        BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
-        category      VARCHAR(30) NOT NULL DEFAULT 'other',
-        original_name VARCHAR(500) NOT NULL,
-        s3_key        TEXT NOT NULL,
-        file_size     BIGINT DEFAULT 0,
-        mime_type     VARCHAR(100),
-        uploaded_by   INTEGER,
-        uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_rfq_files_rfq ON crm_rfq_files(rfq_id);
-
-      CREATE TABLE IF NOT EXISTS crm_rfq_audit_log (
-        id          BIGSERIAL    PRIMARY KEY,
-        rfq_id      BIGINT       NOT NULL,
-        event_type  VARCHAR(50)  NOT NULL,
-        old_value   TEXT,
-        new_value   TEXT,
-        changed_by  INTEGER,
-        note        TEXT,
-        created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_rfq_audit_rfq ON crm_rfq_audit_log(rfq_id);
-      CREATE INDEX IF NOT EXISTS idx_rfq_audit_ts  ON crm_rfq_audit_log(created_at);
-    `);
-
-    // ─── Product T&C Master ────────────────────────────────────────────────
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS crm_product_tc_master (
-        id            BIGSERIAL    PRIMARY KEY,
-        product_type  VARCHAR(50)  NOT NULL,
-        section       VARCHAR(100) NOT NULL DEFAULT 'general',
-        title         VARCHAR(255) NOT NULL,
-        content       TEXT         NOT NULL,
-        source_rfq_id BIGINT       REFERENCES crm_rfqs(id) ON DELETE SET NULL,
-        is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
-        is_pending    BOOLEAN      NOT NULL DEFAULT FALSE,
-        sort_order    INTEGER      NOT NULL DEFAULT 0,
-        created_by    INTEGER,
-        updated_by    INTEGER,
-        created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_tc_master_product  ON crm_product_tc_master(product_type);
-      CREATE INDEX IF NOT EXISTS idx_tc_master_active   ON crm_product_tc_master(is_active);
-      CREATE INDEX IF NOT EXISTS idx_tc_master_pending  ON crm_product_tc_master(is_pending);
-    `);
-
-    // ─── Distribution tables ───────────────────────────────────────────────
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS crm_agencies (
-        id                  BIGSERIAL    PRIMARY KEY,
-        name                VARCHAR(255) NOT NULL,
-        owner_name          VARCHAR(255),
-        email               VARCHAR(255),
-        phone               VARCHAR(50),
-        city                VARCHAR(100),
-        territory           VARCHAR(255),
-        gstin               VARCHAR(50),
-        onboarding_step     INTEGER      NOT NULL DEFAULT 1 CHECK (onboarding_step BETWEEN 1 AND 5),
-        status              VARCHAR(20)  NOT NULL DEFAULT 'onboarding',
-        monthly_activations INTEGER      NOT NULL DEFAULT 0,
-        agent_count         INTEGER      NOT NULL DEFAULT 0,
-        total_override      NUMERIC(15,2) NOT NULL DEFAULT 0,
-        notes               TEXT,
-        created_by          INTEGER      NOT NULL,
-        created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_crm_agencies_status ON crm_agencies(status);
-      CREATE INDEX IF NOT EXISTS idx_crm_agencies_city   ON crm_agencies(city);
-
-      CREATE TABLE IF NOT EXISTS crm_agents (
-        id                  BIGSERIAL    PRIMARY KEY,
-        name                VARCHAR(255) NOT NULL,
-        email               VARCHAR(255),
-        phone               VARCHAR(50),
-        city                VARCHAR(100),
-        channel_type        VARCHAR(50)  NOT NULL DEFAULT 'IFA',
-        agent_code          VARCHAR(50)  UNIQUE,
-        agency_id           BIGINT       REFERENCES crm_agencies(id) ON DELETE SET NULL,
-        status              VARCHAR(20)  NOT NULL DEFAULT 'active',
-        notes               TEXT,
-        total_activations   INTEGER      NOT NULL DEFAULT 0,
-        total_earned        NUMERIC(15,2) NOT NULL DEFAULT 0,
-        pending_payout      NUMERIC(15,2) NOT NULL DEFAULT 0,
-        created_by          INTEGER      NOT NULL,
-        created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_crm_agents_channel ON crm_agents(channel_type);
-      CREATE INDEX IF NOT EXISTS idx_crm_agents_city    ON crm_agents(city);
-      CREATE INDEX IF NOT EXISTS idx_crm_agents_status  ON crm_agents(status);
-      CREATE INDEX IF NOT EXISTS idx_crm_agents_agency  ON crm_agents(agency_id);
-
-      CREATE TABLE IF NOT EXISTS crm_commissions (
-        id                  BIGSERIAL    PRIMARY KEY,
-        agent_id            BIGINT       REFERENCES crm_agents(id) ON DELETE SET NULL,
-        agent_code          VARCHAR(50),
-        agent_name          VARCHAR(255),
-        subscriber_name     VARCHAR(255),
-        subscriber_phone    VARCHAR(50),
-        subscriber_email    VARCHAR(255),
-        plan_code           VARCHAR(50),
-        amount              NUMERIC(12,2) NOT NULL DEFAULT 0,
-        commission_type     VARCHAR(20)  NOT NULL DEFAULT 'y1',
-        activation_date     DATE,
-        eligible_date       DATE,
-        status              VARCHAR(20)  NOT NULL DEFAULT 'pending',
-        paid_at             TIMESTAMPTZ,
-        clawback_reason     TEXT,
-        notes               TEXT,
-        created_by          INTEGER      NOT NULL,
-        created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_crm_commissions_agent   ON crm_commissions(agent_id);
-      CREATE INDEX IF NOT EXISTS idx_crm_commissions_status  ON crm_commissions(status);
-      CREATE INDEX IF NOT EXISTS idx_crm_commissions_plan    ON crm_commissions(plan_code);
-      CREATE INDEX IF NOT EXISTS idx_crm_commissions_eligible ON crm_commissions(eligible_date);
-
-      CREATE TABLE IF NOT EXISTS crm_corporate_health_plans (
-        id                      BIGSERIAL    PRIMARY KEY,
-        corporate_id            INTEGER,
-        corporate_name          VARCHAR(255) NOT NULL,
-        plan_template_code      VARCHAR(50)  NOT NULL,
-        display_name            VARCHAR(255) NOT NULL,
-        plan_year               INTEGER      NOT NULL DEFAULT EXTRACT(YEAR FROM NOW()),
-        plan_grade              VARCHAR(100),
-        contract_ref            VARCHAR(50)  UNIQUE,
-        negotiated_price_per_emp NUMERIC(10,2),
-        employee_headcount      INTEGER      NOT NULL DEFAULT 0,
-        corporate_share         NUMERIC(5,2) NOT NULL DEFAULT 100.00,
-        employee_share          NUMERIC(5,2) NOT NULL DEFAULT 0.00,
-        start_date              DATE,
-        end_date                DATE,
-        status                  VARCHAR(20)  NOT NULL DEFAULT 'draft',
-        renewal_of_id           BIGINT       REFERENCES crm_corporate_health_plans(id) ON DELETE SET NULL,
-        notes                   TEXT,
-        contract_doc_url        VARCHAR(500),
-        created_by              INTEGER      NOT NULL,
-        created_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at              TIMESTAMPTZ  NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_corp_plans_corporate ON crm_corporate_health_plans(corporate_id);
-      CREATE INDEX IF NOT EXISTS idx_corp_plans_status    ON crm_corporate_health_plans(status);
-      CREATE INDEX IF NOT EXISTS idx_corp_plans_year      ON crm_corporate_health_plans(plan_year);
-      CREATE INDEX IF NOT EXISTS idx_corp_plans_renewal   ON crm_corporate_health_plans(renewal_of_id);
-
-      ALTER TABLE crm_corporate_health_plans ADD COLUMN IF NOT EXISTS rfq_id BIGINT REFERENCES crm_rfqs(id) ON DELETE SET NULL;
-      CREATE INDEX IF NOT EXISTS idx_corp_plans_rfq ON crm_corporate_health_plans(rfq_id);
-    `);
-    console.log('[CRM] DB tables initialized (incl. RFQ + Claims + Distribution + Corporate Plans)');
-  } catch (err) {
-    console.error('[CRM] DB table init error:', err.message);
+async function ensureCrmSchema() {
+  if (!crmSchemaPromise) {
+    crmSchemaPromise = sharedPool.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ANY($1::text[])`,
+      [CRM_SCHEMA_TABLES]
+    ).then(({ rows }) => {
+      const present = new Set(rows.map((row) => row.table_name));
+      const missingTables = CRM_SCHEMA_TABLES.filter((table) => !present.has(table));
+      if (missingTables.length) {
+        const error = new Error('CRM schema migration has not been applied');
+        error.status = 503;
+        error.code = 'SCHEMA_NOT_MIGRATED';
+        error.details = { missingTables };
+        throw error;
+      }
+    }).catch((error) => {
+      crmSchemaPromise = null;
+      throw error;
+    });
   }
-})();
+  return crmSchemaPromise;
+}
+
+router.use(async (req, res, next) => {
+  try {
+    await ensureCrmSchema();
+    next();
+  } catch (error) {
+    const status = Number.isInteger(error.status) ? error.status : 503;
+    res.status(status).json({
+      success: false,
+      code: error.code || 'SCHEMA_UNAVAILABLE',
+      message: error.message || 'CRM schema is unavailable',
+      details: error.details,
+    });
+  }
+});
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 async function checkLockout(email, ip) {
@@ -751,6 +366,11 @@ router.get('/profile', authCRM, async (req, res) => {
 router.get('/dashboard/stats', authCRM, async (req, res) => {
   try {
     const pool = sharedPool;
+    // Leads carry real, multi-tenant data → scope by the caller's tenant (via the v2 twin). Deals,
+    // activities and legacy contacts have no tenant column and are currently empty; they stay
+    // un-scoped until a schema migration adds tenant_uid to them (see follow-up notes).
+    const leadStatParams = [];
+    const leadStatScope = scopeLeadToTenant('id', req.crmUser.tenantUid, leadStatParams);
     const [leads, deals, activities, contacts] = await Promise.all([
       pool.query(`SELECT
         COUNT(*) AS total,
@@ -761,7 +381,7 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'lost')        AS lost,
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS this_week,
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS this_month
-      FROM crm_leads`),
+      FROM crm_leads WHERE ${leadStatScope}`, leadStatParams),
       pool.query(`SELECT
         COUNT(*) AS total,
         COALESCE(SUM(value), 0) AS total_value,
@@ -771,7 +391,7 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
         COUNT(*) FILTER (WHERE stage NOT IN ('won','lost')) AS active_count,
         COALESCE(AVG(probability) FILTER (WHERE stage NOT IN ('won','lost')), 0) AS avg_probability,
         COALESCE(SUM(value * probability / 100.0) FILTER (WHERE stage NOT IN ('won','lost')), 0) AS weighted_pipeline
-      FROM crm_deals`),
+      FROM crm_deals WHERE tenant_uid = $1`, [req.crmUser.tenantUid || null]),
       pool.query(`SELECT
         COUNT(*) AS total,
         COUNT(*) FILTER (WHERE completed_at IS NOT NULL) AS completed,
@@ -780,8 +400,8 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
         COUNT(*) FILTER (WHERE type = 'call')  AS calls,
         COUNT(*) FILTER (WHERE type = 'email') AS emails,
         COUNT(*) FILTER (WHERE type = 'meeting') AS meetings
-      FROM crm_activities`),
-      pool.query(`SELECT COUNT(*) AS total FROM crm_contacts`)
+      FROM crm_activities WHERE tenant_uid = $1`, [req.crmUser.tenantUid || null]),
+      pool.query(`SELECT COUNT(*) AS total FROM crm_contacts WHERE tenant_uid = $1`, [req.crmUser.tenantUid || null])
     ]);
     return res.status(200).json({
       success: true,
@@ -797,6 +417,14 @@ router.get('/dashboard/stats', authCRM, async (req, res) => {
 // LEADS CRUD
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Legacy crm_leads has NO tenant column; its v2 twin crm_leads_v2 carries the unambiguous tenant_uid
+// (1:1 via legacy_lead_id). Scope legacy-lead queries to the caller's tenant THROUGH the twin.
+// Fail-closed: a null/absent tenantUid matches nothing — we never fall back to showing all tenants.
+function scopeLeadToTenant(idCol, tenantUid, params) {
+  params.push(tenantUid || null);
+  return `${idCol} IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $${params.length} AND legacy_lead_id IS NOT NULL)`;
+}
+
 router.get('/leads', authCRM, async (req, res) => {
   try {
     const pool = sharedPool;
@@ -808,7 +436,8 @@ router.get('/leads', authCRM, async (req, res) => {
     if (priority && priority !== 'all') { params.push(priority); conditions.push(`priority = $${params.length}`); }
     if (assigned_to) { params.push(parseInt(assigned_to)); conditions.push(`assigned_to = $${params.length}`); }
     if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length} OR company ILIKE $${params.length} OR phone ILIKE $${params.length})`); }
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    conditions.push(scopeLeadToTenant('id', req.crmUser.tenantUid, params)); // tenant isolation (always applied)
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const allowedSorts = ['created_at', 'updated_at', 'name', 'status', 'priority', 'next_followup'];
     const sort = allowedSorts.includes(sortBy) ? sortBy : 'created_at';
     const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
@@ -830,14 +459,19 @@ router.post('/leads', authCRM, [body('name').notEmpty().withMessage('Lead name i
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [name, email||null, phone||null, company||null, designation||null, source||'manual', status||'new', priority||'medium', notes||null, JSON.stringify(tags||[]), next_followup||null, req.crmUser.id, req.crmUser.id]
     );
-    syncLegacyLeadToV2(rows[0].id).catch(() => {});
+    // Associate the new lead's v2 twin with the CREATOR's tenant (not the hardcoded default), so it
+    // belongs to — and is visible to — only that tenant. Works for tenants-table tenants
+    // (hospital/clinic/broker); corporate-tenant uid derivation is a known follow-up (see notes).
+    syncLegacyLeadToV2(rows[0].id, req.crmUser.tenantId || undefined).catch(() => {});
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create lead' }); }
 });
 
 router.get('/leads/:id', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(`SELECT * FROM crm_leads WHERE id = $1`, [req.params.id]);
+    const params = [req.params.id];
+    const scope = scopeLeadToTenant('id', req.crmUser.tenantUid, params);
+    const { rows } = await sharedPool.query(`SELECT * FROM crm_leads WHERE id = $1 AND ${scope}`, params);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
     const activities = await sharedPool.query(`SELECT * FROM crm_activities WHERE lead_id = $1 ORDER BY created_at DESC LIMIT 50`, [req.params.id]);
     return res.status(200).json({ success: true, data: { ...rows[0], activities: activities.rows } });
@@ -892,18 +526,22 @@ router.put('/leads/:id', authCRM, async (req, res) => {
   try {
     const { name, email, phone, company, designation, source, status, priority, notes, tags, assigned_to, next_followup } = req.body;
 
-    const prevRes = await sharedPool.query(`SELECT status FROM crm_leads WHERE id = $1`, [req.params.id]);
+    const prevParams = [req.params.id];
+    const prevScope = scopeLeadToTenant('id', req.crmUser.tenantUid, prevParams);
+    const prevRes = await sharedPool.query(`SELECT status FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
     if (!prevRes.rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
     const previousStatus = prevRes.rows[0].status;
 
+    const upParams = [name, email, phone, company, designation, source, status, priority, notes, tags?JSON.stringify(tags):null, assigned_to, next_followup, req.params.id];
+    const upScope = scopeLeadToTenant('id', req.crmUser.tenantUid, upParams); // tenant guard on the write
     const { rows } = await sharedPool.query(
       `UPDATE crm_leads SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone),
        company=COALESCE($4,company), designation=COALESCE($5,designation), source=COALESCE($6,source),
        status=COALESCE($7,status), priority=COALESCE($8,priority), notes=COALESCE($9,notes), tags=COALESCE($10,tags),
        assigned_to=COALESCE($11,assigned_to), next_followup=COALESCE($12,next_followup),
        converted_at=CASE WHEN $7='converted' AND converted_at IS NULL THEN NOW() ELSE converted_at END,
-       updated_at=NOW() WHERE id=$13 RETURNING *`,
-      [name, email, phone, company, designation, source, status, priority, notes, tags?JSON.stringify(tags):null, assigned_to, next_followup, req.params.id]
+       updated_at=NOW() WHERE id=$13 AND ${upScope} RETURNING *`,
+      upParams
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
 
@@ -911,7 +549,9 @@ router.put('/leads/:id', authCRM, async (req, res) => {
     if (status && newStatus !== previousStatus) {
       handleLeadStatusChange(rows[0].id, previousStatus, newStatus).catch(() => {});
     }
-    syncLegacyLeadToV2(rows[0].id).catch(() => {});
+    // Keep the twin on the lead's own tenant (the updater is the same tenant, enforced by the scope
+    // guard above) — never let a re-sync move the lead to the hardcoded default tenant.
+    syncLegacyLeadToV2(rows[0].id, req.crmUser.tenantId || undefined).catch(() => {});
 
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to update lead' }); }
@@ -919,7 +559,9 @@ router.put('/leads/:id', authCRM, async (req, res) => {
 
 router.delete('/leads/:id', authCRM, async (req, res) => {
   try {
-    const { rowCount } = await sharedPool.query(`DELETE FROM crm_leads WHERE id = $1`, [req.params.id]);
+    const delParams = [req.params.id];
+    const delScope = scopeLeadToTenant('id', req.crmUser.tenantUid, delParams);
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_leads WHERE id = $1 AND ${delScope}`, delParams);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Lead not found' });
     removeLegacyLeadFromV2(req.params.id).catch(() => {});
     return res.status(200).json({ success: true, message: 'Lead deleted' });
@@ -950,7 +592,8 @@ router.get('/deals', authCRM, async (req, res) => {
     if (stage && stage !== 'all') { params.push(stage); conditions.push(`stage = $${params.length}`); }
     if (assigned_to) { params.push(parseInt(assigned_to)); conditions.push(`assigned_to = $${params.length}`); }
     if (search) { params.push(`%${search}%`); conditions.push(`(title ILIKE $${params.length} OR contact_name ILIKE $${params.length} OR company ILIKE $${params.length})`); }
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(req.crmUser.tenantUid || null); conditions.push(`tenant_uid = $${params.length}`); // tenant isolation (fail-closed)
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const allowedSorts = ['created_at','updated_at','title','value','stage','expected_close','probability'];
     const sort = allowedSorts.includes(sortBy) ? sortBy : 'created_at';
     const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
@@ -968,11 +611,11 @@ router.post('/deals', authCRM, [body('title').notEmpty().withMessage('Deal title
   try {
     const { title, lead_id, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags } = req.body;
     const { rows } = await sharedPool.query(
-      `INSERT INTO crm_deals (title,lead_id,value,currency,stage,probability,expected_close,contact_name,contact_email,contact_phone,company,notes,tags,assigned_to,created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
-      [title, lead_id||null, value||0, currency||'INR', stage||'qualification', probability||10, expected_close||null, contact_name||null, contact_email||null, contact_phone||null, company||null, notes||null, JSON.stringify(tags||[]), req.crmUser.id, req.crmUser.id]
+      `INSERT INTO crm_deals (title,lead_id,value,currency,stage,probability,expected_close,contact_name,contact_email,contact_phone,company,notes,tags,assigned_to,created_by,tenant_uid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [title, lead_id||null, value||0, currency||'INR', stage||'qualification', probability||10, expected_close||null, contact_name||null, contact_email||null, contact_phone||null, company||null, notes||null, JSON.stringify(tags||[]), req.crmUser.id, req.crmUser.id, req.crmUser.tenantUid || null]
     );
-    if (lead_id) { await sharedPool.query(`UPDATE crm_leads SET deal_id=$1, updated_at=NOW() WHERE id=$2`, [rows[0].id, lead_id]); }
+    if (lead_id) { await sharedPool.query(`UPDATE crm_leads SET deal_id=$1, updated_at=NOW() WHERE id=$2 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $3 AND legacy_lead_id IS NOT NULL)`, [rows[0].id, lead_id, req.crmUser.tenantUid || null]); }
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create deal' }); }
 });
@@ -989,8 +632,8 @@ router.put('/deals/:id', authCRM, async (req, res) => {
        won_at=CASE WHEN $4='won' AND won_at IS NULL THEN NOW() ELSE won_at END,
        lost_at=CASE WHEN $4='lost' AND lost_at IS NULL THEN NOW() ELSE lost_at END,
        lost_reason=CASE WHEN $4='lost' THEN COALESCE($14,lost_reason) ELSE lost_reason END,
-       updated_at=NOW() WHERE id=$15 RETURNING *`,
-      [title, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags?JSON.stringify(tags):null, assigned_to, lost_reason, req.params.id]
+       updated_at=NOW() WHERE id=$15 AND tenant_uid=$16 RETURNING *`,
+      [title, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags?JSON.stringify(tags):null, assigned_to, lost_reason, req.params.id, req.crmUser.tenantUid || null]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Deal not found' });
     return res.status(200).json({ success: true, data: rows[0] });
@@ -999,7 +642,7 @@ router.put('/deals/:id', authCRM, async (req, res) => {
 
 router.delete('/deals/:id', authCRM, async (req, res) => {
   try {
-    const { rowCount } = await sharedPool.query(`DELETE FROM crm_deals WHERE id = $1`, [req.params.id]);
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_deals WHERE id = $1 AND tenant_uid = $2`, [req.params.id, req.crmUser.tenantUid || null]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Deal not found' });
     return res.status(200).json({ success: true, message: 'Deal deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete deal' }); }
@@ -1018,7 +661,8 @@ router.get('/activities', authCRM, async (req, res) => {
     if (lead_id) { params.push(parseInt(lead_id)); conditions.push(`lead_id = $${params.length}`); }
     if (deal_id) { params.push(parseInt(deal_id)); conditions.push(`deal_id = $${params.length}`); }
     if (overdue === 'true') { conditions.push(`completed_at IS NULL AND scheduled_at < NOW()`); }
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(req.crmUser.tenantUid || null); conditions.push(`tenant_uid = $${params.length}`); // tenant isolation (fail-closed)
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const [countRes, dataRes] = await Promise.all([
       sharedPool.query(`SELECT COUNT(*) FROM crm_activities ${where}`, params),
       sharedPool.query(`SELECT * FROM crm_activities ${where} ORDER BY COALESCE(scheduled_at,created_at) DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, parseInt(limit), offset])
@@ -1032,17 +676,17 @@ router.post('/activities', authCRM, [body('type').notEmpty(), body('title').notE
   try {
     const { type, title, description, lead_id, deal_id, scheduled_at } = req.body;
     const { rows } = await sharedPool.query(
-      `INSERT INTO crm_activities (type,title,description,lead_id,deal_id,scheduled_at,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [type, title, description||null, lead_id||null, deal_id||null, scheduled_at||null, req.crmUser.id]
+      `INSERT INTO crm_activities (type,title,description,lead_id,deal_id,scheduled_at,created_by,tenant_uid) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [type, title, description||null, lead_id||null, deal_id||null, scheduled_at||null, req.crmUser.id, req.crmUser.tenantUid || null]
     );
-    if (lead_id) { await sharedPool.query(`UPDATE crm_leads SET last_contacted=NOW(), updated_at=NOW() WHERE id=$1`, [lead_id]); }
+    if (lead_id) { await sharedPool.query(`UPDATE crm_leads SET last_contacted=NOW(), updated_at=NOW() WHERE id=$1 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $2 AND legacy_lead_id IS NOT NULL)`, [lead_id, req.crmUser.tenantUid || null]); }
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create activity' }); }
 });
 
 router.put('/activities/:id/complete', authCRM, async (req, res) => {
   try {
-    const { rows } = await sharedPool.query(`UPDATE crm_activities SET completed_at=NOW(), outcome=$1 WHERE id=$2 RETURNING *`, [req.body.outcome||'completed', req.params.id]);
+    const { rows } = await sharedPool.query(`UPDATE crm_activities SET completed_at=NOW(), outcome=$1 WHERE id=$2 AND tenant_uid=$3 RETURNING *`, [req.body.outcome||'completed', req.params.id, req.crmUser.tenantUid || null]);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Activity not found' });
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to complete activity' }); }
@@ -1050,7 +694,7 @@ router.put('/activities/:id/complete', authCRM, async (req, res) => {
 
 router.delete('/activities/:id', authCRM, async (req, res) => {
   try {
-    const { rowCount } = await sharedPool.query(`DELETE FROM crm_activities WHERE id = $1`, [req.params.id]);
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_activities WHERE id = $1 AND tenant_uid = $2`, [req.params.id, req.crmUser.tenantUid || null]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Activity not found' });
     return res.status(200).json({ success: true, message: 'Activity deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete activity' }); }
@@ -1067,7 +711,8 @@ router.get('/contacts', authCRM, async (req, res) => {
     const conditions = []; const params = [];
     if (search) { params.push(`%${search}%`); conditions.push(`(name ILIKE $${params.length} OR email ILIKE $${params.length} OR phone ILIKE $${params.length})`); }
     if (company) { params.push(`%${company}%`); conditions.push(`company ILIKE $${params.length}`); }
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    params.push(req.crmUser.tenantUid || null); conditions.push(`tenant_uid = $${params.length}`); // tenant isolation (fail-closed)
+    const where = `WHERE ${conditions.join(' AND ')}`;
     const [countRes, dataRes] = await Promise.all([
       sharedPool.query(`SELECT COUNT(*) FROM crm_contacts ${where}`, params),
       sharedPool.query(`SELECT * FROM crm_contacts ${where} ORDER BY created_at DESC LIMIT $${params.length+1} OFFSET $${params.length+2}`, [...params, parseInt(limit), offset])
@@ -1081,9 +726,9 @@ router.post('/contacts', authCRM, [body('name').notEmpty()], async (req, res) =>
   try {
     const { name, email, phone, company, designation, address, city, state, tags, notes, lead_id } = req.body;
     const { rows } = await sharedPool.query(
-      `INSERT INTO crm_contacts (name,email,phone,company,designation,address,city,state,tags,notes,lead_id,created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-      [name, email||null, phone||null, company||null, designation||null, address||null, city||null, state||null, JSON.stringify(tags||[]), notes||null, lead_id||null, req.crmUser.id]
+      `INSERT INTO crm_contacts (name,email,phone,company,designation,address,city,state,tags,notes,lead_id,created_by,tenant_uid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+      [name, email||null, phone||null, company||null, designation||null, address||null, city||null, state||null, JSON.stringify(tags||[]), notes||null, lead_id||null, req.crmUser.id, req.crmUser.tenantUid || null]
     );
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create contact' }); }
@@ -1096,8 +741,8 @@ router.put('/contacts/:id', authCRM, async (req, res) => {
       `UPDATE crm_contacts SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone),
        company=COALESCE($4,company), designation=COALESCE($5,designation), address=COALESCE($6,address),
        city=COALESCE($7,city), state=COALESCE($8,state), tags=COALESCE($9,tags), notes=COALESCE($10,notes),
-       updated_at=NOW() WHERE id=$11 RETURNING *`,
-      [name, email, phone, company, designation, address, city, state, tags?JSON.stringify(tags):null, notes, req.params.id]
+       updated_at=NOW() WHERE id=$11 AND tenant_uid=$12 RETURNING *`,
+      [name, email, phone, company, designation, address, city, state, tags?JSON.stringify(tags):null, notes, req.params.id, req.crmUser.tenantUid || null]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Contact not found' });
     return res.status(200).json({ success: true, data: rows[0] });
@@ -1106,7 +751,7 @@ router.put('/contacts/:id', authCRM, async (req, res) => {
 
 router.delete('/contacts/:id', authCRM, async (req, res) => {
   try {
-    const { rowCount } = await sharedPool.query(`DELETE FROM crm_contacts WHERE id = $1`, [req.params.id]);
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_contacts WHERE id = $1 AND tenant_uid = $2`, [req.params.id, req.crmUser.tenantUid || null]);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Contact not found' });
     return res.status(200).json({ success: true, message: 'Contact deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete contact' }); }
@@ -1118,17 +763,20 @@ router.delete('/contacts/:id', authCRM, async (req, res) => {
 
 router.get('/reports/sales-funnel', authCRM, async (req, res) => {
   try {
+    // Tenant-scope the lead counts via the v2 twin ($1 reused). Deal counts are empty (no tenant
+    // column yet) — left as-is until deals get tenancy.
+    const ls = `AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $1 AND legacy_lead_id IS NOT NULL)`;
     const { rows } = await sharedPool.query(`
       SELECT unnest(ARRAY['new','contacted','qualified','proposal','negotiation','converted','lost']) AS stage,
       unnest(ARRAY[
-        (SELECT COUNT(*) FROM crm_leads WHERE status='new'),
-        (SELECT COUNT(*) FROM crm_leads WHERE status='contacted'),
-        (SELECT COUNT(*) FROM crm_leads WHERE status='qualified'),
+        (SELECT COUNT(*) FROM crm_leads WHERE status='new' ${ls}),
+        (SELECT COUNT(*) FROM crm_leads WHERE status='contacted' ${ls}),
+        (SELECT COUNT(*) FROM crm_leads WHERE status='qualified' ${ls}),
         (SELECT COUNT(*) FROM crm_deals WHERE stage IN ('proposal')),
         (SELECT COUNT(*) FROM crm_deals WHERE stage IN ('negotiation','contract')),
         (SELECT COUNT(*) FROM crm_deals WHERE stage='won'),
-        (SELECT COUNT(*) FROM crm_deals WHERE stage='lost')+(SELECT COUNT(*) FROM crm_leads WHERE status='lost')
-      ]) AS count`);
+        (SELECT COUNT(*) FROM crm_deals WHERE stage='lost')+(SELECT COUNT(*) FROM crm_leads WHERE status='lost' ${ls})
+      ]) AS count`, [req.crmUser.tenantUid || null]);
     return res.status(200).json({ success: true, data: rows });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to generate funnel' }); }
 });
@@ -1159,13 +807,13 @@ router.get('/reports/team-performance', authCRM, async (req, res) => {
         COALESCE(SUM(d.value) FILTER (WHERE d.stage='won'),0) AS revenue,
         COUNT(DISTINCT a.id) AS total_activities
       FROM users u
-      LEFT JOIN crm_leads l ON l.assigned_to=u.id
+      LEFT JOIN crm_leads l ON l.assigned_to=u.id AND l.id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $1 AND legacy_lead_id IS NOT NULL)
       LEFT JOIN crm_deals d ON d.assigned_to=u.id
       LEFT JOIN crm_activities a ON a.created_by=u.id
       WHERE u.role IN ('team','admin') OR u."isTeam"=true OR u."isAdmin"=true
       GROUP BY u.id, u."firstName", u."lastName", u.email
       HAVING COUNT(DISTINCT l.id)+COUNT(DISTINCT d.id)+COUNT(DISTINCT a.id)>0
-      ORDER BY revenue DESC`);
+      ORDER BY revenue DESC`, [req.crmUser.tenantUid || null]);
     return res.status(200).json({ success: true, data: rows });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to generate team report' }); }
 });
@@ -1197,7 +845,8 @@ router.get('/funnel-analytics', authCRM, async (req, res) => {
           COUNT(*) FILTER (WHERE status='lost')      AS lost,
           COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS new_30d
         FROM crm_leads
-      `),
+        WHERE id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $1 AND legacy_lead_id IS NOT NULL)
+      `, [req.crmUser.tenantUid || null]),
       sharedPool.query(`
         SELECT
           COUNT(*) FILTER (WHERE stage='qualification') AS qualification,
