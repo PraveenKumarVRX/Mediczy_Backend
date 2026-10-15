@@ -29,8 +29,62 @@ import {
   marketingCopilotChat,
   executeMarketingAction,
 } from '../services/crm-marketing-copilot.service.js';
+import { runCrmAgent, applyCrmAgentAction } from '../services/crm-agent/index.js';
 
 const router = express.Router();
+
+// ─── Agentic CRM operator (WS-A) ─────────────────────────────────────────────
+// A1: read-only tools. A2: write tools that the agent can only PROPOSE; the proposals come back as
+// `pendingActions` and are applied only via /agent/confirm below, after explicit human confirmation.
+// Feature-flagged off by default. See docs/architecture/CRM_COMMS_HUB_UPGRADE_PLAN.md.
+router.post('/agent', authCRM, async (req, res) => {
+  if (process.env.CRM_AGENT_ENABLED !== 'true') {
+    return res.status(503).json({ success: false, message: 'The CRM agent is not enabled on this environment.' });
+  }
+  try {
+    if (!req.crmUser?.tenantId) {
+      return res.status(400).json({ success: false, message: 'No tenant context on this session.' });
+    }
+    const { messages, message } = req.body || {};
+    const convo = Array.isArray(messages) && messages.length
+      ? messages
+      : (message ? [{ role: 'user', content: String(message) }] : null);
+    if (!convo) {
+      return res.status(400).json({ success: false, message: 'Provide `message` (string) or `messages` (array).' });
+    }
+    const result = await runCrmAgent({ crmUser: req.crmUser, messages: convo });
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[crm-ai] agent error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Apply ONE staged write proposal after the human confirms it in the UI. The body echoes the
+// { tool, args } from a `pendingActions` entry. RBAC is re-checked and the change is audited as applied.
+router.post('/agent/confirm', authCRM, async (req, res) => {
+  if (process.env.CRM_AGENT_ENABLED !== 'true') {
+    return res.status(503).json({ success: false, message: 'The CRM agent is not enabled on this environment.' });
+  }
+  try {
+    if (!req.crmUser?.tenantId) {
+      return res.status(400).json({ success: false, message: 'No tenant context on this session.' });
+    }
+    const { tool, args } = req.body || {};
+    if (!tool || typeof tool !== 'string') {
+      return res.status(400).json({ success: false, message: '`tool` (string) is required.' });
+    }
+    const result = await applyCrmAgentAction({ crmUser: req.crmUser, toolName: tool, args: args || {} });
+    if (result?.error) {
+      const code = result.error === 'permission_denied' ? 403 : (result.error === 'not_found' ? 404 : 400);
+      return res.status(code).json({ success: false, ...result });
+    }
+    return res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[crm-ai] agent confirm error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -60,44 +114,33 @@ async function dealActivities(dealId) {
   ).catch(() => []);
 }
 
-async function ensureEmailAiTables() {
-  await sharedPool.query(`
-    CREATE TABLE IF NOT EXISTS crm_ai_email_communications (
-      id                 BIGSERIAL PRIMARY KEY,
-      entity_type        VARCHAR(40),
-      entity_id          BIGINT,
-      lead_id            BIGINT,
-      deal_id            BIGINT,
-      contact_email      VARCHAR(255),
-      subject            TEXT,
-      body               TEXT,
-      intent             VARCHAR(100),
-      tone               VARCHAR(80),
-      status             VARCHAR(40) DEFAULT 'draft',
-      event_type         VARCHAR(40),
-      sentiment          VARCHAR(40),
-      engagement_score   INTEGER DEFAULT 0,
-      conversion_signal  VARCHAR(40),
-      urgency            VARCHAR(40),
-      next_action        JSONB DEFAULT '{}'::jsonb,
-      suggested_stage    VARCHAR(100),
-      revenue_impact     NUMERIC(15,2) DEFAULT 0,
-      ai_payload         JSONB DEFAULT '{}'::jsonb,
-      learning_tags      JSONB DEFAULT '[]'::jsonb,
-      created_by         INTEGER,
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_ai_email_entity ON crm_ai_email_communications(entity_type, entity_id);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_lead ON crm_ai_email_communications(lead_id);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_deal ON crm_ai_email_communications(deal_id);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_status ON crm_ai_email_communications(status);
-    CREATE INDEX IF NOT EXISTS idx_ai_email_created ON crm_ai_email_communications(created_at DESC);
-  `);
+// ─── Schema readiness ─────────────────────────────────────────────────────────
+const REQUIRED_SCHEMA_TABLES = ['crm_ai_email_communications'];
+let schemaReadyPromise = null;
+async function ensureSchemaReady() {
+  if (!schemaReadyPromise) {
+    schemaReadyPromise = sharedPool.query(
+      `SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ANY($1::text[])`,
+      [REQUIRED_SCHEMA_TABLES]
+    ).then(({ rows }) => {
+      const present = new Set(rows.map((row) => row.table_name));
+      const missingTables = REQUIRED_SCHEMA_TABLES.filter((table) => !present.has(table));
+      if (missingTables.length) {
+        const error = new Error('CRM extension schema migration has not been applied');
+        error.status = 503; error.code = 'SCHEMA_NOT_MIGRATED'; error.details = { missingTables };
+        throw error;
+      }
+    }).catch((error) => { schemaReadyPromise = null; throw error; });
+  }
+  return schemaReadyPromise;
 }
 
-ensureEmailAiTables().catch(err => {
-  console.warn("[CRM AI] Email AI table initialization skipped:", err.message);
+router.use(async (_req, res, next) => {
+  try { await ensureSchemaReady();  next(); }
+  catch (error) {
+    const status = Number.isInteger(error.status) ? error.status : 503;
+    res.status(status).json({ success: false, code: error.code || 'SCHEMA_UNAVAILABLE', message: error.message || 'CRM extension schema is unavailable', details: error.details });
+  }
 });
 
 async function loadEmailEntity(entityType, entityId) {
