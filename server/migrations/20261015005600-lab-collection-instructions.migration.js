@@ -1,10 +1,8 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query(`
@@ -25,18 +23,18 @@ export async function up() {
     await client.query('ROLLBACK');
     throw error;
   } finally {
-    await client.end();
+    client.release();
   }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('ALTER TABLE lab_collection_tasks DROP CONSTRAINT IF EXISTS lab_collection_tasks_instructions_length');
     await client.query('ALTER TABLE lab_collection_tasks DROP COLUMN IF EXISTS instructions');
   } finally {
-    await client.end();
+    client.release();
   }
 }
 

@@ -1,6 +1,4 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS ai_adverse_events (
@@ -55,8 +53,8 @@ const statements = [
 ];
 
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     for (const statement of statements) await client.query(statement);
@@ -65,19 +63,19 @@ export async function up() {
     await client.query('ROLLBACK');
     throw error;
   } finally {
-    await client.end();
+    client.release();
   }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('DROP TABLE IF EXISTS ai_proactive_alerts CASCADE');
     await client.query('DROP TABLE IF EXISTS ai_doctor_metrics CASCADE');
     await client.query('DROP TABLE IF EXISTS ai_adverse_events CASCADE');
   } finally {
-    await client.end();
+    client.release();
   }
 }
 

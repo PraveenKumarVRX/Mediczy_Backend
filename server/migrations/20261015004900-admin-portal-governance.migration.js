@@ -1,6 +1,4 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS lab_portal_state (
@@ -93,22 +91,22 @@ const statements = [
 ];
 
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try { await client.query('BEGIN'); for (const statement of statements) await client.query(statement); await client.query('COMMIT'); }
   catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { await client.end(); }
+  finally { client.release(); }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query('DROP TABLE IF EXISTS corporate_wellness_events, corporate_welcome_email_deliveries, corporate_network_assignments, team_plan_customization_approvals, lab_portal_state CASCADE');
     await client.query('COMMIT');
   } catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { await client.end(); }
+  finally { client.release(); }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('20261015004900-admin-portal-governance.migration.js')) {

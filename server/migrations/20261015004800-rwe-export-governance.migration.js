@@ -1,10 +1,8 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query(`CREATE TABLE IF NOT EXISTS rwe_export_requests (
@@ -19,14 +17,14 @@ export async function up() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_rwe_export_requests_hospital ON rwe_export_requests(hospital_id, created_at DESC)');
     await client.query('COMMIT');
   } catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { await client.end(); }
+  finally { client.release(); }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try { await client.query('DROP TABLE IF EXISTS rwe_export_requests CASCADE'); }
-  finally { await client.end(); }
+  finally { client.release(); }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('20261015004800-rwe-export-governance.migration.js')) {

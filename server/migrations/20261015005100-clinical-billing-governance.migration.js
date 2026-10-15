@@ -1,6 +1,4 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 const statements = [
   `CREATE TABLE IF NOT EXISTS clinical_alerts (
@@ -81,22 +79,22 @@ const statements = [
 ];
 
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try { await client.query('BEGIN'); for (const statement of statements) await client.query(statement); await client.query('COMMIT'); }
   catch (error) { await client.query('ROLLBACK'); throw error; }
-  finally { await client.end(); }
+  finally { client.release(); }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('DROP TABLE IF EXISTS non_payable_items CASCADE');
     await client.query('DROP TABLE IF EXISTS billing_estimates CASCADE');
     await client.query('DROP TABLE IF EXISTS clinical_coding_suggestions CASCADE');
     await client.query('DROP TABLE IF EXISTS clinical_alerts CASCADE');
-  } finally { await client.end(); }
+  } finally { client.release(); }
 }
 
 if (process.argv[1] && process.argv[1].endsWith('20261015005100-clinical-billing-governance.migration.js')) {

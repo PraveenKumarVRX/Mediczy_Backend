@@ -4,9 +4,7 @@
  * Clean-room implementation: these tables model capabilities described in the
  * public comparison document; no MedCore schema, fixtures or prompts are used.
  */
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 export async function up(pool) {
   await pool.query(`
@@ -132,10 +130,10 @@ export async function down(pool) {
 }
 
 if (process.argv[1] && process.argv[1].endsWith('20261015006100-medcore-adoption.migration.js')) {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  client.connect()
-    .then(() => up(client))
+  const db = sharedPool.pool || sharedPool;
+  db.connect()
+    .then((client) => up(client).finally(() => client.release()))
     .then(() => console.log('medcore-adoption migration applied'))
     .catch((error) => { console.error(error); process.exitCode = 1; })
-    .finally(() => client.end());
+    .finally(() => db.end());
 }

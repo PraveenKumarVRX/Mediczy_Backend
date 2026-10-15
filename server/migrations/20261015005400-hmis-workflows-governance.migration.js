@@ -1,6 +1,4 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 const statements = [
   `CREATE TABLE IF NOT EXISTS discharge_packets (
     id BIGSERIAL PRIMARY KEY, organization_id BIGINT, admission_id BIGINT NOT NULL, patient_id BIGINT,
@@ -46,6 +44,6 @@ const statements = [
   `CREATE INDEX IF NOT EXISTS idx_preauth_docs ON hmis_preauth_documents(preauth_id)`
 ];
 
-export async function up() { const client = new Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); try { await client.query('BEGIN'); for (const statement of statements) await client.query(statement); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { await client.end(); } }
-export async function down() { const client = new Client({ connectionString: process.env.DATABASE_URL }); await client.connect(); try { for (const table of ['hmis_preauth_documents','hmis_preauth_requests','automation_run_log','automation_jobs','discharge_packets']) await client.query(`DROP TABLE IF EXISTS ${table} CASCADE`); } finally { await client.end(); } }
+export async function up() { const db = sharedPool.pool || sharedPool; const client = await db.connect(); try { await client.query('BEGIN'); for (const statement of statements) await client.query(statement); await client.query('COMMIT'); } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); } }
+export async function down() { const db = sharedPool.pool || sharedPool; const client = await db.connect(); try { for (const table of ['hmis_preauth_documents','hmis_preauth_requests','automation_run_log','automation_jobs','discharge_packets']) await client.query(`DROP TABLE IF EXISTS ${table} CASCADE`); } finally { client.release(); } }
 if (process.argv[1] && process.argv[1].endsWith('20261015005400-hmis-workflows-governance.migration.js')) up().then(() => console.log('hmis-workflows-governance migration applied')).catch((error) => { console.error(error); process.exitCode = 1; });

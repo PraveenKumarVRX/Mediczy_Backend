@@ -1,6 +1,4 @@
-import pg from 'pg';
-
-const { Client } = pg;
+import sharedPool from '../db/pgPool.js';
 
 /**
  * Standalone collection-safety incident log.  It is intentionally separate from
@@ -8,8 +6,8 @@ const { Client } = pg;
  * completed, and quality staff may need to investigate it independently.
  */
 export async function up() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('BEGIN');
     await client.query(`
@@ -50,17 +48,17 @@ export async function up() {
     await client.query('ROLLBACK');
     throw error;
   } finally {
-    await client.end();
+    client.release();
   }
 }
 
 export async function down() {
-  const client = new Client({ connectionString: process.env.DATABASE_URL });
-  await client.connect();
+  const db = sharedPool.pool || sharedPool;
+  const client = await db.connect();
   try {
     await client.query('DROP TABLE IF EXISTS lab_collection_incidents CASCADE');
   } finally {
-    await client.end();
+    client.release();
   }
 }
 
