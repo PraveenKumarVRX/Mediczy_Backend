@@ -126,9 +126,32 @@ every step coordinated with concurrent sessions.
 - `crm.route.js` leads/deals/activities/contacts scoped by `tenant_uid`, fail-closed (`ed772fa3`).
 - Kind-agnostic tenancy columns on `crm_deals`/`crm_activities`/`crm_contacts` (`684cc497`, applied).
 
-## 7. Recommended next step
+## 7. Progress — Option A executed (2026-10-16)
 
-Decide **Option A vs B**. If A (recommended): I implement A1 (corporate→owning-tenant resolver) and
-run the A2 per-file audit/hardening. If B: I start with the B1 schema prototype on a copy and bring
-back dry-run results before touching any populated table. Either way, one file/table at a time,
-coordinated with the concurrent sessions.
+**Decision: Option A.**
+
+- **A1 — resolver: DONE** (commit `fed36e16`). `authCRM` now redirects a corporate-resolved CRM user
+  to its owning `tenants` row (`corporates.owned_by_tenant_id → tenants`) and stamps `corporateUid`.
+  `req.crmUser.tenantId` is therefore always an unambiguous `tenants` id. Additive/forward-looking: 0
+  CRM users resolve to a corporate today, so hospital/clinic/broker users are unchanged. Verified:
+  hospital user unchanged; corporate user (Ninjacart `CMR4ET`) redirects to its owning tenant
+  (`Z34Y8W`) with `corporateUid` preserved.
+
+- **A2 — per-file audit: DONE (no fixes needed).** Audited the 13 services. Every **user-facing**
+  read/write is tenant-scoped (`WHERE … tenant_id = $n`); confirmed especially on the only
+  data-bearing tables, `crm_leads_v2` / `crm_contacts_v2` (52 rows each). The only non-tenant-predicated
+  queries are (a) **by-id writes on entities already resolved within the tenant** (transitively safe —
+  e.g. `crm-v2-sync` twin update, automation/segment action handlers) and (b) **intentional
+  cross-tenant cron processors** (`WHERE status='published'`, segment refresh). The systemic leak was
+  `crm.route.js` (legacy endpoints), already fixed. With A1, the services' integer `tenant_id` scoping
+  is now unambiguous. **No service rewrites required** — the ~300-reference Option-B rewrite is avoided.
+
+### Remaining (forward-looking, low priority)
+- **A3 — per-corporate sub-filter:** only needed once corporate CRM users exist *and* one owning tenant
+  serves multiple corporates (they'd otherwise share the owning tenant's CRM view). Add a `corporate_uid`
+  filter (additive column) keyed on `req.crmUser.corporateUid`.
+- **Defense-in-depth:** add `AND tenant_id = $n` to the handful of by-id writes (`crm-v2-sync:115`,
+  automation/segment action handlers) — currently transitively safe, not a live risk.
+- **Deploy:** all of the above is committed but **not yet live** — the running server loads the whole
+  working tree, which still holds other sessions' uncommitted work, so activation waits for a clean,
+  coordinated reload.
