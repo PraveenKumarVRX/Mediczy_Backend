@@ -33,9 +33,11 @@ echo -e "${GREEN}✅ Build verified${NC}"
 echo ""
 
 # Step 2: Sync to S3
-# NOTE: Do NOT use --delete — CloudFront may still cache old index.html referencing
-# old asset hashes. Removing old assets causes white screen until cache expires.
-# Old assets are cleaned up by a separate cleanup step after cache invalidation confirms.
+# Never delete hashed assets during a deploy. Existing browser tabs can hold an
+# older index.html for hours and still request its chunks. Removing those files
+# creates the exact dynamic-import 404/white-screen failure this deployment is
+# intended to prevent. Use scripts/ops/prune-client-assets.mjs as a separate,
+# retention-based cleanup after the release window.
 echo -e "${YELLOW}☁️  Step 2/4: Uploading to S3...${NC}"
 aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
   --cache-control "public,max-age=31536000,immutable" \
@@ -81,18 +83,11 @@ if aws cloudfront create-invalidation \
     --distribution-id "$CLOUDFRONT_ID" \
     --paths "/index.html" "/" "/*" > /dev/null 2>&1; then
   echo -e "${GREEN}✅ CloudFront cache invalidated${NC}"
-  # Wait briefly so active users finish loading in-flight pages before
-  # we delete old hashed chunks. CloudFront TTL is gone but browsers that
-  # already have the OLD index.html in memory still reference old chunk URLs
-  # for ~30-60 seconds. The frontend also handles this with a self-reload.
-  echo -e "${YELLOW}🧹 Waiting 60s before cleaning old S3 assets...${NC}"
-  sleep 60
-  echo -e "${YELLOW}🧹 Cleaning up old S3 assets (post-invalidation)...${NC}"
-  if aws s3 sync "$BUILD_DIR" "$S3_BUCKET" --delete --cache-control "public,max-age=31536000,immutable" --exclude "*.html" --exclude "serviceWorker.js" --exclude "service-worker.js"; then
-    echo -e "${GREEN}✅ Old assets cleaned up${NC}"
-  else
-    echo -e "${RED}❌ Old asset cleanup failed — S3 may still have stale chunks${NC}"
-  fi
+  # Keep old hashed chunks available. Browsers that already have the OLD
+  # index.html in memory may request those URLs long after this invalidation.
+  # The frontend also handles stale shells with a cache-busting reload.
+  echo -e "${GREEN}✅ Existing hashed assets retained for stale browser sessions${NC}"
+  echo -e "${YELLOW}   Run the retention-based asset prune separately after the release window.${NC}"
 else
   echo -e "${YELLOW}⚠️  CloudFront invalidation skipped (no permissions)${NC}"
   echo -e "${YELLOW}   Old assets kept in S3 to avoid white screen during cache TTL${NC}"

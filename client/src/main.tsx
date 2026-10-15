@@ -25,11 +25,26 @@ const getCurrentBundleTag = () => {
 };
 
 const triggerChunkRecovery = () => {
-  const key = 'chunk_reload_bundle';
+  const key = 'chunk_reload_attempts';
   const bundleTag = getCurrentBundleTag();
-  if (sessionStorage.getItem(key) === bundleTag) return false;
-  sessionStorage.setItem(key, bundleTag);
-  window.location.reload();
+  let attempts: { bundle: string; count: number } = { bundle: '', count: 0 };
+  try {
+    attempts = JSON.parse(sessionStorage.getItem(key) || '{}');
+  } catch { /* an unavailable/corrupt session store should not block recovery */ }
+  if (attempts.bundle === bundleTag && attempts.count >= 2) return false;
+  const nextCount = attempts.bundle === bundleTag ? attempts.count + 1 : 1;
+  try { sessionStorage.setItem(key, JSON.stringify({ bundle: bundleTag, count: nextCount })); } catch { /* private browsing */ }
+
+  // Unregistering the active worker and deleting its caches avoids retrying a
+  // stale shell. A query-string cache buster also forces a fresh HTML request
+  // through CloudFront when an edge still has the previous shell.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then((registrations) => registrations.forEach((registration) => registration.unregister())).catch(() => {});
+  }
+  if ('caches' in window) caches.keys().then((names) => Promise.all(names.map((name) => caches.delete(name)))).catch(() => {});
+  const freshUrl = new URL(window.location.href);
+  freshUrl.searchParams.set('__chunk_recovery', `${Date.now()}-${nextCount}`);
+  window.location.replace(freshUrl.toString());
   return true;
 };
 
