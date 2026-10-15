@@ -1188,16 +1188,40 @@ export function CRMReportsPage() {
 
 export function CRMSettingsPage() {
   const navigate = useNavigate();
-  const [crmUser, setCrmUser] = useState<any>(null);
+  const handleSettingsAuthError = useCallback(() => navigate('/crm/login', { replace: true }), [navigate]);
+  const [crmUser, setCrmUser] = useState<any>(() => {
+    try {
+      const cached = localStorage.getItem('crmUserData');
+      return cached ? JSON.parse(cached) : null;
+    } catch { return null; }
+  });
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
 
   useEffect(() => {
     const token = localStorage.getItem('crmToken');
     if (!token) { navigate('/crm/login'); return; }
     const fetchProfile = async () => {
+      setProfileLoading(true);
+      setProfileError('');
       try {
         const { data } = await api.get('/crm/profile', { headers: authHeaders() });
-        if (data.success) setCrmUser(data.crmUser);
-      } catch {}
+        if (!data?.success || !data.crmUser) throw new Error('The CRM profile response was incomplete');
+        setCrmUser(data.crmUser);
+        // Keep the shell and settings page in sync after a role/permission change.
+        localStorage.setItem('crmUserData', JSON.stringify(data.crmUser));
+      } catch (error: any) {
+        if (error?.response?.status === 401) {
+          localStorage.removeItem('crmToken');
+          localStorage.removeItem('crmRefreshToken');
+          localStorage.removeItem('crmUserData');
+          navigate('/crm/login', { replace: true });
+          return;
+        }
+        setProfileError(error?.response?.data?.message || error?.message || 'Could not load your CRM profile.');
+      } finally {
+        setProfileLoading(false);
+      }
     };
     fetchProfile();
   }, [navigate]);
@@ -1219,16 +1243,13 @@ export function CRMSettingsPage() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-3">
+            profileLoading ? <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-white/[0.05] animate-pulse" />
-              <div className="space-y-2">
-                <div className="h-4 w-32 bg-white/[0.05] rounded animate-pulse" />
-                <div className="h-3 w-48 bg-white/[0.05] rounded animate-pulse" />
-              </div>
-            </div>
+              <div className="space-y-2"><div className="h-4 w-32 bg-white/[0.05] rounded animate-pulse" /><div className="h-3 w-48 bg-white/[0.05] rounded animate-pulse" /></div>
+            </div> : <div className="rounded-xl border border-rose-400/20 bg-rose-400/5 px-4 py-3 text-sm text-rose-200">{profileError || 'CRM profile is unavailable.'}</div>
           )}
         </div>
-        <CRMChannelSettings crmUser={crmUser} />
+        <CRMChannelSettings crmUser={crmUser} profileLoading={profileLoading} onAuthError={handleSettingsAuthError} />
       </div>
     </CRMLayout>
   );

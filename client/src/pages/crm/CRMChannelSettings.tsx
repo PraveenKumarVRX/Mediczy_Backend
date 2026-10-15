@@ -88,13 +88,26 @@ function ChannelCard({ definition, integration, editable, onSaved }: { definitio
   </div>;
 }
 
-export default function CRMChannelSettings({ crmUser }: { crmUser: any }) {
+export default function CRMChannelSettings({ crmUser, profileLoading = false, onAuthError }: { crmUser: any; profileLoading?: boolean; onAuthError?: () => void }) {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const editable = hasCRMCapability(crmUser, 'communication:write');
-  const load = useCallback(async () => { setLoading(true); setError(''); try { const response = await api.get('/crm/communication-hub/integrations', { headers: authHeaders() }); setIntegrations(response.data.data || []); } catch (err: any) { setError(err?.response?.data?.message || 'Could not load channel settings'); } finally { setLoading(false); } }, []);
-  useEffect(() => { load(); }, [load]);
+  const load = useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const response = await api.get('/crm/communication-hub/integrations', { headers: authHeaders() });
+      setIntegrations(response.data.data || []);
+    } catch (err: any) {
+      if (err?.response?.status === 401) { onAuthError?.(); return; }
+      const status = err?.response?.status;
+      const message = err?.response?.data?.message || 'Could not load channel settings';
+      setError(status === 503
+        ? `${message}. Ask the platform administrator to apply the CRM channel migration and configure the credential encryption key.`
+        : message);
+    } finally { setLoading(false); }
+  }, [onAuthError]);
+  useEffect(() => { if (!profileLoading) load(); }, [load, profileLoading]);
   const byChannel = useMemo(() => new Map(integrations.map((item) => [item.channel, item])), [integrations]);
   const update = (next: Integration) => setIntegrations((current) => [...current.filter((item) => item.channel !== next.channel), next]);
   const groups = ['Messaging', 'Voice', 'Social'];
