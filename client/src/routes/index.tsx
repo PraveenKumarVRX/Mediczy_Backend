@@ -283,6 +283,7 @@ const CRMTeamPage       = lazyNamed(_CRMModulePages, "CRMTeamPage");
 const CRMOperatorPage   = lazy(() => import("@/pages/crm/CRMOperatorPage"));
 const CRMFlowBuilderPage = lazy(() => import("@/pages/crm/CRMFlowBuilderPage"));
 const CRMSocialGrowthPage = lazy(() => import("@/pages/crm/CRMSocialGrowthPage"));
+const CRMSocialContentPage = lazy(() => import("@/pages/crm/CRMSocialContentPage"));
 
 // Insurance RFQ / distribution — moved to the Team module (2026-09-10):
 // these aren't hospital-CRM functions, see TeamInsuranceLayout.tsx's header comment.
@@ -1384,6 +1385,7 @@ const AppRoutes = () => {
         <Route path="/crm/agent"          element={<CRMOperatorPage />} />
         <Route path="/crm/flow-builder"   element={<CRMFlowBuilderPage />} />
         <Route path="/crm/social-growth"  element={<CRMSocialGrowthPage />} />
+        <Route path="/crm/social-content" element={<CRMSocialContentPage />} />
         <Route path="/crm/hospital"       element={<HospitalCRMFoundationPage />} />
         <Route path="/crm/hospital/command-center" element={<HospitalCRMWorldclassPage />} />
         <Route path="/crm/hospital/communication-hub" element={<HospitalCRMCommunicationHubPage />} />

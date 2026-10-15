@@ -286,7 +286,7 @@ export const isUniqueIdCompatibleWithRole = (uniqueId, role) => {
 export const ENTITY_KIND_PREFIXES = Object.freeze({
   corporate: 'C', hospital: 'H', clinic: 'K', lab: 'L', pharmacy: 'P', ambulance: 'B',
   homecare: 'M', diagnostic_centre: 'Y', ngo: 'G', tpa: 'X', insurance_company: 'I', broker: 'V',
-  wellness_company: 'W', psu: 'S', aggregator: 'Z',
+  wellness_company: 'W', psu: 'S', aggregator: 'Z', crm_social_post: 'Q',
   user: 'U', patient: 'U', doctor: 'D', nurse: 'N', assistant: 'A', team: 'T',
   corporate_employee: 'E', ohc: 'O', phlebotomist: 'F', care_unit: 'J', admin: 'R',
 });

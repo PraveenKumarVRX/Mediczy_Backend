@@ -269,6 +269,12 @@ recording and opt-out suppression are implemented behind `CRM_SOCIAL_GROWTH_ENAB
 existing official Meta webhook/inbox adapter is reused. A real IG comment-to-DM test account and
 provider credentials are still required for connector UAT.
 
+**Content-planning extension (BrightBean Studio concepts; clean-room only):** the CRM now has a
+tenant-scoped social composer, platform-specific caption overrides, a month calendar, draft/review/
+approval states, internal review comments and an auditable status history. Authors cannot approve
+their own posts. A planned date is editorial intent only: automatic publishing is not enabled until
+the relevant provider account and first-party publishing connector are implemented and tested.
+
 ---
 
 ## 5. Sequencing (recommended)
