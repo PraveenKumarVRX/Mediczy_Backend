@@ -1,5 +1,6 @@
 import express from 'express';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
+import { requireFeatureFlag } from '../services/feature-flag.service.js';
 import {
   listInboxConversations,
   assignConversation,
@@ -33,6 +34,7 @@ const sendError = (res, error) => res.status(error.statusCode || 500).json({ suc
 
 router.use(enabled);
 router.use(authCRM);
+router.use(requireFeatureFlag('crm.brightbean_chat', { fallbackEnv: 'CRM_SOCIAL_GROWTH_ENABLED' }));
 
 // Shared inbox operator surface.
 router.get('/inbox/conversations', requireCRMCapability('foundation:read'), async (req, res) => {

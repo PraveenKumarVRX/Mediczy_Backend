@@ -7,6 +7,7 @@
 
 import express from 'express';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
+import { requireFeatureFlag } from '../services/feature-flag.service.js';
 import sharedPool from '../db/pgPool.js';
 import {
   scoreLead,
@@ -32,16 +33,14 @@ import {
 import { runCrmAgent, applyCrmAgentAction } from '../services/crm-agent/index.js';
 
 const router = express.Router();
+const agenticFlag = requireFeatureFlag('crm.agentic_operator', { fallbackEnv: 'CRM_AGENT_ENABLED' });
 
 // ─── Agentic CRM operator (WS-A) ─────────────────────────────────────────────
 // A1 read tools and A2 guarded writes. Write tools can only PROPOSE; proposals come back as
 // `pendingActions` and are applied only via /agent/confirm below, after explicit human confirmation.
 // Feature-flagged so rollout can be controlled per environment. Production is enabled
 // through the managed SSM parameters; authentication and capability checks still apply.
-router.post('/agent', authCRM, requireCRMCapability('foundation:read'), async (req, res) => {
-  if (process.env.CRM_AGENT_ENABLED !== 'true') {
-    return res.status(503).json({ success: false, message: 'The CRM agent is not enabled on this environment.' });
-  }
+router.post('/agent', authCRM, agenticFlag, requireCRMCapability('foundation:read'), async (req, res) => {
   try {
     if (!req.crmUser?.tenantId) {
       return res.status(400).json({ success: false, message: 'No tenant context on this session.' });

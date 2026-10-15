@@ -1,5 +1,6 @@
 import express from 'express';
 import { authCRM, requireCRMCapability } from '../middleware/crm.middleware.js';
+import { requireFeatureFlag } from '../services/feature-flag.service.js';
 import { listIdentities, resolveIdentity, listTriggers, createTrigger, dispatchTrigger, pauseConversation, resumeConversation, scheduleReply, listScheduledReplies, processDueScheduledReplies } from '../services/crm-social-growth.service.js';
 import { addPostComment, approvePost, createPost, getPost, listPosts, planPost, rejectPost, submitPost, updatePost } from '../services/crm-social-content.service.js';
 
@@ -14,6 +15,8 @@ const tenantUid = (req, res) => {
   return req.crmUser.tenantUid;
 };
 router.use(enabled);
+router.use(authCRM);
+router.use(requireFeatureFlag('crm.social_growth', { fallbackEnv: 'CRM_SOCIAL_GROWTH_ENABLED' }));
 router.get('/posts', authCRM, requireCRMCapability('foundation:read'), async (req, res) => {
   try { const tenant = tenantUid(req, res); if (!tenant) return; res.json({ success: true, posts: await listPosts(tenant, req.query) }); }
   catch (e) { sendError(res, e); }

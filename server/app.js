@@ -276,6 +276,7 @@ import userAssociationRouter from './routes/userAssociation.route.js';
 import adminWebinarRouter from './routes/admin/webinar.routes.js';
 import adminWebinarModulesRouter from './routes/admin/webinar-modules.routes.js';
 import adminPendingRegistrationsRouter from './routes/admin/pending-registrations.route.js';
+import featureFlagsAdminRouter, { publicFeatureFlagsRouter } from './routes/feature-flags.route.js';
 import doctorWebinarRouter from './routes/doctor/webinar.routes.js';
 import publicWebinarRouter from './routes/webinar.routes.js';
 
@@ -1476,6 +1477,8 @@ app.use('/api/admin/orders-revenue', adminOrdersRevenueRouter); // Real orders/p
 app.use('/api/admin/webinars', authUser, requireRole('admin'), adminWebinarRouter); // Super admin webinar management
 app.use('/api/admin/webinar-modules', authUser, requireRole('admin'), adminWebinarModulesRouter); // Webinar module & notification configuration
 app.use('/api/admin/pending-registrations', adminPendingRegistrationsRouter); // Super admin review & approve entity registrations
+app.use('/api/admin/feature-flags', featureFlagsAdminRouter); // Tenant-aware feature flag registry
+app.use('/api/feature-flags', publicFeatureFlagsRouter); // Authenticated effective flag snapshot
 app.use('/api/admin/module-access', moduleAccessRouter);
 app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checking user's own module access
 app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access

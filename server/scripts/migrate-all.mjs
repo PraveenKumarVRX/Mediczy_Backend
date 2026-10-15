@@ -100,6 +100,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261015006700-crm-agent-tenant-uid.migration.js',
   '20261015006800-crm-agent-corporate-scope.migration.js',
   '20261016000000-crm-legacy-tenancy.migration.js',
+  '20261016000100-feature-flags.migration.js',
 ];
 
 function runStep(step) {
