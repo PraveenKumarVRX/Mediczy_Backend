@@ -83,8 +83,10 @@ export const authCRM = async (req, res, next) => {
     // Resolve the UNAMBIGUOUS entity uid (which encodes the kind via its prefix) + the kind, and attach
     // both. tenantId is kept for backward-compat; new/fixed code must scope by tenantUid.
     const tenantIdInt = metadata.tenantId || user.tenant_id || user.organization_id || decoded.tenantId || decoded.tenant_id || null;
+    let resolvedTenantId = tenantIdInt;   // Option A: always ends up a real `tenants` id (never a corporate id)
     let tenantUidResolved = user.organization_uid || null;
     let tenantKind = null;
+    let corporateUid = null;
     try {
       if (!tenantUidResolved && user.tenant_id) tenantUidResolved = await organizationUid.tenantUid(user.tenant_id);
       if (!tenantUidResolved && tenantIdInt) {
@@ -93,6 +95,26 @@ export const authCRM = async (req, res, next) => {
       if (tenantUidResolved) {
         const reg = await sharedPool.query('SELECT kind FROM entity_registry WHERE uid = $1', [tenantUidResolved]);
         tenantKind = reg.rows[0]?.kind || null;
+      }
+      // Option A (docs/architecture/CRM_TENANCY_MIGRATION_PLAN.md): a corporate's CRM data lives under
+      // its OWNING tenants row — the corporate is a dimension, not an independent CRM tenant. Redirect a
+      // corporate-resolved CRM user to that owning tenant so tenantId/tenantUid are always an unambiguous
+      // `tenants` entity (never a corporate id that could collide with a tenants id), and keep the
+      // corporate's own uid for optional per-corporate sub-filtering (corporate_uid).
+      if (tenantKind === 'corporate' && tenantUidResolved) {
+        corporateUid = tenantUidResolved;
+        const owner = await sharedPool.query(
+          `SELECT t.id AS tid, t.unique_id AS tuid, er.kind
+             FROM corporates c JOIN tenants t ON t.id = COALESCE(c.owned_by_tenant_id, c.tenant_id)
+             LEFT JOIN entity_registry er ON er.uid = t.unique_id
+            WHERE c.unique_id = $1`, [corporateUid]);
+        if (owner.rows[0]) {
+          resolvedTenantId = owner.rows[0].tid;
+          tenantUidResolved = owner.rows[0].tuid;
+          tenantKind = owner.rows[0].kind || tenantKind;
+        }
+        // No owning tenant found → leave tenantUid as the corporate uid; uid-scoped CRM reads then
+        // fail closed (no tenants-scoped rows match), which is the safe outcome.
       }
     } catch (_) { /* resolution failure must not break auth; uid-scoped reads then fail closed (empty) */ }
 
@@ -104,9 +126,10 @@ export const authCRM = async (req, res, next) => {
       role: decoded.role || 'crm',
       isCRM: true,
       isAdmin: user.isAdmin || decoded.isAdmin || false,
-      tenantId: tenantIdInt,
-      tenantUid: tenantUidResolved,     // unambiguous entity uid — scope CRM data by THIS
-      tenantKind,                       // 'hospital' | 'clinic' | 'corporate' | 'broker' | … (from entity_registry)
+      tenantId: resolvedTenantId,       // always a real `tenants` id (corporate users → owning tenant)
+      tenantUid: tenantUidResolved,     // unambiguous owning-tenant uid — scope CRM data by THIS
+      tenantKind,                       // the owning tenant's kind: 'hospital' | 'clinic' | 'broker' | …
+      corporateUid,                     // set only for corporate-context CRM users (per-corporate sub-filter)
       permissions: metadata.crmPermissions || decoded.crmPermissions || [],
       crmRole: metadata.crmRole || decoded.crmRole || DEFAULT_CRM_ROLE,
     };
