@@ -579,7 +579,7 @@ const ISHA_LLM_AGENT_TYPE = getProviderEnv('ISHA_LLM_AGENT_TYPE') || getProvider
 const ISHA_PRIMARY_ENABLED = MEDIQZY_AI_PRIMARY_PROVIDER === 'isha' && ISHA_DIRECT_ENABLED;
 const GROQ_CHAT_MODEL = getProviderEnv('GROQ_MODEL') || getProviderEnv('GROQ_CHAT_MODEL') || 'openai/gpt-oss-20b';
 // Sarvam AI — opt-in Indic/multilingual fallback. Inert unless SARVAM_ENABLED=true AND a key is set.
-const SARVAM_MODEL = getProviderEnv('SARVAM_MODEL') || 'sarvam-105b';
+const SARVAM_MODEL = getProviderEnv('SARVAM_MODEL') || 'sarvam-105b-conversations';
 const SARVAM_ENABLED = String(getProviderEnv('SARVAM_ENABLED') || '').toLowerCase() === 'true' && Boolean(getProviderEnv('SARVAM_API_KEY'));
 
 const PROVIDERS = [
