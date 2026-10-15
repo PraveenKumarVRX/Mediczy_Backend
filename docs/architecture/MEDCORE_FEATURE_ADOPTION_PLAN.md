@@ -1,6 +1,6 @@
 # MedCore feature-adoption plan — designs to bring into mediqzy, license-safely
 
-**Status:** Implemented behind the `/api/medcore-adoption` feature boundary; production migration applied and CI gate validated on 15 October 2026.
+**Status:** Implemented behind the `/api/medcore-adoption` feature boundary; tenant-scoped clinical-adoption records, approval-gated lab-explanation delivery, adherence scheduling, production migration and CI gate validated on 15 October 2026.
 **Date:** 2026-10-15.
 **Source:** MedCore (`github.com/Globussoft-Technologies/medcore`) — a peer Indian HIS (80+ API
 routers, 155+ Prisma models, RN patient app).
@@ -175,10 +175,11 @@ current contracts while the capability is validated with test accounts.
 | WS-3 | `server/services/metric-integrity.service.js` | `GET /api/medcore-adoption/metrics/:metricKey`; every result carries `available`/`unavailable`, a nullable value and a reason, so missing data cannot render as zero. |
 | WS-4 | `server/services/prescription-safety-gate.service.js` | `POST /api/medcore-adoption/drug-safety/signoff`; deterministic interaction checks run before long-tail analysis, contraindications block sign-off, and an acknowledgement reason is audited in `drug_safety_signoffs`. |
 | WS-5 | `server/services/pharmacy-forecast.service.js` | `POST /api/medcore-adoption/pharmacy/forecast`; additive Holt-Winters forecast with confidence bounds, MAE and explicit unavailable semantics for short history, persisted in `pharmacy_demand_forecasts`. |
-| WS-6 | `server/services/medcore-adoption.service.js`, `client/src/pages/AgentConsole.tsx` | `POST/GET/PATCH /api/medcore-adoption/agent-handoffs` and `/agent-console`; transcript, SOAP, red flags, doctor matches and audited lifecycle are shown in one queue. |
-| WS-7 | `server/services/medcore-adoption.service.js` | `POST /api/medcore-adoption/lab-explainer/drafts`, `GET /lab-explainer/queue` plus approve/reject endpoints; patient delivery is allowed only after clinician approval. Adherence plans/events and `/adherence/run-due` honour quiet hours and retain language/channel. |
+| WS-6 | `server/services/medcore-adoption.service.js`, `client/src/pages/AgentConsole.tsx` | `POST/GET/PATCH /api/medcore-adoption/agent-handoffs` and `/agent-console`; transcript, SOAP, red flags, doctor matches and audited lifecycle are shown in one tenant-scoped queue, with clinical-role access for reads/updates. |
+| WS-7 | `server/services/medcore-adoption.service.js` and `medcore-adoption-cron.service.js` | `POST /api/medcore-adoption/lab-explainer/drafts`, queue, approve/reject and `/lab-explainer/:id/deliver`; delivery is tenant-scoped and allowed only after clinician approval. Adherence plans/events and the minute scheduler honour quiet hours and retain language/channel. |
 
-The migration is `server/migrations/20261015006100-medcore-adoption.migration.js` and is registered
+The migrations are `server/migrations/20261015006100-medcore-adoption.migration.js` and
+`server/migrations/20261015006600-medcore-tenant-delivery.migration.js`; both are registered
 in `server/scripts/migrate-all.mjs`. The implementation uses mediqzy's existing `pool`, auth
 middleware, triage, drug-safety, interpretability and quality-gate services. No MedCore code,
 schema, fixtures, datasets, translations or prompts were copied or translated.
@@ -189,7 +190,7 @@ its approval checklist remains a release gate.
 
 1. Run `cd server && npm run migrate:all` (or apply migration `20261015006100-medcore-adoption.migration.js`).
 2. Run `cd server && npm run test:ai-gold` and retain the JSON output as the governance evidence.
-3. Set `MEDCORE_ADOPTION_ENABLED=false` until the model-card, clinical review and
+3. Leave `MEDCORE_ADOPTION_ENABLED` unset/false until the model-card, clinical review and
    counsel clean-room sign-offs in §4 are complete. The API is authenticated, but it is not a substitute
    for those approvals.
 4. Add real pharmacy history, doctor matching and notification-provider adapters before enabling the

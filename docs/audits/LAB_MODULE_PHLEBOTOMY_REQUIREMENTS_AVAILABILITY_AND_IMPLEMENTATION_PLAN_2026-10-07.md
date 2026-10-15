@@ -12,6 +12,15 @@ The current implementation cannot support a production phlebotomist workflow. Mo
 
 **Recommended release posture:** build the shared backend and lab dispatch console first, then ship a native phlebotomist pilot with both Home and Ward modes behind a capability flag. Do not expose collection completion, consent, barcode, payment, QC, handoff, or synchronization as authoritative until the server command and audit record succeed.
 
+### Current implementation update — 15 October 2026
+
+The shared collection service, lab dispatch surfaces, and canonical `phlebo-app` now have server-backed
+instructions, replacement-label, incident-reporting, and handoff-QC flows. Handoff QC accepts bounded
+`sealId`, `temperatureC`, and `labelMatch` values, persists them in immutable specimen custody evidence,
+and refuses an explicit label mismatch. The OpenAPI contract, mobile client, lab portal, migration
+manifest, and regression coverage are aligned. Production release still requires applying the pending
+collection migrations, running home/ward UAT, and closing the policy/infrastructure gates listed below.
+
 ## 1. Requested capability set
 
 The implementation plan treats “all capabilities” as the following product surface:
@@ -84,7 +93,7 @@ The implementation plan treats “all capabilities” as the following product s
 | Patient verification | Not present | No two-identifier verification record | Add verification command recording method, result, timestamp and actor without storing unnecessary values | P0 |
 | Consent/refusal | Not present | Consent is a local UI claim | Add versioned consent record, scope, method, language, witness/patient confirmation and refusal path | P0 |
 | Collection | Status transition exists | `arrived → collected` can succeed without proof/consent/specimens | Add required preconditions and atomic state transition | P0 |
-| Handoff/receipt | Handover JSON exists | No receiver, specimen set, QC, rejection or lab receipt model | Add custody command, receiver identity, specimen set and independent lab receipt | P0 |
+| Handoff/receipt | Receiver, specimen set, custody events and lab receipt are implemented; bounded handoff QC is now recorded in custody evidence | Seal/temperature/label policy and physical seal/printer integration still need UAT/clinical sign-off | Keep the handoff command authoritative, apply the existing collection migrations, and verify receiver, QC, rejection and receipt reconciliation | P0 |
 
 ### 3.3 Ward collection
 
@@ -108,7 +117,8 @@ The implementation plan treats “all capabilities” as the following product s
 | Collection condition | Not present | No hemolysis/quantity/temperature/label condition | Add structured condition and rejection fields with role-based edits | P1 |
 | Custody transitions | Generic event JSON | No sender/receiver/facility/receipt semantics | Add append-only `lab_specimen_custody_events`, immutable actor/time/operation metadata | P0 |
 | Lab receipt | No independent receipt command | Handoff can be treated as completion | Add receiver endpoint and exception/rejection reconciliation | P0 |
-| Replacement labels | Not present | Duplicate or damaged labels cannot be controlled | Add replacement workflow requiring reason, original specimen link and supervisor approval | P1 |
+| Replacement labels | **Implemented locally** | Dispatch-approved replacement now retires the original barcode, preserves the specimen link and records the reason/approver in an immutable ledger; collectors can request a replacement | Apply migration `20261015005700-lab-collection-label-replacement.migration.js`, then verify request → approval → rescan on a test task | P1 |
+| Collection safety incidents | **Implemented locally** | Collector and dispatch can record an auditable incident (type, severity, description, task/specimen link); lab dispatch can list and resolve incidents | Apply migration `20261015005800-lab-collection-incidents.migration.js`, then run needlestick/adverse-reaction/mislabeled-tube UAT; external incident-system bridge and retention are policy gates | P1 |
 
 ### 3.5 Offline and device execution
 

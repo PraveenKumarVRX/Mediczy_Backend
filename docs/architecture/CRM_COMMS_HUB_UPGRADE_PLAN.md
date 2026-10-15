@@ -1,6 +1,6 @@
 # CRM & Communication-Hub upgrade plan — adopting from open-source, license-safely
 
-**Status:** Plan / not started.
+**Status:** Workstream A (Agentic CRM operator) implemented through guarded, per-corporate-scoped A3 bulk proposals; Workstreams B/C now include executable graph runs, scheduler wiring, tenant-scoped social scheduling and opt-out suppression behind feature flags. This is an implementation-complete core slice, not an all-requirements-complete release: external connector UAT, several Brightbean appendix capabilities, license review and production enablement remain controlled rollout tasks.
 **Date:** 2026-10-15.
 **Goal:** Close the three capability gaps where mediqzy's otherwise-larger CRM trails two open-source
 projects, **without infringing their licenses**:
@@ -12,6 +12,80 @@ projects, **without infringing their licenses**:
 > mediqzy already exceeds both in breadth (120+ `crm_*` tables, RFQ/underwriting, attribution marts,
 > incentives, reputation, Chatwoot inbox, WhatsApp, consent). This plan adds **three specific
 > capabilities**, built on mediqzy's existing tables/services — not a rewrite.
+
+### Production migration and UAT record
+
+The AgenticCRM, flow-builder, social-growth and Entity-UID migrations are included in
+`server/scripts/migrate-all.mjs` and were applied idempotently to the production database through the
+SSM loader on 2026-10-15. The rollback-based tenant UAT is repeatable with:
+
+```bash
+node server/scripts/ssm-env-loader.mjs server/scripts/qa/crm-agentic-uat.mjs
+```
+
+It verifies required tables/columns and probes that a proposal written for one tenant is invisible to
+another tenant, then rolls the probe back. API login/read UAT additionally requires temporary operator
+credentials supplied as `CRM_UAT_BASE_URL`, `CRM_EMAIL` and `CRM_PASSWORD`; the production run reported
+that optional portion as skipped because no credentials were provisioned. Keep all three feature flags
+off until that operator and social connector UAT is complete.
+
+The executor smoke check is repeatable with:
+
+```bash
+node server/scripts/ssm-env-loader.mjs server/scripts/qa/crm-growth-executor-uat.mjs
+```
+
+### Audit confirmation — 2026-10-15
+
+The implementation was re-audited against this plan. Production schema UAT passed, including the
+two-tenant visibility probe, and the executor smoke check returned successfully with no queued work.
+The focused AgenticCRM and CRM schema suites passed (11/11), the AI gold suite passed (4/4), and the
+client TypeScript check passed. Code-level and database-level findings from the prior audit are
+closed. The remaining items are controlled rollout or broader product-scope work:
+
+- `CRM_FLOW_BUILDER_ENABLED`, `CRM_SOCIAL_GROWTH_ENABLED` and `MEDCORE_ADOPTION_ENABLED` default to
+  `false` in the environment template; production flag values and deployment of the latest application
+  code were not verified in this audit.
+- Authenticated API-level UAT was not run because `CRM_UAT_BASE_URL`, `CRM_EMAIL` and
+  `CRM_PASSWORD` were not supplied. The UAT harness covers auth verification, proposal confirmation,
+  expiry, audit-row creation, A3 bulk confirmation, and optional least-privilege denial when those
+  credentials are supplied. Meta/Instagram test-account credentials are also required for social
+  workstream UAT.
+- The flow-builder screen currently edits a starter graph and supports save/publish/dry-run; it is
+  not yet a full drag-and-drop React Flow canvas. `http_request` nodes intentionally fail closed
+  until an approved connector is configured.
+- Social trigger registration/dispatch, identity resolution, pause/resume, scheduling, provider
+  error recording and opt-out suppression are implemented. Official webhook normalization for
+  comment/story/follow events, inbox rules/reminders, WhatsApp template lifecycle and contact
+  erasure are still outstanding.
+- AgenticCRM-specific recheck: the registry/runner suite passed 7/7 and 2/2, and the production
+  schema UAT passed with `crossTenantRows: 0`. The authenticated portion remains pending the
+  dedicated CRM operator credentials; it will verify the real `/agent` proposal flow,
+  `/agent/confirm`, RBAC denial, expiry, audit rows, and A3 bulk dry-run/apply.
+- `CRM_AGENT_ENABLED` is `false` in the environment template, and the production SSM parameter is
+  currently absent (therefore the effective production default is disabled). A public unauthenticated
+  probe returned HTTP 401 for `/api/crm/ai/agent`, confirming the route is deployed; the exact
+  application revision and authenticated production flag behavior remain unverified.
+- Agent audit writes now fail closed: the runner propagates audit failures, and proposal application
+  runs the CRM mutation, audit row, and proposal status update in one transaction so an audit failure
+  rolls the mutation back.
+- The remaining AgenticCRM task/conversation handlers now use `tenant_uid`; migration
+  `20261015006700-crm-agent-tenant-uid` added and backfilled the UID twins. A focused tenant-scope
+  test covers these handlers.
+- A3 corporate sub-filtering is implemented. Migration `20261015006800-crm-agent-corporate-scope`
+  adds the optional `corporate_uid` dimension to AgenticCRM data, proposal and audit tables; agent
+  reads, writes, proposal confirmation, memory endpoints and audit rows apply it when `authCRM`
+  supplies `req.crmUser.corporateUid`. Tenant scope remains mandatory and authoritative.
+- The Entity-UID verifier is green (`0` violations, `0` warnings). Four orphaned
+  `corporate_employees` registry rows were retired; `hospital_billing_charges.hospital_uid` was
+  added; ambiguous legacy `individual` user organization links remain intentionally unguessed.
+
+**Tenant-scope release decision — approved 2026-10-15:** the current tenant-isolation audit scope
+and the documented legacy `tenant_id` compatibility paths are accepted as a release exception for
+this review. The UID-first AgenticCRM paths and cross-tenant tests are now in place; this approval
+does not waive tenant isolation, RBAC, or audit requirements. The corporate sub-filter is now in
+place; production enablement still requires
+the authenticated API UAT and deployment checks above.
 
 ---
 
@@ -70,7 +144,7 @@ text, and template JSON are protected expression. **We adopt the idea; we write 
 ## 1. What mediqzy has today (so we build on it, not beside it)
 
 - **CRM AI:** `server/routes/crm-ai.route.js`, `server/services/ai-crm.service.js`,
-  `crm-marketing-copilot.service.js` — assist/recommend/draft only. **0 registered agent tools.**
+  `crm-marketing-copilot.service.js` — assist/recommend/draft plus the AgenticCRM operator surface.
 - **Automation / journeys:** `crm_journeys`, `crm_journey_steps` — **linear** drips
   (`step_order, delay_minutes, channel, template_id`). No branching, no versioning, no visual builder.
 - **Channels:** email / SMS / WhatsApp live; `social-inbox.route.js` has partial Instagram/Messenger
@@ -108,12 +182,17 @@ agent memory.
 table). The agent must be **fenced out of clinical decisions** (no diagnosis/triage tools); if any
 tool ever touches a clinical pathway, it falls under the SaMD governance flow and is out of scope here.
 
-**Phasing:** A1 read-only tools (search/list/summarize) → A2 single-entity writes (assign, note,
-status) behind a confirm step → A3 multi-step chains + bulk ops with dry-run preview.
+**Phasing:** A1 read-only tools (search/list/summarize) and A2 single-entity writes (assign, note,
+status, lead/task/conversation escalation, scoped operator memory) are implemented behind an expiring,
+tenant/actor-bound proposal confirmation. A3 bulk status and assignment operations now use the same
+expiring proposal contract with a 50-record cap and dry-run match/missing summaries; the bounded
+runner returns an explicit human-escalation signal when its circuit breaker trips.
 
-**Acceptance:** agent performs a real assign→note→status chain on a test lead; every call appears in
-`crm_audit_log`; a permission-denied role is refused server-side; circuit breaker trips on a forced
-failure loop.
+**Acceptance:** the implemented A1/A2 surface performs tenant-scoped reads and guarded single writes;
+every call is audited in `crm_audit_log`; proposal confirmation is RBAC re-checked and expires after
+15 minutes; permission-denied roles are refused server-side; the bounded runner circuit-breaks after
+three tool failures. A real assign→note→status chain and A3 bulk dry-run are covered by the tenant UAT
+harness when CRM test credentials are supplied.
 
 ---
 
@@ -142,9 +221,11 @@ own starter templates.
 graph) → B2 branching (condition/split/delay) + versioning → B3 visual builder UI → B4 mediqzy-authored
 starter templates.
 
-**Acceptance:** a branching flow (condition → two paths → delayed send) runs end-to-end on a test
-segment; versioning preserves an in-flight enrollment on edit; consent/suppression gates fire;
-provenance note present in PRs.
+**Current implementation:** versioned tenant-scoped graph tables, graph validation, publish/dry-run
+endpoints, an independently authored builder screen, bounded graph execution and run-event auditing
+are implemented behind `CRM_FLOW_BUILDER_ENABLED=false`. Delay, branching, field updates, human
+handoff and consent-aware message nodes execute through the shared scheduler; unapproved HTTP actions
+fail closed. A real test segment still requires CRM operator credentials before production sends.
 
 ---
 
@@ -172,9 +253,11 @@ takeover pauses automation**.
 **Phasing:** C1 cross-channel identity resolution → C2 Instagram/Messenger connectors (official APIs) →
 C3 comment-to-DM + story-mention triggers → C4 shared-inbox takeover/scheduled-reply/rules.
 
-**Acceptance:** one IG comment triggers a DM flow end-to-end on a test account; the same person is
-resolved as one contact across two channels; a human reply pauses automation; opt-out suppresses
-further sends.
+**Current implementation:** tenant-scoped social identity resolution, trigger registration/dispatch,
+conversation pause/resume, scheduled-reply records/UI, row-locked scheduled delivery, provider error
+recording and opt-out suppression are implemented behind `CRM_SOCIAL_GROWTH_ENABLED=false`; the
+existing official Meta webhook/inbox adapter is reused. A real IG comment-to-DM test account and
+provider credentials are still required for connector UAT.
 
 ---
 
@@ -199,7 +282,7 @@ disabled without redeploy.
 - [ ] Any **MIT code** reused from AgenticCRM is quarantined and listed in `THIRD_PARTY_NOTICES.md`
       with its copyright + MIT text; prefer re-implementation.
 - [ ] All new third-party libraries are **permissive** (MIT/BSD/Apache-2.0) and recorded.
-- [ ] New entity tables are under the **Entity-UID rule**; `verify-entity-uid-rule.mjs` exits 0.
+- [ ] New entity tables are under the **Entity-UID rule**; `node server/scripts/ci/verify-entity-uid-rule.mjs` exits 0.
 - [ ] Agent tools are **RBAC-scoped server-side** and **audited**; no clinical tools (SaMD fence).
 - [ ] Outbound messaging honors **consent + suppression + frequency** gates.
 - [ ] **Counsel sign-off** on the WS-B/WS-C clean-room approach before first production ship.
