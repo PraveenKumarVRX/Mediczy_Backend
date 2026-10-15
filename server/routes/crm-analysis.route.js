@@ -24,7 +24,7 @@ function safeJSON(v, fallback = []) {
 
 // ─── LLM helper ──────────────────────────────────────────────────────────────
 const aiComplete = async (messages, opts = {}) => {
-  const result = await llmProvider.chat({ messages, maxTokens: opts.maxTokens || 2500, temperature: opts.temperature || 0.2 });
+  const result = await llmProvider.chat({ messages, maxTokens: opts.maxTokens || 2500, temperature: opts.temperature || 0.2, preferProvider: process.env.CRM_LLM_PROVIDER || 'sarvam' });
   return result?.content || result?.text || result?.message || String(result || '');
 };
 

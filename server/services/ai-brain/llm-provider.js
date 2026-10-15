@@ -864,6 +864,8 @@ async function chat({
   conversationId = null,
   responseFormat = null,
   forceProvider = null,
+  preferProvider = null,   // move this provider to the FRONT of the cascade but keep the rest as
+                           // fallback (unlike forceProvider, which is that provider only). Works with tools.
   skipCache = false,       // set true for agentic/tool-calling or clinical flows
   cacheScope = null,       // tenant/patient/session scope required before caching clinical text
   cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
@@ -942,6 +944,13 @@ async function chat({
       throw new Error('Provider ' + forceProvider + ' is disabled for app traffic');
     }
     providersToTry = [forced];
+  } else if (preferProvider) {
+    // Preferred-first with full fallback: try preferProvider, then the rest of the
+    // enabled cascade in priority order. Unlike forceProvider this never leaves the
+    // caller with no fallback, and it is compatible with tool-calling.
+    const pref = PROVIDERS.find(p => p.name === preferProvider && !p.disabled);
+    const rest = PROVIDERS.filter(p => p.name !== preferProvider && !p.disabled).sort((a, b) => a.priority - b.priority);
+    providersToTry = pref ? [pref, ...rest] : rest;
   } else if (cognitiveTier && !tools) {
     // ── HAIS: Tier-first routing ─────────────────────────────────────────
     // Move the tier's preferred provider to the front; keep others as fallback.

@@ -17,6 +17,9 @@ import { hasCRMCapability } from '../../config/crm-roles.config.js';
 import { TOOLS, toolDefinitions } from './tool-registry.js';
 import { MAX_ITERATIONS, MAX_TOOL_FAILURES, PROPOSAL_TTL_MS, proposalMatches, isProposalExpired } from './guardrails.js';
 const MAX_TOOL_RESULT_CHARS = 8000;
+// CRM's primary LLM: Sarvam (Indic/multilingual), preferred-first with full cascade fallback.
+// Overridable via CRM_LLM_PROVIDER (e.g. 'sib' to revert to the platform default).
+const CRM_LLM_PROVIDER = process.env.CRM_LLM_PROVIDER || 'sarvam';
 
 const SYSTEM_PROMPT = `You are the Mediqzy CRM assistant operating a healthcare provider's CRM.
 You can read tenant-scoped lead, contact, deal, task and conversation data, and PROPOSE changes, by calling the provided tools. Rules:
@@ -93,6 +96,7 @@ export async function runCrmAgent({ crmUser, messages }) {
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const res = await llmProvider.chat({
       messages: convo, tools, toolChoice: 'auto', skipCache: true, maxTokens: 1024,
+      preferProvider: CRM_LLM_PROVIDER,   // Sarvam-first for CRM, cascade fallback
     });
     const calls = res.toolCalls || [];
 
@@ -162,7 +166,7 @@ export async function runCrmAgent({ crmUser, messages }) {
   }
 
   // Ran out of tool-calling iterations — force a final, tool-free answer from what we gathered.
-  const final = await llmProvider.chat({ messages: convo, toolChoice: 'none', skipCache: true, maxTokens: 1024 });
+  const final = await llmProvider.chat({ messages: convo, toolChoice: 'none', skipCache: true, maxTokens: 1024, preferProvider: CRM_LLM_PROVIDER });
   return { reply: final.content || '', toolTrace, pendingActions, iterations: MAX_ITERATIONS, stopReason: 'max_iterations', provider: final.provider };
 }
 

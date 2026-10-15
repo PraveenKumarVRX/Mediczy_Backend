@@ -163,6 +163,7 @@ export async function marketingCopilotChat({ messages = [], crmUser = {} }) {
       temperature: 0.4,
       skipCache: true,
       cognitiveTier: 'standard',
+      preferProvider: process.env.CRM_LLM_PROVIDER || 'sarvam',  // Sarvam-first for CRM, cascade fallback
     });
     reply = result.content?.trim() || '';
   } catch (err) {

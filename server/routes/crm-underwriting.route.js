@@ -39,7 +39,7 @@ const aiComplete = async (messages, { maxTokens = 1200, temperature = 0.25, uwMo
     }
     throw new Error('All UW providers failed');
   }
-  const result = await llmProvider.chat({ messages, maxTokens, temperature });
+  const result = await llmProvider.chat({ messages, maxTokens, temperature, preferProvider: process.env.CRM_LLM_PROVIDER || 'sarvam' });
   return result?.content || result?.text || result?.message || String(result || '');
 };
 
