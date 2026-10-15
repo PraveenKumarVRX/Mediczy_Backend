@@ -6,6 +6,21 @@ import pool from '../db/pgPool.js';
 
 export async function up() {
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS hospital_os_events (
+      id BIGSERIAL PRIMARY KEY,
+      tenant_id VARCHAR(64) DEFAULT 'default',
+      event_type VARCHAR(80) NOT NULL,
+      source VARCHAR(80),
+      entity_type VARCHAR(40),
+      entity_id VARCHAR(64),
+      payload JSONB DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_hospital_os_events_type
+      ON hospital_os_events(event_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_hospital_os_events_entity
+      ON hospital_os_events(entity_type, entity_id);
+
     ALTER TABLE hospital_os_events
       ADD COLUMN IF NOT EXISTS event_id UUID,
       ADD COLUMN IF NOT EXISTS facility_id VARCHAR(64),
