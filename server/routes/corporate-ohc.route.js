@@ -2,7 +2,7 @@
 import { careUnitService, ohcService, careUnitPool } from '../services/care-units/index.js';
 import { authCorporate } from '../middleware/corporate.middleware.js';
 import { forbidden } from '../services/collection/errors.js';
-import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
+import { generateFitnessCertificatePdf, resolveFitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 import { buildCorporateOhcRouter } from './care-units/corporate-ohc.router.js';
 
 async function resolvePrincipal(req) {
@@ -25,5 +25,5 @@ async function resolvePrincipal(req) {
 
 export default buildCorporateOhcRouter({
   service: careUnitService, ohcService, authenticate: authCorporate, resolvePrincipal,
-  renderPdf: generateFitnessCertificatePdf, pdfPathOf: fitnessCertificatePdfPath,
+  renderPdf: generateFitnessCertificatePdf, pdfPathOf: resolveFitnessCertificatePdfPath,
 });

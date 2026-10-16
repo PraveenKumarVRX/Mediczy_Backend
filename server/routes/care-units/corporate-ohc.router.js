@@ -54,7 +54,7 @@ export function buildCorporateOhcRouter({ service, ohcService, authenticate, res
   router.get('/:uid/certificates/:certId/pdf', handle(async (req, res) => {
     const cert = await ohcService.certificateById(mayOperate(req), req.params.certId);
     if (!pdfPathOf) return res.status(404).json({ success: false, code: 'not_found', message: 'PDF not available' });
-    const file = pdfPathOf(cert.id);
+    const file = pdfPathOf(cert);
     res.sendFile(file, (err) => { if (err && !res.headersSent) res.status(404).json({ success: false, code: 'not_found', message: 'PDF not available' }); });
   }));
   router.get('/:uid/emergencies', handle(async (req, res) => res.json({ success: true, ...(await ohcService.emergencies(mayOperate(req), { ...req.query, unit: req.params.uid })) })));

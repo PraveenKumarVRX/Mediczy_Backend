@@ -7,7 +7,7 @@ import express from 'express';
 import fs from 'fs';
 import { authUser } from '../middleware/auth.middleware.js';
 import { getFitnessCertificatesForPatientOnly, getFitnessCertificateById } from '../services/corporate-hmis.service.js';
-import { fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
+import { fitnessCertificatePdfFileName, resolveFitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 
 const router = express.Router();
 
@@ -26,11 +26,11 @@ router.get('/:id/pdf', authUser, async (req, res) => {
     if (!cert || Number(cert.patient_id) !== Number(req.user.id)) {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
-    const filePath = fitnessCertificatePdfPath(req.params.id);
+    const filePath = resolveFitnessCertificatePdfPath(cert);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ success: false, message: 'Certificate PDF not available' });
     }
-    return res.download(filePath, `fitness-certificate-${req.params.id}.pdf`);
+    return res.download(filePath, fitnessCertificatePdfFileName(cert));
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

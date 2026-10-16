@@ -47,7 +47,7 @@ export function buildOhcWorkspaceRouter({ ohc, authenticate, limiter = [], rende
   router.get('/certificates/:id/pdf', handle(async (req, res) => {
     const cert = await ohc.certificateById(req.ohc, req.params.id);
     if (!pdfPathOf) return res.status(404).json({ success: false, code: 'not_found', message: 'PDF not available' });
-    const file = pdfPathOf(cert.id);
+    const file = pdfPathOf(cert);
     res.sendFile(file, (err) => { if (err && !res.headersSent) res.status(404).json({ success: false, code: 'not_found', message: 'PDF not available' }); });
   }));
   return router;

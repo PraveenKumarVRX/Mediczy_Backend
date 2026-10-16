@@ -32,7 +32,7 @@ import {
   issueFitnessCertificate, getFitnessCertificatesByPatient, getFitnessCertificateById,
   getFitnessCertificatesIssuedByClinicStaff,
 } from '../services/corporate-hmis.service.js';
-import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
+import { generateFitnessCertificatePdf, fitnessCertificatePdfFileName, resolveFitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 import { resolveDoctorLetterhead } from '../services/doctor-letterhead.service.js';
 
 const router = express.Router();
@@ -196,11 +196,11 @@ router.get('/fitness-certificate/:id/pdf', authClinicDoctor, async (req, res) =>
     if (!cert || !issuedByThisDoctor) {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
-    const filePath = fitnessCertificatePdfPath(req.params.id);
+    const filePath = resolveFitnessCertificatePdfPath(cert);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ success: false, message: 'Certificate PDF not found — it may not have been generated yet.' });
     }
-    return res.download(filePath, `fitness-certificate-${req.params.id}.pdf`);
+    return res.download(filePath, fitnessCertificatePdfFileName(cert));
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

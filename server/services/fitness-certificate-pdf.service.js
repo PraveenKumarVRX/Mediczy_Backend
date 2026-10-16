@@ -21,8 +21,74 @@ function ensureDir() {
   if (!fs.existsSync(PDF_DIR)) fs.mkdirSync(PDF_DIR, { recursive: true });
 }
 
-export function fitnessCertificatePdfPath(certificateId) {
+/**
+ * Keep filename components filesystem-safe. Employee IDs are supplied by a
+ * corporate and may contain spaces, slashes, or punctuation; none of those
+ * should be allowed to change the directory in which a PDF is written.
+ */
+function filePart(value, fallback) {
+  const cleaned = String(value ?? '')
+    .trim()
+    .replace(/[^A-Za-z0-9.-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return cleaned || fallback;
+}
+
+function issuedDatePart(cert) {
+  const source = cert?.issued_date || cert?.issuedDate || cert?.signed_at || cert?.created_at;
+  if (!source) return 'UNKNOWN-DATE';
+  const raw = String(source).trim();
+  // DATE values are already unambiguous and should not be shifted by a
+  // server timezone conversion.
+  const dateOnly = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (dateOnly) return `${dateOnly[1]}${dateOnly[2]}${dateOnly[3]}`;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? filePart(raw, 'UNKNOWN-DATE') : parsed.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
+ * The FC number is derived from the database BIGSERIAL id. PostgreSQL does
+ * not reuse sequence values after deletes, so this remains unique even when a
+ * certificate is removed. The resulting format is:
+ *   FC-000123_EMP-0042_20261017.pdf
+ */
+export function fitnessCertificateNumber(certificateOrId, metadata = {}) {
+  const cert = certificateOrId && typeof certificateOrId === 'object'
+    ? certificateOrId
+    : { id: certificateOrId, ...metadata };
+  const id = Number(cert.id);
+  return Number.isSafeInteger(id) && id > 0 ? `FC-${String(id).padStart(6, '0')}` : `FC-${filePart(cert.id, 'UNKNOWN')}`;
+}
+
+export function fitnessCertificatePdfFileName(certificateOrId, metadata = {}) {
+  const cert = certificateOrId && typeof certificateOrId === 'object'
+    ? certificateOrId
+    : { id: certificateOrId, ...metadata };
+  const fcNumber = fitnessCertificateNumber(cert);
+  const employeeId = filePart(cert.employee_id ?? cert.employeeId, `PATIENT-${filePart(cert.patient_id ?? cert.patientId, 'UNKNOWN')}`);
+  return `${fcNumber}_${employeeId}_${issuedDatePart(cert)}.pdf`;
+}
+
+export function fitnessCertificatePdfPath(certificateOrId, metadata = {}) {
+  return path.join(PDF_DIR, fitnessCertificatePdfFileName(certificateOrId, metadata));
+}
+
+/** The pre-sequence name used by certificates issued before this change. */
+export function legacyFitnessCertificatePdfPath(certificateId) {
   return path.join(PDF_DIR, `fitness-cert-${certificateId}.pdf`);
+}
+
+/**
+ * Prefer the descriptive name, but keep old PDFs available while certificates
+ * issued before the naming change are being retained.
+ */
+export function resolveFitnessCertificatePdfPath(certificateOrId, metadata = {}) {
+  const current = fitnessCertificatePdfPath(certificateOrId, metadata);
+  if (fs.existsSync(current)) return current;
+  const id = certificateOrId && typeof certificateOrId === 'object' ? certificateOrId.id : certificateOrId;
+  const legacy = legacyFitnessCertificatePdfPath(id);
+  return fs.existsSync(legacy) ? legacy : current;
 }
 
 const STATUS_LABEL = {
@@ -52,7 +118,7 @@ function renderConditionalBlock(template, key, value) {
  */
 export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
   ensureDir();
-  const filePath = fitnessCertificatePdfPath(cert.id);
+  const filePath = fitnessCertificatePdfPath(cert);
 
   let html = fs.readFileSync(TEMPLATE_PATH, 'utf-8');
 
@@ -75,7 +141,11 @@ export async function generateFitnessCertificatePdf(cert, letterhead = {}) {
   const replacements = {
     '{{signatureSlot}}': signatureSlot,
     '{{logoSlot}}': logoSlot,
-    '{{certificateId}}': cert.id,
+    // The template already includes the "Certificate No. FC-" label in a
+    // couple of places; use the numeric sequence portion here to avoid
+    // rendering a duplicated FC prefix while keeping the PDF and filename in
+    // the same sequence.
+    '{{certificateId}}': fitnessCertificateNumber(cert).replace(/^FC-/, ''),
     '{{issuedDate}}': fmtDate(cert.signed_at || cert.created_at),
     '{{patientName}}': cert.patient_name || '—',
     '{{employeeId}}': cert.employee_id || '—',

@@ -10,7 +10,7 @@ import fs from 'fs';
 import { authTeam, requirePermission } from '../middleware/team.middleware.js';
 import sharedPool from '../db/pgPool.js';
 import { issueFitnessCertificate, getFitnessCertificatesByPatient, getFitnessCertificateById, deleteFitnessCertificate } from '../services/corporate-hmis.service.js';
-import { generateFitnessCertificatePdf, fitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
+import { generateFitnessCertificatePdf, fitnessCertificatePdfFileName, fitnessCertificatePdfPath, legacyFitnessCertificatePdfPath, resolveFitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 import { ohcService } from '../services/care-units/index.js';
 
 const router = express.Router();
@@ -112,11 +112,13 @@ router.get('/fitness-certificate/patient/:patientId', authTeam, requirePermissio
 
 router.get('/fitness-certificate/:id/pdf', authTeam, requirePermission('Doctor Management'), async (req, res) => {
   try {
-    const filePath = fitnessCertificatePdfPath(req.params.id);
+    const cert = await getFitnessCertificateById(req.params.id);
+    if (!cert) return res.status(404).json({ success: false, message: 'Certificate not found' });
+    const filePath = resolveFitnessCertificatePdfPath(cert);
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ success: false, message: 'Certificate PDF not found — it may not have been generated yet.' });
     }
-    return res.download(filePath, `fitness-certificate-${req.params.id}.pdf`);
+    return res.download(filePath, fitnessCertificatePdfFileName(cert));
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }
@@ -141,8 +143,13 @@ router.delete('/fitness-certificate/:id', authTeam, requirePermission('Doctor Ma
     if (!deleted) {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
     }
-    const filePath = fitnessCertificatePdfPath(req.params.id);
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    const currentPath = fitnessCertificatePdfPath(cert);
+    const legacyPath = legacyFitnessCertificatePdfPath(cert.id);
+    // If both names exist, remove both. Downloads use the descriptive name
+    // first and fall back to the legacy name for older certificates.
+    for (const filePath of new Set([currentPath, legacyPath])) {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
     console.log(`[team-occupational-health] FC-${req.params.id} (${cert.patient_name}, org ${organizationId}) deleted by team user ${req.teamUser.id}`);
     return res.json({ success: true });
   } catch (err) {
