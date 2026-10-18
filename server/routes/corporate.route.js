@@ -4733,7 +4733,7 @@ router.get('/analytics/monthly-utilization', authCorporate, async (req, res) => 
       { replacements: { corporateId } }
     );
     // Merge by month
-    const months: Record<string, any> = {};
+    const months = {};
     for (const r of apptRows) { months[r.month_key] = { month: r.month, appointments: parseInt(r.appointments, 10), ahcCompletions: 0 }; }
     for (const r of ahcRows) { if (!months[r.month_key]) months[r.month_key] = { month: r.month, appointments: 0, ahcCompletions: 0 }; months[r.month_key].ahcCompletions = parseInt(r.completions, 10); }
     const chart = Object.entries(months).sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
