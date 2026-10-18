@@ -4447,7 +4447,7 @@ router.get('/all-appointments', authCorporate, async (req, res) => {
                 CONCAT(u."firstName", ' ', u."lastName") AS "employeeName",
                 u.department_name AS department,
                 COALESCE(a."consultationType", a.type, 'Teleconsultation') AS type,
-                a."doctorName", a.facility, a."appointmentDate"::text AS date,
+                a."doctorName", NULL AS facility, a."appointmentDate"::text AS date,
                 a."appointmentTime"::text AS time, a.status, a.reason AS notes,
                 a."createdAt", 'employee_booked' AS source
          FROM appointments a
