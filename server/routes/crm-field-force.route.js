@@ -1031,4 +1031,371 @@ router.get('/tour-plans', authCRM, FF_READ, async (req, res) => {
   }
 });
 
+// ─── PHASE 6: REMAINING GAP COMPLETIONS ──────────────────────────────────────
+
+import llmProvider from '../services/ai-brain/llm-provider.js';
+
+// ── CME events (BH overview) ──────────────────────────────────────────────────
+
+// GET /cme-events?status=planned&month=2026-10
+router.get('/cme-events', authCRM, FF_READ, async (req, res) => {
+  const { status, month } = req.query;
+  const tenantId = tid(req);
+  const params = [tenantId];
+  const conds = ['e.tenant_id=$1'];
+  if (status) { params.push(status); conds.push(`e.status=$${params.length}`); }
+  if (month)  { params.push(month + '-01'); conds.push(`DATE_TRUNC('month',e.scheduled_at) = $${params.length}::date`); }
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.*,
+         u.name AS created_by_name,
+         (SELECT COUNT(*) FROM field_cme_attendees a WHERE a.cme_event_id=e.id) AS invited_count,
+         (SELECT COUNT(*) FROM field_cme_attendees a WHERE a.cme_event_id=e.id AND a.attended) AS attended_count,
+         (SELECT COUNT(*) FROM field_cme_speakers s WHERE s.cme_event_id=e.id) AS speaker_count
+       FROM field_cme_events e LEFT JOIN users u ON u.id=e.created_by
+       WHERE ${conds.join(' AND ')} ORDER BY e.scheduled_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /cme-events/:id  — update status or budget
+router.patch('/cme-events/:id', authCRM, FF_MANAGE, async (req, res) => {
+  const { status, budget_allocated, compliance_notes, notes } = req.body;
+  const tenantId = tid(req);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_cme_events SET
+         status            = COALESCE($3, status),
+         budget_allocated  = COALESCE($4, budget_allocated),
+         compliance_notes  = COALESCE($5, compliance_notes),
+         notes             = COALESCE($6, notes),
+         updated_at        = NOW()
+       WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+      [req.params.id, tenantId, status||null, budget_allocated||null, compliance_notes||null, notes||null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'CME event not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── CME speakers / KOL ledger ─────────────────────────────────────────────────
+
+// GET /cme-events/:id/speakers
+router.get('/cme-events/:id/speakers', authCRM, FF_READ, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT s.* FROM field_cme_speakers s WHERE s.cme_event_id=$1 ORDER BY s.created_at`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /cme-events/:id/speakers
+router.post('/cme-events/:id/speakers', authCRM, FF_MANAGE, async (req, res) => {
+  const { doctor_crm_id, speaker_name, speciality, speaker_type, honorarium, compliance_cleared, notes } = req.body;
+  const tenantId = tid(req);
+  if (!speaker_name) return res.status(400).json({ error: 'speaker_name required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO field_cme_speakers
+         (cme_event_id, doctor_crm_id, tenant_id, speaker_name, speciality,
+          speaker_type, honorarium, compliance_cleared, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [req.params.id, doctor_crm_id||null, tenantId, speaker_name, speciality||null,
+       speaker_type||'keynote', honorarium||null, compliance_cleared||false, notes||null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /cme-events/speakers/:id  — update compliance clearance etc
+router.patch('/cme-events/speakers/:id', authCRM, FF_MANAGE, async (req, res) => {
+  const { compliance_cleared, honorarium, notes } = req.body;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_cme_speakers SET
+         compliance_cleared = COALESCE($2, compliance_cleared),
+         honorarium         = COALESCE($3, honorarium),
+         notes              = COALESCE($4, notes)
+       WHERE id=$1 RETURNING *`,
+      [req.params.id, compliance_cleared ?? null, honorarium ?? null, notes ?? null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Speaker not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── event budgets ─────────────────────────────────────────────────────────────
+
+// GET /event-budgets?status=submitted
+router.get('/event-budgets', authCRM, FF_READ, async (req, res) => {
+  const { status } = req.query;
+  const tenantId = tid(req);
+  const params = [tenantId];
+  const conds = ['b.tenant_id=$1'];
+  if (status) { params.push(status); conds.push(`b.status=$${params.length}`); }
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.*, u.name AS created_by_name, au.name AS approved_by_name
+       FROM field_event_budgets b
+       LEFT JOIN users u ON u.id=b.created_by
+       LEFT JOIN users au ON au.id=b.approved_by
+       WHERE ${conds.join(' AND ')} ORDER BY b.created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /event-budgets
+router.post('/event-budgets', authCRM, FF_READ, async (req, res) => {
+  const { camp_id, cme_event_id, approved_amount, roi_projection, sponsorship_details, itemized_spend, notes } = req.body;
+  const tenantId = tid(req);
+  const createdBy = req.crmUser?.id;
+  if (!approved_amount) return res.status(400).json({ error: 'approved_amount required' });
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO field_event_budgets
+         (camp_id, cme_event_id, tenant_id, created_by, approved_amount,
+          itemized_spend, roi_projection, sponsorship_details, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [camp_id||null, cme_event_id||null, tenantId, createdBy,
+       approved_amount, JSON.stringify(itemized_spend||[]),
+       roi_projection||null, JSON.stringify(sponsorship_details||{}), notes||null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /event-budgets/:id/approve
+router.patch('/event-budgets/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
+  const { utilized_amount, itemized_spend } = req.body;
+  const tenantId = tid(req);
+  const approvedBy = req.crmUser?.id;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_event_budgets SET
+         status = 'approved', approved_by=$3, approved_at=NOW(),
+         utilized_amount = COALESCE($4, utilized_amount),
+         itemized_spend  = COALESCE($5::jsonb, itemized_spend),
+         updated_at = NOW()
+       WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+      [req.params.id, tenantId, approvedBy, utilized_amount||null,
+       itemized_spend ? JSON.stringify(itemized_spend) : null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Budget not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── coupon campaign analytics ─────────────────────────────────────────────────
+
+// GET /coupons/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD
+router.get('/coupons/analytics', authCRM, FF_READ, async (req, res) => {
+  const { from, to } = req.query;
+  const tenantId = tid(req);
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         c.code, c.type, c.description,
+         c."usageCount" AS total_redemptions,
+         c."usageLimit",
+         c."value",
+         c."validUntil",
+         COUNT(DISTINCT fc.id) AS camp_usages
+       FROM coupons c
+       LEFT JOIN field_camp_registrations fc ON fc.screening_notes ILIKE '%' || c.code || '%'
+       WHERE c."isActive" = TRUE
+       GROUP BY c.id
+       ORDER BY c."usageCount" DESC LIMIT 50`,
+      []
+    );
+    res.json({ coupons: rows, note: 'camp_usages = registrations where coupon code appears in screening_notes' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── target reallocation ────────────────────────────────────────────────────────
+
+// POST /targets/reallocate
+router.post('/targets/reallocate', authCRM, FF_MANAGE, async (req, res) => {
+  const { from_user_id, to_user_id, target_type, amount, reason } = req.body;
+  if (!from_user_id || !to_user_id || !amount) {
+    return res.status(400).json({ error: 'from_user_id, to_user_id, amount required' });
+  }
+  const tenantId = tid(req);
+  const managerId = req.crmUser?.id;
+  const now = new Date().toISOString().slice(0, 10);
+  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // reduce from source
+    await client.query(
+      `UPDATE field_targets SET target_value = target_value - $3, updated_at=NOW()
+       WHERE user_id=$1 AND tenant_id=$2 AND target_type=$4
+         AND period_start <= $5 AND period_end >= $5`,
+      [from_user_id, tenantId, amount, target_type||'visits', now]
+    );
+    // check if dest target exists for this period
+    const existing = await client.query(
+      `SELECT id FROM field_targets WHERE user_id=$1 AND tenant_id=$2
+       AND target_type=$3 AND period_start <= $4 AND period_end >= $4`,
+      [to_user_id, tenantId, target_type||'visits', now]
+    );
+    if (existing.rows.length) {
+      await client.query(
+        `UPDATE field_targets SET target_value = target_value + $3, updated_at=NOW()
+         WHERE user_id=$1 AND tenant_id=$2 AND target_type=$4
+           AND period_start <= $5 AND period_end >= $5`,
+        [to_user_id, tenantId, amount, target_type||'visits', now]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO field_targets (user_id, tenant_id, target_type, target_value, period_start, period_end, set_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [to_user_id, tenantId, target_type||'visits', amount, now, monthEnd, managerId]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true, from_user_id, to_user_id, amount, reason });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
+// ── enhanced doctor profile with revenue attribution ─────────────────────────
+
+// GET /doctor-crm/:id  — full profile with MTD revenue + visit stats
+router.get('/doctor-crm/:id', authCRM, FF_READ, async (req, res) => {
+  const tenantId = tid(req);
+  try {
+    const [doctor, visitStats, intel] = await Promise.all([
+      pool.query(`SELECT * FROM field_doctor_crm WHERE id=$1 AND tenant_id=$2`, [req.params.id, tenantId]),
+      pool.query(
+        `SELECT
+           COUNT(*) AS total_visits,
+           COUNT(*) FILTER (WHERE status='completed') AS completed_visits,
+           COUNT(*) FILTER (WHERE DATE(created_at) >= date_trunc('month',NOW())::date) AS mtd_visits,
+           MAX(created_at) AS last_visit_at,
+           COUNT(DISTINCT user_id) AS exec_count
+         FROM field_visits WHERE doctor_crm_id=$1 AND tenant_id=$2`,
+        [req.params.id, tenantId]
+      ),
+      pool.query(
+        `SELECT * FROM field_doctor_intel WHERE doctor_crm_id=$1`,
+        [req.params.id]
+      ),
+    ]);
+    if (!doctor.rows.length) return res.status(404).json({ error: 'Doctor not found' });
+    res.json({ ...doctor.rows[0], visit_stats: visitStats.rows[0], intel: intel.rows[0]||null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── notifications (BH can push to field exec) ─────────────────────────────────
+
+// POST /notifications/push  — send notification to one or all field execs
+router.post('/notifications/push', authCRM, FF_MANAGE, async (req, res) => {
+  const { user_ids, type, title, body, data } = req.body;
+  const tenantId = tid(req);
+  if (!title || !type) return res.status(400).json({ error: 'type and title required' });
+  try {
+    let targetUsers = user_ids;
+    if (!targetUsers || !targetUsers.length) {
+      // all field force users in this tenant
+      const { rows } = await pool.query(
+        `SELECT DISTINCT user_id FROM field_attendance WHERE tenant_id=$1
+         UNION SELECT DISTINCT user_id FROM field_visits WHERE tenant_id=$1`,
+        [tenantId]
+      );
+      targetUsers = rows.map(r => r.user_id);
+    }
+    const inserts = targetUsers.map(uid => pool.query(
+      `INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [uid, tenantId, type, title, body||null, JSON.stringify(data||{})]
+    ));
+    await Promise.all(inserts);
+    res.json({ sent: targetUsers.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PIP / performance card with scoring ───────────────────────────────────────
+
+// GET /team/:userId/pip  — performance card with PIP flag for BH review
+router.get('/team/:userId/pip', authCRM, FF_READ, async (req, res) => {
+  const tenantId = tid(req);
+  const uid = Number(req.params.userId);
+  const now = new Date().toISOString().slice(0, 10);
+  try {
+    const [scorecard, targets] = await Promise.all([
+      pool.query(
+        `SELECT
+           COUNT(v.id) FILTER (WHERE DATE(v.created_at) >= date_trunc('month',NOW())::date) AS mtd_visits,
+           COUNT(v.id) FILTER (WHERE v.status='completed' AND DATE(v.created_at) >= date_trunc('month',NOW())::date) AS completed_visits,
+           COUNT(a.id) FILTER (WHERE a.date >= date_trunc('month',NOW())::date AND a.status IN ('present','late','exception')) AS present_days,
+           COUNT(l.id) FILTER (WHERE l.pipeline_stage='closed_won' AND DATE(l.closed_at) >= date_trunc('month',NOW())::date) AS leads_won
+         FROM users u
+         LEFT JOIN field_visits v ON v.user_id=u.id AND v.tenant_id=$2
+         LEFT JOIN field_attendance a ON a.user_id=u.id AND a.tenant_id=$2
+         LEFT JOIN field_leads l ON l.assigned_to=u.id AND l.tenant_id=$2
+         WHERE u.id=$1`,
+        [uid, tenantId]
+      ),
+      pool.query(
+        `SELECT target_type, target_value FROM field_targets
+         WHERE user_id=$1 AND tenant_id=$2 AND period_start <= $3 AND period_end >= $3`,
+        [uid, tenantId, now]
+      ),
+    ]);
+
+    const sc = scorecard.rows[0] || {};
+    const tgt = targets.rows.reduce((a, t) => { a[t.target_type] = t.target_value; return a; }, {});
+
+    // PIP flag: visits < 50% of target OR attendance < 15 days MTD (approximate)
+    const visitTarget = tgt.visits || tgt.doctor_visits || 0;
+    const pip_flag = visitTarget > 0 && sc.completed_visits < visitTarget * 0.5;
+    const pip_reasons = [];
+    if (pip_flag) pip_reasons.push(`Completed visits ${sc.completed_visits} < 50% of target ${visitTarget}`);
+    if (sc.present_days < 15) pip_reasons.push(`Attendance ${sc.present_days} days < 15 this month`);
+
+    res.json({
+      user_id: uid,
+      scorecard: sc,
+      targets: tgt,
+      pip_flag: pip_flag || sc.present_days < 15,
+      pip_reasons,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

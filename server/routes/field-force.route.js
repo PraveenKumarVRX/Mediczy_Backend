@@ -1239,4 +1239,562 @@ router.post('/outreach-permissions', authTeam, FF, async (req, res) => {
   }
 });
 
+// ─── PHASE 6: REMAINING GAP COMPLETIONS ──────────────────────────────────────
+
+import llmProvider from '../services/ai-brain/llm-provider.js';
+
+// ── day-plan sequence (multi-stop planner) ────────────────────────────────────
+
+// GET /my/day-plan?date=YYYY-MM-DD  — ordered visit list for the day
+router.get('/my/day-plan', authTeam, FF, async (req, res) => {
+  const { date = today() } = req.query;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT v.*, e.status AS exception_status
+       FROM field_visits v
+       LEFT JOIN field_visit_exceptions e ON e.visit_id = v.id
+       WHERE v.user_id=$1 AND v.tenant_id=$2
+         AND DATE(COALESCE(v.planned_at, v.created_at)) = $3
+       ORDER BY COALESCE(v.planned_sequence, 999), v.planned_at`,
+      [uid, tid, date]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /visits/:id/sequence  — set stop sequence + estimated arrival
+router.patch('/visits/:id/sequence', authTeam, FF, async (req, res) => {
+  const { planned_sequence, estimated_arrival } = req.body;
+  const uid = req.user.id;
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE field_visits SET planned_sequence=$3, estimated_arrival=$4::timestamptz,
+         updated_at=NOW()
+       WHERE id=$1 AND user_id=$2 RETURNING *`,
+      [req.params.id, uid, planned_sequence ?? null, estimated_arrival ?? null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Visit not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /visits/:id/checklist  — update in-progress checklist items
+router.patch('/visits/:id/checklist', authTeam, FF, async (req, res) => {
+  const { visit_checklist, duration_seconds } = req.body;
+  const uid = req.user.id;
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE field_visits SET
+         visit_checklist = COALESCE($3::jsonb, visit_checklist),
+         duration_seconds = COALESCE($4, duration_seconds),
+         updated_at = NOW()
+       WHERE id=$1 AND user_id=$2 RETURNING *`,
+      [req.params.id, uid, visit_checklist ? JSON.stringify(visit_checklist) : null,
+       duration_seconds ?? null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Visit not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── institution profile ───────────────────────────────────────────────────────
+
+// GET /institution/:entityType/:entityId  — profile: visits + open leads + empanelment
+router.get('/institution/:entityType/:entityId', authTeam, FF, async (req, res) => {
+  const { entityType, entityId } = req.params;
+  const tid = tenantId(req);
+  try {
+    const [visits, leads, emp] = await Promise.all([
+      sharedPool.query(
+        `SELECT v.id, v.visit_type, v.status, v.planned_at, v.created_at,
+           u.name AS exec_name, v.notes_actual
+         FROM field_visits v LEFT JOIN users u ON u.id=v.user_id
+         WHERE v.entity_type=$1 AND v.entity_id=$2 AND v.tenant_id=$3
+         ORDER BY v.created_at DESC LIMIT 30`,
+        [entityType, entityId, tid]
+      ),
+      sharedPool.query(
+        `SELECT id, lead_type, entity_name, pipeline_stage, contract_value, created_at
+         FROM field_leads
+         WHERE entity_type=$1 AND entity_id=$2 AND tenant_id=$3
+         ORDER BY created_at DESC LIMIT 10`,
+        [entityType, entityId, tid]
+      ),
+      sharedPool.query(
+        `SELECT id, entity_name, status, insurer_name, panel_type, created_at
+         FROM field_empanelment_applications
+         WHERE entity_type=$1 AND entity_id::TEXT=$2 AND tenant_id=$3
+         ORDER BY created_at DESC LIMIT 5`,
+        [entityType, entityId, tid]
+      ),
+    ]);
+    res.json({
+      entity_type: entityType,
+      entity_id:   entityId,
+      visits:      visits.rows,
+      leads:       leads.rows,
+      empanelment: emp.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── CME events (exec view) ────────────────────────────────────────────────────
+
+// GET /cme-events?status=planned
+router.get('/cme-events', authTeam, FF, async (req, res) => {
+  const { status } = req.query;
+  const tid = tenantId(req);
+  const params = [tid];
+  const conds = ['e.tenant_id=$1'];
+  if (status) { params.push(status); conds.push(`e.status=$${params.length}`); }
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT e.*,
+         (SELECT COUNT(*) FROM field_cme_attendees a WHERE a.cme_event_id=e.id) AS invited_count,
+         (SELECT COUNT(*) FROM field_cme_attendees a WHERE a.cme_event_id=e.id AND a.attended) AS attended_count,
+         (SELECT COUNT(*) FROM field_cme_speakers s WHERE s.cme_event_id=e.id) AS speaker_count
+       FROM field_cme_events e
+       WHERE ${conds.join(' AND ')} ORDER BY e.scheduled_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /cme-events
+router.post('/cme-events', authTeam, FF, async (req, res) => {
+  const { name, event_type, scheduled_at, venue, city, max_attendees, budget_allocated, notes } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!name || !scheduled_at) return res.status(400).json({ error: 'name and scheduled_at required' });
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_cme_events
+         (tenant_id, created_by, name, event_type, scheduled_at, venue, city,
+          max_attendees, budget_allocated, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [tid, uid, name, event_type||'cme', scheduled_at, venue||null, city||null,
+       max_attendees||null, budget_allocated||null, notes||null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /cme-events/:id/invite  — invite a doctor to CME
+router.post('/cme-events/:id/invite', authTeam, FF, async (req, res) => {
+  const { doctor_crm_id, doctor_name, phone } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const qr_token = crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_cme_attendees
+         (cme_event_id, doctor_crm_id, tenant_id, invited_by, doctor_name, phone,
+          invitation_sent_at, qr_token)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)
+       ON CONFLICT DO NOTHING RETURNING *`,
+      [req.params.id, doctor_crm_id||null, tid, uid, doctor_name||null, phone||null, qr_token]
+    );
+    res.status(201).json(rows[0] || { message: 'Already invited' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /cme-events/:id/checkin  — validate QR token and mark attendance
+router.post('/cme-events/:id/checkin', authTeam, FF, async (req, res) => {
+  const { qr_token } = req.body;
+  if (!qr_token) return res.status(400).json({ error: 'qr_token required' });
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE field_cme_attendees SET attended=TRUE, checkin_at=NOW()
+       WHERE cme_event_id=$1 AND qr_token=$2 AND attended=FALSE
+       RETURNING *`,
+      [req.params.id, qr_token]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Invalid QR token or already checked in' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /cme-events/:id/attendees
+router.get('/cme-events/:id/attendees', authTeam, FF, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT a.*, u.name AS invited_by_name
+       FROM field_cme_attendees a
+       LEFT JOIN users u ON u.id=a.invited_by
+       WHERE a.cme_event_id=$1 ORDER BY a.created_at`,
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── notifications ─────────────────────────────────────────────────────────────
+
+// GET /notifications?unread=true
+router.get('/notifications', authTeam, FF, async (req, res) => {
+  const { unread, limit = 50 } = req.query;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const params = [uid, tid, Math.min(Number(limit), 200)];
+  const conds = ['user_id=$1', 'tenant_id=$2'];
+  if (unread === 'true') conds.push('read=FALSE');
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT * FROM field_notifications WHERE ${conds.join(' AND ')}
+       ORDER BY created_at DESC LIMIT $3`,
+      params
+    );
+    const { rows: cnt } = await sharedPool.query(
+      `SELECT COUNT(*) AS unread_count FROM field_notifications
+       WHERE user_id=$1 AND tenant_id=$2 AND read=FALSE`,
+      [uid, tid]
+    );
+    res.json({ notifications: rows, unread_count: Number(cnt[0].unread_count) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /notifications/:id/read
+router.patch('/notifications/:id/read', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  try {
+    await sharedPool.query(
+      `UPDATE field_notifications SET read=TRUE, read_at=NOW()
+       WHERE id=$1 AND user_id=$2`,
+      [req.params.id, uid]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /notifications/read-all
+router.patch('/notifications/read-all', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    const { rowCount } = await sharedPool.query(
+      `UPDATE field_notifications SET read=TRUE, read_at=NOW()
+       WHERE user_id=$1 AND tenant_id=$2 AND read=FALSE`,
+      [uid, tid]
+    );
+    res.json({ marked_read: rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── offline sync ──────────────────────────────────────────────────────────────
+
+// POST /sync  — process a queue of offline operations idempotently
+router.post('/sync', authTeam, FF, async (req, res) => {
+  const { queue = [], device_id, last_sync_at } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!Array.isArray(queue)) return res.status(400).json({ error: 'queue must be an array' });
+
+  const results = [];
+  for (const item of queue.slice(0, 200)) {
+    const { idempotency_key, operation, payload } = item;
+    if (!idempotency_key || !operation) {
+      results.push({ idempotency_key, status: 'skipped', error: 'missing idempotency_key or operation' });
+      continue;
+    }
+
+    // check idempotency — already processed?
+    const { rows: existing } = await sharedPool.query(
+      `SELECT id, status, result FROM field_sync_log WHERE idempotency_key=$1`,
+      [idempotency_key]
+    );
+    if (existing.length) {
+      results.push({ idempotency_key, status: 'duplicate', result: existing[0].result });
+      continue;
+    }
+
+    let status = 'processed';
+    let result = null;
+    let error_message = null;
+
+    try {
+      switch (operation) {
+        case 'clock_in': {
+          const { lat, lng, accuracy_m, address } = payload;
+          const d = new Date().toISOString().slice(0, 10);
+          const { rows } = await sharedPool.query(
+            `INSERT INTO field_attendance
+               (user_id, date, clock_in_at, clock_in_lat, clock_in_lng, clock_in_accuracy_m, clock_in_address, status, tenant_id)
+             VALUES ($1,$2,NOW(),$3,$4,$5,$6,'present',$7)
+             ON CONFLICT (user_id, date) DO UPDATE SET
+               clock_in_lat=$3, clock_in_lng=$4, clock_in_accuracy_m=$5, clock_in_address=$6, updated_at=NOW()
+             RETURNING id`,
+            [uid, d, lat||null, lng||null, accuracy_m||null, address||null, tid]
+          );
+          result = { id: rows[0]?.id };
+          break;
+        }
+        case 'clock_out': {
+          const { lat, lng, accuracy_m } = payload;
+          const d = new Date().toISOString().slice(0, 10);
+          const { rows } = await sharedPool.query(
+            `UPDATE field_attendance SET clock_out_at=NOW(), clock_out_lat=$3,
+               clock_out_lng=$4, clock_out_accuracy_m=$5, updated_at=NOW()
+             WHERE user_id=$1 AND date=$2 RETURNING id`,
+            [uid, d, lat||null, lng||null, accuracy_m||null]
+          );
+          result = { id: rows[0]?.id };
+          break;
+        }
+        case 'create_visit': {
+          const { entity_type, entity_id, entity_name, visit_type, planned_at, notes } = payload;
+          const { rows } = await sharedPool.query(
+            `INSERT INTO field_visits
+               (user_id, tenant_id, entity_type, entity_id, entity_name, visit_type, planned_at, notes_planned, status, is_unplanned)
+             VALUES ($1,$2,$3,$4,$5,$6,$7::timestamptz,$8,'planned',TRUE)
+             RETURNING id`,
+            [uid, tid, entity_type||'other', entity_id||null, entity_name||null,
+             visit_type||'regular', planned_at||null, notes||null]
+          );
+          result = { id: rows[0]?.id };
+          break;
+        }
+        case 'complete_visit': {
+          const { visit_id, notes_actual, outcome, checklist } = payload;
+          const { rows } = await sharedPool.query(
+            `UPDATE field_visits SET status='completed', notes_actual=$3,
+               visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW()
+             WHERE id=$2 AND user_id=$1 RETURNING id`,
+            [uid, visit_id, notes_actual||null, checklist ? JSON.stringify(checklist) : null]
+          );
+          result = { id: rows[0]?.id };
+          break;
+        }
+        case 'add_notification_read': {
+          await sharedPool.query(
+            `UPDATE field_notifications SET read=TRUE, read_at=NOW()
+             WHERE id=$1 AND user_id=$2`, [payload.notification_id, uid]
+          );
+          result = { ok: true };
+          break;
+        }
+        default:
+          status = 'skipped';
+          error_message = `unknown operation: ${operation}`;
+      }
+    } catch (opErr) {
+      status = 'failed';
+      error_message = opErr.message;
+    }
+
+    await sharedPool.query(
+      `INSERT INTO field_sync_log
+         (user_id, tenant_id, device_id, idempotency_key, operation, payload, status, result, error_message)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (idempotency_key) DO NOTHING`,
+      [uid, tid, device_id||'unknown', idempotency_key, operation,
+       JSON.stringify(payload||{}), status, result ? JSON.stringify(result) : null, error_message]
+    );
+    results.push({ idempotency_key, status, result, error_message });
+  }
+
+  res.json({ processed: results.length, results, server_time: new Date().toISOString() });
+});
+
+// ── device telemetry ──────────────────────────────────────────────────────────
+
+// POST /telemetry
+router.post('/telemetry', authTeam, FF, async (req, res) => {
+  const { device_id, app_version, gps_accuracy, cell_signal, battery_pct, network_type, lat, lng, extras } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    await sharedPool.query(
+      `INSERT INTO field_telemetry
+         (user_id, tenant_id, device_id, app_version, gps_accuracy, cell_signal,
+          battery_pct, network_type, lat, lng, extras)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [uid, tid, device_id||null, app_version||null, gps_accuracy||null, cell_signal||null,
+       battery_pct||null, network_type||null, lat||null, lng||null,
+       JSON.stringify(extras||{})]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── coupon validator (OPD field use) ─────────────────────────────────────────
+
+// GET /coupon/validate/:code
+router.get('/coupon/validate/:code', authTeam, FF, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT id, code, type, value, description, "validFrom", "validUntil",
+         "usageLimit", "usageCount", "isActive"
+       FROM coupons
+       WHERE UPPER(code) = UPPER($1)
+         AND "isActive" = TRUE
+         AND ("validFrom" IS NULL OR "validFrom" <= NOW())
+         AND ("validUntil" IS NULL OR "validUntil" >= NOW())`,
+      [req.params.code]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Invalid or expired coupon' });
+    const c = rows[0];
+    const valid = !c.usageLimit || c.usageCount < c.usageLimit;
+    res.json({ ...c, can_redeem: valid });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── territory route (GeoJSON for client map) ──────────────────────────────────
+
+// GET /territory?date=YYYY-MM-DD  — territory polygon + today's planned stops
+router.get('/territory', authTeam, FF, async (req, res) => {
+  const { date = today() } = req.query;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    const [territory, stops] = await Promise.all([
+      sharedPool.query(
+        `SELECT id, name, polygon_geojson, description
+         FROM field_territories WHERE tenant_id=$1
+         AND (assigned_user_ids IS NULL OR $2 = ANY(assigned_user_ids))
+         LIMIT 5`,
+        [tid, uid]
+      ),
+      sharedPool.query(
+        `SELECT id, entity_name, entity_type, visit_type, planned_at,
+           check_in_lat, check_in_lng, planned_sequence, estimated_arrival, status
+         FROM field_visits
+         WHERE user_id=$1 AND tenant_id=$2
+           AND DATE(COALESCE(planned_at, created_at)) = $3
+         ORDER BY COALESCE(planned_sequence, 999), planned_at`,
+        [uid, tid, date]
+      ),
+    ]);
+    res.json({ territories: territory.rows, stops: stops.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── AI endpoints ──────────────────────────────────────────────────────────────
+
+// GET /ai/briefing  — personalised daily briefing from LLM
+router.get('/ai/briefing', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    const [scorecard, targets, pendingExceptions, unreadNotif] = await Promise.all([
+      sharedPool.query(
+        `SELECT visits_done, leads_closed FROM (
+           SELECT
+             COUNT(v.id) FILTER (WHERE v.status='completed' AND DATE(v.created_at) >= date_trunc('month',NOW())::date) AS visits_done,
+             COUNT(l.id) FILTER (WHERE l.pipeline_stage='closed_won' AND DATE(l.closed_at) >= date_trunc('month',NOW())::date) AS leads_closed
+           FROM field_visits v
+           LEFT JOIN field_leads l ON l.assigned_to=$1
+           WHERE v.user_id=$1 AND v.tenant_id=$2
+         ) sc`,
+        [uid, tid]
+      ),
+      sharedPool.query(
+        `SELECT target_type, target_value, period_end FROM field_targets
+         WHERE user_id=$1 AND tenant_id=$2 AND period_end >= NOW()::date
+         ORDER BY period_end LIMIT 3`,
+        [uid, tid]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) AS cnt FROM field_visit_exceptions
+         WHERE user_id=$1 AND tenant_id=$2 AND status='pending'`,
+        [uid, tid]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) AS cnt FROM field_notifications
+         WHERE user_id=$1 AND tenant_id=$2 AND read=FALSE`,
+        [uid, tid]
+      ),
+    ]);
+
+    const sc = scorecard.rows[0] || {};
+    const tgt = targets.rows;
+    const context = [
+      `Field executive daily briefing. Today: ${today()}.`,
+      `MTD: ${sc.visits_done||0} visits completed, ${sc.leads_closed||0} leads closed.`,
+      tgt.length ? `Active targets: ${tgt.map(t=>`${t.target_type} = ${t.target_value} by ${t.period_end}`).join('; ')}.` : '',
+      pendingExceptions.rows[0]?.cnt > 0 ? `${pendingExceptions.rows[0].cnt} out-of-beat exception(s) pending manager review.` : '',
+      `${unreadNotif.rows[0]?.cnt||0} unread notification(s).`,
+    ].filter(Boolean).join(' ');
+
+    const { choices } = await llmProvider.chat({
+      messages: [
+        { role: 'system', content: 'You are a concise field force AI assistant. Generate a 3-bullet daily briefing for the field executive based on the data. Be specific, actionable and encouraging. Output plain text only, no markdown.' },
+        { role: 'user', content: context },
+      ],
+      max_tokens: 250,
+    });
+
+    res.json({
+      briefing: choices?.[0]?.message?.content?.trim() || 'Good morning! Stay on track with your targets today.',
+      data: { scorecard: sc, targets: tgt, pending_exceptions: pendingExceptions.rows[0]?.cnt },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /ai/optimize-route  — LLM-based visit sequence optimizer
+router.post('/ai/optimize-route', authTeam, FF, async (req, res) => {
+  const { stops, current_location } = req.body;
+  if (!stops || !stops.length) return res.status(400).json({ error: 'stops array required' });
+  try {
+    const stopList = stops.map((s, i) => `${i+1}. ${s.entity_name} (${s.visit_type||'visit'})`).join('\n');
+    const locationNote = current_location
+      ? `Current location: lat ${current_location.lat}, lng ${current_location.lng}.`
+      : 'Current location: unknown.';
+
+    const { choices } = await llmProvider.chat({
+      messages: [
+        { role: 'system', content: 'You are a route optimization assistant for a healthcare field executive. Given a list of stops, suggest the most efficient visit order to minimise travel. Return ONLY a JSON array of stop numbers in recommended order, e.g. [3,1,2,4]. Nothing else.' },
+        { role: 'user', content: `${locationNote}\nStops:\n${stopList}` },
+      ],
+      max_tokens: 100,
+    });
+
+    const raw = choices?.[0]?.message?.content?.trim() || '';
+    let order = [];
+    try { order = JSON.parse(raw.match(/\[[\d,\s]+\]/)?.[0] || '[]'); } catch { /* ignore */ }
+
+    const optimized = order.length === stops.length
+      ? order.map(i => stops[i - 1]).filter(Boolean)
+      : stops;
+
+    res.json({ optimized_stops: optimized, order, efficiency_note: 'Ordered by proximity estimate.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
