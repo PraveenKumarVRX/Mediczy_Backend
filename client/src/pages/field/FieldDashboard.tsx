@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapPin, Clock, CheckCircle2, Plus, FileText, AlertCircle, LogOut, CalendarDays } from 'lucide-react';
+import { MapPin, Clock, CheckCircle2, Plus, FileText, AlertCircle, LogOut, CalendarDays, Receipt, Tent, Building2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -252,6 +252,30 @@ export default function FieldDashboard() {
             <CalendarDays size={18} className="text-[#17365D]" />
             <span className="text-sm font-semibold text-slate-800">Attendance</span>
             <span className="text-xs text-slate-400">History & calendar</span>
+          </button>
+          <button onClick={() => navigate('/team/field/expenses')}
+            className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col items-start gap-1 shadow-sm hover:shadow-md transition-shadow">
+            <Receipt size={18} className="text-[#17365D]" />
+            <span className="text-sm font-semibold text-slate-800">Expenses</span>
+            <span className="text-xs text-slate-400">Claims & travel</span>
+          </button>
+          <button onClick={() => navigate('/team/field/camps')}
+            className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col items-start gap-1 shadow-sm hover:shadow-md transition-shadow">
+            <Tent size={18} className="text-[#17365D]" />
+            <span className="text-sm font-semibold text-slate-800">Health Camps</span>
+            <span className="text-xs text-slate-400">Plan & track</span>
+          </button>
+          <button onClick={() => navigate('/team/field/empanelment')}
+            className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col items-start gap-1 shadow-sm hover:shadow-md transition-shadow">
+            <Building2 size={18} className="text-[#17365D]" />
+            <span className="text-sm font-semibold text-slate-800">Empanelment</span>
+            <span className="text-xs text-slate-400">Insurer pipeline</span>
+          </button>
+          <button onClick={() => navigate('/team/field/outreach')}
+            className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col items-start gap-1 shadow-sm hover:shadow-md transition-shadow">
+            <Users size={18} className="text-[#17365D]" />
+            <span className="text-sm font-semibold text-slate-800">Outreach</span>
+            <span className="text-xs text-slate-400">NGO · RWA · Govt</span>
           </button>
         </div>
 

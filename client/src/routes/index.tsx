@@ -327,6 +327,10 @@ const TeamBrokerManagement     = lazy(() => import("@/pages/team/TeamBrokerManag
 const FieldDashboard           = lazy(() => import("@/pages/field/FieldDashboard"));
 const FieldAttendance          = lazy(() => import("@/pages/field/FieldAttendance"));
 const FieldVisits              = lazy(() => import("@/pages/field/FieldVisits"));
+const FieldExpenses            = lazy(() => import("@/pages/field/FieldExpenses"));
+const FieldCamps               = lazy(() => import("@/pages/field/FieldCamps"));
+const FieldEmpanelment         = lazy(() => import("@/pages/field/FieldEmpanelment"));
+const FieldOutreach            = lazy(() => import("@/pages/field/FieldOutreach"));
 const TeamDoctorManagement     = lazy(() => import("@/pages/team/TeamDoctorManagement"));
 const TeamProviderNetwork      = lazy(() => import("@/pages/team/TeamProviderNetwork"));
 
@@ -1517,6 +1521,14 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Field Force"><FieldAttendance /></TeamGuard>} />
         <Route path="/team/field/visits"
           element={<TeamGuard permission="Field Force"><FieldVisits /></TeamGuard>} />
+        <Route path="/team/field/expenses"
+          element={<TeamGuard permission="Field Force"><FieldExpenses /></TeamGuard>} />
+        <Route path="/team/field/camps"
+          element={<TeamGuard permission="Field Force"><FieldCamps /></TeamGuard>} />
+        <Route path="/team/field/empanelment"
+          element={<TeamGuard permission="Field Force"><FieldEmpanelment /></TeamGuard>} />
+        <Route path="/team/field/outreach"
+          element={<TeamGuard permission="Field Force"><FieldOutreach /></TeamGuard>} />
 
         {/* ── Team (admin-only) ────────────────────────────────────────── */}
         <Route path="/team/activity"
