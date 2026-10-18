@@ -267,9 +267,20 @@ export const createAppointment = async (req, res) => {
       // Use the resolved internal ID for database operations
       const resolvedDoctorId = doctor.id;
 
-      const corporateTenantId = req.user?.organization_type === 'corporate'
+      // Prefer explicit corporate org on token; fall back to user_associations lookup
+      // so self-booked appointments by corporate employees are visible in the corporate portal.
+      let corporateTenantId = req.user?.organization_type === 'corporate'
         ? (req.user.organization_id || req.user.tenant_id)
         : null;
+      if (!corporateTenantId && req.user?.id) {
+        const [assocRows] = await postgresSequelize.query(
+          `SELECT "entityId" FROM user_associations
+           WHERE "userId" = :uid AND "entityType" = 'corporate' AND status = 'active'
+           LIMIT 1`,
+          { replacements: { uid: req.user.id } }
+        ).catch(() => [[]]);
+        if (assocRows[0]?.entityId) corporateTenantId = assocRows[0].entityId;
+      }
       const clinicTenantId = doctor.organization_type === 'clinic'
         ? doctor.organization_id
         : null;
