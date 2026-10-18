@@ -680,4 +680,355 @@ router.get('/empanelment', authCRM, FF_READ, async (req, res) => {
   }
 });
 
+// ─── PHASE 5: GAP COMPLETIONS ────────────────────────────────────────────────
+
+// ── unified approvals inbox ────────────────────────────────────────────────────
+// GET /approvals?type=expenses|exceptions|tour_plans&status=pending
+router.get('/approvals', authCRM, FF_READ, async (req, res) => {
+  const { type, status = 'pending' } = req.query;
+  const tenantId = tid(req);
+  try {
+    const results = {};
+
+    if (!type || type === 'expenses') {
+      const { rows } = await pool.query(
+        `SELECT ec.*, u.name AS exec_name, 'expense' AS approval_type
+         FROM field_expense_claims ec JOIN users u ON u.id=ec.user_id
+         WHERE ec.tenant_id=$1 AND ec.status=$2 ORDER BY ec.created_at DESC LIMIT 50`,
+        [tenantId, status === 'pending' ? 'submitted' : status]
+      );
+      results.expenses = rows;
+    }
+
+    if (!type || type === 'exceptions') {
+      const { rows } = await pool.query(
+        `SELECT e.*, u.name AS exec_name, v.entity_name, v.visit_type, 'exception' AS approval_type
+         FROM field_visit_exceptions e
+         JOIN users u ON u.id=e.user_id
+         LEFT JOIN field_visits v ON v.id=e.visit_id
+         WHERE e.tenant_id=$1 AND e.status=$2 ORDER BY e.created_at DESC LIMIT 50`,
+        [tenantId, status]
+      );
+      results.exceptions = rows;
+    }
+
+    if (!type || type === 'tour_plans') {
+      const { rows } = await pool.query(
+        `SELECT t.*, u.name AS exec_name, 'tour_plan' AS approval_type
+         FROM field_tour_plans t JOIN users u ON u.id=t.user_id
+         WHERE t.tenant_id=$1 AND t.status=$2 ORDER BY t.submitted_at DESC LIMIT 50`,
+        [tenantId, status === 'pending' ? 'submitted' : status]
+      );
+      results.tour_plans = rows;
+    }
+
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /approvals/exceptions/:id/approve
+router.patch('/approvals/exceptions/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
+  const { review_note } = req.body;
+  const reviewerId = req.user?.id;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_visit_exceptions SET status='approved', reviewed_by=$2,
+         reviewed_at=NOW(), review_note=$3, updated_at=NOW()
+       WHERE id=$1 AND status='pending' RETURNING *`,
+      [req.params.id, reviewerId, review_note || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /approvals/exceptions/:id/reject
+router.patch('/approvals/exceptions/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
+  const { review_note } = req.body;
+  const reviewerId = req.user?.id;
+  if (!review_note) return res.status(400).json({ error: 'review_note required for rejection' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_visit_exceptions SET status='rejected', reviewed_by=$2,
+         reviewed_at=NOW(), review_note=$3, updated_at=NOW()
+       WHERE id=$1 AND status='pending' RETURNING *`,
+      [req.params.id, reviewerId, review_note]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /approvals/tour-plans/:id/approve
+router.patch('/approvals/tour-plans/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
+  const { review_note } = req.body;
+  const reviewerId = req.user?.id;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_tour_plans SET status='approved', reviewed_by=$2,
+         reviewed_at=NOW(), review_note=$3, updated_at=NOW()
+       WHERE id=$1 AND status='submitted' RETURNING *`,
+      [req.params.id, reviewerId, review_note || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Tour plan not found or not submitted' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /approvals/tour-plans/:id/reject
+router.patch('/approvals/tour-plans/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
+  const { review_note } = req.body;
+  if (!review_note) return res.status(400).json({ error: 'review_note required' });
+  const reviewerId = req.user?.id;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_tour_plans SET status='rejected', reviewed_by=$2,
+         reviewed_at=NOW(), review_note=$3, updated_at=NOW()
+       WHERE id=$1 AND status='submitted' RETURNING *`,
+      [req.params.id, reviewerId, review_note]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Tour plan not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── lead pipeline stage progression ──────────────────────────────────────────
+
+// PATCH /leads/:id/stage
+router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
+  const { pipeline_stage, note } = req.body;
+  const valid = ['new','contacted','qualified','proposal','empanelment','closed_won','closed_lost'];
+  if (!valid.includes(pipeline_stage)) {
+    return res.status(400).json({ error: `pipeline_stage must be one of: ${valid.join(', ')}` });
+  }
+  const tenantId = tid(req);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_leads SET
+         pipeline_stage = $3,
+         stage_history  = COALESCE(stage_history,'[]'::jsonb) || jsonb_build_object(
+           'stage', $3, 'at', NOW(), 'by', $4::text, 'note', $5::text
+         )::jsonb,
+         updated_at = NOW()
+       WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+      [req.params.id, tenantId, pipeline_stage, req.user?.id, note || null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /leads/:id/convert — mark as closed_won with contract details
+router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
+  const { contract_value, mou_document_url, note } = req.body;
+  const tenantId = tid(req);
+  try {
+    const { rows } = await pool.query(
+      `UPDATE field_leads SET
+         pipeline_stage  = 'closed_won',
+         contract_value  = $3,
+         mou_document_url= $4,
+         closed_at       = NOW(),
+         stage_history   = COALESCE(stage_history,'[]'::jsonb) || jsonb_build_object(
+           'stage','closed_won','at',NOW(),'by',$5::text,'note',$6::text
+         )::jsonb,
+         updated_at      = NOW()
+       WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+      [req.params.id, tenantId, contract_value||null, mou_document_url||null,
+       req.user?.id, note||null]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── doctor CRM enrichment ─────────────────────────────────────────────────────
+
+// GET /doctor-crm/:id/intel  — gatekeeper/relationship notes
+router.get('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT i.*, u.name AS updated_by_name
+       FROM field_doctor_intel i
+       LEFT JOIN users u ON u.id=i.updated_by
+       WHERE i.doctor_crm_id=$1`,
+      [req.params.id]
+    );
+    res.json(rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PUT /doctor-crm/:id/intel — upsert gatekeeper intel
+router.put('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
+  const { gatekeeper_name, gatekeeper_phone, opd_days, best_visit_time, notes } = req.body;
+  const tenantId = tid(req);
+  try {
+    const existing = await pool.query(
+      `SELECT id FROM field_doctor_intel WHERE doctor_crm_id=$1`, [req.params.id]
+    );
+    let rows;
+    if (existing.rows.length) {
+      ({ rows } = await pool.query(
+        `UPDATE field_doctor_intel SET
+           gatekeeper_name=$2, gatekeeper_phone=$3, opd_days=$4,
+           best_visit_time=$5, notes=$6, updated_by=$7, updated_at=NOW()
+         WHERE doctor_crm_id=$1 RETURNING *`,
+        [req.params.id, gatekeeper_name||null, gatekeeper_phone||null, opd_days||null,
+         best_visit_time||null, notes||null, req.user?.id]
+      ));
+    } else {
+      ({ rows } = await pool.query(
+        `INSERT INTO field_doctor_intel
+           (doctor_crm_id, tenant_id, gatekeeper_name, gatekeeper_phone,
+            opd_days, best_visit_time, notes, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [req.params.id, tenantId, gatekeeper_name||null, gatekeeper_phone||null,
+         opd_days||null, best_visit_time||null, notes||null, req.user?.id]
+      ));
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /doctor-crm/:id/trail — visit history + linked admissions for a doctor
+router.get('/doctor-crm/:id/trail', authCRM, FF_READ, async (req, res) => {
+  const tenantId = tid(req);
+  try {
+    const [visits, intel] = await Promise.all([
+      pool.query(
+        `SELECT v.*, u.name AS exec_name
+         FROM field_visits v
+         LEFT JOIN users u ON u.id=v.user_id
+         WHERE v.doctor_crm_id=$1 AND v.tenant_id=$2
+         ORDER BY v.created_at DESC LIMIT 50`,
+        [req.params.id, tenantId]
+      ),
+      pool.query(
+        `SELECT dc.name, dc.speciality, dc.hospital_name, dc.relationship_status,
+           COUNT(v.id) AS total_visits,
+           MAX(v.created_at) AS last_visit_at,
+           COUNT(v.id) FILTER (WHERE v.status='completed') AS completed_visits
+         FROM field_doctor_crm dc
+         LEFT JOIN field_visits v ON v.doctor_crm_id=dc.id
+         WHERE dc.id=$1 GROUP BY dc.id`,
+        [req.params.id]
+      ),
+    ]);
+    res.json({
+      doctor:  intel.rows[0] || null,
+      visits:  visits.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── camp management (BH view) ─────────────────────────────────────────────────
+
+// GET /camps
+router.get('/camps', authCRM, FF_READ, async (req, res) => {
+  const { status } = req.query;
+  const tenantId = tid(req);
+  try {
+    const params = [tenantId];
+    const conds  = ['tenant_id=$1'];
+    if (status) { params.push(status); conds.push(`status=$${params.length}`); }
+    const { rows } = await pool.query(
+      `SELECT c.*,
+         (SELECT COUNT(*) FROM field_camp_registrations r WHERE r.camp_id=c.id) AS footfall
+       FROM health_camps c
+       WHERE ${conds.join(' AND ')} ORDER BY c.scheduled_date DESC LIMIT 100`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /camps/:id/registrations
+router.get('/camps/:id/registrations', authCRM, FF_READ, async (req, res) => {
+  const tenantId = tid(req);
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.*, u.name AS registered_by_name
+       FROM field_camp_registrations r
+       JOIN users u ON u.id=r.registered_by
+       WHERE r.camp_id=$1 AND r.tenant_id=$2 ORDER BY r.created_at DESC`,
+      [req.params.id, tenantId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── exceptions overview (BH) ──────────────────────────────────────────────────
+
+// GET /exceptions?status=pending&user_id=
+router.get('/exceptions', authCRM, FF_READ, async (req, res) => {
+  const { status, user_id } = req.query;
+  const tenantId = tid(req);
+  const params = [tenantId];
+  const conds  = ['e.tenant_id=$1'];
+  if (status)  { params.push(status);  conds.push(`e.status=$${params.length}`); }
+  if (user_id) { params.push(user_id); conds.push(`e.user_id=$${params.length}`); }
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.*, u.name AS exec_name, v.entity_name, v.visit_type,
+         ru.name AS reviewed_by_name
+       FROM field_visit_exceptions e
+       JOIN users u ON u.id=e.user_id
+       LEFT JOIN field_visits v ON v.id=e.visit_id
+       LEFT JOIN users ru ON ru.id=e.reviewed_by
+       WHERE ${conds.join(' AND ')} ORDER BY e.created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── tour plans (BH view) ──────────────────────────────────────────────────────
+
+// GET /tour-plans?user_id=&status=submitted
+router.get('/tour-plans', authCRM, FF_READ, async (req, res) => {
+  const { user_id, status } = req.query;
+  const tenantId = tid(req);
+  const params = [tenantId];
+  const conds  = ['t.tenant_id=$1'];
+  if (status)  { params.push(status);  conds.push(`t.status=$${params.length}`); }
+  if (user_id) { params.push(user_id); conds.push(`t.user_id=$${params.length}`); }
+  try {
+    const { rows } = await pool.query(
+      `SELECT t.*, u.name AS exec_name FROM field_tour_plans t
+       JOIN users u ON u.id=t.user_id
+       WHERE ${conds.join(' AND ')} ORDER BY t.month DESC, t.submitted_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

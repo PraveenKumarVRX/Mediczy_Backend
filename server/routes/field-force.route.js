@@ -902,4 +902,341 @@ router.get('/team/visits', authTeam, FFM, async (req, res) => {
   }
 });
 
+// ─── PHASE 5: GAP COMPLETIONS ────────────────────────────────────────────────
+
+// ── exec self-view targets ───────────────────────────────────────────────────
+
+// GET /my/targets
+router.get('/my/targets', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT t.*,
+         COALESCE(
+           (SELECT COUNT(*) FROM field_visits v
+            WHERE v.user_id = $1 AND DATE(v.created_at) BETWEEN t.period_start AND t.period_end),0
+         ) AS visits_done,
+         COALESCE(
+           (SELECT COUNT(*) FROM field_leads l
+            WHERE l.assigned_to = $1 AND l.pipeline_stage IN ('closed_won')
+            AND DATE(l.closed_at) BETWEEN t.period_start AND t.period_end),0
+         ) AS leads_closed
+       FROM field_targets t
+       WHERE t.user_id = $1 AND t.tenant_id = $2
+       ORDER BY t.period_end DESC LIMIT 12`,
+      [uid, tid]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /my/scorecard
+router.get('/my/scorecard', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+  const monthEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+  try {
+    const [visits, att, expenses, leads, targets] = await Promise.all([
+      sharedPool.query(
+        `SELECT COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE status='completed') AS completed
+         FROM field_visits WHERE user_id=$1 AND tenant_id=$2
+         AND DATE(created_at) BETWEEN $3 AND $4`,
+        [uid, tid, monthStart, monthEnd]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) AS present_days FROM field_attendance
+         WHERE user_id=$1 AND tenant_id=$2 AND date BETWEEN $3 AND $4
+         AND status IN ('present','late','exception')`,
+        [uid, tid, monthStart, monthEnd]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) AS claims,
+           SUM(total_amount) AS total_claimed,
+           SUM(CASE WHEN status='approved' THEN total_amount ELSE 0 END) AS approved_amount
+         FROM field_expense_claims WHERE user_id=$1 AND tenant_id=$2
+         AND DATE(created_at) BETWEEN $3 AND $4`,
+        [uid, tid, monthStart, monthEnd]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE pipeline_stage='closed_won') AS won,
+           COUNT(*) FILTER (WHERE pipeline_stage='closed_lost') AS lost
+         FROM field_leads WHERE assigned_to=$1 AND tenant_id=$2
+         AND DATE(created_at) BETWEEN $3 AND $4`,
+        [uid, tid, monthStart, monthEnd]
+      ),
+      sharedPool.query(
+        `SELECT * FROM field_targets WHERE user_id=$1 AND tenant_id=$2
+         AND period_start <= $3 AND period_end >= $3 ORDER BY created_at DESC LIMIT 1`,
+        [uid, tid, monthStart]
+      ),
+    ]);
+    res.json({
+      period: { start: monthStart, end: monthEnd },
+      visits:   visits.rows[0],
+      attendance: att.rows[0],
+      expenses: expenses.rows[0],
+      leads:    leads.rows[0],
+      target:   targets.rows[0] || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── out-of-beat exceptions ────────────────────────────────────────────────────
+
+// POST /visits/:id/exception  — submit an out-of-beat exception request
+router.post('/visits/:id/exception', authTeam, FF, async (req, res) => {
+  const { beat_territory_id, distance_breach_km, reason } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!reason) return res.status(400).json({ error: 'reason is required' });
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_visit_exceptions
+         (visit_id, user_id, tenant_id, beat_territory_id, distance_breach_km, reason)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT DO NOTHING
+       RETURNING *`,
+      [req.params.id, uid, tid, beat_territory_id || null, distance_breach_km || null, reason]
+    );
+    res.status(201).json(rows[0] || { message: 'Exception already submitted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /visits/:id/exception
+router.get('/visits/:id/exception', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT e.*, u.name AS reviewed_by_name
+       FROM field_visit_exceptions e
+       LEFT JOIN users u ON u.id = e.reviewed_by
+       WHERE e.visit_id = $1 AND e.user_id = $2`,
+      [req.params.id, uid]
+    );
+    res.json(rows[0] || null);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /my/exceptions?status=pending
+router.get('/my/exceptions', authTeam, FF, async (req, res) => {
+  const { status } = req.query;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const params = [uid, tid];
+  const conds = ['e.user_id=$1', 'e.tenant_id=$2'];
+  if (status) { params.push(status); conds.push(`e.status=$${params.length}`); }
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT e.*, v.entity_name, v.visit_type, u.name AS reviewed_by_name
+       FROM field_visit_exceptions e
+       LEFT JOIN field_visits v ON v.id = e.visit_id
+       LEFT JOIN users u ON u.id = e.reviewed_by
+       WHERE ${conds.join(' AND ')} ORDER BY e.created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── monthly tour plans ────────────────────────────────────────────────────────
+
+// GET /tour-plans
+router.get('/tour-plans', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT * FROM field_tour_plans WHERE user_id=$1 AND tenant_id=$2
+       ORDER BY month DESC LIMIT 12`,
+      [uid, tid]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /tour-plans — create or update draft for a month
+router.post('/tour-plans', authTeam, FF, async (req, res) => {
+  const { month, beat_dates, notes } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!month) return res.status(400).json({ error: 'month (YYYY-MM-01) is required' });
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_tour_plans (user_id, tenant_id, month, beat_dates, notes)
+       VALUES ($1,$2,$3::date,$4,$5)
+       ON CONFLICT (user_id, month)
+       DO UPDATE SET beat_dates=$4, notes=$5, status='draft', updated_at=NOW()
+       RETURNING *`,
+      [uid, tid, month, JSON.stringify(beat_dates || {}), notes || null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /tour-plans/:id/submit
+router.patch('/tour-plans/:id/submit', authTeam, FF, async (req, res) => {
+  const uid = req.user.id;
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE field_tour_plans SET status='submitted', submitted_at=NOW(), updated_at=NOW()
+       WHERE id=$1 AND user_id=$2 AND status='draft'
+       RETURNING *`,
+      [req.params.id, uid]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Draft tour plan not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── health camp registrations ─────────────────────────────────────────────────
+
+// POST /camps/:id/register
+router.post('/camps/:id/register', authTeam, FF, async (req, res) => {
+  const { patient_name, age, gender, phone, address, screening_notes, high_risk_flag, referred_to } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!patient_name) return res.status(400).json({ error: 'patient_name is required' });
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_camp_registrations
+         (camp_id, tenant_id, registered_by, patient_name, age, gender, phone,
+          address, screening_notes, high_risk_flag, referred_to)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [req.params.id, tid, uid, patient_name, age||null, gender||null, phone||null,
+       address||null, screening_notes||null, high_risk_flag||false, referred_to||null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /camps/:id/registrations
+router.get('/camps/:id/registrations', authTeam, FF, async (req, res) => {
+  const tid = tenantId(req);
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT r.*, u.name AS registered_by_name
+       FROM field_camp_registrations r
+       JOIN users u ON u.id = r.registered_by
+       WHERE r.camp_id=$1 AND r.tenant_id=$2 ORDER BY r.created_at DESC`,
+      [req.params.id, tid]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── collateral / sample handovers ────────────────────────────────────────────
+
+// POST /handovers
+router.post('/handovers', authTeam, FF, async (req, res) => {
+  const { visit_id, doctor_crm_id, items, digital_signature_url, geofence_verified, lat, lng } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!items || !items.length) return res.status(400).json({ error: 'items array is required' });
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_handovers
+         (visit_id, doctor_crm_id, user_id, tenant_id, items,
+          digital_signature_url, geofence_verified, lat, lng)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [visit_id||null, doctor_crm_id||null, uid, tid, JSON.stringify(items),
+       digital_signature_url||null, geofence_verified||false, lat||null, lng||null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /handovers?visit_id=&doctor_crm_id=
+router.get('/handovers', authTeam, FF, async (req, res) => {
+  const { visit_id, doctor_crm_id } = req.query;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const params = [uid, tid];
+  const conds = ['user_id=$1', 'tenant_id=$2'];
+  if (visit_id)      { params.push(visit_id);      conds.push(`visit_id=$${params.length}`); }
+  if (doctor_crm_id) { params.push(doctor_crm_id); conds.push(`doctor_crm_id=$${params.length}`); }
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT * FROM field_handovers WHERE ${conds.join(' AND ')} ORDER BY created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── outreach permissions ──────────────────────────────────────────────────────
+
+// GET /outreach-permissions
+router.get('/outreach-permissions', authTeam, FF, async (req, res) => {
+  const { status, type } = req.query;
+  const tid = tenantId(req);
+  const params = [tid];
+  const conds = ['tenant_id=$1'];
+  if (status) { params.push(status); conds.push(`status=$${params.length}`); }
+  if (type)   { params.push(type);   conds.push(`permission_type=$${params.length}`); }
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT p.*, u.name AS created_by_name FROM field_outreach_permissions p
+       JOIN users u ON u.id = p.user_id
+       WHERE ${conds.join(' AND ')} ORDER BY p.created_at DESC`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /outreach-permissions
+router.post('/outreach-permissions', authTeam, FF, async (req, res) => {
+  const { outreach_id, permission_type, authority_name, reference_no,
+          valid_from, valid_until, document_url, notes } = req.body;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  if (!permission_type || !authority_name) {
+    return res.status(400).json({ error: 'permission_type and authority_name required' });
+  }
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_outreach_permissions
+         (outreach_id, tenant_id, user_id, permission_type, authority_name,
+          reference_no, valid_from, valid_until, document_url, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      [outreach_id||null, tid, uid, permission_type, authority_name,
+       reference_no||null, valid_from||null, valid_until||null, document_url||null, notes||null]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
