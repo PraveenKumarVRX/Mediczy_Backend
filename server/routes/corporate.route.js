@@ -1452,6 +1452,9 @@ router.get('/health-risk/employees', authCorporate, async (req, res) => {
     let employees = [];
     if (corporateId) {
       const [rows] = await postgresSequelize.query(
+        // Use a LATERAL subquery so each employee gets at most ONE risk score
+        // row (the most recent).  A plain LEFT JOIN to ai_health_risk_scores
+        // produces one result row per score entry, inflating the employee count.
         `SELECT
            ce."employeeId",
            ce.department,
@@ -1468,7 +1471,14 @@ router.get('/health-risk/employees', authCorporate, async (req, res) => {
            hrs.valid_until
          FROM corporate_employees ce
          LEFT JOIN users u ON u.id = ce."userId"
-         LEFT JOIN ai_health_risk_scores hrs ON hrs.patient_id = u.id
+         LEFT JOIN LATERAL (
+           SELECT overall_score, risk_level, risk_factors, recommendations,
+                  created_at, valid_until
+           FROM ai_health_risk_scores
+           WHERE patient_id = u.id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) hrs ON u.id IS NOT NULL
          WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
          ORDER BY ce."createdAt" DESC`,
         { replacements: { corporateId } }

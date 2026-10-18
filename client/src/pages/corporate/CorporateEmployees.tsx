@@ -245,7 +245,12 @@ const CorporateEmployees: React.FC = () => {
   };
 
   const parseCSV = (text: string): any[] => {
-    const lines = text.split('\n').filter(line => line.trim());
+    // Normalise Windows (CRLF) and old Mac (CR) line endings before splitting.
+    // Without this, column headers end up with a trailing \r which the server
+    // doesn't recognise, causing "Missing required fields" on every row even
+    // when the file is perfectly valid.
+    const normalised = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalised.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
     
     const headers = lines[0].split(',').map(h => h.trim());

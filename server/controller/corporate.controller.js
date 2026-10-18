@@ -266,10 +266,12 @@ export const getCorporateSummary = async (req, res) => {
 
     
 
-    // Real employee count
+    // Real employee count — use corporate_employees (the HR master list) so
+    // the Dashboard matches the Employees page.  user_associations only counts
+    // employees who have activated a Mediczy app account, which is a subset.
     const [countRow] = await postgresSequelize.query(
-      `SELECT COUNT(*) AS cnt FROM user_associations
-       WHERE "entityId" = :corporateId AND "entityType" = 'corporate' AND status = 'active'`,
+      `SELECT COUNT(*) AS cnt FROM corporate_employees
+       WHERE corporate_id = :corporateId AND "isActive" = true`,
       { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
     );
     const activeEmployees = parseInt(countRow?.cnt || 0, 10);
@@ -356,10 +358,11 @@ export const getCorporateHealthAnalytics = async (req, res) => {
 
     
 
-    // Total enrolled employees
+    // Total employees — count from corporate_employees (HR master list) so
+    // this matches the Dashboard and the Employees page.
     const [countRow] = await postgresSequelize.query(
-      `SELECT COUNT(*) AS cnt FROM user_associations
-       WHERE "entityId" = :corporateId AND "entityType" = 'corporate' AND status = 'active'`,
+      `SELECT COUNT(*) AS cnt FROM corporate_employees
+       WHERE corporate_id = :corporateId AND "isActive" = true`,
       { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
     );
     const totalEmployees = parseInt(countRow?.cnt || 0, 10);

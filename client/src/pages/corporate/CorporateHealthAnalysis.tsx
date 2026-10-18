@@ -28,19 +28,11 @@ interface DepartmentHealth {
   atRiskCount: number;
 }
 
-const FALLBACK_METRICS: HealthMetric[] = [
-  { category: 'Physical Health', score: 78, trend: 'up', change: 5, totalEmployees: 250, atRisk: 23 },
-  { category: 'Mental Wellness', score: 72, trend: 'down', change: -3, totalEmployees: 250, atRisk: 35 },
-  { category: 'Preventive Care', score: 85, trend: 'up', change: 8, totalEmployees: 250, atRisk: 12 },
-  { category: 'Chronic Conditions', score: 68, trend: 'stable', change: 0, totalEmployees: 250, atRisk: 45 },
-];
-const FALLBACK_DEPTS: DepartmentHealth[] = [
-  { department: 'Engineering', totalEmployees: 85, healthScore: 76, checkupCompletion: 82, atRiskCount: 12 },
-  { department: 'Marketing', totalEmployees: 42, healthScore: 81, checkupCompletion: 90, atRiskCount: 5 },
-  { department: 'Sales', totalEmployees: 58, healthScore: 73, checkupCompletion: 75, atRiskCount: 18 },
-  { department: 'Finance', totalEmployees: 35, healthScore: 79, checkupCompletion: 88, atRiskCount: 7 },
-  { department: 'Operations', totalEmployees: 30, healthScore: 74, checkupCompletion: 80, atRiskCount: 9 },
-];
+// No pre-fabricated fallback data — the page shows what the API returns.
+// If the API is unavailable a "sample data" banner appears instead of
+// invented numbers.
+const FALLBACK_METRICS: HealthMetric[] = [];
+const FALLBACK_DEPTS: DepartmentHealth[] = [];
 
 const CorporateHealthAnalysis: React.FC = () => {
   const { toast } = useToast();
@@ -52,8 +44,8 @@ const CorporateHealthAnalysis: React.FC = () => {
   const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>(FALLBACK_METRICS);
   const [departmentHealth, setDepartmentHealth] = useState<DepartmentHealth[]>(FALLBACK_DEPTS);
   const [overallStats, setOverallStats] = useState({
-    averageHealthScore: 76, totalEmployees: 250, checkupCompletionRate: 82,
-    highRiskEmployees: 35, mediumRiskEmployees: 58, lowRiskEmployees: 157,
+    averageHealthScore: 0, totalEmployees: 0, checkupCompletionRate: 0,
+    highRiskEmployees: 0, mediumRiskEmployees: 0, lowRiskEmployees: 0,
   });
 
   const loadData = useCallback(async () => {
@@ -64,26 +56,37 @@ const CorporateHealthAnalysis: React.FC = () => {
       });
       const d = (data as any)?.data;
       if (d) {
-        // Map API response to our shape — fall back to current state if field missing
+        // Map API response to our shape
+        const total = d.totalEmployees ?? 0;
+        const rd = d.riskDistribution || {};
         if (d.riskDistribution) {
           setOverallStats({
-            averageHealthScore: Math.round(d.averageRiskScore ?? 76),
-            totalEmployees: d.totalEmployees ?? 250,
-            checkupCompletionRate: d.monitoredEmployees && d.totalEmployees
-              ? Math.round((d.monitoredEmployees / d.totalEmployees) * 100) : 82,
-            highRiskEmployees: (d.riskDistribution?.high ?? 0) + (d.riskDistribution?.critical ?? 0),
-            mediumRiskEmployees: d.riskDistribution?.medium ?? 0,
-            lowRiskEmployees: d.riskDistribution?.low ?? 0,
+            averageHealthScore: Math.round(d.averageRiskScore ?? 0),
+            totalEmployees: total,
+            checkupCompletionRate: d.monitoredEmployees && total
+              ? Math.round((d.monitoredEmployees / total) * 100) : 0,
+            highRiskEmployees: (rd.high ?? 0) + (rd.critical ?? 0),
+            mediumRiskEmployees: rd.medium ?? 0,
+            lowRiskEmployees: rd.low ?? 0,
           });
         }
-        if (Array.isArray(d.commonConditions) && d.commonConditions.length) {
-          const total = d.totalEmployees ?? 250;
-          setHealthMetrics([
-            { category: 'Physical Health', score: Math.max(0, 100 - Math.round(((d.riskDistribution?.high ?? 0) / total) * 100)), trend: 'up', change: 3, totalEmployees: total, atRisk: d.riskDistribution?.high ?? 0 },
-            { category: 'Mental Wellness', score: Math.round(d.healthyEmployees ? (d.healthyEmployees / total) * 100 : 72), trend: 'stable', change: 0, totalEmployees: total, atRisk: d.riskDistribution?.medium ?? 0 },
-            { category: 'Preventive Care', score: d.monitoredEmployees ? Math.round((d.monitoredEmployees / total) * 100) : 85, trend: 'up', change: 5, totalEmployees: total, atRisk: d.riskDistribution?.critical ?? 0 },
-            { category: 'Chronic Conditions', score: Math.max(0, 100 - Math.round(((d.atRiskEmployees ?? 0) / total) * 100)), trend: 'stable', change: 0, totalEmployees: total, atRisk: d.atRiskEmployees ?? 0 },
-          ]);
+        // Always update health metrics from live data (even if no chronic
+        // conditions are on file yet — show zeros rather than invented numbers).
+        setHealthMetrics(total > 0 ? [
+          { category: 'Physical Health', score: Math.max(0, 100 - Math.round(((rd.high ?? 0) / total) * 100)), trend: 'up', change: 0, totalEmployees: total, atRisk: rd.high ?? 0 },
+          { category: 'Mental Wellness', score: Math.round(d.healthyEmployees ? (d.healthyEmployees / total) * 100 : 0), trend: 'stable', change: 0, totalEmployees: total, atRisk: rd.medium ?? 0 },
+          { category: 'Preventive Care', score: d.monitoredEmployees ? Math.round((d.monitoredEmployees / total) * 100) : 0, trend: 'stable', change: 0, totalEmployees: total, atRisk: rd.critical ?? 0 },
+          { category: 'Chronic Conditions', score: Math.max(0, 100 - Math.round(((d.atRiskEmployees ?? 0) / total) * 100)), trend: 'stable', change: 0, totalEmployees: total, atRisk: d.atRiskEmployees ?? 0 },
+        ] : []);
+        // Map real department breakdown from the server
+        if (Array.isArray(d.departmentRisks)) {
+          setDepartmentHealth(d.departmentRisks.map((r: any) => ({
+            department: r.department,
+            totalEmployees: r.totalEmployees ?? 0,
+            healthScore: r.avgRiskScore != null ? Math.max(0, 100 - Math.round(r.avgRiskScore)) : 0,
+            checkupCompletion: 0,
+            atRiskCount: r.highRisk ?? 0,
+          })));
         }
         setUsingFallback(false);
       }
@@ -183,7 +186,7 @@ const CorporateHealthAnalysis: React.FC = () => {
           title="Health Analysis Dashboard"
           description="Comprehensive health analytics and insights for your workforce"
           gradient="from-rose-500 to-rose-700"
-          showExport={true}
+          showExport={!usingFallback && overallStats.totalEmployees > 0}
           onExport={handleExport}
           showRefresh={true}
           onRefresh={loadData}
@@ -228,7 +231,7 @@ const CorporateHealthAnalysis: React.FC = () => {
               <SelectItem value="operations">Operations</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleExport}>
+          <Button onClick={handleExport} disabled={usingFallback || overallStats.totalEmployees === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export Report
           </Button>
