@@ -465,6 +465,22 @@ const CorporateWellnessCalendar: React.FC = () => {
   };
 
   const handleCreateActivity = async () => {
+    if (!newActivity.title.trim()) {
+      toast({ title: 'Title is required', variant: 'destructive' });
+      return;
+    }
+    if (!newActivity.startTime) {
+      toast({ title: 'Start time is required', variant: 'destructive' });
+      return;
+    }
+    if (!newActivity.endTime) {
+      toast({ title: 'End time is required', variant: 'destructive' });
+      return;
+    }
+    if (newActivity.startTime >= newActivity.endTime) {
+      toast({ title: 'End time must be after start time', variant: 'destructive' });
+      return;
+    }
     const theme = WELLNESS_THEMES[newActivity.date.getMonth()];
     const participantCount = getParticipantCount();
     try {
@@ -945,14 +961,14 @@ const CorporateWellnessCalendar: React.FC = () => {
 
         {/* Create Activity Dialog */}
         <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogContent className="max-w-lg max-h-[90vh] bg-white dark:bg-slate-800">
-            <DialogHeader>
+          <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden bg-white dark:bg-slate-800">
+            <DialogHeader className="flex-shrink-0">
               <DialogTitle className="text-slate-900 dark:text-white">Add Wellness Activity</DialogTitle>
               <DialogDescription className="text-slate-500 dark:text-slate-400">
                 Schedule a new wellness activity on the calendar
               </DialogDescription>
             </DialogHeader>
-            <ScrollArea className="max-h-[60vh] pr-4">
+            <ScrollArea className="flex-1 min-h-0 pr-4">
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Activity Title</Label>
@@ -1241,9 +1257,9 @@ const CorporateWellnessCalendar: React.FC = () => {
               </div>
             </div>
             </ScrollArea>
-            <DialogFooter>
+            <DialogFooter className="flex-shrink-0 pt-2">
               <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-              <Button onClick={handleCreateActivity} disabled={!newActivity.title} className="bg-gradient-to-r from-teal-500 to-emerald-600">
+              <Button onClick={handleCreateActivity} disabled={!newActivity.title.trim()} className="bg-gradient-to-r from-teal-500 to-emerald-600">
                 Add Activity
               </Button>
             </DialogFooter>
@@ -1424,6 +1440,36 @@ const CorporateWellnessCalendar: React.FC = () => {
                             <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
                               {registrationsEvent.registered_count} / {registrationsEvent.max_participants ?? '∞'} registered
                             </span>
+                            {registrations.length > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1"
+                                onClick={() => {
+                                  const rows = [
+                                    ['Employee ID', 'Name', 'Department', 'Status', 'Registered At'],
+                                    ...registrations.map(r => [
+                                      r.employeeId || '',
+                                      r.employeeName || '',
+                                      r.department || '',
+                                      r.status || '',
+                                      r.invitedAt ? new Date(r.invitedAt).toLocaleDateString() : '',
+                                    ]),
+                                  ];
+                                  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+                                  const blob = new Blob([csv], { type: 'text/csv' });
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement('a');
+                                  a.href = url;
+                                  a.download = `registrations-${selectedActivity?.title?.replace(/\s+/g, '-') ?? 'activity'}-${new Date().toISOString().slice(0, 10)}.csv`;
+                                  a.click();
+                                  URL.revokeObjectURL(url);
+                                }}
+                              >
+                                <Download className="h-3 w-3" />
+                                Export CSV
+                              </Button>
+                            )}
                           </div>
                         )}
                         <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">

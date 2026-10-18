@@ -888,12 +888,12 @@ export const getUserAppointments = async (req, res) => {
     // Filter upcoming or past
     const now = new Date();
     if (upcoming === 'true') {
-      // Upcoming: scheduled, confirmed, in-progress (not completed, cancelled, or no-show)
+      // Upcoming: pending, scheduled, confirmed, in-progress (not completed, cancelled, or no-show)
       whereClause.appointmentDate = {
         [Op.gte]: now.toISOString().split('T')[0]
       };
       whereClause.status = {
-        [Op.in]: ['scheduled', 'confirmed', 'in-progress', 'rescheduled']
+        [Op.in]: ['pending', 'scheduled', 'confirmed', 'in-progress', 'rescheduled']
       };
     } else if (past === 'true') {
       // Past: completed, cancelled, no-show

@@ -919,7 +919,7 @@ const CorporateAppointments: React.FC = () => {
                       </div>
 
                       <div className="text-sm text-slate-400">
-                        <strong>Doctor:</strong> {appointment.doctorName}
+                        <strong>Doctor:</strong> {appointment.doctorName && appointment.doctorName !== 'TBD' ? appointment.doctorName : 'Not Assigned'}
                       </div>
 
                       {appointment.notes && (
@@ -978,7 +978,7 @@ const CorporateAppointments: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Employee</span><span className="font-semibold">{selectedAppointment.employeeName} ({selectedAppointment.employeeId})</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Department</span><span className="font-semibold">{selectedAppointment.department}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Type</span><span className="font-semibold">{selectedAppointment.appointmentType}</span></div>
-                <div className="flex justify-between"><span className="text-slate-400">Doctor</span><span className="font-semibold">{selectedAppointment.doctorName}</span></div>
+                <div className="flex justify-between"><span className="text-slate-400">Doctor</span><span className="font-semibold">{selectedAppointment.doctorName && selectedAppointment.doctorName !== 'TBD' ? selectedAppointment.doctorName : 'Not Assigned'}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Facility</span><span className="font-semibold">{selectedAppointment.facility}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Date & Time</span><span className="font-semibold">{new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Status</span><span className="font-semibold capitalize">{selectedAppointment.status.replace('-', ' ')}</span></div>

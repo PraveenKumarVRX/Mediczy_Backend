@@ -4423,10 +4423,10 @@ router.get('/dashboard/age-distribution', authCorporate, async (req, res) => {
 // ─── All employee appointments (HR-booked + employee self-booked) ─────────────
 router.get('/all-appointments', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
-  const { status, type, page = 1, limit = 50 } = req.query;
+  const { status, page = 1, limit = 50 } = req.query;
   const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
   try {
-    // HR-booked (corporate_scheduled_appointments)
+    // HR-booked (no RLS)
     const [hrAppts] = await postgresSequelize.query(
       `SELECT id, "employeeId", "employeeName", department, "appointmentType" AS type,
               "doctorName", facility, date::text, time, status, notes, "createdAt",
@@ -4437,23 +4437,28 @@ router.get('/all-appointments', authCorporate, async (req, res) => {
        ORDER BY date DESC, time DESC`,
       { replacements: { corporateId, status: status || null } }
     );
-    // Employee self-booked (appointments table, linked via corporate_tenant_id)
-    const [selfAppts] = await postgresSequelize.query(
-      `SELECT a.id,
-              u."employee_id" AS "employeeId",
-              CONCAT(u."firstName", ' ', u."lastName") AS "employeeName",
-              u.department_name AS department,
-              COALESCE(a."consultationType", a.type, 'Teleconsultation') AS type,
-              a."doctorName", a.facility, a."appointmentDate"::text AS date,
-              a."appointmentTime"::text AS time, a.status, a.reason AS notes,
-              a."createdAt", 'employee_booked' AS source
-       FROM appointments a
-       JOIN users u ON u.id = a."patientId"
-       WHERE a.corporate_tenant_id = :corporateId
-         AND (:status IS NULL OR a.status = :status)
-       ORDER BY a."appointmentDate" DESC, a."appointmentTime" DESC`,
-      { replacements: { corporateId, status: status || null } }
-    );
+    // Employee self-booked (appointments table has RLS — use platform-admin bypass)
+    let selfAppts = [];
+    await postgresSequelize.transaction(async (tx) => {
+      await setRlsContext(tx, { orgId: 0, userId: 0, isPlatformAdmin: true });
+      const [rows] = await postgresSequelize.query(
+        `SELECT a.id,
+                u."employee_id" AS "employeeId",
+                CONCAT(u."firstName", ' ', u."lastName") AS "employeeName",
+                u.department_name AS department,
+                COALESCE(a."consultationType", a.type, 'Teleconsultation') AS type,
+                a."doctorName", a.facility, a."appointmentDate"::text AS date,
+                a."appointmentTime"::text AS time, a.status, a.reason AS notes,
+                a."createdAt", 'employee_booked' AS source
+         FROM appointments a
+         JOIN users u ON u.id = a."patientId"
+         WHERE a.corporate_tenant_id = :corporateId
+           AND (:status IS NULL OR a.status = :status)
+         ORDER BY a."appointmentDate" DESC, a."appointmentTime" DESC`,
+        { replacements: { corporateId, status: status || null }, transaction: tx }
+      );
+      selfAppts = rows;
+    });
     const all = [...hrAppts, ...selfAppts].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     const paginated = all.slice(offset, offset + parseInt(limit, 10));
     return res.json({ success: true, data: { appointments: paginated, total: all.length, page: parseInt(page, 10) } });

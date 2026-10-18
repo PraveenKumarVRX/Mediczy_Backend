@@ -293,7 +293,11 @@ class NotificationService {
   parseTemplate(template, variables) {
     let result = template;
     for (const [key, value] of Object.entries(variables)) {
-      result = result.replace(new RegExp(`{{${key}}}`, 'g'), value || '');
+      let val = String(value ?? '');
+      // Strip an existing "Dr." prefix from doctorName to prevent "Dr. Dr." duplication
+      // (some callers already prefix the name; templates add "Dr." before {{doctorName}})
+      if (key === 'doctorName') val = val.replace(/^Dr\.\s*/i, '').trim();
+      result = result.replace(new RegExp(`{{${key}}}`, 'g'), val);
     }
     return result;
   }
@@ -1083,7 +1087,7 @@ class NotificationService {
     });
 
     if (notification) {
-      await notification.update({ isRead: true, readAt: new Date() });
+      await notification.update({ isRead: true, readAt: new Date(), status: 'read' });
       return { success: true };
     }
 
@@ -1100,7 +1104,7 @@ class NotificationService {
       where.userType = userType;
     }
     await Notification.update(
-      { isRead: true, readAt: new Date() },
+      { isRead: true, readAt: new Date(), status: 'read' },
       { where }
     );
     return { success: true };

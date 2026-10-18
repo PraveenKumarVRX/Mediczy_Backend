@@ -43,16 +43,20 @@ function fullName(m: Pick<HrTeamMember, 'firstName' | 'lastName' | 'email'>) {
   return name || m.email;
 }
 
-function decodeOwnUserId(): number | null {
+function decodeJwtPayload(): { id?: number; userId?: number; role?: string } | null {
   try {
     const token = localStorage.getItem('corporateToken');
     if (!token) return null;
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const id = payload?.id ?? payload?.userId;
-    return id ? Number(id) : null;
+    return JSON.parse(atob(token.split('.')[1]));
   } catch {
     return null;
   }
+}
+
+function decodeOwnUserId(): number | null {
+  const payload = decodeJwtPayload();
+  const id = payload?.id ?? payload?.userId;
+  return id ? Number(id) : null;
 }
 
 const CorporateHrTeam = () => {
@@ -72,8 +76,10 @@ const CorporateHrTeam = () => {
   const [promoteTarget, setPromoteTarget] = useState<HrTeamMember | null>(null);
 
   const ownId = useMemo(decodeOwnUserId, []);
+  // Direct corporate login has role='corporate' in the JWT (not a users-table row)
+  const ownRole = useMemo(() => decodeJwtPayload()?.role, []);
   const me = useMemo(() => team.find((m) => Number(m.id) === ownId) || null, [team, ownId]);
-  const isSuperAdmin = me?.role === 'corporate_admin';
+  const isSuperAdmin = me?.role === 'corporate_admin' || ownRole === 'corporate';
 
   const fetchTeam = async () => {
     setLoading(true);

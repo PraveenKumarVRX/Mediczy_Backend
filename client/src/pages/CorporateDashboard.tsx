@@ -366,6 +366,38 @@ const CorporateDashboard = () => {
     { month: 'Month 6', healthyCount: 23, atRiskCount: 8 },
   ];
 
+  const handleExportReport = () => {
+    const rows: string[][] = [
+      ["Metric", "Value"],
+      ["Company", corporateProfile.companyName],
+      ["Report Date", new Date().toLocaleDateString()],
+      ["Total Employees", String(healthAnalytics?.totalEmployees ?? "—")],
+      ["Monitored Employees", String(healthAnalytics?.monitoredEmployees ?? "—")],
+      ["Healthy Employees", String(healthAnalytics?.healthyEmployees ?? "—")],
+      ["At-Risk Employees", String(healthAnalytics?.atRiskEmployees ?? "—")],
+      ["Critical Cases", String(healthAnalytics?.criticalCases ?? "—")],
+      ["Average Risk Score", healthAnalytics?.averageRiskScore != null ? healthAnalytics.averageRiskScore.toFixed(1) : "—"],
+      ["Risk: Low", String(healthAnalytics?.riskDistribution?.low ?? 0)],
+      ["Risk: Medium", String(healthAnalytics?.riskDistribution?.medium ?? 0)],
+      ["Risk: High", String(healthAnalytics?.riskDistribution?.high ?? 0)],
+      ["Risk: Critical", String(healthAnalytics?.riskDistribution?.critical ?? 0)],
+    ];
+    if (healthAnalytics?.departmentRisks?.length) {
+      rows.push([], ["Department", "Employees", "Avg Risk", "High Risk"]);
+      for (const d of healthAnalytics.departmentRisks) {
+        rows.push([d.department, String(d.totalEmployees), String(d.averageRisk ?? "—"), String(d.highRiskCount ?? "—")]);
+      }
+    }
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `health-report-${corporateProfile.companyName.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const hasRiskData = healthAnalytics &&
     ((healthAnalytics.riskDistribution?.low ?? 0) +
      (healthAnalytics.riskDistribution?.medium ?? 0) +
@@ -549,7 +581,7 @@ const CorporateDashboard = () => {
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
               </Button>
-              <Button className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 border-0">
+              <Button onClick={handleExportReport} className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 border-0">
                 <Download className="w-4 h-4 mr-2" />
                 Export Report
               </Button>

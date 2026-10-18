@@ -12,6 +12,7 @@ export interface ServerNotification {
   data?: any;
   channels?: any;
   status: "pending" | "sent" | "delivered" | "read" | "failed";
+  isRead?: boolean;
   readAt?: string | null;
   priority?: "low" | "normal" | "high" | "urgent";
   expiresAt?: string | null;
@@ -135,7 +136,7 @@ export const useServerNotifications = (options: UseServerNotificationsOptions = 
       message: n.message,
       type: mapType(n.type),
       timestamp: new Date(n.createdAt || n.updatedAt || Date.now()),
-      read: n.status === "read",
+      read: n.status === "read" || n.isRead === true,
       actionUrl: n.actionUrl || null,
       data: n.data,
     }));
