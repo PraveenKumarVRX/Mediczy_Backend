@@ -14,6 +14,7 @@
  *   corporate_notifications.employee_id  — optional per-employee targeting
  */
 import sharedPool from '../db/pgPool.js';
+import { pathToFileURL } from 'url';
 
 export async function up(pool) {
   await pool.query(`
@@ -148,4 +149,17 @@ export async function down(pool) {
       DROP COLUMN IF EXISTS action_url,
       DROP COLUMN IF EXISTS employee_id;
   `);
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const { default: pool } = await import('../db/pgPool.js');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query("SELECT pg_advisory_xact_lock(hashtext('corporate-consent-ahc-notifications-migration'))");
+    await up(client);
+    await client.query('COMMIT');
+    console.log('Corporate consent / AHC / notification schema ready');
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); await pool.end(); }
 }
