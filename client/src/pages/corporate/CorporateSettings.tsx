@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, Bell, Lock, Users, Building2, CreditCard, Globe, Save, Cog } from 'lucide-react';
+import { Settings, Bell, Lock, Users, Building2, CreditCard, Globe, Save, Cog, CheckSquare } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +32,16 @@ const CorporateSettings: React.FC = () => {
   const [billingLoading, setBillingLoading] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Controlled eligibility form
+  const [eligibility, setEligibility] = useState({
+    checkupsPerYear: 1,
+    minServiceMonths: 0,
+    eligibleDepartments: '',
+    maxAge: 0,
+    eligibleGrades: '',
+  });
+  const [isSavingEligibility, setIsSavingEligibility] = useState(false);
 
   // Controlled general form — seeded from the logged-in corporate's real
   // profile where available; overwritten by saved settings once loaded.
@@ -90,13 +100,18 @@ const CorporateSettings: React.FC = () => {
 
   const loadSettings = async () => {
     try {
-      const { data } = await api.get('/corporate/settings');
+      const [{ data }, eligRes] = await Promise.all([
+        api.get('/corporate/settings'),
+        api.get('/corporate/settings/data').catch(() => ({ data: null })),
+      ]);
       const saved = (data as any)?.data?.settings || {};
       if (saved.general) setGeneral((prev) => ({ ...prev, ...saved.general }));
       if (saved.notifs) setNotifs((prev) => ({ ...prev, ...saved.notifs }));
       if (saved.security) setSecurity((prev) => ({ ...prev, ...saved.security }));
       if (saved.billing) setBilling((prev) => ({ ...prev, ...saved.billing }));
       if (saved.integrations) setIntegrations((prev) => ({ ...prev, ...saved.integrations }));
+      const savedElig = (eligRes.data as any)?.data?.settings?.eligibility;
+      if (savedElig) setEligibility((prev) => ({ ...prev, ...savedElig }));
     } catch (error: any) {
       toast({
         title: 'Failed to load settings',
@@ -133,6 +148,18 @@ const CorporateSettings: React.FC = () => {
       toast({ title: 'Failed to save settings', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveEligibility = async () => {
+    try {
+      setIsSavingEligibility(true);
+      await api.put('/corporate/settings/data', { settings: { eligibility } });
+      toast({ title: 'Eligibility rules saved' });
+    } catch (error: any) {
+      toast({ title: 'Failed to save eligibility rules', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
+    } finally {
+      setIsSavingEligibility(false);
     }
   };
 
@@ -209,10 +236,14 @@ const CorporateSettings: React.FC = () => {
         />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="general">
             <Building2 className="h-4 w-4 mr-2" />
             General
+          </TabsTrigger>
+          <TabsTrigger value="eligibility">
+            <CheckSquare className="h-4 w-4 mr-2" />
+            Eligibility
           </TabsTrigger>
           <TabsTrigger value="notifications">
             <Bell className="h-4 w-4 mr-2" />
@@ -336,6 +367,77 @@ const CorporateSettings: React.FC = () => {
                 </div>
                 <Switch checked={general.mentalHealthSupport} onCheckedChange={v => setGeneral(p => ({ ...p, mentalHealthSupport: v }))} />
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Eligibility Rules */}
+        <TabsContent value="eligibility" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Eligibility Rules</CardTitle>
+              <CardDescription>Define which employees qualify for health checkups and programmes</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="checkupsPerYear">Checkups per year</Label>
+                  <Input
+                    id="checkupsPerYear"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={eligibility.checkupsPerYear}
+                    onChange={e => setEligibility(p => ({ ...p, checkupsPerYear: parseInt(e.target.value, 10) || 1 }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="minServiceMonths">Minimum months of service to be eligible</Label>
+                  <Input
+                    id="minServiceMonths"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={eligibility.minServiceMonths}
+                    onChange={e => setEligibility(p => ({ ...p, minServiceMonths: parseInt(e.target.value, 10) || 0 }))}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="eligibleDepartments">Eligible departments</Label>
+                <Input
+                  id="eligibleDepartments"
+                  placeholder="Comma-separated, leave blank for all"
+                  value={eligibility.eligibleDepartments}
+                  onChange={e => setEligibility(p => ({ ...p, eligibleDepartments: e.target.value }))}
+                />
+                <p className="text-xs text-slate-400">Comma-separated department names — leave blank to include all departments</p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="maxAge">Maximum age for eligibility (0 = no limit)</Label>
+                <Input
+                  id="maxAge"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={eligibility.maxAge}
+                  onChange={e => setEligibility(p => ({ ...p, maxAge: parseInt(e.target.value, 10) || 0 }))}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="eligibleGrades">Eligible job grades / designations</Label>
+                <Input
+                  id="eligibleGrades"
+                  placeholder="Comma-separated, leave blank for all"
+                  value={eligibility.eligibleGrades}
+                  onChange={e => setEligibility(p => ({ ...p, eligibleGrades: e.target.value }))}
+                />
+                <p className="text-xs text-slate-400">Comma-separated grades or designations — leave blank to include all</p>
+              </div>
+              <Button onClick={handleSaveEligibility} disabled={isSavingEligibility} className="w-full sm:w-auto">
+                <Save className="h-4 w-4 mr-2" />
+                {isSavingEligibility ? 'Saving…' : 'Save Eligibility Rules'}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

@@ -247,6 +247,10 @@ const CorporateWellnessCalendar: React.FC = () => {
   const [themeDialogOpen, setThemeDialogOpen] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [sendingInvites, setSendingInvites] = useState(false);
+  const [viewActivityTab, setViewActivityTab] = useState<'details' | 'registrations'>('details');
+  const [registrations, setRegistrations] = useState<any[]>([]);
+  const [registrationsLoading, setRegistrationsLoading] = useState(false);
+  const [registrationsEvent, setRegistrationsEvent] = useState<{ registered_count: number; max_participants: number | null } | null>(null);
 
   // New activity form
   const [newActivity, setNewActivity] = useState({
@@ -530,7 +534,35 @@ const CorporateWellnessCalendar: React.FC = () => {
 
   const handleViewActivity = (activity: WellnessActivity) => {
     setSelectedActivity(activity);
+    setViewActivityTab('details');
+    setRegistrations([]);
+    setRegistrationsEvent(null);
     setViewActivityOpen(true);
+    fetchRegistrations(activity.id);
+  };
+
+  const fetchRegistrations = async (activityId: string) => {
+    setRegistrationsLoading(true);
+    try {
+      const { data } = await api.get(`/corporate/wellness-calendar/activities/${encodeURIComponent(activityId)}/registrations`);
+      setRegistrations(data?.data?.registrations || []);
+      setRegistrationsEvent(data?.data?.event || null);
+    } catch {
+      toast({ title: 'Failed to load registrations', variant: 'destructive' });
+      setRegistrations([]);
+    } finally {
+      setRegistrationsLoading(false);
+    }
+  };
+
+  const cancelRegistration = async (rsvpId: string) => {
+    try {
+      await api.delete(`/corporate/wellness-calendar/registrations/${encodeURIComponent(rsvpId)}`);
+      toast({ title: 'Registration cancelled' });
+      if (selectedActivity) fetchRegistrations(selectedActivity.id);
+    } catch {
+      toast({ title: 'Failed to cancel registration', variant: 'destructive' });
+    }
   };
 
   const handleDeleteActivity = async (activityId: string) => {
@@ -1220,7 +1252,7 @@ const CorporateWellnessCalendar: React.FC = () => {
 
         {/* View Activity Dialog */}
         <Dialog open={viewActivityOpen} onOpenChange={setViewActivityOpen}>
-          <DialogContent className="max-w-lg bg-white dark:bg-slate-800">
+          <DialogContent className="max-w-2xl bg-white dark:bg-slate-800">
             {selectedActivity && (() => {
               const typeInfo = getActivityTypeInfo(selectedActivity.type);
               const TypeIcon = typeInfo.icon;
@@ -1239,6 +1271,19 @@ const CorporateWellnessCalendar: React.FC = () => {
                       </div>
                     </div>
                   </DialogHeader>
+                  {/* Tab bar */}
+                  <div className="flex border-b border-slate-200 dark:border-slate-700">
+                    <button
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${viewActivityTab === 'details' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                      onClick={() => setViewActivityTab('details')}
+                    >Details</button>
+                    <button
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${viewActivityTab === 'registrations' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                      onClick={() => setViewActivityTab('registrations')}
+                    >Registrations</button>
+                  </div>
+                  {viewActivityTab === 'details' && (
+                  <ScrollArea className="max-h-[55vh]">
                   <div className="space-y-4 py-4">
                     <p className="text-slate-600 dark:text-slate-400">{selectedActivity.description}</p>
                     
@@ -1363,6 +1408,79 @@ const CorporateWellnessCalendar: React.FC = () => {
                       </Badge>
                     </div>
                   </div>
+                  </ScrollArea>
+                  )}
+                  {viewActivityTab === 'registrations' && (
+                  <ScrollArea className="max-h-[55vh]">
+                  <div className="py-4">
+                    {registrationsLoading ? (
+                      <div className="py-8 flex justify-center">
+                        <RefreshCw className="h-6 w-6 animate-spin text-slate-400" />
+                      </div>
+                    ) : (
+                      <>
+                        {registrationsEvent && (
+                          <div className="mb-3 flex items-center justify-between px-1">
+                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                              {registrationsEvent.registered_count} / {registrationsEvent.max_participants ?? '∞'} registered
+                            </span>
+                          </div>
+                        )}
+                        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-slate-200 dark:border-slate-700 text-xs text-slate-500 uppercase tracking-wide">
+                                <th className="px-3 py-2 text-left">Emp ID</th>
+                                <th className="px-3 py-2 text-left">Name</th>
+                                <th className="px-3 py-2 text-left">Dept</th>
+                                <th className="px-3 py-2 text-left">Status</th>
+                                <th className="px-3 py-2 text-left">Registered At</th>
+                                <th className="px-3 py-2"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {registrations.map((r) => (
+                                <tr key={r.id} className="border-b border-slate-100 dark:border-slate-700/50 hover:bg-slate-50 dark:hover:bg-slate-700/30">
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{r.employeeId || '—'}</td>
+                                  <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">{r.employeeName}</td>
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">{r.department || '—'}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      r.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                      r.status === 'cancelled' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                                      'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                                    }`}>{r.status}</span>
+                                  </td>
+                                  <td className="px-3 py-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {r.invitedAt ? new Date(r.invitedAt).toLocaleDateString() : '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    {r.status !== 'cancelled' && (
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50 dark:border-red-800 dark:hover:bg-red-900/20"
+                                        onClick={() => cancelRegistration(String(r.id))}
+                                      >
+                                        Cancel
+                                      </Button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                              {registrations.length === 0 && (
+                                <tr>
+                                  <td colSpan={6} className="py-8 text-center text-slate-500 text-sm">No registrations yet</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  </ScrollArea>
+                  )}
                   <DialogFooter>
                     <Button variant="outline" className="text-red-600" onClick={() => {
                       handleDeleteActivity(selectedActivity.id);

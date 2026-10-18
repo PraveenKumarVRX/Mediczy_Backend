@@ -200,7 +200,7 @@ const CorporateHrTeam = () => {
               <Button variant="outline" size="icon" onClick={fetchTeam} title="Refresh">
                 <RefreshCw className="w-4 h-4" />
               </Button>
-              {isSuperAdmin && (
+              {isSuperAdmin ? (
                 <Button
                   size="sm"
                   className="bg-teal-600 hover:bg-teal-700 text-white gap-2"
@@ -209,6 +209,16 @@ const CorporateHrTeam = () => {
                 >
                   <UserPlus className="w-4 h-4" /> Add Team Member
                 </Button>
+              ) : (
+                <span title="Only the Super HR (Corporate Admin) can invite new members">
+                  <Button
+                    size="sm"
+                    className="bg-teal-600 hover:bg-teal-700 text-white gap-2 opacity-50 cursor-not-allowed"
+                    disabled
+                  >
+                    <UserPlus className="w-4 h-4" /> Add Team Member
+                  </Button>
+                </span>
               )}
             </div>
           }

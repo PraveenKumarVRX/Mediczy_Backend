@@ -95,7 +95,9 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [loading, setLoading] = useState(false);
   const [enrollLoading, setEnrollLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<'batches' | 'enrollments'>('batches');
+  const [activeTab, setActiveTab] = useState<'batches' | 'enrollments' | 'reports'>('batches');
+  const [healthReports, setHealthReports] = useState<any[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
@@ -137,7 +139,19 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
     }
   }, [toast]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  const loadHealthReports = useCallback(async () => {
+    setReportsLoading(true);
+    try {
+      const { data } = await api.get('/corporate/health-reports');
+      setHealthReports(data?.data?.reports || []);
+    } catch {
+      toast({ title: 'Failed to load report status', variant: 'destructive' });
+    } finally {
+      setReportsLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { loadData(); loadHealthReports(); }, [loadData, loadHealthReports]);
   useEffect(() => {
     if (selectedBatch && activeTab === 'enrollments') loadEnrollments(selectedBatch);
   }, [selectedBatch, activeTab, loadEnrollments]);
@@ -436,6 +450,61 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
             </CardContent>
           </Card>
         )}
+
+        {/* Report Status panel */}
+        <Card className="bg-slate-900/60 border-slate-700/60">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-slate-100 text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-teal-400" /> Report Delivery Status
+                </CardTitle>
+                <CardDescription className="text-slate-500 text-xs">Track which employees have received their health reports</CardDescription>
+              </div>
+              <Button variant="ghost" size="sm" onClick={loadHealthReports} disabled={reportsLoading} className="text-slate-400 h-8">
+                {reportsLoading ? 'Loading…' : 'Refresh'}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {reportsLoading ? (
+              <p className="text-slate-500 text-sm py-4 text-center">Loading…</p>
+            ) : healthReports.length === 0 ? (
+              <p className="text-slate-500 text-sm py-4 text-center">No health reports found. Reports uploaded via the Team portal will appear here.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800">
+                      {['Employee', 'Dept', 'Report', 'Type', 'Due', 'Delivered', 'Status'].map(h => (
+                        <th key={h} className="text-left py-2 px-3 text-slate-500 font-medium">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {healthReports.map(r => (
+                      <tr key={r.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
+                        <td className="py-2 px-3 text-slate-200">{r.employeeName || r.employeeId}</td>
+                        <td className="py-2 px-3 text-slate-400">{r.department || '—'}</td>
+                        <td className="py-2 px-3 text-slate-300">{r.reportName}</td>
+                        <td className="py-2 px-3 text-slate-400">{r.checkupType || r.reportType}</td>
+                        <td className="py-2 px-3 text-slate-400">{r.dueAt ? new Date(r.dueAt).toLocaleDateString('en-IN') : '—'}</td>
+                        <td className="py-2 px-3 text-slate-400">{r.deliveredAt ? new Date(r.deliveredAt).toLocaleDateString('en-IN') : '—'}</td>
+                        <td className="py-2 px-3">
+                          <Badge className={`text-xs ${
+                            r.slaStatus === 'delivered' ? 'bg-emerald-500/20 text-emerald-400' :
+                            r.slaStatus === 'overdue'   ? 'bg-red-500/20 text-red-400' :
+                            'bg-amber-500/20 text-amber-400'
+                          }`}>{r.slaStatus || (r.deliveredAt ? 'delivered' : 'pending')}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Create batch dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>

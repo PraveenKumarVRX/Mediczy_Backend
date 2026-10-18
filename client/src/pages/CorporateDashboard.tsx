@@ -195,6 +195,8 @@ const CorporateDashboard = () => {
   const [healthAnalytics, setHealthAnalytics] = useState<HealthRiskAnalytics | null>(null);
   const [employees, setEmployees] = useState<EmployeeHealth[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<EmployeeHealth[]>([]);
+  const [participation, setParticipation] = useState<any>(null);
+  const [ageDistribution, setAgeDistribution] = useState<any[]>([]);
 
   useEffect(() => {
     fetchDashboardData(true);
@@ -221,17 +223,21 @@ const CorporateDashboard = () => {
       }
       setError(null);
       
-      const [summaryRes, healthRes, employeesRes, appointmentsRes] = await Promise.all([
+      const [summaryRes, healthRes, employeesRes, appointmentsRes, participationRes, ageDistRes] = await Promise.all([
         api.get("/corporate/dashboard/summary").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/health-analytics").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/employees-health").catch(() => ({ data: null })),
-        api.get("/corporate/dashboard/appointments").catch(() => ({ data: null }))
+        api.get("/corporate/dashboard/appointments").catch(() => ({ data: null })),
+        api.get("/corporate/analytics/participation").catch(() => ({ data: null })),
+        api.get("/corporate/dashboard/age-distribution").catch(() => ({ data: null }))
       ]);
 
       setSummary(summaryRes.data?.data || null);
       setHealthAnalytics(healthRes.data?.data || null);
       setEmployees(employeesRes.data?.data?.employees || []);
       setAppointments(appointmentsRes.data?.data?.appointments || []);
+      setParticipation(participationRes.data?.data || null);
+      setAgeDistribution(ageDistRes.data?.data?.ageGroups || []);
 
       // Update corporate profile from summary API response
       const cp = summaryRes.data?.data?.corporateProfile;
@@ -682,6 +688,90 @@ const CorporateDashboard = () => {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Participation KPI Cards */}
+        {participation && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Teleconsultations this month */}
+            <Card className="bg-slate-800/60 border-slate-700/50 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-xl bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors">
+                    <Phone className="w-5 h-5 text-blue-400" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 font-medium mb-1">Teleconsultations</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-slate-200">{participation.teleconsultationsThisMonth ?? 0}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">This month</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pending Checkups */}
+            <Card className="bg-slate-800/60 border-slate-700/50 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-xl bg-amber-500/10 group-hover:bg-amber-500/20 transition-colors">
+                    <Clock className="w-5 h-5 text-amber-400" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 font-medium mb-1">Pending Checkups</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-slate-200">{participation.pendingCheckups ?? 0}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Awaiting completion</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Participation Rate */}
+            <Card className="bg-slate-800/60 border-slate-700/50 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="p-2 rounded-xl bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors">
+                    <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400 font-medium mb-1">Participation Rate</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-emerald-400">{participation.participationRate ?? 0}%</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">{participation.totalParticipating ?? 0} of {participation.totalEligible ?? 0} employees</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Age Distribution Section */}
+        {ageDistribution.length > 0 && (
+          <Card className="bg-slate-800/60 border-slate-700/50">
+            <CardContent className="p-5">
+              <h3 className="text-base font-semibold text-slate-200 mb-1">Age Distribution</h3>
+              <p className="text-xs text-slate-400 mb-4">Employee breakdown by age group</p>
+              <div className="space-y-3">
+                {ageDistribution.map((group: any) => (
+                  <div key={group.range} className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400 w-20 shrink-0">{group.range}</span>
+                    <div className="flex-1 bg-slate-700/50 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-emerald-500 h-2 rounded-full transition-all duration-500"
+                        style={{ width: `${group.percentage ?? 0}%` }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-400 w-8 text-right">{group.percentage ?? 0}%</span>
+                    <span className="text-xs text-slate-500 w-10 text-right">({group.count})</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Quick Actions Section (DoctorDashboard Style) */}

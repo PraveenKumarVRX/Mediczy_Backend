@@ -3,6 +3,7 @@ import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   ShieldCheck, Search, FileDown, Loader2, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ const CorporateFitnessCertificates = () => {
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   const load = async () => {
     setLoading(true);
@@ -50,6 +52,29 @@ const CorporateFitnessCertificates = () => {
     if (!q) return true;
     return c.patient_name?.toLowerCase().includes(q) || (c.employee_id || '').toLowerCase().includes(q);
   }), [certificates, search]);
+
+  const exportCSV = (certs: Certificate[]) => {
+    const header = ['Certificate ID', 'Patient Name', 'Employee ID', 'Fitness Status', 'Valid From', 'Valid Until', 'Issued By'];
+    const rows = certs.map((c) =>
+      [
+        c.id,
+        c.patient_name,
+        c.employee_id || '',
+        c.fitness_status,
+        c.examination_date ? new Date(c.examination_date).toLocaleDateString() : '',
+        c.valid_until ? new Date(c.valid_until).toLocaleDateString() : '',
+        c.issued_by,
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')
+    );
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fitness-certificates-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const download = (id: number) => {
     api.get(`/v1/occupational-health/fitness-certificate/${id}/pdf`, { responseType: 'blob' })
@@ -72,9 +97,14 @@ const CorporateFitnessCertificates = () => {
           gradient="from-emerald-600 to-emerald-800"
           badge={{ text: `${certificates.length} issued`, variant: 'emerald' }}
           actions={
-            <Button variant="outline" size="icon" onClick={load} title="Refresh">
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => exportCSV(filtered)} title="Export all visible rows as CSV">
+                <FileDown className="h-4 w-4 mr-1" /> Export All CSV
+              </Button>
+              <Button variant="outline" size="icon" onClick={load} title="Refresh">
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           }
         />
 
@@ -87,6 +117,28 @@ const CorporateFitnessCertificates = () => {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10">
+            <span className="text-sm text-emerald-400 font-medium">{selectedIds.size} selected</span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+              onClick={() => exportCSV(filtered.filter((c) => selectedIds.has(c.id)))}
+            >
+              <FileDown className="h-3.5 w-3.5 mr-1" /> Export CSV
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-slate-400 hover:text-white"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
 
         <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] overflow-hidden">
           {loading ? (
@@ -101,6 +153,15 @@ const CorporateFitnessCertificates = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-white/[0.06] text-left text-xs text-slate-500 uppercase tracking-wide">
+                    <th className="px-4 py-3">
+                      <Checkbox
+                        checked={filtered.length > 0 && filtered.every((c) => selectedIds.has(c.id))}
+                        onCheckedChange={(checked) => {
+                          if (checked) setSelectedIds(new Set(filtered.map((c) => c.id)));
+                          else setSelectedIds(new Set());
+                        }}
+                      />
+                    </th>
                     <th className="px-4 py-3">Employee</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Examined</th>
@@ -115,6 +176,18 @@ const CorporateFitnessCertificates = () => {
                     const Icon = meta.icon;
                     return (
                       <tr key={c.id} className="border-b border-white/[0.04] hover:bg-slate-800/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <Checkbox
+                            checked={selectedIds.has(c.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedIds((prev) => {
+                                const next = new Set(prev);
+                                if (checked) next.add(c.id); else next.delete(c.id);
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <p className="font-medium text-white">{c.patient_name}</p>
                           {c.employee_id && <p className="text-xs text-slate-500">{c.employee_id}</p>}

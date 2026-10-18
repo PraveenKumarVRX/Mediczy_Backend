@@ -4348,7 +4348,6 @@ router.post('/ahc/enrollments/:id/dependents', authCorporate, async (req, res) =
   const { name, relationship, dateOfBirth, gender } = req.body || {};
   if (!name || !relationship) return res.status(400).json({ success: false, message: 'name and relationship required' });
   try {
-    // Verify enrollment belongs to this corporate
     const [enr] = await postgresSequelize.query(
       `SELECT id FROM corporate_ahc_enrollments WHERE id = :id AND corporate_id = :corporateId`,
       { replacements: { id, corporateId } }
@@ -4364,6 +4363,379 @@ router.post('/ahc/enrollments/:id/dependents', authCorporate, async (req, res) =
   } catch (err) {
     console.error('[corporate] ahc add dependent error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to add dependent' });
+  }
+});
+
+// ─── Bulk employee status ──────────────────────────────────────────────────────
+router.patch('/employees/bulk-status', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { employeeIds, action } = req.body || {};
+  if (!Array.isArray(employeeIds) || !employeeIds.length) return res.status(400).json({ success: false, message: 'employeeIds required' });
+  if (!['activate', 'deactivate'].includes(action)) return res.status(400).json({ success: false, message: 'action must be activate or deactivate' });
+  try {
+    const [result] = await postgresSequelize.query(
+      `UPDATE corporate_employees SET "isActive" = :active, "updatedAt" = NOW()
+       WHERE corporate_id = :corporateId AND "employeeId" = ANY(:ids)
+       RETURNING "employeeId"`,
+      { replacements: { active: action === 'activate', corporateId, ids: employeeIds } }
+    );
+    return res.json({ success: true, data: { updated: result.length, action } });
+  } catch (err) {
+    console.error('[corporate] bulk-status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update employees' });
+  }
+});
+
+// ─── Age distribution analytics ───────────────────────────────────────────────
+router.get('/dashboard/age-distribution', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT
+         CASE
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) < 25 THEN 'Under 25'
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) BETWEEN 25 AND 34 THEN '25-34'
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) BETWEEN 35 AND 44 THEN '35-44'
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) BETWEEN 45 AND 54 THEN '45-54'
+           ELSE '55+'
+         END AS age_range,
+         COUNT(*) AS count
+       FROM corporate_employees ce
+       LEFT JOIN users u ON u.id = ce."userId"
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND u."dateOfBirth" IS NOT NULL
+       GROUP BY age_range
+       ORDER BY age_range`,
+      { replacements: { corporateId } }
+    );
+    const total = rows.reduce((s, r) => s + parseInt(r.count, 10), 0);
+    const ageGroups = rows.map(r => ({
+      range: r.age_range,
+      count: parseInt(r.count, 10),
+      percentage: total > 0 ? Math.round((parseInt(r.count, 10) / total) * 100) : 0,
+    }));
+    return res.json({ success: true, data: { ageGroups, totalWithDOB: total } });
+  } catch (err) {
+    console.error('[corporate] age-distribution error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load age distribution' });
+  }
+});
+
+// ─── All employee appointments (HR-booked + employee self-booked) ─────────────
+router.get('/all-appointments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { status, type, page = 1, limit = 50 } = req.query;
+  const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  try {
+    // HR-booked (corporate_scheduled_appointments)
+    const [hrAppts] = await postgresSequelize.query(
+      `SELECT id, "employeeId", "employeeName", department, "appointmentType" AS type,
+              "doctorName", facility, date::text, time, status, notes, "createdAt",
+              'hr_booked' AS source
+       FROM corporate_scheduled_appointments
+       WHERE corporate_id = :corporateId
+         AND (:status IS NULL OR status = :status)
+       ORDER BY date DESC, time DESC`,
+      { replacements: { corporateId, status: status || null } }
+    );
+    // Employee self-booked (appointments table, linked via corporate_tenant_id)
+    const [selfAppts] = await postgresSequelize.query(
+      `SELECT a.id,
+              u."employee_id" AS "employeeId",
+              CONCAT(u."firstName", ' ', u."lastName") AS "employeeName",
+              u.department_name AS department,
+              COALESCE(a."consultationType", a.type, 'Teleconsultation') AS type,
+              a."doctorName", a.facility, a."appointmentDate"::text AS date,
+              a."appointmentTime"::text AS time, a.status, a.reason AS notes,
+              a."createdAt", 'employee_booked' AS source
+       FROM appointments a
+       JOIN users u ON u.id = a."patientId"
+       WHERE a.corporate_tenant_id = :corporateId
+         AND (:status IS NULL OR a.status = :status)
+       ORDER BY a."appointmentDate" DESC, a."appointmentTime" DESC`,
+      { replacements: { corporateId, status: status || null } }
+    );
+    const all = [...hrAppts, ...selfAppts].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const paginated = all.slice(offset, offset + parseInt(limit, 10));
+    return res.json({ success: true, data: { appointments: paginated, total: all.length, page: parseInt(page, 10) } });
+  } catch (err) {
+    console.error('[corporate] all-appointments error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load appointments' });
+  }
+});
+
+// ─── Send manual appointment reminder ─────────────────────────────────────────
+router.post('/appointments/:apptId/remind', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { apptId } = req.params;
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, created_at)
+       VALUES (:corporateId, 'appointment_reminder', 'Appointment Reminder',
+               'You have an upcoming health appointment. Please be on time.', 'high', false, NOW())`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, message: 'Reminder sent' });
+  } catch (err) {
+    console.error('[corporate] remind error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to send reminder' });
+  }
+});
+
+// ─── Doctor list for scheduling ───────────────────────────────────────────────
+router.get('/doctors', authCorporate, async (req, res) => {
+  const { search = '', specialization = '' } = req.query;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT id, CONCAT("firstName", ' ', "lastName") AS name,
+              specialization, "consultationFees" AS fee, rating, status,
+              "profileImage" AS avatar, "registrationNumber"
+       FROM doctors
+       WHERE status = 'active'
+         AND (:search = '' OR LOWER(CONCAT("firstName",' ',"lastName")) LIKE LOWER('%' || :search || '%'))
+         AND (:spec = '' OR LOWER(specialization) LIKE LOWER('%' || :spec || '%'))
+       ORDER BY rating DESC NULLS LAST, "totalReviews" DESC NULLS LAST
+       LIMIT 100`,
+      { replacements: { search, spec: specialization } }
+    );
+    return res.json({ success: true, data: { doctors: rows } });
+  } catch (err) {
+    console.error('[corporate] doctors error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load doctors' });
+  }
+});
+
+// ─── Wellness activity registrations ──────────────────────────────────────────
+router.get('/wellness-calendar/activities/:id/registrations', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  try {
+    const [event] = await postgresSequelize.query(
+      `SELECT id, title, registered_count, max_participants FROM corporate_wellness_events
+       WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId } }
+    );
+    if (!event[0]) return res.status(404).json({ success: false, message: 'Event not found' });
+    const [rows] = await postgresSequelize.query(
+      `SELECT r.id, r."employeeId", r.status, r.invited_at AS "invitedAt", r.responded_at AS "respondedAt",
+              COALESCE(CONCAT(u."firstName",' ',u."lastName"), r."employeeId") AS "employeeName",
+              ce.department, ce.designation
+       FROM corporate_wellness_event_rsvps r
+       LEFT JOIN users u ON u.id = r."userId"
+       LEFT JOIN corporate_employees ce ON ce."employeeId" = r."employeeId" AND ce.corporate_id = :corporateId
+       WHERE r.event_id = :id
+       ORDER BY r.invited_at DESC`,
+      { replacements: { id, corporateId } }
+    );
+    return res.json({ success: true, data: { event: event[0], registrations: rows } });
+  } catch (err) {
+    console.error('[corporate] wellness registrations error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load registrations' });
+  }
+});
+
+router.delete('/wellness-calendar/registrations/:rsvpId', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { rsvpId } = req.params;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `UPDATE corporate_wellness_event_rsvps r
+       SET status = 'cancelled', responded_at = NOW()
+       FROM corporate_wellness_events e
+       WHERE r.id = :rsvpId AND r.event_id = e.id AND e.corporate_id = :corporateId
+       RETURNING r.id`,
+      { replacements: { rsvpId, corporateId } }
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Registration not found' });
+    await postgresSequelize.query(
+      `UPDATE corporate_wellness_events SET registered_count = GREATEST(0, registered_count - 1)
+       WHERE id = (SELECT event_id FROM corporate_wellness_event_rsvps WHERE id = :rsvpId)`,
+      { replacements: { rsvpId } }
+    );
+    return res.json({ success: true, message: 'Registration cancelled' });
+  } catch (err) {
+    console.error('[corporate] cancel rsvp error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to cancel registration' });
+  }
+});
+
+// ─── Health report delivery status ────────────────────────────────────────────
+router.get('/health-reports', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { department, status } = req.query;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT hr.id, hr.employee_id AS "employeeId", hr.report_name AS "reportName",
+              hr.report_type AS "reportType", hr.report_date::text AS "reportDate",
+              hr.sla_status AS "slaStatus", hr.report_delivered_at AS "deliveredAt",
+              hr.report_due_at AS "dueAt", hr.notified_email AS "notifiedEmail",
+              hr.notified_whatsapp AS "notifiedWhatsapp", hr.checkup_type AS "checkupType",
+              COALESCE(CONCAT(u."firstName",' ',u."lastName"), ce."employeeId") AS "employeeName",
+              ce.department
+       FROM corporate_health_reports hr
+       LEFT JOIN users u ON u.id = hr.employee_id
+       LEFT JOIN corporate_employees ce ON ce."userId" = hr.employee_id AND ce.corporate_id = :corporateId
+       WHERE hr.corporate_id = :corporateId
+         AND (:dept IS NULL OR ce.department = :dept)
+         AND (:status IS NULL OR hr.sla_status = :status)
+       ORDER BY hr.report_date DESC`,
+      { replacements: { corporateId, dept: department || null, status: status || null } }
+    );
+    const stats = {
+      total: rows.length,
+      delivered: rows.filter(r => r.deliveredAt).length,
+      overdue: rows.filter(r => r.slaStatus === 'overdue').length,
+      pending: rows.filter(r => !r.deliveredAt).length,
+    };
+    return res.json({ success: true, data: { reports: rows, stats } });
+  } catch (err) {
+    console.error('[corporate] health-reports error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load health reports' });
+  }
+});
+
+// ─── Corporate settings (eligibility rules + general) ─────────────────────────
+router.get('/settings/data', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { settings: rows[0]?.settings || {} } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to load settings' });
+  }
+});
+
+router.put('/settings/data', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { settings } = req.body || {};
+  if (!settings || typeof settings !== 'object') return res.status(400).json({ success: false, message: 'settings object required' });
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_settings (corporate_id, settings, "createdAt", "updatedAt")
+       VALUES (:corporateId, :settings, NOW(), NOW())
+       ON CONFLICT (corporate_id) DO UPDATE SET settings = corporate_settings.settings || :settings, "updatedAt" = NOW()`,
+      { replacements: { corporateId, settings: JSON.stringify(settings) } }
+    );
+    return res.json({ success: true, message: 'Settings saved' });
+  } catch (err) {
+    console.error('[corporate] save settings error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to save settings' });
+  }
+});
+
+// ─── Participation analytics ───────────────────────────────────────────────────
+router.get('/analytics/participation', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    const [totalRow] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS total FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+      { replacements: { corporateId } }
+    );
+    const total = parseInt(totalRow[0]?.total || 0, 10);
+    // Participating = had at least one appointment or AHC enrollment
+    const [participantRows] = await postgresSequelize.query(
+      `SELECT COUNT(DISTINCT ce."employeeId") AS cnt
+       FROM corporate_employees ce
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+         AND (
+           EXISTS (SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId")
+           OR EXISTS (SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId")
+         )`,
+      { replacements: { corporateId } }
+    );
+    const participating = parseInt(participantRows[0]?.cnt || 0, 10);
+    // Monthly teleconsultation count
+    const [tcRows] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS cnt FROM appointments
+       WHERE corporate_tenant_id = :corporateId
+         AND "appointmentDate" >= DATE_TRUNC('month', NOW())`,
+      { replacements: { corporateId } }
+    );
+    const teleconsultationsThisMonth = parseInt(tcRows[0]?.cnt || 0, 10);
+    // Pending checkups from AHC enrollments
+    const [pendRow] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS cnt FROM corporate_ahc_enrollments
+       WHERE corporate_id = :corporateId AND status IN ('pending','invited')`,
+      { replacements: { corporateId } }
+    );
+    const pendingCheckups = parseInt(pendRow[0]?.cnt || 0, 10);
+    // Department-wise participation
+    const [deptRows] = await postgresSequelize.query(
+      `SELECT ce.department,
+              COUNT(*) AS total,
+              COUNT(CASE WHEN EXISTS (
+                SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId"
+              ) OR EXISTS (
+                SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId"
+              ) THEN 1 END) AS participating
+       FROM corporate_employees ce
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce.department IS NOT NULL
+       GROUP BY ce.department
+       ORDER BY total DESC`,
+      { replacements: { corporateId } }
+    );
+    const departments = deptRows.map(r => ({
+      department: r.department,
+      total: parseInt(r.total, 10),
+      participating: parseInt(r.participating, 10),
+      rate: parseInt(r.total, 10) > 0 ? Math.round((parseInt(r.participating, 10) / parseInt(r.total, 10)) * 100) : 0,
+    }));
+    return res.json({
+      success: true,
+      data: {
+        totalEligible: total,
+        totalParticipating: participating,
+        participationRate: total > 0 ? Math.round((participating / total) * 100) : 0,
+        teleconsultationsThisMonth,
+        pendingCheckups,
+        departments,
+      },
+    });
+  } catch (err) {
+    console.error('[corporate] participation analytics error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load participation data' });
+  }
+});
+
+// ─── Monthly utilization chart ─────────────────────────────────────────────────
+router.get('/analytics/monthly-utilization', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    // Appointments by month (last 12 months)
+    const [apptRows] = await postgresSequelize.query(
+      `SELECT TO_CHAR(DATE_TRUNC('month', "appointmentDate"), 'Mon YYYY') AS month,
+              TO_CHAR(DATE_TRUNC('month', "appointmentDate"), 'YYYY-MM') AS month_key,
+              COUNT(*) AS appointments
+       FROM corporate_scheduled_appointments
+       WHERE corporate_id = :corporateId
+         AND "appointmentDate" >= NOW() - INTERVAL '12 months'
+       GROUP BY DATE_TRUNC('month', "appointmentDate")
+       ORDER BY DATE_TRUNC('month', "appointmentDate")`,
+      { replacements: { corporateId } }
+    );
+    // AHC completions by month
+    const [ahcRows] = await postgresSequelize.query(
+      `SELECT TO_CHAR(DATE_TRUNC('month', updated_at), 'Mon YYYY') AS month,
+              TO_CHAR(DATE_TRUNC('month', updated_at), 'YYYY-MM') AS month_key,
+              COUNT(*) AS completions
+       FROM corporate_ahc_enrollments
+       WHERE corporate_id = :corporateId AND status = 'completed'
+         AND updated_at >= NOW() - INTERVAL '12 months'
+       GROUP BY DATE_TRUNC('month', updated_at)
+       ORDER BY DATE_TRUNC('month', updated_at)`,
+      { replacements: { corporateId } }
+    );
+    // Merge by month
+    const months: Record<string, any> = {};
+    for (const r of apptRows) { months[r.month_key] = { month: r.month, appointments: parseInt(r.appointments, 10), ahcCompletions: 0 }; }
+    for (const r of ahcRows) { if (!months[r.month_key]) months[r.month_key] = { month: r.month, appointments: 0, ahcCompletions: 0 }; months[r.month_key].ahcCompletions = parseInt(r.completions, 10); }
+    const chart = Object.entries(months).sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
+    return res.json({ success: true, data: { chart } });
+  } catch (err) {
+    console.error('[corporate] monthly-utilization error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load utilization data' });
   }
 });
 

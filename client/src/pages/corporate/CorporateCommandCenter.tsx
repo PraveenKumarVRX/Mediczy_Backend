@@ -77,13 +77,19 @@ export default function CorporateCommandCenter() {
   const [topConditions, setTopConditions] = useState<Array<{ condition: string; claims: number; cost: number; pct: number }>>([]);
   const [wellnessPrograms, setWellnessPrograms] = useState<Array<{ name: string; participants: number; completion: number; impact: string; cost: number; roi: number }>>([]);
 
+  // Participation & monthly utilization
+  const [participationDepts, setParticipationDepts] = useState<Array<{ department: string; total: number; participating: number; rate: number }>>([]);
+  const [monthlyUtilization, setMonthlyUtilization] = useState<Array<{ month: string; appointments: number; ahcCompletions: number }>>([]);
+
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [summaryRes, analyticsRes] = await Promise.all([
+        const [summaryRes, analyticsRes, participationRes, utilizationRes] = await Promise.all([
           api.get('/corporate/dashboard/summary').catch(() => ({ data: null })),
           api.get('/corporate/dashboard/health-analytics').catch(() => ({ data: null })),
+          api.get('/corporate/analytics/participation').catch(() => ({ data: null })),
+          api.get('/corporate/analytics/monthly-utilization').catch(() => ({ data: null })),
         ]);
 
         const summary = summaryRes.data?.data;
@@ -131,6 +137,23 @@ export default function CorporateCommandCenter() {
             ...prev,
             totalEmployees: summary.KPIs?.activeEmployees || prev.totalEmployees,
           }));
+        }
+
+        const participation = participationRes.data?.data;
+        if (participation) {
+          setKpis(prev => ({
+            ...prev,
+            activeParticipants: participation.totalParticipating ?? prev.activeParticipants,
+            participationRate: participation.participationRate ?? prev.participationRate,
+          }));
+          if (Array.isArray(participation.departments)) {
+            setParticipationDepts(participation.departments);
+          }
+        }
+
+        const utilization = utilizationRes.data?.data;
+        if (utilization?.chart && Array.isArray(utilization.chart)) {
+          setMonthlyUtilization(utilization.chart.slice(-6));
         }
       } catch (e) {
         console.error('Command center load error', e);
@@ -403,6 +426,59 @@ export default function CorporateCommandCenter() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Department Participation */}
+            {participationDepts.length > 0 && (
+              <Card className="!p-0 border-white/[0.06] bg-slate-900/50 lg:col-span-2">
+                <CardContent className="p-5">
+                  <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                    <Users className="h-4 w-4 text-violet-400" /> Department Participation
+                  </h3>
+                  <div className="space-y-2.5">
+                    {participationDepts.slice(0, 8).sort((a, b) => b.rate - a.rate).map((d, i) => (
+                      <div key={i}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs text-slate-300 truncate flex-1 mr-2">{d.department}</span>
+                          <span className="text-xs text-slate-400 flex-shrink-0">{d.participating} / {d.total} ({d.rate}%)</span>
+                        </div>
+                        <div className="relative h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-violet-500"
+                            style={{ width: `${Math.min(d.rate, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Monthly Utilization */}
+            {monthlyUtilization.length > 0 && (
+              <Card className="!p-0 border-white/[0.06] bg-slate-900/50 lg:col-span-2">
+                <CardContent className="p-5">
+                  <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4 text-blue-400" /> Monthly Utilization (last 6 months)
+                  </h3>
+                  <div className="h-52">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={monthlyUtilization} barGap={4}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                        <XAxis dataKey="month" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                        <Tooltip
+                          contentStyle={{ background: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px' }}
+                        />
+                        <Legend wrapperStyle={{ fontSize: '10px', color: '#94a3b8' }} />
+                        <Bar dataKey="appointments" name="Appointments" fill="#3b82f6" radius={[3, 3, 0, 0]} barSize={18} />
+                        <Bar dataKey="ahcCompletions" name="AHC Completions" fill="#8b5cf6" radius={[3, 3, 0, 0]} barSize={18} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </motion.div>
         )}
 

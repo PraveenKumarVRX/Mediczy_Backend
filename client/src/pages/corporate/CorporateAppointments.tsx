@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Clock, MapPin, Search, Filter, CheckCircle, XCircle, AlertCircle, Users, RefreshCw, CalendarCheck, RotateCcw, Stethoscope, Building2, FlaskConical, Microscope, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Bell, Calendar, Clock, MapPin, Search, Filter, CheckCircle, XCircle, AlertCircle, Users, RefreshCw, CalendarCheck, RotateCcw, Stethoscope, Building2, FlaskConical, Microscope, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,7 @@ interface Appointment {
   time: string;
   status: 'scheduled' | 'completed' | 'cancelled' | 'no-show';
   notes?: string;
+  source?: 'hr_booked' | 'employee_booked';
 }
 
 interface EmployeeOption {
@@ -33,6 +34,14 @@ interface EmployeeOption {
   department: string;
   businessUnit?: string;
   location?: string;
+}
+
+interface DoctorOption {
+  id: string;
+  name: string;
+  specialization: string;
+  fee: number;
+  rating: number;
 }
 
 // ── Appointment type catalogue ────────────────────────────────────────────
@@ -88,6 +97,13 @@ const CorporateAppointments: React.FC = () => {
   // Complete confirmation state
   const [isCompleteOpen, setIsCompleteOpen] = useState(false);
   const [completingAppt, setCompletingAppt] = useState<Appointment | null>(null);
+  // Source filter
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
+  // Doctor search state
+  const [doctorResults, setDoctorResults] = useState<DoctorOption[]>([]);
+  const [doctorSearchLoading, setDoctorSearchLoading] = useState(false);
+  const [showDoctorDropdown, setShowDoctorDropdown] = useState(false);
+  const doctorSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stats = {
     totalScheduled: appointments.filter(a => a.status === 'scheduled').length,
@@ -97,16 +113,17 @@ const CorporateAppointments: React.FC = () => {
   };
 
   const filteredAppointments = useMemo(() => appointments.filter(appointment => {
-    const matchesSearch = 
+    const matchesSearch =
       appointment.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       appointment.employeeId.toLowerCase().includes(searchQuery.toLowerCase()) ||
       appointment.department.toLowerCase().includes(searchQuery.toLowerCase()) ||
       appointment.appointmentType.toLowerCase().includes(searchQuery.toLowerCase());
-    
+
     const matchesStatus = statusFilter === 'all' || appointment.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  }), [appointments, searchQuery, statusFilter]);
+    const matchesSource = sourceFilter === 'all' || appointment.source === sourceFilter;
+
+    return matchesSearch && matchesStatus && matchesSource;
+  }), [appointments, searchQuery, statusFilter, sourceFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -159,6 +176,7 @@ const CorporateAppointments: React.FC = () => {
     location: '',
     appointmentType: '',
     doctorName: '',
+    doctorId: '',
     facility: '',
     date: '',
     time: '',
@@ -202,8 +220,22 @@ const CorporateAppointments: React.FC = () => {
   const loadAppointments = async () => {
     try {
       setIsLoading(true);
-      const { data } = await api.get('/corporate/appointments');
-      const list = ((data as any)?.data?.appointments || []) as Appointment[];
+      const { data } = await api.get('/corporate/all-appointments');
+      const raw = ((data as any)?.data?.appointments || []) as any[];
+      const list: Appointment[] = raw.map((a: any) => ({
+        id: a.id,
+        employeeId: a.employeeId,
+        employeeName: a.employeeName,
+        department: a.department,
+        appointmentType: a.appointmentType || a.type || '',
+        doctorName: a.doctorName || '',
+        facility: a.facility || '',
+        date: a.date,
+        time: a.time,
+        status: a.status,
+        notes: a.notes,
+        source: a.source,
+      }));
       setAppointments(list);
     } catch (error: any) {
       setAppointments([]);
@@ -240,6 +272,27 @@ const CorporateAppointments: React.FC = () => {
       });
     }
   };
+
+  const searchDoctors = useCallback((query: string) => {
+    if (doctorSearchTimer.current) clearTimeout(doctorSearchTimer.current);
+    if (query.length < 2) {
+      setDoctorResults([]);
+      setShowDoctorDropdown(false);
+      return;
+    }
+    doctorSearchTimer.current = setTimeout(async () => {
+      setDoctorSearchLoading(true);
+      try {
+        const { data } = await api.get('/corporate/doctors', { params: { search: query } });
+        setDoctorResults(((data as any)?.data?.doctors || []) as DoctorOption[]);
+        setShowDoctorDropdown(true);
+      } catch {
+        setDoctorResults([]);
+      } finally {
+        setDoctorSearchLoading(false);
+      }
+    }, 300);
+  }, []);
 
   useEffect(() => {
     loadAppointments();
@@ -283,10 +336,11 @@ const CorporateAppointments: React.FC = () => {
       setIsScheduleDialogOpen(false);
       setAppointmentForm({
         employeeId: '', employeeName: '', department: '', businessUnit: '', location: '',
-        appointmentType: '', doctorName: '', facility: '', date: '', time: '', notes: ''
+        appointmentType: '', doctorName: '', doctorId: '', facility: '', date: '', time: '', notes: ''
       });
       setEmpSearch(''); setEmpBUFilter('all'); setEmpDeptFilter('all'); setEmpCityFilter('all');
       setFacSearch('');
+      setDoctorResults([]); setShowDoctorDropdown(false);
     } catch (error: any) {
       toast({
         title: "Scheduling failed",
@@ -369,6 +423,15 @@ const CorporateAppointments: React.FC = () => {
     toast({ title: 'Appointments refreshed', description: 'Showing the latest appointment list.' });
   };
 
+  const handleSendReminder = async (appointment: Appointment) => {
+    try {
+      await api.post(`/corporate/appointments/${encodeURIComponent(appointment.id)}/remind`);
+      toast({ title: 'Reminder sent', description: `Reminder sent to ${appointment.employeeName}` });
+    } catch (error: any) {
+      toast({ title: 'Failed to send reminder', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
+    }
+  };
+
   return (
     <CorporateLayout title="Corporate Appointments">
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
@@ -400,9 +463,10 @@ const CorporateAppointments: React.FC = () => {
         <Dialog open={isScheduleDialogOpen} onOpenChange={(open) => {
           setIsScheduleDialogOpen(open);
           if (!open) {
-            setAppointmentForm({ employeeId: '', employeeName: '', department: '', businessUnit: '', location: '', appointmentType: '', doctorName: '', facility: '', date: '', time: '', notes: '' });
+            setAppointmentForm({ employeeId: '', employeeName: '', department: '', businessUnit: '', location: '', appointmentType: '', doctorName: '', doctorId: '', facility: '', date: '', time: '', notes: '' });
             setEmpSearch(''); setEmpBUFilter('all'); setEmpDeptFilter('all'); setEmpCityFilter('all');
             setFacSearch('');
+            setDoctorResults([]); setShowDoctorDropdown(false);
           }
         }}>
           <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
@@ -631,6 +695,63 @@ const CorporateAppointments: React.FC = () => {
                 );
               })()}
 
+              {/* Doctor / Consultant name */}
+              <div className="grid gap-2">
+                <Label htmlFor="doctorName">Doctor / Consultant <span className="text-slate-500 font-normal text-xs">(optional)</span></Label>
+                <div className="relative">
+                  <Input
+                    id="doctorName"
+                    placeholder="Search doctor by name (type ≥ 2 chars)…"
+                    value={appointmentForm.doctorName}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setAppointmentForm(p => ({ ...p, doctorName: val, doctorId: '' }));
+                      searchDoctors(val);
+                    }}
+                    className="bg-slate-800/60 border-white/10 text-white placeholder:text-slate-500"
+                    autoComplete="off"
+                  />
+                  {doctorSearchLoading && (
+                    <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-slate-400" />
+                  )}
+                </div>
+                {showDoctorDropdown && doctorResults.length > 0 && (
+                  <div className="border border-white/10 rounded-xl overflow-hidden bg-slate-900">
+                    <div className="max-h-40 overflow-y-auto divide-y divide-white/[0.05]">
+                      {doctorResults.map(doc => (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-white/5 transition-all"
+                          onClick={() => {
+                            setAppointmentForm(p => ({ ...p, doctorName: doc.name, doctorId: doc.id }));
+                            setShowDoctorDropdown(false);
+                          }}
+                        >
+                          <Stethoscope className="h-4 w-4 text-blue-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium text-white truncate">{doc.name}</div>
+                            <div className="text-xs text-slate-500 flex items-center gap-2 flex-wrap">
+                              {doc.specialization && <span>{doc.specialization}</span>}
+                              {doc.fee ? <><span className="text-slate-700">·</span><span>₹{doc.fee}</span></> : null}
+                              {doc.rating ? <><span className="text-slate-700">·</span><span>★ {doc.rating}</span></> : null}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="px-4 py-1.5 bg-slate-800/40 text-xs text-slate-600 border-t border-white/[0.04]">
+                      {doctorResults.length} doctor{doctorResults.length !== 1 ? 's' : ''} found
+                    </div>
+                  </div>
+                )}
+                {appointmentForm.doctorId && (
+                  <p className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
+                    <CheckCircle className="h-3 w-3" /> Doctor selected from directory
+                  </p>
+                )}
+              </div>
+
               {/* Date + Time */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
@@ -738,6 +859,16 @@ const CorporateAppointments: React.FC = () => {
                 <SelectItem value="no-show">No Show</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="w-[190px]">
+                <SelectValue placeholder="Filter by source" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sources</SelectItem>
+                <SelectItem value="hr_booked">HR Booked</SelectItem>
+                <SelectItem value="employee_booked">Employee Booked</SelectItem>
+              </SelectContent>
+            </Select>
             <Button variant="outline" onClick={handleRefresh}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh
@@ -761,6 +892,11 @@ const CorporateAppointments: React.FC = () => {
                             <span className="capitalize">{appointment.status.replace('-', ' ')}</span>
                           </div>
                         </Badge>
+                        {appointment.source && (
+                          <Badge className={appointment.source === 'hr_booked' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-blue-500/15 text-blue-400'}>
+                            {appointment.source === 'hr_booked' ? 'HR Booked' : 'Employee Booked'}
+                          </Badge>
+                        )}
                       </div>
                       
                       <div className="grid grid-cols-2 gap-4 text-sm">
@@ -796,6 +932,9 @@ const CorporateAppointments: React.FC = () => {
                     <div className="flex gap-2">
                       {appointment.status === 'scheduled' && (
                         <>
+                          <Button variant="ghost" size="sm" onClick={() => handleSendReminder(appointment)} title="Send Reminder">
+                            <Bell className="h-3 w-3" />
+                          </Button>
                           <Button variant="outline" size="sm" onClick={() => handleReschedule(appointment)}>
                             <RotateCcw className="h-3 w-3 mr-1" />Reschedule
                           </Button>
@@ -843,6 +982,9 @@ const CorporateAppointments: React.FC = () => {
                 <div className="flex justify-between"><span className="text-slate-400">Facility</span><span className="font-semibold">{selectedAppointment.facility}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Date & Time</span><span className="font-semibold">{new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time}</span></div>
                 <div className="flex justify-between"><span className="text-slate-400">Status</span><span className="font-semibold capitalize">{selectedAppointment.status.replace('-', ' ')}</span></div>
+                {selectedAppointment.source && (
+                  <div className="flex justify-between items-center"><span className="text-slate-400">Source</span><Badge className={selectedAppointment.source === 'hr_booked' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-blue-500/15 text-blue-400'}>{selectedAppointment.source === 'hr_booked' ? 'HR Booked' : 'Employee Booked'}</Badge></div>
+                )}
                 {selectedAppointment.notes && <p className="text-slate-400">Notes: <span className="font-semibold">{selectedAppointment.notes}</span></p>}
               </div>
             )}
