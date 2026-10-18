@@ -553,6 +553,7 @@ const AdminTenantManagement = () => {
         <div>
           <h1 className="text-3xl font-bold">Super Admin - Tenant Management</h1>
           <p className="text-gray-600 mt-2">Create and manage healthcare organizations with tier-based provisioning</p>
+          <Button variant="link" onClick={() => navigate('/admin/dedicated-installations')}>Manage dedicated CRM / lab installations</Button>
         </div>
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
