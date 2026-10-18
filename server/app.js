@@ -172,6 +172,7 @@ import ticketsRouter from './routes/tickets.route.js';
 import tenantRouter from './routes/tenant.route.js';
 import tenantDomainRouter from './routes/tenant-domain.route.js';
 import { dedicatedInstallationsRouter } from './routes/dedicated-installations.route.js';
+import fieldForceRouter from './routes/field-force.route.js';
 import emailRouter from './routes/email.route.js';
 import paymentRouter from './routes/payment.route.js';
 import orderRouter from './routes/order.route.js';
@@ -1562,6 +1563,7 @@ app.use('/api/tickets', ticketsRouter); // Support ticket management system
 app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/admin/dedicated-installations', dedicatedInstallationsRouter({ pool: pgPool, authenticate: authUser }));
+app.use('/api/field', fieldForceRouter); // Smart Force field force module (Team login, 'Field Force' permission)
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api/aggregators', aggregatorRouter); // Aggregator organizational hierarchy
 app.use('/api/aggregator-auth', aggregatorAuthRouter); // Aggregator authentication (login/register)

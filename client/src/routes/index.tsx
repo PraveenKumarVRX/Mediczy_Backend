@@ -324,6 +324,9 @@ const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans
 const TeamUserPlanCustomization = lazy(() => import("@/pages/team/TeamUserPlanCustomization"));
 const TeamPlanGovernance       = lazy(() => import("@/pages/team/TeamPlanGovernance"));
 const TeamBrokerManagement     = lazy(() => import("@/pages/team/TeamBrokerManagement"));
+const FieldDashboard           = lazy(() => import("@/pages/field/FieldDashboard"));
+const FieldAttendance          = lazy(() => import("@/pages/field/FieldAttendance"));
+const FieldVisits              = lazy(() => import("@/pages/field/FieldVisits"));
 const TeamDoctorManagement     = lazy(() => import("@/pages/team/TeamDoctorManagement"));
 const TeamProviderNetwork      = lazy(() => import("@/pages/team/TeamProviderNetwork"));
 
@@ -1506,6 +1509,14 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Broker Management"><TeamBrokerManagement /></TeamGuard>} />
         <Route path="/team/reports"
           element={<TeamGuard permission={["Patient Reports", "Analytics Access", "Reports Access"]}><TeamReports /></TeamGuard>} />
+
+        {/* ── Field Force (Smart Force) ──────────────────────────────── */}
+        <Route path="/team/field"
+          element={<TeamGuard permission="Field Force"><FieldDashboard /></TeamGuard>} />
+        <Route path="/team/field/attendance"
+          element={<TeamGuard permission="Field Force"><FieldAttendance /></TeamGuard>} />
+        <Route path="/team/field/visits"
+          element={<TeamGuard permission="Field Force"><FieldVisits /></TeamGuard>} />
 
         {/* ── Team (admin-only) ────────────────────────────────────────── */}
         <Route path="/team/activity"
