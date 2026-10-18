@@ -71,6 +71,10 @@ export const CRM_CAPABILITY_ROLES = Object.freeze({
 
   // CRM team/user management — admin only.
   'team:manage': [],
+
+  // Field force management — Business Head sees all, Sales Rep sees own data.
+  'field_force:read':   [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.SALES_REP],
+  'field_force:manage': [CRM_ROLES.BUSINESS_HEAD], // approve expenses, set targets, assign territories
 });
 
 // Capabilities business_head does NOT get for free, even as an executive

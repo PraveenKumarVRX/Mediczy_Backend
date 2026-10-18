@@ -138,6 +138,7 @@ import crmFlowBuilderRouter from './routes/crm-flow-builder.route.js';
 import crmSocialGrowthRouter from './routes/crm-social-growth.route.js';
 import crmBrightbeanChatRouter from './routes/crm-brightbean-chat.route.js';
 import crmAnalysisRouter from './routes/crm-analysis.route.js';
+import crmFieldForceRouter from './routes/crm-field-force.route.js';
 import './workers/crm-campaign.worker.js';
 import './workers/crm-segment-blast.worker.js';
 import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
@@ -1564,6 +1565,7 @@ app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/admin/dedicated-installations', dedicatedInstallationsRouter({ pool: pgPool, authenticate: authUser }));
 app.use('/api/field', fieldForceRouter); // Smart Force field force module (Team login, 'Field Force' permission)
+app.use('/api/crm/field-force', crmFieldForceRouter); // Field force management — Business Head CRM view
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api/aggregators', aggregatorRouter); // Aggregator organizational hierarchy
 app.use('/api/aggregator-auth', aggregatorAuthRouter); // Aggregator authentication (login/register)
