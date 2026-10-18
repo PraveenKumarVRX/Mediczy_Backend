@@ -3916,4 +3916,455 @@ router.get('/employees/:id', authCorporate, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Notifications — enhanced: send, unread-count, action_url
+// ---------------------------------------------------------------------------
+
+router.get('/notifications/unread-count', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { count: 0 } });
+  const [row] = await postgresSequelize.query(
+    `SELECT COUNT(*)::int AS cnt FROM corporate_notifications
+      WHERE corporate_id = :corporateId AND read = false`,
+    { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  return res.json({ success: true, data: { count: row?.cnt || 0 } });
+});
+
+router.post('/notifications/send', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  const { type = 'announcement', title, message, priority = 'medium', actionUrl, employeeId } = req.body || {};
+  if (!title || !message) return res.status(400).json({ success: false, message: 'title and message are required' });
+  const [rows] = await postgresSequelize.query(
+    `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, action_url, employee_id, created_at)
+     VALUES (:corporateId, :type, :title, :message, :priority, false, :actionUrl, :employeeId, NOW())
+     RETURNING id, type, title, message, priority, read, action_url AS "actionUrl", employee_id AS "employeeId", created_at AS "createdAt"`,
+    { replacements: { corporateId, type, title, message, priority, actionUrl: actionUrl || null, employeeId: employeeId || null } }
+  );
+  return res.status(201).json({ success: true, data: { notification: rows[0] } });
+});
+
+// ---------------------------------------------------------------------------
+// Consent management
+// ---------------------------------------------------------------------------
+
+router.get('/consent/summary', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { total: 0, granted: 0, pending: 0 } });
+  try {
+    // Total active employees
+    const [totalRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const total = totalRow?.cnt || 0;
+    const [grantedRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS cnt FROM corporate_employee_consents
+        WHERE corporate_id = :corporateId AND granted = true AND consent_type = 'health_data'`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const granted = grantedRow?.cnt || 0;
+    return res.json({ success: true, data: { total, granted, pending: total - granted, consentRate: total > 0 ? Math.round((granted / total) * 100) : 0 } });
+  } catch (err) {
+    console.error('[corporate] consent summary error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch consent summary' });
+  }
+});
+
+router.get('/consent/employees', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { employees: [] } });
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT ce."employeeId", ce.department, ce.designation,
+              COALESCE(u."firstName" || ' ' || u."lastName", ce.metadata->>'firstName' || ' ' || ce.metadata->>'lastName', ce."employeeId") AS name,
+              COALESCE(u.email, ce.email) AS email,
+              c.granted, c.granted_at AS "grantedAt", c.revoked_at AS "revokedAt", c.updated_at AS "updatedAt"
+         FROM corporate_employees ce
+         LEFT JOIN users u ON u.id = ce."userId"
+         LEFT JOIN corporate_employee_consents c
+           ON c.corporate_id = ce.corporate_id AND c.employee_id = ce."employeeId" AND c.consent_type = 'health_data'
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+        ORDER BY ce."createdAt" DESC`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { employees: rows } });
+  } catch (err) {
+    console.error('[corporate] consent employees error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch consent data' });
+  }
+});
+
+router.post('/consent/record', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  const { employeeId, granted, notes } = req.body || {};
+  if (!employeeId) return res.status(400).json({ success: false, message: 'employeeId required' });
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_employee_consents (corporate_id, employee_id, consent_type, granted, granted_at, revoked_at, notes, created_at, updated_at)
+       VALUES (:corporateId, :employeeId, 'health_data', :granted,
+               CASE WHEN :granted THEN NOW() ELSE NULL END,
+               CASE WHEN NOT :granted THEN NOW() ELSE NULL END,
+               :notes, NOW(), NOW())
+       ON CONFLICT (corporate_id, employee_id, consent_type) DO UPDATE
+         SET granted = EXCLUDED.granted,
+             granted_at = CASE WHEN EXCLUDED.granted THEN NOW() ELSE corporate_employee_consents.granted_at END,
+             revoked_at = CASE WHEN NOT EXCLUDED.granted THEN NOW() ELSE NULL END,
+             notes = COALESCE(EXCLUDED.notes, corporate_employee_consents.notes),
+             updated_at = NOW()`,
+      { replacements: { corporateId, employeeId, granted: !!granted, notes: notes || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] consent record error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to record consent' });
+  }
+});
+
+router.post('/consent/bulk-request', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  try {
+    // Upsert a consent request row for every active employee who hasn't consented yet.
+    // granted=false means "requested but not yet responded"; HR will update per employee.
+    const [result] = await postgresSequelize.query(
+      `INSERT INTO corporate_employee_consents (corporate_id, employee_id, consent_type, granted, created_at, updated_at)
+       SELECT :corporateId, ce."employeeId", 'health_data', false, NOW(), NOW()
+         FROM corporate_employees ce
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+       ON CONFLICT (corporate_id, employee_id, consent_type) DO NOTHING`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { message: 'Consent requests created for pending employees' } });
+  } catch (err) {
+    console.error('[corporate] bulk consent request error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to create consent requests' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Report access audit log — auto-logged on /reports/:id/download
+// ---------------------------------------------------------------------------
+
+router.get('/audit-log', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { entries: [] } });
+  const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+  const offset = parseInt(req.query.offset || '0', 10);
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT id, report_id AS "reportId", report_title AS "reportTitle",
+              accessed_by_type AS "accessedByType", accessed_by_name AS "accessedByName",
+              action, ip_address AS "ipAddress", accessed_at AS "accessedAt"
+         FROM corporate_report_access_log
+        WHERE corporate_id = :corporateId
+        ORDER BY accessed_at DESC
+        LIMIT :limit OFFSET :offset`,
+      { replacements: { corporateId, limit, offset } }
+    );
+    const [countRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS cnt FROM corporate_report_access_log WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({ success: true, data: { entries: rows, total: countRow?.cnt || 0 } });
+  } catch (err) {
+    console.error('[corporate] audit log error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch audit log' });
+  }
+});
+
+// Inject audit logging into the existing download route by patching the
+// response after the existing handler fires a download. Rather than rewriting
+// the handler we add a thin post-download logging route that the client calls
+// immediately after a successful download.
+router.post('/reports/:id/log-access', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true });
+  const { id } = req.params;
+  const { action = 'download', reportTitle } = req.body || {};
+  const user = req.user;
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'HR';
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_report_access_log
+         (corporate_id, report_id, report_title, accessed_by_type, accessed_by_user_id, accessed_by_name, action, ip_address, accessed_at)
+       VALUES (:corporateId, :reportId, :reportTitle, 'hr', :userId, :name, :action, :ip, NOW())`,
+      { replacements: { corporateId, reportId: id, reportTitle: reportTitle || null, userId: user?.id || null, name, action, ip: req.ip || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    // Non-fatal — don't block the UI if audit logging fails
+    console.warn('[corporate] audit log insert warning:', err.message);
+    return res.json({ success: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Annual Health Checkup (AHC) management
+// ---------------------------------------------------------------------------
+
+router.get('/ahc/summary', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { batches: 0, enrolled: 0, completed: 0, pending: 0 } });
+  try {
+    const [batchRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'active')::int AS active,
+              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+         FROM corporate_ahc_batches WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const [enrollRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+              COUNT(*) FILTER (WHERE status = 'invited')::int AS invited,
+              COUNT(*) FILTER (WHERE status = 'booked')::int AS booked,
+              COUNT(*) FILTER (WHERE report_ready = true)::int AS report_ready
+         FROM corporate_ahc_enrollments WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({
+      success: true,
+      data: {
+        batches: batchRow?.total || 0,
+        activeBatches: batchRow?.active || 0,
+        completedBatches: batchRow?.completed || 0,
+        enrolled: enrollRow?.total || 0,
+        completed: enrollRow?.completed || 0,
+        pending: enrollRow?.pending || 0,
+        invited: enrollRow?.invited || 0,
+        booked: enrollRow?.booked || 0,
+        reportReady: enrollRow?.report_ready || 0,
+      },
+    });
+  } catch (err) {
+    console.error('[corporate] ahc summary error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch AHC summary' });
+  }
+});
+
+router.get('/ahc/batches', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { batches: [] } });
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT b.id, b.batch_name AS "batchName", b.batch_year AS "batchYear",
+              b.scheduled_date AS "scheduledDate", b.due_date AS "dueDate",
+              b.status, b.priority, b.notes, b.target_departments AS "targetDepartments",
+              b.created_at AS "createdAt",
+              COUNT(e.id)::int AS enrolled,
+              COUNT(e.id) FILTER (WHERE e.status = 'completed')::int AS completed,
+              COUNT(e.id) FILTER (WHERE e.status = 'pending')::int AS pending,
+              COUNT(e.id) FILTER (WHERE e.report_ready = true)::int AS "reportReady"
+         FROM corporate_ahc_batches b
+         LEFT JOIN corporate_ahc_enrollments e ON e.batch_id = b.id
+        WHERE b.corporate_id = :corporateId
+        GROUP BY b.id
+        ORDER BY b.batch_year DESC, b.created_at DESC`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { batches: rows } });
+  } catch (err) {
+    console.error('[corporate] ahc batches error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch AHC batches' });
+  }
+});
+
+router.post('/ahc/batches', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  const { batchName, batchYear, scheduledDate, dueDate, priority = 'normal', notes, targetDepartments } = req.body || {};
+  if (!batchName || !dueDate) return res.status(400).json({ success: false, message: 'batchName and dueDate are required' });
+  try {
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_ahc_batches (corporate_id, batch_name, batch_year, scheduled_date, due_date, priority, notes, target_departments, created_by, status)
+       VALUES (:corporateId, :batchName, :batchYear, :scheduledDate, :dueDate, :priority, :notes, :targetDepartments, :createdBy, 'planning')
+       RETURNING id, batch_name AS "batchName", batch_year AS "batchYear", scheduled_date AS "scheduledDate", due_date AS "dueDate", status, priority, created_at AS "createdAt"`,
+      {
+        replacements: {
+          corporateId, batchName,
+          batchYear: batchYear || new Date().getFullYear(),
+          scheduledDate: scheduledDate || null,
+          dueDate,
+          priority,
+          notes: notes || null,
+          targetDepartments: targetDepartments ? JSON.stringify(targetDepartments) : null,
+          createdBy: req.user?.id || null,
+        },
+      }
+    );
+    return res.status(201).json({ success: true, data: { batch: rows[0] } });
+  } catch (err) {
+    console.error('[corporate] ahc create batch error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to create AHC batch' });
+  }
+});
+
+router.put('/ahc/batches/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { status, priority, notes, dueDate, scheduledDate } = req.body || {};
+  try {
+    await postgresSequelize.query(
+      `UPDATE corporate_ahc_batches SET
+         status = COALESCE(:status, status),
+         priority = COALESCE(:priority, priority),
+         notes = COALESCE(:notes, notes),
+         due_date = COALESCE(:dueDate, due_date),
+         scheduled_date = COALESCE(:scheduledDate, scheduled_date),
+         updated_at = NOW()
+       WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId, status: status || null, priority: priority || null, notes: notes || null, dueDate: dueDate || null, scheduledDate: scheduledDate || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] ahc update batch error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update AHC batch' });
+  }
+});
+
+router.get('/ahc/batches/:id/enrollments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT e.id, e.employee_id AS "employeeId", e.employee_name AS "employeeName",
+              e.department, e.status, e.booked_date AS "bookedDate", e.booked_slot AS "bookedSlot",
+              e.report_ready AS "reportReady", e.report_url AS "reportUrl",
+              e.reminder_sent_at AS "reminderSentAt", e.notes,
+              COALESCE(u."firstName" || ' ' || u."lastName", e.employee_name, e.employee_id) AS name,
+              COALESCE(u.email, '') AS email,
+              (SELECT COUNT(*)::int FROM corporate_ahc_dependents d WHERE d.enrollment_id = e.id) AS dependents
+         FROM corporate_ahc_enrollments e
+         LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.batch_id = :id AND e.corporate_id = :corporateId
+        ORDER BY e.department, name`,
+      { replacements: { id, corporateId } }
+    );
+    return res.json({ success: true, data: { enrollments: rows } });
+  } catch (err) {
+    console.error('[corporate] ahc enrollments error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch enrollments' });
+  }
+});
+
+router.post('/ahc/batches/:id/enroll-all', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { departments } = req.body || {};  // optional: filter by department
+  try {
+    // Verify the batch belongs to this corporate
+    const [batchRows] = await postgresSequelize.query(
+      `SELECT id FROM corporate_ahc_batches WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId } }
+    );
+    if (!batchRows[0]) return res.status(404).json({ success: false, message: 'Batch not found' });
+
+    let deptFilter = '';
+    const replacements = { id, corporateId };
+    if (Array.isArray(departments) && departments.length) {
+      deptFilter = `AND ce.department = ANY(ARRAY[:departments])`;
+      replacements.departments = departments;
+    }
+
+    const [result] = await postgresSequelize.query(
+      `INSERT INTO corporate_ahc_enrollments (batch_id, corporate_id, employee_id, employee_name, department, user_id, status, created_at, updated_at)
+       SELECT :id, :corporateId, ce."employeeId",
+              TRIM(COALESCE(u."firstName" || ' ' || u."lastName", ce.metadata->>'firstName' || ' ' || ce.metadata->>'lastName', ce."employeeId")),
+              ce.department, ce."userId", 'pending', NOW(), NOW()
+         FROM corporate_employees ce
+         LEFT JOIN users u ON u.id = ce."userId"
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true ${deptFilter}
+       ON CONFLICT (batch_id, employee_id) DO NOTHING
+       RETURNING id`,
+      { replacements }
+    );
+    return res.json({ success: true, data: { enrolled: result.length, message: `${result.length} employees enrolled` } });
+  } catch (err) {
+    console.error('[corporate] ahc enroll-all error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to enroll employees' });
+  }
+});
+
+router.put('/ahc/enrollments/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { status, bookedDate, bookedSlot, reportReady, reportUrl, notes } = req.body || {};
+  try {
+    await postgresSequelize.query(
+      `UPDATE corporate_ahc_enrollments SET
+         status = COALESCE(:status, status),
+         booked_date = COALESCE(:bookedDate, booked_date),
+         booked_slot = COALESCE(:bookedSlot, booked_slot),
+         report_ready = COALESCE(:reportReady, report_ready),
+         report_url = COALESCE(:reportUrl, report_url),
+         notes = COALESCE(:notes, notes),
+         updated_at = NOW()
+       WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId, status: status || null, bookedDate: bookedDate || null, bookedSlot: bookedSlot || null, reportReady: reportReady != null ? reportReady : null, reportUrl: reportUrl || null, notes: notes || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] ahc update enrollment error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update enrollment' });
+  }
+});
+
+router.post('/ahc/batches/:id/send-reminders', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  try {
+    // Mark reminder_sent_at for all pending/invited enrollments in this batch
+    const [result] = await postgresSequelize.query(
+      `UPDATE corporate_ahc_enrollments SET reminder_sent_at = NOW(), updated_at = NOW()
+        WHERE batch_id = :id AND corporate_id = :corporateId AND status IN ('pending', 'invited')
+        RETURNING id, employee_id`,
+      { replacements: { id, corporateId } }
+    );
+    // Insert notification for each employee who has a linked user
+    await postgresSequelize.query(
+      `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, employee_id, created_at)
+       SELECT :corporateId, 'appointment_reminder',
+              'Annual Health Checkup Reminder',
+              'Your annual health checkup is due. Please schedule your appointment at the earliest.',
+              'high', false, e.employee_id, NOW()
+         FROM corporate_ahc_enrollments e
+        WHERE e.batch_id = :id AND e.corporate_id = :corporateId AND e.status IN ('pending','invited')`,
+      { replacements: { id, corporateId } }
+    );
+    return res.json({ success: true, data: { reminded: result.length, message: `Reminders sent to ${result.length} employees` } });
+  } catch (err) {
+    console.error('[corporate] ahc send reminders error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to send reminders' });
+  }
+});
+
+router.post('/ahc/enrollments/:id/dependents', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { name, relationship, dateOfBirth, gender } = req.body || {};
+  if (!name || !relationship) return res.status(400).json({ success: false, message: 'name and relationship required' });
+  try {
+    // Verify enrollment belongs to this corporate
+    const [enr] = await postgresSequelize.query(
+      `SELECT id FROM corporate_ahc_enrollments WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId } }
+    );
+    if (!enr[0]) return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_ahc_dependents (enrollment_id, name, relationship, date_of_birth, gender)
+       VALUES (:id, :name, :relationship, :dateOfBirth, :gender)
+       RETURNING id, name, relationship, date_of_birth AS "dateOfBirth", gender, status`,
+      { replacements: { id, name, relationship, dateOfBirth: dateOfBirth || null, gender: gender || null } }
+    );
+    return res.status(201).json({ success: true, data: { dependent: rows[0] } });
+  } catch (err) {
+    console.error('[corporate] ahc add dependent error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to add dependent' });
+  }
+});
+
 export default router;

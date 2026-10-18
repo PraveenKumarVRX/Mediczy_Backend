@@ -184,6 +184,7 @@ const AdminPlans               = lazy(() => import("@/pages/admin/AdminPlans"));
 const AdminInsurance           = lazy(() => import("@/pages/admin/AdminInsurance"));
 const AdminWorkflowAutomation  = lazy(() => import("@/pages/admin/AdminWorkflowAutomation"));
 const AdminTenantManagement    = lazy(() => import("@/pages/admin/AdminTenantManagement"));
+const AdminDedicatedInstallations = lazy(() => import("@/pages/admin/AdminDedicatedInstallations"));
 const HospitalsManagement      = lazy(() => import("@/pages/admin/HospitalsManagement"));
 const PendingRegistrations     = lazy(() => import("@/pages/admin/PendingRegistrations"));
 const ClinicsManagement        = lazy(() => import("@/pages/admin/ClinicsManagement"));
@@ -570,6 +571,7 @@ const CorporateHealthRiskAssessment = lazy(() => import("@/pages/corporate/Corpo
 const CorporateGamification         = lazy(() => import("@/pages/corporate/CorporateGamification"));
 const CorporateWellnessCalendar     = lazy(() => import("@/pages/corporate/CorporateWellnessCalendar"));
 const CorporateCompliance           = lazy(() => import("@/pages/corporate/CorporateCompliance"));
+const CorporateAnnualHealthCheckup  = lazy(() => import("@/pages/corporate/CorporateAnnualHealthCheckup"));
 const CorporateSupport              = lazy(() => import("@/pages/corporate/CorporateSupport"));
 const CorporateCommandCenter        = lazy(() => import("@/pages/corporate/CorporateCommandCenter"));
 const CorporateUserManagement       = lazy(() => import("@/pages/corporate/CorporateUserManagement"));
@@ -1529,6 +1531,7 @@ const AppRoutes = () => {
         <Route path="/admin/insurance"           element={<AdminRoute><AdminInsurance /></AdminRoute>} />
         <Route path="/admin/workflow-automation" element={<AdminRoute><AdminWorkflowAutomation /></AdminRoute>} />
         <Route path="/admin/tenants"             element={<AdminRoute><AdminTenantManagement /></AdminRoute>} />
+        <Route path="/admin/dedicated-installations" element={<AdminRoute><AdminDedicatedInstallations /></AdminRoute>} />
         <Route path="/admin/insurer"             element={<AdminRoute><InsurerManagement /></AdminRoute>} />
         <Route path="/admin/tpa"                 element={<AdminRoute><TPAManagement /></AdminRoute>} />
         <Route path="/admin/brokers"             element={<AdminRoute><BrokerManagement /></AdminRoute>} />
@@ -1609,6 +1612,7 @@ const AppRoutes = () => {
         <Route path="/corporate/complaints"              element={<CorporateComplaints />} />
         <Route path="/corporate/compliance"              element={<CorporateCompliance />} />
         <Route path="/corporate/notifications"           element={<CorporateNotifications />} />
+        <Route path="/corporate/annual-health-checkup"   element={<CorporateAnnualHealthCheckup />} />
         <Route path="/corporate/settings"                element={<CorporateSettings />} />
         <Route path="/corporate/help"                    element={<CorporateHelp />} />
         <Route path="/corporate/health-risk-assessment"  element={<CorporateHealthRiskAssessment />} />

@@ -4,6 +4,7 @@ import { getUserType } from "@/hooks/auth";
 import CorporateSidebar from "./CorporateSidebar";
 import { useTheme } from "@/utils/theme.provider";
 import { Bell, HeartPulse, User, ChevronDown, Search } from "lucide-react";
+import api from "@/utils/api";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -25,6 +26,7 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
   const { setTheme } = useTheme();
   const [corporateName, setCorporateName] = useState<string>('');
   const [adminName, setAdminName] = useState<string>('HR Admin');
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   // Force dark mode for the corporate portal — use ThemeProvider so it wins the race
   useEffect(() => {
@@ -52,6 +54,19 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
       navigate("/corporate/login");
     }
   }, [navigate]);
+
+  // Live notification badge — poll every 60s while the layout is mounted
+  useEffect(() => {
+    let cancelled = false;
+    const fetchCount = () => {
+      api.get('/corporate/notifications/unread-count')
+        .then(r => { if (!cancelled) setUnreadCount(r.data?.data?.count || 0); })
+        .catch(() => {});
+    };
+    fetchCount();
+    const timer = setInterval(fetchCount, 60000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -114,25 +129,20 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative text-slate-400 hover:text-white hover:bg-slate-800/60 rounded-xl">
                   <Bell className="w-4.5 h-4.5" />
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
+                  {unreadCount > 0 && (
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-slate-900" />
+                  )}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-80 bg-slate-900 border-slate-800 shadow-2xl shadow-slate-950/60">
                 <DropdownMenuLabel className="text-slate-300 font-semibold px-4 py-3 border-b border-slate-800">
                   Notifications
-                  <span className="ml-2 text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">3 new</span>
+                  {unreadCount > 0 && (
+                    <span className="ml-2 text-xs bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full">{unreadCount} new</span>
+                  )}
                 </DropdownMenuLabel>
-                <DropdownMenuItem className="flex flex-col items-start gap-0.5 px-4 py-3 hover:bg-slate-800/60 cursor-pointer">
-                  <span className="text-sm font-medium text-slate-200">New claim filed</span>
-                  <span className="text-xs text-slate-500">5 minutes ago</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start gap-0.5 px-4 py-3 hover:bg-slate-800/60 cursor-pointer">
-                  <span className="text-sm font-medium text-slate-200">Policy approval pending</span>
-                  <span className="text-xs text-slate-500">2 hours ago</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="flex flex-col items-start gap-0.5 px-4 py-3 hover:bg-slate-800/60 cursor-pointer">
-                  <span className="text-sm font-medium text-slate-200">Health report ready</span>
-                  <span className="text-xs text-slate-500">Today, 9:00 AM</span>
+                <DropdownMenuItem className="px-4 py-3 hover:bg-slate-800/60 cursor-pointer" onClick={() => navigate('/corporate/notifications')}>
+                  <span className="text-sm text-slate-300">View all notifications →</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -213,6 +213,7 @@ const CorporateReports: React.FC = () => {
       window.URL.revokeObjectURL(url);
 
       toast({ title: 'Downloaded', description: 'Report downloaded successfully.' });
+      api.post(`/corporate/reports/${encodeURIComponent(report.id)}/log-access`).catch(() => {});
     } catch (error: any) {
       toast({
         title: 'Download failed',

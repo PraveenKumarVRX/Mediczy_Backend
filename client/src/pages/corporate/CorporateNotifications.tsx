@@ -4,12 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Bell, AlertCircle, CheckCircle, Calendar, FileText, Users, TrendingUp, Filter, Search, BellRing } from 'lucide-react';
+import { Bell, AlertCircle, CheckCircle, Calendar, FileText, Users, TrendingUp, Filter, Search, BellRing, Plus, Send } from 'lucide-react';
 import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Notification {
   id: string;
@@ -43,6 +46,29 @@ const CorporateNotifications: React.FC = () => {
   const [priorityFilter, setPriorityFilter] = useState<'all' | 'high' | 'medium' | 'low'>('all');
   const [showUnreadOnly, setShowUnreadOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  // Compose dialog
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [compose, setCompose] = useState({ title: '', message: '', type: 'announcement', priority: 'medium' });
+
+  const handleSend = async () => {
+    if (!compose.title.trim() || !compose.message.trim()) {
+      toast({ title: 'Title and message are required', variant: 'destructive' }); return;
+    }
+    setSending(true);
+    try {
+      await api.post('/corporate/notifications/send', compose);
+      toast({ title: 'Notification sent', description: compose.title });
+      setComposeOpen(false);
+      setCompose({ title: '', message: '', type: 'announcement', priority: 'medium' });
+      loadNotifications();
+    } catch (e: any) {
+      toast({ title: 'Failed to send', description: e?.response?.data?.message, variant: 'destructive' });
+    } finally {
+      setSending(false);
+    }
+  };
 
   const loadNotifications = async () => {
     try {
@@ -181,9 +207,14 @@ const CorporateNotifications: React.FC = () => {
             { label: 'This Week', value: thisWeekCount },
           ]}
           actions={
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setComposeOpen(true)} className="bg-white/10 hover:bg-white/20 text-white border-white/20">
+                <Plus className="h-3.5 w-3.5 mr-1" /> Compose
+              </Button>
               <Button variant="outline" size="sm" onClick={handleMarkAllAsRead} disabled={isLoading || unreadCount === 0} className="bg-white/10 hover:bg-white/20 text-white border-white/20">
-              Mark All Read
-            </Button>
+                Mark All Read
+              </Button>
+            </div>
           }
         />
 
@@ -337,6 +368,67 @@ const CorporateNotifications: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Compose dialog */}
+      <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-slate-100">
+          <DialogHeader>
+            <DialogTitle>Send Notification</DialogTitle>
+            <DialogDescription className="text-slate-400">Broadcast a message to all employees in this corporate.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-slate-300">Title *</Label>
+              <input value={compose.title} onChange={e => setCompose(p => ({ ...p, title: e.target.value }))}
+                placeholder="Notification title…"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-violet-500" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-300">Message *</Label>
+              <textarea value={compose.message} onChange={e => setCompose(p => ({ ...p, message: e.target.value }))}
+                placeholder="Write your message here…" rows={3}
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-slate-100 text-sm placeholder:text-slate-500 focus:outline-none focus:border-violet-500 resize-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Type</Label>
+                <Select value={compose.type} onValueChange={v => setCompose(p => ({ ...p, type: v }))}>
+                  <SelectTrigger className="bg-slate-800 border-slate-700 text-slate-100">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectItem value="announcement" className="text-slate-300">Announcement</SelectItem>
+                    <SelectItem value="health_alert" className="text-slate-300">Health Alert</SelectItem>
+                    <SelectItem value="policy_update" className="text-slate-300">Policy Update</SelectItem>
+                    <SelectItem value="appointment_reminder" className="text-slate-300">Appointment Reminder</SelectItem>
+                    <SelectItem value="wellness" className="text-slate-300">Wellness</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-slate-300">Priority</Label>
+                <Select value={compose.priority} onValueChange={v => setCompose(p => ({ ...p, priority: v }))}>
+                  <SelectTrigger className="bg-slate-800 border-slate-700 text-slate-100">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-900 border-slate-700">
+                    <SelectItem value="low" className="text-slate-300">Low</SelectItem>
+                    <SelectItem value="medium" className="text-slate-300">Medium</SelectItem>
+                    <SelectItem value="high" className="text-slate-300">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setComposeOpen(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+            <Button onClick={handleSend} disabled={sending} className="bg-violet-600 hover:bg-violet-500">
+              <Send className="h-4 w-4 mr-2" />
+              {sending ? 'Sending…' : 'Send to All Employees'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </CorporateLayout>
   );
 };

@@ -28,6 +28,8 @@ const MANIFEST = [
   { id: 'health-checkup-bookings', cmd: 'node', args: ['migrations/20261015006000-health-checkup-bookings.migration.js'], cwd: SERVER },
   { id: 'crm-brightbean-chat-adoption', cmd: 'node', args: ['migrations/20261015006900-crm-brightbean-chat-adoption.migration.js'], cwd: SERVER },
   { id: 'crm-social-content', cmd: 'node', args: ['migrations/20261015007000-crm-social-content.migration.js'], cwd: SERVER },
+  { id: 'dedicated-installations', cmd: 'node', args: ['migrations/20261018000100-dedicated-installations.migration.js'], cwd: SERVER },
+  { id: 'corporate-consent-ahc-notifications', cmd: 'node', args: ['migrations/20261018000200-corporate-consent-ahc-notifications.migration.js'], cwd: SERVER },
 ];
 
 // 2026-Q4 wave — migrations committed in the Oct 2026 build that were not yet in the
