@@ -12,7 +12,7 @@
  * The test auto-cleans records it creates (best effort).
  */
 
-import fetch from 'node:fetch';
+// fetch is a global in Node 18+ — no import needed
 
 const BASE = process.env.SMOKE_BASE_URL || 'http://localhost:8888/api';
 const EMAIL    = process.env.FIELD_FORCE_EMAIL    || process.env.TEAM_TEST_EMAIL;

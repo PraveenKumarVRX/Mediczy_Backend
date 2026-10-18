@@ -65,7 +65,7 @@ async function up(client) {
   await client.query(`
     CREATE TABLE IF NOT EXISTS field_leads (
       id              BIGSERIAL PRIMARY KEY,
-      visit_id        BIGINT REFERENCES field_visits(id),
+      visit_id        BIGINT,                             -- logical FK to field_visits (no hard constraint — phases applied separately)
       user_id         INT NOT NULL,              -- field exec who generated the lead
       entity_name     VARCHAR(255) NOT NULL,
       entity_type     VARCHAR(50),
@@ -129,16 +129,24 @@ async function up(client) {
     CREATE INDEX IF NOT EXISTS idx_doctor_crm_status   ON field_doctor_crm(relationship_status);
   `);
 
-  // ── expense claim approval columns (idempotent) ───────────────────────────
+  // ── expense claim approval columns (idempotent, only if Phase 2 already applied) ──
   await client.query(`
-    ALTER TABLE field_expense_claims
-      ADD COLUMN IF NOT EXISTS approval_notes TEXT;
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='field_expense_claims') THEN
+        ALTER TABLE field_expense_claims ADD COLUMN IF NOT EXISTS approval_notes TEXT;
+      END IF;
+    END $$;
   `);
 
-  // ── field_visits: add lead_count helper ───────────────────────────────────
+  // ── field_visits: add lead_id helper (only if Phase 1 already applied) ───
   await client.query(`
-    ALTER TABLE field_visits
-      ADD COLUMN IF NOT EXISTS lead_id BIGINT REFERENCES field_leads(id);
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='field_visits') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='field_visits' AND column_name='lead_id') THEN
+          ALTER TABLE field_visits ADD COLUMN lead_id BIGINT REFERENCES field_leads(id);
+        END IF;
+      END IF;
+    END $$;
   `);
 }
 
