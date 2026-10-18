@@ -11,7 +11,7 @@ import {
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
   Brain, Sparkles, MessageSquare, Star, ShieldCheck,
   Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
-  UserCog, Contact, List, Bot, UserPlus, Filter, Inbox, GitBranch, MessageCircle, Calendar,
+  UserCog, Contact, List, Bot, UserPlus, Filter, Inbox, GitBranch, MessageCircle, MapPin,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
@@ -68,6 +68,9 @@ const sidebarNav = [
     { icon: Brain,    label: 'AI Insights', path: '/crm/ai-insights' },
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
     { icon: Settings, label: 'Settings & Channels', path: '/crm/settings' },
+  ]},
+  { section: 'FIELD FORCE', items: [
+    { icon: MapPin, label: 'Smart Force', path: '/crm/field-force', cap: 'field_force:read' },
   ]},
   { section: 'ADMIN', items: [
     { icon: UserPlus, label: 'Team', path: '/crm/team', cap: 'team:manage' },

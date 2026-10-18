@@ -263,6 +263,7 @@ const HospitalCRMGovernancePage = lazyNamed(_HospitalCRMOperationsPages, "Hospit
 const CRMEmailPage = lazy(() => import("@/pages/crm/CRMEmailPage"));
 const CRMCampaignAnalyticsPage = lazy(() => import("@/pages/crm/CRMCampaignAnalyticsPage"));
 const CRMAIInsightsPage        = lazy(() => import("@/pages/crm/CRMAIInsightsPage"));
+const CRMFieldForcePage        = lazy(() => import("@/pages/crm/CRMFieldForcePage"));
 const CRMMarketingCopilotPage  = lazy(() => import("@/pages/crm/CRMMarketingCopilotPage"));
 const _CRMMarketingPages = () => import("@/pages/crm/CRMMarketingPages");
 const CRMCampaignsPage = lazyNamed(_CRMMarketingPages, "CRMCampaignsPage");
@@ -1425,6 +1426,7 @@ const AppRoutes = () => {
         <Route path="/crm/templates"           element={<CRMTemplatesPage />} />
         <Route path="/crm/senders"             element={<CRMSendersPage />} />
         <Route path="/crm/suppressions"        element={<CRMSuppressionsPage />} />
+        <Route path="/crm/field-force"         element={<CRMFieldForcePage />} />
 
         {/* ── Team (public) ───────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />
