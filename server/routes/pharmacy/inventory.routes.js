@@ -1,243 +1,111 @@
 /**
  * Pharmacy Inventory Routes
- * Endpoints for managing pharmacy inventory and medicine search
+ *
+ * Reads/writes the real catalog (`pharmacy_medicines`) joined with this pharmacy's
+ * stock (`pharmacy_stock`) and batches (`pharmacy_batches`) — the same tables every
+ * other pharmacy route (sales, batches, purchase orders, returns) already uses.
+ * Response shapes are kept identical to the previous (disconnected flat-model)
+ * implementation so the client needs no changes.
  */
 
 import express from 'express';
-import jwt from 'jsonwebtoken';
-import { JWT_CONFIG } from '../../config/auth.config.js';
-import { PharmacyInventory, sequelize } from '../../models/index.js';
-import { Op, QueryTypes } from 'sequelize';
+import sharedPool from '../../db/pgPool.js';
+import { requirePharmacyAuth } from '../../middleware/pharmacyAuth.middleware.js';
 import cimsService from '../../services/cims-medicine.service.js';
 
 const router = express.Router();
 
-/**
- * Middleware to verify pharmacy token
- */
-const verifyPharmacyToken = (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ success: false, message: 'Unauthorized' });
-    }
+router.use(requirePharmacyAuth);
 
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-    if (decoded.type !== 'pharmacy') {
-      return res.status(403).json({ success: false, message: 'Access denied' });
-    }
+// Shape a joined (pharmacy_medicines + pharmacy_stock + nearest batch) row into the
+// flat contract the client already parses (see client/src/pages/pharmacy/PharmacyModulePages.tsx
+// `normalizeMedicine`).
+function toClientShape(row) {
+  const quantity = Number(row.quantity || 0);
+  const reorderLevel = Number(row.reorder_level || 20);
+  return {
+    id: row.id,
+    medicineName: row.name,
+    name: row.name,
+    genericName: row.generic_name,
+    manufacturer: row.manufacturer,
+    category: row.category || 'General',
+    quantity,
+    unit: row.form || 'unit',
+    unitPrice: Number(row.unit_price || row.mrp || 0),
+    mrp: Number(row.mrp || row.unit_price || 0),
+    reorderLevel,
+    batchNumber: row.batch_number || null,
+    expiryDate: row.expiry_date || null,
+    status: quantity <= reorderLevel ? 'Low Stock' : 'In Stock',
+    location: row.supplier ? `Supplier: ${row.supplier}` : 'Unassigned',
+  };
+}
 
-    req.pharmacyId = decoded.id;
-    req.pharmacyToken = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ success: false, message: 'Invalid token' });
-  }
-};
-
-/**
- * Master medicine database - Common Indian medicines
- * This will be used when pharmacy inventory is empty or for suggestions
- */
-const MASTER_MEDICINES = [
-  // Pain Relief / Analgesics
-  { name: 'Paracetamol 500mg', genericName: 'Acetaminophen', category: 'Pain Relief', manufacturer: 'Cipla', price: 2.50, mrp: 3.00, unit: 'tablet' },
-  { name: 'Paracetamol 650mg', genericName: 'Acetaminophen', category: 'Pain Relief', manufacturer: 'Sun Pharma', price: 3.00, mrp: 3.50, unit: 'tablet' },
-  { name: 'Ibuprofen 400mg', genericName: 'Ibuprofen', category: 'Pain Relief', manufacturer: 'Dr. Reddy', price: 3.50, mrp: 4.50, unit: 'tablet' },
-  { name: 'Diclofenac 50mg', genericName: 'Diclofenac Sodium', category: 'Pain Relief', manufacturer: 'Novartis', price: 4.00, mrp: 5.00, unit: 'tablet' },
-  { name: 'Aspirin 75mg', genericName: 'Acetylsalicylic Acid', category: 'Pain Relief', manufacturer: 'Bayer', price: 2.00, mrp: 2.50, unit: 'tablet' },
-  { name: 'Combiflam', genericName: 'Ibuprofen + Paracetamol', category: 'Pain Relief', manufacturer: 'Sanofi', price: 5.50, mrp: 6.50, unit: 'tablet' },
-  
-  // Antibiotics
-  { name: 'Amoxicillin 250mg', genericName: 'Amoxicillin', category: 'Antibiotic', manufacturer: 'GSK', price: 8.00, mrp: 10.00, unit: 'capsule' },
-  { name: 'Amoxicillin 500mg', genericName: 'Amoxicillin', category: 'Antibiotic', manufacturer: 'Cipla', price: 12.00, mrp: 15.00, unit: 'capsule' },
-  { name: 'Azithromycin 250mg', genericName: 'Azithromycin', category: 'Antibiotic', manufacturer: 'Zydus', price: 25.00, mrp: 30.00, unit: 'tablet' },
-  { name: 'Azithromycin 500mg', genericName: 'Azithromycin', category: 'Antibiotic', manufacturer: 'Cipla', price: 45.00, mrp: 55.00, unit: 'tablet' },
-  { name: 'Ciprofloxacin 500mg', genericName: 'Ciprofloxacin', category: 'Antibiotic', manufacturer: 'Ranbaxy', price: 15.00, mrp: 18.00, unit: 'tablet' },
-  { name: 'Metronidazole 400mg', genericName: 'Metronidazole', category: 'Antibiotic', manufacturer: 'Abbott', price: 5.00, mrp: 6.50, unit: 'tablet' },
-  { name: 'Cefixime 200mg', genericName: 'Cefixime', category: 'Antibiotic', manufacturer: 'Lupin', price: 30.00, mrp: 35.00, unit: 'tablet' },
-  { name: 'Augmentin 625mg', genericName: 'Amoxicillin + Clavulanic Acid', category: 'Antibiotic', manufacturer: 'GSK', price: 35.00, mrp: 42.00, unit: 'tablet' },
-  
-  // Gastric / Antacids
-  { name: 'Omeprazole 20mg', genericName: 'Omeprazole', category: 'Gastric', manufacturer: 'Dr. Reddy', price: 5.00, mrp: 6.50, unit: 'capsule' },
-  { name: 'Pantoprazole 40mg', genericName: 'Pantoprazole', category: 'Gastric', manufacturer: 'Sun Pharma', price: 8.00, mrp: 10.00, unit: 'tablet' },
-  { name: 'Ranitidine 150mg', genericName: 'Ranitidine', category: 'Gastric', manufacturer: 'GSK', price: 3.50, mrp: 4.50, unit: 'tablet' },
-  { name: 'Digene', genericName: 'Aluminium/Magnesium Hydroxide', category: 'Antacid', manufacturer: 'Abbott', price: 4.00, mrp: 5.00, unit: 'tablet' },
-  { name: 'Gelusil MPS', genericName: 'Antacid Combination', category: 'Antacid', manufacturer: 'Pfizer', price: 3.00, mrp: 4.00, unit: 'tablet' },
-  
-  // Allergy / Antihistamines
-  { name: 'Cetirizine 10mg', genericName: 'Cetirizine', category: 'Allergy', manufacturer: 'Cipla', price: 2.50, mrp: 3.50, unit: 'tablet' },
-  { name: 'Levocetirizine 5mg', genericName: 'Levocetirizine', category: 'Allergy', manufacturer: 'Sun Pharma', price: 4.00, mrp: 5.00, unit: 'tablet' },
-  { name: 'Montair LC', genericName: 'Montelukast + Levocetirizine', category: 'Allergy', manufacturer: 'Cipla', price: 12.00, mrp: 15.00, unit: 'tablet' },
-  { name: 'Allegra 120mg', genericName: 'Fexofenadine', category: 'Allergy', manufacturer: 'Sanofi', price: 18.00, mrp: 22.00, unit: 'tablet' },
-  
-  // Diabetes
-  { name: 'Metformin 500mg', genericName: 'Metformin HCl', category: 'Diabetes', manufacturer: 'USV', price: 2.00, mrp: 2.50, unit: 'tablet' },
-  { name: 'Metformin 850mg', genericName: 'Metformin HCl', category: 'Diabetes', manufacturer: 'Sun Pharma', price: 3.00, mrp: 3.50, unit: 'tablet' },
-  { name: 'Glimepiride 1mg', genericName: 'Glimepiride', category: 'Diabetes', manufacturer: 'Sanofi', price: 4.00, mrp: 5.00, unit: 'tablet' },
-  { name: 'Glimepiride 2mg', genericName: 'Glimepiride', category: 'Diabetes', manufacturer: 'USV', price: 6.00, mrp: 7.50, unit: 'tablet' },
-  { name: 'Glycomet GP2', genericName: 'Glimepiride + Metformin', category: 'Diabetes', manufacturer: 'USV', price: 8.00, mrp: 10.00, unit: 'tablet' },
-  
-  // Cardiovascular / Blood Pressure
-  { name: 'Amlodipine 5mg', genericName: 'Amlodipine', category: 'Cardiovascular', manufacturer: 'Pfizer', price: 3.00, mrp: 4.00, unit: 'tablet' },
-  { name: 'Atenolol 50mg', genericName: 'Atenolol', category: 'Cardiovascular', manufacturer: 'Cipla', price: 2.50, mrp: 3.00, unit: 'tablet' },
-  { name: 'Losartan 50mg', genericName: 'Losartan Potassium', category: 'Cardiovascular', manufacturer: 'Dr. Reddy', price: 4.50, mrp: 5.50, unit: 'tablet' },
-  { name: 'Telmisartan 40mg', genericName: 'Telmisartan', category: 'Cardiovascular', manufacturer: 'Glenmark', price: 5.00, mrp: 6.00, unit: 'tablet' },
-  { name: 'Ecosprin 75mg', genericName: 'Aspirin', category: 'Cardiovascular', manufacturer: 'USV', price: 1.50, mrp: 2.00, unit: 'tablet' },
-  { name: 'Clopidogrel 75mg', genericName: 'Clopidogrel', category: 'Cardiovascular', manufacturer: 'Sun Pharma', price: 8.00, mrp: 10.00, unit: 'tablet' },
-  { name: 'Atorvastatin 10mg', genericName: 'Atorvastatin', category: 'Cardiovascular', manufacturer: 'Ranbaxy', price: 5.00, mrp: 6.50, unit: 'tablet' },
-  { name: 'Rosuvastatin 10mg', genericName: 'Rosuvastatin', category: 'Cardiovascular', manufacturer: 'Sun Pharma', price: 12.00, mrp: 15.00, unit: 'tablet' },
-  
-  // Vitamins & Supplements
-  { name: 'Vitamin D3 60000IU', genericName: 'Cholecalciferol', category: 'Vitamins', manufacturer: 'USV', price: 30.00, mrp: 35.00, unit: 'capsule' },
-  { name: 'Vitamin B Complex', genericName: 'B-Complex Vitamins', category: 'Vitamins', manufacturer: 'Abbott', price: 2.00, mrp: 2.50, unit: 'tablet' },
-  { name: 'Calcium + Vitamin D3', genericName: 'Calcium Carbonate + Cholecalciferol', category: 'Vitamins', manufacturer: 'Cadila', price: 6.00, mrp: 7.50, unit: 'tablet' },
-  { name: 'Iron + Folic Acid', genericName: 'Ferrous Sulphate + Folic Acid', category: 'Vitamins', manufacturer: 'Aristo', price: 3.00, mrp: 4.00, unit: 'tablet' },
-  { name: 'Shelcal 500', genericName: 'Calcium + Vitamin D3', category: 'Vitamins', manufacturer: 'Torrent', price: 8.00, mrp: 10.00, unit: 'tablet' },
-  { name: 'Zincovit', genericName: 'Multivitamin + Zinc', category: 'Vitamins', manufacturer: 'Apex', price: 5.00, mrp: 6.00, unit: 'tablet' },
-  
-  // Cough & Cold
-  { name: 'Benadryl Cough Syrup', genericName: 'Diphenhydramine', category: 'Cough & Cold', manufacturer: 'Johnson & Johnson', price: 85.00, mrp: 100.00, unit: 'bottle' },
-  { name: 'Cheston Cold', genericName: 'Cetirizine + Paracetamol + Phenylephrine', category: 'Cough & Cold', manufacturer: 'Cipla', price: 8.00, mrp: 10.00, unit: 'tablet' },
-  { name: 'Sinarest', genericName: 'Paracetamol + Phenylephrine + Chlorpheniramine', category: 'Cough & Cold', manufacturer: 'Centaur', price: 4.00, mrp: 5.00, unit: 'tablet' },
-  { name: 'Alex Cough Syrup', genericName: 'Dextromethorphan + Chlorpheniramine', category: 'Cough & Cold', manufacturer: 'Glenmark', price: 75.00, mrp: 90.00, unit: 'bottle' },
-  { name: 'Grilinctus Syrup', genericName: 'Terbutaline + Bromhexine + Guaifenesin', category: 'Cough & Cold', manufacturer: 'Franco-Indian', price: 90.00, mrp: 110.00, unit: 'bottle' },
-  
-  // Respiratory
-  { name: 'Asthalin Inhaler', genericName: 'Salbutamol', category: 'Respiratory', manufacturer: 'Cipla', price: 120.00, mrp: 145.00, unit: 'inhaler' },
-  { name: 'Foracort Inhaler', genericName: 'Formoterol + Budesonide', category: 'Respiratory', manufacturer: 'Cipla', price: 420.00, mrp: 500.00, unit: 'inhaler' },
-  { name: 'Deriphyllin', genericName: 'Etofylline + Theophylline', category: 'Respiratory', manufacturer: 'Franco-Indian', price: 4.00, mrp: 5.00, unit: 'tablet' },
-  
-  // Steroids / Anti-inflammatory
-  { name: 'Prednisolone 5mg', genericName: 'Prednisolone', category: 'Steroid', manufacturer: 'Cadila', price: 3.00, mrp: 4.00, unit: 'tablet' },
-  { name: 'Dexamethasone 0.5mg', genericName: 'Dexamethasone', category: 'Steroid', manufacturer: 'Zydus', price: 2.50, mrp: 3.00, unit: 'tablet' },
-  { name: 'Wysolone 10mg', genericName: 'Prednisolone', category: 'Steroid', manufacturer: 'Pfizer', price: 4.50, mrp: 5.50, unit: 'tablet' },
-  
-  // Skin / Dermatology
-  { name: 'Betadine Ointment', genericName: 'Povidone-Iodine', category: 'Skin Care', manufacturer: 'Win Medicare', price: 35.00, mrp: 42.00, unit: 'tube' },
-  { name: 'Candid Cream', genericName: 'Clotrimazole', category: 'Antifungal', manufacturer: 'Glenmark', price: 55.00, mrp: 65.00, unit: 'tube' },
-  { name: 'Soframycin Cream', genericName: 'Framycetin', category: 'Skin Care', manufacturer: 'Sanofi', price: 40.00, mrp: 48.00, unit: 'tube' },
-  { name: 'T-Bact Ointment', genericName: 'Mupirocin', category: 'Skin Care', manufacturer: 'Glenmark', price: 110.00, mrp: 130.00, unit: 'tube' },
-  
-  // Eye / Ophthalmic
-  { name: 'Ciprofloxacin Eye Drops', genericName: 'Ciprofloxacin', category: 'Eye Care', manufacturer: 'Cipla', price: 25.00, mrp: 30.00, unit: 'bottle' },
-  { name: 'Gentamicin Eye Drops', genericName: 'Gentamicin', category: 'Eye Care', manufacturer: 'Sun Pharma', price: 20.00, mrp: 25.00, unit: 'bottle' },
-  { name: 'Refresh Tears', genericName: 'Carboxymethylcellulose', category: 'Eye Care', manufacturer: 'Allergan', price: 150.00, mrp: 180.00, unit: 'bottle' },
-  
-  // ORS / Rehydration
-  { name: 'Electral Powder', genericName: 'ORS', category: 'Rehydration', manufacturer: 'FDC', price: 15.00, mrp: 18.00, unit: 'sachet' },
-  { name: 'Enerzal', genericName: 'Glucose + Electrolytes', category: 'Rehydration', manufacturer: 'FDC', price: 45.00, mrp: 55.00, unit: 'bottle' },
-];
+// Shared SELECT: catalog row + this pharmacy's stock quantity + nearest-expiry batch.
+const BASE_SELECT = `
+  SELECT pm.id, pm.name, pm.generic_name, pm.manufacturer, pm.category, pm.form,
+         pm.mrp, pm.unit_price, pm.reorder_level,
+         COALESCE(ps.quantity, 0) AS quantity,
+         nb.batch_number, nb.expiry_date, nb.supplier
+  FROM pharmacy_medicines pm
+  JOIN pharmacy_stock ps ON ps.medicine_id = pm.id AND ps.pharmacy_id = $1
+  LEFT JOIN LATERAL (
+    SELECT batch_number, expiry_date, supplier
+    FROM pharmacy_batches b
+    WHERE b.pharmacy_id = $1 AND b.medicine_id = pm.id AND b.quantity > 0
+    ORDER BY b.expiry_date NULLS LAST, b.created_at ASC
+    LIMIT 1
+  ) nb ON true
+`;
 
 /**
  * GET /api/pharmacy/inventory
- * Get all medicines in inventory
+ * List this pharmacy's stocked medicines (real catalog + stock, not demo data).
  */
-router.get('/', verifyPharmacyToken, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const pharmacyId = req.pharmacyId;
     const { category, search, lowStock, page = 1, limit = 50 } = req.query;
-    
-    // Build where clause
-    const whereClause = { organizationId: pharmacyId };
-    
+
+    const conditions = [];
+    const params = [pharmacyId];
+    let idx = 2;
+
     if (category) {
-      whereClause.category = category;
+      conditions.push(`pm.category ILIKE $${idx}`);
+      params.push(category);
+      idx++;
     }
-    
     if (search) {
-      whereClause[Op.or] = [
-        { medicineName: { [Op.iLike]: `%${search}%` } },
-        { genericName: { [Op.iLike]: `%${search}%` } },
-        { manufacturer: { [Op.iLike]: `%${search}%` } }
-      ];
+      conditions.push(`(pm.name ILIKE $${idx} OR pm.generic_name ILIKE $${idx} OR pm.manufacturer ILIKE $${idx})`);
+      params.push(`%${search}%`);
+      idx++;
     }
-    
     if (lowStock === 'true') {
-      whereClause.quantity = { [Op.lte]: sequelize.col('reorder_level') };
+      conditions.push(`COALESCE(ps.quantity, 0) <= pm.reorder_level`);
     }
 
-    // Try to get from database first
-    let medicines = [];
-    let total = 0;
-    
-    try {
-      const { rows, count } = await PharmacyInventory.findAndCountAll({
-        where: whereClause,
-        order: [['medicineName', 'ASC']],
-        limit: parseInt(limit),
-        offset: (parseInt(page) - 1) * parseInt(limit)
-      });
-      medicines = rows;
-      total = count;
-    } catch (dbError) {
-      console.log('Pharmacy inventory table may not exist, using master list');
-    }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const safeLimit = Math.min(200, Math.max(1, parseInt(limit, 10) || 50));
+    const offset = (Math.max(1, parseInt(page, 10) || 1) - 1) * safeLimit;
 
-    // If no database results, provide master medicine list
-    if (medicines.length === 0) {
-      let filteredMedicines = MASTER_MEDICINES;
-      
-      if (search) {
-        const searchLower = search.toLowerCase();
-        filteredMedicines = filteredMedicines.filter(m => 
-          m.name.toLowerCase().includes(searchLower) ||
-          m.genericName.toLowerCase().includes(searchLower) ||
-          m.category.toLowerCase().includes(searchLower)
-        );
-      }
-      
-      if (category) {
-        filteredMedicines = filteredMedicines.filter(m => 
-          m.category.toLowerCase() === category.toLowerCase()
-        );
-      }
-      
-      total = filteredMedicines.length;
-      const offset = (parseInt(page) - 1) * parseInt(limit);
-      medicines = filteredMedicines.slice(offset, offset + parseInt(limit)).map((m, idx) => ({
-        id: idx + 1,
-        medicineName: m.name,
-        genericName: m.genericName,
-        manufacturer: m.manufacturer,
-        category: m.category,
-        quantity: Math.floor(Math.random() * 200) + 50, // Random stock for demo
-        unit: m.unit,
-        unitPrice: m.price,
-        mrp: m.mrp,
-        reorderLevel: 20,
-        batchNumber: `BATCH-${String(idx + 1).padStart(3, '0')}`,
-        expiryDate: new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        status: 'In Stock',
-        location: `Shelf ${String.fromCharCode(65 + Math.floor(idx / 10))}-${(idx % 10) + 1}`
-      }));
-    } else {
-      // Format database results
-      medicines = medicines.map(m => ({
-        id: m.id,
-        medicineName: m.medicineName,
-        genericName: m.genericName,
-        manufacturer: m.manufacturer,
-        category: m.category || 'General',
-        quantity: m.quantity,
-        unit: m.unit,
-        unitPrice: m.unitPrice,
-        mrp: m.mrp || (m.unitPrice * 1.2),
-        reorderLevel: m.reorderLevel,
-        batchNumber: m.batchNumber,
-        expiryDate: m.expiryDate,
-        status: m.quantity <= m.reorderLevel ? 'Low Stock' : 'In Stock',
-        location: m.location || 'Shelf A-1'
-      }));
-    }
+    const [rowsResult, countResult] = await Promise.all([
+      sharedPool.query(
+        `${BASE_SELECT} ${where} ORDER BY pm.name ASC LIMIT $${idx} OFFSET $${idx + 1}`,
+        [...params, safeLimit, offset]
+      ),
+      sharedPool.query(
+        `SELECT COUNT(*) FROM pharmacy_medicines pm JOIN pharmacy_stock ps ON ps.medicine_id = pm.id AND ps.pharmacy_id = $1 ${where}`,
+        params
+      ),
+    ]);
 
-    // Calculate stats
-    const lowStockCount = medicines.filter(m => m.quantity <= m.reorderLevel).length;
-    const expiringCount = medicines.filter(m => {
-      const expiry = new Date(m.expiryDate);
-      const thirtyDaysFromNow = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      return expiry <= thirtyDaysFromNow;
-    }).length;
+    const total = parseInt(countResult.rows[0].count, 10);
+    const medicines = rowsResult.rows.map(toClientShape);
+    const lowStockCount = medicines.filter((m) => m.quantity <= m.reorderLevel).length;
+    const thirtyDays = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const expiringCount = medicines.filter((m) => m.expiryDate && new Date(m.expiryDate) <= thirtyDays).length;
 
     res.json({
       success: true,
@@ -248,735 +116,452 @@ router.get('/', verifyPharmacyToken, async (req, res) => {
           totalItems: total,
           lowStock: lowStockCount,
           expiringSoon: expiringCount,
-          categories: [...new Set(medicines.map(m => m.category))].length
-        }
+          categories: new Set(medicines.map((m) => m.category)).size,
+        },
       },
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        totalPages: Math.ceil(total / parseInt(limit))
-      }
+      pagination: { page: parseInt(page, 10) || 1, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) },
     });
   } catch (error) {
     console.error('Inventory fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch inventory',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch inventory', error: error.message });
   }
 });
 
 /**
  * GET /api/pharmacy/inventory/search
- * Search medicines by name, generic name, or category
+ * Search this pharmacy's stocked medicines by name/generic/manufacturer.
  */
-router.get('/search', verifyPharmacyToken, async (req, res) => {
+router.get('/search', async (req, res) => {
   try {
+    const pharmacyId = req.pharmacyId;
     const { q, limit = 20 } = req.query;
-    
-    if (!q || q.length < 2) {
-      return res.json({ success: true, data: [] });
-    }
 
-    const searchLower = q.toLowerCase();
-    
-    // Search in master medicine list
-    const results = MASTER_MEDICINES
-      .filter(m => 
-        m.name.toLowerCase().includes(searchLower) ||
-        m.genericName.toLowerCase().includes(searchLower) ||
-        m.category.toLowerCase().includes(searchLower) ||
-        m.manufacturer.toLowerCase().includes(searchLower)
-      )
-      .slice(0, parseInt(limit))
-      .map((m, idx) => ({
-        id: idx + 1,
-        name: m.name,
-        genericName: m.genericName,
-        category: m.category,
-        manufacturer: m.manufacturer,
-        price: m.price,
-        mrp: m.mrp,
-        unit: m.unit,
-        inStock: true,
-        quantity: Math.floor(Math.random() * 200) + 50
-      }));
+    if (!q || q.length < 2) return res.json({ success: true, data: [] });
+
+    const safeLimit = Math.min(50, Math.max(1, parseInt(limit, 10) || 20));
+    const result = await sharedPool.query(
+      `${BASE_SELECT}
+       WHERE pm.name ILIKE $2 OR pm.generic_name ILIKE $2 OR pm.manufacturer ILIKE $2
+       ORDER BY pm.name ASC LIMIT $3`,
+      [pharmacyId, `%${q}%`, safeLimit]
+    );
 
     res.json({
       success: true,
       query: q,
-      data: results
+      data: result.rows.map((row) => {
+        const shaped = toClientShape(row);
+        return { ...shaped, price: shaped.unitPrice, inStock: shaped.quantity > 0 };
+      }),
     });
   } catch (error) {
     console.error('Medicine search error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Search failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Search failed', error: error.message });
   }
 });
 
 /**
  * GET /api/pharmacy/inventory/categories
- * Get all medicine categories
+ * Distinct categories across this pharmacy's stocked medicines.
  */
-router.get('/categories', verifyPharmacyToken, async (req, res) => {
+router.get('/categories', async (req, res) => {
   try {
-    const categories = [...new Set(MASTER_MEDICINES.map(m => m.category))].sort();
-    
-    res.json({
-      success: true,
-      data: categories.map((cat, idx) => ({
-        id: idx + 1,
-        name: cat,
-        count: MASTER_MEDICINES.filter(m => m.category === cat).length
-      }))
-    });
+    const pharmacyId = req.pharmacyId;
+    const result = await sharedPool.query(
+      `SELECT COALESCE(pm.category, 'General') AS name, COUNT(*) AS count
+       FROM pharmacy_medicines pm
+       JOIN pharmacy_stock ps ON ps.medicine_id = pm.id AND ps.pharmacy_id = $1
+       GROUP BY 1 ORDER BY 1`,
+      [pharmacyId]
+    );
+    res.json({ success: true, data: result.rows.map((r, idx) => ({ id: idx + 1, name: r.name, count: parseInt(r.count, 10) })) });
   } catch (error) {
     console.error('Categories fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch categories',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch categories', error: error.message });
   }
 });
 
 /**
  * GET /api/pharmacy/inventory/:id
- * Get specific medicine details
+ * Detail view for one medicine this pharmacy stocks, including all its batches.
  */
-router.get('/:id', verifyPharmacyToken, async (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const { id } = req.params;
     const pharmacyId = req.pharmacyId;
+    const id = parseInt(req.params.id, 10);
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid medicine ID' });
 
-    // Try database first
-    try {
-      const medicine = await PharmacyInventory.findOne({
-        where: { id: parseInt(id), organizationId: pharmacyId }
-      });
-      
-      if (medicine) {
-        return res.json({
-          success: true,
-          data: {
-            id: medicine.id,
-            name: medicine.medicineName,
-            genericName: medicine.genericName,
-            manufacturer: medicine.manufacturer,
-            category: medicine.category || 'General',
-            description: `Used for treatment as prescribed`,
-            stock: medicine.quantity,
-            minStock: medicine.reorderLevel,
-            price: medicine.unitPrice,
-            mrp: medicine.mrp || (medicine.unitPrice * 1.2),
-            unit: medicine.unit,
-            batchDetails: [{
-              batchNumber: medicine.batchNumber,
-              quantity: medicine.quantity,
-              expiryDate: medicine.expiryDate,
-              location: 'Shelf A-1'
-            }],
-            salesHistory: []
-          }
-        });
-      }
-    } catch (dbError) {
-      console.log('Database query failed, using master list');
-    }
+    const result = await sharedPool.query(`${BASE_SELECT} WHERE pm.id = $2`, [pharmacyId, id]);
+    if (!result.rows.length) return res.status(404).json({ success: false, message: 'Medicine not found' });
 
-    // Fallback to master list
-    const idx = parseInt(id) - 1;
-    if (idx >= 0 && idx < MASTER_MEDICINES.length) {
-      const m = MASTER_MEDICINES[idx];
-      return res.json({
-        success: true,
-        data: {
-          id: parseInt(id),
-          name: m.name,
-          genericName: m.genericName,
-          manufacturer: m.manufacturer,
-          category: m.category,
-          description: `Used for treatment as prescribed`,
-          stock: Math.floor(Math.random() * 200) + 50,
-          minStock: 20,
-          price: m.price,
-          mrp: m.mrp,
-          unit: m.unit,
-          batchDetails: [{
-            batchNumber: `BATCH-${String(idx + 1).padStart(3, '0')}`,
-            quantity: Math.floor(Math.random() * 200) + 50,
-            expiryDate: new Date(Date.now() + Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-            location: `Shelf ${String.fromCharCode(65 + Math.floor(idx / 10))}-${(idx % 10) + 1}`
-          }],
-          salesHistory: []
-        }
-      });
-    }
+    const batches = await sharedPool.query(
+      `SELECT batch_number, quantity, expiry_date, supplier, created_at AS location
+       FROM pharmacy_batches WHERE pharmacy_id = $1 AND medicine_id = $2 ORDER BY expiry_date NULLS LAST`,
+      [pharmacyId, id]
+    );
 
-    res.status(404).json({
-      success: false,
-      message: 'Medicine not found'
+    const shaped = toClientShape(result.rows[0]);
+    res.json({
+      success: true,
+      data: {
+        ...shaped,
+        stock: shaped.quantity,
+        minStock: shaped.reorderLevel,
+        price: shaped.unitPrice,
+        description: 'Used for treatment as prescribed',
+        batchDetails: batches.rows.map((b) => ({
+          batchNumber: b.batch_number,
+          quantity: b.quantity,
+          expiryDate: b.expiry_date,
+          location: b.supplier || 'Unassigned',
+        })),
+        salesHistory: [],
+      },
     });
   } catch (error) {
     console.error('Medicine detail error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch medicine details',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to fetch medicine details', error: error.message });
   }
 });
 
 /**
  * POST /api/pharmacy/inventory
- * Add new medicine to inventory
+ * Add (or restock) a medicine: reuse the catalog row by name if it already exists
+ * (same pattern as server/routes/pharmacy/stock.route.js), then add/increment this
+ * pharmacy's stock row, and optionally create a batch if batch/expiry info is given.
  */
-router.post('/', verifyPharmacyToken, async (req, res) => {
+router.post('/', async (req, res) => {
+  const client = await sharedPool.connect();
   try {
     const pharmacyId = req.pharmacyId;
     const {
       name, genericName, manufacturer, category, quantity,
-      unit, price, mrp, batchNumber, expiryDate, reorderLevel
+      unit, price, mrp, batchNumber, expiryDate, reorderLevel, supplier,
     } = req.body;
 
-    // Try to add to database
-    try {
-      const medicine = await PharmacyInventory.create({
-        medicineName: name,
-        genericName,
-        manufacturer,
-        category,
-        quantity: parseInt(quantity) || 0,
-        unit,
-        unitPrice: parseFloat(price) || 0,
-        mrp: parseFloat(mrp) || parseFloat(price) * 1.2,
-        batchNumber,
-        expiryDate,
-        reorderLevel: parseInt(reorderLevel) || 10,
-        organizationId: pharmacyId
-      });
-
-      return res.status(201).json({
-        success: true,
-        message: 'Medicine added to inventory',
-        data: medicine
-      });
-    } catch (dbError) {
-      console.log('Database insert failed:', dbError.message);
+    if (!name || !quantity) {
+      return res.status(400).json({ success: false, message: 'Medicine name and quantity are required' });
     }
 
-    // Fallback mock response
+    const qty = parseInt(quantity, 10) || 0;
+    const unitPrice = parseFloat(price) || 0;
+    const mrpVal = parseFloat(mrp) || unitPrice;
+
+    await client.query('BEGIN');
+
+    const existing = await client.query(`SELECT * FROM pharmacy_medicines WHERE name ILIKE $1 LIMIT 1`, [name]);
+    let medicine = existing.rows[0];
+    if (!medicine) {
+      const inserted = await client.query(
+        `INSERT INTO pharmacy_medicines (name, generic_name, manufacturer, category, form, unit_price, mrp, reorder_level, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) RETURNING *`,
+        [name, genericName || null, manufacturer || null, category || null, unit || null, unitPrice, mrpVal, parseInt(reorderLevel, 10) || 20]
+      );
+      medicine = inserted.rows[0];
+    }
+
+    const existingStock = await client.query(
+      `SELECT * FROM pharmacy_stock WHERE pharmacy_id = $1 AND medicine_id = $2 LIMIT 1`,
+      [pharmacyId, medicine.id]
+    );
+
+    let stock;
+    if (existingStock.rows.length) {
+      const updated = await client.query(
+        `UPDATE pharmacy_stock SET quantity = quantity + $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+        [qty, existingStock.rows[0].id]
+      );
+      stock = updated.rows[0];
+    } else {
+      const created = await client.query(
+        `INSERT INTO pharmacy_stock (pharmacy_id, medicine_id, quantity, expiry_date, batch_number, supplier, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) RETURNING *`,
+        [pharmacyId, medicine.id, qty, expiryDate || null, batchNumber || null, supplier || null]
+      );
+      stock = created.rows[0];
+    }
+
+    if (batchNumber) {
+      await client.query(
+        `INSERT INTO pharmacy_batches (pharmacy_id, medicine_id, batch_number, quantity, expiry_date, supplier, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+         ON CONFLICT (batch_number) DO UPDATE SET quantity = pharmacy_batches.quantity + EXCLUDED.quantity, updated_at = NOW()`,
+        [pharmacyId, medicine.id, batchNumber, qty, expiryDate || null, supplier || null]
+      );
+    }
+
+    await client.query('COMMIT');
+
     res.status(201).json({
       success: true,
       message: 'Medicine added to inventory',
-      data: {
-        id: Math.floor(Math.random() * 10000),
-        medicineName: name,
-        genericName,
-        manufacturer,
-        category,
-        quantity,
-        unit,
-        unitPrice: price,
-        mrp,
-        batchNumber,
-        expiryDate,
-        reorderLevel,
-        createdAt: new Date().toISOString()
-      }
+      data: toClientShape({ ...medicine, quantity: stock.quantity, batch_number: batchNumber, expiry_date: expiryDate, supplier }),
     });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Add medicine error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to add medicine',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to add medicine', error: error.message });
+  } finally {
+    client.release();
   }
 });
 
 /**
  * PUT /api/pharmacy/inventory/:id
- * Update medicine in inventory
+ * Update catalog fields for a medicine (shared across pharmacies, same as /api/pharmacy/medicines).
  */
-router.put('/:id', verifyPharmacyToken, async (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    const pharmacyId = req.pharmacyId;
-    const updateData = req.body;
+    const id = parseInt(req.params.id, 10);
+    const { name, genericName, manufacturer, category, unit, price, reorderLevel } = req.body;
+    if (!id) return res.status(400).json({ success: false, message: 'Invalid medicine ID' });
 
-    // Try database update
-    try {
-      const [updated] = await PharmacyInventory.update({
-        medicineName: updateData.name,
-        genericName: updateData.genericName,
-        manufacturer: updateData.manufacturer,
-        quantity: updateData.quantity,
-        unit: updateData.unit,
-        unitPrice: updateData.price,
-        batchNumber: updateData.batchNumber,
-        expiryDate: updateData.expiryDate,
-        reorderLevel: updateData.reorderLevel
-      }, {
-        where: { id: parseInt(id), organizationId: pharmacyId }
-      });
+    const result = await sharedPool.query(
+      `UPDATE pharmacy_medicines SET
+         name = COALESCE($1, name), generic_name = COALESCE($2, generic_name),
+         manufacturer = COALESCE($3, manufacturer), category = COALESCE($4, category),
+         form = COALESCE($5, form), unit_price = COALESCE($6, unit_price),
+         reorder_level = COALESCE($7, reorder_level), updated_at = NOW()
+       WHERE id = $8 RETURNING *`,
+      [name || null, genericName || null, manufacturer || null, category || null, unit || null,
+       price !== undefined ? parseFloat(price) : null, reorderLevel !== undefined ? parseInt(reorderLevel, 10) : null, id]
+    );
 
-      if (updated) {
-        return res.json({
-          success: true,
-          message: 'Medicine updated successfully',
-          data: { id: parseInt(id), ...updateData, updatedAt: new Date().toISOString() }
-        });
-      }
-    } catch (dbError) {
-      console.log('Database update failed:', dbError.message);
-    }
-
-    // Fallback mock response
-    res.json({
-      success: true,
-      message: 'Medicine updated successfully',
-      data: {
-        id: parseInt(id),
-        ...updateData,
-        updatedAt: new Date().toISOString()
-      }
-    });
+    if (!result.rows.length) return res.status(404).json({ success: false, message: 'Medicine not found' });
+    res.json({ success: true, message: 'Medicine updated successfully', data: { id, ...req.body, updatedAt: new Date().toISOString() } });
   } catch (error) {
     console.error('Update medicine error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update medicine',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to update medicine', error: error.message });
   }
 });
 
 /**
  * PUT /api/pharmacy/inventory/:id/stock
- * Update stock quantity only
+ * Adjust this pharmacy's stock quantity for a medicine directly (manual correction).
  */
-router.put('/:id/stock', verifyPharmacyToken, async (req, res) => {
+router.put('/:id/stock', async (req, res) => {
   try {
-    const { id } = req.params;
     const pharmacyId = req.pharmacyId;
-    const { quantity, operation = 'set' } = req.body; // operation: 'set', 'add', 'subtract'
+    const medicineId = parseInt(req.params.id, 10);
+    const { quantity, operation = 'set' } = req.body;
+    const qty = parseInt(quantity, 10) || 0;
 
-    try {
-      const medicine = await PharmacyInventory.findOne({
-        where: { id: parseInt(id), organizationId: pharmacyId }
-      });
+    const existing = await sharedPool.query(
+      `SELECT * FROM pharmacy_stock WHERE pharmacy_id = $1 AND medicine_id = $2 LIMIT 1`,
+      [pharmacyId, medicineId]
+    );
 
-      if (medicine) {
-        let newQuantity = parseInt(quantity);
-        if (operation === 'add') {
-          newQuantity = medicine.quantity + parseInt(quantity);
-        } else if (operation === 'subtract') {
-          newQuantity = Math.max(0, medicine.quantity - parseInt(quantity));
-        }
-
-        await medicine.update({ quantity: newQuantity });
-
-        return res.json({
-          success: true,
-          message: 'Stock updated successfully',
-          data: { id, previousStock: medicine.quantity, newStock: newQuantity }
-        });
-      }
-    } catch (dbError) {
-      console.log('Stock update failed:', dbError.message);
+    if (!existing.rows.length) {
+      const created = await sharedPool.query(
+        `INSERT INTO pharmacy_stock (pharmacy_id, medicine_id, quantity, created_at, updated_at) VALUES ($1, $2, $3, NOW(), NOW()) RETURNING *`,
+        [pharmacyId, medicineId, qty]
+      );
+      return res.json({ success: true, message: 'Stock updated successfully', data: { id: medicineId, previousStock: 0, newStock: created.rows[0].quantity } });
     }
 
-    res.json({
-      success: true,
-      message: 'Stock updated successfully',
-      data: { id: parseInt(id), quantity, updatedAt: new Date().toISOString() }
-    });
+    const previous = existing.rows[0].quantity;
+    let newQuantity = qty;
+    if (operation === 'add') newQuantity = previous + qty;
+    if (operation === 'subtract') newQuantity = Math.max(0, previous - qty);
+
+    await sharedPool.query(`UPDATE pharmacy_stock SET quantity = $1, updated_at = NOW() WHERE id = $2`, [newQuantity, existing.rows[0].id]);
+    res.json({ success: true, message: 'Stock updated successfully', data: { id: medicineId, previousStock: previous, newStock: newQuantity } });
   } catch (error) {
     console.error('Stock update error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update stock',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to update stock', error: error.message });
   }
 });
 
 /**
  * DELETE /api/pharmacy/inventory/:id
- * Remove medicine from inventory
+ * Remove this pharmacy's stock row for a medicine (catalog row itself is shared, not deleted).
  */
-router.delete('/:id', verifyPharmacyToken, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const { id } = req.params;
     const pharmacyId = req.pharmacyId;
-
-    try {
-      const deleted = await PharmacyInventory.destroy({
-        where: { id: parseInt(id), organizationId: pharmacyId }
-      });
-
-      if (deleted) {
-        return res.json({
-          success: true,
-          message: 'Medicine removed from inventory',
-          data: { id: parseInt(id) }
-        });
-      }
-    } catch (dbError) {
-      console.log('Database delete failed:', dbError.message);
-    }
-
-    res.json({
-      success: true,
-      message: 'Medicine removed from inventory',
-      data: { id: parseInt(id) }
-    });
+    const medicineId = parseInt(req.params.id, 10);
+    const result = await sharedPool.query(
+      `DELETE FROM pharmacy_stock WHERE pharmacy_id = $1 AND medicine_id = $2 RETURNING id`,
+      [pharmacyId, medicineId]
+    );
+    if (!result.rows.length) return res.status(404).json({ success: false, message: 'Medicine not found in your inventory' });
+    res.json({ success: true, message: 'Medicine removed from inventory', data: { id: medicineId } });
   } catch (error) {
     console.error('Delete medicine error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to delete medicine',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to delete medicine', error: error.message });
   }
 });
 
 /**
- * GET /api/pharmacy/inventory/search/:query (Legacy support)
- * Search medicines by name, generic name, or category
+ * GET /api/pharmacy/inventory/search/:query (legacy path kept for compatibility)
  */
-router.get('/search/:query', verifyPharmacyToken, async (req, res) => {
+router.get('/search/:query', async (req, res) => {
   try {
-    const { query } = req.params;
-    
-    const searchLower = query.toLowerCase();
-    const results = MASTER_MEDICINES
-      .filter(m => 
-        m.name.toLowerCase().includes(searchLower) ||
-        m.genericName.toLowerCase().includes(searchLower) ||
-        m.category.toLowerCase().includes(searchLower)
-      )
-      .slice(0, 20)
-      .map((m, idx) => ({
-        id: idx + 1,
-        name: m.name,
-        genericName: m.genericName,
-        category: m.category,
-        stock: Math.floor(Math.random() * 200) + 50,
-        price: m.price
-      }));
-
+    const pharmacyId = req.pharmacyId;
+    const result = await sharedPool.query(
+      `${BASE_SELECT} WHERE pm.name ILIKE $2 OR pm.generic_name ILIKE $2 ORDER BY pm.name ASC LIMIT 20`,
+      [pharmacyId, `%${req.params.query}%`]
+    );
     res.json({
       success: true,
-      query,
-      results
+      query: req.params.query,
+      results: result.rows.map((row) => {
+        const shaped = toClientShape(row);
+        return { id: shaped.id, name: shaped.name, genericName: shaped.genericName, category: shaped.category, stock: shaped.quantity, price: shaped.unitPrice };
+      }),
     });
   } catch (error) {
     console.error('Search error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Search failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Search failed', error: error.message });
   }
 });
 
 // ============================================
-// CIMS Medicine Database Routes
+// CIMS Medicine Reference Database Routes
+// (independent reference dataset, unrelated to this pharmacy's stock — unchanged)
 // ============================================
 
-/**
- * GET /api/pharmacy/inventory/cims/search
- * Search CIMS medicine database
- */
-router.get('/cims/search', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/search', async (req, res) => {
   try {
     const { q, page = 1, limit = 50, cursor } = req.query;
     const useCursor = Object.prototype.hasOwnProperty.call(req.query, 'cursor');
-    
-    if (!q || q.length < 2) {
-      return res.json({ success: true, data: [], message: 'Enter at least 2 characters' });
-    }
-
+    if (!q || q.length < 2) return res.json({ success: true, data: [], message: 'Enter at least 2 characters' });
     const results = cimsService.searchByName(q, { page: parseInt(page), limit: parseInt(limit), cursor, useCursor });
-    
     res.json({
-      success: true,
-      query: q,
-      total: results.total,
-      data: results.data,
-      pagination: cursor
-        ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
-        : { page: results.page, limit: results.limit, totalPages: results.totalPages }
+      success: true, query: q, total: results.total, data: results.data,
+      pagination: cursor ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
+                          : { page: results.page, limit: results.limit, totalPages: results.totalPages },
     });
   } catch (error) {
     console.error('CIMS search error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'CIMS search failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'CIMS search failed', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/categories
- * Get all CIMS medicine categories
- */
-router.get('/cims/categories', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/categories', async (req, res) => {
   try {
-    const categories = cimsService.getCategories();
-    
-    res.json({
-      success: true,
-      data: categories
-    });
+    res.json({ success: true, data: cimsService.getCategories() });
   } catch (error) {
     console.error('CIMS categories error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get categories',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get categories', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/category/:categoryName
- * Get medicines by category from CIMS
- */
-router.get('/cims/category/:categoryName', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/category/:categoryName', async (req, res) => {
   try {
     const { categoryName } = req.params;
     const { page = 1, limit = 100, cursor } = req.query;
     const useCursor = Object.prototype.hasOwnProperty.call(req.query, 'cursor');
-    
     const results = cimsService.getByCategory(categoryName, { page: parseInt(page), limit: parseInt(limit), cursor, useCursor });
-    
     res.json({
-      success: true,
-      category: categoryName,
-      total: results.total,
-      data: results.data,
-      pagination: cursor
-        ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
-        : { page: results.page, limit: results.limit, totalPages: results.totalPages }
+      success: true, category: categoryName, total: results.total, data: results.data,
+      pagination: cursor ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
+                          : { page: results.page, limit: results.limit, totalPages: results.totalPages },
     });
   } catch (error) {
     console.error('CIMS category fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get medicines by category',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get medicines by category', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/medicine/:id
- * Get detailed medicine info from CIMS
- */
-router.get('/cims/medicine/:id', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/medicine/:id', async (req, res) => {
   try {
-    const { id } = req.params;
-    
-    const medicine = cimsService.getById(id);
-    
-    if (!medicine) {
-      return res.status(404).json({
-        success: false,
-        message: 'Medicine not found in CIMS database'
-      });
-    }
-
-    res.json({
-      success: true,
-      data: medicine
-    });
+    const medicine = cimsService.getById(req.params.id);
+    if (!medicine) return res.status(404).json({ success: false, message: 'Medicine not found in CIMS database' });
+    res.json({ success: true, data: medicine });
   } catch (error) {
     console.error('CIMS medicine fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get medicine details',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get medicine details', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/alternatives/:medicineId
- * Get medicine alternatives (same generic)
- */
-router.get('/cims/alternatives/:medicineId', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/alternatives/:medicineId', async (req, res) => {
   try {
     const { medicineId } = req.params;
     const { page = 1, limit = 10, cursor } = req.query;
     const useCursor = Object.prototype.hasOwnProperty.call(req.query, 'cursor');
-    
     const alternatives = cimsService.getAlternatives(medicineId, { page: parseInt(page), limit: parseInt(limit), cursor, useCursor });
-    
     res.json({
-      success: true,
-      medicineId,
-      total: alternatives.total,
-      data: alternatives.data,
-      pagination: cursor
-        ? { cursor: alternatives.cursor, nextCursor: alternatives.nextCursor, limit: alternatives.limit }
-        : { page: alternatives.page, limit: alternatives.limit, totalPages: alternatives.totalPages }
+      success: true, medicineId, total: alternatives.total, data: alternatives.data,
+      pagination: cursor ? { cursor: alternatives.cursor, nextCursor: alternatives.nextCursor, limit: alternatives.limit }
+                          : { page: alternatives.page, limit: alternatives.limit, totalPages: alternatives.totalPages },
     });
   } catch (error) {
     console.error('CIMS alternatives error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get alternatives',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get alternatives', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/indication/:indication
- * Search medicines by indication
- */
-router.get('/cims/indication/:indication', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/indication/:indication', async (req, res) => {
   try {
     const { indication } = req.params;
     const { page = 1, limit = 30, cursor } = req.query;
     const useCursor = Object.prototype.hasOwnProperty.call(req.query, 'cursor');
-    
     const results = cimsService.searchByIndication(indication, { page: parseInt(page), limit: parseInt(limit), cursor, useCursor });
-    
     res.json({
-      success: true,
-      indication,
-      total: results.total,
-      data: results.data,
-      pagination: cursor
-        ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
-        : { page: results.page, limit: results.limit, totalPages: results.totalPages }
+      success: true, indication, total: results.total, data: results.data,
+      pagination: cursor ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
+                          : { page: results.page, limit: results.limit, totalPages: results.totalPages },
     });
   } catch (error) {
     console.error('CIMS indication search error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to search by indication',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to search by indication', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/stats
- * Get CIMS database statistics
- */
-router.get('/cims/stats', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/stats', async (req, res) => {
   try {
-    const stats = cimsService.getStats();
-    
-    res.json({
-      success: true,
-      data: stats
-    });
+    res.json({ success: true, data: cimsService.getStats() });
   } catch (error) {
     console.error('CIMS stats error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get statistics',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get statistics', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/otc
- * Get all OTC medicines
- */
-router.get('/cims/otc', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/otc', async (req, res) => {
   try {
     const { page = 1, limit = 100, cursor } = req.query;
     const useCursor = Object.prototype.hasOwnProperty.call(req.query, 'cursor');
-    
     const otcMedicines = cimsService.getOTCMedicines({ page: parseInt(page), limit: parseInt(limit), cursor, useCursor });
-    
     res.json({
-      success: true,
-      total: otcMedicines.total,
-      data: otcMedicines.data,
-      pagination: cursor
-        ? { cursor: otcMedicines.cursor, nextCursor: otcMedicines.nextCursor, limit: otcMedicines.limit }
-        : { page: otcMedicines.page, limit: otcMedicines.limit, totalPages: otcMedicines.totalPages }
+      success: true, total: otcMedicines.total, data: otcMedicines.data,
+      pagination: cursor ? { cursor: otcMedicines.cursor, nextCursor: otcMedicines.nextCursor, limit: otcMedicines.limit }
+                          : { page: otcMedicines.page, limit: otcMedicines.limit, totalPages: otcMedicines.totalPages },
     });
   } catch (error) {
     console.error('CIMS OTC fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get OTC medicines',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get OTC medicines', error: error.message });
   }
 });
 
-/**
- * GET /api/pharmacy/inventory/cims/pregnancy-safe
- * Get pregnancy-safe medicines
- */
-router.get('/cims/pregnancy-safe', verifyPharmacyToken, async (req, res) => {
+router.get('/cims/pregnancy-safe', async (req, res) => {
   try {
     const { page = 1, limit = 50, cursor } = req.query;
     const useCursor = Object.prototype.hasOwnProperty.call(req.query, 'cursor');
-    
     const safeMedicines = cimsService.getPregnancySafe({ page: parseInt(page), limit: parseInt(limit), cursor, useCursor });
-    
     res.json({
-      success: true,
-      total: safeMedicines.total,
-      data: safeMedicines.data,
-      pagination: cursor
-        ? { cursor: safeMedicines.cursor, nextCursor: safeMedicines.nextCursor, limit: safeMedicines.limit }
-        : { page: safeMedicines.page, limit: safeMedicines.limit, totalPages: safeMedicines.totalPages }
+      success: true, total: safeMedicines.total, data: safeMedicines.data,
+      pagination: cursor ? { cursor: safeMedicines.cursor, nextCursor: safeMedicines.nextCursor, limit: safeMedicines.limit }
+                          : { page: safeMedicines.page, limit: safeMedicines.limit, totalPages: safeMedicines.totalPages },
     });
   } catch (error) {
     console.error('CIMS pregnancy-safe fetch error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to get pregnancy-safe medicines',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Failed to get pregnancy-safe medicines', error: error.message });
   }
 });
 
-/**
- * POST /api/pharmacy/inventory/cims/advanced-search
- * Advanced search with filters
- */
-router.post('/cims/advanced-search', verifyPharmacyToken, async (req, res) => {
+router.post('/cims/advanced-search', async (req, res) => {
   try {
-    const filters = req.body;
-    
-    const results = cimsService.advancedSearch(filters);
-    
+    const results = cimsService.advancedSearch(req.body);
     res.json({
-      success: true,
-      total: results.total,
-      data: results.data,
-      pagination: filters?.cursor
-        ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
-        : { page: results.page, limit: results.limit, totalPages: results.totalPages }
+      success: true, total: results.total, data: results.data,
+      pagination: req.body?.cursor ? { cursor: results.cursor, nextCursor: results.nextCursor, limit: results.limit }
+                                    : { page: results.page, limit: results.limit, totalPages: results.totalPages },
     });
   } catch (error) {
     console.error('CIMS advanced search error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Advanced search failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Advanced search failed', error: error.message });
   }
 });
 
-export { MASTER_MEDICINES };
 export default router;

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { QueryTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import sharedPool from '../db/pgPool.js';
 
 const hash = (value) => crypto.createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const key = (value) => {
@@ -14,11 +15,16 @@ const key = (value) => {
 const fail = (message, code, status) => Object.assign(new Error(message), { code, status });
 
 export async function ensurePharmacyGovernanceReady() {
-  const rows = await sequelize.query(`
+  // Uses the raw pg pool, not Sequelize: Sequelize sniffs any query against
+  // information_schema.tables and auto-classifies it as a "show tables" query,
+  // reformatting the result into a flat array of table-name strings regardless of
+  // the `type` option passed — so `r.table_name` always comes back undefined and
+  // this check could never pass. Confirmed directly against prod (2026-10-19).
+  const { rows } = await sharedPool.query(`
     SELECT table_name FROM information_schema.tables
     WHERE table_schema = current_schema()
       AND table_name IN ('pharmacy_stock_movements','pharmacy_controlled_movements','pharmacy_wastage','pharmacy_recalls','pharmacy_recall_items')
-  `, { type: QueryTypes.SELECT });
+  `);
   const present = new Set((rows || []).map((r) => r.table_name));
   const required = ['pharmacy_stock_movements','pharmacy_controlled_movements','pharmacy_wastage','pharmacy_recalls','pharmacy_recall_items'];
   if (required.some((table) => !present.has(table))) throw fail('Pharmacy governance schema is not migrated', 'PHARMACY_GOVERNANCE_SCHEMA_NOT_READY', 503);
@@ -86,7 +92,10 @@ export async function recordControlledMovement(input) {
     const signed = ['receive', 'return'].includes(input.movementType) ? Number(input.quantity) : -Number(input.quantity);
     const balanceAfter = Number(balanceRow?.balance || 0) + signed;
     if (balanceAfter < 0) throw fail('Controlled-drug movement would make the register negative', 'insufficient_controlled_stock', 409);
-    const [row] = await sequelize.query(`
+    // QueryTypes.INSERT returns [insertedRows, rowCount] — destructure both levels,
+    // not just the outer tuple (confirmed directly against prod: the single-level
+    // destructure used here previously returned the whole rows array as "movement").
+    const [[row]] = await sequelize.query(`
       INSERT INTO pharmacy_controlled_movements (pharmacy_id, organization_id, medicine_id, batch_id, movement_type, quantity, balance_after, patient_id, prescription_id, witness_id, reason, idempotency_key, request_hash, actor_id)
       VALUES (:pharmacyId,:organizationId,:medicineId,:batchId,:movementType,:quantity,:balanceAfter,:patientId,:prescriptionId,:witnessId,:reason,:idempotencyKey,:requestHash,:actorId) RETURNING *
     `, { replacements: { pharmacyId: input.pharmacyId, organizationId: input.organizationId || null, medicineId: input.medicineId, batchId: input.batchId || null, movementType: input.movementType, quantity: input.quantity, balanceAfter, patientId: input.patientId || null, prescriptionId: input.prescriptionId || null, witnessId: input.witnessId || null, reason: input.reason || null, idempotencyKey: movementKey, requestHash, actorId: input.actorId || null }, type: QueryTypes.INSERT, transaction });

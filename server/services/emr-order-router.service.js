@@ -4,6 +4,7 @@
  */
 
 import pool from '../db/pgPool.js';
+import { issueFefo } from './pharmacy-inventory-governance.service.js';
 
 let tablesReady = false;
 
@@ -438,6 +439,33 @@ export async function finalizePharmacyDispenseBilling(pharmacyPrescriptionId, { 
          VALUES ($1, $2, $3, $4, $5)`,
         [invoiceId, item.medicine_id, item.quantity, item.price, item.quantity * item.price]
       );
+    }
+
+    // Actually consume stock (FEFO across batches) — billing alone used to have no inventory effect.
+    const stockClient = await pool.connect();
+    try {
+      await stockClient.query('BEGIN');
+      for (const item of medItems.rows) {
+        await stockClient.query(
+          `UPDATE pharmacy_stock SET quantity = quantity - $1, updated_at = NOW()
+           WHERE medicine_id = $2 AND pharmacy_id = $3 AND quantity >= $1`,
+          [item.quantity, item.medicine_id, pid]
+        );
+        await issueFefo(stockClient, {
+          pharmacyId: pid,
+          medicineId: item.medicine_id,
+          quantity: Number(item.quantity),
+          referenceType: 'opd_prescription',
+          referenceId: pharmacyPrescriptionId,
+          idempotencyKey: `opd-rx-${pharmacyPrescriptionId}-${item.medicine_id}`,
+        });
+      }
+      await stockClient.query('COMMIT');
+    } catch (stockErr) {
+      await stockClient.query('ROLLBACK').catch(() => {});
+      console.error('[emr-order-router] FEFO stock deduction failed for Rx', pharmacyPrescriptionId, stockErr.message);
+    } finally {
+      stockClient.release();
     }
   }
 

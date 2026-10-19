@@ -511,6 +511,8 @@ const PharmacyInventoryPage      = lazyNamed(_PharmacyModulePages, "PharmacyInve
 const PharmacyStockAlertsPage    = lazyNamed(_PharmacyModulePages, "PharmacyStockAlertsPage");
 const PharmacyBatchesPage        = lazyNamed(_PharmacyModulePages, "PharmacyBatchesPage");
 const PharmacyPurchaseOrdersPage = lazyNamed(_PharmacyModulePages, "PharmacyPurchaseOrdersPage");
+const PharmacySuppliersPage      = lazyNamed(_PharmacyModulePages, "PharmacySuppliersPage");
+const PharmacySupplierReturnsPage = lazyNamed(_PharmacyModulePages, "PharmacySupplierReturnsPage");
 const PharmacyCustomersPage      = lazyNamed(_PharmacyModulePages, "PharmacyCustomersPage");
 const PharmacyReportsPage        = lazyNamed(_PharmacyModulePages, "PharmacyReportsPage");
 const PharmacyInvoicesPage       = lazyNamed(_PharmacyModulePages, "PharmacyInvoicesPage");
@@ -1299,6 +1301,8 @@ const AppRoutes = () => {
         <Route path="/pharmacy/stock-alerts"     element={<PharmacyStockAlertsPage />} />
         <Route path="/pharmacy/batches"          element={<PharmacyBatchesPage />} />
         <Route path="/pharmacy/purchase-orders"  element={<PharmacyPurchaseOrdersPage />} />
+        <Route path="/pharmacy/suppliers"        element={<PharmacySuppliersPage />} />
+        <Route path="/pharmacy/supplier-returns" element={<PharmacySupplierReturnsPage />} />
         <Route path="/pharmacy/customers"        element={<PharmacyCustomersPage />} />
         <Route path="/pharmacy/reports"          element={<PharmacyReportsPage />} />
         <Route path="/pharmacy/invoices"         element={<PharmacyInvoicesPage />} />

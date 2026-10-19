@@ -2,11 +2,14 @@
  * Drug Price Sync Service
  *
  * Sources (in priority order):
- *  1. NPPA Ceiling Prices  — Government of India, free, monthly Excel
- *  2. Jan Aushadhi CSV     — PMBI generic drug list, free, quarterly
- *  3. Built-in corrections — Curated reference data for known CIMS pricing errors
+ *  1. NPPA Ceiling Prices       — Government of India, free, monthly Excel
+ *  2. Jan Aushadhi CSV          — PMBI generic drug list, free, quarterly
+ *  3. Built-in corrections      — Curated reference data for known CIMS pricing errors
+ *  4. Indian Medicine Dataset   — ~254k catalog; adds medicines missing from inventory
+ *  5. OpenMRP (admin-triggered) — selling-price enrichment, not part of the nightly run
  *
- * Runs automatically via cron (daily at 2:30 AM).
+ * Runs automatically via cron (daily at 12:15 AM) — sources 1-4, so new medicines
+ * released into the open-source catalog get added automatically overnight.
  * Admin can also trigger a manual sync via POST /api/admin/drug-price-sync/run
  */
 
@@ -423,7 +426,7 @@ export async function syncFromUploadedFile(buffer, originalName) {
 let lastSyncResult = null;
 let isSyncing = false;
 
-export async function runFullSync({ sources = ['builtin', 'nppa', 'janaushadhi'] } = {}) {
+export async function runFullSync({ sources = ['builtin', 'nppa', 'janaushadhi', 'indian_medicine_dataset'] } = {}) {
   if (isSyncing) {
     return { success: false, message: 'Sync already in progress' };
   }
@@ -446,6 +449,18 @@ export async function runFullSync({ sources = ['builtin', 'nppa', 'janaushadhi']
     // 3. Jan Aushadhi (generic drug prices)
     if (sources.includes('janaushadhi')) {
       results.push(await syncFromJanAushadhi());
+    }
+
+    // 4. Indian Medicine Dataset — adds medicines not yet in inventory, and
+    // back-fills prices for existing ones with no authoritative source yet
+    if (sources.includes('indian_medicine_dataset')) {
+      results.push(await syncFromIndianMedicineDataset());
+    }
+
+    // 5. OpenMRP — selling-price enrichment for existing medicines (admin-triggered
+    // only by default; not in the nightly run since it's rate-limited to ~2000/run)
+    if (sources.includes('openmrp')) {
+      results.push(await syncFromOpenMRP());
     }
 
     const totalUpdated = results.reduce((s, r) => s + r.updated, 0);
@@ -501,8 +516,9 @@ class DrugPriceSyncService {
       return;
     }
 
-    // Run daily at 2:30 AM (stagger from other 2 AM crons)
-    this._job = cron.schedule('30 2 * * *', async () => {
+    // Run daily at 12:15 AM so overnight price changes (NPPA ceiling updates,
+    // Jan Aushadhi) are live before customers shop the next morning
+    this._job = cron.schedule('15 0 * * *', async () => {
       if (!(await beginJob('drug_price_sync'))) return;
       console.log('💊 [drug-price-sync] Starting daily price sync...');
       try {
@@ -517,7 +533,7 @@ class DrugPriceSyncService {
     });
 
     this.isRunning = true;
-    console.log('💊 Drug price sync service started (runs daily at 2:30 AM)');
+    console.log('💊 Drug price sync service started (runs daily at 12:15 AM)');
 
     // Run built-in corrections immediately on startup (non-blocking, low-priority)
     setTimeout(async () => {

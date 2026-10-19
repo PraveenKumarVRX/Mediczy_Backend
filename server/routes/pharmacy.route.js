@@ -20,9 +20,7 @@ import {
 const pharmUploadFields = createUploadMiddleware('contactIdCard');
 
 
-import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
-import posRouter from './pharmacy/pos.routes.js';
 import prescriptionsRouter from './pharmacy/prescriptions.route.js';
 import transactionsRouter from './pharmacy/transactions.route.js';
 import stockRouter from './pharmacy/stock.route.js';
@@ -34,13 +32,15 @@ import invoicesRouter from './pharmacy/invoices.route.js';
 import analyticsRouter from './pharmacy/analytics.route.js';
 import returnsRouter from './pharmacy/returns.route.js';
 import complianceRouter from './pharmacy/compliance.route.js';
+import governanceRouter from './pharmacy/governance.route.js';
+import supplierReturnsRouter from './pharmacy/supplier-returns.route.js';
+import suppliersRouter from './pharmacy/suppliers.route.js';
+import creditRouter from './pharmacy/credit.route.js';
 
 const router = express.Router();
 
 // Mount sub-routers
-router.use('/dashboard', dashboardRouter);
 router.use('/inventory', inventoryRouter);
-router.use('/pos', posRouter);
 router.use('/prescriptions', prescriptionsRouter);
 router.use('/transactions', transactionsRouter);
 router.use('/prescriptions-detail', prescriptionsRouter);
@@ -53,6 +53,10 @@ router.use('/invoices', invoicesRouter);
 router.use('/analytics', analyticsRouter);
 router.use('/returns', returnsRouter);
 router.use('/compliance', complianceRouter);
+router.use('/governance', governanceRouter);
+router.use('/supplier-returns', supplierReturnsRouter);
+router.use('/suppliers', suppliersRouter);
+router.use('/credit', creditRouter);
 
 /**
  * GET /api/pharmacy/medicines

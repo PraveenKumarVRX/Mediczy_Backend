@@ -34,16 +34,25 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Insert medicine
-    const medicineQuery = `
-      INSERT INTO pharmacy_medicines 
-      (name, unit_price, reorder_level, created_at)
-      VALUES ($1, $2, $3, NOW())
-      RETURNING *;
-    `;
+    // Reuse the existing catalog entry if this medicine is already known (from the
+    // open-source dataset sync or another pharmacy's stock) — only insert a new
+    // catalog row when it's genuinely a new medicine, since `name` is unique.
+    const existing = await db.query(
+      `SELECT * FROM pharmacy_medicines WHERE name ILIKE $1 LIMIT 1`,
+      [medicineName]
+    );
 
-    const medicineResult = await db.query(medicineQuery, [medicineName, unitPrice, reorderLevel]);
-    const medicine = medicineResult.rows[0];
+    let medicine = existing.rows[0];
+    if (!medicine) {
+      const medicineQuery = `
+        INSERT INTO pharmacy_medicines
+        (name, unit_price, reorder_level, created_at)
+        VALUES ($1, $2, $3, NOW())
+        RETURNING *;
+      `;
+      const medicineResult = await db.query(medicineQuery, [medicineName, unitPrice, reorderLevel]);
+      medicine = medicineResult.rows[0];
+    }
 
     // Insert stock
     const stockQuery = `

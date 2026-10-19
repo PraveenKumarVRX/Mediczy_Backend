@@ -46,6 +46,8 @@ const PharmacySidebar = () => {
         { name: 'Stock Alerts', href: '/pharmacy/stock-alerts', icon: AlertTriangle },
         { name: 'Batch Management', href: '/pharmacy/batches', icon: Boxes },
         { name: 'Purchase Orders', href: '/pharmacy/purchase-orders', icon: Truck },
+        { name: 'Suppliers', href: '/pharmacy/suppliers', icon: Truck },
+        { name: 'Supplier Returns', href: '/pharmacy/supplier-returns', icon: Boxes },
       ],
     },
     {

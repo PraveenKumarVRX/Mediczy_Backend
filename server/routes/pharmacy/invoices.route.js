@@ -21,7 +21,6 @@ router.post('/', async (req, res) => {
       customerId,
       items, // [{medicineId, quantity, price}]
       totalAmount,
-      taxAmount = 0,
       discountAmount = 0,
       paymentMethod,
       notes
@@ -35,10 +34,34 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // GST split: look up each line's HSN/rate from the catalog (snapshot it onto the
+    // invoice item so a later catalog-rate change doesn't rewrite history), default
+    // intra-state CGST+SGST split (the common case for a local walk-in sale).
+    const medicineIds = items.map((item) => item.medicineId);
+    const gstRows = await db.query(
+      `SELECT id, hsn_code, COALESCE(gst_rate, 12.00) AS gst_rate FROM pharmacy_medicines WHERE id = ANY($1::int[])`,
+      [medicineIds]
+    );
+    const gstByMedicine = new Map(gstRows.rows.map((r) => [r.id, r]));
+
+    let cgstAmount = 0;
+    let sgstAmount = 0;
+    const lineItems = items.map((item) => {
+      const gstInfo = gstByMedicine.get(item.medicineId) || { hsn_code: null, gst_rate: 12.00 };
+      const subtotal = item.quantity * item.price;
+      const lineTax = subtotal * (Number(gstInfo.gst_rate) / 100);
+      cgstAmount += lineTax / 2;
+      sgstAmount += lineTax / 2;
+      return { ...item, subtotal, hsnCode: gstInfo.hsn_code, gstRate: gstInfo.gst_rate };
+    });
+    cgstAmount = Math.round(cgstAmount * 100) / 100;
+    sgstAmount = Math.round(sgstAmount * 100) / 100;
+    const taxAmount = cgstAmount + sgstAmount;
+
     const query = `
-      INSERT INTO pharmacy_invoices 
-      (pharmacy_id, transaction_id, customer_id, total_amount, tax_amount, discount_amount, payment_method, notes, status, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'issued', NOW())
+      INSERT INTO pharmacy_invoices
+      (pharmacy_id, transaction_id, customer_id, total_amount, tax_amount, cgst_amount, sgst_amount, igst_amount, discount_amount, payment_method, notes, status, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, $10, 'issued', NOW())
       RETURNING *;
     `;
 
@@ -48,18 +71,20 @@ router.post('/', async (req, res) => {
       customerId,
       totalAmount,
       taxAmount,
+      cgstAmount,
+      sgstAmount,
       discountAmount,
       paymentMethod,
       notes
     ]);
     const invoice = result.rows[0];
 
-    // Insert invoice items
-    for (const item of items) {
+    // Insert invoice items (with their GST snapshot)
+    for (const item of lineItems) {
       const itemQuery = `
-        INSERT INTO pharmacy_invoice_items 
-        (invoice_id, medicine_id, quantity, price, subtotal)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO pharmacy_invoice_items
+        (invoice_id, medicine_id, quantity, price, subtotal, hsn_code, gst_rate)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *;
       `;
       await db.query(itemQuery, [
@@ -67,7 +92,9 @@ router.post('/', async (req, res) => {
         item.medicineId,
         item.quantity,
         item.price,
-        item.quantity * item.price
+        item.subtotal,
+        item.hsnCode,
+        item.gstRate
       ]);
     }
 

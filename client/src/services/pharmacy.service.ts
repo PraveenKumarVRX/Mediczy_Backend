@@ -180,13 +180,12 @@ const pharmacyService = {
       return response.data;
     },
 
-    // Create sale
+    // Create sale (the server picks the FEFO batch per item automatically)
     create: async (saleData: {
       customerId?: number;
       prescriptionId?: number;
       items: Array<{
         medicineId: number;
-        batchId: number;
         quantity: number;
         price: number;
       }>;
@@ -374,6 +373,46 @@ const pharmacyService = {
         headers: getAuthHeader(),
         params,
       });
+      return response.data;
+    },
+  },
+
+  // ============ Suppliers ============
+  suppliers: {
+    getAll: async (params?: { search?: string; limit?: number; offset?: number }) => {
+      const response = await api.get(`${API_URL}/pharmacy/suppliers`, { headers: getAuthHeader(), params });
+      return response.data;
+    },
+    create: async (supplierData: { name: string; contactPerson?: string; phone?: string; email?: string; gstin?: string; paymentTerms?: string; notes?: string }) => {
+      const response = await api.post(`${API_URL}/pharmacy/suppliers`, supplierData, { headers: getAuthHeader() });
+      return response.data;
+    },
+    update: async (supplierId: number, updates: any) => {
+      const response = await api.put(`${API_URL}/pharmacy/suppliers/${supplierId}`, updates, { headers: getAuthHeader() });
+      return response.data;
+    },
+  },
+
+  // ============ Customer Credit ============
+  credit: {
+    getLedger: async (customerId: number) => {
+      const response = await api.get(`${API_URL}/pharmacy/credit/${customerId}`, { headers: getAuthHeader() });
+      return response.data;
+    },
+    recordPayment: async (customerId: number, amount: number, notes?: string) => {
+      const response = await api.post(`${API_URL}/pharmacy/credit/${customerId}/payment`, { amount, notes }, { headers: getAuthHeader() });
+      return response.data;
+    },
+  },
+
+  // ============ Supplier Returns ============
+  supplierReturns: {
+    getAll: async (params?: { limit?: number; offset?: number }) => {
+      const response = await api.get(`${API_URL}/pharmacy/supplier-returns`, { headers: getAuthHeader(), params });
+      return response.data;
+    },
+    create: async (returnData: { supplierId?: number; supplierName?: string; reason?: string; items: Array<{ medicineId: number; batchId?: number; quantity: number; costPrice: number }> }) => {
+      const response = await api.post(`${API_URL}/pharmacy/supplier-returns`, returnData, { headers: getAuthHeader() });
       return response.data;
     },
   },

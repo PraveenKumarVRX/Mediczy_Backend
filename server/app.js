@@ -1932,6 +1932,10 @@ dailyHealthScoreService.start();
 import drugPriceSyncService from './services/drug-price-sync.service.js';
 drugPriceSyncService.start();
 
+// ============== Pharmacy: Low-Stock / Near-Expiry Alert Scan ==============
+import pharmacyStockAlertCronService from './services/pharmacy-stock-alert-cron.service.js';
+pharmacyStockAlertCronService.start();
+
 // ============== Corporate Employee QC (Daily 03:00 IST) ==============
 import corporateEmployeeQcService from './services/corporate-employee-qc.service.js';
 corporateEmployeeQcService.start();

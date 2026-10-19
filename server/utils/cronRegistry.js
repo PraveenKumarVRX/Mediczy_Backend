@@ -74,7 +74,8 @@ export const TASK_DEFINITIONS = [
   { key: 'data_retention_weekly', name: 'Data Retention — Weekly',               schedule: 'Weekly Sun 3 AM',  category: 'compliance', scheduleDesc: '0 3 * * 0' },
   { key: 'data_retention_monthly',name: 'Data Retention — Monthly',              schedule: '1st of month 4 AM',category: 'compliance', scheduleDesc: '0 4 1 * *' },
   // Pharmacy
-  { key: 'drug_price_sync',       name: 'Drug Price Sync (NPPA/Jan Aushadhi)',   schedule: 'Daily 2:30 AM',    category: 'pharmacy',   scheduleDesc: '30 2 * * *' },
+  { key: 'drug_price_sync',       name: 'Drug Price Sync (NPPA/Jan Aushadhi/Dataset)', schedule: 'Daily 12:15 AM', category: 'pharmacy', scheduleDesc: '15 0 * * *' },
+  { key: 'pharmacy_stock_alerts', name: 'Pharmacy Low-Stock / Near-Expiry Scan', schedule: 'Daily 5 AM',       category: 'pharmacy',   scheduleDesc: '0 5 * * *' },
   // SCM
   { key: 'scm_par_reorder',       name: 'SCM PAR Auto-Reorder Scan',            schedule: 'Every 6 hours',    category: 'scm',        scheduleDesc: '45 */6 * * *' },
   // Parking

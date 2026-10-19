@@ -13,7 +13,7 @@ router.use(requirePharmacyAuth);
 
 router.post('/', async (req, res) => {
   try {
-    const { supplier, items, expectedDeliveryDate, notes } = req.body;
+    const { supplier, supplierId, items, expectedDeliveryDate, notes } = req.body;
     const pharmacyId = req.pharmacyId;
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -26,14 +26,20 @@ router.post('/', async (req, res) => {
       }
     }
 
+    let supplierName = supplier || null;
+    if (supplierId && !supplierName) {
+      const supplierRow = await db.query('SELECT name FROM pharmacy_suppliers WHERE id = $1 AND pharmacy_id = $2', [supplierId, pharmacyId]);
+      supplierName = supplierRow.rows[0]?.name || null;
+    }
+
     const totalAmount = items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unitPrice), 0);
 
     const result = await db.query([
       'INSERT INTO pharmacy_purchase_orders',
-      '(pharmacy_id, supplier, total_amount, expected_delivery_date, status, notes, created_at)',
-      "VALUES ($1, $2, $3, $4, 'pending', $5, NOW())",
+      '(pharmacy_id, supplier, supplier_id, total_amount, expected_delivery_date, status, notes, created_at)',
+      "VALUES ($1, $2, $3, $4, $5, 'pending', $6, NOW())",
       'RETURNING *;'
-    ].join(' '), [pharmacyId, supplier || null, totalAmount, expectedDeliveryDate || null, notes || null]);
+    ].join(' '), [pharmacyId, supplierName, supplierId || null, totalAmount, expectedDeliveryDate || null, notes || null]);
     const order = result.rows[0];
 
     for (const item of items) {
@@ -75,6 +81,8 @@ router.post('/:orderId/receive', async (req, res) => {
   try {
     const pharmacyId = req.pharmacyId;
     const { orderId } = req.params;
+    const { batches } = req.body || {}; // optional: [{ medicineId, batchNumber, expiryDate, costPrice }]
+    const batchByMedicine = new Map((Array.isArray(batches) ? batches : []).map((b) => [b.medicineId, b]));
 
     await client.query('BEGIN');
 
@@ -111,6 +119,17 @@ router.post('/:orderId/receive', async (req, res) => {
           'INSERT INTO pharmacy_stock (pharmacy_id, medicine_id, quantity, supplier, created_at, updated_at)',
           'VALUES ($1, $2, $3, $4, NOW(), NOW());'
         ].join(' '), [pharmacyId, item.medicine_id, item.quantity, order.supplier || null]);
+      }
+
+      // Capture the real batch/expiry if supplied at receipt time (the manufacturer's
+      // actual batch is only known once goods physically arrive, not at PO creation).
+      const batchInfo = batchByMedicine.get(item.medicine_id);
+      if (batchInfo?.batchNumber) {
+        await client.query([
+          'INSERT INTO pharmacy_batches (pharmacy_id, medicine_id, batch_number, quantity, expiry_date, cost_price, supplier, created_at, updated_at)',
+          'VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())',
+          'ON CONFLICT (batch_number) DO UPDATE SET quantity = pharmacy_batches.quantity + EXCLUDED.quantity, updated_at = NOW();'
+        ].join(' '), [pharmacyId, item.medicine_id, batchInfo.batchNumber, item.quantity, batchInfo.expiryDate || null, batchInfo.costPrice || item.unit_price, order.supplier || null]);
       }
     }
 
