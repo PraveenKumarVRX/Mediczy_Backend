@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { exportToExcel } from '@/utils/exportToExcel';
 
 interface Certificate {
   id: number;
@@ -76,6 +77,19 @@ const CorporateFitnessCertificates = () => {
     URL.revokeObjectURL(url);
   };
 
+  const exportExcel = (certs: Certificate[]) => {
+    const rows = certs.map((c) => ({
+      'Certificate ID': c.id,
+      'Patient Name': c.patient_name,
+      'Employee ID': c.employee_id || '',
+      'Fitness Status': c.fitness_status,
+      'Valid From': c.examination_date ? new Date(c.examination_date).toLocaleDateString() : '',
+      'Valid Until': c.valid_until ? new Date(c.valid_until).toLocaleDateString() : '',
+      'Issued By': c.issued_by,
+    }));
+    exportToExcel(rows, { filename: 'fitness-certificates', sheetName: 'Fitness Certificates' });
+  };
+
   const download = (id: number) => {
     api.get(`/v1/occupational-health/fitness-certificate/${id}/pdf`, { responseType: 'blob' })
       .then((res) => {
@@ -99,7 +113,10 @@ const CorporateFitnessCertificates = () => {
           actions={
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => exportCSV(filtered)} title="Export all visible rows as CSV">
-                <FileDown className="h-4 w-4 mr-1" /> Export All CSV
+                <FileDown className="h-4 w-4 mr-1" /> Export CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => exportExcel(filtered)} title="Export all visible rows as Excel">
+                <FileDown className="h-4 w-4 mr-1" /> Export Excel
               </Button>
               <Button variant="outline" size="icon" onClick={load} title="Refresh">
                 <RefreshCw className="h-4 w-4" />

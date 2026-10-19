@@ -104,6 +104,7 @@ const NEW_MIGRATIONS_2026Q4 = [
   '20261015006800-crm-agent-corporate-scope.migration.js',
   '20261016000000-crm-legacy-tenancy.migration.js',
   '20261016000100-feature-flags.migration.js',
+  '20261019000100-nursing-workflow-integrity.migration.js',
 ];
 
 function runStep(step) {
@@ -168,6 +169,8 @@ async function runNew2026Migrations() {
       else await mod.up();
       console.log(`  Done: ${name}`);
     } catch (e) {
+      // This atomic clinical migration must fail visibly on historical conflicts.
+      if (name === '20261019000100-nursing-workflow-integrity.migration.js') throw e;
       if (/already exists|duplicate|exists/i.test(e.message || '')) console.log(`  Skipped (exists): ${name}`);
       else throw e;
     }

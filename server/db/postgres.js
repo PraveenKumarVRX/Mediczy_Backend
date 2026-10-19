@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import pkg from 'pg';
+import { postgresTls } from './postgres-tls.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -78,9 +79,7 @@ function buildConfig() {
       max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '50', 10),
       idleTimeoutMillis: 30000,
       application_name: process.env.POSTGRES_APP_NAME || 'mediczy_helper',
-      ssl: process.env.POSTGRES_SSL === 'true' || process.env.PG_SSL === 'true'
-        ? { rejectUnauthorized: false }
-        : undefined
+      ssl: postgresTls(process.env, connectionString)
     };
   }
 
@@ -100,9 +99,7 @@ function buildConfig() {
     query_timeout: 30000,  // Additional query timeout
     // Application identification
     application_name: process.env.POSTGRES_APP_NAME || 'mediczy_helper',
-    ssl: process.env.POSTGRES_SSL === 'true' || process.env.PG_SSL === 'true'
-      ? { rejectUnauthorized: false }
-      : undefined
+    ssl: postgresTls()
   };
 }
 

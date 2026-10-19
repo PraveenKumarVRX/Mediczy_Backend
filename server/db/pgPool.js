@@ -5,6 +5,7 @@
  */
 
 import pg from 'pg';
+import { postgresTls } from './postgres-tls.js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -123,9 +124,7 @@ function buildPoolConfig() {
     !hasPrimaryDiscreteConfig ? process.env.POSTGRES_URI : undefined,
     !hasPrimaryDiscreteConfig ? process.env.PG_URI : undefined
   );
-  const ssl = process.env.POSTGRES_SSL === 'true'
-    ? { rejectUnauthorized: false }
-    : false;
+  const ssl = postgresTls(process.env, connectionString);
 
   if (connectionString) {
     return {

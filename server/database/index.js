@@ -1,3 +1,4 @@
+import { postgresTls } from '../db/postgres-tls.js';
 /**
  * Database Configuration & Connection Pool
  * Manages PostgreSQL database connections with connection pooling
@@ -24,6 +25,7 @@ const dbConfig = {
   host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
   port: process.env.DB_PORT || process.env.POSTGRES_PORT || 5432,
   database: process.env.DB_NAME || process.env.POSTGRES_DATABASE || 'mediczy',
+  ssl: postgresTls({ ...process.env, POSTGRES_PRIMARY_HOST: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost' }),
   // Connection pool settings
   max: parseInt(process.env.DB_POOL_MAX || process.env.POSTGRES_POOL_MAX || '20'),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000'),

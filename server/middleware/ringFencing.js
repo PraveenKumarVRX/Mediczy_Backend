@@ -376,6 +376,13 @@ const USER_TYPE_PERMISSIONS = {
   },
   nurse: {
     allowedPaths: [
+      // Assigned admission services enforce tenant/ward scope and individual action permissions.
+      '/api/v1/nursing',
+      '/api/v1/nursing-ipd',
+      '/api/v1/echart',
+      '/api/v1/nursing-echart',
+      '/api/v1/emar',
+      '/api/v1/vitals',
       '/api/clinical-safety',  // allergies, problem list, prescription safety, reconciliation (WP-1.1/1.2)
       '/api/care-series',  // module route (RBAC enforced per route)
       '/api/dialysis',  // module route (RBAC enforced per route)

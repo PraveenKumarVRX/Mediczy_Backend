@@ -90,13 +90,7 @@ const NurseNotes: React.FC = () => {
       form.append('sourceType', 'wound');
       const { data } = await api.post('/ai/vision/analyze', form, { headers: { Authorization: `Bearer ${token}` } });
       setWoundResult(data.analysis);
-      await api.post('/roadmap-intelligence/wounds', {
-        patientId,
-        woundType: data.analysis.woundType,
-        stage: data.analysis.stage,
-        areaCm2: data.analysis.estimatedAreaCm2,
-        note: data.analysis.assessment,
-      }, { headers: { Authorization: `Bearer ${token}` } });
+      // AI output is a draft. Record reviewed findings in the assigned admission workspace.
     } finally {
       setWoundLoading(false);
     }

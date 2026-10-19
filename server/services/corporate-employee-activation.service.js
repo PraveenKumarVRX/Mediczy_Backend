@@ -109,13 +109,46 @@ export async function reactivateCorporateEmployeeAccount(userId, { client = null
 }
 
 /**
+ * An HR-added corporate_employees row created before the account existed (or
+ * added without an email lookup happening) is left with userId NULL — link it
+ * by email now, same as the create-employee path does. Covers the reverse
+ * ordering: employee added first, real account registered/logs in later.
+ */
+async function linkUnlinkedCorporateEmployeeByEmail(user) {
+  if (!user?.email) return false;
+  const { rows } = await pool.query(
+    `SELECT id, corporate_id, "employeeId" FROM corporate_employees
+      WHERE "userId" IS NULL AND lower(email) = lower($1) LIMIT 1`,
+    [user.email]
+  );
+  const unlinked = rows[0];
+  if (!unlinked) return false;
+
+  await pool.query(`UPDATE corporate_employees SET "userId" = $1, "updatedAt" = NOW() WHERE id = $2`, [user.id, unlinked.id]);
+  await pool.query(
+    `INSERT INTO user_associations ("userId", "entityType", "entityId", role, status, metadata, corporate_unique_id, "createdAt", "updatedAt")
+     SELECT $1, 'corporate', $2, 'employee', 'active',
+            jsonb_build_object('employeeId', $3::text, 'profileActivation', 'active'),
+            (SELECT unique_id FROM corporates WHERE id = $2), NOW(), NOW()
+     WHERE NOT EXISTS (
+       SELECT 1 FROM user_associations WHERE "userId" = $1 AND "entityType" = 'corporate' AND "entityId" = $2 AND role = 'employee'
+     )`,
+    [user.id, unlinked.corporate_id, unlinked.employeeId]
+  );
+  return true;
+}
+
+/**
  * Before login inactive guard — auto-fix HR-onboarded corporate employees.
  */
 export async function tryAutoActivateCorporateEmployeeForLogin(user) {
   if (!user?.id) return { activated: false };
   if (user.status === 'active') return { activated: false, alreadyActive: true };
 
-  const isCorporate = user.isCorporate === true || await hasActiveCorporateEmployment(user.id);
+  let isCorporate = user.isCorporate === true || await hasActiveCorporateEmployment(user.id);
+  if (!isCorporate) {
+    isCorporate = await linkUnlinkedCorporateEmployeeByEmail(user);
+  }
   if (!isCorporate) return { activated: false, reason: 'not_corporate' };
 
   const result = await reactivateCorporateEmployeeAccount(user.id);

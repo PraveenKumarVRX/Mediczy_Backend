@@ -1,4 +1,8 @@
 import express from 'express';
+import { nursingHandler } from './nursing-http.js';
+import { nursingContext,nursingQuery,assertAdmission } from '../services/nursing-context.service.js';
+import { recordEntry } from '../services/nursing-echart.service.js';
+import { clinicalAlerts,acknowledgeNursingAlert } from '../services/nursing-operations.service.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { auditHealthAccess } from '../middleware/audit.middleware.js';
 import {
@@ -10,6 +14,18 @@ import { QueryTypes } from 'sequelize';
 import { resolveTenantId } from '../utils/tenant-identity.js';
 
 const router = express.Router();
+router.use(authUser);
+// The general vitals API cannot bypass a nurse's admission and ward permissions.
+router.use((req,res,next)=>{
+  if(req.user?.role!=='nurse')return next();
+  if(req.method==='POST'&&req.path==='/')return nursingHandler(r=>recordEntry({...r.body,heartRate:r.body.heartRate??r.body.pulse,entryType:'vitals',amendsId:null,idempotencyKey:r.get('Idempotency-Key')}),201)(req,res);
+  if(req.method==='GET'&&['/alerts','/clinical-alerts'].includes(req.path))return nursingHandler(()=>clinicalAlerts())(req,res);
+  const trend=req.path.match(/^\/(\d+)\/(trend|latest)$/);
+  if(req.method==='GET'&&trend)return nursingHandler(async r=>{await assertAdmission(trend[1]);return trend[2]==='latest'?getLatestVitals(Number(trend[1]),nursingContext().organizationId):getVitalsTrend(Number(trend[1]),nursingContext().organizationId,{hours:Number(r.query.hours)||24});})(req,res);
+  const alert=req.path.match(/^\/alerts\/(\d+)\/(acknowledge|resolve)$/);
+  if(req.method==='POST'&&alert)return nursingHandler(async()=>{if(alert[2]==='acknowledge')return acknowledgeNursingAlert(alert[1]);const [row]=await nursingQuery('SELECT admission_id FROM early_warning_alerts WHERE id=:id AND organization_id=:org',{replacements:{id:Number(alert[1]),org:nursingContext().organizationId},type:QueryTypes.SELECT});await assertAdmission(row?.admission_id);return resolveAlert(Number(alert[1]),nursingContext().organizationId);})(req,res);
+  return res.status(410).json({success:false,code:'USE_ADMISSION_NURSING_CHART',message:'Use the admission-linked nursing workspace.'});
+});
 
 // Clinical valid ranges — NEWS2 / NICE guidelines
 const VITAL_RANGES = {
@@ -39,7 +55,7 @@ function validateVitalRanges(body) {
 }
 
 // POST /api/v1/vitals
-router.post('/', authUser, auditHealthAccess('VITALS_WRITE', { resourceType: 'VitalSigns' }), async (req, res) => {
+router.post('/',  auditHealthAccess('VITALS_WRITE', { resourceType: 'VitalSigns' }), async (req, res) => {
   try {
     const rangeErrors = validateVitalRanges(req.body);
     if (rangeErrors.length) {
@@ -54,7 +70,7 @@ router.post('/', authUser, auditHealthAccess('VITALS_WRITE', { resourceType: 'Vi
 });
 
 // GET /api/v1/vitals/:admissionId/trend
-router.get('/:admissionId/trend', authUser, async (req, res) => {
+router.get('/:admissionId/trend',  async (req, res) => {
   try {
     const organizationId = resolveTenantId(req.user);
     const { hours } = req.query;
@@ -66,7 +82,7 @@ router.get('/:admissionId/trend', authUser, async (req, res) => {
 });
 
 // GET /api/v1/vitals/:admissionId/latest
-router.get('/:admissionId/latest', authUser, async (req, res) => {
+router.get('/:admissionId/latest',  async (req, res) => {
   try {
     const organizationId = resolveTenantId(req.user);
     const latest = await getLatestVitals(parseInt(req.params.admissionId), organizationId);
@@ -77,7 +93,7 @@ router.get('/:admissionId/latest', authUser, async (req, res) => {
 });
 
 // GET /api/v1/vitals/alerts
-router.get('/alerts', authUser, async (req, res) => {
+router.get('/alerts',  async (req, res) => {
   try {
     const organizationId = resolveTenantId(req.user);
     const { admissionId, wardId, severity } = req.query;
@@ -93,7 +109,7 @@ router.get('/alerts', authUser, async (req, res) => {
 });
 
 // POST /api/v1/vitals/alerts/:id/acknowledge
-router.post('/alerts/:id/acknowledge', authUser, async (req, res) => {
+router.post('/alerts/:id/acknowledge',  async (req, res) => {
   try {
     const organizationId = resolveTenantId(req.user);
     const result = await acknowledgeAlert(parseInt(req.params.id), organizationId, req.user.id);
@@ -104,7 +120,7 @@ router.post('/alerts/:id/acknowledge', authUser, async (req, res) => {
 });
 
 // POST /api/v1/vitals/alerts/:id/resolve
-router.post('/alerts/:id/resolve', authUser, async (req, res) => {
+router.post('/alerts/:id/resolve',  async (req, res) => {
   try {
     const organizationId = resolveTenantId(req.user);
     const result = await resolveAlert(parseInt(req.params.id), organizationId);
@@ -116,7 +132,7 @@ router.post('/alerts/:id/resolve', authUser, async (req, res) => {
 
 // GET /api/v1/vitals/clinical-alerts — document §8 Phase 2: unified clinical alert feed
 // Merges vitals EWS alerts + lab CDSS rule alerts into one feed
-router.get('/clinical-alerts', authUser, async (req, res) => {
+router.get('/clinical-alerts',  async (req, res) => {
   try {
     const organizationId = resolveTenantId(req.user);
     const { patientId, admissionId, severity, limit = 50 } = req.query;

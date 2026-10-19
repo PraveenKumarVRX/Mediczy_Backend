@@ -6,67 +6,10 @@
  *  - IPD task board (priority task list per ward/nurse)
  */
 
-import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { requireIndividualNurse, nursingQuery,nursingContext,assertAdmission,boundedNumber,clinicalError,nursingAudit,requireText } from './nursing-context.service.js';
 import { QueryTypes } from 'sequelize';
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS nursing_assessments (
-      id              BIGSERIAL PRIMARY KEY,
-      organization_id BIGINT,
-      admission_id    BIGINT NOT NULL,
-      patient_id      BIGINT,
-      assessment_type TEXT NOT NULL DEFAULT 'admission',  -- admission | shift | risk | discharge_education
-      assessed_by     TEXT,
-      fall_risk       TEXT,        -- low | medium | high
-      pressure_sore_risk TEXT,     -- low | medium | high (Braden)
-      infection_risk  TEXT,
-      pain_score      SMALLINT,
-      mobility_status TEXT,        -- independent | assisted | dependent | bedbound
-      nutrition_status TEXT,
-      cognitive_status TEXT,
-      iv_access       TEXT,
-      wound_status    TEXT,
-      drain_details   TEXT,
-      intake_ml       INTEGER,
-      output_ml       INTEGER,
-      allergies_confirmed BOOLEAN DEFAULT FALSE,
-      meds_reconciled     BOOLEAN DEFAULT FALSE,
-      patient_educated    BOOLEAN DEFAULT FALSE,
-      education_topics    JSONB DEFAULT '[]'::jsonb,
-      notes           TEXT,
-      assessment_data JSONB DEFAULT '{}'::jsonb,
-      assessed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_nursing_assessment_admission
-      ON nursing_assessments(admission_id, assessed_at DESC);
-
-    CREATE TABLE IF NOT EXISTS nursing_tasks (
-      id              BIGSERIAL PRIMARY KEY,
-      organization_id BIGINT,
-      admission_id    BIGINT NOT NULL,
-      patient_id      BIGINT,
-      ward_id         BIGINT,
-      task_type       TEXT NOT NULL,   -- vitals | medication | wound_care | assessment | education | other
-      title           TEXT NOT NULL,
-      description     TEXT,
-      priority        TEXT DEFAULT 'routine',  -- stat | urgent | routine
-      due_at          TIMESTAMPTZ,
-      assigned_to     TEXT,
-      status          TEXT DEFAULT 'pending',  -- pending | in_progress | completed | missed
-      completed_by    TEXT,
-      completed_at    TIMESTAMPTZ,
-      notes           TEXT,
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_nursing_tasks_admission ON nursing_tasks(admission_id);
-    CREATE INDEX IF NOT EXISTS idx_nursing_tasks_ward      ON nursing_tasks(ward_id, status, due_at);
-    CREATE INDEX IF NOT EXISTS idx_nursing_tasks_due       ON nursing_tasks(due_at, status);
-  `);
-}
-ensureTables().catch(e => console.warn('[nursing-ipd] table init:', e.message));
+// SCHEMA_NOT_MIGRATED is returned by the shared query adapter; schema is migration-owned.
 
 // ── Nursing assessments ───────────────────────────────────────────────────────
 
@@ -77,7 +20,13 @@ export async function createNursingAssessment({
   drainDetails, intakeMl, outputMl, allergiesConfirmed, medsReconciled,
   patientEducated, educationTopics, notes, assessmentData, assessedAt
 }) {
-  const [result] = await sequelize.query(
+    requireIndividualNurse();
+  const ctx=nursingContext();
+  const admission=await assertAdmission(admissionId,{active:true,patientId});
+  organizationId=ctx.organizationId;patientId=admission.patient_id;assessedBy=ctx.actorId;
+  if(!['admission','shift','risk','discharge_education'].includes(assessmentType)) throw clinicalError(422,'INVALID_ASSESSMENT','Invalid assessment type');
+  if(painScore!=null) boundedNumber(painScore,0,10,'Pain score');
+  const [result] = await nursingQuery(
     `INSERT INTO nursing_assessments (
        organization_id, admission_id, patient_id, assessment_type, assessed_by,
        fall_risk, pressure_sore_risk, infection_risk, pain_score, mobility_status,
@@ -112,9 +61,10 @@ export async function createNursingAssessment({
 }
 
 export async function getAdmissionAssessments(admissionId) {
-  return sequelize.query(
-    `SELECT * FROM nursing_assessments WHERE admission_id = :admId ORDER BY assessed_at DESC`,
-    { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
+  const ctx=nursingContext();await assertAdmission(admissionId);
+  return nursingQuery(
+    `SELECT * FROM nursing_assessments WHERE admission_id = :admId AND organization_id= :org ORDER BY assessed_at DESC`,
+    { replacements: { admId: admissionId, org:ctx.organizationId }, type: QueryTypes.SELECT }
   );
 }
 
@@ -122,18 +72,22 @@ export async function getAdmissionAssessments(admissionId) {
 
 export async function createNursingTask({
   organizationId, admissionId, patientId, wardId, taskType,
-  title, description, priority = 'routine', dueAt, assignedTo
+  title, description, priority = 'routine', dueAt, assignedTo, templateKey
 }) {
-  const [result] = await sequelize.query(
+  const ctx=nursingContext();const admission=await assertAdmission(admissionId,{active:true,patientId});
+  organizationId=ctx.organizationId;patientId=admission.patient_id;wardId=admission.current_ward_id;
+  requireText(title,'Task title',500);
+  if(!['stat','urgent','routine'].includes(priority)) throw clinicalError(422,'INVALID_PRIORITY','Invalid task priority');
+  const [result] = await nursingQuery(
     `INSERT INTO nursing_tasks (organization_id, admission_id, patient_id, ward_id,
-       task_type, title, description, priority, due_at, assigned_to)
-     VALUES (:orgId, :admId, :patientId, :wardId, :type, :title, :desc, :priority, :due, :assignedTo)
-     RETURNING *`,
+       task_type, title, description, priority, due_at, assigned_to, template_key)
+     VALUES (:orgId, :admId, :patientId, :wardId, :type, :title, :desc, :priority, :due, :assignedTo, :template)
+     ON CONFLICT (organization_id,admission_id,template_key) WHERE template_key IS NOT NULL DO NOTHING RETURNING *`,
     {
       replacements: {
         orgId: organizationId || null, admId: admissionId, patientId: patientId || null,
         wardId: wardId || null, type: taskType, title, desc: description || null,
-        priority, due: dueAt || null, assignedTo: assignedTo || null
+        priority, due: dueAt || null, assignedTo: assignedTo || null, template:templateKey||null
       },
       type: QueryTypes.INSERT
     }
@@ -141,36 +95,23 @@ export async function createNursingTask({
   return result[0];
 }
 
-export async function getNursingTaskBoard(organizationId, { wardId, assignedTo, status, windowHours = 4 } = {}) {
-  let where = 'organization_id = :orgId';
-  const replacements = { orgId: organizationId };
-
-  if (wardId)     { where += ' AND ward_id = :wardId';     replacements.wardId = wardId; }
-  if (assignedTo) { where += ' AND assigned_to = :nurse';  replacements.nurse = assignedTo; }
-
-  const statusFilter = status || 'pending';
-  where += ` AND status = :status AND (due_at IS NULL OR due_at <= NOW() + INTERVAL '${parseInt(windowHours)} hours')`;
-  replacements.status = statusFilter;
-
-  return sequelize.query(
-    `SELECT t.*, a.admission_number FROM nursing_tasks t
-     LEFT JOIN ip_admissions a ON a.id = t.admission_id
-     WHERE ${where}
-     ORDER BY
-       CASE priority WHEN 'stat' THEN 1 WHEN 'urgent' THEN 2 ELSE 3 END,
-       due_at ASC NULLS LAST`,
-    { replacements, type: QueryTypes.SELECT }
-  );
+export async function getNursingTaskBoard(organizationId,{admissionId,wardId,assignedTo,status,windowHours=24}={}) {
+  const ctx=nursingContext();if(admissionId) await assertAdmission(admissionId);
+  return nursingQuery(`SELECT t.*,t.due_at AS scheduled_at,a.admission_number FROM nursing_tasks t JOIN ip_admissions a ON a.id=t.admission_id AND a.organization_id=t.organization_id
+    WHERE t.organization_id= :org AND (:admission::bigint IS NULL OR t.admission_id= :admission) AND (:ward::bigint IS NULL OR t.ward_id= :ward)
+    AND (:nurse::text IS NULL OR t.assigned_to= :nurse) AND (:status ='all' OR t.status= :status)
+    AND (t.due_at IS NULL OR t.due_at<=NOW()+ :hours *INTERVAL '1 hour')
+    AND (:role !='nurse' OR EXISTS(SELECT 1 FROM nursing_assignments na WHERE na.organization_id= :org AND na.nurse_id= :actor AND na.ward_id=t.ward_id AND na.starts_at<=NOW() AND na.ends_at>NOW() AND na.revoked_at IS NULL))
+    ORDER BY CASE t.priority WHEN 'stat' THEN 1 WHEN 'urgent' THEN 2 ELSE 3 END,t.due_at NULLS LAST,t.id`,{replacements:{org:ctx.organizationId,admission:admissionId||null,ward:wardId||null,nurse:assignedTo||null,status:status||'all',hours:boundedNumber(windowHours,1,720,'Window hours'),role:ctx.role,actor:ctx.actorId},type:QueryTypes.SELECT});
 }
-
-export async function completeNursingTask(taskId, organizationId, { completedBy, notes } = {}) {
-  await sequelize.query(
-    `UPDATE nursing_tasks
-     SET status = 'completed', completed_by = :by, completed_at = NOW(), notes = :notes, updated_at = NOW()
-     WHERE id = :taskId AND organization_id = :orgId`,
-    { replacements: { taskId, orgId: organizationId, by: completedBy || null, notes: notes || null }, type: QueryTypes.UPDATE }
-  );
-  return { success: true };
+export async function completeNursingTask(taskId,organizationId,{notes,version}={}) {
+    requireIndividualNurse();
+  const ctx=nursingContext();const [task]=await nursingQuery('SELECT * FROM nursing_tasks WHERE id= :id AND organization_id= :org FOR UPDATE',{replacements:{id:taskId,org:ctx.organizationId},type:QueryTypes.SELECT});
+  if(!task) throw clinicalError(404,'TASK_NOT_FOUND','Task not found');await assertAdmission(task.admission_id,{active:true});
+  if(task.status==='completed') return task;
+  if(Number(version)!==task.version) throw clinicalError(409,'STALE_VERSION','The task changed; refresh first');
+  const [row]=await nursingQuery("UPDATE nursing_tasks SET status='completed',completed_by= :actor,completed_at=NOW(),notes= :notes,version=version+1,updated_at=NOW() WHERE id= :id RETURNING *",{replacements:{id:taskId,actor:String(ctx.actorId),notes:notes||null},type:QueryTypes.SELECT});
+  await nursingAudit('nursing.task.completed','nursing_task',taskId);return row;
 }
 
 export async function autoGenerateAdmissionTasks(admissionId, organizationId, { wardId, patientId } = {}) {
@@ -181,11 +122,12 @@ export async function autoGenerateAdmissionTasks(admissionId, organizationId, { 
     { taskType: 'wound_care', title: 'Inspect and document skin condition',  priority: 'routine', dueHours: 8 },
     { taskType: 'education',  title: 'Orientation — call bell, diet, activity restrictions', priority: 'routine', dueHours: 6 },
   ];
+  await assertAdmission(admissionId,{active:true});
   const created = [];
   for (const d of defaults) {
     const due = new Date(Date.now() + d.dueHours * 3600000);
-    const task = await createNursingTask({ organizationId, admissionId, patientId, wardId, taskType: d.taskType, title: d.title, priority: d.priority, dueAt: due });
-    created.push(task);
+    const task = await createNursingTask({ organizationId, admissionId, patientId, wardId, taskType: d.taskType, title: d.title, priority: d.priority, dueAt: due, templateKey:d.taskType });
+    if(task) created.push(task);
   }
   return created;
 }

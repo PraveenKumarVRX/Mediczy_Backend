@@ -1,0 +1,167 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Database metric alarms; no notification destinations are fabricated",
+  "Parameters": {
+    "DatabaseIdentifier": {
+      "Type": "String"
+    }
+  },
+  "Resources": {
+    "Cpu": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "${DatabaseIdentifier}-CPUUtilization"
+        },
+        "AlarmDescription": "Mediqzy database hardening; notification destinations must be assigned separately",
+        "Namespace": "AWS/RDS",
+        "MetricName": "CPUUtilization",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseIdentifier"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 85,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "missing"
+      }
+    },
+    "Connections": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "${DatabaseIdentifier}-DatabaseConnections"
+        },
+        "AlarmDescription": "Mediqzy database hardening; notification destinations must be assigned separately",
+        "Namespace": "AWS/RDS",
+        "MetricName": "DatabaseConnections",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseIdentifier"
+            }
+          }
+        ],
+        "Statistic": "Maximum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 300,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "missing"
+      }
+    },
+    "FreeStorage": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "${DatabaseIdentifier}-FreeStorageSpace"
+        },
+        "AlarmDescription": "Mediqzy database hardening; notification destinations must be assigned separately",
+        "Namespace": "AWS/RDS",
+        "MetricName": "FreeStorageSpace",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseIdentifier"
+            }
+          }
+        ],
+        "Statistic": "Minimum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 10737418240,
+        "ComparisonOperator": "LessThanThreshold",
+        "TreatMissingData": "missing"
+      }
+    },
+    "FreeMemory": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "${DatabaseIdentifier}-FreeableMemory"
+        },
+        "AlarmDescription": "Mediqzy database hardening; notification destinations must be assigned separately",
+        "Namespace": "AWS/RDS",
+        "MetricName": "FreeableMemory",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseIdentifier"
+            }
+          }
+        ],
+        "Statistic": "Minimum",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 268435456,
+        "ComparisonOperator": "LessThanThreshold",
+        "TreatMissingData": "missing"
+      }
+    },
+    "ReadLatency": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "${DatabaseIdentifier}-ReadLatency"
+        },
+        "AlarmDescription": "Mediqzy database hardening; notification destinations must be assigned separately",
+        "Namespace": "AWS/RDS",
+        "MetricName": "ReadLatency",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseIdentifier"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 0.05,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "missing"
+      }
+    },
+    "WriteLatency": {
+      "Type": "AWS::CloudWatch::Alarm",
+      "Properties": {
+        "AlarmName": {
+          "Fn::Sub": "${DatabaseIdentifier}-WriteLatency"
+        },
+        "AlarmDescription": "Mediqzy database hardening; notification destinations must be assigned separately",
+        "Namespace": "AWS/RDS",
+        "MetricName": "WriteLatency",
+        "Dimensions": [
+          {
+            "Name": "DBInstanceIdentifier",
+            "Value": {
+              "Ref": "DatabaseIdentifier"
+            }
+          }
+        ],
+        "Statistic": "Average",
+        "Period": 60,
+        "EvaluationPeriods": 3,
+        "DatapointsToAlarm": 3,
+        "Threshold": 0.05,
+        "ComparisonOperator": "GreaterThanThreshold",
+        "TreatMissingData": "missing"
+      }
+    }
+  }
+}

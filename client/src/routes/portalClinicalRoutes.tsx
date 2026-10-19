@@ -128,7 +128,7 @@ export function portalClinicalRoutes(portal: ClinicalPortal, pages: PortalClinic
   const defs = routeDefs(pages);
 
   return (Object.keys(defs) as RouteKey[])
-    .filter((key) => portal === "hospital" || !HOSPITAL_ONLY.includes(key))
+    .filter((key) => portal === "hospital" || (portal === "nurse" && ["emar", "admissionEchart", "echart", "admissionNursingTasks"].includes(key)) || !HOSPITAL_ONLY.includes(key))
     .map((key) => {
       const { path, el: Element } = defs[key];
       return <Route key={`${portal}-${path}`} path={`${prefix}/${path}`} element={<Element />} />;

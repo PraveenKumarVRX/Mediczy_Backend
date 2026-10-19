@@ -97,12 +97,14 @@ const CorporateSettings: React.FC = () => {
   // Controlled billing/integration
   const [billing, setBilling] = useState({ billingEmail: seedEmail, billingCycle: 'annual' });
   const [integrations, setIntegrations] = useState({ hrms: false, insuranceApi: false, telemedicine: false, wearables: false, calendar: false });
+  const [planInfo, setPlanInfo] = useState<{ linkedPlan: boolean; planName?: string; maxEmployees?: number | null } | null>(null);
 
   const loadSettings = async () => {
     try {
-      const [{ data }, eligRes] = await Promise.all([
+      const [{ data }, eligRes, benefitsRes] = await Promise.all([
         api.get('/corporate/settings'),
         api.get('/corporate/settings/data').catch(() => ({ data: null })),
+        api.get('/corporate/my-benefits').catch(() => ({ data: null })),
       ]);
       const saved = (data as any)?.data?.settings || {};
       if (saved.general) setGeneral((prev) => ({ ...prev, ...saved.general }));
@@ -112,6 +114,12 @@ const CorporateSettings: React.FC = () => {
       if (saved.integrations) setIntegrations((prev) => ({ ...prev, ...saved.integrations }));
       const savedElig = (eligRes.data as any)?.data?.settings?.eligibility;
       if (savedElig) setEligibility((prev) => ({ ...prev, ...savedElig }));
+      const benefitsData = (benefitsRes?.data as any)?.data;
+      setPlanInfo({
+        linkedPlan: Boolean(benefitsData?.linkedPlan),
+        planName: benefitsData?.plan?.planName,
+        maxEmployees: benefitsData?.enrollment?.total ?? null,
+      });
     } catch (error: any) {
       toast({
         title: 'Failed to load settings',
@@ -585,10 +593,14 @@ const CorporateSettings: React.FC = () => {
                 <Label>Current Plan</Label>
                 <div className="flex items-center justify-between p-4 bg-slate-800/40 rounded-lg">
                   <div>
-                    <p className="font-semibold">Enterprise Plan</p>
-                    <p className="text-sm text-slate-400">Up to 500 employees</p>
+                    <p className="font-semibold">{planInfo?.linkedPlan ? (planInfo.planName || 'Corporate Plan') : 'No plan configured'}</p>
+                    <p className="text-sm text-slate-400">
+                      {planInfo?.linkedPlan
+                        ? (planInfo.maxEmployees ? `Up to ${planInfo.maxEmployees} employees` : 'Employee cap not set')
+                        : 'Contact Mediqzy to set up a subscription plan'}
+                    </p>
                   </div>
-                  <Button variant="outline">Upgrade Plan</Button>
+                  <Button variant="outline">{planInfo?.linkedPlan ? 'Upgrade Plan' : 'Contact Sales'}</Button>
                 </div>
               </div>
               <div className="grid gap-2">
@@ -601,11 +613,11 @@ const CorporateSettings: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <CreditCard className="h-5 w-5 text-slate-400" />
                     <div>
-                      <p className="font-semibold">Visa ending in 4242</p>
-                      <p className="text-sm text-slate-400">Expires 12/2025</p>
+                      <p className="font-semibold">Not configured</p>
+                      <p className="text-sm text-slate-400">No payment method on file</p>
                     </div>
                   </div>
-                  <Button variant="outline">Update</Button>
+                  <Button variant="outline">Add</Button>
                 </div>
               </div>
               <div className="grid gap-2">

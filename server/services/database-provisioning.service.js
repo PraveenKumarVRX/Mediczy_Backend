@@ -1,3 +1,4 @@
+import { postgresTls } from '../db/postgres-tls.js';
 /**
  * Database Provisioning Service
  * Handles automatic database creation for Professional and Enterprise tenants
@@ -36,7 +37,8 @@ const getAdminClient = () => {
     port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
     database: 'postgres', // Connect to default postgres DB for admin operations
     user: process.env.POSTGRES_USER || 'mediczy_ai',
-    password: process.env.POSTGRES_PASSWORD || 'change_me'
+    password: process.env.POSTGRES_PASSWORD || 'change_me',
+    ssl: postgresTls()
   });
 };
 
@@ -225,6 +227,7 @@ async function runMigrations(dbName) {
     username: process.env.POSTGRES_USER || 'mediczy_ai',
     password: process.env.POSTGRES_PASSWORD || 'change_me',
     dialect: 'postgres',
+    dialectOptions: { ssl: postgresTls() },
     logging: false
   });
   
@@ -446,6 +449,7 @@ async function seedTenantDatabase(dbName, tenant) {
     username: process.env.POSTGRES_USER || 'mediczy_ai',
     password: process.env.POSTGRES_PASSWORD || 'change_me',
     dialect: 'postgres',
+    dialectOptions: { ssl: postgresTls() },
     logging: false
   });
   
@@ -558,6 +562,7 @@ export function getTenantConnection(tenant) {
       username: process.env.POSTGRES_USER || 'mediczy_ai',
       password: process.env.POSTGRES_PASSWORD || 'change_me',
       dialect: 'postgres',
+    dialectOptions: { ssl: postgresTls() },
       logging: false,
       pool: {
         max: tier.dedicated_server ? 20 : 5,

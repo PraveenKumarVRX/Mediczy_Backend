@@ -19,7 +19,11 @@ const REQUIRED_TABLES = [
   'patient_consents',
   'patient_consent_history',
   'anonymous_patients',
-  'audit_logs'
+  'audit_logs',
+  'nursing_flowsheet_entries', 'nursing_assessments', 'nursing_tasks',
+  'nursing_assignments', 'nursing_facility_settings', 'nursing_audit_events',
+  'nursing_replays', 'nursing_outbox', 'nursing_handovers', 'nursing_images',
+  'nursing_interventions', 'nursing_care_goals', 'nursing_goal_evaluations', 'nursing_notifications','nursing_staff_links','nursing_infusion_events','nursing_device_observations','nursing_device_bindings'
 ];
 
 function dbConfig() {
@@ -67,7 +71,7 @@ async function main() {
       policyReport.push({ table, policyCount: rows[0].policy_count });
     }
 
-    const failures = [];
+    const failures = missingTables.map(table => `${table}: required table missing`);
 
     for (const [table, meta] of existing.entries()) {
       if (!meta.rls_enabled) failures.push(`${table}: RLS disabled`);

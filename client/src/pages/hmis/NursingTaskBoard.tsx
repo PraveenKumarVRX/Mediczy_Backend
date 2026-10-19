@@ -20,6 +20,7 @@ interface NursingTask {
   completed_at?: string;
   completed_by?: string;
   notes?: string;
+  version: number;
 }
 
 const TASK_ICON: Record<string, React.ElementType> = {
@@ -86,7 +87,7 @@ export default function NursingTaskBoard() {
   const completeTask = async (taskId: number) => {
     setCompleting(taskId);
     try {
-      await api.put(`/v1/nursing/tasks/${taskId}/complete`, { notes: '' });
+      await api.put(`/v1/nursing/tasks/${taskId}/complete`, { notes: '', version: tasks.find(t => t.id === taskId)?.version });
       setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: 'completed' } : t));
     } catch (e: any) {
       setError(e?.response?.data?.message ?? 'Could not complete task');

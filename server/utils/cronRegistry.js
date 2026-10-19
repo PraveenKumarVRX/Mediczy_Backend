@@ -22,6 +22,7 @@ export const TASK_DEFINITIONS = [
   // Appointments
   { key: 'appt_autocancel',       name: 'Appointment Auto-Cancel',               schedule: 'Daily midnight',   category: 'appointment', scheduleDesc: '0 0 * * *' },
   { key: 'appt_morning_cleanup',  name: 'Appointment Morning Cleanup',           schedule: 'Daily 6 AM',       category: 'appointment', scheduleDesc: '0 6 * * *' },
+  { key: 'corp_appt_autocancel',  name: 'Corporate Appointment Auto-No-Show',    schedule: 'Daily midnight',   category: 'appointment', scheduleDesc: '0 0 * * *' },
   { key: 'appt_reminder',         name: 'Appointment Reminders (24h/2h/15min)',  schedule: 'Every 30 min',     category: 'appointment', scheduleDesc: '*/30 * * * *' },
   { key: 'appt_notification',     name: 'Upcoming Appointment Notifications',    schedule: 'Every 1 min',      category: 'appointment', scheduleDesc: '* * * * *' },
   { key: 'followup_automation',   name: 'Follow-Up Appointment Automation',      schedule: 'Daily 10 AM',      category: 'appointment', scheduleDesc: '0 10 * * *' },

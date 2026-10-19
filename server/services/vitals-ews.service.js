@@ -7,6 +7,8 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { currentNursingContext } from './nursing-context.service.js';
+const query = (sql, options) => sequelize.query(sql, { ...options, ...(currentNursingContext() ? { transaction: currentNursingContext().transaction } : {}) });
 import { computeNews2 } from './news2.service.js';
 
 // ── NEWS2 (WP-1.8) ──────────────────────────────────────────────────────────
@@ -50,6 +52,7 @@ export async function saveVitals({
   patientId,
   recordedBy,
   source = 'manual',
+  recordedAt,
   deviceId,
   temperature,
   pulse,
@@ -76,7 +79,7 @@ export async function saveVitals({
 }) {
   let scale = spo2Scale;
   if (scale == null && admissionId) {
-    const [adm] = await sequelize.query(
+    const [adm] = await query(
       `SELECT spo2_target_scale FROM ip_admissions WHERE id = :admId AND organization_id = :orgId`,
       { replacements: { admId: admissionId, orgId: organizationId }, type: QueryTypes.SELECT }
     ).catch(() => [null]);
@@ -91,7 +94,7 @@ export async function saveVitals({
   const news2 = result2.score;
   const si = shockIndex(pulse, bpSystolic);
 
-  const [result] = await sequelize.query(
+  const [result] = await query(
     `INSERT INTO vital_records (
       organization_id, admission_id, patient_id, recorded_by, recorded_at, source, device_id,
       temperature, pulse, bp_systolic, bp_diastolic, spo2, respiratory_rate,
@@ -99,7 +102,7 @@ export async function saveVitals({
       fio2, peep, tidal_volume, news2_score, shock_index, notes,
       oxygen_supplemental, consciousness, spo2_scale, news2_complete, news2_provisional, news2_band
     ) VALUES (
-      :orgId, :admId, :patientId, :recordedBy, NOW(), :source, :deviceId,
+      :orgId, :admId, :patientId, :recordedBy, :recordedAt, :source, :deviceId,
       :temp, :pulse, :sbp, :dbp, :spo2, :rr,
       :gcs, :pain, :urine, :glucose, :weight,
       :fio2, :peep, :tv, :news2, :si, :notes,
@@ -107,12 +110,12 @@ export async function saveVitals({
     ) RETURNING *`,
     {
       replacements: {
-        orgId: organizationId, admId: admissionId || null, patientId, recordedBy: recordedBy || null,
-        source, deviceId: deviceId || null, temp: temperature || null, pulse: pulse || null,
-        sbp: bpSystolic || null, dbp: bpDiastolic || null, spo2: spo2 || null, rr: respiratoryRate || null,
-        gcs: gcsScore || null, pain: painScore || null, urine: urineOutputMl || null,
-        glucose: bloodGlucose || null, weight: weightKg || null,
-        fio2: fio2 || null, peep: peep || null, tv: tidalVolume || null,
+        orgId: organizationId, admId: admissionId || null, patientId, recordedBy: recordedBy || null, recordedAt: recordedAt || new Date(),
+        source, deviceId: deviceId || null, temp: temperature ?? null, pulse: pulse ?? null,
+        sbp: bpSystolic ?? null, dbp: bpDiastolic ?? null, spo2: spo2 ?? null, rr: respiratoryRate ?? null,
+        gcs: gcsScore ?? null, pain: painScore ?? null, urine: urineOutputMl ?? null,
+        glucose: bloodGlucose ?? null, weight: weightKg ?? null,
+        fio2: fio2 ?? null, peep: peep ?? null, tv: tidalVolume ?? null,
         news2, si, notes: notes || null,
         onOxygen: Boolean(onOxygen), consciousness: consciousness || null, scale,
         complete: result2.complete, provisional: result2.provisional, band: result2.band
@@ -143,7 +146,7 @@ async function triggerAlert(organizationId, admissionId, patientId, vitalRecordI
   if (!severity) return;
 
   // Avoid duplicate alerts within last 30 minutes
-  const [recent] = await sequelize.query(
+  const [recent] = await query(
     `SELECT id FROM early_warning_alerts
      WHERE admission_id = :admId AND resolved = false AND triggered_at > NOW() - INTERVAL '30 minutes'
      LIMIT 1`,
@@ -165,7 +168,7 @@ async function triggerAlert(organizationId, admissionId, patientId, vitalRecordI
 }
 
 async function createAlert(organizationId, admissionId, patientId, vitalRecordId, alertType, severity, news2, message) {
-  await sequelize.query(
+  await query(
     `INSERT INTO early_warning_alerts (organization_id, admission_id, vital_record_id, patient_id, alert_type, severity, news2_score, alert_message, triggered_at)
      VALUES (:orgId, :admId, :vitalId, :patientId, :type, :severity, :news2, :message, NOW())`,
     {
@@ -179,7 +182,7 @@ async function createAlert(organizationId, admissionId, patientId, vitalRecordId
 }
 
 export async function getVitalsTrend(admissionId, organizationId, { hours = 24 } = {}) {
-  return sequelize.query(
+  return query(
     `SELECT * FROM vital_records
      WHERE admission_id = :admId AND organization_id = :orgId
        AND recorded_at >= NOW() - INTERVAL '${parseInt(hours)} hours'
@@ -199,7 +202,7 @@ export async function getActiveAlerts(organizationId, { admissionId, wardId, sev
     replacements.wardId = wardId;
   }
 
-  return sequelize.query(
+  return query(
     `SELECT a.*, adm.admission_number, b.bed_number, w.name as ward_name
      FROM early_warning_alerts a
      LEFT JOIN ip_admissions adm ON adm.id = a.admission_id
@@ -212,7 +215,7 @@ export async function getActiveAlerts(organizationId, { admissionId, wardId, sev
 }
 
 export async function acknowledgeAlert(alertId, organizationId, acknowledgedBy) {
-  await sequelize.query(
+  await query(
     `UPDATE early_warning_alerts SET acknowledged_by = :by, acknowledged_at = NOW() WHERE id = :alertId AND organization_id = :orgId`,
     { replacements: { by: acknowledgedBy, alertId, orgId: organizationId }, type: QueryTypes.UPDATE }
   );
@@ -220,7 +223,7 @@ export async function acknowledgeAlert(alertId, organizationId, acknowledgedBy) 
 }
 
 export async function resolveAlert(alertId, organizationId) {
-  await sequelize.query(
+  await query(
     `UPDATE early_warning_alerts SET resolved = true WHERE id = :alertId AND organization_id = :orgId`,
     { replacements: { alertId, orgId: organizationId }, type: QueryTypes.UPDATE }
   );
@@ -228,7 +231,7 @@ export async function resolveAlert(alertId, organizationId) {
 }
 
 export async function getLatestVitals(admissionId, organizationId) {
-  const [latest] = await sequelize.query(
+  const [latest] = await query(
     `SELECT * FROM vital_records WHERE admission_id = :admId AND organization_id = :orgId ORDER BY recorded_at DESC LIMIT 1`,
     { replacements: { admId: admissionId, orgId: organizationId }, type: QueryTypes.SELECT }
   );

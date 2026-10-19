@@ -49,6 +49,8 @@ const Nurse = sequelize.define('Nurse', {
     type: DataTypes.STRING(100),
     allowNull: true
   },
+  tenantId: { type: DataTypes.INTEGER, allowNull: true, field: 'tenant_id' },
+  metadata: { type: DataTypes.JSONB, allowNull: true },
   // PostgreSQL uses 'status' instead of 'isActive'
   status: {
     type: DataTypes.STRING(50),

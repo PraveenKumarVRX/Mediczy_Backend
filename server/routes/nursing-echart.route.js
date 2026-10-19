@@ -1,66 +1,15 @@
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
-import {
-  recordEntry, getFlowsheet, getLatestVitals, getIOSummary, getVitalsTrend
-} from '../services/nursing-echart.service.js';
-import { resolveTenantId } from '../utils/tenant-identity.js';
-
+import { recordEntry, getFlowsheet, getLatestVitals, getIOSummary, getVitalsTrend, updateNursingDraft, signNursingEntry, amendNursingEntry } from '../services/nursing-echart.service.js';
+import { nursingHandler } from './nursing-http.js';
 const router = express.Router();
-
-// POST /api/v1/echart/entry
-router.post('/entry', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const result = await recordEntry({ ...req.body, organizationId, recordedBy: req.user.id });
-    res.status(201).json({ success: true, data: result });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// GET /api/v1/echart/flowsheet/:admissionId
-router.get('/flowsheet/:admissionId', authUser, async (req, res) => {
-  try {
-    const { entryType, from, to, limit } = req.query;
-    const rows = await getFlowsheet(parseInt(req.params.admissionId), {
-      entryType, from, to, limit: limit ? parseInt(limit) : 100
-    });
-    res.json({ success: true, data: rows });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// GET /api/v1/echart/vitals/:admissionId/latest
-router.get('/vitals/:admissionId/latest', authUser, async (req, res) => {
-  try {
-    const row = await getLatestVitals(parseInt(req.params.admissionId));
-    res.json({ success: true, data: row });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// GET /api/v1/echart/vitals/:admissionId/trend
-router.get('/vitals/:admissionId/trend', authUser, async (req, res) => {
-  try {
-    const hours = req.query.hours ? parseInt(req.query.hours) : 24;
-    const rows = await getVitalsTrend(parseInt(req.params.admissionId), hours);
-    res.json({ success: true, data: rows });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// GET /api/v1/echart/io/:admissionId
-router.get('/io/:admissionId', authUser, async (req, res) => {
-  try {
-    const days = req.query.days ? parseInt(req.query.days) : 3;
-    const rows = await getIOSummary(parseInt(req.params.admissionId), days);
-    res.json({ success: true, data: rows });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
+router.use(authUser);
+router.post('/entry', nursingHandler(req => recordEntry({ ...req.body, amendsId: null, amendmentReason: null, idempotencyKey: req.get('Idempotency-Key') }), 201));
+router.get('/flowsheet/:admissionId', nursingHandler(req => getFlowsheet(req.params.admissionId, req.query)));
+router.get('/vitals/:admissionId/latest', nursingHandler(req => getLatestVitals(req.params.admissionId)));
+router.get('/vitals/:admissionId/trend', nursingHandler(req => getVitalsTrend(req.params.admissionId, req.query.hours || 24)));
+router.get('/io/:admissionId', nursingHandler(req => getIOSummary(req.params.admissionId, req.query.days || 3)));
+router.patch('/entries/:id', nursingHandler(req => updateNursingDraft(req.params.id, req.body)));
+router.post('/entries/:id/sign', nursingHandler(req => signNursingEntry(req.params.id, req.body)));
+router.post('/entries/:id/amendments', nursingHandler(req => amendNursingEntry(req.params.id, { ...req.body, idempotencyKey: req.get('Idempotency-Key') }), 201));
 export default router;

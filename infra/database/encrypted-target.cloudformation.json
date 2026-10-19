@@ -1,0 +1,22 @@
+{
+ "AWSTemplateFormatVersion":"2010-09-09",
+ "Description":"Private encrypted Multi-AZ replacement; traffic is never switched by this stack",
+ "Parameters":{
+  "EncryptedSnapshot":{"Type":"String"},"ParameterGroup":{"Type":"String"},
+  "DatabaseKeyArn":{"Type":"String"},"SubnetGroup":{"Type":"String","Default":"default"},
+  "SecurityGroup":{"Type":"AWS::EC2::SecurityGroup::Id"}
+ },
+ "Resources":{
+  "EncryptedDatabase":{"Type":"AWS::RDS::DBInstance","DeletionPolicy":"Retain","UpdateReplacePolicy":"Retain","Properties":{
+   "DBInstanceIdentifier":"mediczy-prod-encrypted-20261019","DBInstanceClass":"db.t4g.medium",
+   "DBSnapshotIdentifier":{"Ref":"EncryptedSnapshot"},"DBParameterGroupName":{"Ref":"ParameterGroup"},
+   "DBSubnetGroupName":{"Ref":"SubnetGroup"},"VPCSecurityGroups":[{"Ref":"SecurityGroup"}],
+   "MultiAZ":true,"PubliclyAccessible":false,"DeletionProtection":true,
+   "StorageType":"gp3","MaxAllocatedStorage":200,"BackupRetentionPeriod":30,
+   "AutoMinorVersionUpgrade":true,"CopyTagsToSnapshot":true,"ManageMasterUserPassword":true,
+   "MasterUserSecret":{"KmsKeyId":{"Ref":"DatabaseKeyArn"}},
+   "Tags":[{"Key":"Application","Value":"Mediqzy"},{"Key":"Purpose","Value":"encrypted-cutover-target"},{"Key":"Traffic","Value":"not-routed"}]
+  }}
+ },
+ "Outputs":{"DatabaseEndpoint":{"Value":{"Fn::GetAtt":["EncryptedDatabase","Endpoint.Address"]}},"DatabaseIdentifier":{"Value":{"Ref":"EncryptedDatabase"}}}
+}

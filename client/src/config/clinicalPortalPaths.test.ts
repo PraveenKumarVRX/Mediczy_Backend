@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildClinicalPaths } from "./clinicalPortalPaths";
 
-// portalClinicalRoutes.tsx mounts HOSPITAL_ONLY routes under /hospital/* only.
+// Nurse bedside routes follow the nurse session; other operational screens remain hospital-only.
 describe("buildClinicalPaths", () => {
   it.each(["doctor", "nurse", "assistant", "hospital"] as const)(
     "points hospital-only screens at /hospital for the %s portal",
@@ -9,8 +9,8 @@ describe("buildClinicalPaths", () => {
       const p = buildClinicalPaths(portal);
       expect(p.commandCenter).toBe("/hospital/command-center");
       expect(p.bedsMap).toBe("/hospital/beds/map");
-      expect(p.emar).toBe("/hospital/emar");
-      expect(p.echart).toBe("/hospital/echart");
+      expect(p.emar).toBe(portal === "nurse" ? "/nurse/emar" : "/hospital/emar");
+      expect(p.echart).toBe(portal === "nurse" ? "/nurse/echart" : "/hospital/echart");
       expect(p.aiOps).toBe("/hospital/ai-ops");
     }
   );

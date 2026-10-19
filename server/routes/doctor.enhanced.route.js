@@ -274,6 +274,7 @@ router.get('/available', [
 
     const strictQcLiteral = `(
       ${onlineCapabilityLiteral}
+      OR ${hasAddressLiteral}
       OR (
         COALESCE(
           NULLIF("clinicAddress_json"->>'city', ''),

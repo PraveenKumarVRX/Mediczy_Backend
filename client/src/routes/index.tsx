@@ -351,6 +351,9 @@ const TeamActivityLogsPage       = lazyNamed(_TeamModulePages, "TeamActivityLogs
 
 // ─── Nurse ───────────────────────────────────────────────────────────────────
 const NurseLogin           = lazy(() => import("@/pages/nurse/NurseLogin"));
+const NurseClinicalWorkspace = lazy(() => import("@/pages/nurse/NurseClinicalWorkspace"));
+const PharmacyNursingReconciliation = lazy(() => import("@/pages/nurse/PharmacyNursingReconciliation"));
+const NursingAdministration = lazy(() => import("@/pages/nurse/NursingAdministration"));
 const NurseDashboard       = lazy(() => import("@/pages/nurse/NurseDashboard"));
 const NurseRegisterPatient = lazy(() => import("@/pages/nurse/NurseRegisterPatient"));
 const NursePatients        = lazy(() => import("@/pages/nurse/NursePatients"));
@@ -575,6 +578,7 @@ const CorporateClaims               = lazy(() => import("@/pages/corporate/Corpo
 const CorporateFitnessCertificates  = lazy(() => import("@/pages/corporate/CorporateFitnessCertificates"));
 const CorporateReports              = lazy(() => import("@/pages/corporate/CorporateReports"));
 const CorporateComplaints           = lazy(() => import("@/pages/corporate/CorporateComplaints"));
+const CorporateDoctorPartners       = lazy(() => import("@/pages/corporate/CorporateDoctorPartners"));
 const CorporateSettings             = lazy(() => import("@/pages/corporate/CorporateSettings"));
 const CorporateHelp                 = lazy(() => import("@/pages/corporate/CorporateHelp"));
 const CorporateHealthRiskAssessment = lazy(() => import("@/pages/corporate/CorporateHealthRiskAssessment"));
@@ -1346,12 +1350,16 @@ const AppRoutes = () => {
         <Route path="/homecare/support"       element={<HomecareSupportPage />} />
 
         {/* ── Nurse ───────────────────────────────────────────────────── */}
+        <Route path="/pharmacy/nursing-consumption" element={<PharmacyNursingReconciliation />} />
+        <Route path="/nurse/ward" element={<MainLayout><NurseClinicalWorkspace /></MainLayout>} />
+        <Route path="/hospital/nursing" element={<NurseClinicalWorkspace />} />
+        <Route path="/hospital/nursing/administration" element={<NursingAdministration />} />
         <Route path="/nurse/login"             element={<NurseLogin />} />
-        <Route path="/nurse/dashboard"         element={<MainLayout><NurseDashboard /></MainLayout>} />
-        <Route path="/nurse/patients"          element={<MainLayout><NursePatients /></MainLayout>} />
-        <Route path="/nurse/vitals"            element={<MainLayout><NurseVitals /></MainLayout>} />
-        <Route path="/nurse/medications"       element={<MainLayout><NurseMedications /></MainLayout>} />
-        <Route path="/nurse/notes"             element={<MainLayout><NurseNotes /></MainLayout>} />
+        <Route path="/nurse/dashboard"         element={<MainLayout><NurseClinicalWorkspace /></MainLayout>} />
+        <Route path="/nurse/patients"          element={<MainLayout><NurseClinicalWorkspace /></MainLayout>} />
+        <Route path="/nurse/vitals"            element={<MainLayout><NurseClinicalWorkspace /></MainLayout>} />
+        <Route path="/nurse/medications"       element={<Navigate to="/nurse/emar" replace />} />
+        <Route path="/nurse/notes"             element={<MainLayout><NurseClinicalWorkspace /></MainLayout>} />
         <Route path="/nurse/appointments"      element={<MainLayout><NurseAppointments /></MainLayout>} />
         <Route path="/nurse/register-patient"   element={<MainLayout><NurseRegisterPatient /></MainLayout>} />
         <Route path="/nurse/chat"               element={<NurseChat />} />
@@ -1639,6 +1647,7 @@ const AppRoutes = () => {
         <Route path="/ohc"                               element={<OhcWorkspace />} />
         <Route path="/corporate/reports"                 element={<CorporateReports />} />
         <Route path="/corporate/complaints"              element={<CorporateComplaints />} />
+        <Route path="/corporate/doctor-partners"         element={<CorporateDoctorPartners />} />
         <Route path="/corporate/compliance"              element={<CorporateCompliance />} />
         <Route path="/corporate/notifications"           element={<CorporateNotifications />} />
         <Route path="/corporate/annual-health-checkup"   element={<CorporateAnnualHealthCheckup />} />

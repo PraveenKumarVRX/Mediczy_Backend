@@ -85,7 +85,7 @@ export default function HospitalNurseStation() {
         <div className="flex flex-wrap gap-2">
           {[
             { label: 'Record Vitals', path: '/hospital/vitals/record' },
-            { label: 'Nursing Tasks', path: '/hospital/admission/1/nursing-tasks' },
+            { label: 'Nursing Tasks', path: '/hospital/nursing' },
             { label: 'e-Charting', path: '/hospital/echart' },
             { label: 'Ward Dashboard', path: '/hospital/ward' },
           ].map(a => (

@@ -2,6 +2,8 @@
 
 Status date: 2026-09-25
 
+Nursing deployment update: 2026-10-19. See section 11.3 for the explicitly authorized live demo rollout; other workstream statuses below retain their original evidence dates.
+
 This is the consolidated implementation plan for audit remediation and the MediQzy v2 roadmap. It
 merges the active planning/status material from:
 
@@ -1393,6 +1395,25 @@ Every production deployment should follow this sequence:
 
 Note: `scripts/deploy/deploy-full-prod-s3.sh` previously reverted to `HEAD` on failure, which is
 already the new code by the time anything can fail. It now reverts to `.deploy/current-live-sha`.
+
+### 11.3 Nursing production exception and demo onboarding — 19 October 2026
+
+The user explicitly requested live deployment because staging does not exist, then selected the existing demo hospital. This authorization applies to the nursing release; it does not mark the wider plan or its external acceptance gates complete.
+
+- **Deployed and technically verified:** snapshot-backed nursing migration, 18 forced-RLS nursing tables, an isolated PM2 backend release, private KMS image storage, frontend/S3 publication and public health/access checks.
+- **Demo configured:** Smart Hospital account `4`, canonical tenant `11`, dedicated Nursing Simulation Ward, one synthetic admission and two simulation-only nurse accounts with bounded shifts. Ordinary admission access is denied. Existing hospital credentials were preserved.
+- **Evidence:** 130 focused backend tests, 34 disposable database scenarios, 10 real demo API checks, 4 real tablet checks, private-image application checks and hospital supervisor login/directory verification. Real authenticated checks also fixed nurse login tenant mapping, global route permissions and multipart parser ownership.
+- **Still gated:** named clinical acceptance, qualified prescribing identities, actual scanner/device workflows, pharmacy reconciliation, retention approval and ward pilot. Clinical ownership hardening has since been applied to 23 tables; remaining legacy ownership and the encrypted RDS cutover are tracked in section 11.4. No real professional qualification, prescribing privilege or signed patient consent was manufactured for the demo.
+
+Current release, access and rollback details: [Nursing production release](deployment/NURSING_PRODUCTION_RELEASE_2026-10-19.md). Machine-readable evidence: [Production verification](testing/NURSING_PRODUCTION_VERIFICATION_2026-10-19.json). Human sign-off: [Clinical acceptance record](testing/NURSING_CLINICAL_ACCEPTANCE_2026-10-19.json).
+
+### 11.4 Database hardening — 19 October 2026
+
+The user subsequently requested database hardening. Clinical table ownership is now separated from the ordinary runtime for 23 nursing/medication/pharmacy/wound tables; immutable trigger functions are protected, PUBLIC schema CREATE is revoked, elevated helpers use invoker privileges, and verified TLS is deployed in backend release `nursing-20261019-06`. Administrator credentials are RDS-managed and the old password is rejected. Historical local backup permissions have been restricted; the canonical nightly job now encrypts a full snapshot-consistent archive and uploads it to private, versioned KMS storage. The duplicate root schedule was removed.
+
+Validation: 8 TLS/secret-policy tests, 130 nursing tests, 36 disposable database scenarios, real populated RLS/privilege probes, Python SIB TLS verification and the real synthetic nursing API walkthrough. An encrypted recovery snapshot exists and an isolated Multi-AZ replacement is provisioning. **Provisioning is not a traffic cutover.** Current operational status and any completed cutover are recorded in [Database hardening](deployment/DATABASE_HARDENING_2026-10-19.md) and its machine evidence; the [cutover runbook](deployment/RDS_ENCRYPTED_CUTOVER_RUNBOOK.md) requires a tested full restore and fenced final copy.
+
+This does not close the full database remediation program. Legacy request-time DDL/runtime ownership, administrator IAM/process separation, on-call alarm destinations and historical snapshot retention remain explicit work. Clinical sign-off remains independent.
 
 ## 12. Documentation maintenance rules
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,8 @@ import {
   Droplets, ClipboardList, Save, Plus, TrendingUp
 } from 'lucide-react';
 import api from '@/utils/api';
+import { nursingWrite } from '@/services/nursing.service';
+import { getClinicalPortal } from '@/config/clinicalPortalPaths';
 
 interface FlowsheetEntry {
   id: number;
@@ -41,7 +43,7 @@ interface IOSummary {
 const TABS = ['vitals', 'io', 'observations', 'assessments'] as const;
 type Tab = typeof TABS[number];
 
-export default function EChartingPage() {
+function EChartingView() {
   const { admissionId: admissionParam } = useParams<{ admissionId: string }>();
   const navigate = useNavigate();
   const [pickedAdmission, setPickedAdmission] = useState('');
@@ -109,7 +111,7 @@ export default function EChartingPage() {
         <div className="space-y-2">
           {beds.map((b) => (
             <Button key={b.admission_id} variant="outline" className="w-full justify-start"
-              onClick={() => navigate(`/hospital/admission/${b.admission_id}/echart`)}>
+              onClick={() => navigate(`/${getClinicalPortal()}/admission/${b.admission_id}/echart`)}>
               {b.bed_number} · {b.ward_name} · Admission #{b.admission_id}
             </Button>
           ))}
@@ -122,7 +124,7 @@ export default function EChartingPage() {
   const submitVitals = async () => {
     setSaving(true);
     try {
-      await api.post('/v1/echart/entry', {
+      await nursingWrite('/v1/echart/entry', {
         admissionId: parseInt(admissionId!),
         entryType: 'vitals',
         bpSystolic:      vitals.bpSystolic      ? parseInt(vitals.bpSystolic)      : undefined,
@@ -152,7 +154,7 @@ export default function EChartingPage() {
   const submitIO = async () => {
     setSaving(true);
     try {
-      await api.post('/v1/echart/entry', {
+      await nursingWrite('/v1/echart/entry', {
         admissionId: parseInt(admissionId!),
         entryType: 'io',
         ioType: io.ioType,
@@ -172,7 +174,7 @@ export default function EChartingPage() {
   const submitObs = async () => {
     setSaving(true);
     try {
-      await api.post('/v1/echart/entry', {
+      await nursingWrite('/v1/echart/entry', {
         admissionId: parseInt(admissionId!),
         entryType: 'observation',
         observationText: obs.observationText,
@@ -476,4 +478,10 @@ export default function EChartingPage() {
       </div>
     </div>
   );
+}
+
+export default function EChartingPage() {
+  const {admissionId}=useParams<{admissionId:string}>();
+  if(getClinicalPortal()==='nurse')return <Navigate replace to={`/nurse/ward${admissionId?`?admissionId=${admissionId}`:''}`}/>;
+  return <EChartingView/>;
 }

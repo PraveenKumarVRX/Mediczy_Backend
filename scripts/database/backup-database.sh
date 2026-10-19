@@ -3,6 +3,7 @@
 # Cron: 0 2 * * * /home/ubuntu/Mediczy/scripts/database/daily-backup.sh
 
 set -euo pipefail
+umask 077
 
 ROOT_DIR="${ROOT_DIR:-/home/ubuntu/Mediczy}"
 BACKUP_DIR="/var/backups/mediczy"
@@ -11,6 +12,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="$BACKUP_DIR/mediczy_db_$TIMESTAMP.sql"
 
 mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
 mkdir -p "$ROOT_DIR/logs"
 
 ROOT="$ROOT_DIR"
@@ -30,9 +32,7 @@ echo "Starting database backup (${POSTGRES_DATABASE}@${POSTGRES_HOST})..."
 
 if ! pg_dump_prod_to_file "$BACKUP_FILE"; then
   echo "ERROR: pg_dump failed — mediczy_helper cannot dump n8n/RLS tables." >&2
-  echo "  Fix: store RDS master password in SSM:" >&2
-  echo "    aws ssm put-parameter --name /mediczy/prod/RDS_MASTER_PASSWORD \\" >&2
-  echo "      --type SecureString --value '<rds-postgres-password>' --region ap-south-1" >&2
+  echo "  Verify access to the RDS-managed administrator secret; never put it in runtime SSM." >&2
   echo "  Or upload last good dump: bash scripts/backup/daily-offsite-backup.sh --upload-local-only" >&2
   record_backup_status fail "pg_dump failed: no credential could dump the database"
   exit 1

@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": [],
+  "files": [
+    "src/vite-env.d.ts",
+    "src/pages/nurse/NurseClinicalWorkspace.tsx",
+    "src/pages/nurse/NursingAdministration.tsx",
+    "src/pages/nurse/PharmacyNursingReconciliation.tsx",
+    "src/pages/hmis/EMARPage.tsx",
+    "src/pages/hmis/EChartingPage.tsx",
+    "src/components/clinical/NursingSessionGate.tsx",
+    "src/components/clinical/NursingHandover.tsx",
+    "src/components/clinical/NursingMedicationExtras.tsx",
+    "src/services/nursing.service.ts"
+  ]
+}

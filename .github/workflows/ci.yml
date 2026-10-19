@@ -17,6 +17,51 @@ permissions:
   contents: read
 
 jobs:
+  nursing-integrity:
+    name: Nursing clinical integrity (isolated fixtures)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      NODE_ENV: test
+      JWT_SECRET: ci-only-nursing-secret
+      JWT_REFRESH_SECRET: ci-only-nursing-refresh-secret
+      NURSING_POSTGRES_BIN: /usr/lib/postgresql/16/bin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+      - name: Install PostgreSQL fixture binaries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-16
+      - run: npm ci
+        working-directory: server
+      - run: npm ci
+        working-directory: client
+      - name: Database TLS and privileged-secret isolation
+        run: node --test server/__tests__/postgres-tls.node.test.mjs
+      - name: Nursing service and contract tests
+        run: npm run test:nursing --prefix server -- --silent
+      - name: Disposable migration, RLS, concurrency and recovery checks
+        run: npm run test:nursing:integration --prefix server
+      - name: Nursing session tests and type check
+        run: |
+          npm run test:nursing --prefix client
+          npm run typecheck:nursing --prefix client
+      - name: Install isolated browser
+        run: npx puppeteer browsers install chrome
+        working-directory: client
+      - name: Synthetic bedside browser checks
+        working-directory: client
+        run: |
+          export NURSING_CHROMIUM_PATH="$(node --input-type=module -e 'import puppeteer from "puppeteer"; process.stdout.write(puppeteer.executablePath())')"
+          npm run test:nursing:browser
+
   server:
     name: Server tests (no new failures)
     runs-on: ubuntu-latest

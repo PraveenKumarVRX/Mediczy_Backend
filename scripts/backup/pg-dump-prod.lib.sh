@@ -31,11 +31,20 @@ pg_resolve_rds_master_user() {
   echo "${POSTGRES_BACKUP_USER:-postgres}"
 }
 
+# Compatibility name for callers; managed RDS secrets take precedence over legacy SSM.
 pg_get_ssm_master_password() {
   command -v aws >/dev/null 2>&1 || return 1
+  local secret_arn secret_json
+  secret_arn=$(aws rds describe-db-instances --db-instance-identifier "$RDS_INSTANCE_ID" \
+    --region "$AWS_REGION" --query 'DBInstances[0].MasterUserSecret.SecretArn' --output text 2>/dev/null) || return 1
+  if [ -n "$secret_arn" ] && [ "$secret_arn" != "None" ]; then
+    secret_json=$(aws secretsmanager get-secret-value --secret-id "$secret_arn" \
+      --region "$AWS_REGION" --query SecretString --output text 2>/dev/null) || return 1
+    printf '%s' "$secret_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["password"], end="")'
+    return
+  fi
   aws ssm get-parameter --name /mediczy/prod/RDS_MASTER_PASSWORD \
-    --with-decryption --region "$AWS_REGION" \
-    --query Parameter.Value --output text 2>/dev/null
+    --with-decryption --region "$AWS_REGION" --query Parameter.Value --output text 2>/dev/null
 }
 
 pg_build_exclude_args() {

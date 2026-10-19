@@ -1,0 +1,10 @@
+{
+  "AWSTemplateFormatVersion":"2010-09-09",
+  "Description":"Protected encryption key for Mediqzy RDS migration and encrypted recovery snapshots",
+  "Resources":{
+    "DatabaseKey":{"Type":"AWS::KMS::Key","DeletionPolicy":"Retain","UpdateReplacePolicy":"Retain","Properties":{"Description":"Mediqzy PostgreSQL storage and recovery","EnableKeyRotation":true,"KeyPolicy":{"Version":"2012-10-17","Statement":[{"Sid":"AccountAdministration","Effect":"Allow","Principal":{"AWS":{"Fn::Sub":"arn:${AWS::Partition}:iam::${AWS::AccountId}:root"}},"Action":"kms:*","Resource":"*"}]},"Tags":[{"Key":"Application","Value":"Mediqzy"},{"Key":"Purpose","Value":"database-hardening"}]}},
+    "DatabaseKeyAlias":{"Type":"AWS::KMS::Alias","Properties":{"AliasName":"alias/mediqzy-database","TargetKeyId":{"Ref":"DatabaseKey"}}},
+    "PostgresParameters":{"Type":"AWS::RDS::DBParameterGroup","Properties":{"Description":"Mediqzy PostgreSQL 18 encrypted target security defaults","Family":"postgres18","Parameters":{"rds.force_ssl":"1","ssl_min_protocol_version":"TLSv1.2","password_encryption":"scram-sha-256","idle_in_transaction_session_timeout":"60000","log_lock_waits":"1","log_statement":"none","log_min_duration_statement":"-1"},"Tags":[{"Key":"Application","Value":"Mediqzy"}]} }
+  },
+  "Outputs":{"DatabaseKeyArn":{"Value":{"Fn::GetAtt":["DatabaseKey","Arn"]}},"ParameterGroupName":{"Value":{"Ref":"PostgresParameters"}}}
+}

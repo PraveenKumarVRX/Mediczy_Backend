@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-19T09:56:05.103617+00:00",
+  "scope": "NUR-01 through NUR-18 repository implementation; clinical and external integration acceptance remains pending",
+  "workspace_head_at_recording": "5475852205981551e31b4d423029685996f006df",
+  "working_tree_changes_included": true,
+  "deployment_performed": false,
+  "deployment_database_accessed": false,
+  "checks": [
+    {
+      "command": "npm run test:nursing --prefix server -- --silent",
+      "status": "passed",
+      "suites": 9,
+      "tests": 111,
+      "exit_code": 0,
+      "limits": "Focused suite; not the complete server test inventory. Jest reported delayed asynchronous handles and eventually exited successfully."
+    },
+    {
+      "command": "npm run test:nursing:integration --prefix server",
+      "status": "passed",
+      "scenarios": 31,
+      "exit_code": 0,
+      "fixture": "Temporary local PostgreSQL 16, synthetic prerequisites and real nursing migrations/services, non-owner application role; cluster removed after completion",
+      "covers": [
+        "migration conflict rollback and additive upgrade/repeat",
+        "tenant and assignment isolation and FORCE RLS",
+        "individual identity, signatures and immutable signed corrections",
+        "canonical vitals and facility-day I/O reconstruction",
+        "task and goal evaluation lifecycle",
+        "qualified prescriber mapping, allergy and dose validation",
+        "concurrent administration, retries and pharmacy reconciliation",
+        "distinct witness, PRN and authorized infusion changes",
+        "31-patient persisted handover and local notification",
+        "signed device ingestion and nurse review",
+        "FHIR collection provenance/content",
+        "revoked assignments and logical backup/restore"
+      ]
+    },
+    {
+      "command": "npm run test:nursing --prefix client",
+      "status": "passed",
+      "files": 2,
+      "tests": 9,
+      "exit_code": 0
+    },
+    {
+      "command": "npm run typecheck:nursing --prefix client",
+      "status": "passed",
+      "exit_code": 0,
+      "limits": "Focused nursing screens and imported dependencies; full application TypeScript remains failing on existing unrelated diagnostics."
+    },
+    {
+      "command": "npm run test:nursing:browser --prefix client",
+      "status": "passed",
+      "checks": 6,
+      "exit_code": 0,
+      "fixture": "Loopback Vite, synthetic intercepted API responses, external requests blocked, Chromium",
+      "viewports": [
+        {
+          "width": 768,
+          "height": 1024
+        },
+        {
+          "width": 1024,
+          "height": 768
+        },
+        {
+          "width": 1440,
+          "height": 900
+        }
+      ],
+      "limits": "Browser UI contracts are verified separately from real database services; this is not deployed-stack clinical UAT."
+    },
+    {
+      "command": "npm run build --prefix client -- --outDir /tmp/mediqzy-nursing-build --emptyOutDir",
+      "status": "passed",
+      "exit_code": 0,
+      "duration_seconds": 132,
+      "warnings": [
+        "Existing chunks exceed 2000 kB."
+      ]
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed",
+      "exit_code": 0
+    },
+    {
+      "check": "CI workflow YAML parsing",
+      "status": "passed",
+      "detail": "nursing-integrity job has 10 steps; new GitHub job has not run remotely."
+    }
+  ],
+  "local_read_load_sample": {
+    "dataset_admissions": 31,
+    "reads": 40,
+    "concurrency": 10,
+    "p95_ms": 94.1,
+    "limits": "Local service-read sample only; no production throughput or service-level guarantee."
+  },
+  "recovery_sample": {
+    "status": "passed",
+    "method": "Local logical PostgreSQL dump and restore; signed history and terminal doses retained",
+    "limits": "Does not establish production RPO/RTO or deployment rollback."
+  },
+  "external_acceptance_pending": [
+    "staging migration and historical dose-conflict reconciliation",
+    "runtime database role and full deployed RLS audit",
+    "hospital staff identities, assignments and approved prescribing/drug/barcode policies",
+    "actual private KMS image storage, scanner and bedside device commissioning",
+    "real authentication, pharmacy stock/return reconciliation and partner FHIR profiles",
+    "clinical UAT, security review, staff training and supervised ward pilot",
+    "production load, backups and recovery objectives"
+  ],
+  "source_sha256": {
+    ".github/workflows/ci.yml": "7fe21ca8d731e3a572b21bfdbfb61d764609fe1d02a0da063aa79246ac1a9da9",
+    "client/package.json": "b6d974f63648e658227a41b98b3a3bf209883a8e7af19beb37239eba4d216106",
+    "client/scripts/nursing-workflow-browser.mjs": "29183be39d5d20f85a29f2f7776354c7bfa1657240adb7b0ffd2342f4b52c208",
+    "client/src/components/clinical/NursingHandover.tsx": "bbc30e59b5489c1b8901c636127f1d3d3319bdd6ae71b13300d49e51a51990b4",
+    "client/src/components/clinical/NursingMedicationExtras.tsx": "2f1c07d73e9e1faee3176895522a6a6cd61027e1786444d91ed7fd3d31b0d482",
+    "client/src/components/clinical/NursingSessionGate.tsx": "19a830b1d82c86ae5d2d01c0a4ff2cebc8bdc90633b2edd460b94ff00a737c1c",
+    "client/src/config/clinicalPortalPaths.test.ts": "2b34395f1f2157b0a48d4f69580046ab132657b53030f3357fedbb5df194079e",
+    "client/src/config/clinicalPortalPaths.ts": "28513fba7570edf31544460d15482bb64093c2e0bbc47e604e72bdc853463c68",
+    "client/src/pages/hmis/EChartingPage.tsx": "3ddbdb7aa1e3111fa08fee348288a10ae824c1f94e6a91ad485dfc7f28c9545e",
+    "client/src/pages/hmis/EMARPage.tsx": "c186bfcad0281f15a0c6303f88401891c56baa47fc998d40708be1f7999bf083",
+    "client/src/pages/hmis/NursingTaskBoard.tsx": "7350ec7262e0ab0214e880a7b3f41feaa340311cf1eb66a3a272ae7bf4f82399",
+    "client/src/pages/nurse/NurseAppointments.tsx": "8b4bbce401b0e42a58e2259c37941060d4cbdd29c023f8a4a191bd46d9e80eae",
+    "client/src/pages/nurse/NurseChat.tsx": "a1ab321741625a784f6e38e2e2b85891ee7861bf32c64ea57702cf6ef44c85f9",
+    "client/src/pages/nurse/NurseClinicalWorkspace.tsx": "1bea6df620cd9ffe1ff1b42f886bc2d356bb08ee90afdca3dc1bc5d45167e505",
+    "client/src/pages/nurse/NurseDashboard.tsx": "649529e65fe5389714747afe4aab4eb0bb563b11e0846d91fcccd672217a6232",
+    "client/src/pages/nurse/NurseLogin.tsx": "5cb552500fef4f9e5ffc12f3a19e2df31aa98599389040ef162c30de2c28a3bf",
+    "client/src/pages/nurse/NurseMedications.tsx": "76d2660db8d4f0d733586c8e49639e3588e213dba1005b15a43cfa3293dc8fee",
+    "client/src/pages/nurse/NurseNotes.tsx": "c42bd83306c0d4d6366605350da5cff5154c10843803c5cba76ea9ac216e2c25",
+    "client/src/pages/nurse/NursePatients.tsx": "89840005276f91ecdb0ed8c6716d74d4838511d5d84935ddeec8989f90e6f217",
+    "client/src/pages/nurse/NurseRegisterPatient.tsx": "e43040e21cf56f6bed4c9df85484224241577aef20aa6bdbebc8ab365f2d96c8",
+    "client/src/pages/nurse/NurseVitals.tsx": "6779f86a2dca996439a20e87c5a121b03326de3630ee0d462bc87c019674ab45",
+    "client/src/pages/nurse/NursingAdministration.tsx": "930723622450765abda55a952649fc53eb6ef2670ee7ba92b0f7e6a435b67d09",
+    "client/src/pages/nurse/PharmacyNursingReconciliation.tsx": "658200861ff5e03cb1689e190c6e3b70e663bacb104420734c3c033ac0cd2188",
+    "client/src/routes/index.tsx": "3b6cf281b9621dee194d6a5ab86a6482cfbd3444abb23b8fa42827dd616ef07c",
+    "client/src/routes/portalClinicalRoutes.tsx": "b92c3b5a87367b1659cbf4a5cf3c3e0472d3a63209b194f75960cf9cf86c65cb",
+    "client/src/services/nursing.service.ts": "b7410dc9305c987f1d4dd1c8305586a0a96ba657ee650a7f63a6c59ac926cc47",
+    "client/src/utils/api.ts": "c7b1f96827a9cbc09a091d6cae217f0f95f3054652689c6469d378079db4da88",
+    "client/src/utils/nursing-session.test.ts": "a55781e9764a854775f2e9acbd0236e51b3be1b967048aae4f5842f31eac5bc7",
+    "client/tsconfig.nursing.json": "7f4477cf8b8a6c562d2b8feb6db648b357f44a88104fc63f37629b24d37a00c5",
+    "docs/api/NURSING_BEDSIDE_API.md": "69b5e1bf6f6de35abd5b9509edb51344ea3bb8d7cf3c007731ae7103a7819cca",
+    "docs/audits/NURSING_IMPLEMENTATION_DELIVERY_2026-10-19.md": "691a2e89e4d6006fa0efa8d313b0e7fec7eec48d84cad244959b65ed5cc31f23",
+    "server/__tests__/nursing-context.test.js": "e19313f3dc4ed9c9a766c727e47887dc98fb3c0bac2d31b643e25da27ea7dce0",
+    "server/__tests__/nursing-handover-draft.test.js": "4e32ad6377e09c01640401029cf8dd6e722af2abb32e244aca550d23a48e4ece",
+    "server/__tests__/nursing-ipd.test.js": "9825bcc1dd5f12b009e430ce2fbb97863a8cd4749e78e4ea7ae90c58d4af31f6",
+    "server/__tests__/nursing-schema.test.js": "3de89a28e056927970d59e8cb5134db65cba83113de82ca84726fff38b49cede",
+    "server/migrations/20261019000100-nursing-workflow-integrity.migration.js": "31377d222a6002154487d6587dc9f26b0c04e978f70af720e4dfa75697826fef",
+    "server/package.json": "08d63945c6211d7f9de8961630d8a0a8dc18a9dc9ae781bcb24f73258dc01690",
+    "server/routes/emar.route.js": "db430496b50ba1101a1b81c7f6428d973379f4c5402452c5cb9ce27010e1ee92",
+    "server/routes/hospital-os.route.js": "45dc0d4e1ecc2f278c8cdacf297c0c6c0b5797c9948be976a6d575fe7ca20ae2",
+    "server/routes/nurse.route.js": "bf69d296ad3c9ad55e23005fb518af8feee818f2106357863c810e728fd2776e",
+    "server/routes/nursing-echart.route.js": "e2fe8ebae5d244846ba2b1943b6475eb1baeb2f28b5690eac75a69d6b14aca24",
+    "server/routes/nursing-http.js": "6785a60a6158157cd90c2a380317832adf01520558a37a5a1e2c5779a35e9676",
+    "server/routes/nursing-ipd.route.js": "73c09699ef98512ec56a3a1759a23dc96d1500d0529ecfaa94991182ea3dbf6e",
+    "server/routes/pharmacy-dispense.route.js": "020fa564bd60b8b5f02f0c28059ed34b81df6c867dcbace5354473a3f30278a4",
+    "server/routes/roadmap-intelligence.route.js": "5f8546e89ee123c9b421bfae1edadd31c6e9360aa3a2825174e7468b5a65a54c",
+    "server/routes/vitals.route.js": "e4a8ac9de12bc6aa77def7839df6603fcc2cc23ea16b5a69e98e53ce278cda57",
+    "server/scripts/migrate-all.mjs": "39c808f668a996fc9d106a70b81c8089960c76e0be3a632f6296dc62a40ac958",
+    "server/scripts/qa/nursing-workflow-integration.mjs": "13c938c5d8db92fe4772598f6d1fb021e338995f1315b1769e26e189bc60d91c",
+    "server/scripts/qa/verify-rls-coverage.mjs": "529b66632eb7af53cc9b2f30623a2651a711bff808848f808c6c9f9a23c5b3d0",
+    "server/services/emar-pharmacy-bridge.service.js": "550439ae0fb0d77365dd75c021e283a7a40bbc05b92d48130342a7b2e9618290",
+    "server/services/emar.service.js": "99b673fb20c8f86ab0af85f95a23f385f5c7f169184fe34bd30c57265043d65b",
+    "server/services/hospital-os/nurse-handover.service.js": "047cadd56a8b6e358cdaf435cc0c357656bd3ea181ef463f65f0e50621730dd5",
+    "server/services/nursing-context.service.js": "1f54dcb5d4c2e6408dd1d2e9ced82bd194a7f9afaec10ca6dd8402b5d1ffa0fc",
+    "server/services/nursing-devices.service.js": "5f03c0144e0921492e892edc88181ceb36e4e1bdd8f4d7a6c01ca8c33e07e04e",
+    "server/services/nursing-echart.service.js": "130fc0c62dba6f590fe916891384e343cd33ee6546446c1705431828a4689f78",
+    "server/services/nursing-export.service.js": "fa6945caaa02d3666811b2c67094396385693a4f9cc3deb577781b1c0e828d0e",
+    "server/services/nursing-images.service.js": "8f9a9dad37a454dae3ec5289042bc259db05ec4096e5da8a2453c04e33f46280",
+    "server/services/nursing-ipd.service.js": "eb7f2d9a96a0e4db227f180d9e6bd41c9c2ed7a8196c01a6b6e53e0637f284e1",
+    "server/services/nursing-operations.service.js": "2c86dcd99587f27173deabfae31cda3be33405d3a598dc0c9d49b305071d6b4a",
+    "server/services/nursing-verification.service.js": "39a1d6b2ff2c3c5ed1c25020faeb0699112de26618c1cee3d69bcf87fdc85d1c",
+    "server/services/nursing-workflow.service.js": "06844c1d5548035f1b164f7a2e658605e0e6c59f9d05737362b9525ab4dd46cf",
+    "server/services/vitals-ews.service.js": "6275dc81c1803c7527cacbab33ebe1d0a835aaaf79a5e2d03751081af1518fe6"
+  }
+}

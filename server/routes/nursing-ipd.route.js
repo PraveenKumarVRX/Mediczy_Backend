@@ -1,99 +1,70 @@
 import express from 'express';
+import { ingestNursingObservation, registerNursingDevice, revokeNursingDevice, listDeviceObservations, reviewDeviceObservation } from '../services/nursing-devices.service.js';
+import { sendRouteError } from '../utils/route-errors.js';
+import multer from 'multer';
+import { uploadNursingImage, getNursingImage } from '../services/nursing-images.service.js';
+import { exportNursingAdmission } from '../services/nursing-export.service.js';
+import * as operations from '../services/nursing-operations.service.js';
 import { authUser } from '../middleware/auth.middleware.js';
-import {
-  createNursingAssessment, getAdmissionAssessments,
-  createNursingTask, getNursingTaskBoard, completeNursingTask, autoGenerateAdmissionTasks
-} from '../services/nursing-ipd.service.js';
-import { saveVitals } from '../services/vitals-ews.service.js';
-import { resolveTenantId } from '../utils/tenant-identity.js';
-
+import { createRateLimiter, uploadLimiter } from '../middleware/rateLimiter.middleware.js';
+import { createNursingAssessment, getAdmissionAssessments, createNursingTask, getNursingTaskBoard, completeNursingTask, autoGenerateAdmissionTasks } from '../services/nursing-ipd.service.js';
+import { nursingContext, withNursingReplay } from '../services/nursing-context.service.js';
+import { recordEntry } from '../services/nursing-echart.service.js';
+import { issueNursingProof } from '../services/nursing-verification.service.js';
+import * as workflow from '../services/nursing-workflow.service.js';
+import { nursingHandler } from './nursing-http.js';
 const router = express.Router();
-
-// POST /api/v1/nursing/assessment
-router.post('/assessment', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const result = await createNursingAssessment({ ...req.body, organizationId });
-    res.status(201).json({ success: true, data: result });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
+router.post('/device-observations/ingest', createRateLimiter('webhook', { keyGenerator: req => `nursing-device:${req.ip}` }), async (req, res) => {
+    try {
+        return res.status(202).json({ success: true, data: await ingestNursingObservation(req.body, req.get('X-Device-Signature')) });
+    }
+    catch (error) {
+        return sendRouteError(res, error);
+    }
 });
-
-// GET /api/v1/nursing/assessment/:admissionId
-router.get('/assessment/:admissionId', authUser, async (req, res) => {
-  try {
-    const data = await getAdmissionAssessments(parseInt(req.params.admissionId));
-    if (!data) return res.status(404).json({ success: false, message: 'No assessment found' });
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/v1/nursing/tasks
-router.post('/tasks', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const task = await createNursingTask({ ...req.body, organizationId });
-    res.status(201).json({ success: true, data: task });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// GET /api/v1/nursing/tasks
-router.get('/tasks', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const { wardId, assignedTo, status, windowHours } = req.query;
-    const tasks = await getNursingTaskBoard(organizationId, {
-      wardId:      wardId      ? parseInt(wardId) : undefined,
-      assignedTo:  assignedTo  || undefined,
-      status:      status      || undefined,
-      windowHours: windowHours ? parseInt(windowHours) : 4
-    });
-    res.json({ success: true, data: tasks });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// PUT /api/v1/nursing/tasks/:id/complete
-router.put('/tasks/:id/complete', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const result = await completeNursingTask(parseInt(req.params.id), organizationId, {
-      completedBy: req.user.id,
-      notes: req.body.notes
-    });
-    res.json({ success: true, data: result });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/v1/nursing/vitals — document §8 Phase 2
-router.post('/vitals', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const record = await saveVitals({ ...req.body, organizationId, recordedBy: req.user.id });
-    res.status(201).json({ success: true, data: record });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/v1/nursing/tasks/auto-generate
-router.post('/tasks/auto-generate', authUser, async (req, res) => {
-  try {
-    const organizationId = resolveTenantId(req.user);
-    const { admissionId, patientId, wardId } = req.body;
-    const tasks = await autoGenerateAdmissionTasks(admissionId, organizationId, { patientId, wardId });
-    res.status(201).json({ success: true, data: tasks });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
+router.use(authUser);
+router.get('/context', nursingHandler(() => ({ actorId: nursingContext().actorId, role: nursingContext().role, organizationId: nursingContext().organizationId })));
+router.get('/patients', nursingHandler(req => workflow.listNursingPatients(req.query)));
+router.get('/assignments', nursingHandler(() => workflow.getNursingAssignments()));
+router.post('/assignments', nursingHandler(req => workflow.createNursingAssignment(req.body), 201));
+router.delete('/assignments/:id', nursingHandler(req => workflow.revokeNursingAssignment(req.params.id)));
+router.get('/settings', nursingHandler(() => workflow.facilitySettings()));
+router.put('/settings', nursingHandler(req => workflow.facilitySettings(req.body)));
+router.post('/verification', createRateLimiter('auth', { skipSuccessfulRequests: true, keyGenerator: req => `nursing-proof:${req.user.id}:${String(req.body.email || 'self').toLowerCase()}` }), nursingHandler(req => issueNursingProof(req.body)));
+router.post('/assessment', nursingHandler(req => withNursingReplay('nursing.assessment', req.get('Idempotency-Key'), req.body, () => createNursingAssessment(req.body)), 201));
+router.get('/assessment/:admissionId', nursingHandler(req => getAdmissionAssessments(req.params.admissionId)));
+router.post('/tasks', nursingHandler(req => withNursingReplay('nursing.task', req.get('Idempotency-Key'), req.body, () => createNursingTask(req.body)), 201));
+router.get('/tasks', nursingHandler(req => getNursingTaskBoard(nursingContext().organizationId, req.query)));
+router.put('/tasks/:id/complete', nursingHandler(req => completeNursingTask(req.params.id, nursingContext().organizationId, req.body)));
+router.post('/vitals', nursingHandler(req => recordEntry({ ...req.body, heartRate: req.body.heartRate ?? req.body.pulse, entryType: 'vitals', amendsId: null, idempotencyKey: req.get('Idempotency-Key') }), 201));
+router.post('/tasks/auto-generate', nursingHandler(req => autoGenerateAdmissionTasks(req.body.admissionId, nursingContext().organizationId, {}), 201));
+router.get('/admissions/:admissionId/goals', nursingHandler(req => workflow.listCareGoals(req.params.admissionId)));
+router.post('/goals', nursingHandler(req => workflow.createCareGoal({ ...req.body, idempotencyKey: req.get('Idempotency-Key') }), 201));
+router.post('/goals/:id/evaluations', nursingHandler(req => workflow.evaluateCareGoal(req.params.id, req.body), 201));
+router.get('/admissions/:admissionId/wounds', nursingHandler(req => workflow.listWounds(req.params.admissionId)));
+router.post('/wounds', nursingHandler(req => workflow.recordWound({ ...req.body, idempotencyKey: req.get('Idempotency-Key') }), 201));
+router.get('/admissions/:admissionId/interventions', nursingHandler(req => workflow.listInterventions(req.params.admissionId)));
+router.post('/interventions', nursingHandler(req => workflow.recordIntervention({ ...req.body, idempotencyKey: req.get('Idempotency-Key') }), 201));
+router.get('/wards/:wardId/snapshot', nursingHandler(req => workflow.wardSnapshot(req.params.wardId)));
+router.get('/handovers', nursingHandler(req => workflow.listHandovers(req.query.wardId)));
+router.post('/handovers', nursingHandler(req => workflow.createHandover({ ...req.body, idempotencyKey: req.get('Idempotency-Key') }), 201));
+router.post('/handovers/:id/send', nursingHandler(req => workflow.transitionHandover(req.params.id, req.body, 'send')));
+router.post('/handovers/:id/accept', nursingHandler(req => workflow.transitionHandover(req.params.id, req.body, 'accept')));
+const imageUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1 } });
+router.post('/images', uploadLimiter, (req, res, next) => imageUpload.single('image')(req, res, error => error ? res.status(422).json({ success: false, code: 'INVALID_UPLOAD', message: 'Upload one JPEG or PNG up to 5 MB' }) : next()), nursingHandler(req => uploadNursingImage(req.body.admissionId, req.file), 201));
+router.get('/images/:id', nursingHandler(req => getNursingImage(req.params.id)));
+router.get('/admissions/:admissionId/export', nursingHandler(req => exportNursingAdmission(req.params.admissionId)));
+router.post('/staff-links', nursingHandler(req => operations.linkClinicalStaff(req.body), 201));
+router.get('/directory', nursingHandler(() => operations.nursingDirectory()));
+router.get('/alerts', nursingHandler(() => operations.clinicalAlerts()));
+router.post('/alerts/:id/acknowledge', nursingHandler(req => operations.acknowledgeNursingAlert(req.params.id)));
+router.get('/metrics', nursingHandler(() => operations.nursingMetrics()));
+router.post('/events/dispatch', nursingHandler(() => operations.dispatchNursingEvents()));
+router.get('/notifications', nursingHandler(() => operations.nursingNotifications()));
+router.post('/notifications/:id/read', nursingHandler(req => operations.markNursingNotification(req.params.id)));
+router.get('/wards/:wardId/downtime', nursingHandler(req => operations.nursingDowntimePack(req.params.wardId)));
+router.post('/devices', nursingHandler(req => registerNursingDevice(req.body), 201));
+router.delete('/devices/:id', nursingHandler(req => revokeNursingDevice(req.params.id)));
+router.get('/admissions/:admissionId/device-observations', nursingHandler(req => listDeviceObservations(req.params.admissionId)));
+router.post('/device-observations/:id/review', nursingHandler(req => reviewDeviceObservation(req.params.id, req.body)));
 export default router;

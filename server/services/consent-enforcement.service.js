@@ -17,26 +17,8 @@ const CONSENT_OVERRIDE_ROLES = new Set([
   'admin', 'super_admin', 'medical_director', 'surgeon', 'anesthetist', 'ot_head'
 ]);
 
-async function ensureTables() {
-  await sequelize.query(`
-    CREATE TABLE IF NOT EXISTS consent_enforcement_log (
-      id              BIGSERIAL PRIMARY KEY,
-      organization_id BIGINT,
-      patient_id      BIGINT NOT NULL,
-      action          TEXT NOT NULL,
-      consent_type    TEXT NOT NULL,
-      consent_id      BIGINT,
-      status          TEXT NOT NULL,   -- allowed | blocked | override
-      override_by     TEXT,
-      override_role   TEXT,
-      override_reason TEXT,
-      context         JSONB DEFAULT '{}'::jsonb,
-      checked_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-    CREATE INDEX IF NOT EXISTS idx_consent_enf_patient ON consent_enforcement_log(patient_id, checked_at DESC);
-  `);
-}
-ensureTables().catch(e => console.warn('[consent-enforcement] table init:', e.message));
+// Schema is provisioned by the consent-enforcement migration.
+
 
 async function logCheck({ organizationId, patientId, action, consentType, consentId, status, overrideBy, overrideRole, overrideReason, context }) {
   await sequelize.query(

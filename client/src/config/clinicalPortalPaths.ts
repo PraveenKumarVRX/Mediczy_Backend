@@ -13,6 +13,10 @@ const PORTAL_BY_USER_TYPE: Record<string, ClinicalPortal> = {
 
 /** Active clinical portal prefix for deep links and navigation */
 export function getClinicalPortal(): ClinicalPortal {
+  if (typeof window !== "undefined") {
+    const visible = window.location.pathname.match(/^\/(hospital|doctor|nurse|assistant)(?:\/|$)/)?.[1];
+    if (visible) return visible as ClinicalPortal;
+  }
   return PORTAL_BY_USER_TYPE[getUserType() || ""] || "hospital";
 }
 
@@ -43,8 +47,8 @@ export function buildClinicalPaths(portal: ClinicalPortal = getClinicalPortal())
     globalBoard: (patientId: string | number) => `${base}/healthos/board/${patientId}`,
     passport: (patientId: string | number) => `${base}/healthos/passport/${patientId}`,
     bedsMap: `${HOSPITAL_ONLY_BASE}/beds/map`,
-    emar: `${HOSPITAL_ONLY_BASE}/emar`,
-    echart: `${HOSPITAL_ONLY_BASE}/echart`,
+    emar: `${portal === "nurse" ? base : HOSPITAL_ONLY_BASE}/emar`,
+    echart: `${portal === "nurse" ? base : HOSPITAL_ONLY_BASE}/echart`,
     aiOps: `${HOSPITAL_ONLY_BASE}/ai-ops`,
   };
 }
@@ -56,6 +60,8 @@ export function buildClinicalPaths(portal: ClinicalPortal = getClinicalPortal())
 export function resolveHmisLegacyPath(pathname: string): string {
   const suffix = pathname.replace(/^\/hmis/, "") || "/";
   const portal = getClinicalPortal();
+
+  if (portal === "nurse" && /^\/(emar|echart|admission\/[^/]+\/(echart|nursing-tasks))(\/|$)/.test(suffix)) return `/nurse${suffix}`;
 
   const hospitalOnly =
     /^\/(command-center|beds\/|ot\/|emar|discharge-board|report-center|hl7-fhir|ai-|predictive-analytics|admission\/|echart|calculators|reference|hospital-copilot)(\/?|$)/.test(

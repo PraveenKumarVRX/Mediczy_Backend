@@ -1010,7 +1010,9 @@ const LabTests = () => {
                                 testType,
                                 testName: item.test.name,
                                 appointmentDate: bookingForm.appointmentDate,
-                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes} [Req:${checkoutKey}]`,
+                                // checkoutKey is an internal idempotency fingerprint (sent separately via the
+                                // X-Idempotency-Key header below) — it must never be embedded in user-facing notes.
+                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes}`.trim(),
                                 urgency: 'routine',
                                 ...(imaging && bookingForm.couponCode.trim() && !couponUsed
                                   ? { coupon_code: bookingForm.couponCode.trim().toUpperCase() }

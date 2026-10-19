@@ -4,6 +4,7 @@
 import { Router } from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import hospitalOs from '../services/hospital-os/index.js';
+import { nursingHandler } from './nursing-http.js';
 
 const router = Router();
 const clinical = [authUser, requireRole(['doctor', 'nurse', 'admin', 'assistant'])];
@@ -113,14 +114,10 @@ router.get('/knowledge-graph/query', ...clinical, async (req, res) => {
 });
 
 // ── Nurse handover ────────────────────────────────────────────────────────────
-router.post('/nurse/handover', ...clinical, async (req, res) => {
-  const brief = await hospitalOs.generateShiftHandover({
-    wardId: req.body.wardId,
-    organizationId: orgId(req),
-    shift: req.body.shift || 'day',
-  });
-  res.json({ success: true, data: brief });
-});
+router.post('/nurse/handover', authUser, nursingHandler(req=>hospitalOs.generateShiftHandover({
+  wardId:req.body.wardId, organizationId:req.user.organization_id||req.user.tenant_id||req.user.tenantId,
+  actorId:req.user.id, role:req.user.role, shift:req.body.shift||'day'
+})));
 
 // ── Command center AI ─────────────────────────────────────────────────────────
 router.get('/command-center/ai', ...leadership, async (req, res) => {

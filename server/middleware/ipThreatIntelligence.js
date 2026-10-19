@@ -1,3 +1,4 @@
+import { postgresTls } from '../db/postgres-tls.js';
 /**
  * IP Threat Intelligence Middleware
  *
@@ -68,7 +69,7 @@ const getPool = () => {
     pgPool = new pg.Pool({
       host: DB_HOST, port: DB_PORT, database: DB_NAME,
       user: DB_USER, password: DB_PASS,
-      ssl: DB_SSL ? { rejectUnauthorized: false } : false,
+      ssl: postgresTls({ ...process.env, POSTGRES_PRIMARY_HOST: DB_HOST, POSTGRES_SSL: String(DB_SSL) }),
       max: 3, idleTimeoutMillis: 30000, connectionTimeoutMillis: 3000,
     });
   }

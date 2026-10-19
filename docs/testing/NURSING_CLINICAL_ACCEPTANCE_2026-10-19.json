@@ -1,0 +1,158 @@
+{
+  "date": "2026-10-19",
+  "status": "pending_clinical_review",
+  "deployment_is_not_clinical_acceptance": true,
+  "reviewers": {
+    "nursing_lead": null,
+    "pharmacy_lead": null,
+    "hospital_it": null,
+    "medical_superintendent": null
+  },
+  "automated_evidence": {
+    "backend_tests_passed": 130,
+    "disposable_database_scenarios_passed": 34,
+    "browser_checks_previously_passed": 6,
+    "private_storage_probe": "passed with synthetic content, EC2 role, KMS and unsigned-read denial",
+    "live_demo_api_checks_passed": 10,
+    "live_demo_tablet_checks_passed": 4,
+    "live_demo_storage_checks_passed": 4,
+    "production_report": "NURSING_PRODUCTION_VERIFICATION_2026-10-19.json"
+  },
+  "scenarios": [
+    {
+      "id": "CLIN-01",
+      "reviewer_role": "Nursing lead",
+      "scenario": "Sign in with actual nurse credentials; verify assigned census, no access after assignment ends, and mixed nurse/hospital browser sessions.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-02",
+      "reviewer_role": "Nursing lead",
+      "scenario": "On the commissioned tablet, create/save/sign a note, lock/unlock, amend a signed note and reconcile an interrupted save.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-03",
+      "reviewer_role": "Nursing lead",
+      "scenario": "Enter locally approved vital vectors, verify score/completeness and demonstrate critical-alert ownership and acknowledgment.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-04",
+      "reviewer_role": "Nursing lead",
+      "scenario": "Verify fluid totals across facility midnight, a backdated entry and a signed correction against the ward paper/downtime record.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-05",
+      "reviewer_role": "Pharmacy lead",
+      "scenario": "Use actual wristband and medicine scanners; demonstrate matching dose and rejection of wrong patient, product, units, dose and route.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-06",
+      "reviewer_role": "Pharmacy lead",
+      "scenario": "Demonstrate distinct witness reauthentication, signed hospital treatment consent and current-order checks for a locally approved high-alert scenario.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-07",
+      "reviewer_role": "Pharmacy lead",
+      "scenario": "Reconcile given/refused/held doses with physical issue, consumption, returns and billing; verify no duplicate stock or financial movement.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-08",
+      "reviewer_role": "Nursing lead",
+      "scenario": "Review assessment templates, care goals, reviewed wound image history, procedures and reassessment schedules.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-09",
+      "reviewer_role": "Nursing lead",
+      "scenario": "Send and accept the actual full ward shift handover with the incoming nurse; verify transfers and census conflicts.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-10",
+      "reviewer_role": "Hospital IT",
+      "scenario": "Verify retention/access policy, actual image upload/read, device key commissioning and device-clock behavior.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-11",
+      "reviewer_role": "Hospital IT",
+      "scenario": "Execute deployed authentication/revocation, downtime/recovery, partner export and measured production capacity scenarios.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    },
+    {
+      "id": "CLIN-12",
+      "reviewer_role": "Medical superintendent",
+      "scenario": "Approve staff training, operating procedures, incident ownership and the supervised ward pilot outcome.",
+      "result": "not_run_by_clinical_reviewer",
+      "reviewer": null,
+      "performed_at": null,
+      "evidence_reference": null,
+      "issues": []
+    }
+  ],
+  "decision": {
+    "approved": false,
+    "reviewer": null,
+    "signed_at": null,
+    "evidence_reference": null
+  },
+  "instructions": "Reviewers must execute scenarios under hospital governance, record results and non-PHI evidence references, and attest the release decision. Automated checks cannot populate human attestations.",
+  "demo_technical_acceptance": {
+    "status": "passed",
+    "hospital_id": 4,
+    "tenant_id": 11,
+    "ward_id": 2,
+    "admission_id": 3,
+    "human_clinical_approval": false
+  }
+}

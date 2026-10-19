@@ -126,6 +126,7 @@ router.get('/sdoh/screenings/:patientId', auth(STAFF_ROLES), handle(async (req, 
 
 // ── Wounds ────────────────────────────────────────────────────────────────────────────────────
 router.post('/wounds', auth(CLINICAL_ROLES), handle(async (req, res) => {
+  if(req.role==='nurse')return res.status(410).json({success:false,code:'USE_ADMISSION_NURSING_CHART',message:'Use the admission-linked nursing workspace to record reviewed wounds.'});
   const { patientId, woundType, stage, areaCm2, healingPercent = 0, note, imageRef } = req.body;
   const row = await scoped(req, async (c) => {
     const pid = await assertPatientInTenant(c, req, patientId);
@@ -135,6 +136,7 @@ router.post('/wounds', auth(CLINICAL_ROLES), handle(async (req, res) => {
   res.status(201).json({ success: true, data: row });
 }));
 router.get('/wounds/:patientId', auth(STAFF_ROLES), handle(async (req, res) => {
+  if(req.role==='nurse')return res.status(410).json({success:false,code:'USE_ADMISSION_NURSING_CHART',message:'Use the admission-linked nursing workspace to view wounds.'});
   const rows = await scoped(req, async (c) => (await c.query(`SELECT * FROM wound_tracking_records WHERE tenant_id = $1 AND patient_id = $2 ORDER BY created_at DESC`, [req.tenantId, req.params.patientId])).rows);
   res.json({ success: true, data: rows });
 }));

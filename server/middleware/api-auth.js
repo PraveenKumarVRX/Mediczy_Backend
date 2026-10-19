@@ -1,3 +1,4 @@
+import { postgresTls } from '../db/postgres-tls.js';
 /**
  * OAuth 2.0 / OIDC Authentication Middleware for Mediqzy API v1
  * Created: February 6, 2026
@@ -26,6 +27,7 @@ const pool = new Pool({
   database: process.env.POSTGRES_DATABASE || process.env.DB_NAME || 'mediczy_ai',
   user: process.env.POSTGRES_USER || process.env.DB_USER || 'mediczy_helper',
   password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD,
+  ssl: postgresTls(),
 });
 
 // JWT secret keys — must be set via environment variables (no fallback for security)

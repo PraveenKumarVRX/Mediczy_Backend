@@ -158,3 +158,6 @@ qa-samples/
 # A symlink named node_modules is NOT matched by "node_modules/" (trailing slash = directories only).
 # A worktree symlink to a shared node_modules was committed once and overwrote the real directory on merge.
 **/node_modules
+
+# Public AWS trust anchors contain no private key material.
+!server/db/certs/aws-rds-ap-south-1.pem

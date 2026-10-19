@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+# Retired before any credentials, backups, or writes: wholesale UAT replacement destroys
+# production clinical history and previously re-granted ownership to the HTTP runtime.
+printf '%s\n' 'UAT-to-production replacement is disabled. Use the controlled encrypted cutover runbook.' >&2
+exit 2
+
 
 ROOT_DIR="/home/ubuntu/Mediczy"
 ENV_FILE="$ROOT_DIR/.env"

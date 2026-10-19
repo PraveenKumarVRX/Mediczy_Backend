@@ -1,3 +1,4 @@
+import { postgresTls } from '../db/postgres-tls.js';
 /**
  * Dedicated DB Provisioner Service
  * ---------------------------------
@@ -175,7 +176,7 @@ async function _provisionDedicated(tenantId, tenantCode, subscriptionPlan) {
         database: 'postgres',
         user:     process.env.POSTGRES_USER,
         password: process.env.POSTGRES_PASSWORD,
-        ssl:      process.env.POSTGRES_SSL === 'true' ? { rejectUnauthorized: false } : false,
+        ssl:      postgresTls(),
       });
       await adminClient.connect();
       await adminClient.query(`CREATE DATABASE ${dbName} OWNER ${dbUser}`);
@@ -265,7 +266,7 @@ export async function getTenantConnection(tenantId) {
     host:    creds.dbHost || db_host,
     port:    creds.dbPort || 5432,
     dialect: 'postgres',
-    dialectOptions: { ssl: { rejectUnauthorized: false } },
+    dialectOptions: { ssl: postgresTls({ ...process.env, POSTGRES_PRIMARY_HOST: creds.dbHost || db_host, POSTGRES_SSL: 'true' }) },
     pool: { max: 10, min: 2, idle: 30000 },
     logging: false,
   });

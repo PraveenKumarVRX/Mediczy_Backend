@@ -72,7 +72,9 @@
     "test:healthos-smoke": "node scripts/healthos-smoke.mjs",
     "test:portal-healthos-smoke": "node scripts/portal-healthos-smoke.mjs",
     "test:ring-fence-healthos-sanity": "node scripts/ring-fence-healthos-sanity.mjs",
-    "audit:request-ddl": "node scripts/qa/audit-request-ddl-and-rls.mjs"
+    "audit:request-ddl": "node scripts/qa/audit-request-ddl-and-rls.mjs",
+    "test:nursing:integration": "node scripts/qa/nursing-workflow-integration.mjs",
+    "test:nursing": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand __tests__/nursing-context.test.js __tests__/nursing-ringfencing.test.js __tests__/nursing-upload-parser.test.js __tests__/nursing-handover-draft.test.js __tests__/emar.test.js __tests__/nursing-ipd.test.js __tests__/nursing-schema.test.js __tests__/emar-pharmacy-bridge.service.test.js __tests__/news2.test.js __tests__/news2-contract.test.js __tests__/roadmap-intelligence-route.test.js"
   },
   "keywords": [],
   "author": "",
@@ -90,6 +92,7 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
     "@opentelemetry/sdk-node": "^0.219.0",
     "@sendgrid/mail": "^8.1.6",
+    "@smithy/credential-provider-imds": "4.4.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "@types/pdfkit": "^0.17.4",
     "@undecaf/zbar-wasm": "^0.11.0",

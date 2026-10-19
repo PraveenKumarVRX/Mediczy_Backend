@@ -7,6 +7,15 @@
 
 This folder contains all Mediczy platform documentation, organized by category for easy navigation.
 
+## Recent source-backed assessments
+
+- [Nursing implementation delivery and rollout record (2026-10-19)](./audits/NURSING_IMPLEMENTATION_DELIVERY_2026-10-19.md) — implementation coverage for NUR-01–18, verification evidence, and deployment gates.
+- [Nursing production release and demo access (2026-10-19)](./deployment/NURSING_PRODUCTION_RELEASE_2026-10-19.md) — live migration, private image storage, Smart Hospital demo, verification and rollback.
+- [Nursing bedside API](./api/NURSING_BEDSIDE_API.md) — assignments, chart signing, eMAR, handover, wounds, device review and export contracts.
+
+- [Nursing: GitHub HMIS comparison, Mediqzy gaps, and implementation plan (2026-10-19)](./audits/NURSING_REPO_COMPARISON_GAPS_IMPLEMENTATION_PLAN_2026-10-19.md) — five repository references, current code findings, prioritized backlog, delivery gates, and test results.
+- [Nursing repository review evidence manifest (2026-10-19)](./audits/NURSING_REPO_REVIEW_EVIDENCE_2026-10-19.json) — pinned commits, license observations, inspected-source hashes, and verification scope.
+
 ---
 
 ## 📂 Category Overview
@@ -283,3 +292,6 @@ When adding new documentation:
 **Last Organized**: January 15, 2026  
 **Platform**: Mediczy Healthcare Platform  
 **Documentation Maintainer**: Development Team
+
+- [Database hardening and encrypted recovery — 19 October 2026](deployment/DATABASE_HARDENING_2026-10-19.md)
+- [Encrypted RDS cutover runbook](deployment/RDS_ENCRYPTED_CUTOVER_RUNBOOK.md)

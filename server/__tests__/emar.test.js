@@ -8,6 +8,12 @@ import express from 'express';
 import request from 'supertest';
 import { jest } from '@jest/globals';
 
+// Route delegation tests keep the transaction/context wrapper and isolate the DB adapter.
+jest.unstable_mockModule('../db/postgres-sequelize.js', () => ({ postgresSequelize: { query: jest.fn(async () => []), transaction: jest.fn(async work => work({ id: 'route-test' })) } }));
+
+
+jest.unstable_mockModule('../services/prescription-safety.service.js', () => ({ prescriptionSafetyGate: () => (_req, _res, next) => next() }));
+
 // ── Auth mock ─────────────────────────────────────────────────────────────────
 
 jest.unstable_mockModule('../middleware/auth.middleware.js', () => ({
@@ -30,9 +36,11 @@ jest.unstable_mockModule('../services/emar.service.js', () => ({
   getDueMedications:      mockGetDueMedications,
   recordAdministration:   mockRecordAdministration,
   getActiveOrders:        mockGetActiveOrders,
+  getAdministrationHistory: mockGetActiveOrders,
   validateAdministration: mockValidateAdministration,
   updateOrderStatus:      mockUpdateOrderStatus,
-  createMedicationOrder:  mockCreateMedicationOrder
+  createMedicationOrder:  mockCreateMedicationOrder,
+  preparePrnDose: jest.fn(), recordInfusionEvent: jest.fn(), listInfusionEvents: jest.fn(), authorizeInfusionRate: jest.fn()
 }));
 
 jest.unstable_mockModule('../services/consent-enforcement.service.js', () => ({

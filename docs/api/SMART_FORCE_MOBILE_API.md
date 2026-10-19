@@ -151,7 +151,7 @@ List visits for the exec.
 | Query param | Required | Description |
 |---|---|---|
 | `date` | optional | `YYYY-MM-DD` |
-| `status` | optional | `planned \| in_progress \| completed \| missed` |
+| `status` | optional | `planned \| checked_in \| completed \| cancelled \| exception` |
 
 ### POST /api/field/visits
 
@@ -510,7 +510,7 @@ Search the doctor CRM (exec read-only).
 | Query param | Required | Description |
 |---|---|---|
 | `search` | optional | Name / hospital / city search |
-| `relationship_status` | optional | `cold \| warm \| hot \| promoter` |
+| `relationship_status` | optional | `prospect \| contacted \| visiting \| active_referrer \| champion \| inactive \| competitor_locked` |
 
 ---
 
@@ -522,7 +522,7 @@ List leads assigned to the exec.
 
 | Query param | Required | Description |
 |---|---|---|
-| `status` | optional | `open \| closed_won \| closed_lost` |
+| `status` | optional | `new \| contacted \| qualified \| proposal \| negotiation \| won \| lost \| parked` |
 
 ### POST /api/field/leads
 
@@ -540,7 +540,7 @@ Create a new lead from field.
 }
 ```
 
-`lead_type` values: `hospital | corporate | insurance | rwa | other`
+`lead_type` values: `corporate | doctor_referral | empanelment | camp | insurance | other`
 
 ---
 
@@ -638,7 +638,7 @@ List outreach accounts (RWA, NGO, corporate).
 | Query param | Required | Description |
 |---|---|---|
 | `type` | optional | `rwa \| ngo \| school \| corporate \| govt \| other` |
-| `relationship_status` | optional | `prospect \| active_partner \| inactive` |
+| `relationship_status` | optional | `prospect \| contacted \| active_partner \| camp_done \| renewal \| inactive` |
 
 ### GET /api/field/outreach-permissions
 
@@ -921,7 +921,7 @@ All team visits.
 | Query param | Description |
 |---|---|
 | `user_id` | Filter by exec |
-| `status` | `planned \| in_progress \| completed \| missed` |
+| `status` | `planned \| checked_in \| completed \| cancelled \| exception` |
 | `date_from / date_to` | Date range |
 
 ### GET /approvals

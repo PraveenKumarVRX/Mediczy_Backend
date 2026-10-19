@@ -94,23 +94,30 @@ describe('every query runs inside the tenant RLS transaction', () => {
   });
 });
 
+describe('legacy nursing wound paths',()=>{
+  it('requires the admission-scoped nursing workflow instead of bypassing assignment checks',async()=>{
+    const result=await request(app).post('/r/wounds').set('authorization',nurse()).send({patientId:5,woundType:'Surgical'});
+    expect(result.status).toBe(410);expect(result.body.code).toBe('USE_ADMISSION_NURSING_CHART');expect(clientQuery).not.toHaveBeenCalled();
+  });
+});
+
 describe('patient ownership is checked before anything is written', () => {
   it('a patient outside the hospital is a 404 and nothing is inserted', async () => {
-    const res = await request(app).post('/r/wounds').set('authorization', nurse()).send({ patientId: 999, woundType: 'x' });
+    const res = await request(app).post('/r/wounds').set('authorization', tok({id:50,role:'doctor',organization_id:4})).send({ patientId: 999, woundType: 'x' });
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('PATIENT_NOT_FOUND');
     expect(dataSql().some((c) => /INSERT/.test(c[0]))).toBe(false);
     expect(clientQuery.mock.calls.some((c) => /ROLLBACK/i.test(c[0]))).toBe(true);
   });
   it('a patient inside the hospital is written with the caller\'s tenant', async () => {
-    const res = await request(app).post('/r/wounds').set('authorization', nurse(4)).send({ patientId: 5, woundType: 'x', stage: '2' });
+    const res = await request(app).post('/r/wounds').set('authorization', tok({id:50,role:'doctor',organization_id:4})).send({ patientId: 5, woundType: 'x', stage: '2' });
     expect(res.status).toBe(201);
     const ins = dataSql().find((c) => /INSERT INTO wound_tracking_records/.test(c[0]));
     expect(ins[1].slice(0, 2)).toEqual([4, 5]);
   });
   it('a missing/non-numeric patientId is a 400', async () => {
-    expect((await request(app).post('/r/wounds').set('authorization', nurse()).send({ woundType: 'x' })).status).toBe(400);
-    expect((await request(app).post('/r/wounds').set('authorization', nurse()).send({ patientId: 'abc' })).status).toBe(400);
+    expect((await request(app).post('/r/wounds').set('authorization', tok({id:50,role:'doctor',organization_id:4})).send({ woundType: 'x' })).status).toBe(400);
+    expect((await request(app).post('/r/wounds').set('authorization', tok({id:50,role:'doctor',organization_id:4})).send({ patientId: 'abc' })).status).toBe(400);
   });
   it('voice enrollment: consent must be granted AND belong to that patient in this hospital', async () => {
     clientQuery.mockImplementation(async (sql, params) => {

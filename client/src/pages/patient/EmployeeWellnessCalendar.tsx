@@ -46,7 +46,7 @@ import { Calendar } from '@/components/ui/calendar';
 // Must match the categories Team login actually writes to event_type
 // (TeamCorporateManagement.tsx's eventTypeColors / CorporateWellnessCalendar.tsx).
 type ActivityType = 'Wellness Session' | 'Health Checkup' | 'Fitness Activity' | 'Mental Health' | 'Yoga & Meditation' | 'Nutrition Workshop' | 'Sports Day' | 'Safety Training' | 'Other';
-type RSVPStatus = 'pending' | 'confirmed' | 'declined' | 'attended' | 'missed';
+type RSVPStatus = 'pending' | 'confirmed' | 'declined' | 'cancelled' | 'attended' | 'missed';
 
 interface WellnessEvent {
   id: string;
@@ -209,7 +209,7 @@ const EmployeeWellnessCalendar: React.FC = () => {
     }
   };
 
-  const handleRSVP = async (eventId: string, status: 'confirmed' | 'declined') => {
+  const handleRSVP = async (eventId: string, status: 'confirmed' | 'declined' | 'cancelled') => {
     setRsvpLoading(true);
     try {
       const { data } = await api.post(`/corporate/wellness-calendar/employee/events/${encodeURIComponent(eventId)}/rsvp`, { status });
@@ -224,9 +224,11 @@ const EmployeeWellnessCalendar: React.FC = () => {
       }
 
       toast({
-        title: status === 'confirmed' ? 'You\'re In! 🎉' : 'RSVP Declined',
+        title: status === 'confirmed' ? 'You\'re In! 🎉' : status === 'cancelled' ? 'Registration Cancelled' : 'RSVP Declined',
         description: status === 'confirmed'
           ? 'You have confirmed your attendance. A calendar invite has been sent to your email.'
+          : status === 'cancelled'
+          ? 'Your registration has been cancelled. HR has been notified.'
           : 'You have declined this event. You can change your response anytime.'
       });
 
@@ -256,7 +258,7 @@ const EmployeeWellnessCalendar: React.FC = () => {
   };
 
   const upcomingEvents = useMemo(() => 
-    events.filter(e => new Date(e.date) >= new Date() && e.myRsvp !== 'declined')
+    events.filter(e => new Date(e.date) >= new Date() && e.myRsvp !== 'declined' && e.myRsvp !== 'cancelled')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [events]
   );
@@ -305,6 +307,8 @@ const EmployeeWellnessCalendar: React.FC = () => {
         return <Badge className="bg-amber-100 text-amber-700"><Bell className="h-3 w-3 mr-1" />Pending RSVP</Badge>;
       case 'declined':
         return <Badge className="bg-slate-100 text-slate-700"><XCircle className="h-3 w-3 mr-1" />Declined</Badge>;
+      case 'cancelled':
+        return <Badge className="bg-orange-100 text-orange-700"><CalendarX className="h-3 w-3 mr-1" />Cancelled</Badge>;
       case 'attended':
         return <Badge className="bg-blue-100 text-blue-700"><CheckCircle className="h-3 w-3 mr-1" />Attended</Badge>;
       case 'missed':
@@ -1060,10 +1064,10 @@ const EmployeeWellnessCalendar: React.FC = () => {
                           <Download className="h-4 w-4 mr-2" />
                           Add to Calendar
                         </Button>
-                        <Button 
+                        <Button
                           variant="outline"
                           className="text-red-600 hover:text-red-700"
-                          onClick={() => handleRSVP(selectedEvent.id, 'declined')}
+                          onClick={() => handleRSVP(selectedEvent.id, 'cancelled')}
                         >
                           <CalendarX className="h-4 w-4 mr-2" />
                           Cancel RSVP

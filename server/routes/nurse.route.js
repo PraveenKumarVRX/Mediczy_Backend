@@ -8,6 +8,12 @@ import Medication from '../models/medication.model.intelligent.js';
 import PatientNote from '../models/patientNote.model.intelligent.js';
 import VitalsRecord from '../models/vitalsRecord.model.intelligent.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authUser } from '../middleware/auth.middleware.js';
+import { assertAdmission } from '../services/nursing-context.service.js';
+import { nursingHandler } from './nursing-http.js';
+import { listNursingPatients,getNursingAssignments } from '../services/nursing-workflow.service.js';
+import { recordEntry,getFlowsheet } from '../services/nursing-echart.service.js';
+import { getAdministrationHistory } from '../services/emar.service.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import userModel from '../models/user.model.intelligent.js';
@@ -17,50 +23,22 @@ import { Appointment, Doctor } from '../models/index.js';
 
 const router = express.Router();
 
-// Nurse authentication middleware
-export const authNurse = async (req, res, next) => {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+// Reuse revocation, account-state and tenant checks for every nurse request.
+export const authNurse = (req,res,next) => authUser(req,res,()=>{
+  if(req.user?.role!=='nurse')return res.status(403).json({success:false,message:'Nurse access required'});
+  req.nurse=req.user;
+  return next();
+});
 
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'No authorization token provided'
-      });
-    }
-
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-
-    if (decoded.role !== 'nurse') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Nurse privileges required.'
-      });
-    }
-
-    req.nurse = {
-      id: decoded.id,
-      email: decoded.email,
-      role: decoded.role
-    };
-
-    next();
-  } catch (error) {
-    console.error('Nurse authentication error:', error);
-
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({
-        success: false,
-        message: 'Token expired. Please login again.'
-      });
-    }
-
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid or expired token'
-    });
-  }
-};
+// Legacy bedside paths share the admission-bound record system. Free-text medication writes are retired.
+router.get('/patients',authNurse,nursingHandler(req=>listNursingPatients(req.query)));
+router.get('/schedule',authNurse,nursingHandler(()=>getNursingAssignments()));
+router.post('/medications',authNurse,(_req,res)=>res.status(410).json({success:false,code:'USE_ORDER_LINKED_EMAR',message:'Use the admission eMAR to document an authorized dose'}));
+router.get('/medications/:patientId',authNurse,nursingHandler(async req=>{await assertAdmission(req.query.admissionId,{patientId:req.params.patientId});return getAdministrationHistory(req.query.admissionId);}));
+router.post('/notes',authNurse,nursingHandler(req=>recordEntry({admissionId:req.body.admissionId,patientId:req.body.patientId,entryType:'note',observationText:req.body.note,idempotencyKey:req.get('Idempotency-Key')}),201));
+router.get('/notes/:patientId',authNurse,nursingHandler(async req=>{await assertAdmission(req.query.admissionId,{patientId:req.params.patientId});return getFlowsheet(req.query.admissionId,{entryType:'note'});}));
+router.post('/vitals',authNurse,nursingHandler(req=>recordEntry({...req.body,entryType:'vitals',amendsId:null,idempotencyKey:req.get('Idempotency-Key')}),201));
+router.get('/vitals/:patientId',authNurse,nursingHandler(async req=>{await assertAdmission(req.query.admissionId,{patientId:req.params.patientId});return getFlowsheet(req.query.admissionId,{entryType:'vitals'});}));
 
 // Nurse login endpoint
 router.post('/login', authLimiter, [
@@ -122,7 +100,7 @@ router.post('/login', authLimiter, [
     const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
     const deviceFp = req.headers['x-device-fingerprint'] || null;
     const { accessToken: token } = await issuePortalTokenPair(
-      { id: nurse.id, nurseId: nurse.id, email: nurse.email, role: 'nurse', userType: 'nurse' },
+      { id: nurse.id, nurseId: nurse.id, email: nurse.email, role: 'nurse', userType: 'nurse', tenant_id:nurse.tenantId||nurse.tenant_id||nurse.organization_id, organization_id:nurse.tenantId||nurse.tenant_id||nurse.organization_id },
       { portal: 'nurse', deviceFp }
     );
 

@@ -1,0 +1,436 @@
+{
+  "review_date": "2026-10-19",
+  "user_timezone": "Asia/Kolkata",
+  "recorded_at_utc": "2026-10-19T08:47:49.697534+00:00",
+  "mediqzy_head": "4fe17b9c545777e58c060caefe971f7f6c9c2b24",
+  "scope": "Paperless bedside nursing deep review; wider application implementation direction only",
+  "method": {
+    "external": "GitHub pages/API metadata and untruncated recursive trees; pinned raw source samples inspected; no upstream build or execution",
+    "local": "Working-tree source inspection; existing isolated Jest suites only; no production access or database migrations",
+    "license_observation": "Root license file and GitHub detection; no legal determination; no external source copied into Mediqzy"
+  },
+  "identity_caveat": "tasmiul/hospital-management-system-django is a probable identification of the unnamed MedCare in the attachment, not a confirmed original URL",
+  "repositories": [
+    {
+      "full_name": "opensource-emr/hospital-management-emr",
+      "default_branch": "master",
+      "pushed_at": "2024-09-02T07:39:32Z",
+      "archived": false,
+      "license": {
+        "key": "mit",
+        "name": "MIT License",
+        "spdx_id": "MIT",
+        "url": "https://api.github.com/licenses/mit",
+        "node_id": "MDc6TGljZW5zZTEz"
+      },
+      "commit": "99638225ba0876261c2c16c3bd2f9b83f4abbc19",
+      "commit_date": "2024-09-02T07:39:32Z",
+      "truncated": false,
+      "root_license_paths": [
+        "LICENSE"
+      ],
+      "tree_entries": 15793,
+      "inspected_sources": [
+        {
+          "path": "Code/Websites/DanpheEMR/Controllers/Nursing/NursingController.cs",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/Code/Websites/DanpheEMR/Controllers/Nursing/NursingController.cs",
+          "sha256": "7be30da9cda29598b90bc80cd4ac216fb1cb9eabe42e815173b40421288902a9"
+        },
+        {
+          "path": "Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/clinical/others/input-output-add.component.ts",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/clinical/others/input-output-add.component.ts",
+          "sha256": "4c585b96c58d0322b3226ea9eba97ae8870950b751dbff69474d4e3bfc25a99b"
+        },
+        {
+          "path": "Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/clinical/vitals/vitals-add.component.ts",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/clinical/vitals/vitals-add.component.ts",
+          "sha256": "8a378129850bba1a02c2aa105c2cbad7b34c8b873516602bb74108e942a8cab6"
+        },
+        {
+          "path": "Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/nursing/department/nursing-inpatient.component.ts",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/nursing/department/nursing-inpatient.component.ts",
+          "sha256": "678484e4f985aa63e9f80441c7cec5cc5b63d4ba1333ea8ebd77502dab94ab3f"
+        },
+        {
+          "path": "Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/nursing/nursing-routing.module.ts",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/Code/Websites/DanpheEMR/wwwroot/DanpheApp/src/app/nursing/nursing-routing.module.ts",
+          "sha256": "97737fb71b62d3fb6174e40f4c7a7f46a13ff268ff53140e6b44c643ef92e7a9"
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/LICENSE",
+          "sha256": "d970d3a20b96919ce838c23dc5b4b02177324c846eab83a0178c3401bc399101"
+        },
+        {
+          "path": "README.md",
+          "url": "https://github.com/opensource-emr/hospital-management-emr/blob/99638225ba0876261c2c16c3bd2f9b83f4abbc19/README.md",
+          "sha256": "b47c8e2701540cea39dd89fb07713c57070aa828895d2ca374077ea7302244ee"
+        }
+      ]
+    },
+    {
+      "full_name": "qwan30/hospital-management-system",
+      "default_branch": "master",
+      "pushed_at": "2026-09-21T02:09:52Z",
+      "archived": false,
+      "license": null,
+      "commit": "a46f5b4653c96575ee50ca35ea9c8bc8022afb33",
+      "commit_date": "2026-08-18T13:04:01Z",
+      "truncated": false,
+      "root_license_paths": [],
+      "tree_entries": 1443,
+      "inspected_sources": [
+        {
+          "path": "README.md",
+          "url": "https://github.com/qwan30/hospital-management-system/blob/a46f5b4653c96575ee50ca35ea9c8bc8022afb33/README.md",
+          "sha256": "84b5549e6dcfdaf54e07cabf99ae5a845fbdd5082dccf069eb0bc0f71e7192a3"
+        },
+        {
+          "path": "backend/controller/src/main/java/com/hospital/api/vitalsigns/VitalSignsController.java",
+          "url": "https://github.com/qwan30/hospital-management-system/blob/a46f5b4653c96575ee50ca35ea9c8bc8022afb33/backend/controller/src/main/java/com/hospital/api/vitalsigns/VitalSignsController.java",
+          "sha256": "b7e6b59d126eea219914962a23d4688d0e813a25b038d89cbe04a0b16f3bf8fb"
+        },
+        {
+          "path": "frontend/src/app/staff/(app)/nurse-intake/page.tsx",
+          "url": "https://github.com/qwan30/hospital-management-system/blob/a46f5b4653c96575ee50ca35ea9c8bc8022afb33/frontend/src/app/staff/(app)/nurse-intake/page.tsx",
+          "sha256": "162243dc9965a125a7ff5d429ce820d1c3371b04074880f3536f73e2893773e5"
+        }
+      ]
+    },
+    {
+      "full_name": "tasmiul/hospital-management-system-django",
+      "default_branch": "main",
+      "pushed_at": "2026-06-24T16:26:05Z",
+      "archived": false,
+      "license": {
+        "key": "mit",
+        "name": "MIT License",
+        "spdx_id": "MIT",
+        "url": "https://api.github.com/licenses/mit",
+        "node_id": "MDc6TGljZW5zZTEz"
+      },
+      "commit": "35b67904d9cc8dd3dce3dae61856acad6cfbcb28",
+      "commit_date": "2026-06-24T16:26:05Z",
+      "truncated": false,
+      "root_license_paths": [
+        "LICENSE"
+      ],
+      "tree_entries": 905,
+      "inspected_sources": [
+        {
+          "path": "LICENSE",
+          "url": "https://github.com/tasmiul/hospital-management-system-django/blob/35b67904d9cc8dd3dce3dae61856acad6cfbcb28/LICENSE",
+          "sha256": "aa6a95e2ac6bb25dc6954e9bcdcad2efba32214002fb851f1a18f263d972f96d"
+        },
+        {
+          "path": "README.md",
+          "url": "https://github.com/tasmiul/hospital-management-system-django/blob/35b67904d9cc8dd3dce3dae61856acad6cfbcb28/README.md",
+          "sha256": "6be69840a4e2fe83b930d7e4bcacea90f383de538e9bcc677734ffa86c8dbf9a"
+        },
+        {
+          "path": "nursing/models.py",
+          "url": "https://github.com/tasmiul/hospital-management-system-django/blob/35b67904d9cc8dd3dce3dae61856acad6cfbcb28/nursing/models.py",
+          "sha256": "0e2e21d74a489049ac318b835fa08f7e6c30e662c0306656440b680e691e6893"
+        },
+        {
+          "path": "nursing/urls.py",
+          "url": "https://github.com/tasmiul/hospital-management-system-django/blob/35b67904d9cc8dd3dce3dae61856acad6cfbcb28/nursing/urls.py",
+          "sha256": "7503f953b3e14bed9bc69dc1a94e9cbcfecd706e9f4d6eb1d49deefd7b59e5a8"
+        },
+        {
+          "path": "nursing/views.py",
+          "url": "https://github.com/tasmiul/hospital-management-system-django/blob/35b67904d9cc8dd3dce3dae61856acad6cfbcb28/nursing/views.py",
+          "sha256": "cb5f4188ea08b05afc37d9dff192626bb33a1c75a5f2df9368df7f49b108de96"
+        },
+        {
+          "path": "requirements.txt",
+          "url": "https://github.com/tasmiul/hospital-management-system-django/blob/35b67904d9cc8dd3dce3dae61856acad6cfbcb28/requirements.txt",
+          "sha256": "65b991d9e60a166736e0cac09966ae9fd74477515dd09c8cd6da9a178f777054"
+        }
+      ]
+    },
+    {
+      "full_name": "Ashishamore/hospital-project",
+      "default_branch": "main",
+      "pushed_at": "2026-09-22T01:16:13Z",
+      "archived": false,
+      "license": null,
+      "commit": "c4e4d984d05aeeca6ade018d204e550da7d0a5c8",
+      "commit_date": "2026-09-22T01:16:11Z",
+      "truncated": false,
+      "root_license_paths": [],
+      "tree_entries": 90,
+      "inspected_sources": [
+        {
+          "path": ".nvmrc",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/.nvmrc",
+          "sha256": "f14b4987904bcb5814e4459a057ed4d20f58a633152288a761214dcd28780b56"
+        },
+        {
+          "path": "README.md",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/README.md",
+          "sha256": "3f964ac6d51f49727105ee5153eba8c283bb15b74275f0bc1c311ff7b299ab97"
+        },
+        {
+          "path": "package.json",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/package.json",
+          "sha256": "d332f02657197347b90dac9373c08bce877ce284d6736819286daad54a72e9b2"
+        },
+        {
+          "path": "src/lib/rbac.js",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/src/lib/rbac.js",
+          "sha256": "1c5f731c22583334a8dccb974ae30dc7337260ed49a601b5f6e7ea7d092c14da"
+        },
+        {
+          "path": "src/pages/AdmissionChart.jsx",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/src/pages/AdmissionChart.jsx",
+          "sha256": "28fec88ec8100a1836fced6beae12d841a220b015bd4212a2470e71845d6515e"
+        },
+        {
+          "path": "src/pages/ICU.jsx",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/src/pages/ICU.jsx",
+          "sha256": "899ca19f0b5639eac3b95545a9ea50caa7e9b71635e515ba1c7c08478ef04cf2"
+        },
+        {
+          "path": "src/pages/Nursing.jsx",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/src/pages/Nursing.jsx",
+          "sha256": "66ed78c20f84e3af35c2608ea688e8766b310bf0f295e3f903ce9c6992dbef10"
+        },
+        {
+          "path": "src/store/actions.js",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/src/store/actions.js",
+          "sha256": "bcb87ad61bde3ebbcac73b56d756d9a470af6afec275b6aed8f6d9c69de6fe4d"
+        },
+        {
+          "path": "src/store/idb.js",
+          "url": "https://github.com/Ashishamore/hospital-project/blob/c4e4d984d05aeeca6ade018d204e550da7d0a5c8/src/store/idb.js",
+          "sha256": "f12ac8ba2a35b7632d5cf905844a111420fcc0d560ba60c11618d755048a3bb5"
+        }
+      ]
+    },
+    {
+      "full_name": "openemr/openemr",
+      "default_branch": "master",
+      "pushed_at": "2026-10-19T08:04:09Z",
+      "archived": false,
+      "license": {
+        "key": "gpl-3.0",
+        "name": "GNU General Public License v3.0",
+        "spdx_id": "GPL-3.0",
+        "url": "https://api.github.com/licenses/gpl-3.0",
+        "node_id": "MDc6TGljZW5zZTk="
+      },
+      "commit": "4b463cd3d2d840a4083c4c6bd47a5654a4574d2e",
+      "commit_date": "2026-10-19T06:09:23Z",
+      "truncated": false,
+      "root_license_paths": [
+        "LICENSE",
+        "acknowledge_license_cert.html"
+      ],
+      "tree_entries": 11575,
+      "inspected_sources": [
+        {
+          "path": "API_README.md",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/API_README.md",
+          "sha256": "d4c5e4187d433ff2619d110b31db222c05029d3ac49605d606d67b195bdc9767"
+        },
+        {
+          "path": "LICENSE",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/LICENSE",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+        },
+        {
+          "path": "README.md",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/README.md",
+          "sha256": "c3b6d3d05bfe5761f3bcb92717e94ec2d9837bd2667b19d1a31d9fb30933178f"
+        },
+        {
+          "path": "docker/development-easy/README.md",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/docker/development-easy/README.md",
+          "sha256": "7ff49fc5a36e26e120dca88b582fd70a56b91619ee701de2b78f3b64bf452e7e"
+        },
+        {
+          "path": "interface/forms/note/new.php",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/interface/forms/note/new.php",
+          "sha256": "a4349012cf7f7538584f8b90d9a483aec0b73bbe5ac66c11a949faa31b892579"
+        },
+        {
+          "path": "interface/forms/vitals/new.php",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/interface/forms/vitals/new.php",
+          "sha256": "37039b08ffe23f4248cfb607627ee3fbc78d48e60fafeffc47ba39ae24a2666c"
+        },
+        {
+          "path": "src/RestControllers/Config/RestConfig.php",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/src/RestControllers/Config/RestConfig.php",
+          "sha256": "9ab3d4e5401615947f1c740292eab207f9ec5d65931194ac28779746eb16aad9"
+        },
+        {
+          "path": "src/Services/FHIR/FhirCarePlanService.php",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/src/Services/FHIR/FhirCarePlanService.php",
+          "sha256": "28e131eeb6a7c1d8431dc95a2765fc2c008bb049e40b500379413cab1724761a"
+        },
+        {
+          "path": "src/Services/FHIR/FhirObservationService.php",
+          "url": "https://github.com/openemr/openemr/blob/4b463cd3d2d840a4083c4c6bd47a5654a4574d2e/src/Services/FHIR/FhirObservationService.php",
+          "sha256": "c650b6b8e54a8e8b724e9cf3f1914da67c45ae2dccf0aafe7452a2222aacad18"
+        }
+      ]
+    }
+  ],
+  "local_source_evidence": [
+    {
+      "path": "client/src/features/hospital-os/pages/NurseHandoverPage.tsx",
+      "sha256": "5922732008c7a42926b3e697a42a76a111e0eac044c131b6a2d6eac1c754bee5"
+    },
+    {
+      "path": "client/src/pages/hmis/EChartingPage.tsx",
+      "sha256": "31d0ba1eda79c72660fe4c8059b8eee29cb6ad0d4e6c5fecc29783cd77a76574"
+    },
+    {
+      "path": "client/src/pages/hmis/EMARPage.tsx",
+      "sha256": "56298eeb793fecc197b2605eb8165cf5f33866f9d06f3e0829fedc1de30bd9cd"
+    },
+    {
+      "path": "client/src/pages/hmis/NursingTaskBoard.tsx",
+      "sha256": "a60fb278cfa923bdb4c3c8caac60ecea85e3c7c2d30ec1495530bc66315bb564"
+    },
+    {
+      "path": "client/src/pages/nurse/NurseDashboard.tsx",
+      "sha256": "649529e65fe5389714747afe4aab4eb0bb563b11e0846d91fcccd672217a6232"
+    },
+    {
+      "path": "client/src/pages/nurse/NurseNotes.tsx",
+      "sha256": "a217ca4f7f85be285088dee8d4f113c2ebd5c2a3a3ed7c9cb6a3849b275dc518"
+    },
+    {
+      "path": "client/src/routes/portalClinicalRoutes.tsx",
+      "sha256": "341cd10f26166d25f67e8a4d217576f8ab757e542008df604a6bb7fa7a53274c"
+    },
+    {
+      "path": "client/src/utils/api.ts",
+      "sha256": "aff3e7ae4022540b9f984a4e408a8787e27d118cdf6199f29b8b5242d245e477"
+    },
+    {
+      "path": "server/app.js",
+      "sha256": "90950b0c687782ae5c1383665f9b8f299d2ebb24cd6bff2d35040c255eb474b1"
+    },
+    {
+      "path": "server/middleware/auth.middleware.js",
+      "sha256": "c8f9d55a785fab99dcc950e47336f93eb0b1c2408b06683ba76bd1b9fe1f37a4"
+    },
+    {
+      "path": "server/middleware/rls-context.middleware.js",
+      "sha256": "4d340b68495a9e85729901b4ec2e12bfa01b7a71eb98bb444d2bdf4866ae4bd4"
+    },
+    {
+      "path": "server/migrations/20260926000006-roadmap-intelligence.migration.js",
+      "sha256": "179b9a1aa5c28d84eb32934b4fbbc2c2cf7215e4cb720827abbaac61634c6371"
+    },
+    {
+      "path": "server/routes/care-plan.route.js",
+      "sha256": "1a9c2faadb848aa60bd1eeae130e1f1671084dd50a4c0e788a9054b418d487e1"
+    },
+    {
+      "path": "server/routes/domains/hmis.domain.js",
+      "sha256": "7ea0b915717f78f22b5495c9a3c0e8ab6f9f56ef45cc963224721fab6c136e85"
+    },
+    {
+      "path": "server/routes/emar.route.js",
+      "sha256": "31e5aa6cd9eb5ec36b8d7baeedb80ab6f5e7b0bf1fb0f058788b06bac0d66b06"
+    },
+    {
+      "path": "server/routes/nurse.route.js",
+      "sha256": "e67eacf069c254b6d7a5151f1bf9d51e89f4beb0e265c0741fd70621ec7a18b6"
+    },
+    {
+      "path": "server/routes/nursing-ipd.route.js",
+      "sha256": "6684bf09746b271af41fa613e329163e9ba7295b4bd878d06885626a605d024a"
+    },
+    {
+      "path": "server/routes/roadmap-intelligence.route.js",
+      "sha256": "6485e3963788854fc1535f04ca7e75436e003c8195892771a54b5a0c540115fc"
+    },
+    {
+      "path": "server/services/emar-pharmacy-bridge.service.js",
+      "sha256": "60129a748a64ad2c7d040d0c870d5ac0b7f5bc0d9cb74ac209d230b7e502dd42"
+    },
+    {
+      "path": "server/services/emar.service.js",
+      "sha256": "3879f3a99c14cab73e5d03ed9345b5813951580e87b61e99719d58e9da881b10"
+    },
+    {
+      "path": "server/services/hospital-os/nurse-handover.service.js",
+      "sha256": "8f6603fc7eea526f71766f83887a0a326e75d5c317f0ab6baca3e9c0032a6777"
+    },
+    {
+      "path": "server/services/news2.service.js",
+      "sha256": "465de1fd5faa02ffe258a74c5ed34e40bd12193c232eb871deff5b86ed056bd5"
+    },
+    {
+      "path": "server/services/nursing-echart.service.js",
+      "sha256": "08d57844e85b4ce6c585595cdc8c70757ec61bccbd27f9f6a4cbf3ec8d9f090a"
+    },
+    {
+      "path": "server/services/nursing-ipd.service.js",
+      "sha256": "3009af3d63ceb75ed084f5ada2c9be381eae8f162f4b9295c0b87e763b661862"
+    },
+    {
+      "path": "server/services/vitals-ews.service.js",
+      "sha256": "b90558dfa5099d2453e642c2947c43517de0e4761a6e8d097178fa4ca5d67a04"
+    },
+    {
+      "path": "docs/hospital/MEDIQZY_HOSPITAL_OS_MASTER_GAP_IMPLEMENTATION.md",
+      "sha256": "59875f0f0297cd282707960cea121ab1d71a09d6e09eb4daac4b156e6dbf293b"
+    }
+  ],
+  "tests": {
+    "runner": "npm test -- --runTestsByPath <listed suite paths> --silent (cwd server)",
+    "suites": [
+      {
+        "path": "server/__tests__/roadmap-intelligence-route.test.js",
+        "passed": 20,
+        "failed": 0,
+        "isolation": "Database mocked; signed-token route behavior"
+      },
+      {
+        "path": "server/__tests__/news2.test.js",
+        "passed": 20,
+        "failed": 0,
+        "isolation": "Pure scorer behavior"
+      },
+      {
+        "path": "server/__tests__/nursing-schema.test.js",
+        "passed": 0,
+        "failed": 1,
+        "isolation": "Source/schema ownership assertions",
+        "finding": "Nursing services still contain runtime DDL"
+      },
+      {
+        "path": "server/__tests__/emar-pharmacy-bridge.service.test.js",
+        "passed": 0,
+        "failed": 5,
+        "isolation": "Sequelize query/transaction mocked",
+        "findings": [
+          "buildDispenseRequestHash export missing",
+          "Changed-payload replay not rejected",
+          "Refused/held outcome skip contract missing",
+          "Atomic dispense/retry contract unmet",
+          "Typed not-found contract unmet"
+        ]
+      }
+    ],
+    "total_passed": 40,
+    "total_failed": 6,
+    "application_code_modified": false
+  },
+  "not_verified": [
+    "Upstream runtime/builds",
+    "Mediqzy deployed configuration or RLS policies",
+    "Clinical usability or safety acceptance",
+    "Browser end-to-end behavior",
+    "Production access",
+    "Clean-database migration or restore",
+    "Performance/load",
+    "Regulatory conformance"
+  ]
+}

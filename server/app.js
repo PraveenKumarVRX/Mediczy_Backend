@@ -29,6 +29,7 @@ import crypto from 'crypto';
 import hpp from "hpp";
 import rateLimit from "express-rate-limit";
 import fileUpload from 'express-fileupload';
+import { NURSING_IMAGE_UPLOAD_PATHS } from './utils/nursing-upload-paths.js';
 import compression from 'compression';
 import orchestrator from "./db/orchestrator.js";
 import userRouter from "./routes/user.route.js";
@@ -956,6 +957,7 @@ app.use((req, res, next) => {
   // Skip express-fileupload for routes that use multer (memoryStorage/diskStorage)
   // These routes handle their own multipart parsing via multer
   const multerPaths = [
+    ...NURSING_IMAGE_UPLOAD_PATHS,
     '/api/offline-scribe/transcribe',
     '/api/offline-scribe/full-pipeline',
     '/api/recordings/upload',

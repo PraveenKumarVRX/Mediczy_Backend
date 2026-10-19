@@ -30,6 +30,18 @@ if command -v aws >/dev/null 2>&1; then
     [ -n "$OPENAI_MODEL_SSM" ] && export OPENAI_MODEL="$OPENAI_MODEL_SSM"
     [ -n "$SIB_PRIMARY_PROVIDER_SSM" ] && export SIB_PRIMARY_PROVIDER="$SIB_PRIMARY_PROVIDER_SSM"
 
+    # Fetch only runtime DB values; an inherited UAT .env must not select production's target.
+    for DB_RUNTIME_KEY in POSTGRES_HOST POSTGRES_PORT POSTGRES_DATABASE POSTGRES_USER POSTGRES_PASSWORD POSTGRES_SSL; do
+        DB_RUNTIME_VALUE="$(load_ssm_value "$DB_RUNTIME_KEY")"
+        if [ -z "$DB_RUNTIME_VALUE" ] || [ "$DB_RUNTIME_VALUE" = "None" ]; then
+            echo "Missing production database parameter: $DB_RUNTIME_KEY" >&2
+            exit 1
+        fi
+        export "$DB_RUNTIME_KEY=$DB_RUNTIME_VALUE"
+    done
+    unset DB_RUNTIME_KEY DB_RUNTIME_VALUE
+    export PGSSLMODE=verify-full
+    export PGSSLROOTCERT="${POSTGRES_SSL_CA_FILE:-/home/ubuntu/Mediczy/server/db/certs/aws-rds-ap-south-1.pem}"
     unset OPENAI_API_KEY_SSM OPENAI_MODEL_SSM SIB_PRIMARY_PROVIDER_SSM
 fi
 

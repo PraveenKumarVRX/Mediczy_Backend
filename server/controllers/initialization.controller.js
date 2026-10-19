@@ -7,6 +7,7 @@ import { initDuckDBEtl, runNightlyETL, startKafkaETLConsumer } from "../services
 import { startAllKafkaConsumers } from "../services/kafka-consumers.service.js";
 import scheduleDeviceMonitoring from "../scripts/device-monitoring-cron.js";
 import scheduleAppointmentAutoCancel from "../scripts/appointment-auto-cancel-cron.js";
+import scheduleCorporateAppointmentAutoCancel from "../scripts/corporate-appointment-auto-cancel-cron.js";
 
 /**
  * Initialization Controller
@@ -114,7 +115,8 @@ class InitializationController {
       // Appointment auto-cancel cron jobs
       console.log('📅 Starting appointment auto-cancel cron jobs...');
       scheduleAppointmentAutoCancel();
-      
+      scheduleCorporateAppointmentAutoCancel();
+
       // Membership validation cron jobs
       console.log('👤 Starting membership validation cron jobs...');
       const { startMembershipCronJobs } = await import('../services/membership-cron.service.js');

@@ -5,6 +5,7 @@
 
 import { Sequelize } from 'sequelize';
 import dotenv from 'dotenv';
+import { postgresTls } from './postgres-tls.js';
 
 dotenv.config();
 
@@ -31,9 +32,7 @@ const postgresSequelize = new Sequelize(database, username, password, {
   port,
   dialect: 'postgres',
   dialectOptions: {
-    ssl: process.env.POSTGRES_SSL === 'true' 
-      ? { rejectUnauthorized: false } 
-      : false,
+    ssl: postgresTls(),
     connectTimeout: 10000,
   },
   logging: process.env.NODE_ENV === 'development' ? console.log : false,

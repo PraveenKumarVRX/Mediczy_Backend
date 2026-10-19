@@ -88,6 +88,17 @@ api.interceptors.request.use(
       config.url = config.url.replace(/^\/api/, '');
     }
 
+    // An explicit caller or the visible staff portal selects the actor. Never borrow a hospital session.
+    const explicitAuth = config.headers && (config.headers as any).Authorization;
+    if (explicitAuth) return config;
+    if (typeof window !== 'undefined') {
+      const visiblePortal = window.location.pathname.match(/^\/(nurse|doctor|assistant)(?:\/|$)/)?.[1];
+      if (visiblePortal && !/\/(login|register)(?:\/|$)/.test(config.url || '')) {
+        const staffToken = localStorage.getItem(`${visiblePortal}Token`);
+        if (staffToken) config.headers = { ...(config.headers || {}), Authorization: `Bearer ${staffToken}` } as any;
+        return config;
+      }
+    }
     const requestPath = config.url || '';
     const prefersHospitalToken =
       /^\/(v1\/(adt|beds|emar|vitals|clinical-workspace|discharge|analytics|nursing|navigation|echart|follow-up|recovery|hl7|fhir|reports|ot|ai-|charge-master|billing))/i.test(requestPath) ||
@@ -162,6 +173,11 @@ api.interceptors.response.use(
     // the user away to /login instead of letting the login page show its own
     // "invalid credentials" error.
     const requestUrl = String(originalRequest?.url || "");
+    if (error.response?.status === 401 && window.location.pathname.startsWith('/nurse/') && !/\/(login|register)(\/|$|\?)/.test(requestUrl)) {
+      window.dispatchEvent(new Event('nursing-session-expired'));
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && /\/(login|auth\/login|register)(\/|$|\?)/.test(requestUrl)) {
       return Promise.reject(error);
     }
@@ -248,7 +264,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      getUserType() === "crm"
+      String(getUserType()) === "crm"
     ) {
       const crmRefresh = window.localStorage.getItem("crmRefreshToken");
       if (crmRefresh) {
@@ -488,7 +504,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      (getUserType() === "user" || getUserType() === "individual" || !getUserType())
+      (getUserType() === "user" || String(getUserType()) === "individual" || !getUserType())
     ) {
       const refreshToken = window.localStorage.getItem("refreshToken");
 

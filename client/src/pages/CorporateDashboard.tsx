@@ -45,6 +45,8 @@ import {
 } from "lucide-react";
 import { getUserType } from "@/hooks/auth";
 import api from "@/utils/api";
+import ExcelJS from "exceljs";
+import { downloadArrayBuffer } from "@/utils/downloadFile";
 import { PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import CorporateLayout from "@/components/corporate/CorporateLayout";
 import { cn } from "@/lib/utils";
@@ -197,6 +199,7 @@ const CorporateDashboard = () => {
   const [filteredEmployees, setFilteredEmployees] = useState<EmployeeHealth[]>([]);
   const [participation, setParticipation] = useState<any>(null);
   const [ageDistribution, setAgeDistribution] = useState<any[]>([]);
+  const [monthlyUtilization, setMonthlyUtilization] = useState<{ month: string; appointments: number; ahcCompletions: number }[]>([]);
 
   useEffect(() => {
     fetchDashboardData(true);
@@ -223,13 +226,14 @@ const CorporateDashboard = () => {
       }
       setError(null);
       
-      const [summaryRes, healthRes, employeesRes, appointmentsRes, participationRes, ageDistRes] = await Promise.all([
+      const [summaryRes, healthRes, employeesRes, appointmentsRes, participationRes, ageDistRes, utilizationRes] = await Promise.all([
         api.get("/corporate/dashboard/summary").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/health-analytics").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/employees-health").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/appointments").catch(() => ({ data: null })),
         api.get("/corporate/analytics/participation").catch(() => ({ data: null })),
-        api.get("/corporate/dashboard/age-distribution").catch(() => ({ data: null }))
+        api.get("/corporate/dashboard/age-distribution").catch(() => ({ data: null })),
+        api.get("/corporate/analytics/monthly-utilization").catch(() => ({ data: null }))
       ]);
 
       setSummary(summaryRes.data?.data || null);
@@ -238,6 +242,7 @@ const CorporateDashboard = () => {
       setAppointments(appointmentsRes.data?.data?.appointments || []);
       setParticipation(participationRes.data?.data || null);
       setAgeDistribution(ageDistRes.data?.data?.ageGroups || []);
+      setMonthlyUtilization(utilizationRes.data?.data?.chart || []);
 
       // Update corporate profile from summary API response
       const cp = summaryRes.data?.data?.corporateProfile;
@@ -396,6 +401,45 @@ const CorporateDashboard = () => {
     a.download = `health-report-${corporateProfile.companyName.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportReportExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Health Report");
+    sheet.columns = [{ header: "Metric", key: "metric", width: 28 }, { header: "Value", key: "value", width: 20 }];
+    sheet.addRow({ metric: "Company", value: corporateProfile.companyName });
+    sheet.addRow({ metric: "Report Date", value: new Date().toLocaleDateString() });
+    sheet.addRow({ metric: "Total Employees", value: healthAnalytics?.totalEmployees ?? "—" });
+    sheet.addRow({ metric: "Monitored Employees", value: healthAnalytics?.monitoredEmployees ?? "—" });
+    sheet.addRow({ metric: "Healthy Employees", value: healthAnalytics?.healthyEmployees ?? "—" });
+    sheet.addRow({ metric: "At-Risk Employees", value: healthAnalytics?.atRiskEmployees ?? "—" });
+    sheet.addRow({ metric: "Critical Cases", value: healthAnalytics?.criticalCases ?? "—" });
+    sheet.addRow({ metric: "Average Risk Score", value: healthAnalytics?.averageRiskScore != null ? healthAnalytics.averageRiskScore.toFixed(1) : "—" });
+    sheet.addRow({ metric: "Risk: Low", value: healthAnalytics?.riskDistribution?.low ?? 0 });
+    sheet.addRow({ metric: "Risk: Medium", value: healthAnalytics?.riskDistribution?.medium ?? 0 });
+    sheet.addRow({ metric: "Risk: High", value: healthAnalytics?.riskDistribution?.high ?? 0 });
+    sheet.addRow({ metric: "Risk: Critical", value: healthAnalytics?.riskDistribution?.critical ?? 0 });
+
+    if (healthAnalytics?.departmentRisks?.length) {
+      sheet.addRow({});
+      const deptSheet = workbook.addWorksheet("By Department");
+      deptSheet.columns = [
+        { header: "Department", key: "department", width: 24 },
+        { header: "Employees", key: "employees", width: 14 },
+        { header: "Avg Risk", key: "avgRisk", width: 14 },
+        { header: "High Risk", key: "highRisk", width: 14 },
+      ];
+      for (const d of healthAnalytics.departmentRisks) {
+        deptSheet.addRow({ department: d.department, employees: d.totalEmployees, avgRisk: d.averageRisk ?? "—", highRisk: d.highRiskCount ?? "—" });
+      }
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadArrayBuffer(
+      buffer as ArrayBuffer,
+      `health-report-${corporateProfile.companyName.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.xlsx`,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
   };
 
   const hasRiskData = healthAnalytics &&
@@ -581,9 +625,13 @@ const CorporateDashboard = () => {
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Refresh
               </Button>
-              <Button onClick={handleExportReport} className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 border-0">
+              <Button onClick={handleExportReport} variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30">
                 <Download className="w-4 h-4 mr-2" />
-                Export Report
+                Export CSV
+              </Button>
+              <Button onClick={handleExportReportExcel} className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 border-0">
+                <Download className="w-4 h-4 mr-2" />
+                Export Excel
               </Button>
             </div>
           </div>
@@ -1071,6 +1119,39 @@ const CorporateDashboard = () => {
                       <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 text-center">Trends not available yet</p>
                       <p className="text-xs text-slate-400 dark:text-slate-500 text-center px-6">
                         Monthly risk trends will build up as health assessments are recorded over time
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              {/* Monthly Teleconsultation & Checkup Trend */}
+              <Card className="p-6 lg:col-span-2 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Monthly Utilization (Last 12 Months)</h3>
+                <div className="relative">
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={monthlyUtilization.length > 0 ? monthlyUtilization : PLACEHOLDER_TRENDS}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={monthlyUtilization.length > 0 ? undefined : '#e2e8f030'} />
+                      <XAxis dataKey="month" tick={{ fill: monthlyUtilization.length > 0 ? undefined : '#64748b' }} />
+                      <YAxis tick={{ fill: monthlyUtilization.length > 0 ? undefined : '#64748b' }} />
+                      {monthlyUtilization.length > 0 && <Tooltip />}
+                      <Legend
+                        formatter={(value) =>
+                          monthlyUtilization.length > 0 ? value : <span className="text-slate-400 dark:text-slate-600">{value}</span>
+                        }
+                      />
+                      <Bar dataKey="appointments" fill={monthlyUtilization.length > 0 ? '#10b981' : '#334155'}
+                        opacity={monthlyUtilization.length > 0 ? 1 : 0.5} name="Teleconsultations" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="ahcCompletions" fill={monthlyUtilization.length > 0 ? '#3b82f6' : '#475569'}
+                        opacity={monthlyUtilization.length > 0 ? 1 : 0.5} name="Checkups Completed" radius={[3, 3, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                  {monthlyUtilization.length === 0 && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/60 dark:bg-slate-800/60 backdrop-blur-[2px] rounded-lg gap-2">
+                      <TrendingUp className="w-8 h-8 text-slate-400" />
+                      <p className="text-sm font-semibold text-slate-600 dark:text-slate-300 text-center">No utilization data yet</p>
+                      <p className="text-xs text-slate-400 dark:text-slate-500 text-center px-6">
+                        Monthly teleconsultation and checkup trends will build up as appointments are booked
                       </p>
                     </div>
                   )}

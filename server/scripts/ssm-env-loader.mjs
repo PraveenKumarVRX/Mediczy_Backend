@@ -13,6 +13,10 @@
  */
 
 import { SSMClient, GetParametersByPathCommand } from '@aws-sdk/client-ssm';
+import { isPrivilegedDatabaseSecret } from '../utils/runtime-secret-policy.js';
+
+// Remove stale privileged credentials inherited from a saved process environment too.
+for (const key of Object.keys(process.env)) if (isPrivilegedDatabaseSecret(key)) delete process.env[key];
 import { createRequire } from 'module';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -85,6 +89,7 @@ async function loadFromSSM() {
       const res = await client.send(cmd);
       for (const param of res.Parameters || []) {
         const key = param.Name.replace(`${SSM_PATH}/`, '');
+        if (isPrivilegedDatabaseSecret(key)) continue;
         // In production, SSM is the source of truth. This prevents stale PM2/env
         // values from masking rotated secrets such as OPENAI_API_KEY.
         if (process.env.NODE_ENV === 'production' || !(key in process.env)) {

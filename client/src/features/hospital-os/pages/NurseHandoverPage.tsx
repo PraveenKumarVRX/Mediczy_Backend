@@ -1,49 +1,22 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
+import NursingHandover from '@/components/clinical/NursingHandover';
 import { Input } from '@/components/ui/input';
-import { HeartPulse, Loader2 } from 'lucide-react';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { generateNurseHandover } from '@/services/hospitalOs.service';
-
 export default function NurseHandoverPage() {
-  const [wardId, setWardId] = useState('');
-  const [shift, setShift] = useState('day');
-  const [brief, setBrief] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-
-  const generate = async () => {
-    setLoading(true);
-    try {
-      const r = await generateNurseHandover(wardId ? Number(wardId) : undefined, shift);
-      setBrief(r?.data);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-semibold flex items-center gap-2">
-        <HeartPulse className="h-5 w-5 text-rose-600" />
-        AI Nurse Handover (Pillar 7)
-      </h2>
-      <div className="flex gap-2 flex-wrap">
-        <Input placeholder="Ward ID (optional)" value={wardId} onChange={(e) => setWardId(e.target.value)} className="max-w-[140px]" />
-        <select className="border rounded-md px-3 text-sm" value={shift} onChange={(e) => setShift(e.target.value)}>
-          <option value="day">Day</option>
-          <option value="evening">Evening</option>
-          <option value="night">Night</option>
-        </select>
-        <Button onClick={generate} disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Generate SBAR brief'}
-        </Button>
-      </div>
-      {brief && (
-        <Card>
-          <CardHeader><CardTitle className="text-base">Shift handover</CardTitle></CardHeader>
-          <CardContent className="text-sm whitespace-pre-wrap">{brief.summary || brief.sbar || JSON.stringify(brief, null, 2)}</CardContent>
-        </Card>
-      )}
-    </div>
-  );
+    const [ward, setWard] = useState('');
+    const [activeWard, setActiveWard] = useState<number | null>(null);
+    const [draft, setDraft] = useState<any>(null);
+    const [error, setError] = useState('');
+    return <main className="space-y-4"><h1 className="text-xl font-semibold">Nursing shift handover</h1><form className="flex flex-wrap gap-2 items-end" onSubmit={e => { e.preventDefault(); setActiveWard(Number(ward)); setDraft(null); }}><div><Label htmlFor="handover-ward">Ward ID</Label><Input id="handover-ward" type="number" min="1" required value={ward} onChange={e => setWard(e.target.value)}/></div><Button>Open ward handover</Button></form>{error && <p role="alert">{error}</p>}{activeWard && <><NursingHandover wardId={activeWard}/><Button variant="outline" onClick={async () => {
+                try {
+                    setError('');
+                    const r = await generateNurseHandover(activeWard, 'day');
+                    setDraft(r.data);
+                }
+                catch (e: any) {
+                    setError(e.response?.data?.message || 'Draft could not be generated.');
+                }
+            }}>Prepare a draft briefing</Button>{draft && <section className="border p-3 rounded"><p>Review required · {draft.patientCount} patients · {draft.provider}{draft.aiUnavailable ? ' · AI unavailable; showing a deterministic draft' : ''}</p>{Object.entries(draft.handover.sbar).map(([k, v]) => <p key={k}>{k}: {String(v)}</p>)}</section>}</>}</main>;
 }

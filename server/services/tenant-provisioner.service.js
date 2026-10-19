@@ -1,3 +1,4 @@
+import { postgresTls } from '../db/postgres-tls.js';
 /**
  * Tenant Provisioner Service
  * 
@@ -138,7 +139,8 @@ class TenantProvisioner {
       port: parseInt(process.env.POSTGRES_PORT || '5432'),
       database: dbName,
       user: process.env.POSTGRES_USER || 'mediczy_helper',
-      password: process.env.POSTGRES_PASSWORD
+      password: process.env.POSTGRES_PASSWORD,
+      ssl: postgresTls()
     });
 
     try {

@@ -46,3 +46,14 @@ export POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 # Optional RDS master credentials — set ONLY in .env when RDS_MASTER_BACKUP=true
 # Do NOT auto-fill from POSTGRES_PASSWORD (helper ≠ postgres user).
+
+# The server is PostgreSQL 18; pg_dump 16 cannot produce a valid backup of it.
+if [ -x "${PG_BIN_DIR:-/usr/lib/postgresql/18/bin}/pg_dump" ]; then
+  export PATH="${PG_BIN_DIR:-/usr/lib/postgresql/18/bin}:$PATH"
+fi
+case "$POSTGRES_HOST" in
+  *.rds.amazonaws.com)
+    export PGSSLMODE=verify-full
+    export PGSSLROOTCERT="${POSTGRES_SSL_CA_FILE:-$ROOT/server/db/certs/aws-rds-ap-south-1.pem}"
+    ;;
+esac
