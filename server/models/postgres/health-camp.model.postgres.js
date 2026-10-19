@@ -33,7 +33,11 @@ const HealthCamp = sequelize.define('HealthCamp', {
   
   services_offered: { type: DataTypes.JSONB, defaultValue: [] },
   reports: { type: DataTypes.JSONB, defaultValue: {} },
-  notes: { type: DataTypes.TEXT }
+  notes: { type: DataTypes.TEXT },
+  campaign_type: {
+    type: DataTypes.ENUM('health_camp', 'cme', 'roundtable', 'rwa_camp', 'corporate_camp', 'other'),
+    defaultValue: 'health_camp'
+  }
 }, {
   tableName: 'health_camps',
   timestamps: true,

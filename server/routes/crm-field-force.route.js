@@ -748,15 +748,16 @@ router.patch('/approvals/exceptions/:id/approve', authCRM, FF_MANAGE, async (req
 
 // PATCH /approvals/exceptions/:id/reject
 router.patch('/approvals/exceptions/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
-  const { review_note } = req.body;
+  const { review_note, rejection_reason } = req.body; // rejection_reason is the doc's documented name
+  const resolvedNote = review_note || rejection_reason;
   const reviewerId = req.user?.id;
-  if (!review_note) return res.status(400).json({ error: 'review_note required for rejection' });
+  if (!resolvedNote) return res.status(400).json({ error: 'review_note (or rejection_reason) required for rejection' });
   try {
     const { rows } = await pool.query(
       `UPDATE field_visit_exceptions SET status='rejected', reviewed_by=$2,
          reviewed_at=NOW(), review_note=$3, updated_at=NOW()
        WHERE id=$1 AND status='pending' RETURNING *`,
-      [req.params.id, reviewerId, review_note]
+      [req.params.id, reviewerId, resolvedNote]
     );
     if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
     res.json(rows[0]);
@@ -785,15 +786,16 @@ router.patch('/approvals/tour-plans/:id/approve', authCRM, FF_MANAGE, async (req
 
 // PATCH /approvals/tour-plans/:id/reject
 router.patch('/approvals/tour-plans/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
-  const { review_note } = req.body;
-  if (!review_note) return res.status(400).json({ error: 'review_note required' });
+  const { review_note, rejection_reason } = req.body; // rejection_reason is the doc's documented name
+  const resolvedNote = review_note || rejection_reason;
+  if (!resolvedNote) return res.status(400).json({ error: 'review_note (or rejection_reason) required' });
   const reviewerId = req.user?.id;
   try {
     const { rows } = await pool.query(
       `UPDATE field_tour_plans SET status='rejected', reviewed_by=$2,
          reviewed_at=NOW(), review_note=$3, updated_at=NOW()
        WHERE id=$1 AND status='submitted' RETURNING *`,
-      [req.params.id, reviewerId, review_note]
+      [req.params.id, reviewerId, resolvedNote]
     );
     if (!rows.length) return res.status(404).json({ error: 'Tour plan not found' });
     res.json(rows[0]);
@@ -806,10 +808,14 @@ router.patch('/approvals/tour-plans/:id/reject', authCRM, FF_MANAGE, async (req,
 
 // PATCH /leads/:id/stage
 router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
-  const { pipeline_stage, note } = req.body;
+  // `stage`/`notes` are the doc's documented field names; pipeline_stage/note are this
+  // table's own — accept either.
+  const { pipeline_stage, note, stage, notes } = req.body;
+  const resolvedStage = pipeline_stage || stage;
+  const resolvedNote = note || notes;
   const valid = ['new','contacted','qualified','proposal','empanelment','closed_won','closed_lost'];
-  if (!valid.includes(pipeline_stage)) {
-    return res.status(400).json({ error: `pipeline_stage must be one of: ${valid.join(', ')}` });
+  if (!valid.includes(resolvedStage)) {
+    return res.status(400).json({ error: `stage must be one of: ${valid.join(', ')}` });
   }
   const tenantId = tid(req);
   try {
@@ -821,7 +827,7 @@ router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
          )::jsonb,
          updated_at = NOW()
        WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [req.params.id, tenantId, pipeline_stage, req.user?.id, note || null]
+      [req.params.id, tenantId, resolvedStage, req.user?.id, resolvedNote || null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
     res.json(rows[0]);
@@ -922,7 +928,7 @@ router.get('/doctor-crm/:id/trail', authCRM, FF_READ, async (req, res) => {
         [req.params.id, tenantId]
       ),
       pool.query(
-        `SELECT dc.name, dc.speciality, dc.hospital_name, dc.relationship_status,
+        `SELECT dc.doctor_name AS name, dc.specialty AS speciality, dc.hospital_affiliation AS hospital_name, dc.relationship_status,
            COUNT(v.id) AS total_visits,
            MAX(v.created_at) AS last_visit_at,
            COUNT(v.id) FILTER (WHERE v.status='completed') AS completed_visits
@@ -955,7 +961,7 @@ router.get('/camps', authCRM, FF_READ, async (req, res) => {
       `SELECT c.*,
          (SELECT COUNT(*) FROM field_camp_registrations r WHERE r.camp_id=c.id) AS footfall
        FROM health_camps c
-       WHERE ${conds.join(' AND ')} ORDER BY c.scheduled_date DESC LIMIT 100`,
+       WHERE ${conds.join(' AND ')} ORDER BY c.start_date DESC LIMIT 100`,
       params
     );
     res.json(rows);
@@ -1218,7 +1224,7 @@ router.get('/coupons/analytics', authCRM, FF_READ, async (req, res) => {
       `SELECT
          c.code, c.type, c.description,
          c."usageCount" AS total_redemptions,
-         c."usageLimit",
+         c."maxUsage" AS "usageLimit",
          c."value",
          c."validUntil",
          COUNT(DISTINCT fc.id) AS camp_usages
@@ -1237,48 +1243,53 @@ router.get('/coupons/analytics', authCRM, FF_READ, async (req, res) => {
 
 // ── target reallocation ────────────────────────────────────────────────────────
 
+// field_targets is one row per (user, calendar month) with a fixed column per target
+// type (visits_target, doctors_target, ...) — not the generic target_type/target_value
+// row-per-target shape this endpoint originally assumed (which was never migrated).
+const TARGET_COLUMN = {
+  visits: 'visits_target', doctors: 'doctors_target', corporates: 'corporates_target',
+  camps: 'camps_target', leads: 'leads_target', empanelment: 'empanelment_target',
+  revenue: 'revenue_target',
+};
+
 // POST /targets/reallocate
 router.post('/targets/reallocate', authCRM, FF_MANAGE, async (req, res) => {
-  const { from_user_id, to_user_id, target_type, amount, reason } = req.body;
-  if (!from_user_id || !to_user_id || !amount) {
-    return res.status(400).json({ error: 'from_user_id, to_user_id, amount required' });
+  const { from_user_id, to_user_id, target_type, transfer_qty, amount, reason } = req.body;
+  const qty = Number(transfer_qty ?? amount); // doc calls this transfer_qty; amount kept as a fallback alias
+  const column = TARGET_COLUMN[target_type || 'visits'];
+  if (!from_user_id || !to_user_id || !qty || !column) {
+    return res.status(400).json({ error: `from_user_id, to_user_id, transfer_qty required; target_type must be one of ${Object.keys(TARGET_COLUMN).join(', ')}` });
   }
   const tenantId = tid(req);
   const managerId = req.crmUser?.id;
-  const now = new Date().toISOString().slice(0, 10);
-  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10);
+  // field_targets.month is a 'YYYY-MM' VARCHAR(7), not a date column
+  const monthKey = new Date().toISOString().slice(0, 7);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // reduce from source
     await client.query(
-      `UPDATE field_targets SET target_value = target_value - $3, updated_at=NOW()
-       WHERE user_id=$1 AND tenant_id=$2 AND target_type=$4
-         AND period_start <= $5 AND period_end >= $5`,
-      [from_user_id, tenantId, amount, target_type||'visits', now]
+      `UPDATE field_targets SET ${column} = GREATEST(0, COALESCE(${column},0) - $3), updated_at=NOW()
+       WHERE user_id=$1 AND tenant_id=$2 AND month=$4`,
+      [from_user_id, tenantId, qty, monthKey]
     );
-    // check if dest target exists for this period
     const existing = await client.query(
-      `SELECT id FROM field_targets WHERE user_id=$1 AND tenant_id=$2
-       AND target_type=$3 AND period_start <= $4 AND period_end >= $4`,
-      [to_user_id, tenantId, target_type||'visits', now]
+      `SELECT id FROM field_targets WHERE user_id=$1 AND tenant_id=$2 AND month=$3`,
+      [to_user_id, tenantId, monthKey]
     );
     if (existing.rows.length) {
       await client.query(
-        `UPDATE field_targets SET target_value = target_value + $3, updated_at=NOW()
-         WHERE user_id=$1 AND tenant_id=$2 AND target_type=$4
-           AND period_start <= $5 AND period_end >= $5`,
-        [to_user_id, tenantId, amount, target_type||'visits', now]
+        `UPDATE field_targets SET ${column} = COALESCE(${column},0) + $2, updated_at=NOW() WHERE id=$1`,
+        [existing.rows[0].id, qty]
       );
     } else {
       await client.query(
-        `INSERT INTO field_targets (user_id, tenant_id, target_type, target_value, period_start, period_end, set_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [to_user_id, tenantId, target_type||'visits', amount, now, monthEnd, managerId]
+        `INSERT INTO field_targets (user_id, tenant_id, month, ${column}, set_by)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [to_user_id, tenantId, monthKey, qty, managerId]
       );
     }
     await client.query('COMMIT');
-    res.json({ ok: true, from_user_id, to_user_id, amount, reason });
+    res.json({ ok: true, from_user_id, to_user_id, target_type: target_type || 'visits', transfer_qty: qty, reason });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
@@ -1355,29 +1366,38 @@ router.get('/team/:userId/pip', authCRM, FF_READ, async (req, res) => {
   const uid = Number(req.params.userId);
   const now = new Date().toISOString().slice(0, 10);
   try {
-    const [scorecard, targets] = await Promise.all([
+    // Each metric is its own independent query — joining field_visits/field_attendance/
+    // field_leads to users all at once (as this previously did) multiplies rows across
+    // three unrelated one-to-many relationships and produces wrong counts even when the
+    // column names are right.
+    const [visits, attendance, leads, targets] = await Promise.all([
       pool.query(
-        `SELECT
-           COUNT(v.id) FILTER (WHERE DATE(v.created_at) >= date_trunc('month',NOW())::date) AS mtd_visits,
-           COUNT(v.id) FILTER (WHERE v.status='completed' AND DATE(v.created_at) >= date_trunc('month',NOW())::date) AS completed_visits,
-           COUNT(a.id) FILTER (WHERE a.date >= date_trunc('month',NOW())::date AND a.status IN ('present','late','exception')) AS present_days,
-           COUNT(l.id) FILTER (WHERE l.pipeline_stage='closed_won' AND DATE(l.closed_at) >= date_trunc('month',NOW())::date) AS leads_won
-         FROM users u
-         LEFT JOIN field_visits v ON v.user_id=u.id AND v.tenant_id=$2
-         LEFT JOIN field_attendance a ON a.user_id=u.id AND a.tenant_id=$2
-         LEFT JOIN field_leads l ON l.assigned_to=u.id AND l.tenant_id=$2
-         WHERE u.id=$1`,
+        `SELECT COUNT(*) FILTER (WHERE DATE(created_at) >= date_trunc('month',NOW())::date) AS mtd_visits,
+                COUNT(*) FILTER (WHERE status='completed' AND DATE(created_at) >= date_trunc('month',NOW())::date) AS completed_visits
+         FROM field_visits WHERE user_id=$1 AND tenant_id=$2`,
         [uid, tenantId]
       ),
       pool.query(
-        `SELECT target_type, target_value FROM field_targets
-         WHERE user_id=$1 AND tenant_id=$2 AND period_start <= $3 AND period_end >= $3`,
+        `SELECT COUNT(*) AS present_days FROM field_attendance
+         WHERE user_id=$1 AND tenant_id=$2 AND date >= date_trunc('month',NOW())::date AND status IN ('present','exception')`,
+        [uid, tenantId]
+      ),
+      pool.query(
+        `SELECT COUNT(*) AS leads_won FROM field_leads
+         WHERE user_id=$1 AND tenant_id=$2 AND pipeline_stage='closed_won' AND DATE(closed_at) >= date_trunc('month',NOW())::date`,
+        [uid, tenantId]
+      ),
+      // field_targets.month is a 'YYYY-MM' string — read this calendar month's row directly
+      pool.query(
+        `SELECT visits_target, doctors_target, leads_target FROM field_targets
+         WHERE user_id=$1 AND tenant_id=$2 AND month = to_char($3::date, 'YYYY-MM')`,
         [uid, tenantId, now]
       ),
     ]);
 
-    const sc = scorecard.rows[0] || {};
-    const tgt = targets.rows.reduce((a, t) => { a[t.target_type] = t.target_value; return a; }, {});
+    const sc = { ...visits.rows[0], ...attendance.rows[0], ...leads.rows[0] };
+    const targetRow = targets.rows[0] || {};
+    const tgt = { visits: targetRow.visits_target, doctors: targetRow.doctors_target, leads: targetRow.leads_target };
 
     // PIP flag: visits < 50% of target OR attendance < 15 days MTD (approximate)
     const visitTarget = tgt.visits || tgt.doctor_visits || 0;

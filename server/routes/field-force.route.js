@@ -187,10 +187,15 @@ router.post('/attendance/exception', authTeam, FF, async (req, res) => {
 router.post('/visits', authTeam, FF, async (req, res) => {
   const {
     entity_type, entity_uid, entity_id, entity_name,
-    purpose, planned_at, notes_planned,
+    purpose, visit_type, planned_at, notes_planned,
+    is_unplanned, planned_sequence,
   } = req.body;
-  if (!entity_name || !purpose) {
-    return res.status(400).json({ error: 'entity_name and purpose are required' });
+  // `purpose` is this table's original categorisation; `visit_type` is the doc's documented
+  // field (regular|followup|sample_drop|cme_invite) — accept either, default purpose from
+  // visit_type's first segment so existing purpose-based reporting keeps working.
+  const resolvedPurpose = purpose || (visit_type === 'followup' ? 'follow_up' : visit_type === 'cme_invite' ? 'meeting' : 'other');
+  if (!entity_name || !(purpose || visit_type)) {
+    return res.status(400).json({ error: 'entity_name and purpose (or visit_type) are required' });
   }
   const uid = req.user.id;
   const tid = tenantId(req);
@@ -205,12 +210,12 @@ router.post('/visits', authTeam, FF, async (req, res) => {
     const { rows } = await sharedPool.query(
       `INSERT INTO field_visits
          (user_id, attendance_id, entity_type, entity_uid, entity_id, entity_name,
-          purpose, planned_at, notes_planned, status, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'planned',$10)
+          purpose, visit_type, planned_at, notes_planned, is_unplanned, planned_sequence, status, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'planned',$13)
        RETURNING *`,
       [uid, att.rows[0]?.id || null, entity_type || null, entity_uid || null,
-       entity_id || null, entity_name, purpose, planned_at || null,
-       notes_planned || null, tid]
+       entity_id || null, entity_name, resolvedPurpose, visit_type || 'regular', planned_at || null,
+       notes_planned || null, !!is_unplanned, planned_sequence || null, tid]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -242,10 +247,13 @@ router.patch('/visits/:id/check-in', authTeam, FF, async (req, res) => {
 router.patch('/visits/:id/check-out', authTeam, FF, async (req, res) => {
   const {
     lat, lng, accuracy_m,
-    met_person, met_designation, outcome,
+    met_person, met_designation, outcome, notes_actual,
     services_discussed, materials_shared,
     next_action, follow_up_date,
   } = req.body;
+  // The doc documents notes_actual as the narrative field; this table's real column is
+  // `outcome` — accept either so a client following the doc still writes real data.
+  const resolvedOutcome = outcome || notes_actual || null;
   try {
     const { rows } = await sharedPool.query(
       `UPDATE field_visits
@@ -267,7 +275,7 @@ router.patch('/visits/:id/check-out', authTeam, FF, async (req, res) => {
       [
         req.params.id, req.user.id,
         lat || null, lng || null, accuracy_m || null,
-        met_person || null, met_designation || null, outcome || null,
+        met_person || null, met_designation || null, resolvedOutcome,
         services_discussed || null, materials_shared || null,
         next_action || null, follow_up_date || null,
       ]
@@ -432,6 +440,7 @@ router.post('/travel', authTeam, FF, async (req, res) => {
     travel_date, from_location, to_location, purpose,
     mode_of_transport, estimated_km, estimated_amount, advance_requested,
     linked_visit_ids, camp_id, notes,
+    mode, estimated_cost, // doc-documented aliases for mode_of_transport / estimated_amount
   } = req.body;
   if (!travel_date || !from_location || !to_location || !purpose)
     return res.status(400).json({ error: 'travel_date, from_location, to_location and purpose are required' });
@@ -445,7 +454,7 @@ router.post('/travel', authTeam, FF, async (req, res) => {
           linked_visit_ids, camp_id, notes, tenant_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [uid, travel_date, from_location, to_location, purpose,
-       mode_of_transport || null, estimated_km || null, estimated_amount || null,
+       mode_of_transport || mode || null, estimated_km || null, estimated_amount || estimated_cost || null,
        advance_requested || 0, linked_visit_ids || null, camp_id || null, notes || null, tid]
     );
     res.status(201).json(rows[0]);
@@ -478,16 +487,20 @@ router.get('/travel', authTeam, FF, async (req, res) => {
 
 // POST /expenses  — create a claim
 router.post('/expenses', authTeam, FF, async (req, res) => {
-  const { travel_request_id, claim_month, title, notes } = req.body;
-  if (!claim_month || !title)
-    return res.status(400).json({ error: 'claim_month and title are required' });
+  // Accept both this table's native fields (claim_month/title) and the doc's documented
+  // ones (claim_date/claim_type/total_amount) so a client built against either works.
+  const { travel_request_id, claim_month, title, notes, claim_date, claim_type, total_amount } = req.body;
+  const resolvedMonth = claim_month || (claim_date ? claim_date.slice(0, 7) + '-01' : null);
+  const resolvedTitle = title || (claim_type ? `${claim_type} claim` : null);
+  if (!resolvedMonth || !resolvedTitle)
+    return res.status(400).json({ error: 'claim_month (or claim_date) and title (or claim_type) are required' });
   const uid = req.user.id;
   const tid = tenantId(req);
   try {
     const { rows } = await sharedPool.query(
-      `INSERT INTO field_expense_claims (user_id, travel_request_id, claim_month, title, notes, tenant_id)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [uid, travel_request_id || null, claim_month, title, notes || null, tid]
+      `INSERT INTO field_expense_claims (user_id, travel_request_id, claim_month, title, total_amount, notes, tenant_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [uid, travel_request_id || null, resolvedMonth, resolvedTitle, total_amount || null, notes || null, tid]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -540,9 +553,13 @@ router.get('/expenses/:id', authTeam, FF, async (req, res) => {
 
 // POST /expenses/:id/items  — add a line item
 router.post('/expenses/:id/items', authTeam, FF, async (req, res) => {
-  const { expense_date, category, description, amount, km_travelled, receipt_url } = req.body;
-  if (!expense_date || !category || !amount)
-    return res.status(400).json({ error: 'expense_date, category and amount are required' });
+  // expense_type/description are the doc's names; category/description are this table's —
+  // category is free text (no CHECK constraint), so accepting either is safe.
+  const { expense_date, category, expense_type, description, amount, km_travelled, receipt_url } = req.body;
+  const resolvedCategory = category || expense_type;
+  const resolvedDate = expense_date || new Date().toISOString().slice(0, 10);
+  if (!resolvedCategory || !amount)
+    return res.status(400).json({ error: 'category (or expense_type) and amount are required' });
   try {
     const claim = await sharedPool.query(
       `SELECT id FROM field_expense_claims WHERE id=$1 AND user_id=$2 AND status IN ('draft','under_review')`,
@@ -553,7 +570,7 @@ router.post('/expenses/:id/items', authTeam, FF, async (req, res) => {
     const { rows } = await sharedPool.query(
       `INSERT INTO field_expense_items (claim_id, expense_date, category, description, amount, km_travelled, receipt_url)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [req.params.id, expense_date, category, description || null, amount, km_travelled || null, receipt_url || null]
+      [req.params.id, resolvedDate, resolvedCategory, description || null, amount, km_travelled || null, receipt_url || null]
     );
     // update total on claim
     await sharedPool.query(
@@ -607,11 +624,12 @@ router.patch('/expenses/:id/submit', authTeam, FF, async (req, res) => {
 
 // GET /camps  — list camps for this tenant
 router.get('/camps', authTeam, FF, async (req, res) => {
-  const { status } = req.query;
+  const { status, campaign_type } = req.query;
   const tid = tenantId(req);
   try {
     const where = { tenant_id: tid };
     if (status) where.status = status;
+    if (campaign_type) where.campaign_type = campaign_type;
     const camps = await HealthCamp.findAll({ where, order: [['start_date', 'DESC']], limit: 50 });
     res.json(camps);
   } catch (err) {
@@ -907,27 +925,50 @@ router.get('/team/visits', authTeam, FFM, async (req, res) => {
 // ── exec self-view targets ───────────────────────────────────────────────────
 
 // GET /my/targets
+// field_targets is month-based (visits_target/doctors_target/etc per calendar month),
+// not the generic target_type/target_value/period_start/period_end shape this endpoint's
+// response documents — expand each month's row into one entry per non-null target type.
 router.get('/my/targets', authTeam, FF, async (req, res) => {
   const uid = req.user.id;
   const tid = tenantId(req);
   try {
+    // field_targets.month is a 'YYYY-MM' VARCHAR(7), not a date column — convert via
+    // (month || '-01')::date rather than month::date, which would truncate/error.
     const { rows } = await sharedPool.query(
       `SELECT t.*,
+         (t.month || '-01')::date AS period_start,
+         ((t.month || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date AS period_end,
          COALESCE(
            (SELECT COUNT(*) FROM field_visits v
-            WHERE v.user_id = $1 AND DATE(v.created_at) BETWEEN t.period_start AND t.period_end),0
+            WHERE v.user_id = $1 AND DATE(v.created_at) BETWEEN (t.month || '-01')::date AND ((t.month || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date),0
          ) AS visits_done,
          COALESCE(
            (SELECT COUNT(*) FROM field_leads l
-            WHERE l.assigned_to = $1 AND l.pipeline_stage IN ('closed_won')
-            AND DATE(l.closed_at) BETWEEN t.period_start AND t.period_end),0
+            WHERE l.user_id = $1 AND l.pipeline_stage = 'closed_won'
+            AND DATE(l.closed_at) BETWEEN (t.month || '-01')::date AND ((t.month || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date),0
          ) AS leads_closed
        FROM field_targets t
        WHERE t.user_id = $1 AND t.tenant_id = $2
-       ORDER BY t.period_end DESC LIMIT 12`,
+       ORDER BY t.month DESC LIMIT 12`,
       [uid, tid]
     );
-    res.json(rows);
+    const TARGET_TYPES = [
+      ['visits', 'visits_target'], ['doctors', 'doctors_target'], ['corporates', 'corporates_target'],
+      ['camps', 'camps_target'], ['leads', 'leads_target'], ['empanelment', 'empanelment_target'],
+      ['revenue', 'revenue_target'],
+    ];
+    const expanded = rows.flatMap((row) =>
+      TARGET_TYPES.filter(([, col]) => row[col] != null).map(([target_type, col]) => ({
+        id: row.id,
+        target_type,
+        target_value: row[col],
+        period_start: row.period_start,
+        period_end: row.period_end,
+        visits_done: row.visits_done,
+        leads_closed: row.leads_closed,
+      }))
+    );
+    res.json(expanded);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -967,23 +1008,25 @@ router.get('/my/scorecard', authTeam, FF, async (req, res) => {
         `SELECT COUNT(*) AS total,
            COUNT(*) FILTER (WHERE pipeline_stage='closed_won') AS won,
            COUNT(*) FILTER (WHERE pipeline_stage='closed_lost') AS lost
-         FROM field_leads WHERE assigned_to=$1 AND tenant_id=$2
+         FROM field_leads WHERE user_id=$1 AND tenant_id=$2
          AND DATE(created_at) BETWEEN $3 AND $4`,
         [uid, tid, monthStart, monthEnd]
       ),
+      // field_targets.month is a 'YYYY-MM' string — compare against the same format
       sharedPool.query(
         `SELECT * FROM field_targets WHERE user_id=$1 AND tenant_id=$2
-         AND period_start <= $3 AND period_end >= $3 ORDER BY created_at DESC LIMIT 1`,
+         AND month = to_char($3::date, 'YYYY-MM') ORDER BY created_at DESC LIMIT 1`,
         [uid, tid, monthStart]
       ),
     ]);
+    const targetRow = targets.rows[0] || null;
     res.json({
       period: { start: monthStart, end: monthEnd },
       visits:   visits.rows[0],
       attendance: att.rows[0],
       expenses: expenses.rows[0],
       leads:    leads.rows[0],
-      target:   targets.rows[0] || null,
+      target:   targetRow ? { target_type: 'visits', target_value: targetRow.visits_target, ...targetRow } : null,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1305,6 +1348,85 @@ router.patch('/visits/:id/checklist', authTeam, FF, async (req, res) => {
   }
 });
 
+// ── doctor CRM (exec, read-only) ──────────────────────────────────────────────
+// Documented at GET /api/field/doctor-crm but never implemented — the only existing
+// doctor-crm route lived under /api/crm/field-force (authCRM, Business Head login),
+// which a field exec's team JWT can't authenticate against.
+
+// GET /doctor-crm  — read-only directory search for the field exec's own use
+router.get('/doctor-crm', authTeam, FF, async (req, res) => {
+  const { search, relationship_status } = req.query;
+  const tid = tenantId(req);
+  const params = [tid];
+  const conds = ['tenant_id=$1'];
+  if (search) {
+    params.push(`%${search}%`);
+    conds.push(`(doctor_name ILIKE $${params.length} OR hospital_affiliation ILIKE $${params.length} OR city ILIKE $${params.length})`);
+  }
+  if (relationship_status) {
+    params.push(relationship_status);
+    conds.push(`relationship_status=$${params.length}`);
+  }
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT id, doctor_name, qualification, specialty, hospital_affiliation, city, phone,
+              relationship_status, last_visit_date, next_visit_date
+       FROM field_doctor_crm WHERE ${conds.join(' AND ')}
+       ORDER BY doctor_name ASC LIMIT 100`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── leads (exec self-view) ────────────────────────────────────────────────────
+// Same situation as doctor-crm above: documented at GET/POST /api/field/leads but only
+// ever implemented under the BH-only /api/crm/field-force path.
+
+// GET /leads  — the exec's own leads
+router.get('/leads', authTeam, FF, async (req, res) => {
+  const { status } = req.query;
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const params = [uid, tid];
+  const conds = ['user_id=$1', 'tenant_id=$2'];
+  if (status) { params.push(status); conds.push(`status=$${params.length}`); }
+  try {
+    const { rows } = await sharedPool.query(
+      `SELECT * FROM field_leads WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT 100`,
+      params
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /leads  — create a new lead from the field
+router.post('/leads', authTeam, FF, async (req, res) => {
+  // field_leads has no `city` column — fold it into notes if the caller sends one
+  // (the doc's example includes it) rather than silently dropping the data.
+  const { lead_type, entity_name, contact_name, phone, city, notes, visit_id } = req.body;
+  if (!entity_name) return res.status(400).json({ error: 'entity_name is required' });
+  const uid = req.user.id;
+  const tid = tenantId(req);
+  const combinedNotes = [city ? `City: ${city}` : null, notes || null].filter(Boolean).join(' — ') || null;
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO field_leads
+         (user_id, tenant_id, visit_id, lead_type, entity_name, contact_name, contact_phone, notes, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'new')
+       RETURNING *`,
+      [uid, tid, visit_id || null, lead_type || 'other', entity_name, contact_name || null, phone || null, combinedNotes]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── institution profile ───────────────────────────────────────────────────────
 
 // GET /institution/:entityType/:entityId  — profile: visits + open leads + empanelment
@@ -1315,17 +1437,25 @@ router.get('/institution/:entityType/:entityId', authTeam, FF, async (req, res) 
     const [visits, leads, emp] = await Promise.all([
       sharedPool.query(
         `SELECT v.id, v.visit_type, v.status, v.planned_at, v.created_at,
-           u.name AS exec_name, v.notes_actual
+           u.name AS exec_name, v.outcome
          FROM field_visits v LEFT JOIN users u ON u.id=v.user_id
          WHERE v.entity_type=$1 AND v.entity_id=$2 AND v.tenant_id=$3
          ORDER BY v.created_at DESC LIMIT 30`,
         [entityType, entityId, tid]
       ),
+      // field_leads has no entity_id column — it links back to the visit it came from,
+      // so match leads via visits already found for this entity (also catches leads
+      // raised from a visit whose entity_type/entity_id matches, through that visit's id).
       sharedPool.query(
-        `SELECT id, lead_type, entity_name, pipeline_stage, contract_value, created_at
-         FROM field_leads
-         WHERE entity_type=$1 AND entity_id=$2 AND tenant_id=$3
-         ORDER BY created_at DESC LIMIT 10`,
+        `SELECT l.id, l.lead_type, l.entity_name, l.pipeline_stage, l.contract_value, l.created_at
+         FROM field_leads l
+         WHERE l.tenant_id=$3 AND (
+           l.entity_type=$1 AND l.entity_name = (
+             SELECT entity_name FROM field_visits WHERE entity_type=$1 AND entity_id=$2 LIMIT 1
+           )
+           OR l.visit_id IN (SELECT id FROM field_visits WHERE entity_type=$1 AND entity_id=$2)
+         )
+         ORDER BY l.created_at DESC LIMIT 10`,
         [entityType, entityId, tid]
       ),
       sharedPool.query(
@@ -1581,12 +1711,14 @@ router.post('/sync', authTeam, FF, async (req, res) => {
           break;
         }
         case 'complete_visit': {
+          // field_visits has no notes_actual column — outcome is the real free-text
+          // narrative field; fall back to it when the doc-documented notes_actual is sent.
           const { visit_id, notes_actual, outcome, checklist } = payload;
           const { rows } = await sharedPool.query(
-            `UPDATE field_visits SET status='completed', notes_actual=$3,
+            `UPDATE field_visits SET status='completed', outcome=$3,
                visit_checklist=COALESCE($4::jsonb, visit_checklist), check_out_at=NOW(), updated_at=NOW()
              WHERE id=$2 AND user_id=$1 RETURNING id`,
-            [uid, visit_id, notes_actual||null, checklist ? JSON.stringify(checklist) : null]
+            [uid, visit_id, outcome || notes_actual || null, checklist ? JSON.stringify(checklist) : null]
           );
           result = { id: rows[0]?.id };
           break;
@@ -1652,7 +1784,7 @@ router.get('/coupon/validate/:code', authTeam, FF, async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
       `SELECT id, code, type, value, description, "validFrom", "validUntil",
-         "usageLimit", "usageCount", "isActive"
+         "maxUsage" AS "usageLimit", "usageCount", "isActive"
        FROM coupons
        WHERE UPPER(code) = UPPER($1)
          AND "isActive" = TRUE
@@ -1678,10 +1810,12 @@ router.get('/territory', authTeam, FF, async (req, res) => {
   const tid = tenantId(req);
   try {
     const [territory, stops] = await Promise.all([
+      // field_territories has no polygon/boundary data — it's a per-exec territory-name
+      // assignment (user_id, territory, city, zone), not map geometry. The doc's
+      // polygon_geojson promise isn't backed by any real column; returning what exists.
       sharedPool.query(
-        `SELECT id, name, polygon_geojson, description
-         FROM field_territories WHERE tenant_id=$1
-         AND (assigned_user_ids IS NULL OR $2 = ANY(assigned_user_ids))
+        `SELECT id, territory AS name, city, zone, description, active
+         FROM field_territories WHERE tenant_id=$1 AND user_id=$2 AND active=TRUE
          LIMIT 5`,
         [tid, uid]
       ),
@@ -1708,22 +1842,24 @@ router.get('/ai/briefing', authTeam, FF, async (req, res) => {
   const uid = req.user.id;
   const tid = tenantId(req);
   try {
-    const [scorecard, targets, pendingExceptions, unreadNotif] = await Promise.all([
+    // visits_done and leads_closed are fetched as two separate aggregates, not a join —
+    // field_visits and field_leads share no foreign key, so joining them multiplies rows.
+    const [visitsDone, leadsClosed, targets, pendingExceptions, unreadNotif] = await Promise.all([
       sharedPool.query(
-        `SELECT visits_done, leads_closed FROM (
-           SELECT
-             COUNT(v.id) FILTER (WHERE v.status='completed' AND DATE(v.created_at) >= date_trunc('month',NOW())::date) AS visits_done,
-             COUNT(l.id) FILTER (WHERE l.pipeline_stage='closed_won' AND DATE(l.closed_at) >= date_trunc('month',NOW())::date) AS leads_closed
-           FROM field_visits v
-           LEFT JOIN field_leads l ON l.assigned_to=$1
-           WHERE v.user_id=$1 AND v.tenant_id=$2
-         ) sc`,
+        `SELECT COUNT(*) AS cnt FROM field_visits
+         WHERE user_id=$1 AND tenant_id=$2 AND status='completed' AND DATE(created_at) >= date_trunc('month',NOW())::date`,
         [uid, tid]
       ),
       sharedPool.query(
-        `SELECT target_type, target_value, period_end FROM field_targets
-         WHERE user_id=$1 AND tenant_id=$2 AND period_end >= NOW()::date
-         ORDER BY period_end LIMIT 3`,
+        `SELECT COUNT(*) AS cnt FROM field_leads
+         WHERE user_id=$1 AND tenant_id=$2 AND pipeline_stage='closed_won' AND DATE(closed_at) >= date_trunc('month',NOW())::date`,
+        [uid, tid]
+      ),
+      // field_targets.month is a 'YYYY-MM' string — surface this calendar month's targets
+      sharedPool.query(
+        `SELECT visits_target, doctors_target, leads_target, month FROM field_targets
+         WHERE user_id=$1 AND tenant_id=$2 AND month = to_char(NOW(), 'YYYY-MM')
+         LIMIT 1`,
         [uid, tid]
       ),
       sharedPool.query(
@@ -1738,8 +1874,13 @@ router.get('/ai/briefing', authTeam, FF, async (req, res) => {
       ),
     ]);
 
-    const sc = scorecard.rows[0] || {};
-    const tgt = targets.rows;
+    const sc = { visits_done: visitsDone.rows[0]?.cnt || 0, leads_closed: leadsClosed.rows[0]?.cnt || 0 };
+    const targetRow = targets.rows[0];
+    const tgt = targetRow
+      ? [['visits', targetRow.visits_target], ['doctors', targetRow.doctors_target], ['leads', targetRow.leads_target]]
+          .filter(([, v]) => v != null)
+          .map(([target_type, target_value]) => ({ target_type, target_value, period_end: targetRow.month }))
+      : [];
     const context = [
       `Field executive daily briefing. Today: ${today()}.`,
       `MTD: ${sc.visits_done||0} visits completed, ${sc.leads_closed||0} leads closed.`,

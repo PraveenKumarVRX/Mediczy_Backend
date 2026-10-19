@@ -172,3 +172,12 @@ export async function down() {
     client.release();
   }
 }
+
+// Self-invoke when run directly (`node server/migrations/field-force.migration.js`), matching
+// every other migration file's convention in this directory. Without this, `up`/`down` were only
+// ever exported, never called — the silent reason field_attendance/field_visits/daily_field_reports
+// were never actually created in prod despite this file existing since Phase 1 (confirmed 2026-10-19:
+// those three tables were missing while every later phase's tables were present).
+if (import.meta.url === `file://${process.argv[1]}`) {
+  up().then(() => process.exit(0)).catch((err) => { console.error('❌ field-force migration failed:', err.message); process.exit(1); });
+}
