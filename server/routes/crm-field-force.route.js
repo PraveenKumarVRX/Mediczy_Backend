@@ -98,14 +98,14 @@ router.get('/attendance', authCRM, FF_READ, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT a.*,
-         u.name AS exec_name, u.email AS exec_email,
+         (u."firstName" || ' ' || u."lastName") AS exec_name, u.email AS exec_email,
          EXTRACT(EPOCH FROM (COALESCE(a.clock_out_at, NOW()) - a.clock_in_at))/3600 AS hours_so_far,
          (SELECT COUNT(*) FROM field_visits WHERE user_id = a.user_id AND DATE(COALESCE(planned_at,created_at)) = a.date AND status = 'completed') AS visits_done,
          (SELECT COUNT(*) FROM field_visits WHERE user_id = a.user_id AND DATE(COALESCE(planned_at,created_at)) = a.date) AS visits_total
        FROM field_attendance a
        JOIN users u ON u.id = a.user_id
        WHERE a.tenant_id = $1 AND a.date = $2
-       ORDER BY u.name`,
+       ORDER BY (u."firstName" || ' ' || u."lastName")`,
       [tenantId, date]
     );
     res.json(rows);
@@ -131,7 +131,7 @@ router.get('/visits', authCRM, FF_READ, async (req, res) => {
   const offset = (page - 1) * limit;
   try {
     const { rows } = await pool.query(
-      `SELECT v.*, u.name AS exec_name
+      `SELECT v.*, (u."firstName" || ' ' || u."lastName") AS exec_name
        FROM field_visits v
        JOIN users u ON u.id = v.user_id
        WHERE ${conds.join(' AND ')}
@@ -152,13 +152,13 @@ router.get('/visits/analytics', authCRM, FF_READ, async (req, res) => {
   try {
     const [byExec, byPurpose, byEntityType, daily] = await Promise.all([
       pool.query(
-        `SELECT u.name AS exec_name, v.user_id,
+        `SELECT (u."firstName" || ' ' || u."lastName") AS exec_name, v.user_id,
            COUNT(*) AS total,
            COUNT(*) FILTER (WHERE v.status = 'completed') AS completed,
            COUNT(*) FILTER (WHERE v.status = 'cancelled') AS cancelled
          FROM field_visits v JOIN users u ON u.id = v.user_id
          WHERE v.tenant_id = $1 AND TO_CHAR(COALESCE(v.planned_at, v.created_at), 'YYYY-MM') = $2
-         GROUP BY v.user_id, u.name ORDER BY total DESC`,
+         GROUP BY v.user_id, (u."firstName" || ' ' || u."lastName") ORDER BY total DESC`,
         [tenantId, month]
       ),
       pool.query(
@@ -206,7 +206,7 @@ router.get('/expenses', authCRM, FF_READ, async (req, res) => {
 
   try {
     const { rows } = await pool.query(
-      `SELECT c.*, u.name AS exec_name,
+      `SELECT c.*, (u."firstName" || ' ' || u."lastName") AS exec_name,
          (SELECT COUNT(*) FROM field_expense_items WHERE claim_id = c.id) AS item_count,
          (SELECT COALESCE(SUM(amount),0) FROM field_expense_items WHERE claim_id = c.id) AS item_total
        FROM field_expense_claims c
@@ -226,7 +226,7 @@ router.get('/expenses/:id', authCRM, FF_READ, async (req, res) => {
   const tenantId = tid(req);
   try {
     const [claim, items] = await Promise.all([
-      pool.query(`SELECT c.*, u.name AS exec_name FROM field_expense_claims c JOIN users u ON u.id = c.user_id WHERE c.id=$1 AND c.tenant_id=$2`, [req.params.id, tenantId]),
+      pool.query(`SELECT c.*, (u."firstName" || ' ' || u."lastName") AS exec_name FROM field_expense_claims c JOIN users u ON u.id = c.user_id WHERE c.id=$1 AND c.tenant_id=$2`, [req.params.id, tenantId]),
       pool.query(`SELECT * FROM field_expense_items WHERE claim_id=$1 ORDER BY expense_date, id`, [req.params.id]),
     ]);
     if (!claim.rows.length) return res.status(404).json({ error: 'Claim not found' });
@@ -287,14 +287,14 @@ router.get('/targets', authCRM, FF_READ, async (req, res) => {
   const tenantId = tid(req);
   try {
     const { rows } = await pool.query(
-      `SELECT t.*, u.name AS exec_name,
+      `SELECT t.*, (u."firstName" || ' ' || u."lastName") AS exec_name,
          (SELECT COUNT(*) FROM field_visits WHERE user_id = t.user_id AND TO_CHAR(COALESCE(planned_at,created_at),'YYYY-MM') = t.month AND tenant_id = $1 AND status = 'completed') AS visits_done,
          (SELECT COUNT(*) FROM field_leads  WHERE user_id = t.user_id AND TO_CHAR(created_at,'YYYY-MM') = t.month AND tenant_id = $1) AS leads_done,
          (SELECT COUNT(*) FROM field_visits WHERE user_id = t.user_id AND entity_type = 'doctor' AND TO_CHAR(COALESCE(planned_at,created_at),'YYYY-MM') = t.month AND tenant_id = $1 AND status = 'completed') AS doctors_done,
          (SELECT COUNT(*) FROM field_visits WHERE user_id = t.user_id AND entity_type = 'corporate' AND TO_CHAR(COALESCE(planned_at,created_at),'YYYY-MM') = t.month AND tenant_id = $1 AND status = 'completed') AS corporates_done
        FROM field_targets t JOIN users u ON u.id = t.user_id
        WHERE t.tenant_id = $1 AND t.month = $2
-       ORDER BY u.name`,
+       ORDER BY (u."firstName" || ' ' || u."lastName")`,
       [tenantId, month]
     );
     res.json(rows);
@@ -417,10 +417,10 @@ router.get('/territories', authCRM, FF_READ, async (req, res) => {
   const tenantId = tid(req);
   try {
     const { rows } = await pool.query(
-      `SELECT t.*, u.name AS exec_name
+      `SELECT t.*, (u."firstName" || ' ' || u."lastName") AS exec_name
        FROM field_territories t JOIN users u ON u.id = t.user_id
        WHERE t.tenant_id = $1 AND t.active = TRUE
-       ORDER BY u.name, t.territory`,
+       ORDER BY (u."firstName" || ' ' || u."lastName"), t.territory`,
       [tenantId]
     );
     res.json(rows);
@@ -471,7 +471,7 @@ router.get('/leads', authCRM, FF_READ, async (req, res) => {
   if (lead_type) { params.push(lead_type); conds.push(`l.lead_type = $${params.length}`); }
   try {
     const { rows } = await pool.query(
-      `SELECT l.*, u.name AS exec_name
+      `SELECT l.*, (u."firstName" || ' ' || u."lastName") AS exec_name
        FROM field_leads l JOIN users u ON u.id = l.user_id
        WHERE ${conds.join(' AND ')}
        ORDER BY l.created_at DESC`,
@@ -598,18 +598,15 @@ router.get('/team', authCRM, FF_READ, async (req, res) => {
   const tenantId = tid(req);
   try {
     const { rows } = await pool.query(
-      `SELECT u.id, u.name, u.email,
+      `SELECT u.id, (u."firstName" || ' ' || u."lastName") AS name, u.email,
          (SELECT MAX(date) FROM field_attendance WHERE user_id = u.id AND tenant_id = $1) AS last_attendance,
          (SELECT COUNT(*) FROM field_visits WHERE user_id = u.id AND tenant_id = $1
             AND TO_CHAR(COALESCE(planned_at,created_at),'YYYY-MM') = TO_CHAR(NOW(),'YYYY-MM')) AS visits_this_month
        FROM users u
        WHERE u.tenant_id = $1
-         AND u.isTeam = TRUE
-         AND EXISTS (
-           SELECT 1 FROM team_permissions tp
-           WHERE tp.user_id = u.id AND tp.permission = 'Field Force'
-         )
-       ORDER BY u.name`,
+         AND u."isTeam" = TRUE
+         AND u.metadata->'permissions' ? 'Field Force'
+       ORDER BY (u."firstName" || ' ' || u."lastName")`,
       [tenantId]
     );
     res.json(rows);
@@ -665,7 +662,7 @@ router.get('/empanelment', authCRM, FF_READ, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT a.*,
-         u.name AS assigned_exec_name,
+         (u."firstName" || ' ' || u."lastName") AS assigned_exec_name,
          (SELECT COUNT(*) FROM field_empanelment_milestones WHERE application_id = a.id AND status='done') AS milestones_done,
          (SELECT COUNT(*) FROM field_empanelment_milestones WHERE application_id = a.id) AS milestones_total
        FROM field_empanelment_applications a
@@ -692,7 +689,7 @@ router.get('/approvals', authCRM, FF_READ, async (req, res) => {
 
     if (!type || type === 'expenses') {
       const { rows } = await pool.query(
-        `SELECT ec.*, u.name AS exec_name, 'expense' AS approval_type
+        `SELECT ec.*, (u."firstName" || ' ' || u."lastName") AS exec_name, 'expense' AS approval_type
          FROM field_expense_claims ec JOIN users u ON u.id=ec.user_id
          WHERE ec.tenant_id=$1 AND ec.status=$2 ORDER BY ec.created_at DESC LIMIT 50`,
         [tenantId, status === 'pending' ? 'submitted' : status]
@@ -702,7 +699,7 @@ router.get('/approvals', authCRM, FF_READ, async (req, res) => {
 
     if (!type || type === 'exceptions') {
       const { rows } = await pool.query(
-        `SELECT e.*, u.name AS exec_name, v.entity_name, v.visit_type, 'exception' AS approval_type
+        `SELECT e.*, (u."firstName" || ' ' || u."lastName") AS exec_name, v.entity_name, v.visit_type, 'exception' AS approval_type
          FROM field_visit_exceptions e
          JOIN users u ON u.id=e.user_id
          LEFT JOIN field_visits v ON v.id=e.visit_id
@@ -714,7 +711,7 @@ router.get('/approvals', authCRM, FF_READ, async (req, res) => {
 
     if (!type || type === 'tour_plans') {
       const { rows } = await pool.query(
-        `SELECT t.*, u.name AS exec_name, 'tour_plan' AS approval_type
+        `SELECT t.*, (u."firstName" || ' ' || u."lastName") AS exec_name, 'tour_plan' AS approval_type
          FROM field_tour_plans t JOIN users u ON u.id=t.user_id
          WHERE t.tenant_id=$1 AND t.status=$2 ORDER BY t.submitted_at DESC LIMIT 50`,
         [tenantId, status === 'pending' ? 'submitted' : status]
@@ -731,7 +728,7 @@ router.get('/approvals', authCRM, FF_READ, async (req, res) => {
 // PATCH /approvals/exceptions/:id/approve
 router.patch('/approvals/exceptions/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
   const { review_note } = req.body;
-  const reviewerId = req.user?.id;
+  const reviewerId = req.crmUser?.id;
   try {
     const { rows } = await pool.query(
       `UPDATE field_visit_exceptions SET status='approved', reviewed_by=$2,
@@ -750,7 +747,7 @@ router.patch('/approvals/exceptions/:id/approve', authCRM, FF_MANAGE, async (req
 router.patch('/approvals/exceptions/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
   const { review_note, rejection_reason } = req.body; // rejection_reason is the doc's documented name
   const resolvedNote = review_note || rejection_reason;
-  const reviewerId = req.user?.id;
+  const reviewerId = req.crmUser?.id;
   if (!resolvedNote) return res.status(400).json({ error: 'review_note (or rejection_reason) required for rejection' });
   try {
     const { rows } = await pool.query(
@@ -769,7 +766,7 @@ router.patch('/approvals/exceptions/:id/reject', authCRM, FF_MANAGE, async (req,
 // PATCH /approvals/tour-plans/:id/approve
 router.patch('/approvals/tour-plans/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
   const { review_note } = req.body;
-  const reviewerId = req.user?.id;
+  const reviewerId = req.crmUser?.id;
   try {
     const { rows } = await pool.query(
       `UPDATE field_tour_plans SET status='approved', reviewed_by=$2,
@@ -789,7 +786,7 @@ router.patch('/approvals/tour-plans/:id/reject', authCRM, FF_MANAGE, async (req,
   const { review_note, rejection_reason } = req.body; // rejection_reason is the doc's documented name
   const resolvedNote = review_note || rejection_reason;
   if (!resolvedNote) return res.status(400).json({ error: 'review_note (or rejection_reason) required' });
-  const reviewerId = req.user?.id;
+  const reviewerId = req.crmUser?.id;
   try {
     const { rows } = await pool.query(
       `UPDATE field_tour_plans SET status='rejected', reviewed_by=$2,
@@ -821,13 +818,13 @@ router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `UPDATE field_leads SET
-         pipeline_stage = $3,
+         pipeline_stage = $3::text,
          stage_history  = COALESCE(stage_history,'[]'::jsonb) || jsonb_build_object(
-           'stage', $3, 'at', NOW(), 'by', $4::text, 'note', $5::text
+           'stage', $3::text, 'at', NOW(), 'by', $4::text, 'note', $5::text
          )::jsonb,
          updated_at = NOW()
        WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [req.params.id, tenantId, resolvedStage, req.user?.id, resolvedNote || null]
+      [req.params.id, tenantId, resolvedStage, req.crmUser?.id, resolvedNote || null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
     res.json(rows[0]);
@@ -838,7 +835,8 @@ router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
 
 // PATCH /leads/:id/convert — mark as closed_won with contract details
 router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
-  const { contract_value, mou_document_url, note } = req.body;
+  const { contract_value, mou_document_url, note, notes } = req.body; // doc documents `notes` (plural)
+  const resolvedNote = note || notes;
   const tenantId = tid(req);
   try {
     const { rows } = await pool.query(
@@ -853,7 +851,7 @@ router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
          updated_at      = NOW()
        WHERE id=$1 AND tenant_id=$2 RETURNING *`,
       [req.params.id, tenantId, contract_value||null, mou_document_url||null,
-       req.user?.id, note||null]
+       req.crmUser?.id, resolvedNote||null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
     res.json(rows[0]);
@@ -868,7 +866,7 @@ router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
 router.get('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT i.*, u.name AS updated_by_name
+      `SELECT i.*, (u."firstName" || ' ' || u."lastName") AS updated_by_name
        FROM field_doctor_intel i
        LEFT JOIN users u ON u.id=i.updated_by
        WHERE i.doctor_crm_id=$1`,
@@ -896,7 +894,7 @@ router.put('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
            best_visit_time=$5, notes=$6, updated_by=$7, updated_at=NOW()
          WHERE doctor_crm_id=$1 RETURNING *`,
         [req.params.id, gatekeeper_name||null, gatekeeper_phone||null, opd_days||null,
-         best_visit_time||null, notes||null, req.user?.id]
+         best_visit_time||null, notes||null, req.crmUser?.id]
       ));
     } else {
       ({ rows } = await pool.query(
@@ -905,7 +903,7 @@ router.put('/doctor-crm/:id/intel', authCRM, FF_READ, async (req, res) => {
             opd_days, best_visit_time, notes, updated_by)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [req.params.id, tenantId, gatekeeper_name||null, gatekeeper_phone||null,
-         opd_days||null, best_visit_time||null, notes||null, req.user?.id]
+         opd_days||null, best_visit_time||null, notes||null, req.crmUser?.id]
       ));
     }
     res.json(rows[0]);
@@ -920,7 +918,7 @@ router.get('/doctor-crm/:id/trail', authCRM, FF_READ, async (req, res) => {
   try {
     const [visits, intel] = await Promise.all([
       pool.query(
-        `SELECT v.*, u.name AS exec_name
+        `SELECT v.*, (u."firstName" || ' ' || u."lastName") AS exec_name
          FROM field_visits v
          LEFT JOIN users u ON u.id=v.user_id
          WHERE v.doctor_crm_id=$1 AND v.tenant_id=$2
@@ -975,7 +973,7 @@ router.get('/camps/:id/registrations', authCRM, FF_READ, async (req, res) => {
   const tenantId = tid(req);
   try {
     const { rows } = await pool.query(
-      `SELECT r.*, u.name AS registered_by_name
+      `SELECT r.*, (u."firstName" || ' ' || u."lastName") AS registered_by_name
        FROM field_camp_registrations r
        JOIN users u ON u.id=r.registered_by
        WHERE r.camp_id=$1 AND r.tenant_id=$2 ORDER BY r.created_at DESC`,
@@ -999,8 +997,8 @@ router.get('/exceptions', authCRM, FF_READ, async (req, res) => {
   if (user_id) { params.push(user_id); conds.push(`e.user_id=$${params.length}`); }
   try {
     const { rows } = await pool.query(
-      `SELECT e.*, u.name AS exec_name, v.entity_name, v.visit_type,
-         ru.name AS reviewed_by_name
+      `SELECT e.*, (u."firstName" || ' ' || u."lastName") AS exec_name, v.entity_name, v.visit_type,
+         (ru."firstName" || ' ' || ru."lastName") AS reviewed_by_name
        FROM field_visit_exceptions e
        JOIN users u ON u.id=e.user_id
        LEFT JOIN field_visits v ON v.id=e.visit_id
@@ -1026,7 +1024,7 @@ router.get('/tour-plans', authCRM, FF_READ, async (req, res) => {
   if (user_id) { params.push(user_id); conds.push(`t.user_id=$${params.length}`); }
   try {
     const { rows } = await pool.query(
-      `SELECT t.*, u.name AS exec_name FROM field_tour_plans t
+      `SELECT t.*, (u."firstName" || ' ' || u."lastName") AS exec_name FROM field_tour_plans t
        JOIN users u ON u.id=t.user_id
        WHERE ${conds.join(' AND ')} ORDER BY t.month DESC, t.submitted_at DESC`,
       params
@@ -1054,7 +1052,7 @@ router.get('/cme-events', authCRM, FF_READ, async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT e.*,
-         u.name AS created_by_name,
+         (u."firstName" || ' ' || u."lastName") AS created_by_name,
          (SELECT COUNT(*) FROM field_cme_attendees a WHERE a.cme_event_id=e.id) AS invited_count,
          (SELECT COUNT(*) FROM field_cme_attendees a WHERE a.cme_event_id=e.id AND a.attended) AS attended_count,
          (SELECT COUNT(*) FROM field_cme_speakers s WHERE s.cme_event_id=e.id) AS speaker_count
@@ -1155,7 +1153,7 @@ router.get('/event-budgets', authCRM, FF_READ, async (req, res) => {
   if (status) { params.push(status); conds.push(`b.status=$${params.length}`); }
   try {
     const { rows } = await pool.query(
-      `SELECT b.*, u.name AS created_by_name, au.name AS approved_by_name
+      `SELECT b.*, (u."firstName" || ' ' || u."lastName") AS created_by_name, (au."firstName" || ' ' || au."lastName") AS approved_by_name
        FROM field_event_budgets b
        LEFT JOIN users u ON u.id=b.created_by
        LEFT JOIN users au ON au.id=b.approved_by

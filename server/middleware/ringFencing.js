@@ -370,6 +370,7 @@ const USER_TYPE_PERMISSIONS = {
       // eight itemized /api/crm/* sub-paths.
       '/api/rfq',
       '/api/social-inbox',  // Instagram/Facebook Messenger Team inbox
+      '/api/field',  // Smart Force field-force module (own authTeam + 'Field Force' permission check)
     ],
     tokenField: 'teamId'
   },

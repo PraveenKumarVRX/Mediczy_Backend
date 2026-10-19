@@ -888,11 +888,11 @@ router.get('/team/attendance', authTeam, FFM, async (req, res) => {
   const tid = tenantId(req);
   try {
     const { rows } = await sharedPool.query(
-      `SELECT a.*, u.name AS exec_name, u.email AS exec_email
+      `SELECT a.*, (u."firstName" || ' ' || u."lastName") AS exec_name, u.email AS exec_email
        FROM field_attendance a
        JOIN users u ON u.id = a.user_id
        WHERE a.tenant_id = $1 AND a.date = $2
-       ORDER BY u.name`,
+       ORDER BY (u."firstName" || ' ' || u."lastName")`,
       [tid, date]
     );
     res.json(rows);
@@ -907,11 +907,11 @@ router.get('/team/visits', authTeam, FFM, async (req, res) => {
   const tid = tenantId(req);
   try {
     const { rows } = await sharedPool.query(
-      `SELECT v.*, u.name AS exec_name
+      `SELECT v.*, (u."firstName" || ' ' || u."lastName") AS exec_name
        FROM field_visits v
        JOIN users u ON u.id = v.user_id
        WHERE v.tenant_id = $1 AND DATE(COALESCE(v.planned_at, v.created_at)) = $2
-       ORDER BY v.planned_at, u.name`,
+       ORDER BY v.planned_at, (u."firstName" || ' ' || u."lastName")`,
       [tid, date]
     );
     res.json(rows);
@@ -1061,7 +1061,7 @@ router.get('/visits/:id/exception', authTeam, FF, async (req, res) => {
   const uid = req.user.id;
   try {
     const { rows } = await sharedPool.query(
-      `SELECT e.*, u.name AS reviewed_by_name
+      `SELECT e.*, (u."firstName" || ' ' || u."lastName") AS reviewed_by_name
        FROM field_visit_exceptions e
        LEFT JOIN users u ON u.id = e.reviewed_by
        WHERE e.visit_id = $1 AND e.user_id = $2`,
@@ -1083,7 +1083,7 @@ router.get('/my/exceptions', authTeam, FF, async (req, res) => {
   if (status) { params.push(status); conds.push(`e.status=$${params.length}`); }
   try {
     const { rows } = await sharedPool.query(
-      `SELECT e.*, v.entity_name, v.visit_type, u.name AS reviewed_by_name
+      `SELECT e.*, v.entity_name, v.visit_type, (u."firstName" || ' ' || u."lastName") AS reviewed_by_name
        FROM field_visit_exceptions e
        LEFT JOIN field_visits v ON v.id = e.visit_id
        LEFT JOIN users u ON u.id = e.reviewed_by
@@ -1180,7 +1180,7 @@ router.get('/camps/:id/registrations', authTeam, FF, async (req, res) => {
   const tid = tenantId(req);
   try {
     const { rows } = await sharedPool.query(
-      `SELECT r.*, u.name AS registered_by_name
+      `SELECT r.*, (u."firstName" || ' ' || u."lastName") AS registered_by_name
        FROM field_camp_registrations r
        JOIN users u ON u.id = r.registered_by
        WHERE r.camp_id=$1 AND r.tenant_id=$2 ORDER BY r.created_at DESC`,
@@ -1242,12 +1242,12 @@ router.get('/outreach-permissions', authTeam, FF, async (req, res) => {
   const { status, type } = req.query;
   const tid = tenantId(req);
   const params = [tid];
-  const conds = ['tenant_id=$1'];
-  if (status) { params.push(status); conds.push(`status=$${params.length}`); }
-  if (type)   { params.push(type);   conds.push(`permission_type=$${params.length}`); }
+  const conds = ['p.tenant_id=$1'];
+  if (status) { params.push(status); conds.push(`p.status=$${params.length}`); }
+  if (type)   { params.push(type);   conds.push(`p.permission_type=$${params.length}`); }
   try {
     const { rows } = await sharedPool.query(
-      `SELECT p.*, u.name AS created_by_name FROM field_outreach_permissions p
+      `SELECT p.*, (u."firstName" || ' ' || u."lastName") AS created_by_name FROM field_outreach_permissions p
        JOIN users u ON u.id = p.user_id
        WHERE ${conds.join(' AND ')} ORDER BY p.created_at DESC`,
       params
@@ -1437,7 +1437,7 @@ router.get('/institution/:entityType/:entityId', authTeam, FF, async (req, res) 
     const [visits, leads, emp] = await Promise.all([
       sharedPool.query(
         `SELECT v.id, v.visit_type, v.status, v.planned_at, v.created_at,
-           u.name AS exec_name, v.outcome
+           (u."firstName" || ' ' || u."lastName") AS exec_name, v.outcome
          FROM field_visits v LEFT JOIN users u ON u.id=v.user_id
          WHERE v.entity_type=$1 AND v.entity_id=$2 AND v.tenant_id=$3
          ORDER BY v.created_at DESC LIMIT 30`,
@@ -1458,13 +1458,11 @@ router.get('/institution/:entityType/:entityId', authTeam, FF, async (req, res) 
          ORDER BY l.created_at DESC LIMIT 10`,
         [entityType, entityId, tid]
       ),
-      sharedPool.query(
-        `SELECT id, entity_name, status, insurer_name, panel_type, created_at
-         FROM field_empanelment_applications
-         WHERE entity_type=$1 AND entity_id::TEXT=$2 AND tenant_id=$3
-         ORDER BY created_at DESC LIMIT 5`,
-        [entityType, entityId, tid]
-      ),
+      // field_empanelment_applications has no entity_type/entity_id/entity_name columns at
+      // all — it's modeled around insurer_name (the insurer side of the deal), with no
+      // link back to which hospital/clinic the application is about. There's no real data
+      // to query here without a schema change, so return empty rather than erroring.
+      Promise.resolve({ rows: [] }),
     ]);
     res.json({
       entity_type: entityType,
@@ -1567,7 +1565,7 @@ router.post('/cme-events/:id/checkin', authTeam, FF, async (req, res) => {
 router.get('/cme-events/:id/attendees', authTeam, FF, async (req, res) => {
   try {
     const { rows } = await sharedPool.query(
-      `SELECT a.*, u.name AS invited_by_name
+      `SELECT a.*, (u."firstName" || ' ' || u."lastName") AS invited_by_name
        FROM field_cme_attendees a
        LEFT JOIN users u ON u.id=a.invited_by
        WHERE a.cme_event_id=$1 ORDER BY a.created_at`,
