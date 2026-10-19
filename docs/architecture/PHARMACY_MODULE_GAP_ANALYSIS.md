@@ -1,6 +1,10 @@
 # Pharmacy Module — Gap Analysis vs. Full Pharmacy ERP
 
-**Date:** 2026-10-19
+**Date:** 2026-10-19 · **Status as of 2026-10-19 (same day):** All gaps in §1 below are now
+**implemented** (commit `504b59da`) except the one explicitly called out as unsafe to automate
+(IPD stock deduction — see note after the table). This doc is kept as the record of what was wrong
+and why; see the end of §1 for what changed under each row.
+
 **Scope:** Compare Mediqzy's pharmacy module against the feature set of a complete retail/hospital
 pharmacy ERP (OPD/IPD dispensing, cash/credit sales, batch-wise inventory with expiry/FEFO, purchase
 orders, supplier management, sales/supplier returns, GST/HSN compliance, prescription linkage,
@@ -49,47 +53,47 @@ truth and retire/migrate model #2), or every feature built on top inherits the s
 
 ## 1. Capability matrix
 
-| Capability | Status | Evidence | Gap |
+| Capability | Status (2026-10-19 start) | Status now | What changed |
 |---|---|---|---|
-| **OPD dispensing → billing** | Partial | `prescriptions.route.js` → `emr-order-router.service.js:finalizePharmacyDispenseBilling()` creates `pharmacy_invoices` + posts to `hospital_billing_charges` | Billing is created but **inventory is never deducted** — totals come from `unit_price`, not stock/batches |
-| **IPD dispensing (eMAR)** | Minimal | `pharmacy_dispense_queue` + `emar-pharmacy-bridge.service.js`, `pending`→`dispensed` status only | No stock/batch deduction, no FEFO, no billing-charge creation on dispense |
-| **Cash sales / POS** | Partial | `transactions.route.js` real DB insert + aggregate `pharmacy_stock` decrement; `PharmacyPOSPage` wired to it | Medicine search hits the fake-fallback model #2; stock decrement is aggregate-only (hardcoded `batchId: 0`), not FEFO/batch-aware |
-| **Credit sales (OTC customer)** | **Missing** | `pharmacy_customers` has only `loyalty_points`; `payment_method` is free text | No credit limit/balance/ledger table for pharmacy-counter customers at all (hospital-wide `hospital_credit_ledger` is a different, patient-billing concept) |
-| **Batch inventory + expiry/FEFO** | Built but orphaned | `pharmacy_batches` table + `issueFefo()` in `pharmacy-inventory-governance.service.js` is a real, correct FEFO engine | Never called by `transactions.route.js` or `prescriptions.route.js` — FEFO logic exists and is dead |
-| **Purchase orders** | Exists | `purchase-orders.route.js`: create + `/receive` bumps `pharmacy_stock.quantity` | Receiving doesn't create a `pharmacy_batches` row — no automatic batch/expiry capture on goods-in |
-| **Supplier management** | **Missing** | `supplier` is a bare `VARCHAR(255)` duplicated across 3 tables | No supplier master (contact, GSTIN, payment terms, outstanding payable, performance) |
-| **Sales returns** | Exists | `returns.route.js`: validates qty against sold-minus-returned, restocks, audit-logged | Restock goes to flat `pharmacy_stock` only, no batch re-association |
-| **Supplier returns** | **Missing** | — | No route/table anywhere for returning expired/damaged stock to a supplier |
-| **GST/HSN compliance** | **Partial** | The `pharmacies` tenant table already has a `gstNumber` column (readable/writable via the existing profile endpoints); `pharmacy_medicines` has no `hsn_code`/`gst_rate`; `pharmacy_invoices` has flat `tax_amount` only, no CGST/SGST/IGST split | Per-medicine HSN/rate and per-invoice tax split are missing; the pharmacy-level GSTIN itself is not a gap |
-| **Prescription linkage (POS)** | Partial | EMR-side `pharmacy_prescriptions` workflow is real; `pharmacy.service.ts` types accept `prescriptionId` | `transactions.route.js`'s actual handler never reads/stores it — no DB column links a counter sale back to a prescription |
-| **Low-stock / near-expiry alerts** | Manual only | `pharmacy_stock_alerts` table + route let a user create an alert by hand; dashboard counts are computed client-side from often-fake inventory data | **No cron job scans stock/batches automatically** — the only pharmacy-tagged cron is `drug_price_sync` (catalog pricing, unrelated) |
-| **Controlled-drug register / wastage / recalls** | Built but dead | `governance.route.js` fully implements all three against real tables | Route file is never imported/mounted — 0% reachable via HTTP |
-| **Dashboard stats** | Partial | The page actually used, `PharmacyDashboard.tsx`, calls `analytics.route.js`'s `/dashboard` — a real, correct query against `pharmacy_stock`/`pharmacy_transactions`. `dashboard.routes.js` (`/api/pharmacy/dashboard/stats`) is 100% hardcoded mock JSON, but is dead code — zero references anywhere in the client | The real dashboard shows real zeros only because the underlying tables are empty (see §0); fixing the data-model unification fixes this with no dashboard code changes. The dead mock route should just be deleted |
+| **OPD dispensing → billing** | Partial — billing created, inventory never deducted | ✅ Fixed | `emr-order-router.service.js:finalizePharmacyDispenseBilling()` now calls `issueFefo()` per line after posting the invoice (`server/services/emr-order-router.service.js`) |
+| **IPD dispensing (eMAR)** | Minimal — status-only queue | ⚠️ Intentionally not automated | `pharmacy_dispense_queue`/`medication_orders` both store the drug as free text with no FK to `pharmacy_medicines` — wiring stock deduction would require unsafe fuzzy name-matching. Left as pure status tracking; a real fix needs a `medicine_id` column added at order-creation time (a doctor-ordering UI change, out of scope here) |
+| **Cash sales / POS** | Partial — fake-model search, aggregate-only decrement | ✅ Fixed | `inventory.routes.js` rewritten onto the real catalog/stock/batches; `transactions.route.js` calls `issueFefo()`; client no longer sends a hardcoded `batchId: 0` |
+| **Credit sales (OTC customer)** | Missing | ✅ Built | `pharmacy_credit_ledger` table + `credit_limit`/`credit_balance` on `pharmacy_customers`; POS supports a "Credit" payment method with limit enforcement; `credit.route.js` + a payment-recording UI on the Customers page |
+| **Batch inventory + expiry/FEFO** | Built but orphaned | ✅ Wired in | `issueFefo()` now called from POS sales and OPD dispensing — verified against synthetic test data (depletes earliest-expiry batch first) |
+| **Purchase orders** | Exists, no batch capture on receive | ✅ Fixed | `/receive` now optionally accepts batch/expiry per item and creates `pharmacy_batches` rows; `supplier_id` FK added alongside the free-text field |
+| **Supplier management** | Missing | ✅ Built | `pharmacy_suppliers` table + `suppliers.route.js` + a Suppliers management page |
+| **Sales returns** | Exists, restocks flat `pharmacy_stock` only | As-is | Still restocks the aggregate only, not a specific batch — correlating a return to the batch it was originally FEFO-issued from would need `pharmacy_transaction_items` to carry a `batch_id`, which it doesn't today. Not fixed in this pass; flagged for a follow-up if batch-level return traceability becomes a real requirement |
+| **Supplier returns** | Missing | ✅ Built | `pharmacy_supplier_returns`/`pharmacy_supplier_return_items` tables + `supplier-returns.route.js` + a Supplier Returns page, decrementing stock/batches |
+| **GST/HSN compliance** | Partial | ✅ Built | `hsn_code`/`gst_rate` on `pharmacy_medicines`; `cgst_amount`/`sgst_amount`/`igst_amount` on `pharmacy_invoices`, computed per line in `invoices.route.js` (intra-state CGST+SGST split; the pharmacy-level GSTIN already existed and was never a gap) |
+| **Prescription linkage (POS)** | Partial — type existed, column didn't | ✅ Fixed | `pharmacy_transactions.prescription_id` column added; `transactions.route.js` now stores it |
+| **Low-stock / near-expiry alerts** | Manual only | ✅ Built | `pharmacy-stock-alert-cron.service.js` scans all active pharmacies daily at 5 AM against each pharmacy's own thresholds, auto-creating `pharmacy_stock_alerts` rows |
+| **Controlled-drug register / wastage / recalls** | Built but dead | ✅ Mounted | `governance.route.js` mounted at `/api/pharmacy/governance`; also fixed a real pre-existing bug found while verifying it (see below) |
+| **Dashboard stats** | Partial (real route + dead mock route) | ✅ Fixed | The real `analytics.route.js` dashboard now shows real numbers since inventory is real; the dead `dashboard.routes.js` mock was deleted |
+
+**Bonus finds while verifying the above:** `pharmacy-inventory-governance.service.js`'s schema-ready
+check queried `information_schema.tables` through Sequelize, which silently reformats such queries
+into a flat array of table names — so the check always failed, and would have made every FEFO-backed
+POS sale throw a 503 the moment it went live. Fixed by switching that one check to the raw pg pool.
+A related `recordControlledMovement` result-destructuring bug (returning the whole rows array instead
+of the single inserted row) was fixed in the same pass. Both confirmed via a synthetic-pharmacy-id
+smoke test against prod, then cleaned up.
 
 ---
 
-## 2. Recommended build order
+## 2. Build order followed (completed 2026-10-19)
 
-Fixing fragmentation has to come before most feature work, or new features get built on the wrong
-data model again.
+Fragmentation was fixed first so later feature work didn't land on the wrong data model:
 
-1. **Unify on model #1** — make `inventory.routes.js` read/write the real `pharmacy_medicines` /
-   `pharmacy_stock` / `pharmacy_batches` tables instead of the flat `pharmacy_inventory` model, and
-   delete the `MASTER_MEDICINES` fake-data fallback. This alone fixes the POS/cart mismatch.
-2. **Wire the existing FEFO engine into the live paths** — call `issueFefo()` from
-   `transactions.route.js` (POS sale) and the OPD/IPD dispense paths instead of the aggregate
-   `pharmacy_stock` decrement. The engine already exists; this is integration, not new logic.
-3. **Mount `governance.route.js`** — zero-cost win: controlled-drug register, wastage, recalls are
-   fully built, just need one line in `pharmacy.route.js`/`app.js`.
-4. **Replace the fake dashboard** with real aggregate queries once #1 is fixed (the numbers are
-   meaningless until inventory is real).
-5. **Add automated low-stock/near-expiry cron** — a scheduled job over the now-real `pharmacy_stock`/
-   `pharmacy_batches`, following the `tick()`/`tickStart()`/`tickError()` convention in
-   `server/utils/cronRegistry.js`.
-6. **New schema + features**: supplier master table, pharmacy customer credit ledger, GST/HSN columns
-   on `pharmacy_medicines`/`pharmacy_invoices` + CGST/SGST/IGST split, supplier-return workflow,
-   prescription-linkage column on `pharmacy_transactions`, batch-row creation on PO receive.
+1. ✅ Unified `inventory.routes.js` onto `pharmacy_medicines`/`pharmacy_stock`/`pharmacy_batches`;
+   deleted the `MASTER_MEDICINES` fake-data fallback.
+2. ✅ Wired `issueFefo()` into `transactions.route.js` (POS) and the OPD billing bridge.
+3. ✅ Mounted `governance.route.js`; fixed the Sequelize/`information_schema` bug that would have
+   broken it (and FEFO) in production.
+4. ✅ Dashboard now shows real numbers now that inventory is real; dead mock route deleted.
+5. ✅ Automated low-stock/near-expiry cron added (`pharmacy-stock-alert-cron.service.js`).
+6. ✅ New schema + features: supplier master, customer credit ledger, GST/HSN + invoice tax split,
+   supplier returns, prescription-linkage column, batch-row creation on PO receive.
 
-Steps 1–4 are prerequisite plumbing fixes to code that already exists; step 6 is genuinely new feature
-work. Attempting step 6 before steps 1–3 would add GST/credit/supplier features on top of the broken
-dual-model split and the dead FEFO engine, reproducing the same bugs in new code.
+Remaining, deliberately not done: IPD stock deduction (no safe medicine-id link exists yet) and
+batch-level return traceability (would need a schema change to `pharmacy_transaction_items`) — see
+the notes in §1's table.

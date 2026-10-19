@@ -172,10 +172,16 @@ router.get('/', async (req, res) => {
     const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
     const pharmacyId = req.pharmacyId;
 
+    // first_medicine_id lets the client's receive dialog capture a batch/expiry without
+    // a separate items-fetch round trip, for the common single-item order.
     const result = await db.query([
-      'SELECT * FROM pharmacy_purchase_orders',
-      'WHERE pharmacy_id = $1',
-      'ORDER BY created_at DESC',
+      'SELECT po.*, first_item.medicine_id AS first_medicine_id',
+      'FROM pharmacy_purchase_orders po',
+      'LEFT JOIN LATERAL (',
+      '  SELECT medicine_id FROM pharmacy_purchase_order_items WHERE order_id = po.id ORDER BY id LIMIT 1',
+      ') first_item ON true',
+      'WHERE po.pharmacy_id = $1',
+      'ORDER BY po.created_at DESC',
       'LIMIT $2 OFFSET $3;'
     ].join(' '), [pharmacyId, limit, offset]);
 

@@ -297,6 +297,7 @@ const pharmacyService = {
     },
     create: async (orderData: {
       supplier?: string;
+      supplierId?: number;
       items: Array<{ medicineId: number; quantity: number; unitPrice: number }>;
       expectedDeliveryDate?: string;
       notes?: string;
@@ -306,8 +307,10 @@ const pharmacyService = {
       });
       return response.data;
     },
-    receive: async (orderId: number) => {
-      const response = await api.post(`${API_URL}/pharmacy/purchase-orders/${orderId}/receive`, {}, {
+    // batches: optional [{ medicineId, batchNumber, expiryDate, costPrice }] to capture the
+    // real batch/expiry as goods physically arrive (unknown at PO-creation time).
+    receive: async (orderId: number, batches?: Array<{ medicineId: number; batchNumber: string; expiryDate?: string; costPrice?: number }>) => {
+      const response = await api.post(`${API_URL}/pharmacy/purchase-orders/${orderId}/receive`, { batches }, {
         headers: getAuthHeader(),
       });
       return response.data;
