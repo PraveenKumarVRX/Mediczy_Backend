@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { addEmployeeOnce } from './employeeList';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Users, Search, Plus, Mail, Phone, MapPin, Briefcase, Calendar, Activity, Upload, Download, FileSpreadsheet, CheckCircle, XCircle, Eye, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { Label } from '@/components/ui/label';
@@ -113,7 +112,6 @@ const CorporateEmployees: React.FC = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const loadEmployees = async () => {
     try {
@@ -158,54 +156,6 @@ const CorporateEmployees: React.FC = () => {
   }, [employees, searchTerm, selectedDept]);
 
   const departments = useMemo(() => Array.from(new Set(employees.map((e) => e.department))).filter(Boolean), [employees]);
-
-  const allFilteredSelected = filteredEmployees.length > 0 && filteredEmployees.every((e) => selectedIds.has(e.employeeId));
-  const someFilteredSelected = filteredEmployees.some((e) => selectedIds.has(e.employeeId));
-
-  const toggleSelectAll = useCallback(() => {
-    if (allFilteredSelected) {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filteredEmployees.forEach((e) => next.delete(e.employeeId));
-        return next;
-      });
-    } else {
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        filteredEmployees.forEach((e) => next.add(e.employeeId));
-        return next;
-      });
-    }
-  }, [allFilteredSelected, filteredEmployees]);
-
-  const toggleSelect = useCallback((employeeId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(employeeId)) next.delete(employeeId);
-      else next.add(employeeId);
-      return next;
-    });
-  }, []);
-
-  const handleBulkStatus = useCallback(async (action: 'activate' | 'deactivate') => {
-    const employeeIds = Array.from(selectedIds);
-    if (!employeeIds.length) return;
-    try {
-      const { data } = await api.patch('/corporate/employees/bulk-status', { employeeIds, action });
-      const updated: number = (data as any)?.data?.updated ?? employeeIds.length;
-      toast({
-        title: `${updated} employee${updated !== 1 ? 's' : ''} ${action === 'activate' ? 'activated' : 'deactivated'}`,
-      });
-      setSelectedIds(new Set());
-      await loadEmployees();
-    } catch (error: any) {
-      toast({
-        title: 'Bulk action failed',
-        description: error?.response?.data?.message || 'Please try again.',
-        variant: 'destructive',
-      });
-    }
-  }, [selectedIds, toast]);
 
   const openCreate = () => {
     setEditingEmployeeId(null);
@@ -295,12 +245,7 @@ const CorporateEmployees: React.FC = () => {
   };
 
   const parseCSV = (text: string): any[] => {
-    // Normalise Windows (CRLF) and old Mac (CR) line endings before splitting.
-    // Without this, column headers end up with a trailing \r which the server
-    // doesn't recognise, causing "Missing required fields" on every row even
-    // when the file is perfectly valid.
-    const normalised = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const lines = normalised.split('\n').filter(line => line.trim());
+    const lines = text.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
     
     const headers = lines[0].split(',').map(h => h.trim());
@@ -416,10 +361,8 @@ const CorporateEmployees: React.FC = () => {
 
       setIsUpsertDialogOpen(false);
     } catch (error: any) {
-      const status = error?.response?.status;
-      const duplicate = status === 409 || error?.response?.data?.code === 'duplicate_employee';
       toast({
-        title: duplicate ? 'Employee already exists' : 'Failed to save employee',
+        title: 'Failed to save employee',
         description: error?.response?.data?.message || 'Please check the form and try again.',
         variant: 'destructive',
       });
@@ -769,39 +712,6 @@ const CorporateEmployees: React.FC = () => {
         </select>
       </div>
 
-      {/* Bulk-action toolbar */}
-      {selectedIds.size > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-800/60 border border-white/10 rounded-lg">
-          <span className="text-sm text-slate-300 font-medium">{selectedIds.size} selected</span>
-          <div className="flex-1" />
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 h-7 text-xs"
-            onClick={() => handleBulkStatus('activate')}
-          >
-            Activate Selected
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300 h-7 text-xs"
-            onClick={() => handleBulkStatus('deactivate')}
-          >
-            Deactivate Selected
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-slate-500 hover:text-slate-300 h-7 w-7 p-0 text-base leading-none"
-            onClick={() => setSelectedIds(new Set())}
-            title="Clear selection"
-          >
-            ×
-          </Button>
-        </div>
-      )}
-
       {/* Employees Table */}
       <Card className="!p-0 bg-slate-900/50 border-white/[0.06]">
         <CardHeader>
@@ -813,14 +723,6 @@ const CorporateEmployees: React.FC = () => {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-white/[0.06] bg-slate-800/30">
-                  <th className="p-3 w-10">
-                    <Checkbox
-                      checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
-                      onCheckedChange={toggleSelectAll}
-                      className="border-slate-600"
-                      aria-label="Select all employees"
-                    />
-                  </th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Employee ID</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Name</th>
                   <th className="text-left p-3 font-semibold text-slate-400 text-xs uppercase">Business Unit</th>
@@ -834,14 +736,6 @@ const CorporateEmployees: React.FC = () => {
               <tbody>
                 {filteredEmployees.map((emp) => (
                   <tr key={emp.id} className="border-b border-white/[0.04] hover:bg-slate-800/30 transition-colors">
-                    <td className="p-3 w-10">
-                      <Checkbox
-                        checked={selectedIds.has(emp.employeeId)}
-                        onCheckedChange={() => toggleSelect(emp.employeeId)}
-                        className="border-slate-600"
-                        aria-label={`Select ${emp.name}`}
-                      />
-                    </td>
                     <td className="p-3 font-medium text-slate-300">{emp.employeeId}</td>
                     <td className="p-3">
                       <div>
