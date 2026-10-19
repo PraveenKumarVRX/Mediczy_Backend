@@ -1409,3 +1409,98 @@ already the new code by the time anything can fail. It now reverts to `.deploy/c
    - remaining risk
 5. Do not mark a phase complete until its exit criteria and owner sign-off are recorded.
 
+
+
+## 13. MedCore vs MediQzy Route and Feature Coverage Comparison
+
+### 13.1 Route inventory summary
+
+Route counts extracted from `/tmp/mcroutes.txt` (MedCore) and `/tmp/mzroutes.txt` (MediQzy),
+normalized by lowercasing, stripping file extensions (`.routes`, `.router`, `.js`, `.ts`), and
+collapsing dot separators to hyphens.
+
+| Metric | MedCore | MediQzy |
+|---|---:|---:|
+| Total routes | 133 | 406 |
+| Overlapping routes | \multicolumn{2}{c|}{13 (13 MedCore = 13 MediQzy normalized names)} |
+| MedCore-only routes | 120 | — |
+| MediQzy-only routes | — | 390 |
+| MediQzy route coverage vs MedCore | — | ~3.1x |
+
+| # | Route | MedCore | MediQzy | Notes |
+|---|---|---|---|---|
+| 1 | abdm | ✅ | ✅ | ABDM health-id integration |
+| 2 | ai-scribe | ✅ | ✅ | Ambient clinical documentation |
+| 3 | ambulance | ✅ | ✅ | Ambulance dispatch (MediQzy adds `ambulance/auth.routes`) |
+| 4 | analytics | ✅ | ✅ | Analytics dashboards |
+| 5 | audit | ✅ | ✅ | Audit trail |
+| 6 | billing | ✅ | ✅ | Billing (MediQzy adds `billing-estimate`, nested pharmacy/hospital billing) |
+| 7 | chat | ✅ | ✅ | Chat (MediQzy adds `chatwoot-webhook`, `support-chat`, etc.) |
+| 8 | ehr | ✅ | ✅ | Electronic health record |
+| 9 | fhir | ✅ | ✅ | FHIR API (MediQzy adds `fhir-subscriptions`, `hypergrid-smart-fhir`) |
+| 10 | health | ✅ | ✅ | Health checks (MediQzy adds many health-* variants) |
+| 11 | pharmacy | ✅ | ✅ | Pharmacy (MediQzy has 17 pharmacy-related routes) |
+| 12 | queue | ✅ | ✅ | Patient queue (MediQzy adds `queue-management`) |
+| 13 | whatsapp-config | ✅ | ✅ | WhatsApp config (MedCore: `whatsapp-config`; MediQzy: `whatsapp.config`) |
+
+MedCore focuses on core hospital operations: clinical workflows, insurance, HR, emergency,
+admissions, discharges, ICD-10, referrals, and super-admin functions. Many of these are absent
+from MediQzy.
+
+**Representative MedCore-only domains:**
+
+| Domain | Sample routes |
+|---|---|
+| Admissions / inpatient | `admissions`, `emergency`, `wards` |
+| AI clinical | `ai-adherence`, `ai-claims`, `ai-coaching`, `ai-doc-qa`, `ai-er-triage`, `ai-radiology`, `ai-sentiment`, `ai-symptom-diary`, `ai-transcribe`, `ai-triage` |
+| Clinical | `consultations`, `icd10`, `medication`, `medicines`, `surgery`, `telemedicine`, `med-reconciliation` |
+| Insurance | `insurance-claims`, `insurance-providers`, `pmjay`, `preauth`, `referral-commissions` |
+| HR / ops | `hr-ops`, `leaves`, `shifts`, `nurse-rounds`, `packages`, `expenses` |
+| Patient | `patients`, `patients-merge`, `patient-auth`, `patient-data-export`, `patient-extras`, `public-patient`, `public-booking`, `public-abha` |
+| Super-admin | `super-admin-audit`, `super-admin-compliance`, `super-admin-health`, `super-admin-metrics`, `super-admin-tenant-config`, `super-admin-users` |
+| Other | `auth`, `bloodbank`, `branches`, `calendar-events`, `campaigns`, `cohorts`, `consult-rail`, `controlled-substances`, `coordinated-visits`, `departments`, `doctor-favourites`, `doctors`, `dpdp-workbench`, `feature-flags`, `feedback`, `growth`, `hl7v2`, `holidays`, `hospital-kiosk`, `implants`, `lab`, `leads`, `maintenance-windows`, `marketing`, `materials`, `me-tenant`, `my-subscription`, `notifications`, `referrals`, `requisitions`, `role-permissions`, `scheduled-jobs`, `scheduled-reports`, `search`, `settings`, `snomed`, `status`, `suppliers`, `support-tickets`, `tenant-onboarding`, `tenants`, `uploads`, `user-invites`, `users`, `visitors`, `visitors-stats`, `waitlist`, `webhooks`, `whatsapp-inbox`, `whatsapp-webhook` |
+
+MediQzy has substantially broader coverage, especially in CRM, corporate, pharmacy, lab, AI
+infrastructure, and multi-module admin surfaces.
+
+| Domain | Count | Representative routes |
+|---|---:|---|
+| admin | 12 | `admin/appointments.routes`, `admin/clinics.routes`, `admin/doctors.routes`, `admin/hospitals.routes`, `admin/labs.routes`, `admin/pharmacies.routes`, `admin/drug-price-sync`, `admin/pending-registrations` |
+| ai | 12 | `ai`, `ai-analytics`, `ai-brain`, `ai-deeptech`, `ai-governance`, `ai-gpu-metrics`, `ai-health`, `ai-hmis-ops`, `ai-intelligence`, `ai-revenue`, `ai-vision` |
+| api-v1 | 13 | `api-v1-appointments`, `api-v1-auth`, `api-v1-chat`, `api-v1-doctors`, `api-v1-labs`, `api-v1-pharmacy`, `api-v1-users`, `api-v1-video`, `api-v1-webhooks`, `api-v1-wellness` |
+| crm | 13 | `crm`, `crm-ai`, `crm-analysis`, `crm-automations`, `crm-flow-builder`, `crm-segments`, `crm-team`, `crm-underwriting`, `crmCampaigns`, `crmEmail` |
+| dept | 12 | `dept/asset`, `dept/biomedical`, `dept/bloodBank`, `dept/cssd`, `dept/dietary`, `dept/finance`, `dept/infectionControl`, `dept/mortuary`, `dept/procurement`, `dept/queue` |
+| doctor | 15 | `doctor`, `doctor-availability`, `doctor-chat`, `doctor-copilot`, `doctor-imaging`, `doctor-oauth`, `doctor-settings`, `doctor/billing.routes`, `doctor/dashboard-alerts.routes`, `doctor/messages.routes` |
+| domains | 7 | `domains/admin.domain`, `domains/ai.domain`, `domains/corporate.domain`, `domains/doctor.domain`, `domains/hmis.domain`, `domains/patient.domain`, `domains/providers.domain` |
+| hospital | 23 | `hospital`, `hospital-auth`, `hospital-billing`, `hospital-crm-*` (5 variants), `hospital-finance`, `hospital-queue`, `hospital-os`, `hospital-practice`, `hospital/executive-dashboard` |
+| lab | 12 | `lab`, `lab-tests`, `lab-rule-engine`, `lab-integration`, `lab/branches`, `lab/orders`, `lab/qc`, `lab/registry`, `lab/ris-imaging` |
+| pharmacy | 17 | `pharmacy-dispense`, `pharmacy/analytics`, `pharmacy/auth.routes`, `pharmacy/batches`, `pharmacy/compliance`, `pharmacy/customers`, `pharmacy/dashboard.routes`, `pharmacy/governance`, `pharmacy/inventory.routes`, `pharmacy/invoices`, `pharmacy/pos.routes`, `pharmacy/prescriptions`, `pharmacy/purchase-orders`, `pharmacy/returns`, `pharmacy/stock`, `pharmacy/stock-alerts`, `pharmacy/transactions` |
+| top-level | 262 | `ambulance/auth.routes`, `anesthesia`, `ayushman`, `chemotherapy`, `claims`, `clinical-intelligence`, `clinical-reports`, `clinical-safety`, `clinical-workflow`, `corporate`, `coupon`, `data-export`, `device`, `dialysis`, `diet`, `discharge-workflow`, `dms`, `emar`, `emr`, `enhanced-appointment`, `enterprise-auth`, `er-workflow`, `fcm`, `follow-up-hmis`, `health-assessment`, `health-camp`, `health-checkup`, `health-diary`, `health-intelligence`, `health-programs`, `health-score`, `hl7-gateway`, `hmis-alerts`, `hmis-analytics`, `hmis-automation`, `hmis-preauth`, `homecare`, `housekeeping`, `hrms`, `iam`, `icu`, `imaging-platform`, `imaging-session`, `india-health-intelligence`, `insurance`, `insurance-broker`, `insurance-company`, `insurance-policy`, `iso27001`, `leaderboard`, `local-ai-node`, `marketing-leads`, `masterdata.routes`, `medcore-adoption`, `medical-ai`, `membership`, `membership-plans`, `module-access`, `module-copilot`, `mrd`, `myupchar`, `nabh-jci`, `notification`, `nurse`, `nursing-echart`, `nursing-ipd`, `oauth`, `offline-scribe`, `ohc-workspace`, `omnichannel-journey`, `online-consultation`, `order`, `org-membership-plans`, `orthanc-webhook`, `ot-rooms-admin`, `ot-scheduling`, `otp`, `parking`, `password-reset`, `patient`, `patient-copilot`, `patient-engagement`, `patient-fitness-certificates`, `patient-navigation`, `patient-pharmacy-orders`, `payment`, `payroll`, `phlebotomy.router`, `places`, `poc-device`, `prescription`, `privacy`, `provider-network-bot`, `public-claim-status`, `public-kiosk-register`, `public-report`, `qms`, `queue-management`, `recording`, `report-analysis`, `report-builder`, `reports`, `revenue-insights`, `revenue-share`, `rfq`, `roadmap-intelligence`, `role`, `rwe-platform`, `saas-dashboard`, `samd-regulatory`, `scm`, `scribe`, `sftp`, `sib-chatbots`, `sib-control`, `sms`, `social-inbox`, `specialist-marketplace`, `specialty-module`, `specialty-ot-extensions`, `sso`, `super-admin-tenant`, `superadmin-clinic.routes`, `support-chat`, `surveillance`, `team`, `team-occupational-health`, `teamEmail`, `tele-icu-command`, `telemetry`, `tenant`, `tenant-domain`, `tickets`, `tpa`, `tpa-dashboard`, `tts`, `unified-hospital-staff.routes`, `unified-patient.routes`, `upload`, `user`, `userAssociation`, `verificationRoutes`, `video`, `video-events`, `videoConfig`, `vitals`, `voice-assistant`, `voice-scriber-admin`, `voiceConfig`, `wallet`, `wards-admin`, `wearable`, `webinar.routes`, `welcomeEmailTemplates`, `whatsapp`, `whatsapp.business`, `whatsapp-numbers`, `whatsapp-production`, `x12n-edi` |
+
+For the 13 overlapping routes, MediQzy consistently shows greater depth:
+
+- **pharmacy**: MedCore has 1 route; MediQzy has 17 pharmacy-related routes (dispense, analytics, batches, compliance, customers, dashboard, governance, inventory, invoices, pos, prescriptions, purchase-orders, returns, stock, stock-alerts, transactions + auth routes)
+- **doctor**: MedCore has `doctors`; MediQzy has 15 doctor-related routes (availability, chat, copilot, imaging, oauth, settings, billing, dashboard-alerts, messages, templates, triage, webinar + enhanced variant)
+- **lab**: MedCore has `lab`; MediQzy has 12 lab-related routes (tests, rule-engine, integration, branches, orders, qc, registry, ris-imaging + auth/enhanced variants)
+- **hospital**: MedCore has `hospital-kiosk`; MediQzy has 23 hospital-related routes (auth, branch, billing, CRM variants, executive-dashboard, finance, os, practice, queue + nested routes)
+- **admin**: MedCore has no dedicated admin cluster; MediQzy has 12 admin sub-routes plus 7 domain route files
+
+1. **MediQzy ledger/journals**: MediQzy has `dept/finance`, `hospital/finance`, `pharmacy/invoices`, `pharmacy/transactions`, `revenue-insights`, `revenue-share`, `admin-orders-revenue`, `admin-stats` — a distributed financial surface. MedCore has `referral-commissions` only (no double-entry GL; confirmed structural advantage for MediQzy in finance parity audit).
+2. **MediQzy CRM**: 13 CRM routes vs MedCore `leads` only — MediQzy has full CRM automation, segments, flow-builder, underwriting, campaigns, email.
+3. **MediQzy API layer**: 13 `api-v1-*` routes providing versioned API surface; MedCore has no versioned API routes.
+4. **MediQzy domain architecture**: 7 `domains/*.domain` route files for modular domain-driven routing.
+
+### 13.7 MedCore structural advantages
+
+1. **Prescribing safety**: MedCore enforces block-by-default with audited override; MediQzy uses a hard-gate model (different safety philosophy, not necessarily inferior).
+2. **Clinical depth**: MedCore has `icd10`, `medication`, `medicines`, `med-reconciliation`, `consultations`, `surgery`, `telemedicine`, `referrals`, `requisitions` — a focused clinical core that MediQzy spreads across many more route names.
+
+### 13.8 Recommendation
+
+MediQzy has ~3x the route count of MedCore with broader domain coverage (CRM, pharmacy, lab, corporate, AI infrastructure, versioned API). For parity, MedCore should prioritize: (a) pharmacy sub-routes (invoices, transactions, stock), (b) versioned API routes, (c) CRM module, and (d) finance ledger — all confirmed gaps in the 2026-10-15 parity audit.
+
+### 13.2 Overlapping routes (common foundation)
+
+These 13 routes exist in both platforms with matching normalized names. MediQzy typically adds
+nested sub-routes under these names (e.g. `pharmacy/invoices`, `pharmacy/analytics` in MediQzy
+vs a single `pharmacy` route in MedCore), indicating greater depth rather than just more names.
