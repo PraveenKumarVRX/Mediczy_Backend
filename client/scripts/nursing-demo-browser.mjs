@@ -10,7 +10,7 @@ try{
  await page.setRequestInterception(true);page.on('request',r=>{const u=new URL(r.url());if(u.origin===new URL(base).origin||['data:','blob:'].includes(u.protocol))r.continue();else r.abort();});
  await page.goto(base+'/nurse/login',{waitUntil:'networkidle2',timeout:30000});await page.waitForSelector('input[type="email"]');
  await page.type('input[type="email"]',account.email);await page.type('input[type="password"]',account.password);await page.click('button[type="submit"]');
- await page.waitForSelector('#nursing-patient',{timeout:30000});const options=await page.$eval('#nursing-patient',e=>Array.from(e.options).map(o=>o.value).filter(Boolean));assert.deepEqual(options,[String(demo.admissionId)]);
+ await page.waitForSelector('#nursing-patient',{timeout:30000});await page.waitForFunction(id=>Array.from(document.querySelector('#nursing-patient')?.options||[]).some(o=>o.value===id),{timeout:30000},String(demo.admissionId));const options=await page.$eval('#nursing-patient',e=>Array.from(e.options).map(o=>o.value).filter(Boolean));assert.deepEqual(options,[String(demo.admissionId)]);
  record.checks.push('Real nurse login renders only the dedicated synthetic admission');
  await page.select('#nursing-patient',String(demo.admissionId));await page.waitForSelector('#nursing-observationText');
  const saved=page.waitForResponse(r=>r.url().includes('/v1/echart/entry')&&r.request().method()==='POST'&&r.status()===201,{timeout:30000});

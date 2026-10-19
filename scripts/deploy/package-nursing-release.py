@@ -33,9 +33,38 @@ client/scripts/nursing-demo-live.mjs
 client/scripts/nursing-demo-browser.mjs
 client/scripts/nursing-demo-storage.mjs
 infra/nursing/private-images.cloudformation.json'''.splitlines())
-files.update(['server/database/index.js', 'server/middleware/api-auth.js', 'server/middleware/ipThreatIntelligence.js', 'server/services/database-provisioning.service.js', 'server/services/tenant-provisioner.service.js', 'server/services/dedicated-db-provisioner.service.js', 'server/db/pgPool.js', 'server/db/postgres.js', 'server/db/postgres-sequelize.js', 'server/db/postgres-tls.js', 'server/db/certs/aws-rds-ap-south-1.pem', 'server/scripts/ssm-env-loader.mjs', 'server/utils/runtime-secret-policy.js', 'server/scripts/ops/harden-nursing-database.mjs', 'server/scripts/ops/database-recovery-dump.mjs', 'server/scripts/ops/database-recovery-restore.mjs', 'infra/database/nursing-ownership.sql', 'infra/database/recovery.cloudformation.json', 'infra/database/encrypted-target.cloudformation.json', 'scripts/ops/load-prod-env.sh', 'scripts/ops/fix-prod-db-ownership.sh', 'scripts/ops/uat-to-prod-db-sync.sh', 'scripts/backup/pg-dump-prod.lib.sh'])
-files.update(['server/scripts/ops/database-encrypted-cutover.mjs','scripts/sib-fastapi-start.sh','infra/database/sib-verified-tls.patch'])
-files.update(['scripts/backup/encrypted-nightly-backup.sh','scripts/database/backup-database.sh','infra/database/backup-storage.cloudformation.json','infra/database/monitoring.cloudformation.json'])
+files.update([
+    'infra/database/backup-storage.cloudformation.json',
+    'infra/database/encrypted-target.cloudformation.json',
+    'infra/database/monitoring.cloudformation.json',
+    'infra/database/nursing-ownership.sql',
+    'infra/database/recovery.cloudformation.json',
+    'infra/database/sib-verified-tls.patch',
+    'scripts/backup/encrypted-nightly-backup.sh',
+    'scripts/backup/pg-dump-prod.lib.sh',
+    'scripts/database/backup-database.sh',
+    'scripts/ops/fix-prod-db-ownership.sh',
+    'scripts/ops/load-prod-env.sh',
+    'scripts/ops/uat-to-prod-db-sync.sh',
+    'scripts/sib-fastapi-start.sh',
+    'server/database/index.js',
+    'server/db/certs/aws-rds-ap-south-1.pem',
+    'server/db/pgPool.js',
+    'server/db/postgres-sequelize.js',
+    'server/db/postgres-tls.js',
+    'server/db/postgres.js',
+    'server/middleware/api-auth.js',
+    'server/middleware/ipThreatIntelligence.js',
+    'server/scripts/ops/database-encrypted-cutover.mjs',
+    'server/scripts/ops/database-recovery-dump.mjs',
+    'server/scripts/ops/database-recovery-restore.mjs',
+    'server/scripts/ops/harden-nursing-database.mjs',
+    'server/scripts/ssm-env-loader.mjs',
+    'server/services/database-provisioning.service.js',
+    'server/services/dedicated-db-provisioner.service.js',
+    'server/services/tenant-provisioner.service.js',
+    'server/utils/runtime-secret-policy.js',
+])
 base=subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True).strip()
 out.mkdir(parents=True,mode=0o750)
 archive=subprocess.Popen(['git','archive',base],cwd=root,stdout=subprocess.PIPE)

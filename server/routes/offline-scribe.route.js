@@ -18,6 +18,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import logger from '../config/logger.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import { checkPrescriptionSafety } from '../services/prescription-safety.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 const ambientSessions = new Map();
@@ -309,11 +310,11 @@ async function transcribeWithCloudFallback(file, language = 'auto') {
 // bounded timeout (local Whisper's "medium" model measured at ~4.5-8x audio duration on
 // this 4-core CPU host — a 3-minute dictation can take 15-25 minutes; that is a real
 // latency problem, not something this fix changes, so a slow local response still falls
-// through to cloud rather than hanging the request). Set SCRIBE_PREFER_LOCAL=true to
-// enable this tier. Opt-in (default off): a slow local model delays every long recording by
-// up to LOCAL_STT_TIMEOUT_MS before the cloud fallback, so enable it only once the model
-// size / latency trade-off has been decided.
-const SCRIBE_PREFER_LOCAL = process.env.SCRIBE_PREFER_LOCAL === 'true';
+// through to cloud rather than hanging the request). Patient audio went to a third-
+// party cloud on every single ambient-scribe transcription regardless of whether that
+// was ever intended or disclosed. Set SCRIBE_PREFER_LOCAL=false to disable this tier
+// entirely (e.g. if the local service is known-down) and go straight to cloud.
+const SCRIBE_PREFER_LOCAL = process.env.SCRIBE_PREFER_LOCAL !== 'false';
 const LOCAL_STT_TIMEOUT_MS = parseInt(process.env.SCRIBE_LOCAL_TIMEOUT_MS || '', 10) || 120000;
 
 async function transcribeLocal(file, language = 'auto') {
@@ -795,10 +796,9 @@ async function auditScribeEvent(req, action, details) {
                 String(details.sessionId || ''),
                 action,
                 String(req.user?.id || 'unknown'),
-                JSON.stringify(details),
-                req.user?.organization_id || req.user?.tenant_id || null,
-            ]
-        );
+            JSON.stringify(details),
+            req.user?.organization_id || req.user?.tenant_id || null,
+        ]);
     } catch (auditErr) {
         logger.warn('Ambient scribe audit write skipped (non-fatal)', { action, error: auditErr.message });
     }

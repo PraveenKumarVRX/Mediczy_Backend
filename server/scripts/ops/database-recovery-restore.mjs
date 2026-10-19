@@ -38,6 +38,8 @@ try {
   const sourceClient=new Client({host:source.Endpoint.Address,database:'mediczy_prod',user:sourceSecret.username,password:sourceSecret.password,ssl:postgresTls({NODE_ENV:'production',POSTGRES_HOST:source.Endpoint.Address})});
   try{await sourceClient.connect();if((await sourceClient.query("SELECT rolcanlogin FROM pg_roles WHERE rolname='mediczy_helper'")).rows[0].rolcanlogin||(await sourceClient.query("SELECT 1 FROM pg_stat_activity WHERE usename='mediczy_helper'")).rowCount)throw new Error('Source must remain write-fenced');}finally{await sourceClient.end();}
   if((await client.query('SELECT 1 FROM pg_stat_activity WHERE datname=$1',[database])).rowCount)throw new Error('Target has clients; refusing replacement');
+  await client.query('ALTER ROLE mediczy_helper NOLOGIN');
+  await client.query("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename='mediczy_helper'");
   await client.query('DROP DATABASE '+database);
  }else if((await client.query('SELECT 1 FROM pg_database WHERE datname=$1',[database])).rowCount)throw new Error('Rehearsal database already exists; inspect it before a fresh run');
  await client.query("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='mediczy_clinical_owner') THEN CREATE ROLE mediczy_clinical_owner NOLOGIN NOBYPASSRLS; END IF; END $$");
@@ -49,6 +51,10 @@ try {
  const restore=spawn('/usr/lib/postgresql/18/bin/pg_restore',['-h',target.Endpoint.Address,'-p','5432','-U',secret.username,'-d',database,'--no-password','--exit-on-error','--single-transaction'],{env,stdio:['pipe','ignore',errors]});
  try{await Promise.all([new Promise((resolve,reject)=>{restore.on('error',reject);restore.on('close',code=>code===0?resolve():reject(new Error('pg_restore failed with exit '+code)));}),pipeline(createReadStream(archive),decrypt(),restore.stdin)]);}finally{closeSync(errors);}
  client=new Client({...config,database});await client.connect();
+ const ownerSafety=(await client.query("SELECT rolcanlogin,rolsuper,rolbypassrls,(SELECT count(*)::int FROM pg_auth_members WHERE roleid=r.oid) AS members FROM pg_roles r WHERE rolname='mediczy_clinical_owner'")).rows[0];
+ if(!ownerSafety||ownerSafety.rolcanlogin||ownerSafety.rolsuper||ownerSafety.rolbypassrls||ownerSafety.members)throw new Error('Clinical owner role is not isolated');result.ownerRoleVerified=true;
+ const definerCount=(await client.query("SELECT count(*)::int n FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.prosecdef")).rows[0].n;
+ if(definerCount)throw new Error('Unexpected elevated public function after restore');result.noPublicSecurityDefiners=true;
  result.tables=(await client.query("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public'")).rows[0].n;
  result.protectedTables=(await client.query("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tableowner='mediczy_clinical_owner'")).rows[0].n;
  result.forcedNursingRls=(await client.query("SELECT count(*)::int n FROM pg_class WHERE relname LIKE 'nursing_%' AND relrowsecurity AND relforcerowsecurity")).rows[0].n;
@@ -65,6 +71,7 @@ try {
   result.exactSequencePositionsVerified=sameSequences?sequences.length:0;
   if(!sameSequences)result.sequenceNote='Live source allocated sequence values during the rehearsal; final fenced copy requires an exact match';
  }
+ if(replaceTarget){result.targetRuntimeStillFenced=!(await client.query("SELECT rolcanlogin FROM pg_roles WHERE rolname='mediczy_helper'")).rows[0].rolcanlogin;if(!result.targetRuntimeStillFenced)throw new Error('Target runtime was unexpectedly enabled');}
  result.status='passed';result.finishedAt=new Date().toISOString();
 }catch(error){result.error=error.message;process.exitCode=1;}
 finally{key.fill(0);if(client)await client.end();writeFileSync(join(dir,'restore-receipt.json'),JSON.stringify(result,null,2)+'\n',{mode:0o600});}
