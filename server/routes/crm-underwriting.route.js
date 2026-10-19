@@ -23,12 +23,13 @@ const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 
 // ─── LLM helper ──────────────────────────────────────────────────────────────
-// UW chat uses isha-insurance (InsuranceLLM-Llama3-8B) first, falls back to groq.
+// UW chat routes through SIB first (SIB's own cascade handles node1/node2/insurance
+// framing), then falls back to Groq. isha-insurance is a dead direct alias — the
+// InsuranceLLM model it targeted is no longer served by isha-inc.com.
 
 const aiComplete = async (messages, { maxTokens = 1200, temperature = 0.25, uwMode = false } = {}) => {
   if (uwMode) {
-    // Try InsuranceLLM first, then Groq — skip BiMediX2 (not trained for insurance)
-    for (const provider of ['isha-insurance', 'groq']) {
+    for (const provider of ['sib', 'groq']) {
       try {
         const result = await llmProvider.chat({ messages, maxTokens, temperature, forceProvider: provider });
         const text = result?.content || result?.text || result?.message || String(result || '');

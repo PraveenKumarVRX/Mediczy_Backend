@@ -9,19 +9,6 @@ import express from 'express';
 import fetch from 'node-fetch';
 import { authUser } from '../middleware/auth.middleware.js';
 
-// The global ring-fencing middleware intentionally allows /api/tts for
-// emergency/public callers. Doctor voice streaming is PHI-adjacent, so this
-// route must still require a resolved authenticated user even when that
-// global allow-list bypasses auth.
-const requireAuthenticatedTtsUser = (req, res, next) => {
-  authUser(req, res, () => {
-    if (!req.user?.id && !req.user?.userId) {
-      return res.status(401).json({ success: false, code: 'unauthenticated', message: 'Authentication required' });
-    }
-    return next();
-  });
-};
-
 const router = express.Router();
 
 // Eleven Labs configuration
@@ -42,7 +29,8 @@ function cleanTtsText(text) {
     .replace(/#{1,6}\s/g, '')
     .replace(/•/g, '')
     .replace(/---/g, '')
-    // TTS engines pronounce "iSHA" as "eye-sha" — respell so it comes out "ee-sha"
+    // "iSHA" reads as "eye-sha" to TTS engines (capital I → the pronoun "I") —
+    // respell phonetically so it's pronounced "ee-sha" instead.
     .replace(/\bisha\b/gi, 'Eesha')
     .trim()
     .substring(0, 5000);
@@ -223,8 +211,8 @@ router.post("/speak", authUser, async (req, res) => {
  * POST /api/tts/stream
  * Streaming TTS. Uses ElevenLabs first, then streams OpenAI TTS fallback.
  */
-router.post("/stream", requireAuthenticatedTtsUser, async (req, res) => {
-  const { text, voiceId, language = "en", model = "eleven_multilingual_v2" } = req.body;
+router.post("/stream", async (req, res) => {
+  const { text, voiceId, model = "eleven_turbo_v2_5" } = req.body;
 
   if (!text) return res.status(400).json({ error: "Text is required" });
 

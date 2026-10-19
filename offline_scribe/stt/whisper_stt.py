@@ -257,19 +257,16 @@ class WhisperSTT:
         logger.info("  pip install openai-whisper")
         logger.info("  Build whisper.cpp from source")
     
-    def _is_whisper_cpp_binary(self, path: str) -> bool:
-        """Confirm a resolved path is actually whisper.cpp's CLI, not a same-named
-        script from another package. FIX (2026-09-30): shutil.which("whisper") on this
-        host resolved to the openai-whisper pip package's CLI (~/.local/bin/whisper),
-        which shares the name but crashes at inference time needing torch+CUDA, which
-        this CPU host does not have. self.backend was set to "whisper-cpp" (the model
-        .bin file existed), so every transcription silently invoked the wrong program.
-        whisper.cpp's --help prints "usage:" and mentions ggml; the pip CLI does not."""
+    @staticmethod
+    def _is_native_binary(path: str) -> bool:
+        """Reject Python/shell console-scripts (e.g. the openai-whisper pip CLI,
+        also named "whisper") that would otherwise be mistaken for the compiled
+        whisper.cpp binary — they have the same name on PATH but are text files
+        starting with a shebang, not an ELF executable."""
         try:
-            result = subprocess.run([path, "--help"], capture_output=True, text=True, timeout=10)
-            output = (result.stdout + result.stderr).lower()
-            return "ggml" in output or ("usage:" in output and "-bs" in output)
-        except Exception:
+            with open(path, "rb") as f:
+                return f.read(4) == b"\x7fELF"
+        except OSError:
             return False
 
     def _find_whisper_cpp(self) -> Optional[str]:
@@ -278,26 +275,24 @@ class WhisperSTT:
         if explicit and Path(explicit).exists():
             return explicit
 
+        for binary in ["whisper-cli", "whisper", "main"]:
+            resolved = shutil.which(binary)
+            if resolved and self._is_native_binary(resolved):
+                return resolved
+
         possible_paths = [
-            "/home/ubuntu/Mediczy/whisper.cpp/build/bin/whisper-cli",
             "/usr/local/bin/whisper-cli",
             "/usr/bin/whisper-cli",
             "/usr/local/bin/whisper-cpp",
+            "/usr/local/bin/whisper",
+            "/usr/bin/whisper",
             "./whisper",
+            "/home/ubuntu/Mediczy/whisper.cpp/build/bin/whisper-cli",
             "../whisper.cpp/main",
         ]
         for path in possible_paths:
-            if Path(path).exists() and self._is_whisper_cpp_binary(path):
+            if Path(path).exists() and self._is_native_binary(path):
                 return path
-
-        # Last resort: PATH lookup, but only "whisper-cli"/"main" — never bare
-        # "whisper", which collides with the openai-whisper pip package's CLI —
-        # and still verified before use.
-        for binary in ["whisper-cli", "main"]:
-            resolved = shutil.which(binary)
-            if resolved and self._is_whisper_cpp_binary(resolved):
-                return resolved
-
         return None
 
     def _detect_language_whisper_cpp(self, audio_path: str, language_hint: str) -> Dict[str, Any]:

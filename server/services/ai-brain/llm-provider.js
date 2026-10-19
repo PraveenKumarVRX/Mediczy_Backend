@@ -21,12 +21,6 @@ import semanticCache from './semantic-cache.service.js';
 import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
 import { recordTelemetry } from './evaluation-engine.js';
 import { maskPhi } from '../../utils/phi-masker.js';
-import gpuScheduler, { slotForRequest } from './gpu-scheduler.service.js';
-
-// GPU scheduling (per-GPU concurrency, priority queue, circuit breaker) is opt-in. While the
-// iSHA nodes are healthy and traffic is low the plain cascade is enough; turn this on to
-// bound concurrent load on the 3090/3060 and fail fast when a node is down.
-const GPU_SCHEDULER_ENABLED = String(process.env.AI_GPU_SCHEDULER_ENABLED || '').toLowerCase() === 'true';
 
 function sanitizeMessagesForLlm(messages) {
   return (messages || []).map((m) => {
@@ -77,17 +71,6 @@ function getProviderEnv(key) {
     }
   }
   return _providerEnvCache[key];
-}
-
-function getProviderIntEnv(keys, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
-  const candidates = Array.isArray(keys) ? keys : [keys];
-  for (const key of candidates) {
-    const value = Number(getProviderEnv(key));
-    if (Number.isFinite(value) && value > 0) {
-      return Math.min(Math.max(value, min), max);
-    }
-  }
-  return fallback;
 }
 
 /**
@@ -176,61 +159,14 @@ async function callIshaInc(params) {
   }
 }
 
-// Sarvam AI — OpenAI-compatible chat completions (Indic / multilingual). Direct fetch
-// (no Cloudflare block). Same contract as callIshaInc: returns the raw OpenAI-shaped JSON.
-async function callSarvam(params) {
-  if (cbCheck(_sarvamOpenUntil)) throw new Error('sarvam circuit open');
-
-  const baseURL = normalizeProviderUrl(getProviderEnv('SARVAM_URL'), 'https://api.sarvam.ai') + '/v1/chat/completions';
-  const apiKey  = getProviderEnv('SARVAM_API_KEY');
-  if (!apiKey) throw new Error('SARVAM_API_KEY not configured');
-
-  const timeoutMs  = getProviderIntEnv(['SARVAM_TIMEOUT_MS'], 20_000, { min: 2_000, max: 60_000 });
-  const controller = new AbortController();
-  const timeoutId  = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const res = await fetch(baseURL, {
-      method:  'POST',
-      headers: {
-        'Content-Type':          'application/json',
-        'Accept':                'application/json',
-        // Sarvam's OpenAI-compatible endpoint accepts a Bearer token; its native
-        // header is api-subscription-key. Send both so auth works either way.
-        'Authorization':         `Bearer ${apiKey}`,
-        'api-subscription-key':  apiKey,
-      },
-      body:   JSON.stringify(params),
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`sarvam ${res.status}: ${body.substring(0, 200)}`);
-    }
-    const data = await res.json();
-    _sarvamFailures = 0;
-    return data;
-  } catch (err) {
-    clearTimeout(timeoutId);
-    cbFail(() => _sarvamFailures, v => { _sarvamFailures = v; }, () => _sarvamOpenUntil, v => { _sarvamOpenUntil = v; }, 'sarvam');
-    if (err.name === 'AbortError') throw new Error(`sarvam request timed out (${Math.round(timeoutMs / 1000)}s)`);
-    throw err;
-  }
-}
-
 async function callIsha(params) {
   if (cbCheck(_ishaOpenUntil)) throw new Error('isha circuit open');
 
   const baseURL = normalizeProviderUrl(getProviderEnv('ISHA_AI_URL'), 'https://ai.isha.buzz');
   if (!baseURL) throw new Error('ISHA_AI_URL not configured');
   const url = `${baseURL}/v1/chat/completions`;
-  const ishaTimeoutMs = getProviderIntEnv(['ISHA_LLM_TIMEOUT', 'ISHA_TIMEOUT_MS'], 30_000, {
-    min: 5_000,
-    max: 120_000,
-  });
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ishaTimeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), 30_000);
 
   const token = await getIshaToken();
   const headers = {
@@ -285,7 +221,7 @@ async function callIsha(params) {
   } catch (err) {
     clearTimeout(timeoutId);
     cbFail(() => _ishaFailures, v => { _ishaFailures = v; }, () => _ishaOpenUntil, v => { _ishaOpenUntil = v; }, 'isha');
-    if (err.name === 'AbortError') throw new Error(`iSHA request timed out (${Math.round(ishaTimeoutMs / 1000)}s)`);
+    if (err.name === 'AbortError') throw new Error('iSHA request timed out (30s)');
     throw err;
   }
 }
@@ -322,33 +258,6 @@ function getIshaIncClient() {
   return _clients.ishaInc;
 }
 
-// GPU workstation (RTX 3090, reached over the WireGuard tunnel, 10.99.0.4) —
-// runs llama.cpp's own `llama-server` binary, which serves an OpenAI-
-// compatible /v1/chat/completions API. This is NOT Ollama's protocol —
-// do not route these through callLocalSLM(). Two models are already running
-// there (confirmed live, not something this integration installs):
-// BiMediX2-8B on :8080 and MedGemma-27B-IQ3 on :8083. Both are candidates
-// for the report-drafting evaluation in imaging-report-drafter.service.js —
-// neither is enabled here until that evaluation and a governance approval
-// have both happened.
-function getWorkstationBimedixClient() {
-  if (!_clients.workstationBimedix) {
-    const baseURL = normalizeProviderUrl(getProviderEnv('WORKSTATION_BIMEDIX_URL'), 'http://10.99.0.4:8080') + '/v1';
-    const apiKey = getProviderEnv('WORKSTATION_LLM_API_KEY') || 'dev-key';
-    _clients.workstationBimedix = new OpenAI({ baseURL, apiKey });
-  }
-  return _clients.workstationBimedix;
-}
-
-function getWorkstationMedgemmaClient() {
-  if (!_clients.workstationMedgemma) {
-    const baseURL = normalizeProviderUrl(getProviderEnv('WORKSTATION_MEDGEMMA_URL'), 'http://10.99.0.4:8083') + '/v1';
-    const apiKey = getProviderEnv('WORKSTATION_LLM_API_KEY') || 'dev-key';
-    _clients.workstationMedgemma = new OpenAI({ baseURL, apiKey });
-  }
-  return _clients.workstationMedgemma;
-}
-
 // Strings that indicate any provider is returning a stub (no real inference backend).
 const STUB_RESPONSE_MARKERS = [
   'Integrate vLLM or llama.cpp backend',
@@ -358,13 +267,7 @@ const STUB_RESPONSE_MARKERS = [
 // In-memory circuit breakers for iSHA and isha-inc (same pattern as SIB)
 let _ishaFailures = 0, _ishaOpenUntil = 0;
 let _ishaIncFailures = 0, _ishaIncOpenUntil = 0;
-let _sarvamFailures = 0, _sarvamOpenUntil = 0;
-// Keyed by provider.name, NOT a shared scalar — callLocalSLM now serves more
-// than one Ollama-protocol endpoint (this server's cloud qwen2:1.5b AND a
-// workstation GGUF model over the WireGuard tunnel). A failure on one must
-// never open the circuit for the other.
-const _slmFailures = new Map();
-const _slmOpenUntil = new Map();
+let _slmFailures = 0, _slmOpenUntil = 0;
 
 function cbCheck(openUntil) { return Date.now() < openUntil; }
 function cbFail(getF, setF, getO, setO, name) {
@@ -374,18 +277,14 @@ function cbFail(getF, setF, getO, setO, name) {
 }
 
 /**
- * Call a local Ollama-protocol endpoint (/api/chat). Used both by the
- * cloud-server's own last-resort qwen2:1.5b (provider 'local-slm') and any
- * workstation GGUF model (provider 'gguf-workstation') — each provider's own
- * baseUrl/model take priority over the generic env-var fallbacks, so the two
- * never collide on a single global target.
+ * Call local SLM via Ollama (http://localhost:11434).
+ * Uses Ollama's /api/chat endpoint — no external dependencies, runs on CPU.
  */
 async function callLocalSLM(provider, params) {
-  const key = provider.name || 'local-slm';
-  if (cbCheck(_slmOpenUntil.get(key) || 0)) throw new Error(`${key} circuit open`);
+  if (cbCheck(_slmOpenUntil)) throw new Error('local-slm circuit open');
 
-  const baseUrl = provider.baseUrl || getProviderEnv('LOCAL_LLM_URL') || 'http://localhost:11434';
-  const model   = provider.model || getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b';
+  const baseUrl = getProviderEnv('LOCAL_LLM_URL') || provider.baseUrl || 'http://localhost:11434';
+  const model   = getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b';
   const url     = `${baseUrl.replace(/\/$/, '')}/api/chat`;
   const controller = new AbortController();
   const timeoutId  = setTimeout(() => controller.abort(), 30_000);
@@ -406,14 +305,14 @@ async function callLocalSLM(provider, params) {
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      throw new Error(`${key} ${res.status}: ${errText.substring(0, 200)}`);
+      throw new Error(`local-slm ${res.status}: ${errText.substring(0, 200)}`);
     }
 
     const data    = await res.json();
     const content = data.message?.content || '';
-    if (!content.trim()) throw new Error(`${key} (Ollama) returned empty response`);
+    if (!content.trim()) throw new Error('local-slm (Ollama) returned empty response');
 
-    _slmFailures.set(key, 0);
+    _slmFailures = 0;
     return {
       id: `slm-${Date.now()}`,
       object: 'chat.completion',
@@ -427,32 +326,20 @@ async function callLocalSLM(provider, params) {
     };
   } catch (err) {
     clearTimeout(timeoutId);
-    cbFail(
-      () => _slmFailures.get(key) || 0,
-      v => _slmFailures.set(key, v),
-      () => _slmOpenUntil.get(key) || 0,
-      v => _slmOpenUntil.set(key, v),
-      key,
-    );
-    if (err.name === 'AbortError') throw new Error(`${key} request timed out (30s)`);
+    cbFail(() => _slmFailures, v => { _slmFailures = v; }, () => _slmOpenUntil, v => { _slmOpenUntil = v; }, 'local-slm');
+    if (err.name === 'AbortError') throw new Error('local-slm request timed out (30s)');
     throw err;
   }
 }
 
-// In-memory circuit breaker for SIB. Root cause of slow/timing-out calls is NOT
-// local Qwen/CPU inference (traced 2026-08-23: SIB's /chat does pgvector KB-RAG
-// retrieval against ai_document_chunks, then proxies to the same remote iSHA GPU
-// nodes (ai.isha.buzz / isha-inc.com) this app's own 'isha' provider calls
-// directly — the extra RAG + proxy hop is what pushes it past this timeout, not
-// a slow local model. Qwen's only role in the SIB codebase (a 2.5-3B planner)
-// was already replaced by a regex classifier (see ai-engine/doctor_bot ITEM-24).
+// In-memory circuit breaker for SIB (Qwen CPU inference is 60-120s, always times out)
 let _sibFailures = 0;
 let _sibOpenUntil = 0;
 
 async function callSib(params) {
   if (Date.now() < _sibOpenUntil) throw new Error('sib circuit open');
 
-  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8001';
+  const baseUrl = getProviderEnv('SIB_URL') || 'http://localhost:8005';
   const url = `${baseUrl.replace(/\/$/, '')}/chat`;
   // Default 8s matches the long-standing working behavior; SIB_TIMEOUT_MS lets ops
   // tune it without code changes. Do NOT shorten blindly — SIB proxies to iSHA
@@ -466,29 +353,13 @@ async function callSib(params) {
     .filter(m => m?.role === 'system' && typeof m?.content === 'string')
     .map(m => m.content.trim())
     .filter(Boolean);
-  const conversationMessages = messages
-    .filter(m => m?.role !== 'system' && typeof m?.content === 'string' && m.content.trim());
+  const userParts = messages
+    .filter(m => m?.role !== 'system' && typeof m?.content === 'string')
+    .map(m => m.content.trim())
+    .filter(Boolean);
 
-  const history = conversationMessages.slice(0, -1).map(m => ({
-    role: m.role === 'assistant' ? 'assistant' : 'user',
-    content: m.content.trim(),
-  }));
-
-  const latestUser = [...conversationMessages].reverse().find(m => m.role === 'user');
-  const labeledTurns = conversationMessages.map(m => {
-    const label = m.role === 'assistant' ? 'Assistant' : 'User';
-    return `${label}: ${m.content.trim()}`;
-  });
-
-  const messageBody = labeledTurns.length
-    ? labeledTurns.join('\n')
-    : (latestUser?.content?.trim() || '');
-
-  const message = systemParts.length
-    ? `${systemParts.join('\n\n')}\n\n---\nConversation:\n${messageBody}`
-    : messageBody;
-
-  if (!message.trim()) throw new Error('SIB request has no message content');
+  const message = [...systemParts, ...userParts].join('\n\n').trim();
+  if (!message) throw new Error('SIB request has no message content');
 
   try {
     const res = await fetch(url, {
@@ -496,17 +367,8 @@ async function callSib(params) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message,
-        history: history.slice(-15),
         patient_id: params.patientId || params.userId || 'mediczy-backend',
-        user_id: params.userId || 'mediczy-backend',
-        // Only genuine patient-facing clinical calls (a real patientId supplied
-        // by the caller) are subject to the GDPR/DPDP AI-consent gate on the SIB
-        // side — generic/non-clinical calls (admin & team copilot, HR text
-        // generation, etc.) never have a patient in the loop at all and were
-        // being blocked by the same gate, which was the actual reported bug.
-        is_patient_specific: Boolean(params.patientId),
-        // SIB routes deep -> node1 (3090) first, standard/reflex -> node2 (3060) first.
-        cognitive_tier: params.cognitive_tier || null,
+        user_id: params.userId,
         context: {
           source: 'llm-provider',
           model_hint: params.model,
@@ -553,7 +415,7 @@ async function callSib(params) {
       _sibFailures = 0;
       console.warn('[LLM] SIB circuit opened — skipping for 5 min');
     }
-    if (err.name === 'AbortError') throw new Error(`sib request timed out (${Math.round(sibTimeoutMs / 1000)}s)`);
+    if (err.name === 'AbortError') throw new Error('sib request timed out (8s)');
     throw err;
   }
 }
@@ -574,13 +436,6 @@ function isIshaConfigured() {
   );
 }
 const ISHA_DIRECT_ENABLED = isIshaConfigured();
-const MEDIQZY_AI_PRIMARY_PROVIDER = String(getProviderEnv('MEDIQZY_AI_PRIMARY_PROVIDER') || 'isha').toLowerCase();
-const ISHA_LLM_AGENT_TYPE = getProviderEnv('ISHA_LLM_AGENT_TYPE') || getProviderEnv('ISHA_AGENT_TYPE') || 'Claims';
-const ISHA_PRIMARY_ENABLED = MEDIQZY_AI_PRIMARY_PROVIDER === 'isha' && ISHA_DIRECT_ENABLED;
-const GROQ_CHAT_MODEL = getProviderEnv('GROQ_MODEL') || getProviderEnv('GROQ_CHAT_MODEL') || 'openai/gpt-oss-20b';
-// Sarvam AI — opt-in Indic/multilingual fallback. Inert unless SARVAM_ENABLED=true AND a key is set.
-const SARVAM_MODEL = getProviderEnv('SARVAM_MODEL') || 'sarvam-105b-conversations';
-const SARVAM_ENABLED = String(getProviderEnv('SARVAM_ENABLED') || '').toLowerCase() === 'true' && Boolean(getProviderEnv('SARVAM_API_KEY'));
 
 const PROVIDERS = [
   {
@@ -589,24 +444,14 @@ const PROVIDERS = [
     model: getProviderEnv('SIB_MODEL') || 'sib-router',
     getClient: () => ({ available: true }),
     useSib: true,
-    priority: ISHA_PRIMARY_ENABLED ? 10 : 0,
+    priority: 0,
   },
   {
     name: 'groq',
-    label: 'Groq chat fallback',
-    model: GROQ_CHAT_MODEL,
+    label: 'Groq (Llama 4 Scout 17B fallback)',
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     getClient: getGroqClient,
-    priority: ISHA_PRIMARY_ENABLED ? 20 : 1,
-  },
-  {
-    name: 'sarvam',
-    label: 'Sarvam AI (Indic/multilingual, OpenAI-compatible fallback)',
-    model: SARVAM_MODEL,
-    getClient: () => ({ available: true }),
-    useFetchSarvam: true,
-    // Tertiary fallback: after SIB and Groq. Inert unless SARVAM_ENABLED + key set.
-    priority: 30,
-    disabled: !SARVAM_ENABLED,
+    priority: 1,
   },
   {
     name: 'openai',
@@ -622,11 +467,11 @@ const PROVIDERS = [
     model: getProviderEnv('ISHA_LLM_MODEL') || 'bi-medix2',
     getClient: () => ({ available: true }),
     useFetch: true,
-    priority: ISHA_PRIMARY_ENABLED ? 0 : 2,
+    priority: 2,
     // Enabled as a genuine cascade fallback whenever iSHA credentials are set.
     // Falls through gracefully (cascade continues) if the endpoint is unreachable.
     disabled: !ISHA_DIRECT_ENABLED,
-    extraBody: { agent_type: ISHA_LLM_AGENT_TYPE },
+    extraBody: { agent_type: 'Clinical' },
   },
   {
     name: 'isha-reflex',
@@ -636,14 +481,13 @@ const PROVIDERS = [
     useFetch: true,
     priority: 91,
     disabled: true,
-    extraBody: { agent_type: ISHA_LLM_AGENT_TYPE },
+    extraBody: { agent_type: 'Clinical' },
   },
   {
     name: 'isha-inc',
     label: 'isha-inc.com direct (diagnostics only; app traffic goes through SIB)',
-    // Was 'smart-orchestrator' — removed from the host, confirmed 404
-    // "model_not_found" with the live server reporting only qwen3-8b-q5-k-m
-    // available. Same class of stale-model-ID bug as the earlier Groq fix.
+    // isha-inc.com serves a single model — verify with GET /v1/models before
+    // changing this default; there is no separate insurance/clinical model anymore.
     model: getProviderEnv('ISHA_INC_MODEL') || 'qwen3-8b-q5-k-m',
     getClient: getIshaIncClient,
     useFetchIshaInc: true,
@@ -651,67 +495,18 @@ const PROVIDERS = [
     disabled: true,
   },
   {
-    name: 'isha-insurance',
-    label: 'isha-inc.com direct (diagnostics only; app traffic goes through SIB)',
-    // Was 'medgemma-4b' — same host, same issue: that model is no longer
-    // available there either (only qwen3-8b-q5-k-m is). Renamed the label
-    // since it's no longer actually MedGemma.
-    model: 'qwen3-8b-q5-k-m',
-    getClient: () => ({ available: true }),
-    useFetchIshaInc: true,
-    priority: 93,
-    disabled: true,
-  },
-  {
     name: 'local-slm',
-    // Was mislabeled "Indic-Gemma-2B" — that model belongs to a different,
-    // unrelated service (offline_scribe/llm/indic_llm_engine.py). This
-    // provider actually talks to Ollama on THIS cloud server, confirmed
-    // running (systemd ollama.service, qwen2:1.5b pulled, localhost:11434).
-    label: 'Local Ollama qwen2:1.5b (cloud-server CPU, last-resort fallback)',
-    model: getProviderEnv('OLLAMA_MODEL') || 'qwen2:1.5b',
+    label: 'Local Indic-Gemma-2B direct (disabled; Groq is the only non-SIB fallback)',
+    model: 'indic-gemma-2b-navarasa',
     useFetch: false,
     useLocalSLM: true,
     baseUrl: getProviderEnv('LOCAL_LLM_URL') || 'http://localhost:11434',
     priority: 95,
     disabled: true,
   },
-  {
-    name: 'workstation-bimedix2-8b',
-    label: 'BiMediX2-8B on GPU workstation (llama.cpp, radiology report drafting — evaluation, not production)',
-    // Already running (confirmed live: llama-server -m BiMediX2-8B-hf.i1-Q6_K.gguf
-    // -c 16384 -np 8 -ngl 99 --port 8080) — this integration does not install
-    // or fine-tune it, only wires Mediczy to call it. A distinct serving
-    // location from the existing isha-buzz-bimedix2 model card (that one is
-    // the cloud ai.isha.buzz copy) — carded separately since it's a
-    // different environment/quant, not assumed identical behavior.
-    model: getProviderEnv('WORKSTATION_BIMEDIX_MODEL') || 'bimedix2-8b',
-    getClient: getWorkstationBimedixClient,
-    priority: 96,
-    // Stays disabled permanently in the GENERAL cascade — never let drug-
-    // interaction/triage/admin-copilot calls silently hit an unvalidated
-    // model over a WireGuard tunnel. Real usage is gated separately, at the
-    // imaging-report-drafter.service.js call site, behind
-    // IMAGING_GGUF_LLM_CLINICAL_APPROVED — see that file.
-    disabled: true,
-  },
-  {
-    name: 'workstation-medgemma-27b',
-    label: 'MedGemma-27B on GPU workstation (llama.cpp, radiology report drafting — evaluation, not production)',
-    // Already running (confirmed live: llama-server -m google_medgemma-27b-it-IQ3_M.gguf
-    // -c 256 -np 2 -ngl 50 --port 8083). Note the small -c 256 context on the
-    // live process — too small for a full structured-findings-to-report
-    // prompt as currently launched; the evaluation step must either request
-    // a larger context on that server or this will need its own launch
-    // profile before it's usable for report drafting specifically.
-    model: getProviderEnv('WORKSTATION_MEDGEMMA_MODEL') || 'medgemma-27b',
-    getClient: getWorkstationMedgemmaClient,
-    priority: 97,
-    disabled: true,
-  },
 ];
 
-const DIRECT_AI_PROVIDER_ALIASES = new Set(['isha', 'isha-reflex', 'isha-inc', 'isha-insurance']);
+const DIRECT_AI_PROVIDER_ALIASES = new Set(['isha', 'isha-reflex', 'isha-inc']);
 const ALLOW_DIRECT_AI_PROVIDERS = String(process.env.ALLOW_DIRECT_AI_PROVIDERS || '').toLowerCase() === 'true';
 
 // ─── Model config cache (60s TTL — avoids DB hit on every request) ───────────
@@ -738,16 +533,10 @@ async function getModelConfig(name = 'isha-primary') {
  * Call a single provider's chat completion API.
  */
 async function callProvider(provider, params) {
-  // patientId/userId are consumed by name (callSib) — never spread into a
-  // third-party SDK request body. Groq/OpenAI reject unknown top-level
-  // properties outright (verified: Groq 400s with "property 'patientId' is
-  // unsupported"), so they must be stripped before reaching those SDKs.
-  const { patientId, userId, cognitive_tier, ...sdkParams } = params;
-
   // Cap max_tokens for models with lower context limits
-  let cappedParams = sdkParams;
-  if (provider.name === 'openai' && sdkParams.max_tokens > 4096) {
-    cappedParams = { ...sdkParams, max_tokens: 4096 };
+  let cappedParams = params;
+  if (provider.name === 'openai' && params.max_tokens > 4096) {
+    cappedParams = { ...params, max_tokens: 4096 };
   }
 
   // Merge any provider-specific extra body params (e.g. agent_type for iSHA)
@@ -760,21 +549,14 @@ async function callProvider(provider, params) {
     return callLocalSLM(provider, finalParams);
   }
 
-  // SIB FastAPI router (preferred primary path) — needs patientId/userId to
-  // scope the GDPR/DPDP consent gate, so pass the original params, not the
-  // SDK-safe stripped copy.
+  // SIB FastAPI router (preferred primary path)
   if (provider.useSib) {
-    return callSib({ ...finalParams, patientId, userId, cognitive_tier });
+    return callSib(finalParams);
   }
 
   // isha-inc.com: direct fetch to bypass Cloudflare OpenAI-SDK block
   if (provider.useFetchIshaInc) {
     return callIshaInc(finalParams);
-  }
-
-  // Sarvam AI: direct fetch, OpenAI-compatible (Indic / multilingual)
-  if (provider.useFetchSarvam) {
-    return callSarvam(finalParams);
   }
 
   // iSHA.buzz: direct fetch with JWT auth
@@ -796,48 +578,6 @@ function looksClinicalForCache(text = '') {
 function buildScopedCacheText(userMessage, cacheScope) {
   const scope = String(cacheScope || '').trim();
   return scope ? `${scope}\n${userMessage}` : userMessage;
-}
-
-// ── Transient-error retry (per provider, before failover) ───────────────────
-const LLM_RETRY_ATTEMPTS = Math.max(1, Math.min(parseInt(process.env.LLM_RETRY_ATTEMPTS || '2', 10) || 2, 4));
-const LLM_RETRY_BASE_MS = Math.max(100, parseInt(process.env.LLM_RETRY_BASE_MS || '400', 10) || 400);
-
-function isTransientLLMError(err) {
-  const code = String(err?.code || err?.cause?.code || '').toUpperCase();
-  const status = Number(err?.status || err?.statusCode || err?.response?.status || 0);
-  const msg = String(err?.message || '').toLowerCase();
-  if (['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'EAI_AGAIN', 'ESOCKET',
-       'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_HEADERS_TIMEOUT'].includes(code)) return true;
-  if (status === 429 || (status >= 500 && status < 600)) return true;
-  return (
-    msg.includes('timed out') || msg.includes('timeout') ||
-    msg.includes('rate limit') || msg.includes('429') ||
-    msg.includes('temporarily') || msg.includes('overloaded')
-  );
-}
-
-/**
- * Call a provider with a short retry on TRANSIENT failures before the cascade
- * fails over to the next provider. Avoids burning a permanently-down provider's
- * slot on a blip, and avoids retrying deterministic errors (auth, bad request).
- */
-async function callProviderWithRetry(provider, params) {
-  let lastErr;
-  for (let attempt = 1; attempt <= LLM_RETRY_ATTEMPTS; attempt += 1) {
-    try {
-      return await callProvider(provider, params);
-    } catch (err) {
-      lastErr = err;
-      if (attempt < LLM_RETRY_ATTEMPTS && isTransientLLMError(err)) {
-        const delay = LLM_RETRY_BASE_MS * attempt;
-        console.warn(`[LLM] ${provider.label} transient error (attempt ${attempt}/${LLM_RETRY_ATTEMPTS}): ${err.message}; retrying in ${delay}ms`);
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-      throw err;
-    }
-  }
-  throw lastErr;
 }
 
 /**
@@ -864,16 +604,10 @@ async function chat({
   conversationId = null,
   responseFormat = null,
   forceProvider = null,
-  preferProvider = null,   // move this provider to the FRONT of the cascade but keep the rest as
-                           // fallback (unlike forceProvider, which is that provider only). Works with tools.
   skipCache = false,       // set true for agentic/tool-calling or clinical flows
   cacheScope = null,       // tenant/patient/session scope required before caching clinical text
   cognitiveTier = null,    // 'reflex' | 'standard' | 'deep' — from CognitiveRouter.classify()
   cognitiveDecisionId = null,  // for outcome recording
-  patientId = null,        // real patient identifier — only set by genuinely patient-facing callers.
-                            // Forwarded to SIB as is_patient_specific to scope the GDPR/DPDP consent
-                            // gate to actual clinical calls; never set this for generic/HR/admin use.
-  userId = null,
 }) {
   messages = sanitizeMessagesForLlm(messages);
   const dbConfig = await getModelConfig();
@@ -927,30 +661,12 @@ async function chat({
     if (requestedProvider !== forceProvider) {
       console.log('[LLM] Routing forceProvider=' + forceProvider + ' through SIB gateway');
     }
-    let forced = PROVIDERS.find(p => p.name === requestedProvider);
+    const forced = PROVIDERS.find(p => p.name === requestedProvider);
     if (!forced) throw new Error('Unknown provider: ' + forceProvider);
-    if (
-      ISHA_PRIMARY_ENABLED &&
-      requestedProvider === 'sib' &&
-      !['false', '0', 'no'].includes(String(getProviderEnv('ROUTE_FORCED_SIB_TO_ISHA') || 'true').toLowerCase())
-    ) {
-      const ishaProvider = PROVIDERS.find(p => p.name === 'isha' && !p.disabled);
-      if (ishaProvider) {
-        console.log('[LLM] Routing forceProvider=sib through iSHA.buzz primary provider');
-        forced = ishaProvider;
-      }
-    }
     if (forced.disabled && !ALLOW_DIRECT_AI_PROVIDERS) {
       throw new Error('Provider ' + forceProvider + ' is disabled for app traffic');
     }
     providersToTry = [forced];
-  } else if (preferProvider) {
-    // Preferred-first with full fallback: try preferProvider, then the rest of the
-    // enabled cascade in priority order. Unlike forceProvider this never leaves the
-    // caller with no fallback, and it is compatible with tool-calling.
-    const pref = PROVIDERS.find(p => p.name === preferProvider && !p.disabled);
-    const rest = PROVIDERS.filter(p => p.name !== preferProvider && !p.disabled).sort((a, b) => a.priority - b.priority);
-    providersToTry = pref ? [pref, ...rest] : rest;
   } else if (cognitiveTier && !tools) {
     // ── HAIS: Tier-first routing ─────────────────────────────────────────
     // Move the tier's preferred provider to the front; keep others as fallback.
@@ -973,7 +689,7 @@ async function chat({
     providersToTry = preferred ? [preferred, ...rest] : PROVIDERS.filter(p => !p.disabled);
     console.log(`[LLM] CognitiveTier=${cognitiveTier} → preferred=${preferredName}, cascade=[${providersToTry.map(p => p.name).join('→')}]`);
   } else {
-    providersToTry = PROVIDERS.filter(p => !p.disabled).sort((a, b) => a.priority - b.priority); // All enabled in cascade order
+    providersToTry = PROVIDERS.filter(p => !p.disabled); // All enabled in cascade order
   }
 
   const cascade = [];       // Track which providers were attempted
@@ -988,9 +704,6 @@ async function chat({
       messages,
       temperature: temp,
       max_tokens: maxTok,
-      patientId,
-      userId,
-      cognitive_tier: cognitiveTier || null,
     };
 
     if (tools && tools.length > 0) {
@@ -1005,33 +718,10 @@ async function chat({
     const providerStart = Date.now();
     try {
       console.log(`[LLM] Trying ${provider.label} (model: ${params.model})...`);
-      const slot = GPU_SCHEDULER_ENABLED
-        ? slotForRequest({ providerName: provider.name, cognitiveTier, messages })
-        : null;
-      response = slot
-        ? await gpuScheduler.schedule(
-            slot.gpu,
-            () => callProviderWithRetry(provider, params),
-            { priority: slot.priority, label: `${provider.name}/${cognitiveTier || 'default'}` }
-          )
-        : await callProviderWithRetry(provider, params);
+      response = await callProvider(provider, params);
 
       // Detect stub responses from any provider (e.g. iSHA returning 200 when model not loaded)
       const rawContent = response.choices[0]?.message?.content || '';
-      const rawToolCalls = response.choices[0]?.message?.tool_calls || [];
-      if (!rawContent.trim() && rawToolCalls.length === 0) {
-        console.warn(`[LLM] ${provider.label} returned empty content, cascading...`);
-        cascade.push({ provider: provider.name, status: 'error', error: 'Empty content response' });
-        errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Empty content response`;
-        import('../llm-metrics.service.js').then(({ logProviderCall }) => {
-          logProviderCall(provider.name, cognitiveTier, Date.now() - providerStart,
-            response?.usage?.prompt_tokens || 0, response?.usage?.completion_tokens || 0,
-            params.model, false, 'empty-content', null);
-        }).catch(() => {});
-        response = null;
-        continue;
-      }
-
       if (STUB_RESPONSE_MARKERS.some(marker => rawContent.includes(marker))) {
         const matchedMarker = STUB_RESPONSE_MARKERS.find(marker => rawContent.includes(marker));
         console.warn(`[LLM] ${provider.label} returned stub placeholder, cascading... MARKER="${matchedMarker}" CONTENT="${rawContent.substring(0,200)}"`);
