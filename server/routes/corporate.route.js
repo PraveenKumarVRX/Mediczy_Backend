@@ -12,13 +12,16 @@ import {
 } from '../controller/corporate.controller.js';
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
-import { createCorporateEmployee, EmployeeConflictError } from '../services/corporate-employee-create.service.js';
+import { reactivateCorporateEmployeeAccount } from '../services/corporate-employee-activation.service.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import {
   generateCorporateMisReport,
-  getCorporateMisCsv,
   resolveCorporateIdFromUser,
+  buildCorporateMisMetrics,
+  misMetricsToRows,
 } from '../services/corporate-wellness-mis.service.js';
+import ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
 import {
   createCorporateBenefitProgram,
   cancelBenefitAuthorization,
@@ -455,7 +458,8 @@ const PLATFORM_FEATURE_LABEL_ALIASES = {
 };
 
 function tagBenefitCategory(b) {
-  return ['ipd', 'maternity'].includes(String(b.category || b.name || '').toLowerCase()) ? 'insurance' : 'wellness';
+  const text = typeof b === 'string' ? b : String(b?.category || b?.name || '');
+  return /\b(ipd|maternity)\b/i.test(text) ? 'insurance' : 'wellness';
 }
 
 function extractPlatformFeatures(rawFeatures) {
@@ -596,10 +600,15 @@ router.get('/my-benefits', authUser, async (req, res) => {
       validFrom: userPlan?.startDate || null,
       validTo: userPlan?.endDate || null,
       planType: planRecord?.tier ? String(planRecord.tier) : (planRecord?.planType || 'Standard'),
-      benefits: (planRecord?.benefits || planRecord?.metadata?.benefits || []).map((b) => ({
-        ...b,
-        benefitCategory: tagBenefitCategory(b),
-      })),
+      // membership_plans.benefits is a plain array of description strings (e.g. "10 GP
+      // teleconsultations/year"), unlike subscription_plans' metadata.benefits objects below --
+      // spreading a string with {...b} explodes it into numeric-indexed characters, so the two
+      // shapes are normalized to the same { category, description, benefitCategory } the UI reads.
+      benefits: (planRecord?.benefits || planRecord?.metadata?.benefits || []).map((b) => (
+        typeof b === 'string'
+          ? { category: b, description: '', benefitCategory: tagBenefitCategory(b) }
+          : { ...b, benefitCategory: tagBenefitCategory(b) }
+      )),
       features: planRecord?.features || {},
       platformFeatures: extractPlatformFeatures(planRecord?.features),
       coverage: planRecord?.metadata?.coverage || {},
@@ -882,40 +891,63 @@ router.get('/health-checkups', authUser, async (req, res) => {
       }
     }
 
-    if (!corporateId) {
-      return res.json({ success: true, linkedPlan: false, checkups: [], data: { checkups: [] } });
+    if (corporateId) {
+      const [planRows] = await postgresSequelize.query(
+        `SELECT metadata FROM subscription_plans
+          WHERE type = 'CORPORATE' AND is_active = true AND (metadata->>'corporateId')::int = :corporateId
+          ORDER BY created_at DESC LIMIT 1`,
+        { replacements: { corporateId } }
+      );
+      const benefits = planRows[0]?.metadata?.benefits;
+      const checkupBenefit = Array.isArray(benefits)
+        ? benefits.find((b) => b.isIncluded && /health.*check|checkup/i.test(`${b.name || ''} ${b.category || ''}`))
+        : null;
+
+      if (checkupBenefit) {
+        const checkups = [{
+          id: 'plan-annual-checkup',
+          name: checkupBenefit.name || 'Annual Health Checkup',
+          description: checkupBenefit.description || 'Included as part of your corporate health plan.',
+          limit: checkupBenefit.limit || null,
+          validFrom: enrollment?.validFrom ? new Date(enrollment.validFrom).toISOString().slice(0, 10) : null,
+          validTo: enrollment?.validTo ? new Date(enrollment.validTo).toISOString().slice(0, 10) : null,
+        }];
+        return res.json({ success: true, linkedPlan: true, checkups, data: { checkups } });
+      }
+      if (planRows[0]) {
+        return res.json({ success: true, linkedPlan: true, checkups: [], data: { checkups: [] } });
+      }
     }
 
-    const [planRows] = await postgresSequelize.query(
-      `SELECT metadata FROM subscription_plans
-        WHERE type = 'CORPORATE' AND is_active = true AND (metadata->>'corporateId')::int = :corporateId
-        ORDER BY created_at DESC LIMIT 1`,
-      { replacements: { corporateId } }
-    );
-    const benefits = planRows[0]?.metadata?.benefits;
-    const checkupBenefit = Array.isArray(benefits)
-      ? benefits.find((b) => b.isIncluded && /health.*check|checkup/i.test(`${b.name || ''} ${b.category || ''}`))
-      : null;
-
-    if (!checkupBenefit) {
-      return res.json({ success: true, linkedPlan: Boolean(planRows[0]), checkups: [], data: { checkups: [] } });
+    // No corporate-linked plan (user_associations + subscription_plans) was found -- but an
+    // employee can also hold a personal plan directly (membership_plans via getActiveUserPlan,
+    // the same source /my-benefits reads), independently of that corporate link. Without this
+    // fallback, a user with a real active plan sees linkedPlan: true on /my-benefits and
+    // linkedPlan: false here, for the same account at the same time.
+    if (!isCorporateSession && Number.isInteger(parseInt(req.user.id))) {
+      let activePlan = null;
+      try {
+        activePlan = await getActiveUserPlan(req.user.id);
+      } catch (error) {
+        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
+      }
+      const planBenefits = activePlan?.plan?.benefits || activePlan?.plan?.metadata?.benefits;
+      if (Array.isArray(planBenefits)) {
+        const textOf = (b) => (typeof b === 'string' ? b : `${b?.name || ''} ${b?.category || ''}`);
+        const hit = planBenefits.find((b) => (typeof b === 'string' || b.isIncluded) && /health.*check|checkup/i.test(textOf(b)));
+        const checkups = hit ? [{
+          id: 'plan-annual-checkup',
+          name: typeof hit === 'string' ? hit : (hit.name || 'Annual Health Checkup'),
+          description: typeof hit === 'string' ? 'Included as part of your health plan.' : (hit.description || 'Included as part of your health plan.'),
+          limit: typeof hit === 'string' ? null : (hit.limit || null),
+          validFrom: activePlan?.startDate ? new Date(activePlan.startDate).toISOString().slice(0, 10) : null,
+          validTo: activePlan?.endDate ? new Date(activePlan.endDate).toISOString().slice(0, 10) : null,
+        }] : [];
+        return res.json({ success: true, linkedPlan: true, checkups, data: { checkups } });
+      }
     }
 
-    const checkups = [{
-      id: 'plan-annual-checkup',
-      name: checkupBenefit.name || 'Annual Health Checkup',
-      description: checkupBenefit.description || 'Included as part of your corporate health plan.',
-      limit: checkupBenefit.limit || null,
-      validFrom: enrollment?.validFrom ? new Date(enrollment.validFrom).toISOString().slice(0, 10) : null,
-      validTo: enrollment?.validTo ? new Date(enrollment.validTo).toISOString().slice(0, 10) : null,
-    }];
-
-    res.json({
-      success: true,
-      linkedPlan: true,
-      checkups,
-      data: { checkups }
-    });
+    return res.json({ success: true, linkedPlan: false, checkups: [], data: { checkups: [] } });
   } catch (error) {
     console.error('Error fetching corporate health checkups:', error);
     res.status(500).json({
@@ -1275,6 +1307,9 @@ router.get('/employees', authCorporate, async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const department = String(req.query.department || '').trim();
   const corporateId = req.user?.corporateId || req.user?.organization_id;
+  // 'active' (default) = current roster; 'inactive' = offboarded employees; 'all' = both.
+  const statusFilter = String(req.query.status || 'active').trim().toLowerCase();
+  const isActiveClause = statusFilter === 'inactive' ? 'ce."isActive" = false' : statusFilter === 'all' ? 'TRUE' : 'ce."isActive" = true';
 
   let employees = [];
 
@@ -1290,6 +1325,7 @@ router.get('/employees', authCorporate, async (req, res) => {
            ce.designation,
            ce."joiningDate",
            ce."isActive",
+           ce."exitDate",
            ce.email AS on_file_email,
            ce.metadata,
            ce."userId",
@@ -1315,7 +1351,7 @@ router.get('/employees', authCorporate, async (req, res) => {
            WHERE chr.corporate_id = ce.corporate_id
              AND chr.employee_id = ce."userId"
          ) hr ON TRUE
-         WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+         WHERE ce.corporate_id = :corporateId AND ${isActiveClause}
          ORDER BY ce."createdAt" DESC`,
         { replacements: { corporateId } }
       );
@@ -1340,6 +1376,9 @@ router.get('/employees', authCorporate, async (req, res) => {
           department: r.department || 'General',
           designation: r.designation || '',
           joiningDate: r.joiningDate ? r.joiningDate.toString().slice(0, 10) : '',
+          isActive: r.isActive,
+          exitDate: r.exitDate ? r.exitDate.toString().slice(0, 10) : '',
+          exitReason: meta.exitReason || '',
           healthStatus: Number(r.overdue_count || 0) > 0 ? 'moderate' : 'good',
           lastCheckup: r.last_checkup ? r.last_checkup.toString().slice(0, 10) : '',
           insurancePlan: 'Standard Plan',
@@ -1424,6 +1463,9 @@ router.get('/health-risk/employees', authCorporate, async (req, res) => {
     let employees = [];
     if (corporateId) {
       const [rows] = await postgresSequelize.query(
+        // Use a LATERAL subquery so each employee gets at most ONE risk score
+        // row (the most recent).  A plain LEFT JOIN to ai_health_risk_scores
+        // produces one result row per score entry, inflating the employee count.
         `SELECT
            ce."employeeId",
            ce.department,
@@ -1440,7 +1482,14 @@ router.get('/health-risk/employees', authCorporate, async (req, res) => {
            hrs.valid_until
          FROM corporate_employees ce
          LEFT JOIN users u ON u.id = ce."userId"
-         LEFT JOIN ai_health_risk_scores hrs ON hrs.patient_id = u.id
+         LEFT JOIN LATERAL (
+           SELECT overall_score, risk_level, risk_factors, recommendations,
+                  created_at, valid_until
+           FROM ai_health_risk_scores
+           WHERE patient_id = u.id
+           ORDER BY created_at DESC
+           LIMIT 1
+         ) hrs ON u.id IS NOT NULL
          WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
          ORDER BY ce."createdAt" DESC`,
         { replacements: { corporateId } }
@@ -1500,16 +1549,100 @@ router.post('/employees', authCorporate, async (req, res) => {
   }
 
   try {
-    const created = await createCorporateEmployee(
-      (sql, replacements) => postgresSequelize.query(sql, { replacements }),
-      { corporateId, employeeId, name, email, businessUnit, department, designation, joiningDate }
+    const normalizedEmployeeId = String(employeeId).trim();
+    const normalizedEmail = email ? String(email).trim().toLowerCase() : null;
+
+    // Creating an employee must not mutate an existing roster row: an existing
+    // employee ID/email is a duplicate, and the explicit PUT endpoint remains
+    // the only update path.
+    const [existingById] = await postgresSequelize.query(
+      `SELECT "employeeId" FROM corporate_employees
+        WHERE corporate_id = :corporateId
+          AND LOWER("employeeId") = LOWER(:employeeId)
+        LIMIT 1`,
+      { replacements: { corporateId, employeeId: normalizedEmployeeId }, type: postgresSequelize.QueryTypes.SELECT }
     );
+    if (existingById) {
+      return res.status(409).json({
+        success: false,
+        code: 'duplicate_employee',
+        field: 'employeeId',
+        message: `Employee ID ${normalizedEmployeeId} already exists in this corporate`,
+      });
+    }
+
+    if (normalizedEmail) {
+      const [existingByEmail] = await postgresSequelize.query(
+        `SELECT ce."employeeId" FROM corporate_employees ce
+          LEFT JOIN users u ON u.id = ce."userId"
+          WHERE ce.corporate_id = :corporateId
+            AND LOWER(COALESCE(NULLIF(ce.email, ''), u.email)) = :email
+          LIMIT 1`,
+        { replacements: { corporateId, email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (existingByEmail) {
+        return res.status(409).json({
+          success: false,
+          code: 'duplicate_employee',
+          field: 'email',
+          message: `Employee email ${normalizedEmail} already exists in this corporate`,
+        });
+      }
+    }
+
+    const [firstName, ...lastNameParts] = String(name).trim().split(/\s+/);
+    const metadata = JSON.stringify({
+      firstName,
+      lastName: lastNameParts.join(' '),
+      profileActivation: 'inactive',
+      activatedAt: null,
+    });
+
+    // Link to an existing user account by email, so the employee isn't left
+    // permanently unlinked (blank email/department/health-status in Team portal).
+    let linkedUserId = null;
+    if (normalizedEmail) {
+      const [existingUser] = await postgresSequelize.query(
+        `SELECT id FROM users WHERE lower(email) = :email LIMIT 1`,
+        { replacements: { email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (existingUser) linkedUserId = existingUser.id;
+    }
+
+    await postgresSequelize.query(
+      `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
+       VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())`,
+      { replacements: { corporateId, userId: linkedUserId, employeeId: normalizedEmployeeId, email: normalizedEmail, businessUnit: businessUnit || null, department: department || null, designation: designation || '', joiningDate: joiningDate || null, metadata } }
+    );
+
+    let appStatus = 'not_invited';
+    if (linkedUserId) {
+      await postgresSequelize.query(
+        `INSERT INTO user_associations ("userId", "entityType", "entityId", role, status, metadata, corporate_unique_id, "createdAt", "updatedAt")
+         SELECT :userId, 'corporate', :corporateId, 'employee', 'active',
+                jsonb_build_object('employeeId', :employeeId::text, 'profileActivation', 'active'),
+                (SELECT unique_id FROM corporates WHERE id = :corporateId), NOW(), NOW()
+         WHERE NOT EXISTS (
+           SELECT 1 FROM user_associations WHERE "userId" = :userId AND "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee'
+         )`,
+        { replacements: { userId: linkedUserId, corporateId, employeeId: normalizedEmployeeId } }
+      );
+      await reactivateCorporateEmployeeAccount(linkedUserId);
+      appStatus = 'active';
+    }
+
+    const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: normalizedEmail || '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan', appStatus };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
-    if (err instanceof EmployeeConflictError) {
-      return res.status(409).json({ success: false, code: err.code, message: err.message });
-    }
     console.error('[corporate] POST /employees error:', err.message);
+    const databaseCode = err?.original?.code || err?.parent?.code || err?.code;
+    if (databaseCode === '23505') {
+      return res.status(409).json({
+        success: false,
+        code: 'duplicate_employee',
+        message: 'An employee with this ID already exists in this corporate',
+      });
+    }
     return res.status(500).json({ success: false, message: 'Failed to create employee' });
   }
 });
@@ -1555,11 +1688,18 @@ router.put('/employees/:id', authCorporate, async (req, res) => {
 router.delete('/employees/:id', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
+  const { exitDate, exitReason } = req.body || {};
+  const metadataPatch = exitReason ? JSON.stringify({ exitReason }) : null;
 
   try {
     const [rows] = await postgresSequelize.query(
-      `UPDATE corporate_employees SET "isActive"=false, "updatedAt"=NOW() WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id`,
-      { replacements: { corporateId, id } }
+      `UPDATE corporate_employees SET
+         "isActive"=false,
+         "exitDate"=COALESCE(:exitDate::date, "exitDate", CURRENT_DATE),
+         metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
+         "updatedAt"=NOW()
+       WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id`,
+      { replacements: { corporateId, id, exitDate: exitDate || null, metadataPatch } }
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
     return res.json({ success: true });
@@ -1599,29 +1739,64 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
         activatedAt: null,
       });
 
-      // Upsert corporate_employees record
+      // Insert a new corporate_employees record; duplicates are reported per row.
       const normalizedEmail = emp.email ? String(emp.email).trim().toLowerCase() : null;
+      const [existingById] = await postgresSequelize.query(
+        `SELECT "employeeId" FROM corporate_employees
+          WHERE corporate_id = :corporateId
+            AND LOWER("employeeId") = LOWER(:employeeId)
+          LIMIT 1`,
+        { replacements: { corporateId, employeeId: generatedEmployeeId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      if (existingById) {
+        errors.push({ row: index + 1, employee: emp, error: `Employee ID ${generatedEmployeeId} already exists in this corporate` });
+        continue;
+      }
+      if (normalizedEmail) {
+        const [existingByEmail] = await postgresSequelize.query(
+          `SELECT ce."employeeId" FROM corporate_employees ce
+            LEFT JOIN users u ON u.id = ce."userId"
+            WHERE ce.corporate_id = :corporateId
+              AND LOWER(COALESCE(NULLIF(ce.email, ''), u.email)) = :email
+            LIMIT 1`,
+          { replacements: { corporateId, email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        if (existingByEmail) {
+          errors.push({ row: index + 1, employee: emp, error: `Employee email ${normalizedEmail} already exists in this corporate` });
+          continue;
+        }
+      }
+      // Link to an existing user account by email, same as the single-employee create path.
+      let linkedUserId = null;
+      if (normalizedEmail) {
+        const [existingUser] = await postgresSequelize.query(
+          `SELECT id FROM users WHERE lower(email) = :email LIMIT 1`,
+          { replacements: { email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        if (existingUser) linkedUserId = existingUser.id;
+      }
+
       await postgresSequelize.query(
         `INSERT INTO corporate_employees (corporate_id, "userId", "employeeId", email, business_unit, department, designation, "joiningDate", metadata, "isActive", "createdAt", "updatedAt")
-         VALUES (:corporateId, NULL, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())
-         ON CONFLICT (corporate_id, "employeeId") DO UPDATE SET
-           email=COALESCE(:email, corporate_employees.email),
-           business_unit=:businessUnit,
-           department=:department,
-           designation=:designation,
-           "joiningDate"=:joiningDate,
-           metadata=CASE
-             WHEN corporate_employees."userId" IS NOT NULL
-               THEN COALESCE(corporate_employees.metadata, '{}'::jsonb)
-                    || jsonb_build_object('profileActivation', 'active')
-             ELSE CAST(:metadata AS JSONB)
-           END,
-           "isActive"=true,
-           "updatedAt"=NOW()`,
-        { replacements: { corporateId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
+         VALUES (:corporateId, :userId, :employeeId, :email, :businessUnit, :department, :designation, :joiningDate, CAST(:metadata AS JSONB), true, NOW(), NOW())`,
+        { replacements: { corporateId, userId: linkedUserId, employeeId: generatedEmployeeId, email: normalizedEmail, businessUnit: emp.businessUnit || emp.business_unit || null, department: emp.department || null, designation: emp.designation || '', joiningDate: emp.joiningDate || null, metadata } }
       );
 
-      successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name });
+      if (linkedUserId) {
+        await postgresSequelize.query(
+          `INSERT INTO user_associations ("userId", "entityType", "entityId", role, status, metadata, corporate_unique_id, "createdAt", "updatedAt")
+           SELECT :userId, 'corporate', :corporateId, 'employee', 'active',
+                  jsonb_build_object('employeeId', :employeeId::text, 'profileActivation', 'active'),
+                  (SELECT unique_id FROM corporates WHERE id = :corporateId), NOW(), NOW()
+           WHERE NOT EXISTS (
+             SELECT 1 FROM user_associations WHERE "userId" = :userId AND "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee'
+           )`,
+          { replacements: { userId: linkedUserId, corporateId, employeeId: generatedEmployeeId } }
+        );
+        await reactivateCorporateEmployeeAccount(linkedUserId);
+      }
+
+      successfulUploads.push({ employeeId: generatedEmployeeId, name: emp.name, linked: Boolean(linkedUserId) });
     } catch (rowErr) {
       errors.push({ row: index + 1, employee: emp, error: rowErr.message });
     }
@@ -2007,10 +2182,19 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
   if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
 
   // Pull real underlying data for the report's category rather than just echoing metadata.
-  let csv;
+  let reportRows, reportHeaders;
   const category = String(report.category || '').toLowerCase();
   if (category === 'mis' || String(report.report_key || '').startsWith('weekly-mis-')) {
-    csv = await getCorporateMisCsv(corporateId, report);
+    const metrics = report?.metrics && Object.keys(report.metrics).length
+      ? report.metrics
+      : await buildCorporateMisMetrics(corporateId, new Date(report.period_start).toISOString().slice(0, 10), new Date(report.period_end).toISOString().slice(0, 10));
+    reportRows = misMetricsToRows(metrics).map((row) => ({
+      period_start: metrics.periodStart || new Date(report.period_start).toISOString().slice(0, 10),
+      period_end: metrics.periodEnd || new Date(report.period_end).toISOString().slice(0, 10),
+      metric: row.metric,
+      value: row.value,
+    }));
+    reportHeaders = ['period_start', 'period_end', 'metric', 'value'];
   } else if (category.includes('claim')) {
     const [claimRows] = await postgresSequelize.query(
       `SELECT ic.claim_number, ic.claim_type, ic.claim_amount, ic.status, ic.submitted_date
@@ -2020,7 +2204,8 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
         ORDER BY ic.submitted_date DESC`,
       { replacements: { corporateId } }
     );
-    csv = toCsv(claimRows, ['claim_number', 'claim_type', 'claim_amount', 'status', 'submitted_date']);
+    reportRows = claimRows;
+    reportHeaders = ['claim_number', 'claim_type', 'claim_amount', 'status', 'submitted_date'];
   } else if (category.includes('risk') || category.includes('health')) {
     const [riskRows] = await postgresSequelize.query(
       `SELECT u."firstName", u."lastName", r.risk_level, r.overall_score, r.created_at
@@ -2031,7 +2216,8 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
         ORDER BY r.created_at DESC`,
       { replacements: { corporateId } }
     );
-    csv = toCsv(riskRows, ['firstName', 'lastName', 'risk_level', 'overall_score', 'created_at']);
+    reportRows = riskRows;
+    reportHeaders = ['firstName', 'lastName', 'risk_level', 'overall_score', 'created_at'];
   } else {
     const [empRows] = await postgresSequelize.query(
       `SELECT ce."employeeId", ce.department, ce.designation, u."firstName", u."lastName", u.email
@@ -2039,14 +2225,48 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
         WHERE ce.corporate_id = :corporateId AND ce."isActive" = true`,
       { replacements: { corporateId } }
     );
-    csv = toCsv(empRows, ['employeeId', 'department', 'designation', 'firstName', 'lastName', 'email']);
+    reportRows = empRows;
+    reportHeaders = ['employeeId', 'department', 'designation', 'firstName', 'lastName', 'email'];
   }
 
   const format = String(req.query.format || report.format || 'csv').toLowerCase();
-  const ext = format === 'excel' ? 'csv' : format === 'pdf' ? 'pdf' : 'csv';
 
+  if (format === 'excel') {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet(String(report.title || 'Report').slice(0, 31));
+    sheet.columns = reportHeaders.map((h) => ({ header: h, key: h, width: Math.min(40, Math.max(14, h.length + 4)) }));
+    for (const row of reportRows) sheet.addRow(row);
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=RPT${report.id}.xlsx`);
+    return res.status(200).send(Buffer.from(buffer));
+  }
+
+  if (format === 'pdf') {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=RPT${report.id}.pdf`);
+    const doc = new PDFDocument({ margin: 40, size: 'A4', layout: reportHeaders.length > 5 ? 'landscape' : 'portrait' });
+    doc.pipe(res);
+    doc.fontSize(16).font('Helvetica-Bold').text(report.title || 'Report', { align: 'center' }).moveDown(1);
+    doc.fontSize(9).font('Helvetica-Bold');
+    const colWidth = (doc.page.width - 80) / reportHeaders.length;
+    let y = doc.y;
+    reportHeaders.forEach((h, i) => doc.text(h, 40 + i * colWidth, y, { width: colWidth }));
+    doc.moveDown(1);
+    doc.font('Helvetica').fontSize(8);
+    for (const row of reportRows) {
+      y = doc.y;
+      if (y > doc.page.height - 60) { doc.addPage(); y = doc.y; }
+      reportHeaders.forEach((h, i) => doc.text(String(row?.[h] ?? ''), 40 + i * colWidth, y, { width: colWidth }));
+      doc.moveDown(0.8);
+    }
+    doc.end();
+    return;
+  }
+
+  const csv = toCsv(reportRows, reportHeaders);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename=RPT${report.id}.${ext}`);
+  res.setHeader('Content-Disposition', `attachment; filename=RPT${report.id}.csv`);
   return res.status(200).send(csv);
 });
 
@@ -2614,6 +2834,11 @@ router.post('/wellness-calendar/activities', authCorporate, async (req, res) => 
       return res.status(400).json({ success: false, message: 'title and date are required' });
     }
 
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (String(date).slice(0, 10) < todayStr) {
+      return res.status(400).json({ success: false, message: 'Activity date cannot be in the past' });
+    }
+
     const themeName = theme || WELLNESS_THEMES[new Date(date).getMonth()]?.name || null;
 
     const [rows] = await postgresSequelize.query(
@@ -2819,8 +3044,8 @@ router.post('/wellness-calendar/employee/events/:id/rsvp', authUser, async (req,
   const eventId = parseInt(req.params.id, 10);
   const { status } = req.body || {};
   if (!eventId) return res.status(400).json({ success: false, message: 'Invalid event ID' });
-  if (!['confirmed', 'declined'].includes(status)) {
-    return res.status(400).json({ success: false, message: "status must be 'confirmed' or 'declined'" });
+  if (!['confirmed', 'declined', 'cancelled'].includes(status)) {
+    return res.status(400).json({ success: false, message: "status must be 'confirmed', 'declined' or 'cancelled'" });
   }
 
   const tx = await postgresSequelize.transaction();
@@ -3807,6 +4032,860 @@ router.get('/employees/:id', authCorporate, async (req, res) => {
     res.json({ success: true, data: { employee: demoEmployee } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch employee', error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Notifications — enhanced: send, unread-count, action_url
+// ---------------------------------------------------------------------------
+
+router.get('/notifications/unread-count', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { count: 0 } });
+  const [row] = await postgresSequelize.query(
+    `SELECT COUNT(*)::int AS cnt FROM corporate_notifications
+      WHERE corporate_id = :corporateId AND read = false`,
+    { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  return res.json({ success: true, data: { count: row?.cnt || 0 } });
+});
+
+router.post('/notifications/send', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  const { type = 'announcement', title, message, priority = 'medium', actionUrl, employeeId } = req.body || {};
+  if (!title || !message) return res.status(400).json({ success: false, message: 'title and message are required' });
+  const [rows] = await postgresSequelize.query(
+    `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, action_url, employee_id, created_at)
+     VALUES (:corporateId, :type, :title, :message, :priority, false, :actionUrl, :employeeId, NOW())
+     RETURNING id, type, title, message, priority, read, action_url AS "actionUrl", employee_id AS "employeeId", created_at AS "createdAt"`,
+    { replacements: { corporateId, type, title, message, priority, actionUrl: actionUrl || null, employeeId: employeeId || null } }
+  );
+  return res.status(201).json({ success: true, data: { notification: rows[0] } });
+});
+
+// ---------------------------------------------------------------------------
+// Consent management
+// ---------------------------------------------------------------------------
+
+router.get('/consent/summary', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { total: 0, granted: 0, pending: 0 } });
+  try {
+    // Total active employees
+    const [totalRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const total = totalRow?.cnt || 0;
+    const [grantedRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS cnt FROM corporate_employee_consents
+        WHERE corporate_id = :corporateId AND granted = true AND consent_type = 'health_data'`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const granted = grantedRow?.cnt || 0;
+    return res.json({ success: true, data: { total, granted, pending: total - granted, consentRate: total > 0 ? Math.round((granted / total) * 100) : 0 } });
+  } catch (err) {
+    console.error('[corporate] consent summary error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch consent summary' });
+  }
+});
+
+router.get('/consent/employees', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { employees: [] } });
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT ce."employeeId", ce.department, ce.designation,
+              COALESCE(u."firstName" || ' ' || u."lastName", ce.metadata->>'firstName' || ' ' || ce.metadata->>'lastName', ce."employeeId") AS name,
+              COALESCE(u.email, ce.email) AS email,
+              c.granted, c.granted_at AS "grantedAt", c.revoked_at AS "revokedAt", c.updated_at AS "updatedAt"
+         FROM corporate_employees ce
+         LEFT JOIN users u ON u.id = ce."userId"
+         LEFT JOIN corporate_employee_consents c
+           ON c.corporate_id = ce.corporate_id AND c.employee_id = ce."employeeId" AND c.consent_type = 'health_data'
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+        ORDER BY ce."createdAt" DESC`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { employees: rows } });
+  } catch (err) {
+    console.error('[corporate] consent employees error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch consent data' });
+  }
+});
+
+router.post('/consent/record', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  const { employeeId, granted, notes } = req.body || {};
+  if (!employeeId) return res.status(400).json({ success: false, message: 'employeeId required' });
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_employee_consents (corporate_id, employee_id, consent_type, granted, granted_at, revoked_at, notes, created_at, updated_at)
+       VALUES (:corporateId, :employeeId, 'health_data', :granted,
+               CASE WHEN :granted THEN NOW() ELSE NULL END,
+               CASE WHEN NOT :granted THEN NOW() ELSE NULL END,
+               :notes, NOW(), NOW())
+       ON CONFLICT (corporate_id, employee_id, consent_type) DO UPDATE
+         SET granted = EXCLUDED.granted,
+             granted_at = CASE WHEN EXCLUDED.granted THEN NOW() ELSE corporate_employee_consents.granted_at END,
+             revoked_at = CASE WHEN NOT EXCLUDED.granted THEN NOW() ELSE NULL END,
+             notes = COALESCE(EXCLUDED.notes, corporate_employee_consents.notes),
+             updated_at = NOW()`,
+      { replacements: { corporateId, employeeId, granted: !!granted, notes: notes || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] consent record error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to record consent' });
+  }
+});
+
+router.post('/consent/bulk-request', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  try {
+    // Upsert a consent request row for every active employee who hasn't consented yet.
+    // granted=false means "requested but not yet responded"; HR will update per employee.
+    const [result] = await postgresSequelize.query(
+      `INSERT INTO corporate_employee_consents (corporate_id, employee_id, consent_type, granted, created_at, updated_at)
+       SELECT :corporateId, ce."employeeId", 'health_data', false, NOW(), NOW()
+         FROM corporate_employees ce
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+       ON CONFLICT (corporate_id, employee_id, consent_type) DO NOTHING`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { message: 'Consent requests created for pending employees' } });
+  } catch (err) {
+    console.error('[corporate] bulk consent request error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to create consent requests' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Report access audit log — auto-logged on /reports/:id/download
+// ---------------------------------------------------------------------------
+
+router.get('/audit-log', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { entries: [] } });
+  const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+  const offset = parseInt(req.query.offset || '0', 10);
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT id, report_id AS "reportId", report_title AS "reportTitle",
+              accessed_by_type AS "accessedByType", accessed_by_name AS "accessedByName",
+              action, ip_address AS "ipAddress", accessed_at AS "accessedAt"
+         FROM corporate_report_access_log
+        WHERE corporate_id = :corporateId
+        ORDER BY accessed_at DESC
+        LIMIT :limit OFFSET :offset`,
+      { replacements: { corporateId, limit, offset } }
+    );
+    const [countRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS cnt FROM corporate_report_access_log WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({ success: true, data: { entries: rows, total: countRow?.cnt || 0 } });
+  } catch (err) {
+    console.error('[corporate] audit log error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch audit log' });
+  }
+});
+
+// Inject audit logging into the existing download route by patching the
+// response after the existing handler fires a download. Rather than rewriting
+// the handler we add a thin post-download logging route that the client calls
+// immediately after a successful download.
+router.post('/reports/:id/log-access', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true });
+  const { id } = req.params;
+  const { action = 'download', reportTitle } = req.body || {};
+  const user = req.user;
+  const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'HR';
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_report_access_log
+         (corporate_id, report_id, report_title, accessed_by_type, accessed_by_user_id, accessed_by_name, action, ip_address, accessed_at)
+       VALUES (:corporateId, :reportId, :reportTitle, 'hr', :userId, :name, :action, :ip, NOW())`,
+      { replacements: { corporateId, reportId: id, reportTitle: reportTitle || null, userId: user?.id || null, name, action, ip: req.ip || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    // Non-fatal — don't block the UI if audit logging fails
+    console.warn('[corporate] audit log insert warning:', err.message);
+    return res.json({ success: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Annual Health Checkup (AHC) management
+// ---------------------------------------------------------------------------
+
+router.get('/ahc/summary', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { batches: 0, enrolled: 0, completed: 0, pending: 0 } });
+  try {
+    const [batchRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'active')::int AS active,
+              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed
+         FROM corporate_ahc_batches WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    const [enrollRow] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+              COUNT(*) FILTER (WHERE status = 'invited')::int AS invited,
+              COUNT(*) FILTER (WHERE status = 'booked')::int AS booked,
+              COUNT(*) FILTER (WHERE report_ready = true)::int AS report_ready
+         FROM corporate_ahc_enrollments WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return res.json({
+      success: true,
+      data: {
+        batches: batchRow?.total || 0,
+        activeBatches: batchRow?.active || 0,
+        completedBatches: batchRow?.completed || 0,
+        enrolled: enrollRow?.total || 0,
+        completed: enrollRow?.completed || 0,
+        pending: enrollRow?.pending || 0,
+        invited: enrollRow?.invited || 0,
+        booked: enrollRow?.booked || 0,
+        reportReady: enrollRow?.report_ready || 0,
+      },
+    });
+  } catch (err) {
+    console.error('[corporate] ahc summary error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch AHC summary' });
+  }
+});
+
+router.get('/ahc/batches', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.json({ success: true, data: { batches: [] } });
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT b.id, b.batch_name AS "batchName", b.batch_year AS "batchYear",
+              b.scheduled_date AS "scheduledDate", b.due_date AS "dueDate",
+              b.status, b.priority, b.notes, b.target_departments AS "targetDepartments",
+              b.created_at AS "createdAt",
+              COUNT(e.id)::int AS enrolled,
+              COUNT(e.id) FILTER (WHERE e.status = 'completed')::int AS completed,
+              COUNT(e.id) FILTER (WHERE e.status = 'pending')::int AS pending,
+              COUNT(e.id) FILTER (WHERE e.report_ready = true)::int AS "reportReady"
+         FROM corporate_ahc_batches b
+         LEFT JOIN corporate_ahc_enrollments e ON e.batch_id = b.id
+        WHERE b.corporate_id = :corporateId
+        GROUP BY b.id
+        ORDER BY b.batch_year DESC, b.created_at DESC`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { batches: rows } });
+  } catch (err) {
+    console.error('[corporate] ahc batches error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch AHC batches' });
+  }
+});
+
+router.post('/ahc/batches', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
+  const { batchName, batchYear, scheduledDate, dueDate, priority = 'normal', notes, targetDepartments } = req.body || {};
+  if (!batchName || !dueDate) return res.status(400).json({ success: false, message: 'batchName and dueDate are required' });
+  try {
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_ahc_batches (corporate_id, batch_name, batch_year, scheduled_date, due_date, priority, notes, target_departments, created_by, status)
+       VALUES (:corporateId, :batchName, :batchYear, :scheduledDate, :dueDate, :priority, :notes, :targetDepartments, :createdBy, 'planning')
+       RETURNING id, batch_name AS "batchName", batch_year AS "batchYear", scheduled_date AS "scheduledDate", due_date AS "dueDate", status, priority, created_at AS "createdAt"`,
+      {
+        replacements: {
+          corporateId, batchName,
+          batchYear: batchYear || new Date().getFullYear(),
+          scheduledDate: scheduledDate || null,
+          dueDate,
+          priority,
+          notes: notes || null,
+          targetDepartments: targetDepartments ? JSON.stringify(targetDepartments) : null,
+          createdBy: req.user?.id || null,
+        },
+      }
+    );
+    return res.status(201).json({ success: true, data: { batch: rows[0] } });
+  } catch (err) {
+    console.error('[corporate] ahc create batch error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to create AHC batch' });
+  }
+});
+
+router.put('/ahc/batches/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { status, priority, notes, dueDate, scheduledDate } = req.body || {};
+  try {
+    await postgresSequelize.query(
+      `UPDATE corporate_ahc_batches SET
+         status = COALESCE(:status, status),
+         priority = COALESCE(:priority, priority),
+         notes = COALESCE(:notes, notes),
+         due_date = COALESCE(:dueDate, due_date),
+         scheduled_date = COALESCE(:scheduledDate, scheduled_date),
+         updated_at = NOW()
+       WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId, status: status || null, priority: priority || null, notes: notes || null, dueDate: dueDate || null, scheduledDate: scheduledDate || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] ahc update batch error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update AHC batch' });
+  }
+});
+
+router.get('/ahc/batches/:id/enrollments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT e.id, e.employee_id AS "employeeId", e.employee_name AS "employeeName",
+              e.department, e.status, e.booked_date AS "bookedDate", e.booked_slot AS "bookedSlot",
+              e.report_ready AS "reportReady", e.report_url AS "reportUrl",
+              e.reminder_sent_at AS "reminderSentAt", e.notes,
+              COALESCE(u."firstName" || ' ' || u."lastName", e.employee_name, e.employee_id) AS name,
+              COALESCE(u.email, '') AS email,
+              (SELECT COUNT(*)::int FROM corporate_ahc_dependents d WHERE d.enrollment_id = e.id) AS dependents
+         FROM corporate_ahc_enrollments e
+         LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.batch_id = :id AND e.corporate_id = :corporateId
+        ORDER BY e.department, name`,
+      { replacements: { id, corporateId } }
+    );
+    return res.json({ success: true, data: { enrollments: rows } });
+  } catch (err) {
+    console.error('[corporate] ahc enrollments error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to fetch enrollments' });
+  }
+});
+
+router.post('/ahc/batches/:id/enroll-all', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { departments } = req.body || {};  // optional: filter by department
+  try {
+    // Verify the batch belongs to this corporate
+    const [batchRows] = await postgresSequelize.query(
+      `SELECT id FROM corporate_ahc_batches WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId } }
+    );
+    if (!batchRows[0]) return res.status(404).json({ success: false, message: 'Batch not found' });
+
+    let deptFilter = '';
+    const replacements = { id, corporateId };
+    if (Array.isArray(departments) && departments.length) {
+      deptFilter = `AND ce.department = ANY(ARRAY[:departments])`;
+      replacements.departments = departments;
+    }
+
+    const [result] = await postgresSequelize.query(
+      `INSERT INTO corporate_ahc_enrollments (batch_id, corporate_id, employee_id, employee_name, department, user_id, status, created_at, updated_at)
+       SELECT :id, :corporateId, ce."employeeId",
+              TRIM(COALESCE(u."firstName" || ' ' || u."lastName", (ce.metadata->>'firstName')::text || ' ' || (ce.metadata->>'lastName')::text, ce."employeeId")),
+              ce.department, ce."userId", 'pending', NOW(), NOW()
+         FROM corporate_employees ce
+         LEFT JOIN users u ON u.id = ce."userId"
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true ${deptFilter}
+       ON CONFLICT (batch_id, employee_id) DO NOTHING
+       RETURNING id`,
+      { replacements }
+    );
+    return res.json({ success: true, data: { enrolled: result.length, message: `${result.length} employees enrolled` } });
+  } catch (err) {
+    console.error('[corporate] ahc enroll-all error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to enroll employees' });
+  }
+});
+
+router.put('/ahc/enrollments/:id', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { status, bookedDate, bookedSlot, reportReady, reportUrl, notes } = req.body || {};
+  try {
+    await postgresSequelize.query(
+      `UPDATE corporate_ahc_enrollments SET
+         status = COALESCE(:status, status),
+         booked_date = COALESCE(:bookedDate, booked_date),
+         booked_slot = COALESCE(:bookedSlot, booked_slot),
+         report_ready = COALESCE(:reportReady, report_ready),
+         report_url = COALESCE(:reportUrl, report_url),
+         notes = COALESCE(:notes, notes),
+         updated_at = NOW()
+       WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId, status: status || null, bookedDate: bookedDate || null, bookedSlot: bookedSlot || null, reportReady: reportReady != null ? reportReady : null, reportUrl: reportUrl || null, notes: notes || null } }
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[corporate] ahc update enrollment error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update enrollment' });
+  }
+});
+
+router.post('/ahc/batches/:id/send-reminders', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  try {
+    // Mark reminder_sent_at for all pending/invited enrollments in this batch
+    const [result] = await postgresSequelize.query(
+      `UPDATE corporate_ahc_enrollments SET reminder_sent_at = NOW(), updated_at = NOW()
+        WHERE batch_id = :id AND corporate_id = :corporateId AND status IN ('pending', 'invited')
+        RETURNING id, employee_id`,
+      { replacements: { id, corporateId } }
+    );
+    // Insert notification for each employee who has a linked user
+    await postgresSequelize.query(
+      `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, employee_id, created_at)
+       SELECT :corporateId, 'appointment_reminder',
+              'Annual Health Checkup Reminder',
+              'Your annual health checkup is due. Please schedule your appointment at the earliest.',
+              'high', false, e.employee_id, NOW()
+         FROM corporate_ahc_enrollments e
+        WHERE e.batch_id = :id AND e.corporate_id = :corporateId AND e.status IN ('pending','invited')`,
+      { replacements: { id, corporateId } }
+    );
+    return res.json({ success: true, data: { reminded: result.length, message: `Reminders sent to ${result.length} employees` } });
+  } catch (err) {
+    console.error('[corporate] ahc send reminders error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to send reminders' });
+  }
+});
+
+router.post('/ahc/enrollments/:id/dependents', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  const { name, relationship, dateOfBirth, gender } = req.body || {};
+  if (!name || !relationship) return res.status(400).json({ success: false, message: 'name and relationship required' });
+  try {
+    const [enr] = await postgresSequelize.query(
+      `SELECT id FROM corporate_ahc_enrollments WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId } }
+    );
+    if (!enr[0]) return res.status(404).json({ success: false, message: 'Enrollment not found' });
+    const [rows] = await postgresSequelize.query(
+      `INSERT INTO corporate_ahc_dependents (enrollment_id, name, relationship, date_of_birth, gender)
+       VALUES (:id, :name, :relationship, :dateOfBirth, :gender)
+       RETURNING id, name, relationship, date_of_birth AS "dateOfBirth", gender, status`,
+      { replacements: { id, name, relationship, dateOfBirth: dateOfBirth || null, gender: gender || null } }
+    );
+    return res.status(201).json({ success: true, data: { dependent: rows[0] } });
+  } catch (err) {
+    console.error('[corporate] ahc add dependent error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to add dependent' });
+  }
+});
+
+// ─── Bulk employee status ──────────────────────────────────────────────────────
+router.patch('/employees/bulk-status', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { employeeIds, action } = req.body || {};
+  if (!Array.isArray(employeeIds) || !employeeIds.length) return res.status(400).json({ success: false, message: 'employeeIds required' });
+  if (!['activate', 'deactivate'].includes(action)) return res.status(400).json({ success: false, message: 'action must be activate or deactivate' });
+  try {
+    const [result] = await postgresSequelize.query(
+      `UPDATE corporate_employees SET "isActive" = :active, "updatedAt" = NOW()
+       WHERE corporate_id = :corporateId AND "employeeId" IN (:ids)
+       RETURNING "employeeId"`,
+      { replacements: { active: action === 'activate', corporateId, ids: employeeIds } }
+    );
+    return res.json({ success: true, data: { updated: result.length, action } });
+  } catch (err) {
+    console.error('[corporate] bulk-status error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to update employees' });
+  }
+});
+
+// ─── Age distribution analytics ───────────────────────────────────────────────
+router.get('/dashboard/age-distribution', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT
+         CASE
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) < 25 THEN 'Under 25'
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) BETWEEN 25 AND 34 THEN '25-34'
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) BETWEEN 35 AND 44 THEN '35-44'
+           WHEN EXTRACT(YEAR FROM AGE(u."dateOfBirth")) BETWEEN 45 AND 54 THEN '45-54'
+           ELSE '55+'
+         END AS age_range,
+         COUNT(*) AS count
+       FROM corporate_employees ce
+       LEFT JOIN users u ON u.id = ce."userId"
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND u."dateOfBirth" IS NOT NULL
+       GROUP BY age_range
+       ORDER BY age_range`,
+      { replacements: { corporateId } }
+    );
+    const total = rows.reduce((s, r) => s + parseInt(r.count, 10), 0);
+    const ageGroups = rows.map(r => ({
+      range: r.age_range,
+      count: parseInt(r.count, 10),
+      percentage: total > 0 ? Math.round((parseInt(r.count, 10) / total) * 100) : 0,
+    }));
+    return res.json({ success: true, data: { ageGroups, totalWithDOB: total } });
+  } catch (err) {
+    console.error('[corporate] age-distribution error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load age distribution' });
+  }
+});
+
+// ─── All employee appointments (HR-booked + employee self-booked) ─────────────
+router.get('/all-appointments', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { status, page = 1, limit = 50 } = req.query;
+  const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  try {
+    // HR-booked (no RLS)
+    const [hrAppts] = await postgresSequelize.query(
+      `SELECT id, "employeeId", "employeeName", department, "appointmentType" AS type,
+              "doctorName", facility, date::text, time, status, notes, "createdAt",
+              'hr_booked' AS source
+       FROM corporate_scheduled_appointments
+       WHERE corporate_id = :corporateId
+         AND (:status IS NULL OR status = :status)
+       ORDER BY date DESC, time DESC`,
+      { replacements: { corporateId, status: status || null } }
+    );
+    // Employee self-booked (appointments table has RLS — use platform-admin bypass)
+    let selfAppts = [];
+    await postgresSequelize.transaction(async (tx) => {
+      await setRlsContext(tx, { orgId: 0, userId: 0, isPlatformAdmin: true });
+      const [rows] = await postgresSequelize.query(
+        `SELECT a.id,
+                u."employee_id" AS "employeeId",
+                CONCAT(u."firstName", ' ', u."lastName") AS "employeeName",
+                u.department_name AS department,
+                COALESCE(a."consultationType", a.type, 'Teleconsultation') AS type,
+                a."doctorName", NULL AS facility, a."appointmentDate"::text AS date,
+                a."appointmentTime"::text AS time, a.status, a.reason AS notes,
+                a."createdAt", 'employee_booked' AS source
+         FROM appointments a
+         JOIN users u ON u.id = a."patientId"
+         WHERE a.corporate_tenant_id = :corporateId
+           AND (:status IS NULL OR a.status = :status)
+         ORDER BY a."appointmentDate" DESC, a."appointmentTime" DESC`,
+        { replacements: { corporateId, status: status || null }, transaction: tx }
+      );
+      selfAppts = rows;
+    });
+    const all = [...hrAppts, ...selfAppts].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const paginated = all.slice(offset, offset + parseInt(limit, 10));
+    return res.json({ success: true, data: { appointments: paginated, total: all.length, page: parseInt(page, 10) } });
+  } catch (err) {
+    console.error('[corporate] all-appointments error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load appointments' });
+  }
+});
+
+// ─── Send manual appointment reminder ─────────────────────────────────────────
+router.post('/appointments/:apptId/remind', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { apptId } = req.params;
+  try {
+    // apptId may belong to either source table (hr_booked vs employee_booked) — check both.
+    const [hrRows] = await postgresSequelize.query(
+      `SELECT date::text AS date, time FROM corporate_scheduled_appointments
+        WHERE id = :apptId AND corporate_id = :corporateId`,
+      { replacements: { apptId, corporateId } }
+    );
+    let apptRow = hrRows[0] || null;
+    if (!apptRow) {
+      await postgresSequelize.transaction(async (tx) => {
+        await setRlsContext(tx, { orgId: 0, userId: 0, isPlatformAdmin: true });
+        const [rows] = await postgresSequelize.query(
+          `SELECT a."appointmentDate"::text AS date, a."appointmentTime"::text AS time
+             FROM appointments a
+            WHERE a.id = :apptId AND a.corporate_tenant_id = :corporateId`,
+          { replacements: { apptId, corporateId }, transaction: tx }
+        );
+        apptRow = rows[0] || null;
+      });
+    }
+    if (!apptRow) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+    const apptDateTime = new Date(`${apptRow.date}T${apptRow.time || '00:00'}:00`);
+    if (!Number.isNaN(apptDateTime.getTime()) && apptDateTime.getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: 'Cannot send a reminder for an appointment that has already passed' });
+    }
+    await postgresSequelize.query(
+      `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, created_at)
+       VALUES (:corporateId, 'appointment_reminder', 'Appointment Reminder',
+               'You have an upcoming health appointment. Please be on time.', 'high', false, NOW())`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, message: 'Reminder sent' });
+  } catch (err) {
+    console.error('[corporate] remind error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to send reminder' });
+  }
+});
+
+// ─── Doctor list for scheduling ───────────────────────────────────────────────
+router.get('/doctors', authCorporate, async (req, res) => {
+  const { search = '', specialization = '' } = req.query;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT id, CONCAT("firstName", ' ', "lastName") AS name,
+              specialization, "consultationFees" AS fee, rating, status,
+              "profileImage" AS avatar, "registrationNumber"
+       FROM doctors
+       WHERE status = 'active'
+         AND (:search = '' OR LOWER(CONCAT("firstName",' ',"lastName")) LIKE LOWER('%' || :search || '%'))
+         AND (:spec = '' OR LOWER(specialization) LIKE LOWER('%' || :spec || '%'))
+       ORDER BY rating DESC NULLS LAST, "totalReviews" DESC NULLS LAST
+       LIMIT 100`,
+      { replacements: { search, spec: specialization } }
+    );
+    return res.json({ success: true, data: { doctors: rows } });
+  } catch (err) {
+    console.error('[corporate] doctors error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load doctors' });
+  }
+});
+
+// ─── Wellness activity registrations ──────────────────────────────────────────
+router.get('/wellness-calendar/activities/:id/registrations', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { id } = req.params;
+  try {
+    const [event] = await postgresSequelize.query(
+      `SELECT id, title, registered_count, max_participants FROM corporate_wellness_events
+       WHERE id = :id AND corporate_id = :corporateId`,
+      { replacements: { id, corporateId } }
+    );
+    if (!event[0]) return res.status(404).json({ success: false, message: 'Event not found' });
+    const [rows] = await postgresSequelize.query(
+      `SELECT r.id, r."employeeId", r.status, r.invited_at AS "invitedAt", r.responded_at AS "respondedAt",
+              COALESCE(CONCAT(u."firstName",' ',u."lastName"), r."employeeId") AS "employeeName",
+              ce.department, ce.designation
+       FROM corporate_wellness_event_rsvps r
+       LEFT JOIN users u ON u.id = r."userId"
+       LEFT JOIN corporate_employees ce ON ce."employeeId" = r."employeeId" AND ce.corporate_id = :corporateId
+       WHERE r.event_id = :id
+       ORDER BY r.invited_at DESC`,
+      { replacements: { id, corporateId } }
+    );
+    return res.json({ success: true, data: { event: event[0], registrations: rows } });
+  } catch (err) {
+    console.error('[corporate] wellness registrations error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load registrations' });
+  }
+});
+
+router.delete('/wellness-calendar/registrations/:rsvpId', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { rsvpId } = req.params;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `UPDATE corporate_wellness_event_rsvps r
+       SET status = 'cancelled', responded_at = NOW()
+       FROM corporate_wellness_events e
+       WHERE r.id = :rsvpId AND r.event_id = e.id AND e.corporate_id = :corporateId
+       RETURNING r.id`,
+      { replacements: { rsvpId, corporateId } }
+    );
+    if (!rows[0]) return res.status(404).json({ success: false, message: 'Registration not found' });
+    await postgresSequelize.query(
+      `UPDATE corporate_wellness_events SET registered_count = GREATEST(0, registered_count - 1)
+       WHERE id = (SELECT event_id FROM corporate_wellness_event_rsvps WHERE id = :rsvpId)`,
+      { replacements: { rsvpId } }
+    );
+    return res.json({ success: true, message: 'Registration cancelled' });
+  } catch (err) {
+    console.error('[corporate] cancel rsvp error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to cancel registration' });
+  }
+});
+
+// ─── Health report delivery status ────────────────────────────────────────────
+router.get('/health-reports', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { department, status } = req.query;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT hr.id, hr.employee_id AS "employeeId", hr.report_name AS "reportName",
+              hr.report_type AS "reportType", hr.report_date::text AS "reportDate",
+              hr.sla_status AS "slaStatus", hr.report_delivered_at AS "deliveredAt",
+              hr.report_due_at AS "dueAt", hr.notified_email AS "notifiedEmail",
+              hr.notified_whatsapp AS "notifiedWhatsapp", hr.checkup_type AS "checkupType",
+              COALESCE(CONCAT(u."firstName",' ',u."lastName"), ce."employeeId") AS "employeeName",
+              ce.department
+       FROM corporate_health_reports hr
+       LEFT JOIN users u ON u.id = hr.employee_id
+       LEFT JOIN corporate_employees ce ON ce."userId" = hr.employee_id AND ce.corporate_id = :corporateId
+       WHERE hr.corporate_id = :corporateId
+         AND (:dept IS NULL OR ce.department = :dept)
+         AND (:status IS NULL OR hr.sla_status = :status)
+       ORDER BY hr.report_date DESC`,
+      { replacements: { corporateId, dept: department || null, status: status || null } }
+    );
+    const stats = {
+      total: rows.length,
+      delivered: rows.filter(r => r.deliveredAt).length,
+      overdue: rows.filter(r => r.slaStatus === 'overdue').length,
+      pending: rows.filter(r => !r.deliveredAt).length,
+    };
+    return res.json({ success: true, data: { reports: rows, stats } });
+  } catch (err) {
+    console.error('[corporate] health-reports error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load health reports' });
+  }
+});
+
+// ─── Corporate settings (eligibility rules + general) ─────────────────────────
+router.get('/settings/data', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId } }
+    );
+    return res.json({ success: true, data: { settings: rows[0]?.settings || {} } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to load settings' });
+  }
+});
+
+router.put('/settings/data', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  const { settings } = req.body || {};
+  if (!settings || typeof settings !== 'object') return res.status(400).json({ success: false, message: 'settings object required' });
+  try {
+    await postgresSequelize.query(
+      `INSERT INTO corporate_settings (corporate_id, settings, "createdAt", "updatedAt")
+       VALUES (:corporateId, :settings, NOW(), NOW())
+       ON CONFLICT (corporate_id) DO UPDATE SET settings = corporate_settings.settings || :settings, "updatedAt" = NOW()`,
+      { replacements: { corporateId, settings: JSON.stringify(settings) } }
+    );
+    return res.json({ success: true, message: 'Settings saved' });
+  } catch (err) {
+    console.error('[corporate] save settings error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to save settings' });
+  }
+});
+
+// ─── Participation analytics ───────────────────────────────────────────────────
+router.get('/analytics/participation', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    const [totalRow] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS total FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+      { replacements: { corporateId } }
+    );
+    const total = parseInt(totalRow[0]?.total || 0, 10);
+    // Participating = had at least one appointment or AHC enrollment
+    const [participantRows] = await postgresSequelize.query(
+      `SELECT COUNT(DISTINCT ce."employeeId") AS cnt
+       FROM corporate_employees ce
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+         AND (
+           EXISTS (SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId")
+           OR EXISTS (SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId")
+         )`,
+      { replacements: { corporateId } }
+    );
+    const participating = parseInt(participantRows[0]?.cnt || 0, 10);
+    // Monthly teleconsultation count
+    const [tcRows] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS cnt FROM appointments
+       WHERE corporate_tenant_id = :corporateId
+         AND "appointmentDate" >= DATE_TRUNC('month', NOW())`,
+      { replacements: { corporateId } }
+    );
+    const teleconsultationsThisMonth = parseInt(tcRows[0]?.cnt || 0, 10);
+    // Pending checkups from AHC enrollments
+    const [pendRow] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS cnt FROM corporate_ahc_enrollments
+       WHERE corporate_id = :corporateId AND status IN ('pending','invited')`,
+      { replacements: { corporateId } }
+    );
+    const pendingCheckups = parseInt(pendRow[0]?.cnt || 0, 10);
+    // Department-wise participation
+    const [deptRows] = await postgresSequelize.query(
+      `SELECT ce.department,
+              COUNT(*) AS total,
+              COUNT(CASE WHEN EXISTS (
+                SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId"
+              ) OR EXISTS (
+                SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId"
+              ) THEN 1 END) AS participating
+       FROM corporate_employees ce
+       WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce.department IS NOT NULL
+       GROUP BY ce.department
+       ORDER BY total DESC`,
+      { replacements: { corporateId } }
+    );
+    const departments = deptRows.map(r => ({
+      department: r.department,
+      total: parseInt(r.total, 10),
+      participating: parseInt(r.participating, 10),
+      rate: parseInt(r.total, 10) > 0 ? Math.round((parseInt(r.participating, 10) / parseInt(r.total, 10)) * 100) : 0,
+    }));
+    return res.json({
+      success: true,
+      data: {
+        totalEligible: total,
+        totalParticipating: participating,
+        participationRate: total > 0 ? Math.round((participating / total) * 100) : 0,
+        teleconsultationsThisMonth,
+        pendingCheckups,
+        departments,
+      },
+    });
+  } catch (err) {
+    console.error('[corporate] participation analytics error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load participation data' });
+  }
+});
+
+// ─── Monthly utilization chart ─────────────────────────────────────────────────
+router.get('/analytics/monthly-utilization', authCorporate, async (req, res) => {
+  const corporateId = req.user?.corporateId || req.user?.organization_id;
+  try {
+    // Appointments by month (last 12 months)
+    const [apptRows] = await postgresSequelize.query(
+      `SELECT TO_CHAR(DATE_TRUNC('month', date), 'Mon YYYY') AS month,
+              TO_CHAR(DATE_TRUNC('month', date), 'YYYY-MM') AS month_key,
+              COUNT(*) AS appointments
+       FROM corporate_scheduled_appointments
+       WHERE corporate_id = :corporateId
+         AND date >= NOW() - INTERVAL '12 months'
+       GROUP BY DATE_TRUNC('month', date)
+       ORDER BY DATE_TRUNC('month', date)`,
+      { replacements: { corporateId } }
+    );
+    // AHC completions by month
+    const [ahcRows] = await postgresSequelize.query(
+      `SELECT TO_CHAR(DATE_TRUNC('month', updated_at), 'Mon YYYY') AS month,
+              TO_CHAR(DATE_TRUNC('month', updated_at), 'YYYY-MM') AS month_key,
+              COUNT(*) AS completions
+       FROM corporate_ahc_enrollments
+       WHERE corporate_id = :corporateId AND status = 'completed'
+         AND updated_at >= NOW() - INTERVAL '12 months'
+       GROUP BY DATE_TRUNC('month', updated_at)
+       ORDER BY DATE_TRUNC('month', updated_at)`,
+      { replacements: { corporateId } }
+    );
+    // Merge by month
+    const months = {};
+    for (const r of apptRows) { months[r.month_key] = { month: r.month, appointments: parseInt(r.appointments, 10), ahcCompletions: 0 }; }
+    for (const r of ahcRows) { if (!months[r.month_key]) months[r.month_key] = { month: r.month, appointments: 0, ahcCompletions: 0 }; months[r.month_key].ahcCompletions = parseInt(r.completions, 10); }
+    const chart = Object.entries(months).sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
+    return res.json({ success: true, data: { chart } });
+  } catch (err) {
+    console.error('[corporate] monthly-utilization error:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to load utilization data' });
   }
 });
 
