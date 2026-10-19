@@ -211,7 +211,7 @@ export default function AdmitPatientForm() {
                 <Button variant="outline" className="flex-1 gap-1" onClick={() => navigate('/hospital/ward')}>
                   Ward Dashboard
                 </Button>
-                <Button variant="outline" className="flex-1 gap-1" onClick={() => navigate('/hospital/patient/1/workspace')}>
+                <Button variant="outline" className="flex-1 gap-1" onClick={() => navigate('/hospital/patient/1/healthos')}>
                   <Printer className="h-3.5 w-3.5" /> IP Workspace
                 </Button>
               </div>

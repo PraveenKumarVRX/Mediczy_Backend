@@ -10,9 +10,18 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { consumeReservation } from './bed-allocation.service.js';
+<<<<<<< HEAD
 import { hasSignedReconciliation } from './med-reconciliation.service.js';
 import { DISCHARGE_OVERRIDE_ROLES } from '../utils/discharge-policy.js';
 import { reconciliationRequired } from './prescription-safety.service.js';
+=======
+import { isComplexDiagnosis, autoInviteSpecialists } from './careos/care-team.service.js';
+import { appendClinicalEvent } from './careos/clinical-timeline.service.js';
+import { autoAdvancePathway } from './careos/treatment-pathway.service.js';
+import { archiveCase, flagReadmissionIfRecent } from './careos/hospital-memory.service.js';
+import { dispatchEvent } from './workflow-ai-orchestrator.service.js';
+import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
+>>>>>>> recover/care-intelligence-mesh
 
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
 
@@ -106,6 +115,19 @@ export async function updateReadinessItem(admissionId, dimension, { completedBy,
      WHERE admission_id = :admId AND dimension = :dim`,
     { replacements: { admId: admissionId, dim: dimension, by: completedBy || null, notes: notes || null }, type: QueryTypes.UPDATE }
   );
+
+  // Recompute the Living Treatment Pathway now that a readiness item changed.
+  const [admission] = await sequelize.query(
+    `SELECT organization_id, patient_id FROM ip_admissions WHERE id = :admId`,
+    { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
+  ).catch(() => [null]);
+  if (admission) {
+    const readiness = await getDischargeReadiness(admissionId, admission.organization_id);
+    autoAdvancePathway(admission.patient_id, admission.organization_id, admissionId, {
+      readinessReady: readiness.ready,
+    }).catch((err) => console.warn('[adt.service] pathway auto-advance failed:', err.message));
+  }
+
   return { success: true };
 }
 
@@ -242,6 +264,51 @@ export async function admitPatient({
     });
 
     await tx.commit();
+
+    appendClinicalEvent({
+      organizationId, patientId, admissionId: admission.id,
+      eventType: 'admission',
+      title: `Admitted (${admissionType}) — ${admissionNumber}`,
+      body: admissionDiagnosis || null,
+      actorType: 'staff', actorId: performedBy,
+      severity: 'info',
+      metadata: { wardId, bedId, admissionNumber },
+    }).catch((err) => console.warn('[adt.service] timeline event failed (admission):', err.message));
+
+    // Dynamic Care Team: auto-invite specialists for recognized high-acuity
+    // diagnoses on admission. Fire-and-forget — CareOS being down must never
+    // block or fail a patient admission, which is why this runs after commit
+    // with errors swallowed rather than inside the transaction.
+    if (isComplexDiagnosis(admissionDiagnosis)) {
+      autoInviteSpecialists(patientId, organizationId, admissionDiagnosis).catch((err) => {
+        console.warn('[adt.service] auto care-team invite failed:', err.message);
+      });
+    }
+
+    // Learning Agent: this admission is itself an outcome signal for any
+    // recently-archived case for the same patient — a readmission within
+    // 30 days of a "complex case" discharge is exactly the kind of feedback
+    // findSimilarCases should be able to warn future clinicians about.
+    flagReadmissionIfRecent(patientId, organizationId).catch((err) => {
+      console.warn('[adt.service] readmission flag failed:', err.message);
+    });
+
+    // Prediction Agent: LOS estimate, pathway suggestion, readmission-risk
+    // scoring — real logic in workflow-ai-orchestrator.service.js that was
+    // previously written but never called from anywhere.
+    dispatchEvent('patient.admitted', admission).catch((err) => {
+      console.warn('[adt.service] prediction agent dispatch failed:', err.message);
+    });
+
+    // Event bus: fire-and-forget publish alongside (not instead of) the
+    // direct calls above — anything that must happen for the admission to
+    // be valid stays a direct call; this is for side-effects that can
+    // tolerate being picked up a moment later by an independent consumer
+    // (see kafka-consumers.service.js's admission consumer).
+    publishEvent(KAFKA_TOPICS.PATIENT_ADMITTED, {
+      admissionId: admission.id, patientId, organizationId, admissionType, admissionDiagnosis,
+    }, { key: String(organizationId) }).catch(() => {});
+
     return admission;
   } catch (err) {
     await tx.rollback();
@@ -280,6 +347,17 @@ export async function transferPatient({
     });
 
     await tx.commit();
+
+    appendClinicalEvent({
+      organizationId, patientId: current.patient_id, admissionId,
+      eventType: 'transfer',
+      title: `Transferred: ward ${fromLocation.ward_id || '—'}/bed ${fromLocation.bed_id || '—'} → ward ${toWardId || '—'}/bed ${toBedId || '—'}`,
+      body: reason || null,
+      actorType: 'staff', actorId: performedBy,
+      severity: 'info',
+      metadata: { fromLocation, toLocation: { ward_id: toWardId, bed_id: toBedId } },
+    }).catch((err) => console.warn('[adt.service] timeline event failed (transfer):', err.message));
+
     return { success: true, from: fromLocation, to: { ward_id: toWardId, bed_id: toBedId } };
   } catch (err) {
     await tx.rollback();
@@ -391,6 +469,48 @@ export async function dischargePatient({
     });
 
     await tx.commit();
+
+    appendClinicalEvent({
+      organizationId, patientId: current.patient_id, admissionId,
+      eventType: 'discharge',
+      title: `Discharged (${dischargeType})`,
+      body: reason || null,
+      actorType: 'staff', actorId: performedBy,
+      severity: 'info',
+      metadata: { dischargeType, dischargeSummaryId: dischargeSummaryId || null },
+    }).catch((err) => console.warn('[adt.service] timeline event failed (discharge):', err.message));
+
+    // Prediction Agent: queues discharge-summary generation + 30-day
+    // follow-up reminder (real logic, previously dead code — see
+    // workflow-ai-orchestrator.service.js).
+    dispatchEvent('patient.discharged', { ...current, discharge_summary_id: dischargeSummaryId || current.discharge_summary_id }).catch((err) => {
+      console.warn('[adt.service] prediction agent dispatch failed (discharge):', err.message);
+    });
+
+    publishEvent(KAFKA_TOPICS.PATIENT_DISCHARGED, {
+      admissionId, patientId: current.patient_id, organizationId, dischargeType,
+    }, { key: String(organizationId) }).catch(() => {});
+
+    // Hospital Knowledge Network: auto-archive complex cases on discharge so
+    // future similar presentations can be matched — previously this only
+    // happened if a clinician manually called POST /memory/archive.
+    if (isComplexDiagnosis(current.admission_diagnosis)) {
+      const keywords = String(current.admission_diagnosis || '')
+        .toLowerCase().split(/\s+/).filter((w) => w.length > 3).slice(0, 8);
+      const losDays = current.admission_datetime
+        ? (Date.now() - new Date(current.admission_datetime).getTime()) / (1000 * 60 * 60 * 24)
+        : null;
+      archiveCase({
+        organizationId,
+        patientId: current.patient_id,
+        presentationSummary: current.admission_diagnosis || 'Complex admission',
+        finalDiagnosis: current.admission_diagnosis || null,
+        lessonsLearned: reason || null,
+        keywords,
+        lengthOfStayDays: losDays,
+      }).catch((err) => console.warn('[adt.service] auto case-archive failed:', err.message));
+    }
+
     return { success: true, dischargedAt: new Date() };
   } catch (err) {
     await tx.rollback();

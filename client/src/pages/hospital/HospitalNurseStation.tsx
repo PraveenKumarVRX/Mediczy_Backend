@@ -51,7 +51,7 @@ export default function HospitalNurseStation() {
             <CardContent className="space-y-2 max-h-64 overflow-y-auto">
               {beds.length === 0 ? <p className="text-xs text-slate-400">No occupied beds</p> : beds.map((b: any) => (
                 <button key={b.id} className="w-full text-left p-2 rounded-lg bg-slate-50 hover:bg-teal-50 text-sm"
-                  onClick={() => b.patient_id && navigate(`/hospital/patient/${b.patient_id}/workspace`)}>
+                  onClick={() => b.patient_id && navigate(`/hospital/patient/${b.patient_id}/healthos`)}>
                   <span className="font-medium">{b.bed_number}</span>
                   <span className="text-slate-500 ml-2">{b.ward_name}</span>
                 </button>

@@ -5,6 +5,21 @@ export async function getCareOSHealth() {
   return res.data;
 }
 
+export interface MeshAgent {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+  status: 'active' | 'partial' | 'planned';
+  invokable: boolean;
+  trigger: string;
+}
+
+export async function getMeshAgents() {
+  const res = await api.get('/v3/healthos/mesh/agents');
+  return res.data as { success: boolean; data: MeshAgent[] };
+}
+
 export async function getLivingWorkspace(patientId: number, admissionId?: number) {
   const res = await api.get(`/v3/healthos/workspace/${patientId}`, {
     params: admissionId ? { admissionId } : undefined,
@@ -60,6 +75,11 @@ export async function getTreatmentPathway(patientId: number) {
 
 export async function getCoordinatorAlerts(patientId: number) {
   const res = await api.get(`/v3/healthos/coordinator/${patientId}/alerts`);
+  return res.data;
+}
+
+export async function getAdmissionBriefing(patientId: number) {
+  const res = await api.get(`/v3/healthos/coordinator/${patientId}/admission-briefing`);
   return res.data;
 }
 
@@ -278,6 +298,11 @@ export async function verifyFamilyAccess(patientId: number, accessCode: string) 
 
 export async function listFamilyUpdates(patientId: number, family = false) {
   const res = await api.get(`/v3/healthos/family/${patientId}/updates`, { params: family ? { family: 'true' } : undefined });
+  return res.data;
+}
+
+export async function draftFamilyUpdate(patientId: number) {
+  const res = await api.get(`/v3/healthos/family/${patientId}/draft`);
   return res.data;
 }
 

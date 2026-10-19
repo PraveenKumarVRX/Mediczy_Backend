@@ -13,6 +13,14 @@ import multer from 'multer';
 import pool from '../db/pgPool.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { s3Storage, s3PresignedUrl } from '../utils/s3-storage.js';
+import { translateClinical } from '../services/hospital-os/translator.service.js';
+
+let chatTranslationColumnReady = false;
+async function ensureChatTranslationColumn() {
+  if (chatTranslationColumnReady) return;
+  await pool.query(`ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS translated_content JSONB`);
+  chatTranslationColumnReady = true;
+}
 
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg', 'image/png', 'image/gif', 'image/webp',
@@ -178,11 +186,12 @@ router.get('/messages/:conversationId', authUser, requireDoctor, async (req, res
     const beforeClause = before ? `AND m."createdAt" < $4` : '';
     if (before) params.push(before);
 
+    await ensureChatTranslationColumn();
     const { rows } = await pool.query(`
       SELECT
         m.id, m."conversationId", m."senderId", m."senderType",
         m."recipientId", m."recipientType", m.content, m."messageType",
-        m.attachments, m.status, m."createdAt"
+        m.attachments, m.status, m."createdAt", m.translated_content
       FROM chat_messages m
       WHERE m."conversationId" = $1
         AND (m."senderId" = $2 OR m."recipientId" = $2)
@@ -230,14 +239,39 @@ router.post('/messages', authUser, requireDoctor, async (req, res) => {
   }
 
   try {
+    await ensureChatTranslationColumn();
     const attachments = req.body.attachments ? JSON.parse(req.body.attachments) : [];
+    const trimmedContent = content?.trim() || '';
+
+    // Translation Agent: if the doctor is messaging a patient and the
+    // patient's language differs from the message's, translate inline so
+    // the recipient sees it in their own language without a separate
+    // manual "translate this" step. Text-only — real-time voice-to-voice
+    // translation during a live call needs infra (streaming ASR + TTS
+    // pipeline) this endpoint doesn't have.
+    let translatedContent = null;
+    if (recipientType === 'patient' && req.body.targetLang && trimmedContent) {
+      try {
+        const t = await translateClinical({
+          text: trimmedContent,
+          sourceLang: req.body.sourceLang || 'auto',
+          targetLang: req.body.targetLang,
+          context: 'consultation_chat',
+          audience: 'patient',
+        });
+        translatedContent = { lang: req.body.targetLang, text: t.translatedText, glossary: t.glossary || [] };
+      } catch (err) {
+        console.warn('[doctor-chat] translation agent failed:', err.message);
+      }
+    }
+
     const { rows } = await pool.query(`
       INSERT INTO chat_messages
         ("conversationId", "senderId", "senderType", "recipientId", "recipientType",
-         content, "messageType", attachments, status, "createdAt", "updatedAt")
-      VALUES ($1, $2, 'doctor', $3, $4, $5, $6, $7::jsonb, 'sent', NOW(), NOW())
+         content, "messageType", attachments, status, translated_content, "createdAt", "updatedAt")
+      VALUES ($1, $2, 'doctor', $3, $4, $5, $6, $7::jsonb, 'sent', $8::jsonb, NOW(), NOW())
       RETURNING *
-    `, [conversationId, doctorId, recipientId, recipientType, content?.trim() || '', messageType, JSON.stringify(attachments)]);
+    `, [conversationId, doctorId, recipientId, recipientType, trimmedContent, messageType, JSON.stringify(attachments), translatedContent ? JSON.stringify(translatedContent) : null]);
 
     res.json({ success: true, message: rows[0] });
   } catch (err) {

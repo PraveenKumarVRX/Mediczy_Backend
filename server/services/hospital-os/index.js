@@ -10,10 +10,11 @@ import { getAIRecommendations } from './command-center-ai.service.js';
 import { translateClinical, translateDocument, listLanguages } from './translator.service.js';
 import { draftLabOrderFromVoice, draftImagingOrderFromVoice, draftTeamNotification } from './voice-commands.service.js';
 import { forecastED } from './ed-forecast.service.js';
-import { optimizeJourney } from './journey-optimizer.service.js';
+import { optimizeJourney, suggestEarlierOTSlot } from './journey-optimizer.service.js';
 import { analyzeWorkforce } from './workforce-ai.service.js';
-import { matchClinicalTrials, detectEmergingPatterns } from './research-hub.service.js';
-import { routeAmbientDocument, synthesizeAmbientNote, getAmbientPipelineStatus } from './ambient-documentation.service.js';
+import { matchClinicalTrials, detectEmergingPatterns, generateResearchBriefing } from './research-hub.service.js';
+import { routeAmbientDocument, getAmbientPipelineStatus } from './ambient-documentation.service.js';
+import { synthesizeAmbientNote, summarizeRadiology, summarizeLabTrends, summarizeBillingAccount } from './department-agents.service.js';
 
 export {
   hospitalCopilotChat,
@@ -42,12 +43,17 @@ export {
   draftTeamNotification,
   forecastED,
   optimizeJourney,
+  suggestEarlierOTSlot,
   analyzeWorkforce,
   matchClinicalTrials,
   detectEmergingPatterns,
+  generateResearchBriefing,
   routeAmbientDocument,
   synthesizeAmbientNote,
   getAmbientPipelineStatus,
+  summarizeRadiology,
+  summarizeLabTrends,
+  summarizeBillingAccount,
 };
 
 export default {
@@ -77,10 +83,15 @@ export default {
   draftTeamNotification,
   forecastED,
   optimizeJourney,
+  suggestEarlierOTSlot,
   analyzeWorkforce,
   matchClinicalTrials,
   detectEmergingPatterns,
+  generateResearchBriefing,
   routeAmbientDocument,
   synthesizeAmbientNote,
   getAmbientPipelineStatus,
+  summarizeRadiology,
+  summarizeLabTrends,
+  summarizeBillingAccount,
 };

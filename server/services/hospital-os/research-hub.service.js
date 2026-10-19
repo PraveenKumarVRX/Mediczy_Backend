@@ -3,6 +3,8 @@
  */
 import pool from '../../db/pgPool.js';
 import { buildPatientSubgraph } from './knowledge-graph.service.js';
+import { findSimilarCases } from '../careos/hospital-memory.service.js';
+import llmProvider from '../ai-brain/llm-provider.js';
 
 export async function matchClinicalTrials({ patientId, organizationId, tenantId = 'default' }) {
   const subgraph = await buildPatientSubgraph(patientId, organizationId, tenantId).catch(() => ({ edges: [] }));
@@ -79,4 +81,50 @@ export async function detectEmergingPatterns({ organizationId, days = 30 }) {
   };
 }
 
-export default { matchClinicalTrials, detectEmergingPatterns };
+/**
+ * Research Agent: combines institutional case memory + clinical trial
+ * matching into one synthesized briefing, instead of two separate lookups
+ * a clinician has to mentally combine themselves.
+ */
+export async function generateResearchBriefing({ patientId, organizationId, diagnosisHint, tenantId = 'default' }) {
+  const [similar, trials] = await Promise.all([
+    findSimilarCases(patientId, organizationId, diagnosisHint || '').catch(() => ({ matches: [] })),
+    matchClinicalTrials({ patientId, organizationId, tenantId }).catch(() => ({ eligibleTrials: [] })),
+  ]);
+
+  const fallbackSummary = [
+    similar.matches?.length ? `${similar.matches.length} similar prior case(s) found in hospital records.` : 'No similar prior cases found.',
+    trials.eligibleTrials?.length ? `${trials.eligibleTrials.length} potentially eligible clinical trial(s).` : 'No matching clinical trials found.',
+  ].join(' ');
+
+  let briefing = fallbackSummary;
+  if (similar.matches?.length || trials.eligibleTrials?.length) {
+    try {
+      const llm = await llmProvider.chat({
+        messages: [
+          {
+            role: 'system',
+            content: `You are a clinical research assistant. Combine similar-case history and clinical-trial matches into a short (3-4 sentence) briefing for the treating clinician. Do not invent facts not present in the data. This is advisory only.`,
+          },
+          { role: 'user', content: `Diagnosis context: ${diagnosisHint || 'not specified'}\nSimilar cases: ${JSON.stringify(similar.matches || [])}\nMatching trials: ${JSON.stringify(trials.eligibleTrials || [])}` },
+        ],
+        temperature: 0.2,
+        maxTokens: 400,
+        skipCache: true,
+      });
+      briefing = (llm.content || '').trim() || fallbackSummary;
+    } catch (err) {
+      console.warn('[research-hub] briefing LLM failed:', err.message);
+    }
+  }
+
+  return {
+    patientId,
+    briefing,
+    similarCases: similar.matches || [],
+    eligibleTrials: trials.eligibleTrials || [],
+    governance: trials.governance,
+  };
+}
+
+export default { matchClinicalTrials, detectEmergingPatterns, generateResearchBriefing };

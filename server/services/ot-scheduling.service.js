@@ -11,6 +11,7 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { dispatchEvent } from './workflow-ai-orchestrator.service.js';
 
 // ── B2: Override audit table bootstrap ───────────────────────────────────────
 
@@ -216,7 +217,7 @@ export async function updateOTStatus(organizationId, bookingId, status, {
   // Free OT room when completed/cancelled
   if (['completed','cancelled'].includes(status)) {
     const [booking] = await sequelize.query(
-      `SELECT ot_room_id FROM ot_bookings WHERE id = :bookingId`,
+      `SELECT ot_room_id, patient_id, organization_id, procedure_name, operative_notes FROM ot_bookings WHERE id = :bookingId`,
       { replacements: { bookingId }, type: QueryTypes.SELECT }
     );
     if (booking?.ot_room_id) {
@@ -224,6 +225,11 @@ export async function updateOTStatus(organizationId, bookingId, status, {
         `UPDATE ot_rooms SET status = 'cleaning' WHERE id = :roomId`,
         { replacements: { roomId: booking.ot_room_id }, type: QueryTypes.UPDATE }
       );
+    }
+    // Prediction Agent: auto-schedule the post-op follow-up as soon as the
+    // case is marked complete, instead of relying on staff to remember.
+    if (status === 'completed' && booking) {
+      dispatchEvent('patient.ot.completed', booking).catch((err) => console.warn('[ot-scheduling] prediction agent dispatch failed:', err.message));
     }
   }
 

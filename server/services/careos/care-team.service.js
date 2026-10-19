@@ -47,6 +47,17 @@ export async function addTeamMember({ teamId, userId, role, specialty, displayNa
   return rows[0];
 }
 
+/**
+ * True only for diagnoses that match a SPECIFIC named complexity rule (sepsis,
+ * NSTEMI, stroke, etc.) — deliberately excludes the generic 'complex'
+ * fallback, so an admission hook can auto-trigger a care team only for
+ * recognized high-acuity conditions, not every single admission.
+ */
+export function isComplexDiagnosis(diagnosisText) {
+  const dx = String(diagnosisText || '').toLowerCase();
+  return Object.keys(MDT_RULES).some((key) => key !== 'complex' && dx.includes(key));
+}
+
 export async function autoInviteSpecialists(patientId, organizationId, diagnosisText) {
   const team = await getOrCreateCareTeam(patientId, organizationId);
   const dx = String(diagnosisText || '').toLowerCase();
@@ -79,4 +90,4 @@ export async function autoInviteSpecialists(patientId, organizationId, diagnosis
   return { teamId: team.id, invited };
 }
 
-export default { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists };
+export default { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists, isComplexDiagnosis };

@@ -8,7 +8,7 @@ import {
   setDailyGoals, getLatestGoals,
   recordSeverityScore, getScoreHistory,
   logICUEvent, getICUEvents,
-  getICUSummary
+  getICUSummary, generateICUProgressNoteDraft
 } from '../services/icu.service.js';
 import { resolveTenantId } from '../utils/tenant-identity.js';
 
@@ -67,6 +67,16 @@ router.get('/census', authUser, requireModule('icu'), async (req, res) => {
 router.get('/:icuAdmissionId/summary', authUser, requireModule('icu'), async (req, res) => {
   try {
     const data = await getICUSummary(parseInt(req.params.icuAdmissionId));
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/v1/icu/:icuAdmissionId/progress-note-draft — AI-drafted SOAP note for physician review
+router.get('/:icuAdmissionId/progress-note-draft', authUser, async (req, res) => {
+  try {
+    const data = await generateICUProgressNoteDraft(parseInt(req.params.icuAdmissionId));
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

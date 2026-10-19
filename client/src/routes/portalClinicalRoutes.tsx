@@ -1,5 +1,5 @@
 import type { ComponentType } from "react";
-import { Route } from "react-router-dom";
+import { Navigate, Route, useLocation } from "react-router-dom";
 import type { ClinicalPortal } from "@/config/clinicalPortalPaths";
 
 type LazyComponent = ComponentType<unknown>;
@@ -110,7 +110,7 @@ function routeDefs(p: PortalClinicalPages): Record<RouteKey, { path: string; el:
     passport: { path: "healthos/passport/:patientId", el: p.MedicalPassportPortal },
     patientHealthos: { path: "patient/:patientId/healthos/*", el: p.LivingPatientWorkspace },
     patientCareos: { path: "patient/:patientId/careos/*", el: p.LivingPatientWorkspace },
-    patientWorkspace: { path: "patient/:patientId/workspace", el: p.InpatientWorkspace },
+    patientWorkspace: { path: "patient/:patientId/workspace", el: LegacyPatientWorkspaceRedirect },
     commandCenter: { path: "command-center", el: p.CommandCenter },
     copilot: { path: "copilot", el: p.HospitalCopilot },
     predictiveAnalytics: { path: "predictive-analytics", el: p.PredictiveAnalytics },
@@ -120,6 +120,11 @@ function routeDefs(p: PortalClinicalPages): Record<RouteKey, { path: string; el:
     aiRevenue: { path: "ai-revenue", el: p.AIRevenueIntelligence },
     aiDept: { path: "ai-dept", el: p.AIDepartmentHub },
   };
+}
+
+function LegacyPatientWorkspaceRedirect() {
+  const location = useLocation();
+  return <Navigate to={`${location.pathname.replace(/\/workspace$/, "/healthos")}?mode=ops`} replace />;
 }
 
 /** Mount clinical + HealthOS routes under /hospital, /doctor, or /nurse */

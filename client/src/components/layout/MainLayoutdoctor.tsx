@@ -61,8 +61,12 @@ import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { OfflineIndicator } from '@/components/OfflineIndicator';
 import ChatApplet from '@/components/chat/ChatApplet';
+<<<<<<< HEAD
 
 import { DOCTOR_NAV_ITEMS, DOCTOR_NAV_CATEGORIES, HOSPITAL_NAV_CATEGORIES } from '@/config/doctorNav.config';
+=======
+import { DOCTOR_NAV_ITEMS, DOCTOR_NAV_CATEGORIES } from '@/config/doctorNav.config';
+>>>>>>> recover/care-intelligence-mesh
 import type { DoctorNavItem } from '@/config/doctorNav.config';
 import { filterDoctorNavItems } from '@/utils/doctorAffiliation';
 

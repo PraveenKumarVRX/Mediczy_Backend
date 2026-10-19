@@ -36,9 +36,15 @@ export function useSocketConnection() {
     isConnectingRef.current = true;
 
     // Create socket connection
+<<<<<<< HEAD
     const socket = io(getSocketUrl(), {
       // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
       // polling establishes over plain HTTP and upgrades when it can (single server process).
+=======
+    const socket = io(SOCKET_URL, {
+      // Polling first — see socket.service.ts for why (Cloudflare edge fails
+      // the WS upgrade over HTTP/2 on this domain; polling degrades safely).
+>>>>>>> recover/care-intelligence-mesh
       transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionAttempts: 5,

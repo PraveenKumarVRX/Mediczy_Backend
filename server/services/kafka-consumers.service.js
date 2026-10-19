@@ -16,6 +16,7 @@ import { connectKafkaConsumer, KAFKA_TOPICS } from '../config/kafka.js';
 import { addJob, QUEUE_NAMES } from '../config/queues.js';
 import { getPool as pgPool } from '../db/postgres.js';
 import { HEALTH_COINS_REWARDS } from '../config/health-coins.config.js';
+import { generateAdmissionBriefing } from './careos/clinical-coordinator.service.js';
 
 // ─── Health Coins Consumer ────────────────────────────────────────────────────
 
@@ -141,6 +142,29 @@ async function startEhrAuditConsumer() {
   console.log('✅ Kafka: EHR audit consumer started');
 }
 
+// ─── Admission Consumer (Care Intelligence Mesh) ─────────────────────────────
+// Decouples the Clinical Agent's admission briefing from the admission
+// transaction itself — adt.service.js publishes patient.admitted and moves
+// on; this consumer picks it up independently and generates the briefing,
+// so a slow LLM call (or the AI stack being down) can never delay a bed
+// assignment.
+
+async function startAdmissionConsumer() {
+  await connectKafkaConsumer(
+    'express-admission-consumer',
+    [KAFKA_TOPICS.PATIENT_ADMITTED],
+    async ({ message }) => {
+      let payload;
+      try { payload = JSON.parse(message.value?.toString() || '{}').payload; } catch { return; }
+      if (!payload?.patientId || !payload?.organizationId) return;
+
+      await generateAdmissionBriefing(payload.patientId, payload.organizationId, payload.admissionId)
+        .catch((e) => console.error('[Kafka:PatientAdmitted] Clinical Agent briefing failed:', e.message));
+    }
+  );
+  console.log('✅ Kafka: admission consumer started');
+}
+
 // ─── Start all consumers ──────────────────────────────────────────────────────
 
 export async function startAllKafkaConsumers() {
@@ -148,6 +172,7 @@ export async function startAllKafkaConsumers() {
     startAppointmentConsumer(),
     startPatientRegistrationConsumer(),
     startEhrAuditConsumer(),
+    startAdmissionConsumer(),
   ]);
   console.log('✅ All Kafka consumers initialized');
 }

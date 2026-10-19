@@ -285,6 +285,12 @@ class NotificationService {
         message: 'Dear {{patientName}}, your hospital account balance is ₹{{totalDue}}. Statement {{statementNumber}}. Pay online: {{paymentLink}} — {{hospitalName}}',
         channels: ['sms', 'whatsapp', 'email', 'in-app'],
         priority: 'high'
+      },
+      care_team_alert: {
+        title: '{{title}}',
+        message: '{{message}}',
+        channels: ['in-app', 'push'],
+        priority: 'normal'
       }
     };
   }

@@ -1,11 +1,11 @@
 import { appendClinicalEvent, getClinicalTimeline } from './clinical-timeline.service.js';
 import { getOrCreateCareTeam, addTeamMember, autoInviteSpecialists } from './care-team.service.js';
-import { analyzePatient, listCoordinatorAlerts, acknowledgeCoordinatorAlert } from './clinical-coordinator.service.js';
-import { getPathway, updatePathway } from './treatment-pathway.service.js';
+import { analyzePatient, listCoordinatorAlerts, generateAdmissionBriefing, acknowledgeCoordinatorAlert } from './clinical-coordinator.service.js';
+import { getPathway, updatePathway, autoAdvancePathway } from './treatment-pathway.service.js';
 import { startClinicalBoard, joinClinicalBoard, recordOpinion, getAIConsensus, createMdtCallToken, listMdtSessions } from './mdt-board.service.js';
 import { buildClinicalPlayback } from './clinical-playback.service.js';
-import { findSimilarCases, archiveCase } from './hospital-memory.service.js';
-import { listFamilyUpdates, publishFamilyUpdate, verifyFamilyAccess } from './family-portal.service.js';
+import { findSimilarCases, archiveCase, recordCaseOutcome } from './hospital-memory.service.js';
+import { listFamilyUpdates, publishFamilyUpdate, generateFamilyUpdateDraft, verifyFamilyAccess } from './family-portal.service.js';
 import { createPatientCallToken } from './one-touch-call.service.js';
 import { listTasks, createTask, updateTaskStatus } from './task-management.service.js';
 import { getLivingWorkspace } from './living-patient-workspace.service.js';
@@ -18,7 +18,7 @@ import { ingestLabResult, listLabResults } from './lab-connector.service.js';
 import { createPharmacyOrder, updatePharmacyStatus, listPharmacyOrders } from './pharmacy-connector.service.js';
 import { scheduleHomecareVisit, completeHomecareVisit, listHomecareVisits } from './home-care.service.js';
 import { ingestWearableReading, listWearableReadings, getMonitoringSummary } from './wearables-monitoring.service.js';
-import { createReferral, acceptReferral, listReferrals } from './referral-federation.service.js';
+import { createReferral, acceptReferral, listReferrals, generateReferralLetter } from './referral-federation.service.js';
 import { shareDocument, listDocuments, getDocumentBundle } from './document-exchange.service.js';
 import { publishGlobalCase, searchGlobalCases } from './global-knowledge.service.js';
 import { detectNetworkSignals, listNetworkSignals, resolveSignal } from './hospital-network-signals.service.js';
@@ -32,6 +32,28 @@ import { getGovernmentDashboard, submitGovernmentReport, simulatePandemic } from
 import { registerEmergencyResource, searchEmergencyResources, getEmergencyNetworkSummary } from './emergency-network.service.js';
 import { computePopulationMetrics, getPopulationDashboard } from './population-analytics.service.js';
 import { getPlatformStatus, getHealthOSCapabilities } from './platform-status.service.js';
+import {
+  createCollaborationArtifact,
+  listCollaborationArtifacts,
+  createAIValidationPack,
+  getAIValidationPack,
+  listAIValidationPacks,
+  addAIValidationCase,
+  recordAIValidationResult,
+  createFederationUATRun,
+  listFederationUATRuns,
+  getFederationUATRun,
+  recordFederationUATCase,
+  submitMarketplaceReview,
+  listMarketplaceReviews,
+  createDisplayHardwareTest,
+  listDisplayHardwareTests,
+  createResearchProtocol,
+  approveResearchProtocol,
+  listResearchProtocols,
+  captureResearchConsent,
+  getReadinessDashboard,
+} from './worldclass-readiness.service.js';
 
 export function getCareOSCapabilities() {
   return getHealthOSCapabilities();
@@ -47,9 +69,11 @@ export {
   autoInviteSpecialists,
   analyzePatient,
   listCoordinatorAlerts,
+  generateAdmissionBriefing,
   acknowledgeCoordinatorAlert,
   getPathway,
   updatePathway,
+  autoAdvancePathway,
   startClinicalBoard,
   joinClinicalBoard,
   recordOpinion,
@@ -59,8 +83,10 @@ export {
   buildClinicalPlayback,
   findSimilarCases,
   archiveCase,
+  recordCaseOutcome,
   listFamilyUpdates,
   publishFamilyUpdate,
+  generateFamilyUpdateDraft,
   verifyFamilyAccess,
   createPatientCallToken,
   listTasks,
@@ -96,6 +122,7 @@ export {
   createReferral,
   acceptReferral,
   listReferrals,
+  generateReferralLetter,
   shareDocument,
   listDocuments,
   getDocumentBundle,
@@ -130,6 +157,26 @@ export {
   dispatchWebhooks,
   getGatewayStatus,
   proxyFhirToOrg,
+  createCollaborationArtifact,
+  listCollaborationArtifacts,
+  createAIValidationPack,
+  getAIValidationPack,
+  listAIValidationPacks,
+  addAIValidationCase,
+  recordAIValidationResult,
+  createFederationUATRun,
+  listFederationUATRuns,
+  getFederationUATRun,
+  recordFederationUATCase,
+  submitMarketplaceReview,
+  listMarketplaceReviews,
+  createDisplayHardwareTest,
+  listDisplayHardwareTests,
+  createResearchProtocol,
+  approveResearchProtocol,
+  listResearchProtocols,
+  captureResearchConsent,
+  getReadinessDashboard,
 };
 
 export default {
@@ -143,9 +190,11 @@ export default {
   autoInviteSpecialists,
   analyzePatient,
   listCoordinatorAlerts,
+  generateAdmissionBriefing,
   acknowledgeCoordinatorAlert,
   getPathway,
   updatePathway,
+  autoAdvancePathway,
   startClinicalBoard,
   joinClinicalBoard,
   recordOpinion,
@@ -155,8 +204,10 @@ export default {
   buildClinicalPlayback,
   findSimilarCases,
   archiveCase,
+  recordCaseOutcome,
   listFamilyUpdates,
   publishFamilyUpdate,
+  generateFamilyUpdateDraft,
   verifyFamilyAccess,
   createPatientCallToken,
   listTasks,
@@ -192,6 +243,7 @@ export default {
   createReferral,
   acceptReferral,
   listReferrals,
+  generateReferralLetter,
   shareDocument,
   listDocuments,
   getDocumentBundle,
@@ -226,4 +278,24 @@ export default {
   dispatchWebhooks,
   getGatewayStatus,
   proxyFhirToOrg,
+  createCollaborationArtifact,
+  listCollaborationArtifacts,
+  createAIValidationPack,
+  getAIValidationPack,
+  listAIValidationPacks,
+  addAIValidationCase,
+  recordAIValidationResult,
+  createFederationUATRun,
+  listFederationUATRuns,
+  getFederationUATRun,
+  recordFederationUATCase,
+  submitMarketplaceReview,
+  listMarketplaceReviews,
+  createDisplayHardwareTest,
+  listDisplayHardwareTests,
+  createResearchProtocol,
+  approveResearchProtocol,
+  listResearchProtocols,
+  captureResearchConsent,
+  getReadinessDashboard,
 };

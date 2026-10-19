@@ -17,6 +17,8 @@ if(receipt.status!=='passed'||!receipt.format.includes('AES-256-GCM'))throw new 
 const aws=(...a)=>JSON.parse(execFileSync('aws',[...a,'--region',region,'--output','json'],{encoding:'utf8'}));
 const target=aws('rds','describe-db-instances','--db-instance-identifier',option('--target')).DBInstances[0];
 if(target.DBInstanceStatus!=='available'||!target.StorageEncrypted||target.PubliclyAccessible||!target.MultiAZ||target.MasterUserSecret?.SecretStatus!=='active')throw new Error('Encrypted private Multi-AZ target is not ready');
+const liveHost=aws('ssm','get-parameter','--name','/mediczy/prod/POSTGRES_HOST').Parameter.Value;
+if(liveHost===target.Endpoint.Address)throw new Error('Refusing to restore onto the active production instance; create a new isolated target');
 if(target.Endpoint.Address===receipt.host)throw new Error('Source and target must be different');
 const archive=join(dir,'database.dump.enc');const hash=createHash('sha256');for await(const chunk of createReadStream(archive))hash.update(chunk);if(hash.digest('hex')!==receipt.sha256)throw new Error('Archive checksum mismatch');
 const decoded=aws('kms','decrypt','--ciphertext-blob','fileb://'+join(dir,'database.dump.key.kms'),'--encryption-context','Application=Mediqzy,Purpose=database-recovery');

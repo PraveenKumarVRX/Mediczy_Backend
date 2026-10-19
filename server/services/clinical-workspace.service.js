@@ -8,7 +8,11 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+<<<<<<< HEAD
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
+=======
+import { ensureClinicalNoteColumns } from './clinical-notes.service.js';
+>>>>>>> recover/care-intelligence-mesh
 
 async function fetchPatientDemographics(patientId) {
   const [fromPatients] = await sequelize.query(
@@ -82,6 +86,7 @@ export function formatVitalsForDisplay(record) {
 }
 
 export async function getPatientWorkspace(patientId, organizationId) {
+  await ensureClinicalNoteColumns();
   const patient = await fetchPatientDemographics(patientId);
 
   const [admission] = await sequelize.query(
@@ -130,11 +135,16 @@ export async function getPatientWorkspace(patientId, organizationId) {
     );
   }).catch((e) => { console.error('[clinical-workspace] allergy lookup failed:', e.message); allergyLookupFailed = true; return []; });
 
+  // See discharge-workflow.service.js buildDraftContext() for why this table
+  // needs mixed quoting: patientId/createdAt/assessment are the real
+  // Sequelize-model columns; note_type/signed_at are snake_case add-ons from
+  // ensureClinicalNoteColumns(). There is no "diagnosis"/"chief_complaint"
+  // column — assessment and chiefComplaint are the real equivalents.
   const recentNotes = await sequelize.query(
-    `SELECT id, note_type, chief_complaint, diagnosis, plan, created_at, signed_at
+    `SELECT id, note_type, "chiefComplaint" AS chief_complaint, assessment AS diagnosis, plan, "createdAt" AS created_at, "signedAt" AS signed_at
      FROM clinical_notes
-     WHERE patient_id = :patientId
-     ORDER BY created_at DESC LIMIT 5`,
+     WHERE "patientId" = :patientId
+     ORDER BY "createdAt" DESC LIMIT 5`,
     { replacements: { patientId }, type: QueryTypes.SELECT }
   ).catch(() => []);
 

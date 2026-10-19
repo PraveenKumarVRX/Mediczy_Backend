@@ -10,13 +10,15 @@ const apply=args.includes('--apply');
 if(!args.includes('--expected-host')||!args.includes('--evidence'))throw new Error('Supply --expected-host and --evidence; default is a rollback-only rehearsal');
 const expected=option('--expected-host'),region=process.env.AWS_REGION||'ap-south-1';
 const ssm=new SSMClient({region});
-const res=await ssm.send(new GetParametersCommand({Names:['POSTGRES_HOST','POSTGRES_DATABASE','POSTGRES_PASSWORD','POSTGRES_USER','RDS_MASTER_PASSWORD'].map(k=>'/mediczy/prod/'+k),WithDecryption:true}));
+const res=await ssm.send(new GetParametersCommand({Names:['POSTGRES_HOST','POSTGRES_DATABASE','POSTGRES_PASSWORD','POSTGRES_USER','RDS_MASTER_PASSWORD','RDS_INSTANCE_ID'].map(k=>'/mediczy/prod/'+k),WithDecryption:true}));
 const settings=Object.fromEntries(res.Parameters.map(p=>[p.Name.split('/').at(-1),p.Value]));
 if(settings.POSTGRES_HOST!==expected || settings.POSTGRES_DATABASE!=='mediczy_prod' || settings.POSTGRES_USER!=='mediczy_helper')throw new Error('Unexpected production target');
 const aws=(...a)=>JSON.parse(execFileSync('aws',[...a,'--region',region,'--output','json'],{encoding:'utf8'}));
-const instance=aws('rds','describe-db-instances','--db-instance-identifier','mediczy-prod').DBInstances[0];
+const instanceId=settings.RDS_INSTANCE_ID||'mediczy-prod';
+if(!['mediczy-prod','mediczy-prod-encrypted-20261019'].includes(instanceId))throw new Error('Unexpected RDS identifier');
+const instance=aws('rds','describe-db-instances','--db-instance-identifier',instanceId).DBInstances[0];
 if(instance.Endpoint.Address!==expected)throw new Error('RDS endpoint mismatch');
-if(apply){if(!args.includes('--snapshot'))throw new Error('Apply requires a current --snapshot');const snap=aws('rds','describe-db-snapshots','--db-snapshot-identifier',option('--snapshot')).DBSnapshots[0];if(snap.Status!=='available'||snap.DBInstanceIdentifier!=='mediczy-prod'||Date.now()-Date.parse(snap.SnapshotCreateTime)>3600000)throw new Error('Recovery snapshot must be available and under one hour old');}
+if(apply){if(!args.includes('--snapshot'))throw new Error('Apply requires a current --snapshot');const snap=aws('rds','describe-db-snapshots','--db-snapshot-identifier',option('--snapshot')).DBSnapshots[0];if(snap.Status!=='available'||snap.DBInstanceIdentifier!==instanceId||Date.now()-Date.parse(snap.SnapshotCreateTime)>3600000)throw new Error('Recovery snapshot must be available and under one hour old');}
 let password=settings.RDS_MASTER_PASSWORD;
 if(instance.MasterUserSecret){const secret=aws('secretsmanager','get-secret-value','--secret-id',instance.MasterUserSecret.SecretArn);password=JSON.parse(secret.SecretString).password;}
 const ssl=postgresTls({NODE_ENV:'production',POSTGRES_HOST:expected});

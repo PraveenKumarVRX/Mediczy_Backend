@@ -29,6 +29,8 @@ export const KAFKA_TOPICS = {
   // Clinical events
   PATIENT_REGISTERED:       'patient.registered',
   PATIENT_UPDATED:          'patient.updated',
+  PATIENT_ADMITTED:         'patient.admitted',
+  PATIENT_DISCHARGED:       'patient.discharged',
 
   // Appointment lifecycle
   APPOINTMENT_BOOKED:       'appointment.booked',

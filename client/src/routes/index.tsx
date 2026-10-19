@@ -89,6 +89,7 @@ const ProgramJourney        = lazy(() => import("@/pages/ProgramJourney"));
 
 // ─── Patient sub-pages ───────────────────────────────────────────────────────
 const PatientNotifications  = lazy(() => import("@/pages/patient/PatientNotifications"));
+const FamilyCareUpdates      = lazy(() => import("@/pages/patient/FamilyCareUpdates"));
 const LabTests              = lazy(() => import("@/pages/patient/LabTests"));
 const MyReports             = lazy(() => import("@/pages/patient/MyReports"));
 const MyFitnessCertificates = lazy(() => import("@/pages/patient/MyFitnessCertificates"));
@@ -1207,6 +1208,13 @@ const AppRoutes = () => {
         <Route path="/hospital/support"                    element={<HospitalSupportPage />} />
         <Route path="/hospital/healthos" element={<CareOSEcosystem />} />
         <Route path="/hospital/careos" element={<CareOSEcosystem />} />
+        <Route path="/hospital/federation" element={<CareOSEcosystem />} />
+        <Route path="/hospital/referrals" element={<CareOSEcosystem />} />
+        <Route path="/hospital/global-board" element={<CareOSEcosystem />} />
+        <Route path="/hospital/marketplace" element={<CareOSEcosystem />} />
+        <Route path="/hospital/research" element={<CareOSEcosystem />} />
+        <Route path="/hospital/home-care" element={<Navigate to="/admin/homecare" replace />} />
+        <Route path="/hospital/population" element={<CareOSEcosystem />} />
         <Route path="/hospital/copilot" element={<HospitalCopilot />} />
         <Route path="/hospital/mdt/inbox" element={<MDTInboxPage />} />
         <Route path="/hospital/mdt/:sessionId/room" element={<MDTRoom />} />
@@ -2079,6 +2087,7 @@ const AppRoutes = () => {
         <Route path="/video-consultation"    element={<MainLayout><VideoConsultation /></MainLayout>} />
         <Route path="/notifications"              element={<Navigate to="/patient/notifications" replace />} />
         <Route path="/patient/notifications"      element={<MainLayout><PatientNotifications /></MainLayout>} />
+        <Route path="/patient/care-updates"       element={<MainLayout><FamilyCareUpdates /></MainLayout>} />
         <Route path="/patient/lab-tests"          element={<MainLayout><LabTests /></MainLayout>} />
         <Route path="/patient/my-reports"         element={<MainLayout><MyReports /></MainLayout>} />
         <Route path="/patient/fitness-certificates" element={<MainLayout><MyFitnessCertificates /></MainLayout>} />
@@ -2141,6 +2150,10 @@ const AppRoutes = () => {
         <Route path="/hospital/qms"             element={<HospitalQmsPage />} />
         <Route path="/display/signage"           element={<LobbySignageDisplay />} />
         <Route path="/display/command"          element={<CommandCentreDisplay />} />
+        <Route path="/display/command-center" element={<CommandCentreDisplay />} />
+        <Route path="/display/ward/:wardId" element={<WardNursingDisplay />} />
+        <Route path="/display/icu/:unitId" element={<ICUBoardDisplay />} />
+        <Route path="/display/room/:bedId" element={<BedsideDisplay />} />
         <Route path="/display/floor-map"        element={<HospitalFloorMapDisplay />} />
         <Route path="/kiosk/family-video"       element={<FamilyVideoKiosk />} />
         <Route path="/kiosk/er-triage"           element={<ERTriageKiosk />} />
