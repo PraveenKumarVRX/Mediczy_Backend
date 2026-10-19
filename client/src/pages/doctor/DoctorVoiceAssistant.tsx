@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import { MicVAD } from "@ricky0123/vad-web";
-import { Room } from "livekit-client";
+import { Room, RoomEvent } from "livekit-client";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import SiriOrb, { OrbState } from "@/components/SiriOrb";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import api from "@/lib/api";
+import doctorCopilotService from "@/services/doctorCopilot";
 import { getToken } from "@/hooks/auth";
 import {
   Send, Volume2, VolumeX, Loader2, Sparkles,
@@ -31,15 +32,20 @@ interface Message {
   timestamp: Date;
 }
 
-interface AgentResponse {
-  intent: string;
-  action: string | null;
-  parameters: Record<string, unknown> | null;
-  response: string;
-  speak: string;
-  data?: Record<string, unknown> | null;
-  requiresConfirmation: boolean;
-}
+const VOICE_LANGUAGES = [
+  { code: "en", label: "English", locale: "en-IN" },
+  { code: "hi", label: "हिन्दी", locale: "hi-IN" },
+  { code: "bn", label: "বাংলা", locale: "bn-IN" },
+  { code: "gu", label: "ગુજરાતી", locale: "gu-IN" },
+  { code: "kn", label: "ಕನ್ನಡ", locale: "kn-IN" },
+  { code: "ml", label: "മലയാളം", locale: "ml-IN" },
+  { code: "mr", label: "मराठी", locale: "mr-IN" },
+  { code: "pa", label: "ਪੰਜਾਬੀ", locale: "pa-IN" },
+  { code: "ta", label: "தமிழ்", locale: "ta-IN" },
+  { code: "te", label: "తెలుగు", locale: "te-IN" },
+  { code: "or", label: "ଓଡ଼ିଆ", locale: "or-IN" },
+  { code: "ur", label: "اردو", locale: "ur-IN" },
+];
 
 // Screen path map for navigation actions
 const SCREEN_PATHS: Record<string, string> = {
@@ -47,17 +53,17 @@ const SCREEN_PATHS: Record<string, string> = {
   patients:       "/doctor/patients",
   prescriptions:  "/doctor/prescriptions",
   dashboard:      "/doctor/dashboard",
-  analytics:      "/doctor/analytics",
+  analytics:      "/doctor/insights",
   billing:        "/doctor/billing",
-  "health-records": "/doctor/health-records",
+  "health-records": "/doctor/patients",
   "er-dashboard": "/doctor/triage",
   "icu-dashboard": "/doctor/health-monitoring",
   "voice-scribe": "/doctor/voice-scribe",
   calculators:    "/doctor/calculators",
-  "ai-assist":    "/doctor/assist",
+  "ai-assist":    "/doctor/ai-hub",
   templates:      "/doctor/templates",
   monitoring:     "/doctor/health-monitoring",
-  queue:          "/doctor/appointments",
+  queue:          "/doctor/clinical-workspace",
   staff:          "/doctor/settings",
 };
 
@@ -72,6 +78,7 @@ const intentIcon = (intent?: string, action?: string | null) => {
   if (action === "get_today_summary")       return <Activity className="h-4 w-4" />;
   if (action === "list_appointments")       return <Calendar className="h-4 w-4" />;
   if (action === "get_patient_health")      return <Activity className="h-4 w-4" />;
+  if (action === "get_clinical_decision_support") return <Brain className="h-4 w-4" />;
   if (action === "book_appointment")        return <Calendar className="h-4 w-4" />;
   if (action === "cancel_appointment")      return <AlertTriangle className="h-4 w-4" />;
   if (action === "reschedule_appointment")  return <Calendar className="h-4 w-4" />;
@@ -109,25 +116,50 @@ function float32ToWav(samples: Float32Array, sampleRate = 16000): Blob {
  * what the second word transcribed to, not just the exact iSHA-sounding list.
  */
 const isWakePhrase = (t: string) => {
-  if (/\b(isha|esha|yesha|eesha|aisha|asha|usha|isa)\b/.test(t)) return true;
+  // Whisper frequently runs "Hey" into "iSHA" with no gap ("Eisha", "Aisha"),
+  // which a word-boundary regex like /\bisha\b/ silently rejects (no boundary
+  // between "e"/"a" and "i"). A plain substring check catches those too —
+  // false positives just wake the assistant for nothing, which is cheap.
+  if (t.includes("isha") || t.includes("esha") || t.includes("yesha") || t.includes("eesha")) return true;
   return /^(hey|hi|hay|hii+|hello)\b/.test(t) && t.trim().split(/\s+/).length <= 3;
 };
 
 /** Strip the wake phrase from a transcript and return the command (if any) */
+// Whisper commonly punctuates the wake phrase ("Hey, Isha.") — [,\s]* (not \s*)
+// between the greeting and the name so that leading "Hey," doesn't leak through
+// as leftover "command" text sent verbatim to the agent.
 const extractCommand = (t: string): string =>
-  t.replace(/^(hey|hi|hay|hii+|hello)[,\s]+\S+\b[,\s.!?]*/i, '').trim();
+  t.replace(/\b(hey|hi|hay)?[,\s]*(e?isha|esha|yesha|eesha)\b[,.\s]*/i, '')
+    .replace(/^(hey|hi|hay|hii+|hello)[,\s]+\S+\b[,\s.!?]*/i, '')
+    .trim();
 
 export default function DoctorVoiceAssistant() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
   const { currentDoctor } = useAuth();
   const doctorFirstName = currentDoctor?.firstName || "Doctor";
+
+  const copilotContext = useMemo(() => {
+    const segment = location.pathname.replace(/^\/doctor\/?/, "").split("/")[0] || "dashboard";
+    let currentPatient: { id?: number | string; name?: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem("doctorCopilotPatient");
+      if (raw) currentPatient = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
+    return {
+      currentScreen: segment === "assistant" ? "isha_assistant" : segment,
+      currentPatient,
+    };
+  }, [location.pathname]);
 
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
-      text: "iSHA ready. Ask me about appointments, patients, drugs, or navigate anywhere.",
+      text: "iSHA ready. Ask me about appointments, patients, conditions, CDSS, knowledge fabric, drugs, tasks, or navigation.",
 
       intent: "general",
       action: null,
@@ -148,7 +180,9 @@ export default function DoctorVoiceAssistant() {
   const [vadRetry, setVadRetry]          = useState(0);       // bump to re-init VAD
   const [micVolume, setMicVolume]        = useState(0);       // 0-1 orb animation input
   const [sttMode, setSttMode]            = useState<'server' | 'browser'>('server'); // active transcription engine
+  const [voiceLanguage, setVoiceLanguage] = useState('en');
   const sttDownNotifiedRef               = useRef<number>(0); // throttle "STT down" feedback
+  const noWakeNotifiedRef                = useRef<number>(0); // throttle "heard you, but no wake word" feedback
 
   // Browser-native Web Speech API is a zero-dependency STT fallback (Chrome/Edge).
   // It runs entirely on-device, so voice commands keep working even when the
@@ -161,7 +195,7 @@ export default function DoctorVoiceAssistant() {
   const speakAbortRef    = useRef<AbortController | null>(null);
   const messagesEndRef   = useRef<HTMLDivElement>(null);
   const inputRef         = useRef<HTMLInputElement>(null);
-  // LiveKit room (future WebRTC use) + simple Audio element for TTS
+  // LiveKit room (agent audio subscription) + HTTP TTS audio element
   const livekitRoomRef   = useRef<Room | null>(null);
   const audioElRef       = useRef<HTMLAudioElement | null>(null);
   // Stable refs so VAD async callbacks always see latest values
@@ -191,8 +225,14 @@ export default function DoctorVoiceAssistant() {
     let room: Room | null = null;
     const connect = async () => {
       try {
-        const { data } = await api.get('/voice-assistant/livekit-token');
+        const { data } = await api.get('/voice-assistant/livekit-token', { params: { language: voiceLanguage } });
         room = new Room();
+        room.on(RoomEvent.TrackSubscribed, (track) => {
+          if (track.kind === 'audio') track.attach();
+        });
+        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+          if (track.kind === 'audio') track.detach();
+        });
         await room.connect(data.url, data.token);
         livekitRoomRef.current = room;
         console.info('[iSHA] LiveKit room connected:', data.roomName);
@@ -206,7 +246,7 @@ export default function DoctorVoiceAssistant() {
       livekitRoomRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [voiceLanguage]);
 
   // ── ElevenLabs TTS → HTMLAudioElement playback ──────────────────────────────
   const stopSpeaking = useCallback(() => {
@@ -268,8 +308,10 @@ export default function DoctorVoiceAssistant() {
       const utter = new SpeechSynthesisUtterance(clean);
       utter.rate = 1.05;
       const voices = synth.getVoices();
-      const preferred = voices.find(v => v.lang === "en-IN") || voices.find(v => v.lang.startsWith("en")) || voices[0];
+      const selectedLocale = VOICE_LANGUAGES.find(v => v.code === voiceLanguage)?.locale || 'en-IN';
+      const preferred = voices.find(v => v.lang.toLowerCase() === selectedLocale.toLowerCase()) || voices.find(v => v.lang.toLowerCase().startsWith(voiceLanguage)) || voices[0];
       if (preferred) utter.voice = preferred;
+      utter.lang = selectedLocale;
       utter.onstart = () => setIsSpeaking(true);
       utter.onend   = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); onEnd?.(); };
       utter.onerror = () => { clearSafety(); setIsSpeaking(false); resumeVAD(); onEnd?.(); };
@@ -284,7 +326,7 @@ export default function DoctorVoiceAssistant() {
           "Content-Type": "application/json",
           ...(authToken ? { Authorization: "Bearer " + authToken } : {}),
         },
-        body: JSON.stringify({ text: clean, model: "eleven_turbo_v2_5" }),
+        body: JSON.stringify({ text: clean, language: voiceLanguage, model: "eleven_multilingual_v2" }),
         signal: abortCtrl.signal,
       });
       if (!resp.ok) throw new Error("TTS " + resp.status);
@@ -327,7 +369,7 @@ export default function DoctorVoiceAssistant() {
       // ElevenLabs fetch failed or play() was blocked — fallback to browser TTS
       tryBrowserTTS();
     }
-  }, [ttsEnabled, stopSpeaking]);
+  }, [ttsEnabled, stopSpeaking, voiceLanguage]);
 
   // ── Keep speakRef / sendToAgentRef in sync ────────────────────────────────
   useEffect(() => { speakRef.current = speak; }, [speak]);
@@ -356,6 +398,12 @@ export default function DoctorVoiceAssistant() {
         } else {
           speakRef.current?.(`Yes, Dr. ${doctorFirstName}?`);
         }
+      } else if (Date.now() - noWakeNotifiedRef.current > 10_000) {
+        // Heard real speech, transcribed it fine, but it's not the wake phrase —
+        // without this the mic silently "ignores" the doctor with zero feedback,
+        // which is indistinguishable from the assistant being broken.
+        noWakeNotifiedRef.current = Date.now();
+        toast({ title: `Heard: "${transcript}"`, description: 'Say "Hey iSHA" first to give a command.' });
       }
     } else {
       // Active mode — send to agent
@@ -399,7 +447,7 @@ export default function DoctorVoiceAssistant() {
     const rec = new SR();
     rec.continuous = true;
     rec.interimResults = false;
-    rec.lang = 'en-IN';
+    rec.lang = VOICE_LANGUAGES.find(v => v.code === voiceLanguage)?.locale || 'en-IN';
 
     rec.onstart = () => { setVadReady(true); setVadError(null); };
     rec.onspeechstart = () => { if (!isSpeakingRef.current) setIsListening(true); };
@@ -431,7 +479,7 @@ export default function DoctorVoiceAssistant() {
     recognitionRef.current = rec;
     recognitionActiveRef.current = true;
     try { rec.start(); return true; } catch { return false; }
-  }, []);
+  }, [voiceLanguage]);
   useEffect(() => { startBrowserSttRef.current = startBrowserStt; }, [startBrowserStt]);
 
   // Auto-switch from server STT (VAD pipeline) to on-device browser STT.
@@ -472,12 +520,17 @@ export default function DoctorVoiceAssistant() {
       const wav = float32ToWav(audio);
       const form = new FormData();
       form.append('audio', wav, 'recording.wav');
+      form.append('language', voiceLanguage);
+      // Auto language detection (Tamil/Telugu/Hindi/etc.) — forcing 'en' here was
+      // tried to help wake-phrase capture, but a controlled Groq Whisper test
+      // (same clip, forced-en vs auto, both with this prompt) transcribed "Hey
+      // iSHA" identically either way, so forcing English bought nothing and only
+      // broke non-English commands. The prompt alone does the biasing work.
+      form.append('prompt', 'Hey iSHA. Open appointments. Show today appointments. Open patients. Open prescriptions.');
       try {
-        const r = await api.post('/voice-assistant/stt', form, { headers: { 'Content-Type': 'multipart/form-data' } });
-        return { text: (r.data?.text || '').trim(), serviceDown: false };
+        const r = await doctorCopilotService.speechToText(form);
+        return { text: (r?.text || '').trim(), serviceDown: false };
       } catch (err: unknown) {
-        // 503 / stt_unavailable means the transcription backend is down — surface it
-        // instead of silently dropping the command (which looks like "not responding").
         const status = (err as { response?: { status?: number } })?.response?.status;
         return { text: '', serviceDown: status === 503 || status === 502 || status === 500 || status === undefined };
       }
@@ -506,8 +559,6 @@ export default function DoctorVoiceAssistant() {
 
         const { text: transcript, serviceDown } = await transcribeAudio(audio);
         if (serviceDown) {
-          // Server transcription is down — fall back to on-device browser STT if
-          // available so voice keeps working; otherwise tell the doctor to type.
           if (browserSttSupported && sttModeRef.current === 'server') {
             switchToBrowserStt();
           } else {
@@ -515,6 +566,7 @@ export default function DoctorVoiceAssistant() {
           }
           return;
         }
+        if (!transcript) return;
         processTranscriptRef.current?.(transcript);
       },
     }).then(v => {
@@ -525,12 +577,29 @@ export default function DoctorVoiceAssistant() {
       setVadError(null);
     }).catch(err => {
       console.warn('VAD init failed, voice commands require mic permission:', err);
-      setVadReady(false);
       // Distinguish permission denial from asset/model load failure for a clear CTA
       const name = (err as Error)?.name || '';
-      const msg = /NotAllowed|Permission/i.test(name + String(err))
+      const permissionDenied = /NotAllowed|Permission/i.test(name + String(err));
+      const msg = permissionDenied
         ? 'Microphone access was blocked. Allow mic permission to use voice commands.'
         : 'Voice model failed to load. You can still type commands, or retry.';
+
+      if (!permissionDenied && browserSttSupported) {
+        sttModeRef.current = 'browser';
+        setSttMode('browser');
+        const ok = startBrowserSttRef.current?.() ?? false;
+        if (ok) {
+          setVadReady(true);
+          setVadError(null);
+          toast({
+            title: 'Using on-device voice',
+            description: 'VAD model did not start, so iSHA switched to browser speech recognition.',
+          });
+          return;
+        }
+      }
+
+      setVadReady(false);
       setVadError(msg);
     });
 
@@ -541,7 +610,7 @@ export default function DoctorVoiceAssistant() {
       stopSpeaking();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [vadRetry]);
+  }, [vadRetry, voiceLanguage]);
 
   // ── Proactive briefing: poll every 2 min for urgent/high alerts ───────────
   const lastSpokenAlertRef = useRef<number>(0);
@@ -553,7 +622,7 @@ export default function DoctorVoiceAssistant() {
       if (isSpeaking || isListening || isProcessing) return;
       if (Date.now() - lastSpokenAlertRef.current < 5 * 60 * 1000) return;
       try {
-        const { data } = await api.get("/voice-assistant/briefing");
+        const data = await doctorCopilotService.getBriefing();
         if (data?.hasUpdates && data?.speakText) {
           if (data.speakText === lastBriefingTextRef.current) return;
           lastBriefingTextRef.current = data.speakText;
@@ -614,32 +683,33 @@ export default function DoctorVoiceAssistant() {
     setMessages(prev => [...prev, userMsg]);
     setInputText("");
 
-    const history = messagesRef.current
+    const history = [...messagesRef.current, userMsg]
       .filter(m => m.id !== "welcome")
       .filter(m => !(m.id.startsWith("briefing-") && m.action === "get_doctor_briefing"))
       .slice(-8)
       .map(m => ({ role: m.role, text: m.text }));
 
     try {
-      const { data } = await api.post<AgentResponse>("/voice-assistant/agent", {
-        text,
+      const data = await doctorCopilotService.chat({
+        message: text,
         history,
-        context: { currentScreen: window.location.pathname.split("/").pop() || "dashboard" },
-        // Pass pending action so server can execute it directly when user says "yes/confirm"
+        context: copilotContext,
+        language: voiceLanguage,
         pendingAction: pendingAction
           ? { action: pendingAction.action, parameters: pendingAction.parameters }
           : null,
       });
 
+      const responseText = data.response || data.speak || "I'm not sure how to help with that.";
       const displayText = (data.speak && data.response && data.response.length > data.speak.length + 40)
         ? data.speak
-        : data.response;
+        : responseText;
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         text: displayText,
-        intent: data.intent,
+        intent: data.intent || (data.path === 'clinical' ? 'medical_query' : data.intent),
         action: data.action,
         parameters: data.parameters,
         requiresConfirmation: data.requiresConfirmation,
@@ -647,15 +717,18 @@ export default function DoctorVoiceAssistant() {
       };
 
       setMessages(prev => [...prev, assistantMsg]);
+      if (pendingAction && /^(yes|yeah|yep|confirm|confirmed|do it|go ahead|okay|ok|please do|proceed)\b/i.test(text.trim()) && !data.requiresConfirmation) {
+        setPendingAction(null);
+      }
 
       if (data.requiresConfirmation) {
-        speak(data.speak || data.response);
+        speak(data.speak || responseText);
         setPendingAction(assistantMsg);
       } else if (data.action === 'navigate_to' || data.action === 'search_patient') {
         // Speak first, navigate only after TTS finishes so audio isn't cut off by unmount
-        speak(data.speak || data.response, () => executeAction(data.action, data.parameters));
+        speak(data.speak || responseText, () => executeAction(data.action, data.parameters));
       } else {
-        speak(data.speak || data.response);
+        speak(data.speak || responseText);
         executeAction(data.action, data.parameters);
       }
     } catch (err: unknown) {
@@ -672,7 +745,7 @@ export default function DoctorVoiceAssistant() {
     } finally {
       setIsProcessing(false);
     }
-  }, [speak, executeAction, pendingAction]);
+  }, [speak, executeAction, copilotContext, pendingAction, voiceLanguage]);
 
   // Keep sendToAgentRef in sync
   useEffect(() => { sendToAgentRef.current = sendToAgent; }, [sendToAgent]);
@@ -686,17 +759,11 @@ export default function DoctorVoiceAssistant() {
 
   const confirmAction = () => {
     if (!pendingAction) return;
-    executeAction(pendingAction.action ?? null, pendingAction.parameters ?? null);
-    setPendingAction(null);
-    const confirmMsg: Message = {
-      id: Date.now().toString(),
-      role: "assistant",
-      text: "Done! Action confirmed.",
-      intent: "general",
-      timestamp: new Date(),
-    };
-    setMessages(prev => [...prev, confirmMsg]);
-    speak("Done!");
+    // Write actions are executed by the server only after it receives an
+    // affirmative confirmation. Reuse the same path as a spoken "yes" so
+    // the button cannot create a client-only success message or duplicate a
+    // server-side mutation.
+    sendToAgentRef.current?.("yes");
   };
 
   const clearConversation = () => {
@@ -762,6 +829,15 @@ export default function DoctorVoiceAssistant() {
             </div>
           </div>
           <div className="flex items-center gap-1">
+            <select
+              aria-label="Voice language"
+              value={voiceLanguage}
+              onChange={(e) => setVoiceLanguage(e.target.value)}
+              className="h-8 rounded-md border border-slate-700 bg-slate-800 px-2 text-xs text-slate-200"
+              title="Voice language"
+            >
+              {VOICE_LANGUAGES.map((item) => <option key={item.code} value={item.code}>{item.label}</option>)}
+            </select>
             {vadReady && !isListening && !isSpeaking && !isProcessing && (
               <Badge variant="secondary" className="gap-1 text-xs text-indigo-300 bg-indigo-950 border border-indigo-700 hidden sm:flex">
                 <Radio className="h-3 w-3 animate-pulse" /> {isAwoken ? "Ready" : "Standby"}

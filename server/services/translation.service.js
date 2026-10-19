@@ -288,7 +288,7 @@ class TranslationService {
       note: 'Translation to target language not available'
     };
   }
-  
+
   /**
    * Free Google Translate endpoint (same one deep-translator/googletrans use under
    * the hood — no API key needed). Used as the working fallback: the self-hosted
