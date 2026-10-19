@@ -13,6 +13,7 @@
 import cron from 'node-cron';
 import axios from 'axios';
 import XLSX from '../utils/excel-compat.js';
+import { parse as csvParse } from 'csv-parse/sync';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -46,6 +47,19 @@ const NPPA_URL = process.env.NPPA_EXCEL_URL ||
 // Jan Aushadhi product list CSV (PMBI quarterly)
 const JAN_AUSHADHI_URL = process.env.JAN_AUSHADHI_URL ||
   'https://janaushadhi.gov.in/downloadfile/ProductList.xlsx';
+
+// OpenMRP API — Apache-2.0 code, ODbL-1.0 database
+// Self-hostable: https://github.com/OpenMRP/openmrp
+const OPENMRP_API_BASE = process.env.OPENMRP_API_URL || 'https://api.openmrp.in';
+
+// Indian Medicine Dataset — junioralive/Indian-Medicine-Dataset on GitHub
+// ~253k Indian medicines with MRP. Verify license before commercial use.
+const INDIAN_DATASET_URL = process.env.INDIAN_MEDICINE_DATASET_URL ||
+  'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/data/medicine_dataset.csv';
+const INDIAN_DATASET_FALLBACKS = [
+  'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/medicines.csv',
+  'https://raw.githubusercontent.com/junioralive/Indian-Medicine-Dataset/main/data/medicines.csv',
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function ensureCacheDir() {
@@ -169,6 +183,189 @@ async function applyBuiltinCorrections() {
 
   log.unshift(`Built-in corrections: updated ${updated} drug records`);
   return { source: 'builtin_correction', updated, log };
+}
+
+// ─── OpenMRP sync ─────────────────────────────────────────────────────────────
+// Queries the OpenMRP API for medicines that have no selling_price yet.
+// Rate-limited to 50 req/min; processes at most 2000 medicines per run.
+export async function syncFromOpenMRP({ limit = 2000 } = {}) {
+  const log = [];
+  let updated = 0;
+  let errors = 0;
+
+  try {
+    // Fetch medicines missing selling_price or openmrp_id
+    const { rows: medicines } = await sharedPool.query(
+      `SELECT id, name, generic_name, brand_name
+         FROM pharmacy_medicines
+        WHERE (openmrp_id IS NULL OR selling_price IS NULL)
+          AND is_discontinued = FALSE
+        ORDER BY id
+        LIMIT $1`,
+      [limit]
+    );
+
+    log.push(`OpenMRP: querying ${medicines.length} medicines without selling price`);
+
+    for (let i = 0; i < medicines.length; i++) {
+      const med = medicines[i];
+      const query = (med.generic_name || med.name || '').slice(0, 60);
+      if (!query) continue;
+
+      try {
+        const res = await axios.get(`${OPENMRP_API_BASE}/api/medicines`, {
+          params: { q: query, limit: 1 },
+          timeout: 8000,
+          headers: { 'User-Agent': 'Mediczy-PriceSyncBot/1.0' },
+        });
+
+        const items = res.data?.results || res.data?.data || res.data || [];
+        const match = Array.isArray(items) ? items[0] : null;
+        if (!match) continue;
+
+        const mrp          = parseFloat(match.mrp || match.price || match.MRP || 0);
+        const openmrpId    = String(match.id || match.product_id || '');
+        // OpenMRP typically returns MRP; apply a conservative 5% discount as selling_price
+        // until a pharmacy's actual selling price overrides it
+        const sellingPrice = mrp > 0 ? +(mrp * 0.95).toFixed(2) : null;
+
+        if (mrp <= 0) continue;
+
+        await sharedPool.query(
+          `UPDATE pharmacy_medicines
+              SET selling_price = COALESCE(selling_price, $1),
+                  openmrp_id    = COALESCE(openmrp_id, $2),
+                  mrp           = CASE WHEN mrp IS NULL OR mrp = 0 THEN $3 ELSE mrp END,
+                  dataset_source = 'openmrp',
+                  updated_at    = NOW()
+            WHERE id = $4`,
+          [sellingPrice, openmrpId, mrp, med.id]
+        );
+        updated++;
+      } catch (reqErr) {
+        errors++;
+        if (errors > 20) {
+          log.push('OpenMRP: too many request errors, aborting batch');
+          break;
+        }
+      }
+
+      // Respect rate limit: 50 req/min = ~1.2s per request
+      if (i > 0 && i % 50 === 0) {
+        await new Promise(r => setTimeout(r, 60000)); // wait 1 min per 50 requests
+      }
+    }
+
+    log.push(`OpenMRP: updated ${updated} selling prices (${errors} request errors)`);
+    return { source: 'openmrp', updated, log };
+  } catch (err) {
+    log.push(`OpenMRP sync failed: ${err.message}`);
+    return { source: 'openmrp', updated: 0, log, error: err.message };
+  }
+}
+
+// ─── Indian Medicine Dataset sync ─────────────────────────────────────────────
+// Downloads junioralive/Indian-Medicine-Dataset CSV (~253k medicines).
+// Inserts new medicines not already in the DB; updates mrp only where
+// price_source is NULL (never overwrites NPPA/Jan Aushadhi government prices).
+export async function syncFromIndianMedicineDataset() {
+  const log = [];
+  let inserted = 0;
+  let priceUpdated = 0;
+
+  try {
+    log.push('Downloading Indian Medicine Dataset...');
+    let csvText;
+    const urls = [INDIAN_DATASET_URL, ...INDIAN_DATASET_FALLBACKS];
+    let lastErr;
+    for (const url of urls) {
+      try {
+        const res = await axios.get(url, {
+          responseType: 'text',
+          timeout: 60000,
+          headers: { 'User-Agent': 'Mediczy-PriceSyncBot/1.0' },
+        });
+        if (res.data && res.data.length > 1000) { csvText = res.data; break; }
+      } catch (e) { lastErr = e; }
+    }
+    if (!csvText) throw new Error(`All dataset URLs failed: ${lastErr?.message}`);
+
+    log.push(`Downloaded ${(csvText.length / 1024 / 1024).toFixed(1)} MB`);
+
+    const rows = csvParse(csvText, {
+      columns: true, skip_empty_lines: true, trim: true,
+      relax_quotes: true, relax_column_count: true,
+    });
+    log.push(`Parsed ${rows.length.toLocaleString()} rows`);
+
+    const BATCH = 500;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const batch = rows.slice(i, i + BATCH);
+      const client = await sharedPool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const raw of batch) {
+          // Columns from updated_indian_medicine_data.csv (junioralive/Indian-Medicine-Dataset)
+          const name  = (raw['name'] || '').trim();
+          const price = parseFloat(raw['price'] || '0');
+          const mfr   = (raw['manufacturer_name'] || '').trim();
+          const pack  = (raw['pack_size_label'] || '').trim();
+          const comp  = (raw['salt_composition'] || raw['short_composition1'] || '').trim();
+          const cat   = (raw['type'] || '').trim();
+          const disc  = (raw['Is_discontinued'] || '').toUpperCase() === 'TRUE';
+
+          if (!name || name.length < 2) continue;
+
+          // Insert if new
+          const ins = await client.query(
+            `INSERT INTO pharmacy_medicines
+               (name, brand_name, generic_name, composition, manufacturer, pack_size,
+                category, mrp, unit_price, selling_price, price_source, dataset_source,
+                in_stock, is_discontinued, created_at, updated_at)
+             VALUES ($1,$1,$2,$3,$4,$5,$6,$7,$7,$7,'indian_medicine_dataset','indian_medicine_dataset',TRUE,$8,NOW(),NOW())
+             ON CONFLICT DO NOTHING
+             RETURNING id`,
+            [name, comp||null, comp||null, mfr||null, pack||null, cat||null, price>0?price:null, disc]
+          );
+          if (ins.rowCount > 0) { inserted++; continue; }
+
+          // Update price only where no authoritative source has set it
+          if (price > 0) {
+            const upd = await client.query(
+              `UPDATE pharmacy_medicines
+                  SET mrp = $1, unit_price = $1, selling_price = $1,
+                      price_source = 'indian_medicine_dataset',
+                      dataset_source = 'indian_medicine_dataset', updated_at = NOW()
+                WHERE name ILIKE $2
+                  AND (mrp IS NULL OR mrp = 0 OR price_source IS NULL)
+                RETURNING id`,
+              [price, name]
+            );
+            priceUpdated += upd.rowCount;
+          }
+          if (disc) {
+            await client.query(
+              `UPDATE pharmacy_medicines SET is_discontinued=TRUE, updated_at=NOW()
+               WHERE name ILIKE $1 AND is_discontinued=FALSE`,
+              [name]
+            );
+          }
+        }
+        await client.query('COMMIT');
+      } catch (batchErr) {
+        await client.query('ROLLBACK');
+        log.push(`Batch at row ${i} failed: ${batchErr.message}`);
+      } finally {
+        client.release();
+      }
+    }
+
+    log.push(`Indian Medicine Dataset: inserted ${inserted.toLocaleString()} new, updated ${priceUpdated.toLocaleString()} prices`);
+    return { source: 'indian_medicine_dataset', updated: inserted + priceUpdated, log };
+  } catch (err) {
+    log.push(`Indian Medicine Dataset sync failed: ${err.message}`);
+    return { source: 'indian_medicine_dataset', updated: 0, log, error: err.message };
+  }
 }
 
 // ─── Sync from uploaded file (for admin manual upload) ────────────────────────

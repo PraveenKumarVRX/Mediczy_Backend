@@ -13,6 +13,8 @@ import {
   runFullSync,
   getSyncStatus,
   syncFromUploadedFile,
+  syncFromOpenMRP,
+  syncFromIndianMedicineDataset,
 } from '../../services/drug-price-sync.service.js';
 import sharedPool from '../../db/pgPool.js';
 
@@ -30,11 +32,14 @@ router.get('/status', async (req, res) => {
     const statsRes = await sharedPool.query(`
       SELECT
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE mrp > 0)         AS with_price,
+        COUNT(*) FILTER (WHERE mrp > 0)                AS with_price,
         COUNT(*) FILTER (WHERE mrp IS NULL OR mrp = 0) AS without_price,
-        ROUND(AVG(mrp) FILTER (WHERE mrp > 0), 2) AS avg_mrp,
-        MIN(mrp) FILTER (WHERE mrp > 0)          AS min_mrp,
-        MAX(mrp) FILTER (WHERE mrp > 0)          AS max_mrp
+        COUNT(*) FILTER (WHERE selling_price > 0)      AS with_selling_price,
+        COUNT(*) FILTER (WHERE openmrp_id IS NOT NULL) AS with_openmrp_id,
+        COUNT(*) FILTER (WHERE is_discontinued = TRUE) AS discontinued,
+        ROUND(AVG(mrp) FILTER (WHERE mrp > 0), 2)     AS avg_mrp,
+        MIN(mrp) FILTER (WHERE mrp > 0)                AS min_mrp,
+        MAX(mrp) FILTER (WHERE mrp > 0)                AS max_mrp
       FROM pharmacy_medicines
     `);
 
@@ -45,12 +50,28 @@ router.get('/status', async (req, res) => {
       ORDER BY count DESC
     `);
 
+    const byDatasetRes = await sharedPool.query(`
+      SELECT dataset_source, COUNT(*) AS count
+      FROM pharmacy_medicines
+      WHERE dataset_source IS NOT NULL
+      GROUP BY dataset_source
+      ORDER BY count DESC
+    `);
+
     res.json({
       success: true,
       isSyncing,
       lastSync: lastSyncResult,
       dbStats: statsRes.rows[0],
       bySources: bySourceRes.rows,
+      byDataset: byDatasetRes.rows,
+      availableSources: [
+        { key: 'builtin',                  description: 'Built-in MRP corrections for known CIMS errors', runTime: 'seconds' },
+        { key: 'nppa',                     description: 'NPPA government DPCO ceiling prices (Excel download)', runTime: '~1 min' },
+        { key: 'janaushadhi',              description: 'Jan Aushadhi generic drug MRP list (PMBI)', runTime: '~1 min' },
+        { key: 'openmrp',                  description: 'OpenMRP API — selling_price for ~2000 medicines per run (rate-limited)', runTime: '~30-60 min' },
+        { key: 'indian_medicine_dataset',  description: 'Indian Medicine Dataset (junioralive/GitHub) — ~253k medicines bulk seed', runTime: '~10-20 min' },
+      ],
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
