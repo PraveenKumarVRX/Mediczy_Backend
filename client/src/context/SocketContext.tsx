@@ -29,15 +29,9 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     if (!currentId) return;
 
     // Connect to socket server
-<<<<<<< HEAD
     socketRef.current = io(getSocketUrl(), {
       // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
       // polling establishes over plain HTTP and upgrades when it can (single server process).
-=======
-    socketRef.current = io(socketOrigin, {
-      // Polling first — see socket.service.ts for why (Cloudflare edge fails
-      // the WS upgrade over HTTP/2 on this domain; polling degrades safely).
->>>>>>> recover/care-intelligence-mesh
       transports: ['polling', 'websocket'],
       path: '/socket.io',
       query: {

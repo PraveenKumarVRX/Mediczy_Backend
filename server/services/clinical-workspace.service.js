@@ -8,11 +8,8 @@
 
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
-<<<<<<< HEAD
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
-=======
 import { ensureClinicalNoteColumns } from './clinical-notes.service.js';
->>>>>>> recover/care-intelligence-mesh
 
 async function fetchPatientDemographics(patientId) {
   const [fromPatients] = await sequelize.query(

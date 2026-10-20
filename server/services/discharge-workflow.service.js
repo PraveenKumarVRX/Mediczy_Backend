@@ -9,11 +9,8 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import llmProvider from './ai-brain/llm-provider.js';
-<<<<<<< HEAD
 import qualityGates from './ai-quality-gates.service.js';
-=======
 import { ensureClinicalNoteColumns } from './clinical-notes.service.js';
->>>>>>> recover/care-intelligence-mesh
 
 async function ensureTables() {
   await sequelize.query(`
@@ -131,7 +128,6 @@ function buildDraftText(ctx) {
   ].filter(Boolean).join('\n');
 }
 
-<<<<<<< HEAD
 // ── AI synthesis (Upgrade Plan Track B, Phase B3) ───────────────────────────
 //
 // buildDraftText() above is a fixed-shape template — real reasoning over
@@ -183,56 +179,12 @@ Output JSON: {
   if (!parsed.fullNarrative) return null;
 
   return { ...parsed, provider: llm.provider };
-=======
-// ── LLM-drafted discharge summary ─────────────────────────────────────────────
-// Falls back to the deterministic template (buildDraftText) if the LLM cascade
-// is unavailable — draft_content is never blank, but ai_generated/ai_model
-// only claim AI authorship when an LLM actually produced the text. This is
-// documentation with mandatory physician sign-off before it reaches a patient
-// (see status: draft → signed → sent below), so it's NOT SaMD per the
-// classification table in CLAUDE.md — no quality-gate/confidence-score
-// plumbing needed, same as the SBAR shift-handover generator it mirrors.
-async function buildDraftTextViaLLM(ctx) {
-  const { admission, notes, meds, labs, otBooking, vitals } = ctx;
-  if (!admission) return { text: buildDraftText(ctx), aiGenerated: false, model: null };
-
-  try {
-    const llm = await llmProvider.chat({
-      messages: [
-        {
-          role: 'system',
-          content: `You are drafting a hospital discharge summary for physician review — this is a DRAFT, not a final clinical document. Write clear, professional prose covering: diagnosis, hospital course, procedures, discharge medications, discharge vitals, and follow-up instructions. End with "This is a draft summary. Please review and sign before sharing with the patient." Do not invent facts not present in the provided data.`,
-        },
-        {
-          role: 'user',
-          content: `Patient: ${admission.patient_name || 'Unknown'} | Admission #: ${admission.admission_number}
-Admitted: ${admission.admission_datetime ? new Date(admission.admission_datetime).toDateString() : 'N/A'}
-Clinical notes: ${JSON.stringify(notes.slice(0, 5))}
-Procedure: ${otBooking ? `${otBooking.procedure_name} (${otBooking.ot_status})` : 'None'}
-Medications: ${JSON.stringify(meds)}
-Recent labs: ${JSON.stringify(labs.slice(0, 10))}
-Latest vitals: ${JSON.stringify(vitals[0] || {})}`,
-        },
-      ],
-      temperature: 0.2,
-      maxTokens: 900,
-      skipCache: true,
-    });
-    const text = (llm.content || '').trim();
-    if (!text) throw new Error('empty LLM response');
-    return { text, aiGenerated: true, model: llm.model || llm.provider || 'llm' };
-  } catch (err) {
-    console.warn('[discharge-workflow] LLM draft failed, falling back to template:', err.message);
-    return { text: buildDraftText(ctx), aiGenerated: false, model: null };
-  }
->>>>>>> recover/care-intelligence-mesh
 }
 
 // ── Draft creation ────────────────────────────────────────────────────────────
 
 export async function createDischargeDraft({ organizationId, admissionId, patientId, preparedBy, aiAssisted = true }) {
   const ctx = await buildDraftContext(admissionId);
-<<<<<<< HEAD
 
   let aiDraft = null;
   if (aiAssisted) {
@@ -259,11 +211,6 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
     });
     await qualityGates.logGateResult(gateResult, { admissionId, patientId, source: 'discharge-workflow' });
   }
-=======
-  const { text: draftContent, aiGenerated, model } = aiAssisted
-    ? await buildDraftTextViaLLM(ctx)
-    : { text: buildDraftText(ctx), aiGenerated: false, model: null };
->>>>>>> recover/care-intelligence-mesh
 
   const [result] = await sequelize.query(
     `INSERT INTO discharge_packets (
@@ -281,7 +228,6 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
     {
       replacements: {
         orgId: organizationId || null, admId: admissionId, patientId: patientId || null,
-<<<<<<< HEAD
         draft: draftContent,
         dx: aiDraft?.diagnosisSummary || null,
         proc: aiDraft?.procedureSummary || null,
@@ -295,9 +241,6 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
           aiConfidence: aiDraft?.confidence ?? null,
           missingDataFlags: aiDraft?.missingDataFlags || [],
         }),
-=======
-        draft: draftContent, ai: aiGenerated, model
->>>>>>> recover/care-intelligence-mesh
       },
       type: QueryTypes.INSERT
     }

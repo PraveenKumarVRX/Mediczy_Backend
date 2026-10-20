@@ -25,16 +25,10 @@ export function clinicalBase(portal: ClinicalPortal = getClinicalPortal()): stri
 }
 
 /**
-<<<<<<< HEAD
- * Routes that portalClinicalRoutes.tsx's HOSPITAL_ONLY list keeps mounted under
- * /hospital/* whatever the active portal is. Paths built from the generic portal
- * base 404 for any non-hospital portal. Keep in sync with HOSPITAL_ONLY there.
-=======
  * Routes that portalClinicalRoutes.tsx's HOSPITAL_ONLY list keeps mounted
  * under /hospital/* regardless of the active portal — /doctor/command-center
  * etc. simply don't exist, so paths built with the generic portal ${base}
  * 404. Kept in sync manually since HOSPITAL_ONLY isn't exported from there.
->>>>>>> recover/care-intelligence-mesh
  */
 const HOSPITAL_ONLY_BASE = "/hospital";
 
@@ -55,13 +49,8 @@ export function buildClinicalPaths(portal: ClinicalPortal = getClinicalPortal())
     globalBoard: (patientId: string | number) => `${base}/healthos/board/${patientId}`,
     passport: (patientId: string | number) => `${base}/healthos/passport/${patientId}`,
     bedsMap: `${HOSPITAL_ONLY_BASE}/beds/map`,
-<<<<<<< HEAD
     emar: `${portal === "nurse" ? base : HOSPITAL_ONLY_BASE}/emar`,
     echart: `${portal === "nurse" ? base : HOSPITAL_ONLY_BASE}/echart`,
-=======
-    emar: `${HOSPITAL_ONLY_BASE}/emar`,
-    echart: `${base}/echart`,
->>>>>>> recover/care-intelligence-mesh
     aiOps: `${HOSPITAL_ONLY_BASE}/ai-ops`,
   };
 }

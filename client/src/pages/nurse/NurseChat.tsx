@@ -97,21 +97,9 @@ const NurseChat: React.FC = () => {
     const nurseId = getNurseId();
     if (!nurseToken || !nurseId) return;
 
-<<<<<<< HEAD
     const sock = io(getSocketUrl(), {
       // Polling first: the Cloudflare edge fails the WS upgrade over HTTP/2 on this domain;
       // polling establishes over plain HTTP and upgrades when it can (single server process).
-=======
-    const socketOrigin =
-      (import.meta.env.VITE_API_BASE_URL ||
-       (import.meta.env.VITE_API_URL
-         ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
-         : window.location.origin));
-
-    const sock = io(socketOrigin, {
-      // Polling first — see socket.service.ts for why (Cloudflare edge fails
-      // the WS upgrade over HTTP/2 on this domain; polling degrades safely).
->>>>>>> recover/care-intelligence-mesh
       transports: ['polling', 'websocket'],
       path: '/socket.io',
       query: { userId: nurseId, userType: 'nurse' },

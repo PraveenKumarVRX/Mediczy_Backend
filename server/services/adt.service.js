@@ -10,18 +10,15 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { consumeReservation } from './bed-allocation.service.js';
-<<<<<<< HEAD
 import { hasSignedReconciliation } from './med-reconciliation.service.js';
 import { DISCHARGE_OVERRIDE_ROLES } from '../utils/discharge-policy.js';
 import { reconciliationRequired } from './prescription-safety.service.js';
-=======
 import { isComplexDiagnosis, autoInviteSpecialists } from './careos/care-team.service.js';
 import { appendClinicalEvent } from './careos/clinical-timeline.service.js';
 import { autoAdvancePathway } from './careos/treatment-pathway.service.js';
 import { archiveCase, flagReadmissionIfRecent } from './careos/hospital-memory.service.js';
 import { dispatchEvent } from './workflow-ai-orchestrator.service.js';
 import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
->>>>>>> recover/care-intelligence-mesh
 
 // ── B4: Discharge readiness table bootstrap ───────────────────────────────────
 

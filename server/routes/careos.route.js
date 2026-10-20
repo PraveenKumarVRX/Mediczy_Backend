@@ -548,14 +548,10 @@ router.get('/network/referrals', ...clinical, async (req, res) => {
 router.post('/network/referrals', ...authDoctorOrOhcReferrer, async (req, res) => {
   res.json({ success: true, data: await careos.createReferral({ fromOrgId: req.body.fromOrgId, toOrgId: req.body.toOrgId, patientId: req.body.patientId, reason: req.body.reason, urgency: req.body.urgency, clinicalSummary: req.body.clinicalSummary, referredBy: req.user.id, passportShareId: req.body.passportShareId }) });
 });
-<<<<<<< HEAD
-router.post('/network/referrals/:id/accept', ...authDoctorOrOhcReferrer, async (req, res) => {
-=======
 router.post('/network/referrals/draft-letter', ...doctorOnly, async (req, res) => {
   res.json({ success: true, data: await careos.generateReferralLetter({ patientId: req.body.patientId, organizationId: orgId(req), toOrgName: req.body.toOrgName, reason: req.body.reason, urgency: req.body.urgency }) });
 });
-router.post('/network/referrals/:id/accept', ...doctorOnly, async (req, res) => {
->>>>>>> recover/care-intelligence-mesh
+router.post('/network/referrals/:id/accept', ...authDoctorOrOhcReferrer, async (req, res) => {
   res.json({ success: true, data: await careos.acceptReferral(Number(req.params.id), req.user.id) });
 });
 router.get('/network/documents/:patientId', ...clinical, async (req, res) => {
