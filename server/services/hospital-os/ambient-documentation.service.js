@@ -6,6 +6,28 @@ import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import llmProvider from '../ai-brain/llm-provider.js';
 import qualityGates from '../ai-quality-gates.service.js';
+import { z } from 'zod';
+import { zodResponseFormat } from 'openai/helpers/zod';
+
+// Only the Groq leg of the LLM cascade honours `response_format` — SIB/iSHA-direct both
+// silently drop it (see discharge-workflow.service.js for the full rationale, same cascade).
+// The `.safeParse()` further down is what actually guards SIB/iSHA's output shape.
+const AmbientNoteSchema = z.object({
+  soap: z.object({
+    subjective: z.string(),
+    objective: z.string(),
+    assessment: z.string(),
+    plan: z.string(),
+  }),
+  fullNote: z.string(),
+  draftOrders: z.array(z.object({
+    type: z.enum(['lab', 'medication', 'imaging', 'referral']),
+    description: z.string(),
+    rationale: z.string(),
+  })),
+  confidence: z.number().min(0).max(1).nullable(),
+});
+const AMBIENT_NOTE_RESPONSE_FORMAT = zodResponseFormat(AmbientNoteSchema, 'ambient_note');
 
 export async function routeAmbientDocument({
   documentType,
@@ -125,7 +147,7 @@ Output JSON: {
     ],
     temperature: 0.1,
     maxTokens: 1600,
-    responseFormat: { type: 'json_object' },
+    responseFormat: AMBIENT_NOTE_RESPONSE_FORMAT,
     skipCache: true,
   });
 
@@ -135,6 +157,13 @@ Output JSON: {
   } catch {
     throw new Error('AI note synthesis returned an unparseable result');
   }
+  // Catches a malformed shape SIB/iSHA can still produce even though neither honours the
+  // `response_format` schema above — the real protection for those two providers.
+  const validated = AmbientNoteSchema.safeParse(parsed);
+  if (!validated.success) {
+    throw new Error(`AI note synthesis returned an invalid shape: ${validated.error.message}`);
+  }
+  parsed = validated.data;
   if (!parsed.fullNote) throw new Error('AI note synthesis did not produce a note');
 
   const gateResult = await qualityGates.checkScribeOutput({

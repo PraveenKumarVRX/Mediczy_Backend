@@ -13,6 +13,7 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
+import { classifySentiment } from '../../services/ai-brain/sentiment-classifier.service.js';
 import { QueryTypes, Op } from 'sequelize';
 import Appointment from '../../models/postgres/appointment.model.postgres.js';
 import Bed from '../../models/postgres/bed.model.postgres.js';
@@ -3630,15 +3631,20 @@ router.post('/prems/responses', verifyHospitalToken, async (req, res) => {
         wait_time_score INTEGER,
         comment TEXT,
         negative_followup BOOLEAN NOT NULL DEFAULT FALSE,
+        sentiment VARCHAR(24),
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       )
     `);
+    await sequelize.query(`ALTER TABLE prems_responses ADD COLUMN IF NOT EXISTS sentiment VARCHAR(24)`);
     const negativeFollowup = Number(rating) <= 2;
+    // `sentiment` has existed on this table since the PREMS migration but was never
+    // populated by this route — classify the free-text comment when one is given.
+    const sentimentResult = comment ? await classifySentiment(comment).catch(() => null) : null;
     const [rows] = await sequelize.query(`
-      INSERT INTO prems_responses (hospital_id, patient_id, visit_type, rating, communication_score, cleanliness_score, wait_time_score, comment, negative_followup)
-      VALUES (:hospitalId,:patientId,:visitType,:rating,:communicationScore,:cleanlinessScore,:waitTimeScore,:comment,:negativeFollowup)
+      INSERT INTO prems_responses (hospital_id, patient_id, visit_type, rating, communication_score, cleanliness_score, wait_time_score, comment, negative_followup, sentiment)
+      VALUES (:hospitalId,:patientId,:visitType,:rating,:communicationScore,:cleanlinessScore,:waitTimeScore,:comment,:negativeFollowup,:sentiment)
       RETURNING *
-    `, { replacements: { hospitalId: req.hospitalId, patientId: patientId || null, visitType, rating, communicationScore: communicationScore || null, cleanlinessScore: cleanlinessScore || null, waitTimeScore: waitTimeScore || null, comment: comment || null, negativeFollowup } });
+    `, { replacements: { hospitalId: req.hospitalId, patientId: patientId || null, visitType, rating, communicationScore: communicationScore || null, cleanlinessScore: cleanlinessScore || null, waitTimeScore: waitTimeScore || null, comment: comment || null, negativeFollowup, sentiment: sentimentResult?.sentiment || null } });
     if (negativeFollowup) {
       await sequelize.query(`
         INSERT INTO tickets ("ticketNumber", subject, description, category, priority, status, requester, metadata, "createdAt", "updatedAt")

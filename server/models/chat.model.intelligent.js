@@ -1,5 +1,6 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes, Op } from 'sequelize';
+import { classifySentiment } from '../services/ai-brain/sentiment-classifier.service.js';
 
 // Define ChatConversation model for PostgreSQL
 // Note: Using camelCase field names to match existing table structure
@@ -252,7 +253,17 @@ class ChatModel {
       lastMessagePreview: text,
       lastMessageAt: new Date()
     });
-    
+
+    // healthSentiment was defined on this model (comment: "patient mood/health
+    // sentiment") but nothing ever computed it. Only classify the patient's own
+    // messages, matching that comment. Fire-and-forget — never block message
+    // delivery on this; the column fills in a moment after the message appears.
+    if (senderType === 'user') {
+      classifySentiment(text)
+        .then((result) => result && message.update({ healthSentiment: result.sentiment }))
+        .catch((err) => console.warn('[ChatModel] healthSentiment classification failed:', err.message));
+    }
+
     return message;
   }
 

@@ -13,8 +13,8 @@ import { forecastED } from './ed-forecast.service.js';
 import { optimizeJourney, suggestEarlierOTSlot } from './journey-optimizer.service.js';
 import { analyzeWorkforce } from './workforce-ai.service.js';
 import { matchClinicalTrials, detectEmergingPatterns, generateResearchBriefing } from './research-hub.service.js';
-import { routeAmbientDocument, getAmbientPipelineStatus } from './ambient-documentation.service.js';
-import { synthesizeAmbientNote, summarizeRadiology, summarizeLabTrends, summarizeBillingAccount } from './department-agents.service.js';
+import { routeAmbientDocument, synthesizeAmbientNote, getAmbientPipelineStatus } from './ambient-documentation.service.js';
+import { summarizeRadiology, summarizeLabTrends, summarizeBillingAccount } from './department-agents.service.js';
 
 export {
   hospitalCopilotChat,

@@ -11,6 +11,100 @@ import { QueryTypes } from 'sequelize';
 import llmProvider from './ai-brain/llm-provider.js';
 import qualityGates from './ai-quality-gates.service.js';
 import { ensureClinicalNoteColumns } from './clinical-notes.service.js';
+import { z } from 'zod';
+import { zodResponseFormat } from 'openai/helpers/zod';
+import leven from 'leven';
+
+// ── Adaptive refinement (Phlox-comparison finding) ──────────────────────────
+//
+// When a doctor's signed finalContent differs substantially from the AI's
+// original draft_content, synthesize a short, bounded list of standing style
+// preferences from the diff and fold them into that doctor's future drafts.
+// Modeled on notification-preferences.service.js's user-keyed JSONB table.
+const REFINEMENT_CHANGE_THRESHOLD = 0.4;
+const MAX_REFINEMENT_INSTRUCTIONS = 10;
+
+async function ensureRefinementsTable() {
+  await sequelize.query(`
+    CREATE TABLE IF NOT EXISTS doctor_note_refinements (
+      doctor_id    INTEGER PRIMARY KEY,
+      instructions JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+}
+ensureRefinementsTable().catch((e) => console.warn('[discharge-workflow] refinements table init:', e.message));
+
+async function getDoctorRefinements(doctorId) {
+  const [row] = await sequelize.query(
+    `SELECT instructions FROM doctor_note_refinements WHERE doctor_id = :doctorId`,
+    { replacements: { doctorId }, type: QueryTypes.SELECT }
+  ).catch(() => [null]);
+  return row?.instructions || [];
+}
+
+function changeRatio(a, b) {
+  const longest = Math.max(a.length, b.length, 1);
+  return leven(a, b) / longest;
+}
+
+async function updateDoctorRefinements({ doctorId, draftContent, finalContent }) {
+  try {
+    const ratio = changeRatio(draftContent, finalContent);
+    if (ratio < REFINEMENT_CHANGE_THRESHOLD) return;
+
+    const existing = await getDoctorRefinements(doctorId);
+    const llm = await llmProvider.chat({
+      messages: [
+        {
+          role: 'system',
+          content: `A physician edited an AI-drafted discharge summary. Compare the original draft and the final
+edited version, and infer up to ${MAX_REFINEMENT_INSTRUCTIONS} short, standing style-preference instructions
+this physician's future drafts should follow (tone, structure, phrasing, level of detail — not clinical facts).
+Merge with their existing preferences below, de-duplicating and keeping the most useful ${MAX_REFINEMENT_INSTRUCTIONS}.
+Existing preferences: ${JSON.stringify(existing)}
+Output JSON: { "instructions": ["...", "..."] }`,
+        },
+        { role: 'user', content: `ORIGINAL DRAFT:\n${draftContent}\n\nFINAL EDITED VERSION:\n${finalContent}` },
+      ],
+      temperature: 0.2,
+      maxTokens: 500,
+      responseFormat: { type: 'json_object' },
+      skipCache: true,
+    });
+    const parsed = JSON.parse(llm.content || '{}');
+    const instructions = Array.isArray(parsed.instructions) ? parsed.instructions.slice(0, MAX_REFINEMENT_INSTRUCTIONS) : null;
+    if (!instructions?.length) return;
+
+    await sequelize.query(
+      `INSERT INTO doctor_note_refinements (doctor_id, instructions, updated_at)
+       VALUES (:doctorId, :instructions, NOW())
+       ON CONFLICT (doctor_id) DO UPDATE SET instructions = :instructions, updated_at = NOW()`,
+      { replacements: { doctorId, instructions: JSON.stringify(instructions) }, type: QueryTypes.INSERT }
+    );
+  } catch (err) {
+    console.warn('[discharge-workflow] adaptive refinement update failed (non-fatal):', err.message);
+  }
+}
+
+// Only the Groq leg of the LLM cascade actually honours `response_format` — SIB (the real
+// primary provider) and iSHA-direct both silently drop it before the request goes on the
+// wire (confirmed by reading llm-provider.js directly), so this schema tightens Groq only.
+// The `.safeParse()` below this, not the request-side schema, is what actually protects
+// against a malformed shape from SIB/iSHA, since both still return JSON per the prompt's
+// instructions without the API-level guarantee.
+const DischargeDraftSchema = z.object({
+  diagnosisSummary: z.string().nullable(),
+  procedureSummary: z.string().nullable(),
+  medicationSummary: z.string().nullable(),
+  followUpSummary: z.string().nullable(),
+  dietInstructions: z.string().nullable(),
+  activityNotes: z.string().nullable(),
+  fullNarrative: z.string(),
+  confidence: z.number().min(0).max(1).nullable(),
+  missingDataFlags: z.array(z.string()),
+});
+const DISCHARGE_DRAFT_RESPONSE_FORMAT = zodResponseFormat(DischargeDraftSchema, 'discharge_draft');
 
 async function ensureTables() {
   await sequelize.query(`
@@ -53,10 +147,18 @@ ensureTables().catch(e => console.warn('[discharge-workflow] table init:', e.mes
 async function buildDraftContext(admissionId) {
   await ensureClinicalNoteColumns();
 
+  // ip_admissions.patient_id references users.id directly, not patients.id — the demographic
+  // columns this query used to select (p.first_name/last_name/date_of_birth/gender) don't
+  // exist on `patients` at all (confirmed live: it's a thin medical-metadata table keyed by
+  // "userId", not a demographics table), so this join matched nothing for any admission and
+  // buildAiDraftText() always failed silently (caught by the .catch() below) straight through
+  // to the static-template fallback. Allergies genuinely do live on `patients`, keyed by
+  // "userId" — hence the second join.
   const [admission] = await sequelize.query(
-    `SELECT a.*, p.first_name || ' ' || p.last_name as patient_name, p.date_of_birth, p.gender, p.allergies
+    `SELECT a.*, u."firstName" || ' ' || u."lastName" as patient_name, u."dateOfBirth" as date_of_birth, u.gender, p.allergies
      FROM ip_admissions a
-     LEFT JOIN patients p ON p.id = a.patient_id
+     LEFT JOIN users u ON u.id = a.patient_id
+     LEFT JOIN patients p ON p."userId" = a.patient_id
      WHERE a.id = :admId LIMIT 1`,
     { replacements: { admId: admissionId }, type: QueryTypes.SELECT }
   ).catch(() => [null]);
@@ -136,18 +238,19 @@ function buildDraftText(ctx) {
 // reviews the same context through the LLM and produces the sections the
 // table already has columns for. Falls back to the template on any
 // failure — a discharge draft must never simply not appear.
-async function buildAiDraftText(ctx) {
+async function buildAiDraftText(ctx, doctorId = null) {
   const { admission, notes, meds, labs, otBooking, vitals } = ctx;
   if (!admission) return null;
 
-  const systemPrompt = `You are drafting a discharge summary for physician review — a DRAFT ONLY, never sent to a patient without physician sign-off.
-Review the admission, diagnoses, procedures, medications, labs, and vitals provided and produce a discharge summary.
-Do not invent findings, medications, or instructions not supported by the provided data.
-Output JSON: {
-  "diagnosisSummary", "procedureSummary", "medicationSummary", "followUpSummary",
-  "dietInstructions", "activityNotes", "fullNarrative",
-  "confidence": 0-1, "missingDataFlags": ["..."]
-}`;
+  const refinements = doctorId ? await getDoctorRefinements(doctorId) : [];
+
+  const systemPrompt = [
+    `You are drafting a discharge summary for physician review — a DRAFT ONLY, never sent to a patient without physician sign-off.`,
+    `Review the admission, diagnoses, procedures, medications, labs, and vitals provided and produce a discharge summary.`,
+    `Do not invent findings, medications, or instructions not supported by the provided data.`,
+    refinements.length ? `## This doctor's standing preferences, learned from past edits\n${refinements.map((i) => `- ${i}`).join('\n')}` : '',
+    `Output JSON: {\n  "diagnosisSummary", "procedureSummary", "medicationSummary", "followUpSummary",\n  "dietInstructions", "activityNotes", "fullNarrative",\n  "confidence": 0-1, "missingDataFlags": ["..."]\n}`,
+  ].filter(Boolean).join('\n\n');
 
   const llm = await llmProvider.chat({
     messages: [
@@ -166,7 +269,7 @@ Output JSON: {
     ],
     temperature: 0.1,
     maxTokens: 1800,
-    responseFormat: { type: 'json_object' },
+    responseFormat: DISCHARGE_DRAFT_RESPONSE_FORMAT,
     skipCache: true,
   });
 
@@ -176,9 +279,16 @@ Output JSON: {
   } catch {
     return null;
   }
-  if (!parsed.fullNarrative) return null;
+  // Catches a malformed shape SIB/iSHA can still produce even though neither honours the
+  // `response_format` schema above — the real protection for those two providers.
+  const validated = DischargeDraftSchema.safeParse(parsed);
+  if (!validated.success) {
+    console.warn('[DischargeWorkflow] AI draft failed schema validation:', validated.error.message);
+    return null;
+  }
+  if (!validated.data.fullNarrative) return null;
 
-  return { ...parsed, provider: llm.provider };
+  return { ...validated.data, provider: llm.provider };
 }
 
 // ── Draft creation ────────────────────────────────────────────────────────────
@@ -188,7 +298,7 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
 
   let aiDraft = null;
   if (aiAssisted) {
-    aiDraft = await buildAiDraftText(ctx).catch((err) => {
+    aiDraft = await buildAiDraftText(ctx, preparedBy).catch((err) => {
       console.error('[DischargeWorkflow] AI synthesis failed, falling back to template:', err.message);
       return null;
     });
@@ -217,11 +327,11 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
        organization_id, admission_id, patient_id, draft_content,
        diagnosis_summary, procedure_summary, medication_summary,
        follow_up_summary, diet_instructions, activity_notes,
-       ai_generated, ai_model, status, packet_data
+       ai_generated, ai_model, status, packet_data, prepared_by
      ) VALUES (
        :orgId, :admId, :patientId, :draft,
        :dx, :proc, :meds, :fu, :diet, :activity,
-       :ai, :model, 'draft', :packetData
+       :ai, :model, 'draft', :packetData, :preparedBy
      )
      ON CONFLICT DO NOTHING
      RETURNING *`,
@@ -241,6 +351,7 @@ export async function createDischargeDraft({ organizationId, admissionId, patien
           aiConfidence: aiDraft?.confidence ?? null,
           missingDataFlags: aiDraft?.missingDataFlags || [],
         }),
+        preparedBy: preparedBy || null,
       },
       type: QueryTypes.INSERT
     }
@@ -351,13 +462,14 @@ export async function signDischargePacket(packetId, { signedBy, finalContent, or
     overridesToRecord.push(pending);
   }
 
-  return sequelize.transaction(async (transaction) => {
+  const result = await sequelize.transaction(async (transaction) => {
     const [rows] = await sequelize.query(
       `UPDATE discharge_packets
        SET status = 'signed', signed_by = :by, signed_at = NOW(),
            final_content = COALESCE(:final, draft_content), updated_at = NOW()
        WHERE id = :id AND organization_id = :orgId AND status = 'draft'
-       RETURNING id, admission_id AS "admissionId", status, signed_by AS "signedBy", signed_at AS "signedAt"`,
+       RETURNING id, admission_id AS "admissionId", status, signed_by AS "signedBy", signed_at AS "signedAt",
+                 draft_content AS "draftContent", final_content AS "finalContent", prepared_by AS "preparedBy"`,
       { replacements: { id: packetId, orgId: organizationId, by: signedBy, final: finalContent || null }, type: QueryTypes.UPDATE, transaction }
     );
     if (!rows.length) {
@@ -372,6 +484,19 @@ export async function signDischargePacket(packetId, { signedBy, finalContent, or
     }
     return { success: true, data: rows[0] };
   });
+
+  // Fire-and-forget — never block the sign response on this. Only meaningful when the
+  // draft was AI-assisted (has a preparer) and the physician actually edited it.
+  const signed = result.data;
+  if (signed.preparedBy && signed.draftContent && signed.finalContent) {
+    updateDoctorRefinements({
+      doctorId: signed.preparedBy,
+      draftContent: signed.draftContent,
+      finalContent: signed.finalContent,
+    }).catch((err) => console.warn('[discharge-workflow] adaptive refinement (fire-and-forget) failed:', err.message));
+  }
+
+  return result;
 }
 
 // ── Send ─────────────────────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import sharedPool from '../db/pgPool.js';
+import { classifySentiment } from './ai-brain/sentiment-classifier.service.js';
 
 const CHANNELS = new Set(['whatsapp', 'sms', 'email', 'call', 'push', 'in_app']);
 const STAGE_FOR_VISIT_EVENT = {
@@ -292,6 +293,10 @@ export async function createFeedback(input, actorUserId) {
 
 export async function createReview(input, actorUserId) {
   const tenantId = requireTenant(input.tenantId);
+  // `sentiment` was accepted verbatim from the caller with nothing computing it when
+  // omitted — compute it from the review text when the caller didn't already supply one,
+  // so a manual/CRM-entered review with no explicit sentiment doesn't just stay null.
+  const sentiment = input.sentiment || (input.reviewText ? (await classifySentiment(input.reviewText).catch(() => null))?.sentiment : null) || null;
   return withTransaction(async (client) => {
     const result = await client.query(
       `INSERT INTO crm_reviews
@@ -299,7 +304,7 @@ export async function createReview(input, actorUserId) {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, COALESCE($16::timestamptz, NOW()), $17::jsonb)
        ON CONFLICT (tenant_id, platform, external_review_id) WHERE external_review_id IS NOT NULL DO UPDATE SET rating = EXCLUDED.rating, review_text = EXCLUDED.review_text, sentiment = EXCLUDED.sentiment, updated_at = NOW()
        RETURNING *`,
-      [tenantId, intOrNull(input.identityId), input.platform || 'manual', input.externalReviewId || null, input.reviewerName || null, input.rating == null ? null : Number(input.rating), input.reviewText || null, input.sentiment || null, input.severity || 'normal', JSON.stringify(input.topics || []), intOrNull(input.doctorId), intOrNull(input.hospitalId), intOrNull(input.branchId), intOrNull(input.serviceLineId), input.reviewUrl || null, input.reviewedAt || null, JSON.stringify(input.metadata || {})]
+      [tenantId, intOrNull(input.identityId), input.platform || 'manual', input.externalReviewId || null, input.reviewerName || null, input.rating == null ? null : Number(input.rating), input.reviewText || null, sentiment, input.severity || 'normal', JSON.stringify(input.topics || []), intOrNull(input.doctorId), intOrNull(input.hospitalId), intOrNull(input.branchId), intOrNull(input.serviceLineId), input.reviewUrl || null, input.reviewedAt || null, JSON.stringify(input.metadata || {})]
     );
     const review = result.rows[0];
     if (review.severity === 'high' || review.severity === 'critical' || Number(review.rating) <= 2) {
