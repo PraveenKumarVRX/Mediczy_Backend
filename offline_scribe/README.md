@@ -106,12 +106,22 @@ GET  /api/scribe/health         - Health check
 
 ## Security & Compliance
 
-- ✅ Fully offline - no internet calls
-- ✅ No patient data leaves device
+- ✅ Fully offline - no internet calls, for this service's own endpoints (file-upload
+  transcription via whisper.cpp + the local Indic-Gemma LLM)
+- ✅ No patient data leaves device, for that same file-upload path
 - ✅ Encrypted audio + text at rest
 - ✅ Audit logging (local)
 - ✅ Doctor review mandatory
 - ✅ "AI-assisted" badge on all outputs
+
+⚠️ **This offline guarantee does NOT extend to the live "ambient scribe" dictation UI**
+(`client/src/hooks/useAmbientScribe.ts`, served by `server/services/scribe-stream.service.js`).
+That flow transcribes speech client-side via the browser's own `SpeechRecognition` API before
+ever reaching this service — and that API is frequently cloud-backed (e.g. Chrome's
+implementation calls Google's servers), independent of whatever this service does locally.
+Treat "fully offline" as true for recorded/uploaded audio processed through this service, and
+not yet true for live ambient dictation — closing that gap means either streaming audio to
+whisper.cpp here instead, or not describing that specific UI flow as offline.
 
 ## Disclaimer
 

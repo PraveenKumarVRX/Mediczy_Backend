@@ -31,6 +31,7 @@ import pool from '../db/pgPool.js';
 import { getAIServiceConfig } from '../config/ai-services.config.js';
 import cdssService from '../services/cdss.service.js';
 import clinicalKnowledgeFabricService from '../services/clinical-knowledge-fabric.service.js';
+import qualityGates from '../services/ai-quality-gates.service.js';
 
 const router = express.Router();
 const requireDoctor = requireRole(['doctor', 'admin', 'assistant', 'nurse', 'team']);
@@ -490,13 +491,24 @@ async function executeAddClinicalNote(doctorId, patientId, note, category = 'obs
       return { success: false, error: 'Patient not found in your appointment records.' };
     }
 
+    // CLAUDE.md §2: every AI-adjacent clinical note must pass a quality gate and be
+    // logged before it reaches the record — this tool previously skipped that check
+    // entirely, relying only on the appointment-relationship guard above.
+    const allergyRows = await pool.query(`SELECT allergies FROM patients WHERE id = $1 LIMIT 1`, [patientId]).catch(() => ({ rows: [] }));
+    const patientAllergies = allergyRows.rows[0]?.allergies || [];
+    const gateResult = await qualityGates.checkScribeOutput({ noteText: note, patientAllergies });
+    await qualityGates.logGateResult(gateResult, { patientId, source: 'voice-assistant.add_clinical_note' });
+
     const colMap = { plan: 'plan', follow_up: '"followUp"', instruction: '"patientEducation"' };
     const noteCol = colMap[category] || 'subjective';
     await pool.query(`
       INSERT INTO clinical_notes ("doctorId", "patientId", ${noteCol}, "status", "createdAt", "updatedAt")
       VALUES ($1, $2, $3, 'draft', NOW(), NOW())
     `, [doctorId, patientId, note]);
-    return { success: true };
+    return {
+      success: true,
+      qualityGate: { passed: gateResult.passed, severity: gateResult.severity, warnings: gateResult.warnings },
+    };
   } catch (err) {
     logger.warn('[VoiceAssistant] add_clinical_note DB error', { error: err.message });
     return { success: false, error: err.message };

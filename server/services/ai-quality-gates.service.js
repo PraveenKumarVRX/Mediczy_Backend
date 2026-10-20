@@ -407,6 +407,28 @@ class AIQualityGatesService {
       }
     }
 
+    // Gate 2b: Medication omission — a documented active medication the LLM's note never
+    // mentions at all. `patientMedications` was accepted by this method but never actually
+    // checked against anything; this closes that gap. Deliberately one-directional (omission
+    // only, not hallucination-detection) — flagging a drug name mentioned in free text that
+    // ISN'T in the active list would need a drug-name dictionary/NER pass this service doesn't
+    // have, so that direction stays the dosage/forbidden-combination gates' job.
+    if (patientMedications.length > 0) {
+      const omitted = patientMedications.filter((name) => {
+        const med = String(name || '').trim();
+        if (!med) return false;
+        const escaped = med.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return !new RegExp(escaped, 'i').test(noteText);
+      });
+      if (omitted.length > 0) {
+        result.warnings.push({
+          code:    'MEDICATION_OMISSION',
+          message: `${omitted.length} documented active medication(s) not referenced in note: ${omitted.join(', ')}`,
+          action:  'Physician must verify the medication list is complete before signing'
+        });
+      }
+    }
+
     // Gate 3: Forbidden drug combinations in note
     this._gateForbiddenCombinations(result, noteText);
 
