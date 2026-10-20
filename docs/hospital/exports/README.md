@@ -41,7 +41,7 @@ bash scripts/docs/build-master-gap-doc.sh   # single large Word package
 | Gaps doc (Word) | `/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.docx` |
 | Gaps doc (PPT) | `/api/downloads/hospital/MediQzy_Greenfield_Hospital_Gaps_Implementation.pptx` |
 
-Example production: `https://mediqzy.com/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx`
+Example production: `https://app.mediqzy.com/api/downloads/hospital/MediQzy_Hospital_OS_Workflow_Charts.docx`
 
 **Note:** Mermaid diagrams in the Markdown are exported as text/code blocks in Word/PPT. For **visual flowcharts**, see below.
 

@@ -13,7 +13,7 @@ import { syncLegacyLeadToV2 } from './crm-v2-sync.service.js';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/fb-lead-intake';
 const SALES_WHATSAPP = process.env.CRM_SALES_WHATSAPP || '+917826911911';
 const HOT_LEAD_THRESHOLD = parseInt(process.env.CRM_HOT_LEAD_THRESHOLD || '70', 10);
-const CRM_BASE_URL = process.env.CRM_BASE_URL || 'https://mediqzy.com';
+const CRM_BASE_URL = process.env.CRM_BASE_URL || 'https://app.mediqzy.com';
 
 const LIST_NAMES = {
   'facebook-lead-ads': 'Facebook Lead Ads',

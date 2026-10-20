@@ -1975,7 +1975,7 @@ async function sendDriftAlert(drifted) {
     from: process.env.EMAIL_FROM || process.env.SMTP_FROM,
     to: process.env.MEDICAL_DIRECTOR_EMAIL,
     subject: '[ALERT] AI Model Drift Detected — Mediczy',
-    text: `Drift detected in ${drifted.length} feature(s): ${drifted.join(', ')}.\n\nReview at: ${process.env.APP_URL || 'https://mediqzy.com'}/api/ai-governance/dashboard\n\nThis is an automated alert from the Mediczy AI Governance system.`,
+    text: `Drift detected in ${drifted.length} feature(s): ${drifted.join(', ')}.\n\nReview at: ${process.env.APP_URL || 'https://app.mediqzy.com'}/api/ai-governance/dashboard\n\nThis is an automated alert from the Mediczy AI Governance system.`,
   });
 }
 

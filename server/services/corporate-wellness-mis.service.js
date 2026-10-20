@@ -234,7 +234,7 @@ export async function getCorporateMisCsv(corporateId, report) {
 
 async function maybeSendMisEmail(corporate, report) {
   if (!corporate?.email) return 'skipped';
-  const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || 'https://mediqzy.com';
+  const appUrl = process.env.APP_URL || process.env.FRONTEND_URL || 'https://app.mediqzy.com';
   try {
     await emailServiceModule.sendOutboundEmail(1, {
       to: corporate.email,
