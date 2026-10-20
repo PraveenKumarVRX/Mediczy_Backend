@@ -265,6 +265,8 @@ const CRMEmailPage = lazy(() => import("@/pages/crm/CRMEmailPage"));
 const CRMCampaignAnalyticsPage = lazy(() => import("@/pages/crm/CRMCampaignAnalyticsPage"));
 const CRMAIInsightsPage        = lazy(() => import("@/pages/crm/CRMAIInsightsPage"));
 const CRMFieldForcePage        = lazy(() => import("@/pages/crm/CRMFieldForcePage"));
+const ContactVoiceJoin = lazy(() => import("@/pages/ContactVoiceJoin"));
+const CRMContactCenterPage     = lazy(() => import("@/pages/crm/CRMContactCenterPage"));
 const CRMMarketingCopilotPage  = lazy(() => import("@/pages/crm/CRMMarketingCopilotPage"));
 const _CRMMarketingPages = () => import("@/pages/crm/CRMMarketingPages");
 const CRMCampaignsPage = lazyNamed(_CRMMarketingPages, "CRMCampaignsPage");
@@ -1447,6 +1449,8 @@ const AppRoutes = () => {
         <Route path="/crm/senders"             element={<CRMSendersPage />} />
         <Route path="/crm/suppressions"        element={<CRMSuppressionsPage />} />
         <Route path="/crm/field-force"         element={<CRMFieldForcePage />} />
+        <Route path="/contact-center/join" element={<ContactVoiceJoin />} />
+        <Route path="/crm/contact-center"      element={<CRMContactCenterPage />} />
 
         {/* ── Team (public) ───────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />
@@ -1536,7 +1540,7 @@ const AppRoutes = () => {
         <Route path="/team/reports"
           element={<TeamGuard permission={["Patient Reports", "Analytics Access", "Reports Access"]}><TeamReports /></TeamGuard>} />
 
-        {/* ── Field Force (Smart Force) ──────────────────────────────── */}
+        {/* ── Smart-Force ───────────────────────────────────────────── */}
         <Route path="/team/field"
           element={<TeamGuard permission="Field Force"><FieldDashboard /></TeamGuard>} />
         <Route path="/team/field/attendance"

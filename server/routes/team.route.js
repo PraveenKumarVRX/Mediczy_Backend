@@ -1,5 +1,7 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
+import { teamLoginValidation, rejectInvalidTeamLogin } from '../middleware/team-login-validation.js';
+import { createTeamAuthResponse } from '../services/team-auth-response.service.js';
 import { createHash } from 'crypto';
 import { randomUUID } from 'crypto';
 import userModel from '../models/user.model.intelligent.js';
@@ -242,23 +244,8 @@ async function revokeAllUserTokens(userId) {
 }
 
 // ─── Team login ───────────────────────────────────────────────────────────────
-router.post('/login', authLimiter, [
-  body('email').isEmail().withMessage('Must be a valid email'),
-  // Never validate password SHAPE at login — only that one was sent. The password is checked
-  // against a bcrypt hash, so a length rule here adds no security and silently locks out any
-  // account whose correct password is shorter than the rule. That is not hypothetical: a 7-char
-  // team password could never sign in, and the account was re-keyed to fit this validator rather
-  // than the validator being fixed. Shape belongs on the routes that SET a password.
-  // (`deptLoginValidation` in unified-hospital-staff.routes.js already does this correctly.)
-  body('password').notEmpty().withMessage('Password is required'),
-], async (req, res) => {
+router.post('/login', authLimiter, teamLoginValidation, rejectInvalidTeamLogin, async (req, res) => {
   try {
-    // QA-BUG-005: validators were defined but result never checked
-    const valErrors = validationResult(req);
-    if (!valErrors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: valErrors.array() });
-    }
-
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     const email = (req.body.email || '').trim().toLowerCase();
     const password = req.body.password || '';
@@ -364,6 +351,8 @@ router.post('/login', authLimiter, [
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
+      name: [user.firstName, user.lastName].filter(Boolean).join(' '),
+      tenantId: payload.tenantId,
       role: user.role || 'team',
       designation: user.designation || 'Healthcare Staff',
       department: user.department || 'Healthcare Operations',
@@ -381,14 +370,13 @@ router.post('/login', authLimiter, [
 
     clearAuthCookies(res);
 
-    return res.status(200).json({
-      success: true,
+    return res.status(200).json(createTeamAuthResponse({
       message: 'Team login successful',
-      token: accessToken,
+      accessToken,
       refreshToken,
       teamUser,
       assignedCorporates
-    });
+    }));
 
   } catch (error) {
     console.error('[Team Login] Error:', error.message);
@@ -398,11 +386,11 @@ router.post('/login', authLimiter, [
 
 // ─── Auth: verify access token ────────────────────────────────────────────────
 router.get('/auth/verify', authTeam, (req, res) => {
-  res.status(200).json({ success: true, teamUser: req.teamUser });
+  res.status(200).json({ success: true, teamUser: req.teamUser, user: req.teamUser });
 });
 
 // ─── Auth: refresh token rotation ────────────────────────────────────────────
-router.post('/auth/refresh', async (req, res) => {
+router.post(['/auth/refresh', '/refresh-token'], async (req, res) => {
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) {
@@ -458,11 +446,10 @@ router.post('/auth/refresh', async (req, res) => {
 
     const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(payload, ip);
 
-    return res.status(200).json({
-      success: true,
-      token: accessToken,
+    return res.status(200).json(createTeamAuthResponse({
+      accessToken,
       refreshToken: newRefreshToken
-    });
+    }));
 
   } catch (error) {
     console.error('[Team Refresh] Error:', error.message);

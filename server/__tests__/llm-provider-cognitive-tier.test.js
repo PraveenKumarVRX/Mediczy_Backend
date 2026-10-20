@@ -21,10 +21,21 @@ async function loadWith(env) {
 
 afterEach(() => {
   delete process.env.AI_GPU_SCHEDULER_ENABLED;
+  delete process.env.ROUTE_FORCED_SIB_TO_ISHA;
   sibBodies.length = 0;
 });
 
 describe('cognitive tier threading', () => {
+  it('redacts provider-bound text and audit output without changing the user response',async()=>{
+    const llm=await loadWith({ROUTE_FORCED_SIB_TO_ISHA:'false'});
+    global.fetch=jest.fn(async(url,init)=>{sibBodies.push(JSON.parse(init.body));return {ok:true,json:async()=>({chat_answer:'Email demo@example.test'}),text:async()=>''};});
+    const result=await llm.chat({messages:[{role:'user',content:'Patient name: Example Person, email demo@example.test, phone +91 9876543210'}],forceProvider:'sib',skipCache:true});
+    expect(result.content).toBe('Email demo@example.test');
+    expect(JSON.stringify(sibBodies)).not.toContain('demo@example.test');expect(JSON.stringify(sibBodies)).not.toContain('9876543210');expect(JSON.stringify(sibBodies)).not.toContain('Example Person');
+    const {default:pool}=await import('../db/pgPool.js');
+    const logs=pool.query.mock.calls.filter(([sql])=>sql.includes('INSERT INTO ai_request_logs'));
+    expect(logs.length).toBeGreaterThan(0);expect(JSON.stringify(logs.at(-1)[1])).not.toContain('demo@example.test');
+  });
   it('sends cognitive_tier to SIB so it can pick the GPU node', async () => {
     const llm = await loadWith({});
     const res = await llm.chat({ messages: [{ role: 'user', content: 'explain this ECG' }], cognitiveTier: 'deep' });

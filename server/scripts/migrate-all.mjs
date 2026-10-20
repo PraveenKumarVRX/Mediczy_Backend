@@ -13,6 +13,7 @@ const SERVER = path.join(__dirname, '..');
 const ROOT = path.join(SERVER, '..');
 
 const MANIFEST = [
+  { id: 'contact-center', cmd: 'node', args: ['migrations/20261020008000-contact-center.migration.js','--check'], cwd: SERVER },
   { id: 'hmis-chain', cmd: 'node', args: ['run-hmis-migrations.js', 'up'], cwd: SERVER },
   { id: 'hospital-queue-os', cmd: 'node', args: ['migrations/20260617-hospital-queue-os.migration.js'], cwd: SERVER, optional: true },
   { id: 'samd-governance', cmd: 'node', args: ['migrations/samd-interpretability-governance.migration.js'], cwd: SERVER, optional: true },

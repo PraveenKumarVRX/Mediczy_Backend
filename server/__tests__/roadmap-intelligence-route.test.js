@@ -135,6 +135,8 @@ describe('patient ownership is checked before anything is written', () => {
   });
 });
 
+describe('biometric scores are model-owned',()=>{it('rejects caller-supplied scores',async()=>{const res=await request(app).post('/r/voice-biometrics/verifications').set('authorization',nurse()).send({patientId:5,enrollmentId:77,sampleRef:'s',score:1});expect(res.status).toBe(400);expect(res.body.code).toBe('MODEL_SCORE_REQUIRED');});});
+
 describe('errors never leak SQL and never hang', () => {
   it('a database failure is a generic 500 with no table names', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => {});

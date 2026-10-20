@@ -1,0 +1,15 @@
+import {spawn} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+const mode=process.argv[3]||process.env.CONTACT_CENTER_WORKER_MODE;
+if(!['stt','bot'].includes(mode))throw new Error('Choose stt or bot');
+const required=['LIVEKIT_URL','LIVEKIT_API_KEY','LIVEKIT_API_SECRET','VOICE_PUBLIC_BASE_URL','VOICE_INTERNAL_SECRET','GROQ_API_KEY',...(mode==='bot'?['ELEVENLABS_API_KEY']:[])];
+if(required.some(key=>!process.env[key]))throw new Error('Required voice worker configuration is incomplete');
+const keys=['PATH','LANG','HOME','SSL_CERT_FILE','ELEVENLABS_VOICE_ID',...required];
+const childEnv=Object.fromEntries(keys.filter(k=>process.env[k]).map(k=>[k,process.env[k]]));
+childEnv.CONTACT_CENTER_WORKER_MODE=mode;
+const interpreter=process.env.VOICE_PYTHON||'/home/ubuntu/Mediczy/.venv/bin/python';
+const script=fileURLToPath(new URL('../../isha-agent/contact_center_worker.py',import.meta.url));
+const child=spawn(interpreter,[script,'start'],{env:childEnv,stdio:'inherit'});
+for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>child.kill(signal));
+child.on('error',()=>{console.error('Voice worker interpreter failed to start');process.exitCode=1;});
+child.on('exit',code=>{process.exitCode=code||0;});

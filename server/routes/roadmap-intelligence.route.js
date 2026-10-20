@@ -284,9 +284,11 @@ router.post('/voice-biometrics/enrollments', auth(CLINICAL_ROLES), handle(async 
   res.status(201).json({ success: true, data: out, readiness: 'pending_model_validation' });
 }));
 router.post('/voice-biometrics/verifications', auth(CLINICAL_ROLES), handle(async (req, res) => {
-  const { patientId, enrollmentId, sampleRef, score = null } = req.body;
+  if(Object.prototype.hasOwnProperty.call(req.body,'score'))return res.status(400).json({success:false,code:'MODEL_SCORE_REQUIRED',message:'Caller-supplied biometric scores are forbidden; use model-backed voice verification'});
+  const { patientId, enrollmentId, sampleRef } = req.body;
+  const score=null;
   if (!patientId || !enrollmentId || !sampleRef) return res.status(400).json({ success: false, message: 'patientId, enrollmentId and sampleRef are required' });
-  const verdict = score === null ? 'review_required' : Number(score) >= 0.9 ? 'match_candidate' : 'non_match_candidate';
+  const verdict = 'review_required';
   const row = await scoped(req, async (c) => {
     const pid = await assertPatientInTenant(c, req, patientId);
     const enrollment = (await c.query(`SELECT 1 FROM voice_biometric_enrollments WHERE id=$1 AND tenant_id=$2 AND patient_id=$3`, [enrollmentId, req.tenantId, pid])).rows[0];

@@ -942,6 +942,11 @@ const ringFencingMiddleware = (req, res, next) => {
   const requestPath = req.originalUrl.split('?')[0]; // Use originalUrl and strip query params
   const requestMethod = req.method;
 
+  // Exact provider/service hook paths authenticate in the contact-center router.
+  // Exotel notifications are reconciled against the account API; gateway events
+  // require an expiring HMAC and a persisted anti-replay nonce.
+  if (requestMethod === 'POST' && /^\/api\/contact-center\/hooks\/(exotel|gateway|livekit|agent|guest)\/[A-Za-z0-9_-]{4,64}$/.test(requestPath)) return next();
+
   // ⚠️ CRITICAL: Bypass ring-fencing for Twilio WhatsApp webhooks
   // Twilio cannot send JWT auth headers; these endpoints must accept unauthenticated requests
   if (requestPath.startsWith('/api/whatsapp-production/webhook') ||
@@ -951,6 +956,12 @@ const ringFencingMiddleware = (req, res, next) => {
       requestPath === '/api/payments/webhook' ||
       requestPath === '/api/payments/config') {
     console.log('✅ Twilio WhatsApp webhook bypass (public, no auth required):', requestPath);
+    return next();
+  }
+
+  // The mobile refresh alias authenticates its refresh token in the route.
+  // Match the exact path and method so adjacent endpoints stay protected.
+  if (requestMethod === 'POST' && requestPath === '/api/team/refresh-token') {
     return next();
   }
 

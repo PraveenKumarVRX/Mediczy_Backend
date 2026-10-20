@@ -82,6 +82,7 @@
   "description": "",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
+    "@aws-sdk/client-kms": "3.985.0",
     "@aws-sdk/client-s3": "^3.985.0",
     "@aws-sdk/client-sesv2": "^3.1069.0",
     "@aws-sdk/client-ssm": "^3.1053.0",

@@ -1,0 +1,42 @@
+# Put secret values in SecureString parameters under /mediczy/prod, never here.
+# This file documents names and synthetic reference structure only.
+VOICE_PUBLIC_BASE_URL=https://app.mediqzy.com
+VOICE_PROVIDER_BINDINGS={"TENANT_UID":{"credential_prefix":"VOICE_HOSPITAL","number":"APPROVED_E164_EXOPHONE","gateway_prefix":"VOICE_GATEWAY"}}
+VOICE_TENANT_UIDS=["TENANT_UID"]
+VOICE_HOSPITAL_SID=<secret-store-reference>
+VOICE_HOSPITAL_API_KEY=<secret-store-reference>
+VOICE_HOSPITAL_API_TOKEN=<secret-store-reference>
+VOICE_HOSPITAL_HOST=api.exotel.com
+# Optional browser calling; requires approved Exotel WebRTC subscribers.
+VOICE_HOSPITAL_WEBRTC_ACCOUNT_TOKEN=<secret-store-reference>
+VOICE_HOSPITAL_WEBRTC_ACCOUNTS={"STAFF_ID":{"userName":"APPROVED_SUBSCRIBER","domain":"APPROVED.exotel.com","sipdomain":"APPROVED.exotel.com","port":443}}
+# Optional signed external media integration. No media server is bundled.
+VOICE_GATEWAY_URL=https://approved-media-service.example
+VOICE_GATEWAY_EVENT_SECRET=<secret-store-reference>
+# Use exact CloudFormation outputs, including the full KMS key ARN.
+VOICE_RECORDINGS_BUCKET=<private-bucket-output>
+VOICE_RECORDINGS_KMS_KEY=<kms-key-arn-output>
+VOICE_MAX_RETENTION_DAYS=30
+VOICE_EMBEDDING_MODEL=clinical-bert-768
+# Reuse the existing project. These already power video and Dr Isha.
+LIVEKIT_URL=<existing-livekit-websocket-url>
+LIVEKIT_API_KEY=<existing-secret-store-reference>
+LIVEKIT_API_SECRET=<existing-secret-store-reference>
+# Only PSTN needs this mapping; browser invitations work without a trunk.
+VOICE_LIVEKIT_BINDINGS={"TENANT_UID":{"outbound_trunk_id":"APPROVED_TRUNK_ID","number":"APPROVED_E164_NUMBER"}}
+VOICE_INTERNAL_SECRET=<new-securestring-worker-signing-secret>
+GROQ_API_KEY=<existing-stt-secret-store-reference>
+ELEVENLABS_API_KEY=<existing-tts-secret-store-reference>
+VOICE_PYTHON=/home/ubuntu/Mediczy/.venv/bin/python
+# Separate private speaker-model service and KMS template key.
+VOICE_BIOMETRIC_URL=https://approved-private-model-service.example
+VOICE_BIOMETRIC_SECRET=<separate-securestring-model-signing-secret>
+VOICE_BIOMETRIC_KMS_KEY=<VoiceBiometricKMSKeyArn-stack-output>
+VOICE_BIOMETRIC_MODEL_SHA256=0575cb64845e6b9a10db9bcb74d5ac32b326b8dc90352671d345e2ee3d0126a2
+VOICE_SPEAKER_CONFIG_SHA256=6f78854fa04ba59e761437b76a2575d3aba5e5016de3e9b69f0c9a5077fb1a41
+VOICE_SPEAKER_MODEL_DIR=<reviewed-local-model-artifact-directory>
+# Optional evaluated antispoof TorchScript, never downloaded from caller input.
+VOICE_ANTISPOOF_MODEL_PATH=<reviewed-local-antispoof-model>
+VOICE_ANTISPOOF_MODEL_SHA256=<approved-sha256>
+# Leave unset until the held-out evaluation passes. Never authorizes login.
+VOICE_BIOMETRIC_VALIDATION=<passed-evaluation-report-json>

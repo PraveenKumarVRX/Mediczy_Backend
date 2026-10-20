@@ -1,5 +1,5 @@
 /**
- * Smart Force Field Force — API client
+ * Smart-Force — API client
  * Uses the same teamToken / api instance as the Team portal.
  * All calls go to /api/field/*.
  */

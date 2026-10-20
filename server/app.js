@@ -162,6 +162,7 @@ import videoRouter from './routes/video.route.js';
 import smsRouter from './routes/sms.route.js';
 import videoConfigRouter from './routes/videoConfig.route.js';
 import voiceConfigRouter from './routes/voiceConfig.route.js';
+import contactCenterRouter, { contactCenterHooks } from './routes/contact-center.route.js';
 import whatsappConfigRouter from './routes/whatsapp.config.route.js';
 import whatsappBusinessRouter from './routes/whatsapp.business.route.js';
 import whatsappProductionRouter from './routes/whatsapp-production.route.js';
@@ -877,10 +878,11 @@ app.use(compression({
 // Doctor registration currently sends verification documents as base64 JSON.
 // Keep this aligned with the public registration document size allowance.
 app.use(express.json({
+  type: ['application/json', 'application/webhook+json'],
   limit: '50mb',
   verify: (req, _res, buf) => {
     // The WhatsApp webhook is HMAC-signed by Meta over the exact bytes it sent, so the raw body is required to verify it.
-    if (req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook' || req.originalUrl.split('?')[0] === '/api/chatwoot/webhook') {
+    if (/^\/api\/contact-center\/hooks\/livekit\/[A-Za-z0-9_-]{4,64}$/.test(req.originalUrl.split('?')[0]) || req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook' || req.originalUrl.split('?')[0] === '/api/chatwoot/webhook') {
       req.rawBody = buf.toString('utf8');
     }
   }
@@ -1550,6 +1552,8 @@ app.use('/api/fb-leads', fbLeadsRouter);    // Facebook Lead Ads webhook (public
 app.use('/api/social-inbox', socialInboxRouter); // Instagram/Facebook Messenger Team inbox (authTeam)
 app.use('/api/crm/brightbean-chat', crmBrightbeanChatRouter); // Clean-room BrightBean-style CRM chat automation
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
+app.use('/api/crm/contact-center', contactCenterRouter);
+app.use('/api/contact-center/hooks', contactCenterHooks);
 app.use('/api/whatsapp', whatsappRouter); // WhatsApp templates, campaigns & messaging
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
 app.use('/api/whatsapp-numbers', whatsappNumbersRouter); // WhatsApp multiple numbers management

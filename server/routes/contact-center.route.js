@@ -1,0 +1,14 @@
+import {Router} from 'express';
+import {authCRM,requireCRMCapability} from '../middleware/crm.middleware.js';
+import {createRateLimiter} from '../middleware/rateLimiter.middleware.js';
+import {contactCenterService,contactMedia,voiceCampaigns,voiceBiometrics} from '../services/contact-center/runtime.js';
+import {createContactCenterRouter,createContactCenterHooks} from './contact-center-http.js';
+import {advancedRouter,advancedHooks} from './contact-center-advanced-http.js';
+export {contactCenterService};
+export const contactCenterHooks=Router();
+contactCenterHooks.use(advancedHooks({media:contactMedia,limiter:createRateLimiter('webhook')}));
+contactCenterHooks.use(createContactCenterHooks({service:contactCenterService,limiter:createRateLimiter('webhook')}));
+const router=Router();
+router.use(advancedRouter({media:contactMedia,campaigns:voiceCampaigns,biometrics:voiceBiometrics,authenticate:authCRM,authorize:requireCRMCapability}));
+router.use(createContactCenterRouter({service:contactCenterService,authenticate:authCRM,authorize:requireCRMCapability}));
+export default router;

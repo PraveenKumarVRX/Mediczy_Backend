@@ -1,0 +1,316 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "MediQzy private call recordings: SSE-KMS, TLS, version-aware deletion and scoped runtime IAM",
+  "Parameters": {
+    "BucketName": {
+      "Type": "String",
+      "AllowedPattern": "[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]"
+    },
+    "RuntimeRoleName": {
+      "Type": "String",
+      "AllowedPattern": "[a-zA-Z0-9+=,.@_-]{1,64}"
+    },
+    "MaximumRetentionDays": {
+      "Type": "Number",
+      "Default": 30,
+      "MinValue": 1,
+      "MaxValue": 3650
+    }
+  },
+  "Resources": {
+    "VoiceKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "EnableKeyRotation": true,
+        "Description": "Private MediQzy voice recording encryption",
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AccountIAM",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    },
+    "VoiceBucket": {
+      "Type": "AWS::S3::Bucket",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "BucketName": {
+          "Ref": "BucketName"
+        },
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "BucketOwnerEnforced"
+            }
+          ]
+        },
+        "PublicAccessBlockConfiguration": {
+          "BlockPublicAcls": true,
+          "IgnorePublicAcls": true,
+          "BlockPublicPolicy": true,
+          "RestrictPublicBuckets": true
+        },
+        "VersioningConfiguration": {
+          "Status": "Enabled"
+        },
+        "BucketEncryption": {
+          "ServerSideEncryptionConfiguration": [
+            {
+              "ServerSideEncryptionByDefault": {
+                "SSEAlgorithm": "aws:kms",
+                "KMSMasterKeyID": {
+                  "Fn::GetAtt": [
+                    "VoiceKey",
+                    "Arn"
+                  ]
+                }
+              },
+              "BucketKeyEnabled": true
+            }
+          ]
+        },
+        "LifecycleConfiguration": {
+          "Rules": [
+            {
+              "Id": "MaximumRetentionFallback",
+              "Status": "Enabled",
+              "Prefix": "voice/",
+              "ExpirationInDays": {
+                "Ref": "MaximumRetentionDays"
+              },
+              "NoncurrentVersionExpiration": {
+                "NoncurrentDays": 1
+              },
+              "AbortIncompleteMultipartUpload": {
+                "DaysAfterInitiation": 1
+              }
+            },
+            {
+              "Id": "RemoveEmptyDeleteMarkers",
+              "Status": "Enabled",
+              "Prefix": "voice/",
+              "ExpiredObjectDeleteMarker": true
+            }
+          ]
+        }
+      }
+    },
+    "VoicePolicy": {
+      "Type": "AWS::S3::BucketPolicy",
+      "Properties": {
+        "Bucket": {
+          "Ref": "VoiceBucket"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "TLSRequired",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:*",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}"
+                },
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}/*"
+                }
+              ],
+              "Condition": {
+                "Bool": {
+                  "aws:SecureTransport": "false"
+                }
+              }
+            },
+            {
+              "Sid": "ExplicitKMSRequired",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}/voice/*"
+              },
+              "Condition": {
+                "StringNotEquals": {
+                  "s3:x-amz-server-side-encryption": "aws:kms"
+                }
+              }
+            },
+            {
+              "Sid": "ExactKeyRequired",
+              "Effect": "Deny",
+              "Principal": "*",
+              "Action": "s3:PutObject",
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}/voice/*"
+              },
+              "Condition": {
+                "StringNotEquals": {
+                  "s3:x-amz-server-side-encryption-aws-kms-key-id": {
+                    "Fn::GetAtt": [
+                      "VoiceKey",
+                      "Arn"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "VoiceRuntimePolicy": {
+      "Type": "AWS::IAM::Policy",
+      "Properties": {
+        "PolicyName": {
+          "Fn::Sub": "${AWS::StackName}-recordings"
+        },
+        "Roles": [
+          {
+            "Ref": "RuntimeRoleName"
+          }
+        ],
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:DeleteObject",
+                "s3:DeleteObjectVersion"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}/voice/*"
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:ListBucketVersions"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}"
+              },
+              "Condition": {
+                "StringLike": {
+                  "s3:prefix": [
+                    "voice/*"
+                  ]
+                }
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kms:GenerateDataKey",
+                "kms:Decrypt"
+              ],
+              "Resource": {
+                "Fn::GetAtt": [
+                  "VoiceKey",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": {
+                    "Fn::Sub": "s3.${AWS::Region}.amazonaws.com"
+                  }
+                },
+                "StringLike": {
+                  "kms:EncryptionContext:aws:s3:arn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::${BucketName}*"
+                  }
+                }
+              }
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kms:Encrypt",
+                "kms:Decrypt"
+              ],
+              "Resource": {
+                "Fn::GetAtt": [
+                  "VoiceBiometricKey",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "Null": {
+                  "kms:EncryptionContext:tenant_uid": "false",
+                  "kms:EncryptionContext:identity_id": "false"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "VoiceBiometricKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "EnableKeyRotation": true,
+        "Description": "Separate tenant-bound speaker template encryption",
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AccountIAM",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "Outputs": {
+    "RecordingsBucket": {
+      "Value": {
+        "Ref": "VoiceBucket"
+      }
+    },
+    "RecordingsKMSKeyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "VoiceKey",
+          "Arn"
+        ]
+      }
+    },
+    "VoiceBiometricKMSKeyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "VoiceBiometricKey",
+          "Arn"
+        ]
+      }
+    }
+  }
+}

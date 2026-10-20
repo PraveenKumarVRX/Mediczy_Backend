@@ -33,6 +33,7 @@ const sidebarNav = [
     { icon: Route, label: 'Hospital CRM', path: '/crm/hospital', cap: 'foundation:read' },
     { icon: Gauge, label: 'Command Center · Business & Marketing Heads', path: '/crm/hospital/command-center', cap: 'dashboard:command-center' },
     { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
+    { icon: Phone, label: 'Contact Center', path: '/crm/contact-center', cap: 'contact_center:read' },
     { icon: Filter, label: 'Segments', path: '/crm/hospital/segments', cap: 'segments:read' },
     { icon: Bot, label: 'Automations', path: '/crm/hospital/automations', cap: 'automations:read' },
     { icon: Sparkles, label: 'Growth Automation', path: '/crm/hospital/growth', cap: 'growth:read' },
@@ -69,8 +70,8 @@ const sidebarNav = [
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
     { icon: Settings, label: 'Settings & Channels', path: '/crm/settings' },
   ]},
-  { section: 'FIELD FORCE', items: [
-    { icon: MapPin, label: 'Smart Force', path: '/crm/field-force', cap: 'field_force:read' },
+  { section: 'SMART-FORCE', items: [
+    { icon: MapPin, label: 'Smart-Force', path: '/crm/field-force', cap: 'field_force:read' },
   ]},
   { section: 'ADMIN', items: [
     { icon: UserPlus, label: 'Team', path: '/crm/team', cap: 'team:manage' },

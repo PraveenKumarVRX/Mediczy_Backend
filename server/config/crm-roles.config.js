@@ -32,6 +32,10 @@ export const DEFAULT_CRM_ROLE = CRM_ROLES.SALES_REP;
 
 // capability -> roles allowed (besides admin, who always passes every check).
 export const CRM_CAPABILITY_ROLES = Object.freeze({
+  'contact_center:biometrics': [CRM_ROLES.BUSINESS_HEAD],
+  'contact_center:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
+  'contact_center:write': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
+  'contact_center:configure': [CRM_ROLES.BUSINESS_HEAD],
   // Executive dashboards — the sensitive ones.
   'dashboard:business-head': [CRM_ROLES.BUSINESS_HEAD],
   'dashboard:marketing-head': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD],

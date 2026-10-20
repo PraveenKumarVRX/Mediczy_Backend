@@ -1,4 +1,5 @@
 import sharedPool from '../db/pgPool.js';
+import {enqueueJourneyVoice} from './contact-center/campaigns.js';
 
 function tenantId(value) {
   const id = Number(value);
@@ -45,10 +46,15 @@ export async function processJourneyQueue(tenant, actorUserId, limit = 100) {
   const processed = [];
   for (const item of due.rows) {
     processed.push(await transaction(async (client) => {
+      const locked=await client.query('SELECT status FROM crm_journey_events WHERE tenant_id=$1 AND id=$2 FOR UPDATE',[id,item.event_id]);
+      if(locked.rows[0]?.status!=='queued')return {eventId:item.event_id,status:'skipped'};
       let eventStatus = 'executed';
       let errorMessage = null;
       if (item.step_type === 'message') {
         const channel = item.channel || 'whatsapp';
+        if(channel==='voice'){
+          await enqueueJourneyVoice(client,{tenantId:id,eventId:item.event_id,identityId:item.identity_id,config:json(item.config)});
+        }else{
         const consent = await client.query(
           `SELECT status FROM crm_consent_records WHERE tenant_id = $1 AND identity_id = $2 AND channel = $3 AND purpose = 'marketing' AND withdrawn_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY captured_at DESC LIMIT 1`,
           [id, item.identity_id, channel]
@@ -62,6 +68,7 @@ export async function processJourneyQueue(tenant, actorUserId, limit = 100) {
              VALUES ($1, $2, $3, $4, 'outbound', 'journey', $5, 'journey-queue', 'queued', $6, $7::jsonb)`,
             [id, item.identity_id, item.lead_id, channel, item.content || item.title || 'Hospital CRM journey message', actorUserId || null, JSON.stringify({ journey_step_id: item.step_id })]
           );
+        }
         }
       } else if (item.step_type === 'task') {
         await client.query(

@@ -1,0 +1,166 @@
+{
+  "at": "2026-10-20T14:13:20.889939+00:00",
+  "providerDecision": "Exotel first; no credentials or approved test number supplied",
+  "gitHead": "327c86002b668351cda529ab8bed478a5d74be33",
+  "workingTree": "dirty; preserve unrelated edits; these hashes are evidence, not a deployment allowlist",
+  "sourceSha256": {
+    "client/package-lock.json": "2c476204b277e789cd89b0ce346659a03cb8596f4ef363ebba6f5c1120cf27fb",
+    "client/package.json": "f98e5fb687a8640bdd0bca6cf9105d308ad63a2332a740995dd80b3c48d2c3e6",
+    "client/src/hooks/useExotelPhone.ts": "5f1513ed974a08ad5703c3f1a8937d79462e8728f09f67c2b7aec868139e0f7c",
+    "client/src/pages/crm/CRMContactCenterPage.test.tsx": "866a9cd717c92c733cfb81ce7e6c37391dab3b1adfc09d025113a8c981256bc2",
+    "client/src/pages/crm/CRMContactCenterPage.tsx": "4226d69da6a68980fbc34f42e38f120e759e5bfab1e5c8b14a51aa18d9d348cd",
+    "client/src/pages/crm/CRMModulePages.tsx": "fde5f6dcede47fca2c2c50f05bd170d0e9680cf7d4524b4f70060ae4a423017c",
+    "client/src/pages/crm/shared/crmRoles.ts": "fc496db7985d0c68f9ecc42e8ef578848f417293854a13ff4e5d2f600ca5c44e",
+    "client/src/routes/index.tsx": "8d62c3fab6b93cd28b05ac875f76d5188840da544fcecfdcaf2abb6e5dccb649",
+    "client/src/types/exotel-webrtc.d.ts": "621bf3d493675a624658a6a99d33c3ab99f9ff22d9aa579188ad91a903a7eda8",
+    "client/src/utils/exotel-privacy.test.ts": "08d5dbf1bbadbc5624ec38c9800c22bb00316a37809146a4046356686faf4775",
+    "client/src/utils/exotel-privacy.ts": "55216be6a8cfdddae31293488643d561e348d0adcb3f8474bf7528334244b033",
+    "docs/api/CONTACT_CENTER_API.md": "84db275a25ab3c4382f8cb46b8e6775176819d520ffe6839bb67e47685f578d4",
+    "docs/deployment/CONTACT_CENTER_EXOTEL_2026-10-20.md": "011022594094f7b126dd9b6d487cdcc825e1796942b09e3d0b5e072aecfc9a4c",
+    "infra/contact-center/environment.example": "7f6a97cf6f03fc659bd8e90d6da38c3270bb48f2d4e0c1f6d6d20695e8964514",
+    "infra/contact-center/private-voice.cloudformation.json": "4cae12082c721660811c0abab94ccdce83e56a5f30b265f84d18010e63079085",
+    "infra/contact-center/worker.config.cjs": "01219297f61673a1c170ed198fd432074081e3bdac9661aae0fdd2bca74ba095",
+    "server/__tests__/contact-center-exotel.test.js": "d36ba1e6a57a9a504b3c021de10684bca043c33ef647eef01fb62bac5b359014",
+    "server/__tests__/contact-center-http.test.js": "fab10b184ed977f80de1b79aca167acd40e50bf8fb1f8064e932aed804dd397f",
+    "server/__tests__/contact-center-integrations.test.js": "4e7c9e2808c399e58318bee5a0902299462046db17fa68b92d3ee1292ab9f806",
+    "server/__tests__/contact-center-policy.test.js": "8605a79471ee393070cb109e86ee330ec8f1bf35adf6028282a306c6e4d81065",
+    "server/__tests__/contact-center-ringfencing.test.js": "b9bc328a09a5a936fcf35ce5d44fa5f183f1f949db7e6c5e663d137947ebee3c",
+    "server/__tests__/llm-provider-cognitive-tier.test.js": "d07768107a9a9e78fe8707789df1d15aab4c81b1375b0b408e2f67543929b763",
+    "server/__tests__/phi-text-redactor.test.js": "23b411f12ab7ea5c9ea348614443b268d4bed2379dba74009baf6bb2d4927f80",
+    "server/app.js": "c7897e62052182fd1f00a8d48c83c628ab990dd9619ec9750f77bdc6aa27169b",
+    "server/config/crm-roles.config.js": "0069dfdc82be99b7a00e153587c36cb498ce43845a565448982ffbc903bd451d",
+    "server/middleware/ringFencing.js": "61ee5757e39559d248e68d17c80e0a16eee797002d1545624918cc88ef51e042",
+    "server/migrations/20261020008000-contact-center.migration.js": "8ab56fde296ac6214f51a1e6ee6f7db9418c88832b3d9ead116f439f414e7350",
+    "server/routes/contact-center-http.js": "553c46828c3730f471ef68d61c432fda4e0f670424914500207537925c2c4cf0",
+    "server/routes/contact-center.route.js": "20dcecef6fff6cd94ec08804b8a65d5113206bd840cc0ba4688f09c8cb6d4c56",
+    "server/scripts/migrate-all.mjs": "a570780839e3a1c3c7a54a150280e1115beba825184600d0945cb4ac3b643292",
+    "server/scripts/ops/migrate-contact-center.mjs": "4e3193a28174a6ddbbb03381fe32667d89c953b11ac216720281638c39d69bf1",
+    "server/scripts/qa/contact-center-integration.mjs": "008bc680cf4db4f108468543d027a0b30f66e471f4f88bb12cfac82658722393",
+    "server/scripts/workers/contact-center.mjs": "848575093b20261847d47510c298e6339dba664bb1547e9aa346f18e33709969",
+    "server/services/ai-brain/llm-provider.js": "e0e90bb9c7bd6c985d717554e0f7bfee4ff46d9ab556a20788f078667d160e22",
+    "server/services/contact-center/exotel.js": "4f97524112208cda21b25b8ec09a3b6ee4e5ad3507704f0c22ca76cd686906f7",
+    "server/services/contact-center/integrations.js": "2c7339cde8c636414df85c6fa294110a0ab277a7c7d1caec4aa50508c26653e1",
+    "server/services/contact-center/policy.js": "9c5ea12ebae0bbb32a888491d7292ff8f63c6e443e6f845689ba3052d5a1dfea",
+    "server/services/contact-center/service.js": "06e4e1e0c640093666d6aec8b4e048165b7f3a86f8b15de81bbda284fcdbced8",
+    "server/services/contact-center/store.js": "8a94a7c63c0f8dd7f7200e2cc4691fa0e4403785aa168a27774c31402fe117e4",
+    "server/utils/phi-text-redactor.js": "9b121f9c5252df47f6adb55cade76484f1f1b873895778325394fab11820a519"
+  },
+  "verification": {
+    "server": {
+      "passed": 81,
+      "suites": 10,
+      "failed": 0,
+      "forceExit": false,
+      "files": [
+        "server/__tests__/llm-provider-cognitive-tier.test.js",
+        "server/__tests__/phi-audit-masking.test.js",
+        "server/__tests__/contact-center-ringfencing.test.js",
+        "server/__tests__/contact-center-integrations.test.js",
+        "server/__tests__/nursing-ringfencing.test.js",
+        "server/__tests__/contact-center-http.test.js",
+        "server/__tests__/ringfencing-public-doctor-auth.test.js",
+        "server/__tests__/contact-center-policy.test.js",
+        "server/__tests__/phi-text-redactor.test.js",
+        "server/__tests__/contact-center-exotel.test.js"
+      ]
+    },
+    "frontend": {
+      "passed": 5,
+      "failed": 0,
+      "files": [
+        "client/src/utils/exotel-privacy.test.ts",
+        "client/src/pages/crm/CRMContactCenterPage.test.tsx"
+      ]
+    },
+    "postgres": {
+      "database": "disposable PostgreSQL 16",
+      "passed": 29,
+      "checks": [
+        "All contact-center tables use the separate NOLOGIN owner and forced RLS",
+        "Runtime cannot disable RLS or truncate audit events",
+        "A tenant cannot select another organization provider credential reference",
+        "Agent identity is tenant-bound",
+        "Concurrent retries originate exactly one provider call",
+        "An idempotency key cannot change recipient",
+        "A busy agent cannot place a second call",
+        "Other tenant cannot read call",
+        "Pool does not retain tenant state",
+        "Database rejects a cross-tenant insert",
+        "Agent active-call references are constrained to an existing call of the same tenant",
+        "Duplicate provider event is skipped",
+        "Late callback cannot regress terminal state",
+        "Event history is immutable",
+        "Browser credentials are rotated only for the assigned account",
+        "Signed event replay is rejected",
+        "Transcripts are redacted before persistence",
+        "Search remains tenant scoped",
+        "Summary jobs produce reviewable artifacts",
+        "Copilot retrieval includes only published tenant knowledge",
+        "Vector indexing and semantic search obey tenant scope",
+        "Unconsented recording import stays denied",
+        "Suppressed destination cannot be dialed",
+        "Queue assignment respects skills and excludes busy agents",
+        "Missing gateway does not fake media success",
+        "A consented completed call imports one private recording",
+        "Retention deletes recording content and contact details",
+        "Delayed events cannot recreate expired call content",
+        "Verified inbound missed calls create one owned callback task"
+      ],
+      "liveCalls": 0,
+      "productionMutations": 0
+    },
+    "frontendBuild": {
+      "passed": true,
+      "modules": 7884,
+      "duration": "1m 29s",
+      "buildLogSha256": "940943a67b9c7732c90a18fd3f967f8b6566305e39bd26ffe7b541c95006e28d",
+      "indexSha256": "b032cdcfcd2fb3351961180992571ea5f4853757af2b16ac1c21656adfeb0772",
+      "artifact": "ephemeral validation build; not deployed",
+      "warnings": [
+        "Browserslist data age",
+        "browser-externalized imaging dependency modules",
+        "existing mixed dynamic/static route imports",
+        "large chunks"
+      ]
+    },
+    "cloudformation": {
+      "validated": true,
+      "deployed": false,
+      "capabilities": [
+        "CAPABILITY_IAM"
+      ],
+      "templateSha256": "4cae12082c721660811c0abab94ccdce83e56a5f30b265f84d18010e63079085"
+    },
+    "administratorMigrationRehearsal": {
+      "at": "2026-10-20T14:12:10.685Z",
+      "mode": "rollback-only",
+      "instance": "mediczy-prod-encrypted-20261019",
+      "host": "mediczy-prod-encrypted-20261019.cloqkwiey4k0.ap-south-1.rds.amazonaws.com",
+      "snapshot": null,
+      "migrationSha256": "8ab56fde296ac6214f51a1e6ee6f7db9418c88832b3d9ead116f439f414e7350",
+      "tables": 14,
+      "liveCalls": 0,
+      "result": "passed"
+    },
+    "syntaxChecks": "passed for service, integrations, HTTP router, migration, administrator runner, worker, shared LLM provider and PM2 config",
+    "targetedGitDiffWhitespace": "passed"
+  },
+  "production": {
+    "applicationDeployed": false,
+    "schemaApplied": false,
+    "infrastructureProvisioned": false,
+    "liveCalls": 0,
+    "clinicalAcceptance": false
+  },
+  "remaining": [
+    "Exotel account/trunk/ExoPhone and approved pilot number; provider/WebRTC and real-call acceptance",
+    "Provider-executed inbound IVR/waiting/overflow and advanced transfer/supervision media implementation",
+    "SIPREC and telephone streaming STT producer, language/latency evaluation",
+    "Telephone AI bot interruption/handoff engine",
+    "CRM ticket/patient/encounter linkage and governed campaign/journey voice execution",
+    "Transfer-aware talk/hold/wait/wrap-up metrics and media monitoring",
+    "Provider-side recording policy/deletion, recording pause/resume and private storage provisioning",
+    "Evaluated acoustic QA/sentiment and validated anti-spoofing speaker model; biometrics disabled",
+    "Broader multilingual privacy evaluation and hospital review"
+  ]
+}

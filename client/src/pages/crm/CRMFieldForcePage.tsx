@@ -1,5 +1,5 @@
 /**
- * CRM Field Force Management — Business Head view
+ * Smart-Force Management — Business Head view
  * Mounted at /crm/field-force and sub-paths.
  * Requires: CRM login, field_force:read capability.
  * Requires field_force:manage for approve/reject/targets/territories.
@@ -819,7 +819,7 @@ export default function CRMFieldForcePage() {
   const [tab, setTab] = useState<TabId>('overview');
 
   return (
-    <CRMLayout title="Smart Force">
+    <CRMLayout title="Smart-Force">
       <div className="p-4 md:p-6 space-y-5 max-w-screen-xl">
         {/* Header */}
         <div className="flex items-center gap-3">
@@ -827,7 +827,7 @@ export default function CRMFieldForcePage() {
             <MapPin className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">Smart Force</h1>
+            <h1 className="text-xl font-bold">Smart-Force</h1>
             <p className="text-sm text-muted-foreground">Field force management — Business Head view</p>
           </div>
         </div>

@@ -28,6 +28,10 @@ export const CRM_ROLE_LABELS: Record<string, string> = {
 };
 
 export const CRM_CAPABILITY_ROLES: Record<string, string[]> = {
+  'contact_center:read': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
+  'contact_center:write': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD, CRM_ROLES.TELECALLER, CRM_ROLES.CONVERSION],
+  'contact_center:configure': [CRM_ROLES.BUSINESS_HEAD],
+  'contact_center:biometrics': [CRM_ROLES.BUSINESS_HEAD],
   'dashboard:business-head': [CRM_ROLES.BUSINESS_HEAD],
   'dashboard:marketing-head': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD],
   'dashboard:command-center': [CRM_ROLES.BUSINESS_HEAD, CRM_ROLES.MARKETING_HEAD],

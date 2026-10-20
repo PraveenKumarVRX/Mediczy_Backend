@@ -147,7 +147,7 @@ export default function FieldDashboard() {
       <div className="bg-[#17365D] text-white px-4 pt-10 pb-6">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-blue-200 text-xs font-semibold tracking-widest uppercase mb-1">Smart Force</p>
+            <p className="text-blue-200 text-xs font-semibold tracking-widest uppercase mb-1">Smart-Force</p>
             <h1 className="text-xl font-bold">Good {new Date().getHours() < 12 ? 'Morning' : 'Afternoon'}, {userName.split(' ')[0]}</h1>
             <p className="text-blue-200 text-sm mt-0.5">{todayStr}</p>
           </div>

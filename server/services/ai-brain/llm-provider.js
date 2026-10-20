@@ -20,7 +20,7 @@ import pool from '../../db/pgPool.js';
 import semanticCache from './semantic-cache.service.js';
 import cognitiveRouter, { TIERS, TIER_PROVIDERS } from './cognitive-router.js';
 import { recordTelemetry } from './evaluation-engine.js';
-import { maskPhi } from '../../utils/phi-masker.js';
+import { sanitizeLlmMessages, redactPhiText } from '../../utils/phi-text-redactor.js';
 import gpuScheduler, { slotForRequest } from './gpu-scheduler.service.js';
 
 // GPU scheduling (per-GPU concurrency, priority queue, circuit breaker) is opt-in. While the
@@ -29,12 +29,7 @@ import gpuScheduler, { slotForRequest } from './gpu-scheduler.service.js';
 const GPU_SCHEDULER_ENABLED = String(process.env.AI_GPU_SCHEDULER_ENABLED || '').toLowerCase() === 'true';
 
 function sanitizeMessagesForLlm(messages) {
-  return (messages || []).map((m) => {
-    if (m?.content && typeof m.content === 'object') {
-      return { ...m, content: maskPhi(m.content) };
-    }
-    return m;
-  });
+  return sanitizeLlmMessages(messages);
 }
 
 // ─── Provider Clients (lazy-init) ───────────────────────────
@@ -230,7 +225,6 @@ async function callIsha(params) {
     max: 120_000,
   });
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ishaTimeoutMs);
 
   const token = await getIshaToken();
   const headers = {
@@ -264,6 +258,7 @@ async function callIsha(params) {
   const { tools: _t, tool_choice: _tc, response_format: _rf, ...rest } = params;
   const sanitisedParams = { ...rest, messages };
 
+  const timeoutId = setTimeout(() => controller.abort(), ishaTimeoutMs);
   try {
     const res = await fetch(url, {
       method: 'POST',
@@ -1067,7 +1062,7 @@ async function chat({
       }).catch(() => {});
       break; // Success — stop cascade
     } catch (err) {
-      const msg = err.message || String(err);
+      const msg = redactPhiText(err.message || String(err));
       console.warn(`[LLM] ${provider.label} failed: ${msg}`);
       cascade.push({ provider: provider.name, status: 'error', error: msg });
       errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: ${msg}`;
@@ -1122,6 +1117,7 @@ async function chat({
     (result.usage.inputTokens  * costs.input  / 1_000_000) +
     (result.usage.outputTokens * costs.output / 1_000_000)
   );
+  const safeLog=sanitizeLlmMessages([{role:'assistant',content:result.content,tool_calls:result.toolCalls}])[0];
   pool.query(
     `INSERT INTO ai_request_logs
       (model_config_id, conversation_id, provider, model_name, input_messages, output_text,
@@ -1129,13 +1125,13 @@ async function chat({
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
     [
       dbConfig?.id || null, (Number.isInteger(+conversationId) && conversationId != null ? +conversationId : null), winningProvider.name, result.model,
-      JSON.stringify(messages.map(m => ({ role: m.role, content: m.content?.substring(0, 500) }))),
-      result.content?.substring(0, 2000),
+      JSON.stringify(messages.map(m => ({ role: m.role, content: typeof m.content==='string'?m.content.substring(0,500):'[MULTIMODAL CONTENT OMITTED]' }))),
+      safeLog.content?.substring(0, 2000),
       result.usage.inputTokens, result.usage.outputTokens, result.usage.totalTokens,
       costUsd, latencyMs,
       cascade.length > 1 ? 'fallback' : 'success',
-      cascade.length > 1 ? errorMessage : null,
-      JSON.stringify(result.toolCalls),
+      cascade.length > 1 ? redactPhiText(errorMessage) : null,
+      JSON.stringify(safeLog.tool_calls),
       JSON.stringify({ finish_reason: result.finishReason, cascade }),
     ]
   ).catch(e => console.error('[LLM] log error:', e.message));

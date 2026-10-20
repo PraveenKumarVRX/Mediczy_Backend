@@ -1,0 +1,15 @@
+import pool from '../../db/pgPool.js';
+import llm from '../ai-brain/llm-provider.js';
+import embedding from '../embedding.service.js';
+import {createContactCenterStore} from './store.js';
+import {createContactCenter} from './service.js';
+import {createCallIntelligence,createMediaGateway,createRecordingStorage} from './integrations.js';
+import {createLiveKitTransport} from './livekit.js';
+import {createContactMedia} from './media-service.js';
+import {createVoiceCampaigns} from './campaigns.js';
+import {createVoiceBiometrics,createSpeakerModel,createTemplateVault} from './biometrics.js';
+const tx=createContactCenterStore(pool);
+export const contactCenterService=createContactCenter({tx,llm:createCallIntelligence(llm),storage:createRecordingStorage(),gateway:createMediaGateway(),embed:text=>embedding.embed(text)});
+export const contactMedia=createContactMedia({tx,base:contactCenterService,transport:createLiveKitTransport(),llm});
+export const voiceCampaigns=createVoiceCampaigns({tx,base:contactCenterService,media:contactMedia});
+export const voiceBiometrics=createVoiceBiometrics({tx,model:createSpeakerModel(),vault:createTemplateVault()});
