@@ -267,6 +267,7 @@ const CRMAIInsightsPage        = lazy(() => import("@/pages/crm/CRMAIInsightsPag
 const CRMFieldForcePage        = lazy(() => import("@/pages/crm/CRMFieldForcePage"));
 const ContactVoiceJoin = lazy(() => import("@/pages/ContactVoiceJoin"));
 const CRMContactCenterPage     = lazy(() => import("@/pages/crm/CRMContactCenterPage"));
+const CRMTelecallerDialer      = lazy(() => import("@/pages/crm/CRMTelecallerDialer"));
 const CRMMarketingCopilotPage  = lazy(() => import("@/pages/crm/CRMMarketingCopilotPage"));
 const _CRMMarketingPages = () => import("@/pages/crm/CRMMarketingPages");
 const CRMCampaignsPage = lazyNamed(_CRMMarketingPages, "CRMCampaignsPage");
@@ -1451,6 +1452,7 @@ const AppRoutes = () => {
         <Route path="/crm/field-force"         element={<CRMFieldForcePage />} />
         <Route path="/contact-center/join" element={<ContactVoiceJoin />} />
         <Route path="/crm/contact-center"      element={<CRMContactCenterPage />} />
+        <Route path="/crm/dialer"      element={<CRMTelecallerDialer />} />
 
         {/* ── Team (public) ───────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />

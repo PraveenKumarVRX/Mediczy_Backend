@@ -11,7 +11,7 @@ import {
   CheckCircle, X, Save, Bell, ArrowRight, UserCheck,
   Brain, Sparkles, MessageSquare, Star, ShieldCheck,
   Route, Gauge, Stethoscope, FlaskConical, Globe, Milestone, Radio, Magnet,
-  UserCog, Contact, List, Bot, UserPlus, Filter, Inbox, GitBranch, MessageCircle, MapPin,
+  UserCog, Contact, List, Bot, UserPlus, Filter, Inbox, GitBranch, MessageCircle, MapPin, Smartphone,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
@@ -34,6 +34,7 @@ const sidebarNav = [
     { icon: Gauge, label: 'Command Center · Business & Marketing Heads', path: '/crm/hospital/command-center', cap: 'dashboard:command-center' },
     { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
     { icon: Phone, label: 'Contact Center', path: '/crm/contact-center', cap: 'contact_center:read' },
+    { icon: Smartphone, label: 'Dialer (mobile)', path: '/crm/dialer', cap: 'contact_center:write' },
     { icon: Filter, label: 'Segments', path: '/crm/hospital/segments', cap: 'segments:read' },
     { icon: Bot, label: 'Automations', path: '/crm/hospital/automations', cap: 'automations:read' },
     { icon: Sparkles, label: 'Growth Automation', path: '/crm/hospital/growth', cap: 'growth:read' },
