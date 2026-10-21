@@ -3,6 +3,7 @@ import { body, param } from 'express-validator';
 import { Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
+import pool from '../db/pgPool.js';
 import { Coupon, CouponUsage } from '../models/index.js';
 import paymentService from '../services/payment.service.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
@@ -296,28 +297,55 @@ router.get('/plans', async (req,res) => {
   }
 });
 
+// A user's individual plan (UserPlan/MembershipPlan, above) is tracked
+// entirely separately from any corporate benefit they're entitled to via
+// user_associations - linking an employee to their corporate never updates
+// this table. Load the corporate link additively so a real paid individual
+// plan is never overridden/hidden, but the User portal can still show "also
+// covered by <company>'s corporate plan" and unlock AHC/corporate-wellness
+// visibility, instead of corporate employees looking permanently
+// "Individual Plan only" regardless of their actual corporate benefits.
+async function loadActiveCorporateLink(userId) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT c.id AS "corporateId", c."companyName", c."packageType", ua.status
+         FROM user_associations ua
+         JOIN corporates c ON c.id = ua."entityId"
+        WHERE ua."userId" = $1 AND ua."entityType" = 'corporate' AND ua.role = 'employee' AND ua.status = 'active'
+        LIMIT 1`,
+      [userId]
+    );
+    return rows[0] || null;
+  } catch (e) {
+    console.error('[membership] loadActiveCorporateLink error:', e.message);
+    return null;
+  }
+}
+
 router.get('/my/current', authUser, async (req,res) => {
   try {
-    const userPlan = await UserPlan.findOne({ 
-      where:{ userId:req.user.id, status:'active' }, 
+    const userPlan = await UserPlan.findOne({
+      where:{ userId:req.user.id, status:'active' },
       include: [{ model: MembershipPlan, as: 'plan' }],
-      order:[['createdAt','DESC']] 
+      order:[['createdAt','DESC']]
     });
-    
+    const corporate = await loadActiveCorporateLink(req.user.id);
+
     if (!userPlan) {
-      return res.json({ userPlan: null, plan: null });
+      return res.json({ userPlan: null, plan: null, corporate });
     }
 
     const planObj = userPlan.toJSON();
     const associatedPlan = userPlan.plan || userPlan.MembershipPlan;
-    res.json({ 
+    res.json({
       userPlan: {
         ...planObj,
         appliedLimits: planObj.metadata?.appliedLimits ||
           (associatedPlan ? buildAppliedLimits(associatedPlan) : {}),
         usage: planObj.metadata?.usage || {},
       },
-      plan: associatedPlan 
+      plan: associatedPlan,
+      corporate
     });
   } catch(e) {
     console.error(e);
