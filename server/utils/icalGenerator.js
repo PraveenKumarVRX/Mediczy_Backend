@@ -162,7 +162,7 @@ export const generateICalFile = (appointment) => {
     `SEQUENCE:0`,
     `PRIORITY:5`,
     // Organizer (Doctor)
-    doctorEmail ? `ORGANIZER;CN=${escapeICalText(doctorName)}:mailto:${doctorEmail}` : null,
+    doctorEmail ? `ORGANIZER;CN=${escapeICalText(doctorDisplayName(doctorName))}:mailto:${doctorEmail}` : null,
     // Attendee (Patient)
     patientEmail ? `ATTENDEE;CN=${escapeICalText(patientName)};RSVP=TRUE:mailto:${patientEmail}` : null,
     // Reminder alarm
@@ -251,7 +251,7 @@ export const generateDoctorICalFile = (appointment) => {
     `SEQUENCE:0`,
     `PRIORITY:5`,
     // Attendee (Doctor as main attendee)
-    doctorEmail ? `ATTENDEE;CN=${escapeICalText(doctorName)};ROLE=REQ-PARTICIPANT:mailto:${doctorEmail}` : null,
+    doctorEmail ? `ATTENDEE;CN=${escapeICalText(doctorDisplayName(doctorName))};ROLE=REQ-PARTICIPANT:mailto:${doctorEmail}` : null,
     // Reminder - 1 hour before
     'BEGIN:VALARM',
     'ACTION:DISPLAY',

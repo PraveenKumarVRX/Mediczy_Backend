@@ -28,6 +28,7 @@ import { notifyCareTeamOfBooking } from '../services/care-team-notification.serv
 import * as appointmentRepository from '../repositories/appointment.repository.js';
 import { resolveActor, isOwnedByActor } from '../services/appointment-identity.service.js';
 import { completeAppointment as completeAppointmentOrchestrated } from '../services/appointment-completion.service.js';
+import { doctorDisplayName } from '../utils/doctor-name.js';
 
 const getAppointmentDateTime = (appointment) => {
   if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
@@ -311,7 +312,7 @@ export const createAppointment = async (req, res) => {
       if (doctorConflict) {
         fail(409, {
           success: false,
-          message: `Dr. ${doctor.firstName} ${doctor.lastName} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
+          message: `${doctorDisplayName([doctor.firstName, doctor.lastName].filter(Boolean).join(' '))} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
           conflict: 'doctor_busy',
           doctorId: doctor.id,
           doctorPublicId: doctor.unique_id
@@ -407,7 +408,7 @@ export const createAppointment = async (req, res) => {
         patientEmail: user.email,
         patientPhone: user.phoneNumber || 'N/A',
         doctorId: resolvedDoctorId,
-        doctorName: `Dr. ${doctor.firstName} ${doctor.lastName}`,
+        doctorName: doctorDisplayName([doctor.firstName, doctor.lastName].filter(Boolean).join(' ')),
         specialization: doctor.specialization,
         appointmentDate,
         appointmentTime,
