@@ -1,0 +1,732 @@
+{
+  "recordedAt": "2026-10-21T06:08:58.806483+00:00",
+  "userFacingTime": "2026-10-21T11:38:58.806483+05:30",
+  "status": "deployed-and-verified",
+  "page": "https://app.mediqzy.com/crm/dialer",
+  "findings": [
+    {
+      "id": "DIAL-01",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-02",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-03",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-04",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-05",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-06",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-07",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-08",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-09",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-10",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "DIAL-11",
+      "implementation": "fixed",
+      "regression": "passed"
+    }
+  ],
+  "code": {
+    "commit": "08304f02bcf5cff2739e6e491e90f44281fcd0d1",
+    "mainPushed": true,
+    "backendRelease": "/home/ubuntu/mediqzy-releases/contact-center-20261021-03/server",
+    "parentRelease": "/home/ubuntu/mediqzy-releases/contact-center-20261021-02",
+    "isolatedFrontendBuild": "/home/ubuntu/mediqzy-releases/contact-center-build-20261021-04",
+    "reviewedOverlayFiles": 90,
+    "sourceHashesVerified": true,
+    "manifestSha256": "efc86d04a6800405b27181e352f74fa169d2359b7fd0b8e4fe0b333909a75997",
+    "unrelatedWorkingTreeChangesExcluded": true
+  },
+  "frontend": {
+    "at": "2026-10-21T06:06:19.942Z",
+    "expectedIndexSha256": "4e48d94be549ff36df1f6d55544d18bc333e8026880514596a70881455a35480",
+    "checks": [
+      {
+        "path": "/crm/dialer",
+        "status": 200,
+        "sha256": "4e48d94be549ff36df1f6d55544d18bc333e8026880514596a70881455a35480",
+        "matchesBuild": true
+      },
+      {
+        "path": "/crm/contact-center",
+        "status": 200,
+        "sha256": "4e48d94be549ff36df1f6d55544d18bc333e8026880514596a70881455a35480",
+        "matchesBuild": true
+      }
+    ],
+    "passed": true,
+    "productionBuildPassed": true,
+    "buildTime": "1m 42s",
+    "nginxAndS3Published": true,
+    "cloudfrontInvalidationRequested": true,
+    "olderHashedAssetsRetained": true,
+    "previousIndexSaved": true
+  },
+  "regression": {
+    "frontend": {
+      "passed": 63,
+      "failed": 0,
+      "testFiles": 10
+    },
+    "backend": {
+      "passed": 76,
+      "failed": 0,
+      "suites": 7
+    },
+    "disposablePostgres": {
+      "database": "disposable PostgreSQL 16",
+      "passed": 63,
+      "checks": [
+        "All contact-center tables use the separate NOLOGIN owner and forced RLS",
+        "Runtime cannot disable RLS or truncate audit events",
+        "A tenant cannot select another organization provider credential reference",
+        "Agent identity is tenant-bound",
+        "Concurrent retries originate exactly one provider call",
+        "An idempotency key cannot change recipient",
+        "A busy agent cannot place a second call",
+        "Other tenant cannot read call",
+        "Pool does not retain tenant state",
+        "Database rejects a cross-tenant insert",
+        "Agent active-call references are constrained to an existing call of the same tenant",
+        "Duplicate provider event is skipped",
+        "Late callback cannot regress terminal state",
+        "Event history is immutable",
+        "Browser credentials are rotated only for the assigned account",
+        "Signed event replay is rejected",
+        "Transcripts are redacted before persistence",
+        "Search remains tenant scoped",
+        "Summary jobs produce reviewable artifacts",
+        "Copilot retrieval includes only published tenant knowledge",
+        "Vector indexing and semantic search obey tenant scope",
+        "Unconsented recording import stays denied",
+        "Suppressed destination cannot be dialed",
+        "Queue assignment respects skills and excludes busy agents",
+        "Missing gateway does not fake media success",
+        "A consented completed call imports one private recording",
+        "Retention deletes recording content and contact details",
+        "Delayed events cannot recreate expired call content",
+        "Verified inbound missed calls create one owned callback task",
+        "LiveKit room provisioning is idempotent under concurrent retries",
+        "LiveKit joins are tenant-bound and agent roles are assigned",
+        "Whisper token grants only the private coaching room",
+        "Hold action retries do not duplicate provider operations",
+        "Signed project hooks ignore unowned rooms and retry idempotent permission changes",
+        "Agent membership permits reconnects beyond initial token TTL but expires with the session",
+        "Caller invitation is single use and cannot grant coaching access",
+        "Native streaming segments are redacted, replay protected and final revisions immutable",
+        "Reception bot replies cite only approved hospital FAQ evidence",
+        "Human handoff reserves the target, revokes old agent grants and stops bot dispatch",
+        "Unavailable handoff leaves a durable callback without ending the call",
+        "Native hangup persists terminal state and blocks new media tokens",
+        "Native callback ownership and recipient checks fail before origination",
+        "Concurrent native callback retries reserve one call and increment attempts once",
+        "Republishing an existing routing identity increments its version and retires the prior version",
+        "Voice campaign recipients resolve to consented existing tenant CRM identities",
+        "Voice campaign originates once and writes a shared CRM activity",
+        "Canonical completed outcomes reconcile to the campaign recipient",
+        "Journey voice enqueue is atomic with its parent transaction and duplicate safe",
+        "Ambiguous voice campaign failures cannot automatically redial",
+        "Quiet hours cannot initiate campaign calls",
+        "A racing unavailable agent defers without consuming a campaign attempt",
+        "Withdrawn marketing consent suppresses scheduled recipients before delivery",
+        "Biometric enrollment consumes a fresh consented challenge and persists an opaque template",
+        "Unevaluated biometric similarity cannot authenticate a caller",
+        "Biometric identities and template lookup cannot cross tenants",
+        "Revocation deletes the biometric template and prevents further inference",
+        "Latest revoked consent cannot resurrect an older biometric opt-in",
+        "Callback-required wrap-up rejects missing/past times and the wrong agent without writes",
+        "Concurrent callback-required wrap-up creates exactly one scheduled task and event",
+        "Callback-required reschedules the claimed source task without resolving or duplicating it",
+        "Wrap-up rolls back the task transition if call persistence fails",
+        "A completed non-follow-up outcome resolves only its linked owned callback",
+        "An unrelated callback owner blocks wrap-up atomically"
+      ],
+      "liveCalls": 0,
+      "productionMutations": 0
+    },
+    "targetedTypecheck": {
+      "passed": true,
+      "command": "tsc --noEmit -p client/tsconfig.dialer.json"
+    },
+    "localBrowser": {
+      "passed": true,
+      "checks": 33
+    }
+  },
+  "production": {
+    "dialerBrowser": {
+      "at": "2026-10-21T06:06:20.999Z",
+      "base": "https://app.mediqzy.com",
+      "checks": [
+        {
+          "name": "Restores active call and provider recovery after reload",
+          "passed": true
+        },
+        {
+          "name": "Uncertain retry retains its original body and request key",
+          "passed": true
+        },
+        {
+          "name": "Callback outcome is submitted as one atomic scheduled update",
+          "passed": true
+        },
+        {
+          "name": "Hidden-page heartbeat cannot restore available presence",
+          "passed": true
+        },
+        {
+          "name": "Provider readiness disables calls",
+          "passed": true
+        },
+        {
+          "name": "Data errors remain errors with a global retry",
+          "passed": true
+        },
+        {
+          "name": "Lead pagination requests and displays the next page",
+          "passed": true
+        },
+        {
+          "name": "desktop-light-leads",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-light-setup",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-light-callbacks",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-light-active",
+          "passed": true,
+          "testedTextNodes": 20,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-light-wrap",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-light-leaderror",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-dark-leads",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-dark-setup",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-dark-callbacks",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-dark-active",
+          "passed": true,
+          "testedTextNodes": 20,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-dark-wrap",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "desktop-dark-leaderror",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-light-leads",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-light-setup",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-light-callbacks",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-light-active",
+          "passed": true,
+          "testedTextNodes": 20,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-light-wrap",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-light-leaderror",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-dark-leads",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-dark-setup",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-dark-callbacks",
+          "passed": true,
+          "testedTextNodes": 25,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-dark-active",
+          "passed": true,
+          "testedTextNodes": 20,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-dark-wrap",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 7.14,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "mobile-dark-leaderror",
+          "passed": true,
+          "testedTextNodes": 24,
+          "minimumContrast": 5.67,
+          "gradientSkipped": 0,
+          "failures": [],
+          "brandVisible": true,
+          "themedPanels": true,
+          "noHorizontalOverflow": true
+        },
+        {
+          "name": "Accessible queue selection and mobile target size",
+          "passed": true
+        },
+        {
+          "name": "Sign out revokes through the API and clears CRM credentials",
+          "passed": true
+        }
+      ],
+      "screenshots": [
+        "desktop-light-leads.png",
+        "desktop-light-setup.png",
+        "desktop-light-callbacks.png",
+        "desktop-light-active.png",
+        "desktop-light-wrap.png",
+        "desktop-light-leaderror.png",
+        "desktop-dark-leads.png",
+        "desktop-dark-setup.png",
+        "desktop-dark-callbacks.png",
+        "desktop-dark-active.png",
+        "desktop-dark-wrap.png",
+        "desktop-dark-leaderror.png",
+        "mobile-light-leads.png",
+        "mobile-light-setup.png",
+        "mobile-light-callbacks.png",
+        "mobile-light-active.png",
+        "mobile-light-wrap.png",
+        "mobile-light-leaderror.png",
+        "mobile-dark-leads.png",
+        "mobile-dark-setup.png",
+        "mobile-dark-callbacks.png",
+        "mobile-dark-active.png",
+        "mobile-dark-wrap.png",
+        "mobile-dark-leaderror.png"
+      ],
+      "pageErrors": [],
+      "productionMutations": 0,
+      "microphoneCapture": false,
+      "contrastScope": "Visible enabled workspace text on solid backgrounds; disabled controls excluded",
+      "fixture": "Synthetic intercepted API requests; no production calls or session revocation",
+      "passed": true
+    },
+    "apiAndDatabaseSmoke": {
+      "at": "2026-10-21T06:05:08.367Z",
+      "base": "https://app.mediqzy.com",
+      "checks": [
+        {
+          "name": "Critical database health",
+          "passed": true,
+          "status": 200
+        },
+        {
+          "name": "All 22 voice tables have forced RLS and separate NOLOGIN ownership",
+          "passed": true,
+          "tables": 22
+        },
+        {
+          "name": "Runtime cannot own voice tables or truncate audit history",
+          "passed": true
+        },
+        {
+          "name": "Unscoped runtime cannot read contact-center calls",
+          "passed": true
+        },
+        {
+          "name": "Unauthenticated denial /api/crm/contact-center",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/crm/contact-center/media/readiness",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/crm/contact-center/voice-campaigns",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/field/attendance/today",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/v1/nursing/worklist",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unsigned LiveKit webhook denied",
+          "passed": true,
+          "status": 403
+        },
+        {
+          "name": "Invalid single-use guest invitation denied",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "name": "Authenticated demo CRM read /api/crm/contact-center",
+          "passed": true,
+          "status": 200
+        },
+        {
+          "name": "Authenticated demo CRM read /api/crm/contact-center/media/readiness",
+          "passed": true,
+          "status": 200,
+          "livekit": true
+        },
+        {
+          "name": "Authenticated demo CRM read /api/crm/contact-center/voice-campaigns",
+          "passed": true,
+          "status": 200
+        }
+      ],
+      "clinicalWrites": 0,
+      "telephoneCalls": 0,
+      "authenticationMethod": "Ephemeral signed access token for existing active demo CRM staff; no role or account changes",
+      "passed": true
+    },
+    "invalidWrapupContract": {
+      "at": "2026-10-21T06:06:02.718Z",
+      "name": "Missing callback time rejected before any service write",
+      "status": 400,
+      "code": "VALIDATION_ERROR",
+      "passed": true,
+      "productionWrites": 0
+    },
+    "crmBrowser": {
+      "at": "2026-10-21T06:06:20.970Z",
+      "base": "https://app.mediqzy.com",
+      "checks": [
+        {
+          "name": "CRM contact-center console renders with real authenticated API data",
+          "passed": true
+        },
+        {
+          "name": "Native LiveKit workspace renders without placing a call",
+          "passed": true
+        },
+        {
+          "name": "Campaign list renders without publishing or dialing",
+          "passed": true
+        },
+        {
+          "name": "Biometric UI requires consent and fresh challenge before capture",
+          "passed": true
+        },
+        {
+          "name": "Mobile dialer renders at phone viewport without overflow",
+          "passed": true
+        }
+      ],
+      "clinicalWrites": 0,
+      "telephoneCalls": 0,
+      "microphoneCapture": false,
+      "authentication": "Ephemeral signed access token for existing active demo CRM staff; login credentials unchanged",
+      "pageErrorCount": 0,
+      "passed": true
+    },
+    "nursingAccess": {
+      "baseUrl": "https://app.mediqzy.com",
+      "patientDataAccessed": false,
+      "clinicalWritesPerformed": false,
+      "checks": [
+        {
+          "route": "/nurse/login",
+          "documentNavigationStatus": 200,
+          "loginRequired": true,
+          "passwordInputPresent": true,
+          "noHorizontalOverflow": true,
+          "passed": true
+        },
+        {
+          "route": "/nurse/ward",
+          "documentNavigationStatus": null,
+          "loginRequired": true,
+          "passwordInputPresent": true,
+          "noHorizontalOverflow": true,
+          "passed": true
+        },
+        {
+          "route": "/hospital/nursing/administration",
+          "documentNavigationStatus": null,
+          "loginRequired": true,
+          "passwordInputPresent": true,
+          "noHorizontalOverflow": true,
+          "passed": true
+        }
+      ],
+      "pageErrors": [],
+      "status": "passed"
+    },
+    "processes": [
+      {
+        "name": "mediczy-server",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-03/server",
+        "restarts": 287
+      },
+      {
+        "name": "mediqzy-contact-stt",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+        "restarts": 0
+      },
+      {
+        "name": "mediqzy-contact-bot",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+        "restarts": 0
+      },
+      {
+        "name": "mediqzy-contact-center-worker",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+        "restarts": 0
+      }
+    ],
+    "pm2StateSaved": true,
+    "workerCodeAndProtocolUnchanged": true
+  },
+  "readability": {
+    "visualScenarios": 24,
+    "minimumCheckedContrast": 5.67,
+    "textNodesChecked": 571,
+    "scope": "Visible enabled workspace text on solid backgrounds; disabled controls excluded",
+    "mobileControlMinimumCssPx": 44
+  },
+  "database": {
+    "migrationRequired": false,
+    "schemaChanged": false,
+    "productionClinicalWrites": 0
+  },
+  "limits": {
+    "productionTelephoneCallsPlaced": 0,
+    "patientRecordsChanged": 0,
+    "realRefreshTokenRevocationExercised": false,
+    "browserMutationsIntercepted": true,
+    "realDeviceBackgroundSuspensionExercised": false,
+    "realPstnAcceptance": "Requires approved configured provider, assigned staff and approved test number; none fabricated",
+    "clinicalAndBiometricAcceptanceChanged": false
+  },
+  "privateEvidenceDirectory": "/home/ubuntu/dialer-fix-evidence/20261021"
+}

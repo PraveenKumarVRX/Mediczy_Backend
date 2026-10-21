@@ -123,3 +123,7 @@ The page loaded without JavaScript page errors. Tested lead/setup layouts did no
 6. Extend failure-path tests; repeat deployed desktop/mobile screenshots and contrast checks. Only then run an approved Exotel test-number pilot, including foreground/background transitions on a real phone.
 
 No actual PSTN delivery, real device background suspension, screen-reader session, real refresh-token revocation, complete tenant penetration test, biometric acceptance or patient-data workflow was exercised. Screenshots beyond the live setup baseline use explicitly synthetic intercepted records. Private details remain under `/home/ubuntu/dialer-audit-evidence/20261021`, outside the served checkout.
+
+## Remediation follow-up
+
+All 11 findings above have now been fixed, deployed and regression-verified. See [the remediation release](../deployment/CRM_DIALER_FIXES_2026-10-21.md) and [verification evidence](../testing/CRM_DIALER_FIXES_VERIFICATION_2026-10-21.json). This audit and its original evidence remain historical records of the prior build. Provider/staff setup and real-device/PSTN acceptance limits remain explicit.
