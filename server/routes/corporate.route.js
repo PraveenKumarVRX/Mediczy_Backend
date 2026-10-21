@@ -1734,7 +1734,8 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
   for (let index = 0; index < employeeList.length; index++) {
     const emp = employeeList[index];
     if (!emp.name || !emp.employeeId) {
-      errors.push({ row: index + 1, employee: emp, error: 'Missing required fields: name and employeeId are required' });
+      const missing = [!emp.name && 'name', !emp.employeeId && 'employeeId'].filter(Boolean).join(' and ');
+      errors.push({ row: index + 1, employee: emp, error: `Missing required field${missing.includes(' and ') ? 's' : ''}: ${missing}` });
       continue;
     }
 

@@ -113,13 +113,14 @@ const CorporateEmployees: React.FC = () => {
   const [uploadResults, setUploadResults] = useState<{ successful: number; failed: number; errors?: any[] } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active');
   const [selectedDept, setSelectedDept] = useState('all');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const loadEmployees = async () => {
+  const loadEmployees = async (status: 'active' | 'inactive' | 'all' = statusFilter) => {
     try {
       setIsLoading(true);
-      const { data } = await api.get('/corporate/employees');
+      const { data } = await api.get('/corporate/employees', { params: { status } });
       const list = ((data as any)?.data?.employees || []) as Employee[];
       setEmployees(list);
     } catch (error: any) {
@@ -134,8 +135,8 @@ const CorporateEmployees: React.FC = () => {
   };
 
   useEffect(() => {
-    loadEmployees();
-  }, []);
+    loadEmployees(statusFilter);
+  }, [statusFilter]);
 
   const getHealthStatusColor = (status: string) => {
     const colors: Record<string, string> = {
@@ -519,10 +520,22 @@ const CorporateEmployees: React.FC = () => {
             { label: 'Not Assessed', value: employees.filter(e => e.healthStatus === 'unassessed' as any).length },
           ]}
           actions={
-            <Button onClick={() => setIsBulkUploadOpen(true)} variant="outline" size="sm" className="bg-white/10 hover:bg-white/20 text-white border-white/20">
-              <Upload className="mr-2 h-4 w-4" />
-              Bulk Upload
-            </Button>
+            <>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'active' | 'inactive' | 'all')}>
+                <SelectTrigger className="w-[150px] bg-white/10 border-white/20 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                  <SelectItem value="all">All</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={() => setIsBulkUploadOpen(true)} variant="outline" size="sm" className="bg-white/10 hover:bg-white/20 text-white border-white/20">
+                <Upload className="mr-2 h-4 w-4" />
+                Bulk Upload
+              </Button>
+            </>
           }
         />
 
@@ -802,7 +815,7 @@ const CorporateEmployees: React.FC = () => {
             className="border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 h-7 text-xs"
             onClick={() => handleBulkStatus('activate')}
           >
-            Activate Selected
+            {statusFilter === 'inactive' ? 'Reactivate Selected' : 'Activate Selected'}
           </Button>
           <Button
             variant="outline"
