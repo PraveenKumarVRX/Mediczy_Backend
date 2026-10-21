@@ -1,0 +1,1544 @@
+{
+  "date": "2026-10-21",
+  "releaseCommit": "bad6fc708bdcf73b29672ed30fffd13c50c1f497",
+  "merge": {
+    "branch": "main",
+    "originMainMatchedAtRelease": true,
+    "ahead": 0,
+    "behind": 0,
+    "result": "Already up to date"
+  },
+  "build": {
+    "passed": true,
+    "source": "/home/ubuntu/mediqzy-releases/main-build-20261021-01",
+    "warnings": "Existing dependency-age, externalized browser modules and large chunks"
+  },
+  "tests": {
+    "backendPassed": 128,
+    "clientPassed": 65,
+    "unitTotalPassed": 193,
+    "databaseScenariosPassed": 20
+  },
+  "typechecks": {
+    "settings": "passed",
+    "dialer": "passed"
+  },
+  "cloudFrontInvalidation": {
+    "id": "IADGCRNLR5F1HRSVIFS8PL3DZW",
+    "status": "Completed"
+  },
+  "startupProbe": {
+    "initialSmokeRacedStartup": true,
+    "initialFailedProbes": 4,
+    "initialEvidenceFile": "api-smoke-during-reload.json",
+    "resolvedBy": "Waited for successful HTTP 200 database readiness, then repeated smoke checks"
+  },
+  "productionDataWritesByChecks": 0,
+  "telephoneCalls": 0,
+  "credentialsSubmitted": false,
+  "frontendArtifact": {
+    "releaseCommit": "bad6fc708bdcf73b29672ed30fffd13c50c1f497",
+    "buildPath": "/home/ubuntu/mediqzy-releases/main-build-20261021-01/client/dist",
+    "indexSha256": "2ff532708470b97a0422fc7879d724b25b4d7ac452875c98a2bc554fa6361b1a",
+    "oldHashedAssetsRetained": true
+  },
+  "sourceParity": [
+    {
+      "path": "server/app.js",
+      "sha256": "9db2229d6c96d9981c526e4d9eb4c66d3ea276e79844b4bb32a55733d462a75b",
+      "matchesMain": true
+    },
+    {
+      "path": "server/index.js",
+      "sha256": "b307db22375f72bb496aff6871f73e99cfbd695c3ed13336b6f4ae25eb84fb4e",
+      "matchesMain": true
+    },
+    {
+      "path": "server/services/crm-channel-integrations.service.js",
+      "sha256": "6d1944647f2d5a8ed9e92994f6384b2666d1c416fb2820cf7ac05e19e523df7d",
+      "matchesMain": true
+    },
+    {
+      "path": "server/routes/hospital-crm-communication-hub.route.js",
+      "sha256": "60b118955c24b0f382887f211e2726e93a143505811ff1169b8219d85bac5799",
+      "matchesMain": true
+    },
+    {
+      "path": "server/config/crm-roles.config.js",
+      "sha256": "b0b805d3c457e8e659d4a8d097b7909b9ba2f4eb9eb1576110d9f4e2bdc58296",
+      "matchesMain": true
+    },
+    {
+      "path": "shared/crm-channel-schema.mjs",
+      "sha256": "6441c6a2c6d1ddfc773de1d7d836c726dc02f6b7fb050f1407683b9e12aed156",
+      "matchesMain": true
+    },
+    {
+      "path": "server/controller/appointment.controller.js",
+      "sha256": "f4fddbf1d516cc72ccb51fd122c22ed191d402e9a9d9d6dea94e5d325a60e481",
+      "matchesMain": true
+    },
+    {
+      "path": "server/services/notification.service.js",
+      "sha256": "3f129c5e5862819c4a41eeae3aa356bab600a41bf5f96ad6afcd393b49c464b2",
+      "matchesMain": true
+    },
+    {
+      "path": "server/routes/corporate.route.js",
+      "sha256": "225fea60bd7994b51ecebefeddc8e388688d15da8cf00308f20635852ed1b50e",
+      "matchesMain": true
+    },
+    {
+      "path": "server/routes/corporate/hr-management.routes.js",
+      "sha256": "8f034ca69a2e16702c679a7dbf1da4360850ff57e044bc142a60d97301397caa",
+      "matchesMain": true
+    },
+    {
+      "path": "server/services/contact-center/service.js",
+      "sha256": "501456f8e071793a2dc418d0e099219d3a2e712394baa2fb053bfe2ec1ed61b0",
+      "matchesMain": true
+    },
+    {
+      "path": "client/src/pages/crm/CRMModulePages.tsx",
+      "sha256": "6dfef4c9e7083e5b6a8d997898d2be2a99230514b5a247d8935de6a475b93eb2",
+      "matchesMain": true
+    },
+    {
+      "path": "client/src/pages/crm/CRMChannelSettings.tsx",
+      "sha256": "3f5fbfcf4d2b642ae0575bf2d579f7a2c9a8da09ff8572bfb0e3d73a63170334",
+      "matchesMain": true
+    },
+    {
+      "path": "client/src/pages/crm/CRMTelecallerDialer.tsx",
+      "sha256": "63664284e50938567df48d06e24e5f2d6cf52569bb7f8790740d39b66513812b",
+      "matchesMain": true
+    }
+  ],
+  "database": {
+    "passed": true,
+    "checks": [
+      {
+        "name": "New inventory returns revision and field presence without secrets or fingerprints",
+        "passed": true
+      },
+      {
+        "name": "Partial rotation retains omitted sibling credentials",
+        "passed": true
+      },
+      {
+        "name": "Explicit field removal deletes only its named credential",
+        "passed": true
+      },
+      {
+        "name": "Two concurrent edits cannot overwrite one another",
+        "passed": true
+      },
+      {
+        "name": "Storage verification is explicit about no provider delivery",
+        "passed": true
+      },
+      {
+        "name": "Tenant boundary cannot read or rotate a different tenant record",
+        "passed": true
+      },
+      {
+        "name": "Validation rejects provider mismatch, invalid values and unknown public/secret fields",
+        "passed": true
+      },
+      {
+        "name": "Calling is managed separately and cannot be silently configured here",
+        "passed": true
+      },
+      {
+        "name": "Provider replacement requires confirmation and removes previous provider secrets",
+        "passed": true
+      },
+      {
+        "name": "Disable is confirmed and prevents verification",
+        "passed": true
+      },
+      {
+        "name": "Audit failure rolls back credential and status changes",
+        "passed": true
+      },
+      {
+        "name": "Disconnect deletes the record and encrypted bundle atomically",
+        "passed": true
+      },
+      {
+        "name": "Audit history contains actor and field names, never submitted secrets",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for business_head",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for marketing_head",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for admin",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for marketing",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for telecaller",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for conversion",
+        "passed": true
+      },
+      {
+        "name": "Configuration permission for sales_rep",
+        "passed": true
+      }
+    ],
+    "productionConnections": 0,
+    "method": "Disposable local PostgreSQL; actual service transactions and synthetic encryption key"
+  },
+  "apiReadiness": {
+    "at": "2026-10-21T09:36:55.258Z",
+    "passed": true,
+    "attempts": [
+      {
+        "status": 200,
+        "ready": true
+      }
+    ]
+  },
+  "apiSmoke": {
+    "at": "2026-10-21T09:36:55.954Z",
+    "checks": [
+      {
+        "name": "Database health",
+        "passed": true,
+        "status": 200,
+        "healthy": true
+      },
+      {
+        "name": "Authenticated existing demo profile",
+        "passed": true,
+        "status": 200,
+        "role": "business_head"
+      },
+      {
+        "name": "Inventory is explicitly inactive and redacted",
+        "passed": true,
+        "status": 200,
+        "channelCount": 9,
+        "inactiveForDelivery": true
+      },
+      {
+        "name": "Configuration role reaches validation; blank provider denied",
+        "passed": true,
+        "status": 400
+      },
+      {
+        "name": "Disable requires explicit confirmation",
+        "passed": true,
+        "status": 400
+      },
+      {
+        "name": "Disconnect requires explicit confirmation",
+        "passed": true,
+        "status": 400
+      },
+      {
+        "name": "Verification requires an authoritative revision",
+        "passed": true,
+        "status": 400
+      },
+      {
+        "name": "Inventory remains authenticated",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Contact-center LiveKit readiness remains separate",
+        "passed": true,
+        "status": 200,
+        "livekit": true
+      }
+    ],
+    "productionDataWrites": 0,
+    "rejectedMutationProbes": 4,
+    "telephoneCalls": 0,
+    "providerDeliveryTests": 0,
+    "passed": true
+  },
+  "platformSmoke": {
+    "at": "2026-10-21T09:36:56.532Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "Critical database health",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "All 22 voice tables have forced RLS and separate NOLOGIN ownership",
+        "passed": true,
+        "tables": 22
+      },
+      {
+        "name": "Runtime cannot own voice tables or truncate audit history",
+        "passed": true
+      },
+      {
+        "name": "Unscoped runtime cannot read contact-center calls",
+        "passed": true
+      },
+      {
+        "name": "Unauthenticated denial /api/crm/contact-center",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/crm/contact-center/media/readiness",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/crm/contact-center/voice-campaigns",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/field/attendance/today",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/v1/nursing/worklist",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unsigned LiveKit webhook denied",
+        "passed": true,
+        "status": 403
+      },
+      {
+        "name": "Invalid single-use guest invitation denied",
+        "passed": true,
+        "status": 404
+      },
+      {
+        "name": "Authenticated demo CRM read /api/crm/contact-center",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "Authenticated demo CRM read /api/crm/contact-center/media/readiness",
+        "passed": true,
+        "status": 200,
+        "livekit": true
+      },
+      {
+        "name": "Authenticated demo CRM read /api/crm/contact-center/voice-campaigns",
+        "passed": true,
+        "status": 200
+      }
+    ],
+    "clinicalWrites": 0,
+    "telephoneCalls": 0,
+    "authenticationMethod": "Ephemeral signed access token for existing active demo CRM staff; no role or account changes",
+    "passed": true
+  },
+  "publicSanity": {
+    "at": "2026-10-21T09:37:43.869Z",
+    "indexSha256": "2ff532708470b97a0422fc7879d724b25b4d7ac452875c98a2bc554fa6361b1a",
+    "checks": [
+      {
+        "path": "/",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/crm/settings",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/crm/contact-center",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/crm/dialer",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/corporate/compliance",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/corporate/hr-team",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/hospital/login",
+        "status": 200,
+        "matchesBuild": true
+      },
+      {
+        "path": "/nurse/login",
+        "status": 200,
+        "matchesBuild": true
+      }
+    ],
+    "assets": [
+      {
+        "path": "/assets/index-DqiCQHqO.js",
+        "status": 200,
+        "contentType": "application/javascript",
+        "passed": true
+      },
+      {
+        "path": "/assets/vendor-charts-BXn5Ohnx.js",
+        "status": 200,
+        "contentType": "application/javascript",
+        "passed": true
+      },
+      {
+        "path": "/assets/vendor-pdf-DgF3Qiox.js",
+        "status": 200,
+        "contentType": "application/javascript",
+        "passed": true
+      },
+      {
+        "path": "/assets/index-CsCJ6F2O.css",
+        "status": 200,
+        "contentType": "text/css",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "smartForceRouting": {
+    "at": "2026-10-21T09:35:25.502Z",
+    "checks": [
+      {
+        "name": "Smart-Force login route rejects empty input without method/routing failure",
+        "base": "https://mediqzy.com",
+        "status": 400,
+        "passed": true
+      },
+      {
+        "name": "Smart-Force login route rejects empty input without method/routing failure",
+        "base": "https://app.mediqzy.com",
+        "status": 400,
+        "passed": true
+      }
+    ],
+    "passed": true,
+    "credentialsSubmitted": false
+  },
+  "settingsBrowser": {
+    "at": "2026-10-21T09:37:10.762Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "Real demo Business Head can manage inventory without altering production",
+        "passed": true,
+        "status": 200,
+        "count": 9,
+        "allInactive": true,
+        "saveControls": 8
+      },
+      {
+        "name": "Settings role business_head",
+        "passed": true
+      },
+      {
+        "name": "Settings role marketing_head",
+        "passed": true
+      },
+      {
+        "name": "Settings role admin",
+        "passed": true
+      },
+      {
+        "name": "Settings role telecaller",
+        "passed": true
+      },
+      {
+        "name": "Settings role sales_rep",
+        "passed": true
+      },
+      {
+        "name": "Profile failure exposes cached-data warning and safely retries",
+        "passed": true
+      },
+      {
+        "name": "Failed inventory load has retry, without invented empty editable records",
+        "passed": true
+      },
+      {
+        "name": "Dirty cards pause refresh and storage verification; other drafts survive saving",
+        "passed": true
+      },
+      {
+        "name": "Provider changes use matching fields and explicit replacement confirmation",
+        "passed": true
+      },
+      {
+        "name": "Field validation blocks invalid sender and port without API writes",
+        "passed": true
+      },
+      {
+        "name": "Conflicts keep secret drafts out of browser storage and accessible errors are announced",
+        "passed": true
+      },
+      {
+        "name": "Storage verification sends revision and never claims successful delivery",
+        "passed": true
+      },
+      {
+        "name": "Disable and disconnect require confirmation and clear inventory after deletion",
+        "passed": true
+      },
+      {
+        "name": "Dirty navigation can be cancelled without losing the draft",
+        "passed": true
+      },
+      {
+        "name": "desktop light contrast, branding and target sizes",
+        "passed": true,
+        "testedTextNodes": 143,
+        "minimumContrast": 7.15,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": {
+          "width": 44,
+          "height": 44
+        }
+      },
+      {
+        "name": "desktop dark contrast, branding and target sizes",
+        "passed": true,
+        "testedTextNodes": 143,
+        "minimumContrast": 7.15,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": {
+          "width": 44,
+          "height": 44
+        }
+      },
+      {
+        "name": "mobile light contrast, branding and target sizes",
+        "passed": true,
+        "testedTextNodes": 143,
+        "minimumContrast": 7.15,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": {
+          "width": 44,
+          "height": 44
+        }
+      },
+      {
+        "name": "mobile dark contrast, branding and target sizes",
+        "passed": true,
+        "testedTextNodes": 143,
+        "minimumContrast": 7.15,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": {
+          "width": 44,
+          "height": 44
+        }
+      },
+      {
+        "name": "narrow light contrast, branding and target sizes",
+        "passed": true,
+        "testedTextNodes": 143,
+        "minimumContrast": 7.15,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": {
+          "width": 44,
+          "height": 44
+        }
+      },
+      {
+        "name": "narrow dark contrast, branding and target sizes",
+        "passed": true,
+        "testedTextNodes": 143,
+        "minimumContrast": 7.15,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": {
+          "width": 44,
+          "height": 44
+        }
+      },
+      {
+        "name": "profileerror readable error state",
+        "passed": true,
+        "testedTextNodes": 15,
+        "minimumContrast": 9.85,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": null
+      },
+      {
+        "name": "loaderror readable error state",
+        "passed": true,
+        "testedTextNodes": 15,
+        "minimumContrast": 9.85,
+        "contrastFailures": [],
+        "noHorizontalOverflow": true,
+        "brandVisible": true,
+        "eyeSize": null
+      }
+    ],
+    "pageErrors": [],
+    "productionMutations": 0,
+    "fixture": "Synthetic intercepted requests; live demo baseline is read-only",
+    "screenshots": [
+      "desktop-light.png",
+      "desktop-dark.png",
+      "mobile-light.png",
+      "mobile-dark.png",
+      "narrow-light.png",
+      "narrow-dark.png",
+      "profileerror.png",
+      "loaderror.png"
+    ],
+    "passed": true
+  },
+  "contactCenterBrowser": {
+    "at": "2026-10-21T09:37:10.689Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "desktop-light-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-guest-join",
+        "passed": true,
+        "testedTextNodes": 6,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      }
+    ],
+    "screenshots": [
+      "desktop-light-calls.png",
+      "desktop-light-livekit.png",
+      "desktop-light-callbacks.png",
+      "desktop-light-search.png",
+      "desktop-light-routing.png",
+      "desktop-light-knowledge.png",
+      "desktop-light-campaigns.png",
+      "desktop-light-voice-identity.png",
+      "desktop-light-settings.png",
+      "desktop-light-call-detail.png",
+      "desktop-dark-calls.png",
+      "desktop-dark-livekit.png",
+      "desktop-dark-callbacks.png",
+      "desktop-dark-search.png",
+      "desktop-dark-routing.png",
+      "desktop-dark-knowledge.png",
+      "desktop-dark-campaigns.png",
+      "desktop-dark-voice-identity.png",
+      "desktop-dark-settings.png",
+      "desktop-dark-call-detail.png",
+      "mobile-light-calls.png",
+      "mobile-light-livekit.png",
+      "mobile-light-callbacks.png",
+      "mobile-light-search.png",
+      "mobile-light-routing.png",
+      "mobile-light-knowledge.png",
+      "mobile-light-campaigns.png",
+      "mobile-light-voice-identity.png",
+      "mobile-light-settings.png",
+      "mobile-light-call-detail.png",
+      "mobile-dark-calls.png",
+      "mobile-dark-livekit.png",
+      "mobile-dark-callbacks.png",
+      "mobile-dark-search.png",
+      "mobile-dark-routing.png",
+      "mobile-dark-knowledge.png",
+      "mobile-dark-campaigns.png",
+      "mobile-dark-voice-identity.png",
+      "mobile-dark-settings.png",
+      "mobile-dark-call-detail.png",
+      "mobile-guest-join.png"
+    ],
+    "productionMutations": 0,
+    "microphoneCapture": false,
+    "fixture": "Synthetic calls/callbacks/routing/knowledge/campaigns; every API request intercepted",
+    "contrastScope": "Visible enabled solid-background text and form values in contact workspace; gradient header and disabled controls excluded",
+    "pageErrors": [],
+    "passed": true
+  },
+  "dialerBrowser": {
+    "at": "2026-10-21T09:37:10.653Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "Restores active call and provider recovery after reload",
+        "passed": true
+      },
+      {
+        "name": "Uncertain retry retains its original body and request key",
+        "passed": true
+      },
+      {
+        "name": "Callback outcome is submitted as one atomic scheduled update",
+        "passed": true
+      },
+      {
+        "name": "Hidden-page heartbeat cannot restore available presence",
+        "passed": true
+      },
+      {
+        "name": "Provider readiness disables calls",
+        "passed": true
+      },
+      {
+        "name": "Data errors remain errors with a global retry",
+        "passed": true
+      },
+      {
+        "name": "Lead pagination requests and displays the next page",
+        "passed": true
+      },
+      {
+        "name": "desktop-light-leads",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-setup",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-callbacks",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-active",
+        "passed": true,
+        "testedTextNodes": 20,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-wrap",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-leaderror",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-leads",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-setup",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-callbacks",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-active",
+        "passed": true,
+        "testedTextNodes": 20,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-wrap",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-leaderror",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-leads",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-setup",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-callbacks",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-active",
+        "passed": true,
+        "testedTextNodes": 20,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-wrap",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-leaderror",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-leads",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-setup",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-callbacks",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-active",
+        "passed": true,
+        "testedTextNodes": 20,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-wrap",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 7.14,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-leaderror",
+        "passed": true,
+        "testedTextNodes": 24,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "Accessible queue selection and mobile target size",
+        "passed": true
+      },
+      {
+        "name": "Sign out revokes through the API and clears CRM credentials",
+        "passed": true
+      }
+    ],
+    "screenshots": [
+      "desktop-light-leads.png",
+      "desktop-light-setup.png",
+      "desktop-light-callbacks.png",
+      "desktop-light-active.png",
+      "desktop-light-wrap.png",
+      "desktop-light-leaderror.png",
+      "desktop-dark-leads.png",
+      "desktop-dark-setup.png",
+      "desktop-dark-callbacks.png",
+      "desktop-dark-active.png",
+      "desktop-dark-wrap.png",
+      "desktop-dark-leaderror.png",
+      "mobile-light-leads.png",
+      "mobile-light-setup.png",
+      "mobile-light-callbacks.png",
+      "mobile-light-active.png",
+      "mobile-light-wrap.png",
+      "mobile-light-leaderror.png",
+      "mobile-dark-leads.png",
+      "mobile-dark-setup.png",
+      "mobile-dark-callbacks.png",
+      "mobile-dark-active.png",
+      "mobile-dark-wrap.png",
+      "mobile-dark-leaderror.png"
+    ],
+    "pageErrors": [],
+    "productionMutations": 0,
+    "microphoneCapture": false,
+    "contrastScope": "Visible enabled workspace text on solid backgrounds; disabled controls excluded",
+    "fixture": "Synthetic intercepted API requests; no production calls or session revocation",
+    "passed": true
+  },
+  "corporateBrowser": {
+    "at": "2026-10-21T09:37:10.726Z",
+    "phase": "after",
+    "productionMutations": 0,
+    "blockedMutations": 0,
+    "checks": [
+      {
+        "name": "Consent summary and active employee roster agree",
+        "passed": true
+      },
+      {
+        "name": "Direct corporate identity appears exactly once and is marked you",
+        "passed": true
+      },
+      {
+        "name": "Failed employee load is not rendered as an empty list",
+        "passed": true
+      },
+      {
+        "name": "Consent retry restores the roster and clears error",
+        "passed": true
+      }
+    ],
+    "pageErrors": [],
+    "api": {
+      "statuses": [
+        {
+          "path": "/api/corporate/consent/summary",
+          "status": 200
+        },
+        {
+          "path": "/api/corporate/consent/employees",
+          "status": 200
+        },
+        {
+          "path": "/api/corporate/hr/team",
+          "status": 200
+        }
+      ],
+      "summary": {
+        "total": 2,
+        "granted": 0,
+        "pending": 2,
+        "consentRate": 0
+      },
+      "employeeCount": 2,
+      "activeGrantedCount": 0,
+      "directIdentityCount": 1,
+      "directIdentityNamespaceValid": true
+    },
+    "completed": true,
+    "passed": true
+  },
+  "processBefore": [
+    {
+      "name": "mediczy-server",
+      "cwd": "/home/ubuntu/Mediczy/server",
+      "status": "online",
+      "restarts": 12,
+      "uptime": 1792573961063
+    }
+  ],
+  "processAfter": [
+    {
+      "name": "mediczy-server",
+      "cwd": "/home/ubuntu/Mediczy/server",
+      "status": "online",
+      "restarts": 13,
+      "uptime": 1792575353735
+    }
+  ],
+  "passed": true,
+  "browserChecksPassed": 101
+}
