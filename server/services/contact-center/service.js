@@ -48,7 +48,7 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         const agents=await c.query('SELECT * FROM cc_agents WHERE tenant_uid=$1 ORDER BY name', [uid]);
         const queues=await c.query('SELECT * FROM cc_queues WHERE tenant_uid=$1 ORDER BY name', [uid]);
         const calls=await c.query('SELECT * FROM cc_calls WHERE tenant_uid=$1 ORDER BY started_at DESC LIMIT 100', [uid]);
-        const callbacks=await c.query("SELECT b.*,c.destination FROM cc_callbacks b JOIN cc_calls c ON c.tenant_uid=b.tenant_uid AND c.id=b.call_id WHERE b.tenant_uid=$1 ORDER BY b.due_at LIMIT 100", [uid]);
+        const callbacks=await c.query("SELECT b.*,c.destination,c.provider FROM cc_callbacks b JOIN cc_calls c ON c.tenant_uid=b.tenant_uid AND c.id=b.call_id WHERE b.tenant_uid=$1 ORDER BY b.due_at LIMIT 100", [uid]);
         const flows=await c.query('SELECT * FROM cc_flows WHERE tenant_uid=$1 ORDER BY created_at DESC LIMIT 100', [uid]);
         const metrics=await one(c, `SELECT COUNT(*)::int AS total, COUNT(*) FILTER(WHERE answered_at IS NOT NULL)::int AS answered,
             COUNT(*) FILTER(WHERE state IN ('busy','no-answer','failed'))::int AS unanswered,
@@ -58,8 +58,10 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         let providerConfigured = false;
         if (cfg?.enabled) { try { binding(uid,cfg);providerFactory(cfg); callbackUrl(uid); providerConfigured = true; } catch { /* only non-secret readiness */ } }
         const mediaGatewayConfigured=Boolean(gateway&&cfg?.gateway_prefix&&env[`${cfg.gateway_prefix}_URL`]?.startsWith('https://')&&env[`${cfg.gateway_prefix}_EVENT_SECRET`]);
+        let sip;try{sip=JSON.parse(env.VOICE_LIVEKIT_BINDINGS||'{}')[uid];}catch{/* unavailable */}
+        const voiceProcessing=Boolean(env.VOICE_INTERNAL_SECRET&&env.GROQ_API_KEY);
         return { config: cfg, providerConfigured, agents: agents.rows, queues: queues.rows, calls: calls.rows, callbacks: callbacks.rows, flows: flows.rows, metrics,
-          capabilities: { livekit:Boolean((env.LIVEKIT_URL||env.LIVEKIT_API_URL)&&env.LIVEKIT_API_KEY&&env.LIVEKIT_API_SECRET),exotelCalling: providerConfigured, agentPhone: true,browserMedia:Boolean(cfg&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNT_TOKEN`]&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNTS`]), mediaGatewayConfigured, supervisorMedia: mediaGatewayConfigured, validatedBiometrics: false } };
+          capabilities: { livekit:Boolean((env.LIVEKIT_URL||env.LIVEKIT_API_URL)&&env.LIVEKIT_API_KEY&&env.LIVEKIT_API_SECRET),exotelCalling: providerConfigured, agentPhone: true,browserMedia:Boolean(cfg&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNT_TOKEN`]&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNTS`]), mediaGatewayConfigured, supervisorMedia: mediaGatewayConfigured, validatedBiometrics:false,nativePstn:Boolean(sip?.outbound_trunk_id&&/^\+[1-9]\d{7,14}$/.test(sip?.number||'')),voiceProcessing,voiceBot:voiceProcessing&&Boolean(env.ELEVENLABS_API_KEY),biometricsConfigured:Boolean(env.VOICE_BIOMETRIC_URL?.startsWith('https://')&&env.VOICE_BIOMETRIC_SECRET&&env.VOICE_BIOMETRIC_KMS_KEY&&env.VOICE_BIOMETRIC_MODEL_SHA256) } };
       });
     },
     async configure(uid, actor, input) {

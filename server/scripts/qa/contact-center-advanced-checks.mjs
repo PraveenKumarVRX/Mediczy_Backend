@@ -30,6 +30,27 @@ export async function advancedChecks({admin,runtime,tx,base,uid,other,actor,chec
  await check('Unavailable handoff leaves a durable callback without ending the call',async()=>{await reject(()=>media.handoff(uid,native.id,'999'),'NO_AVAILABLE_AGENT');assert.equal((await tx(uid,c=>c.query('SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND call_id=$2',[uid,native.id]))).rowCount,1);assert.ok(!ended.has(native.provider_sid));});
  await media.action(uid,{id:2},native.id,{action:'hangup'},'end-native-0001');
  await check('Native hangup persists terminal state and blocks new media tokens',async()=>{assert.equal((await base.getCall(uid,native.id)).state,'completed');await reject(()=>media.join(uid,{id:2},native.id),'CALL_ENDED');});
+ await check('Native callback ownership and recipient checks fail before origination',async()=>{
+  await tx(uid,async c=>{await c.query("UPDATE cc_agents SET active_call_id=null,presence='available',wrap_until=null,updated_at=now() WHERE tenant_uid=$1",[uid]);await c.query('UPDATE cc_calls SET destination=$3 WHERE tenant_uid=$1 AND id=$2',[uid,native.id,'+919999999991']);await c.query("UPDATE cc_callbacks SET owner_id=$3,status='in_progress',attempts=0 WHERE tenant_uid=$1 AND call_id=$2",[uid,native.id,String(actor.id)]);});
+  const callback=(await tx(uid,c=>c.query('SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND call_id=$2',[uid,native.id]))).rows[0];
+  await reject(()=>media.start(uid,actor,{to:'+919999999992',callback_id:callback.id},'native-callback-wrong-to'),'CALLBACK_SCOPE_MISMATCH');
+  await reject(()=>media.start(uid,{id:2},{to:'+919999999991',callback_id:callback.id},'native-callback-wrong-owner'),'CALLBACK_SCOPE_MISMATCH');
+  assert.equal((await tx(uid,c=>c.query('SELECT attempts FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2',[uid,callback.id]))).rows[0].attempts,0);
+ });
+ await check('Concurrent native callback retries reserve one call and increment attempts once',async()=>{
+  const callback=(await tx(uid,c=>c.query('SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND call_id=$2',[uid,native.id]))).rows[0];
+  const calls=await Promise.all(Array.from({length:4},()=>media.start(uid,actor,{to:'+919999999991',callback_id:callback.id},'native-callback-retry-0001')));
+  assert.equal(new Set(calls.map(c=>c.id)).size,1);assert.equal((await tx(uid,c=>c.query('SELECT attempts FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2',[uid,callback.id]))).rows[0].attempts,1);
+  await reject(()=>media.start(uid,actor,{to:'+919999999991',callback_id:callback.id},'native-callback-agent-busy'),'NO_AVAILABLE_AGENT');
+  assert.equal((await tx(uid,c=>c.query('SELECT attempts FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2',[uid,callback.id]))).rows[0].attempts,1);
+  await media.finish(uid,calls[0].id);
+ });
+ await check('Republishing an existing routing identity increments its version and retires the prior version',async()=>{
+  const input={name:'Synthetic routing recovery',graph:{start:'end',nodes:[{id:'end',type:'end'}]},publish:true};const first=await base.saveFlow(uid,actor,input);const second=await base.saveFlow(uid,actor,{...input,id:first.id});
+  assert.equal(second.id,first.id);assert.equal(second.version,first.version+1);
+  const rows=(await tx(uid,c=>c.query('SELECT version,published FROM cc_flows WHERE tenant_uid=$1 AND id=$2 ORDER BY version',[uid,first.id]))).rows;
+  assert.equal(rows[0].published,false);assert.equal(rows[1].published,true);
+ });
  await admin.query(`CREATE TABLE crm_person_identities(id bigint PRIMARY KEY,tenant_id bigint,status text);
  CREATE TABLE crm_identity_keys(id bigserial PRIMARY KEY,tenant_id bigint,person_id bigint,key_type text,normalized_value text,raw_value text,is_verified boolean);
  CREATE TABLE crm_consent_records(id bigserial PRIMARY KEY,tenant_id bigint,identity_id bigint,channel text,purpose text,status text,proof_ref text,captured_at timestamptz DEFAULT now(),expires_at timestamptz,withdrawn_at timestamptz);

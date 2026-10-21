@@ -15,7 +15,7 @@ Base: `/api/crm/contact-center`, JSON, CRM Bearer JWT. Tenant UID and actor come
 | `POST /flows` | Save a validated graph version; `publish: true` selects the current version; provider routing must be connected separately |
 | `POST /calls` | Explicit agent-first call; required `Idempotency-Key`; responds 202 with durable local call record |
 | `GET /calls/:id` | Call, immutable events, redacted transcripts, reviewed/unreviewed artifacts and available recording IDs |
-| `POST /calls/:id/reconcile` | Fetch canonical provider state; cannot redial an uncertain call |
+| `POST /calls/:id/reconcile` | Dispatch by stored provider (native LiveKit or Exotel); cannot redial an uncertain call |
 | `POST /calls/:id/disposition` | Assigned-agent wrap-up after confirmed terminal state |
 | `POST /calls/:id/actions` | Authorized media-gateway action; unavailable gateway returns 503, not simulated success |
 | `POST /calls/:id/artifacts/:kind` | `summary`, `copilot`, `qa` draft from final segments and approved FAQ evidence |
@@ -58,7 +58,7 @@ Source extension: 2026-10-20. See the [LiveKit release/acceptance record](../dep
 | Method/path | Capability and contract |
 |---|---|
 | `GET /media/readiness` | Read: `{livekit:boolean}` checks server configuration, not worker health or clinical acceptance |
-| `POST /calls/livekit` | Write: required `Idempotency-Key`; `{to?,transcribe?:false,bot?:false,language?:"en",consent?}`; 202 durable call. Omit `to` for browser-only; PSTN uses the server-bound SIP trunk. STT/bot requires documented processing consent and worker signing configuration |
+| `POST /calls/livekit` | Write: required `Idempotency-Key`; `{to?,callback_id?,transcribe?:false,bot?:false,language?:"en",consent?}`; 202 durable call. Omit `to` for browser-only; PSTN uses the server-bound SIP trunk. STT/bot requires documented processing consent and worker signing configuration |
 | `POST /calls/:id/media/join` | Write: `{mode:"agent"|"listen"|"whisper"|"barge"}`; assigned agent or assigned supervisor/admin for supervision. Returns `{primary,coaching,identity,expiresIn:120}`; each non-null connection is `{serverUrl,roomName,token,expiresIn}`. Whisper has no primary token |
 | `POST /calls/:id/media/invite` | Assigned agent: single-use browser invite `{tenantUid,callId,invite,expiresIn:900}`. Use a URL fragment, not a query string or stored credential |
 | `POST /calls/:id/media/actions` | Write: required action idempotency key; `{action:"hold"|"resume"|"hangup"|"interrupt"|"bot_handoff"|"transfer"|"listen"|"whisper"|"barge",targetAgentId?}`. Transfer/supervision requires assigned supervisor/admin; transfer target is a numeric staff ID string |
@@ -78,3 +78,9 @@ Worker-only operations use exact POST `/api/contact-center/hooks/agent/:tenant` 
 Exact POST `/api/contact-center/hooks/livekit/:tenant` requires the LiveKit SDK's signed Authorization token over the exact raw JSON body. Exact POST `/api/contact-center/hooks/guest/:tenant` requires `{callId,invite,consent:boolean}` and a valid unexpired single-use invite. Transcribed guest calls require affirmative processing consent. These narrowly scoped hooks do not accept tenant/actor overrides from CRM request bodies.
 
 Existing growth journeys use `stepType:"message",channel:"voice",config:{campaign_id:"published-tenant-campaign-uuid"}`. Enqueue occurs inside the existing journey event transaction; its source key prevents duplicate delivery. Marketing/transcription consent and suppression are rechecked before each attempted call. Unknown outcomes are quarantined; unavailable-agent races defer without consuming a dial attempt.
+
+## Recovery and readiness update — 2026-10-21
+
+The overview includes non-secret `nativePstn`, `voiceProcessing`, `voiceBot` and `biometricsConfigured` capability flags. These report configured prerequisites, not worker health, model validation or clinical acceptance. Callback rows include their source call `provider`. Native `callback_id` requires the authenticated agent to own an in-progress callback and use its exact stored destination; reservation and attempt accounting are atomic. An idempotent replay does not increment attempts.
+
+The console preflights microphone access before reserving calls or redeeming guest invitations, retains recovery/end controls after connection failure, and keeps media mounted across console tabs. Guests keep their short-lived connection grant in memory for bounded retries; invitations remain single-use. Open call details refresh with the overview. Existing routing graphs can be loaded and republished under the same ID. CRM requests renew an expired access token once through `POST /api/crm/auth/refresh`; rejected refresh credentials clear only the CRM session and return to sign-in. Mutation retries preserve their body and idempotency key.

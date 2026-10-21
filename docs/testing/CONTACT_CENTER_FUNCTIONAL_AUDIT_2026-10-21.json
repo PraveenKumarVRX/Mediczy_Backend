@@ -1,0 +1,219 @@
+{
+  "at": "2026-10-21T05:04:11.025076+00:00",
+  "userFacingDate": "21 October 2026, Asia/Kolkata",
+  "page": "https://app.mediqzy.com/crm/contact-center",
+  "gitHead": "2f29353ecb0638142dce8f1530fb077e255f8341",
+  "findings": [
+    {
+      "id": "CC-AUD-01",
+      "priority": "high",
+      "title": "Microphone/connection failure after reservation leaves no operator hangup control",
+      "evidenceMode": "isolated React reproduction with real hook and injected LiveKit SDK",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-02",
+      "priority": "high",
+      "title": "Switching console tabs disconnects native audio without finishing the call",
+      "evidenceMode": "isolated React reproduction with real hook and injected LiveKit SDK",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-03",
+      "priority": "high",
+      "title": "Native status refresh is dispatched to Exotel reconciliation",
+      "evidenceMode": "deployed bundle with intercepted synthetic record plus pure service factory",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-04",
+      "priority": "medium",
+      "title": "Selected call details do not refresh with the overview poll",
+      "evidenceMode": "deployed bundle with intercepted state transition",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-05",
+      "priority": "medium",
+      "title": "Routing publication does not retain flow identity/version history",
+      "evidenceMode": "deployed bundle with intercepted publication plus pure service factory",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-06",
+      "priority": "medium",
+      "title": "Native callbacks are forced through the disabled Exotel dialer",
+      "evidenceMode": "isolated full-page React reproduction",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-07",
+      "priority": "high",
+      "title": "Guest media failure consumes its invitation before a successful connection",
+      "evidenceMode": "isolated React reproduction with real hook and one-use API fixture",
+      "confirmed": true
+    },
+    {
+      "id": "CC-AUD-08",
+      "priority": "medium",
+      "title": "Expired access tokens leave a loading console without refresh or redirect",
+      "evidenceMode": "deployed bundle with intercepted 401 and synthetic refresh-token placeholder",
+      "confirmed": true
+    }
+  ],
+  "counts": {
+    "high": 4,
+    "medium": 4,
+    "total": 8
+  },
+  "liveBundleAudit": {
+    "at": "2026-10-21T05:01:52.497Z",
+    "page": "https://app.mediqzy.com/crm/contact-center",
+    "productionMutations": 0,
+    "callsPlaced": 0,
+    "observations": [
+      {
+        "id": "CC-AUD-READY",
+        "mode": "live-read-only",
+        "startEnabledWithoutAssignment": true,
+        "agentAssignmentPresent": false
+      },
+      {
+        "id": "CC-AUD-03",
+        "mode": "live-bundle-with-intercepted-synthetic-call",
+        "reconcileRequest": "/api/crm/contact-center/calls/11111111-1111-4111-8111-111111111111/reconcile",
+        "expectedNativePath": "/api/crm/contact-center/calls/11111111-1111-4111-8111-111111111111/media/reconcile",
+        "errorShown": true
+      },
+      {
+        "id": "CC-AUD-04",
+        "mode": "intercepted-server-state-change",
+        "recentCallCompleted": true,
+        "detailStillQueued": true,
+        "wrapUpOffered": false,
+        "detailRequestCount": 1
+      },
+      {
+        "id": "CC-AUD-05",
+        "mode": "live-bundle-blocked-publication",
+        "publicationAttempts": 2,
+        "requestHasExistingFlowId": [
+          false,
+          false
+        ]
+      },
+      {
+        "id": "CC-AUD-08",
+        "mode": "intercepted-expired-access-token",
+        "remainsOnContactCenter": true,
+        "refreshAttempted": false,
+        "refreshCredentialPresent": true,
+        "loadingStillShown": true
+      }
+    ],
+    "blockedMutationCount": 3,
+    "liveBaseline": {
+      "providerConfigured": false,
+      "livekitConfigured": true,
+      "assignedAgents": 0,
+      "ownAgentAssigned": false,
+      "callCount": 0,
+      "initialPageErrorCount": 0
+    },
+    "pageErrorCount": 0,
+    "completed": true
+  },
+  "reactReproductions": {
+    "confirmed": 4,
+    "failed": 0,
+    "note": "These assertions demonstrate current defects, not successful product behavior. The temporary test was removed from normal test discovery.",
+    "cases": [
+      "CC-AUD-01: microphone denial after reservation leaves no hangup control",
+      "CC-AUD-02: switching console tabs disconnects active native audio without ending the call",
+      "CC-AUD-06: a native-call callback is forced into the disabled Exotel dialer",
+      "CC-AUD-07: guest microphone failure consumes the invite and a retry is denied"
+    ]
+  },
+  "serviceReproductions": {
+    "at": "2026-10-21T05:00:40.890Z",
+    "mode": "Pure service factories with injected in-memory query fixtures",
+    "productionMutations": 0,
+    "checks": [
+      {
+        "id": "CC-AUD-03",
+        "confirmed": true,
+        "observation": "Generic provider reconciliation requires enabled Exotel configuration even for a LiveKit room SID"
+      },
+      {
+        "id": "CC-AUD-05",
+        "confirmed": true,
+        "observation": "Repeated UI-shaped publication requests create distinct flow IDs at version 1"
+      }
+    ]
+  },
+  "sourceParity": {
+    "files": {
+      "client/src/pages/crm/CRMContactCenterPage.tsx": {
+        "sha256": "40f3b41259b6be9c2d9136fdfaf36f8034614ea361b07419e18eef67d4d849f0",
+        "matchesIsolatedRelease": true
+      },
+      "client/src/pages/crm/ContactVoiceTools.tsx": {
+        "sha256": "2328eda90afbe9619f086889d043ba53059b48025b124cc78fcf2173537cb10f",
+        "matchesIsolatedRelease": true
+      },
+      "client/src/pages/ContactVoiceJoin.tsx": {
+        "sha256": "f204b0f820383054193c623fa7deb1d5687ea5f15081add40ff4f88c008f47f2",
+        "matchesIsolatedRelease": true
+      },
+      "client/src/hooks/useContactLiveKit.ts": {
+        "sha256": "4de518bacef3f91b00a4a7ec700fa936719370e90384fafae48c72de51efb326",
+        "matchesIsolatedRelease": true
+      },
+      "server/routes/contact-center-http.js": {
+        "sha256": "14dbb5977cc1e528e066de395f7e9c0cf947aac9dd931ec9265a627b8459aedd",
+        "matchesIsolatedRelease": true
+      },
+      "server/routes/contact-center-advanced-http.js": {
+        "sha256": "814c69ede843999a53a89036a5a0b971b727846a8aa91c8c27afed7214acbcd6",
+        "matchesIsolatedRelease": true
+      },
+      "server/services/contact-center/service.js": {
+        "sha256": "e0231c15c65c26a0d33acc24572b9ea228d2c980efa988c5b535c64cc46aa3de",
+        "matchesIsolatedRelease": true
+      },
+      "server/services/contact-center/media-service.js": {
+        "sha256": "f24da721622e9f925f1e0471aa7237dee7c06eff99b6d84a0ffee9cfa1a6290e",
+        "matchesIsolatedRelease": true
+      }
+    }
+  },
+  "configurationPresence": {
+    "at": "2026-10-21T05:01:53.469Z",
+    "configurationPresence": {
+      "VOICE_PROVIDER_BINDINGS": false,
+      "VOICE_LIVEKIT_BINDINGS": false,
+      "VOICE_BIOMETRIC_URL": false,
+      "VOICE_BIOMETRIC_KMS_KEY": false,
+      "VOICE_INTERNAL_SECRET": true
+    },
+    "secretValuesIncluded": false
+  },
+  "artifactSha256": {
+    "live-page.json": "8c875f89cf9e18dbf7086a178a8119c3c2fe73a35c361cfc560e23309ca1253c",
+    "component-reproductions.json": "461c9108508b0ea86e8e7f63d9971f57928f015de63dd3c1844fcc096b23a396",
+    "component-reproductions.fixture.tsx": "bb2f1821f8fb80b6831a6070ba5b9c781e84e2a73c7bf19579ca06c36eaff215",
+    "service-reproductions.json": "110ef94e491030aac77858df459d59e70c40422f6c37d5eec12b048d6841b8b5",
+    "source-parity.json": "a1ddd3b1c4f4c08c08f654db15708a9a9cf88829ed06059bb0ee58bdd92661d2",
+    "configuration-presence.json": "e1e5fb1dcd9edaca30ea11487611d163348b0b743912cc1b2e4158dc67e95fb0"
+  },
+  "auditHarnessSha256": "0075c1238c1b0f37f36c2add7bdad7011d71f4a92deb1787eb605ee47d9e043c",
+  "privateReproductionDirectory": "/home/ubuntu/contact-center-audit-evidence/20261021",
+  "scopeLimits": [
+    "No real telephone calls or microphone capture",
+    "No production mutations or application fixes",
+    "Not a complete security/tenant penetration test",
+    "No actual provider-console webhook, STT/TTS medical accuracy or biometric validation",
+    "Failure-path cases were intercepted or isolated; no live caller was subjected to a failure"
+  ],
+  "report": "docs/audits/CONTACT_CENTER_FUNCTIONAL_AUDIT_2026-10-21.md"
+}

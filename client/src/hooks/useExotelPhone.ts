@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import {contactCenterApi} from '@/pages/crm/contactCenterClient';
 import { configurePrivateExotelLogging } from '@/utils/exotel-privacy';
 
 type Call={Answer:()=>void;Hangup:()=>void;Hold:()=>void;UnHold:()=>void;Mute:()=>void;UnMute:()=>void;sendDTMF:(digit:string)=>void};
@@ -16,8 +17,7 @@ export function useExotelPhone(){
     setState('connecting');setError('');
     try{
       const mic=await navigator.mediaDevices.getUserMedia({audio:true});mic.getTracks().forEach(track=>track.stop());
-      const response=await fetch('/api/crm/contact-center/browser-session',{method:'POST',headers:{Authorization:`Bearer ${localStorage.getItem('crmToken')||''}`,'Content-Type':'application/json'},body:'{}'});
-      const account=await response.json();if(!response.ok)throw new Error(account.error||'Browser phone is unavailable');
+      const account=await contactCenterApi('/browser-session','POST',{});
       const [{ExotelWebClient},{getLogger}]=await Promise.all([import('@exotel-npm-dev/webrtc-client-sdk'),import('@exotel-npm-dev/webrtc-core-sdk')]);
       configurePrivateExotelLogging(ExotelWebClient,getLogger());
       const instance=new ExotelWebClient() as Client;

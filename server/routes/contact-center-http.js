@@ -19,7 +19,7 @@ const uuid=value=>parse(z.string().uuid(),value);
 const kind=value=>parse(z.enum(['summary','copilot','qa']),value);
 function handler(fn){return async(req,res)=>{try{await fn(req,res);}catch(error){const status=error.statusCode||500;res.status(status).json({success:false,error:status>=500?'Contact-center operation failed':error.message,code:error.statusCode?error.code||'CONTACT_CENTER_ERROR':'CONTACT_CENTER_ERROR'});}};}
 
-export function createContactCenterRouter({ service, authenticate, authorize }) {
+export function createContactCenterRouter({ service, media, authenticate, authorize }) {
   const router=Router();
   router.use(authenticate,authorize('contact_center:read'));
   const uid=req=>{
@@ -38,7 +38,7 @@ export function createContactCenterRouter({ service, authenticate, authorize }) 
   router.post('/flows',configure,handler(async(req,res)=>res.json(await service.saveFlow(uid(req),req.crmUser,parse(flow,req.body)))));
   router.post('/calls',write,handler(async(req,res)=>res.status(202).json(await service.dial(uid(req),req.crmUser,parse(dial,req.body),req.get('Idempotency-Key')))));
   router.get('/calls/:id',handler(async(req,res)=>res.json(await service.callDetail(uid(req),uuid(req.params.id)))));
-  router.post('/calls/:id/reconcile',write,handler(async(req,res)=>{const call=await service.getCall(uid(req),uuid(req.params.id));if(!call.provider_sid)throw fail(409,'PROVIDER_ID_PENDING','Provider identifier is not available; do not redial automatically');res.json(await service.reconcile(uid(req),call.provider_sid));}));
+  router.post('/calls/:id/reconcile',write,handler(async(req,res)=>{const call=await service.getCall(uid(req),uuid(req.params.id));if(call.provider==='livekit'){if(!media)throw fail(503,'MEDIA_NOT_CONFIGURED','Native media is unavailable');return res.json(await media.reconcile(uid(req),call.id));}if(!call.provider_sid)throw fail(409,'PROVIDER_ID_PENDING','Provider identifier is not available; do not redial automatically');res.json(await service.reconcile(uid(req),call.provider_sid));}));
   router.post('/calls/:id/actions',write,handler(async(req,res)=>res.json(await service.mediaAction(uid(req),req.crmUser,uuid(req.params.id),parse(action,req.body)))));
   router.post('/calls/:id/disposition',write,handler(async(req,res)=>res.json(await service.disposition(uid(req),req.crmUser,uuid(req.params.id),parse(disposition,req.body)))));
   router.post('/calls/:id/artifacts/:kind',write,handler(async(req,res)=>res.json(await service.artifact(uid(req),req.crmUser,uuid(req.params.id),kind(req.params.kind)))));

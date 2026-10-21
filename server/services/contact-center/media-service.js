@@ -22,6 +22,11 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
         const old=await one(c,'SELECT * FROM cc_calls WHERE tenant_uid=$1 AND idempotency_key=$2',[uid,key]);
         if(old){if(old.request_hash!==requestHash)throw fail(409,'IDEMPOTENCY_CONFLICT','Key belongs to a different request');return {...old,duplicate:true};}
         if(input.to&&await one(c,'SELECT 1 FROM cc_suppressions WHERE tenant_uid=$1 AND phone=$2',[uid,input.to]))throw fail(409,'SUPPRESSED','Recipient is suppressed');
+        if(input.callback_id){
+          const callback=await one(c,'SELECT b.*,v.destination FROM cc_callbacks b JOIN cc_calls v ON v.tenant_uid=b.tenant_uid AND v.id=b.call_id WHERE b.tenant_uid=$1 AND b.id=$2 FOR UPDATE OF b',[uid,input.callback_id]);
+          if(!callback||callback.owner_id!==String(actor.id)||callback.status!=='in_progress'||!input.to||callback.destination!==input.to)throw fail(409,'CALLBACK_SCOPE_MISMATCH','Claim this callback and use its stored recipient with your assigned agent');
+          await c.query('UPDATE cc_callbacks SET attempts=attempts+1 WHERE tenant_uid=$1 AND id=$2',[uid,input.callback_id]);
+        }
         const a=await one(c,"SELECT * FROM cc_agents WHERE tenant_uid=$1 AND user_id=$2 FOR UPDATE",[uid,String(actor.id)]);
         if(!a||a.presence!=='available'||a.active_call_id||Date.parse(a.updated_at)<Date.now()-120000)throw fail(409,'NO_AVAILABLE_AGENT','Become available before starting a call');
         const id=randomUUID(),room=`cc-${hash(uid).slice(0,12)}-${id}`;
@@ -118,7 +123,7 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
       await c.query("UPDATE cc_agents SET active_call_id=null,presence='wrap_up',wrap_until=now()+interval '60 seconds',last_call_end=now() WHERE tenant_uid=$1 AND user_id=$2 AND active_call_id=$3",[uid,call.agent_id,id]);
       await audit(c,uid,id,'livekit_call_finished','system:livekit',{},`livekit:finished:${id}`);
     });},
-    async reconcile(uid,id){const s=await session(uid,id);const participants=await transport.participants(s.room_name);return {state:s.state,participants:participants.map(p=>({identity:p.identity,kind:p.kind})),requiresOperatorReview:s.state==='unknown'};},
+    async reconcile(uid,id){const s=await session(uid,id);const participants=s.state==='ended'?[]:await transport.participants(s.room_name);return {state:s.state,participants:participants.map(p=>({identity:p.identity,kind:p.kind})),requiresOperatorReview:s.state==='unknown'};},
     async expire(uid){const expired=await tx(uid,async c=>(await c.query("SELECT call_id,room_name FROM cc_media_sessions WHERE tenant_uid=$1 AND state!='ended' AND created_at<now()-interval '1 hour'",[uid])).rows);for(const s of expired){await transport.end(s.room_name);await api.finish(uid,s.call_id);}return {expired:expired.length};},
     async webhook(uid,raw,authorization){
       const e=await transport.webhook(raw,authorization);const room=e.room?.name;

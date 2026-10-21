@@ -39,6 +39,6 @@ export function createLiveKitTransport({env=process.env,clients}={}){
       await api().rooms.sendData(room,Buffer.from(JSON.stringify({body,timestamp,nonce,signature})),DataPacket_Kind.RELIABLE,{topic:'mediqzy.voice.control'});
     },
     async webhook(raw,authorization){const cfg=connection();try{return await new WebhookReceiver(cfg.key,cfg.secret).receive(raw,authorization,false,10);}catch{throw fail(403,'INVALID_SIGNATURE','Invalid LiveKit webhook signature');}},
-    async participants(room){return api().rooms.listParticipants(room);},
+    async participants(room){return (await absent(()=>api().rooms.listParticipants(room)))||[];},
   };
 }

@@ -1,9 +1,22 @@
-import {useState} from 'react';
+import {useRef,useState} from 'react';
+import {ensureVoiceMicrophone} from '@/utils/voice-permission';
 import {useContactLiveKit} from '@/hooks/useContactLiveKit';
 import {Button} from '@/components/ui/button';
 export default function ContactVoiceJoin(){
  const voice=useContactLiveKit(),[error,setError]=useState(''),[consent,setConsent]=useState(false),[busy,setBusy]=useState(false);
  const [invitation]=useState(()=>new URLSearchParams(location.hash.slice(1)));
- async function join(){setBusy(true);setError('');try{const tenant=invitation.get('tenant');if(!/^[A-Za-z0-9_-]{4,64}$/.test(tenant||''))throw new Error('Invalid invitation');const response=await fetch(`/api/contact-center/hooks/guest/${tenant}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({callId:invitation.get('call'),invite:invitation.get('invite'),consent})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Invitation is unavailable');history.replaceState(null,'',location.pathname);await voice.connect(data,'caller');}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- return <main className="min-h-screen bg-slate-50 flex items-center justify-center p-5"><section className="max-w-lg rounded-2xl bg-white border p-7 space-y-5"><h1 className="font-bold text-2xl">Connect with the hospital</h1><p>Use your microphone for a secure voice call with the hospital team.</p><label className="flex gap-3 text-sm"><input type="checkbox" checked={consent} onChange={e=>setConsent(e.target.checked)}/>I agree to voice transcription and automated reception assistance if enabled for this call.</label>{(error||voice.error)&&<p role="alert">{error||voice.error}</p>}<Button disabled={busy} onClick={voice.connected?voice.disconnect:join}>{voice.connected?'Leave call':busy?'Connecting…':'Join hospital call'}</Button></section></main>;
+ const grant=useRef<{data:any;expiresAt:number}|null>(null);
+ async function join(){setBusy(true);setError('');try{
+  await ensureVoiceMicrophone();
+  if(!grant.current){
+   const tenant=invitation.get('tenant');if(!/^[A-Za-z0-9_-]{4,64}$/.test(tenant||''))throw new Error('Invalid invitation');
+   const response=await fetch(`/api/contact-center/hooks/guest/${tenant}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({callId:invitation.get('call'),invite:invitation.get('invite'),consent})});
+   const data=await response.json();if(!response.ok)throw new Error(data.error||'Invitation is unavailable');
+   grant.current={data,expiresAt:Date.now()+(data.primary?.expiresIn||120)*1000};
+  }
+  if(grant.current.expiresAt<=Date.now())throw new Error('The connection grant expired. Ask the hospital for a new invitation.');
+  await voice.connect(grant.current.data,'caller');history.replaceState(null,'',location.pathname);
+ }catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+
+ return <main className="min-h-screen bg-slate-50 flex items-center justify-center p-5"><section className="max-w-lg rounded-2xl bg-white border p-7 space-y-5"><h1 className="font-bold text-2xl">Connect with the hospital</h1><p>Use your microphone for a secure voice call with the hospital team.</p><label className="flex gap-3 text-sm"><input type="checkbox" disabled={Boolean(grant.current)} checked={consent} onChange={e=>setConsent(e.target.checked)}/>I agree to voice transcription and automated reception assistance if enabled for this call.</label>{(error||voice.error)&&<p role="alert">{error||voice.error}</p>}<Button disabled={busy} onClick={voice.connected?voice.disconnect:join}>{voice.connected?'Leave call':busy?'Connecting…':'Join hospital call'}</Button></section></main>;
 }

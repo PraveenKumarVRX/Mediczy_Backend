@@ -29,6 +29,11 @@ describe('contact-center HTTP access boundary',()=>{
     const r=await request(app).post('/api/crm/contact-center/calls').set('X-Test-Role','telecaller').send({to:'+919876543210',tenantUid:'OTHER',agent_id:'another'});
     expect(r.status).toBe(400);expect(service.dial).not.toHaveBeenCalled();
   });
+  it('dispatches native reconciliation to the media service without Exotel',async()=>{
+    const media={reconcile:jest.fn(async()=>({state:'ready'}))};service.getCall=jest.fn(async()=>({id:'11111111-1111-4111-8111-111111111111',provider:'livekit',provider_sid:'cc-room'}));
+    const scoped=express();scoped.use(express.json());scoped.use(createContactCenterRouter({service,media,authenticate:(req,res,next)=>{req.crmUser={id:1,tenantUid:'HOSPITAL_11'};next();},authorize:()=>(req,res,next)=>next()}));
+    const response=await request(scoped).post('/calls/11111111-1111-4111-8111-111111111111/reconcile').send({});expect(response.status).toBe(200);expect(media.reconcile).toHaveBeenCalledWith('HOSPITAL_11','11111111-1111-4111-8111-111111111111');expect(service.reconcile).not.toHaveBeenCalled();
+  });
   it('treats callbacks only as pointers to an account-verified provider record',async()=>{
     const r=await request(app).post('/api/contact-center/hooks/exotel/HOSPITAL_11').send({CallSid:'abc123abc123abc123',Status:'completed',RecordingUrl:'https://attacker.test'});
     expect(r.status).toBe(200);expect(service.reconcile).toHaveBeenCalledWith('HOSPITAL_11','abc123abc123abc123');

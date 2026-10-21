@@ -10,5 +10,5 @@ contactCenterHooks.use(advancedHooks({media:contactMedia,limiter:createRateLimit
 contactCenterHooks.use(createContactCenterHooks({service:contactCenterService,limiter:createRateLimiter('webhook')}));
 const router=Router();
 router.use(advancedRouter({media:contactMedia,campaigns:voiceCampaigns,biometrics:voiceBiometrics,authenticate:authCRM,authorize:requireCRMCapability}));
-router.use(createContactCenterRouter({service:contactCenterService,authenticate:authCRM,authorize:requireCRMCapability}));
+router.use(createContactCenterRouter({service:contactCenterService,media:contactMedia,authenticate:authCRM,authorize:requireCRMCapability}));
 export default router;

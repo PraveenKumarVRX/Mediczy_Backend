@@ -10,6 +10,7 @@ export function useContactLiveKit(){
  async function connect(value:{primary?:Connection|null;coaching?:Connection|null},mode='agent'){
   disconnect();const request=generation.current;setError('');
   try{
+   if(!value.primary&&!value.coaching)throw new Error('The voice connection grant is unavailable.');
    for(const [kind,config] of Object.entries(value).filter(([key])=>['primary','coaching'].includes(key)) as [string,Connection|null][]){
     if(!config)continue;const room=new Room({adaptiveStream:true,dynacast:true});rooms.current.push(room);
     room.on(RoomEvent.TrackSubscribed,track=>{if(track.kind===Track.Kind.Audio){const el=track.attach();el.setAttribute('data-contact-voice',kind);document.body.appendChild(el);elements.current.push(el);}});
