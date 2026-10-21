@@ -435,11 +435,12 @@ const LabTests = () => {
 
   const filteredTests = tests.filter(test => {
     // Handle status filter groups
-    const matchesStatus = 
+    const matchesStatus =
       filterStatus === 'all' ||
-      (filterStatus === 'pending' && ['pending', 'pending_confirmation'].includes(test.status)) ||
-      (filterStatus === 'in_progress' && ['confirmed', 'sample_collected', 'processing'].includes(test.status)) ||
+      (filterStatus === 'pending' && test.status === 'pending_confirmation') ||
+      (filterStatus === 'in_progress' && test.status === 'booked') ||
       (filterStatus === 'completed' && test.status === 'completed') ||
+      (filterStatus === 'other' && ['cancelled', 'no_show', 'rescheduled'].includes(test.status)) ||
       test.status === filterStatus;
     
     const matchesSearch = 
@@ -488,11 +489,16 @@ const LabTests = () => {
     return labels[status] || status.replace('_', ' ');
   };
 
+  // Real backend status enum is exactly: pending_confirmation, booked,
+  // completed, cancelled, no_show, rescheduled - 'pending'/'confirmed'/
+  // 'sample_collected'/'processing' never occur, which is why in_progress
+  // was always 0 and total never matched pending+in_progress+completed.
   const statusCounts = {
     total: tests.length,
-    pending: tests.filter(t => ['pending', 'pending_confirmation'].includes(t.status)).length,
-    in_progress: tests.filter(t => ['confirmed', 'sample_collected', 'processing'].includes(t.status)).length,
-    completed: tests.filter(t => t.status === 'completed').length
+    pending: tests.filter(t => t.status === 'pending_confirmation').length,
+    in_progress: tests.filter(t => t.status === 'booked').length,
+    completed: tests.filter(t => t.status === 'completed').length,
+    other: tests.filter(t => ['cancelled', 'no_show', 'rescheduled'].includes(t.status)).length,
   };
 
   return (
@@ -1245,7 +1251,7 @@ const LabTests = () => {
         </motion.div>
 
         {/* Stats */}
-        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('all')}>
             <CardContent className="pt-6">
@@ -1282,6 +1288,16 @@ const LabTests = () => {
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600 dark:text-green-400">{statusCounts.completed}</div>
                 <div className="text-sm text-gray-600 dark:text-slate-400">Completed</div>
+              </div>
+            </CardContent>
+          </Card>
+          </motion.div>
+          <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('other')}>
+            <CardContent className="pt-6">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gray-500 dark:text-gray-400">{statusCounts.other}</div>
+                <div className="text-sm text-gray-600 dark:text-slate-400">Cancelled / No-Show</div>
               </div>
             </CardContent>
           </Card>
@@ -1345,6 +1361,13 @@ const LabTests = () => {
                   size="sm"
                 >
                   Completed
+                </Button>
+                <Button
+                  variant={filterStatus === 'other' ? 'default' : 'outline'}
+                  onClick={() => setFilterStatus('other')}
+                  size="sm"
+                >
+                  Cancelled / No-Show
                 </Button>
               </div>
             </div>

@@ -180,6 +180,18 @@ const MyReports = () => {
     return colors[type as keyof typeof colors];
   };
 
+  // Raw upload filenames (e.g. "rn_image_picker_lib_temp_b2d77114....jpg")
+  // and single-character testName values are not meant for display - show a
+  // human-friendly label instead, falling back through reportType + date.
+  const TYPE_LABELS: Record<string, string> = { lab: 'Lab Report', imaging: 'Imaging Report', prescription: 'Prescription', general: 'Report' };
+  const getDisplayName = (report: Report): string => {
+    const testName = report.testName?.trim();
+    if (testName && testName.length >= 3) return testName;
+    const label = TYPE_LABELS[report.reportType] || 'Report';
+    const date = report.reportDate || report.uploadedAt;
+    return date ? `${label} - ${new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}` : label;
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -190,7 +202,8 @@ const MyReports = () => {
     total: reports.length,
     lab: reports.filter(r => r.reportType === 'lab').length,
     prescription: reports.filter(r => r.reportType === 'prescription').length,
-    imaging: reports.filter(r => r.reportType === 'imaging').length
+    imaging: reports.filter(r => r.reportType === 'imaging').length,
+    general: reports.filter(r => r.reportType === 'general').length,
   };
 
   const handlePreviewReport = async (report: Report) => {
@@ -340,7 +353,7 @@ const MyReports = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
         <Card
           className="cursor-pointer transition-shadow hover:shadow-md"
           onClick={() => setFilterType('all')}
@@ -382,6 +395,17 @@ const MyReports = () => {
             <div className="text-center">
               <div className="text-3xl font-bold text-purple-600">{typeCounts.prescription}</div>
               <div className="text-sm text-gray-600">Prescriptions</div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setFilterType('general')}
+        >
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-600">{typeCounts.general}</div>
+              <div className="text-sm text-gray-600">General</div>
             </div>
           </CardContent>
         </Card>
@@ -429,6 +453,13 @@ const MyReports = () => {
               >
                 Prescription
               </Button>
+              <Button
+                variant={filterType === 'general' ? 'default' : 'outline'}
+                onClick={() => setFilterType('general')}
+                size="sm"
+              >
+                General
+              </Button>
             </div>
           </div>
         </CardContent>
@@ -455,14 +486,14 @@ const MyReports = () => {
                   className="text-lg leading-snug break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
                   title={report.fileName}
                 >
-                  {report.fileName}
+                  {getDisplayName(report)}
                 </CardTitle>
                 {report.description && (
                   <CardDescription className="break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]">
                     {report.description}
                   </CardDescription>
                 )}
-                {report.testName && (
+                {report.testName && report.testName.trim().length >= 3 && (
                   <p className="text-sm text-gray-600 dark:text-gray-400 break-words">
                     <span className="font-medium">Test:</span>{' '}
                     <span className="break-all">{report.testName}</span>
