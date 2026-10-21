@@ -1,361 +1,90 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Phone, PhoneOff, LogOut, Clock, AlertCircle, CheckCircle2, RefreshCw, Users } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
-import {
-  getOverview, setPresence, dial, getCall, setDisposition,
-  claimCallback, resolveCallback, getMyLeads, TERMINAL_CALL_STATES,
-  type CCOverview, type CRMLead,
-} from './dialerClient';
-
-const PRESENCE_HEARTBEAT_MS = 25_000; // under the server's 2-minute freshness window
-const CALL_POLL_MS = 5_000;
-
-const DISPOSITIONS: Array<{ value: Parameters<typeof setDisposition>[1]; label: string }> = [
-  { value: 'appointment_followup', label: 'Appointment follow-up' },
-  { value: 'information_provided', label: 'Information provided' },
-  { value: 'callback_required', label: 'Callback required' },
-  { value: 'wrong_number', label: 'Wrong number' },
-  { value: 'no_action', label: 'No action' },
-];
-
-function currentUser(): { id?: number | string; crmRole?: string; firstName?: string } {
-  try { return JSON.parse(localStorage.getItem('crmUserData') || '{}'); } catch { return {}; }
-}
-
-export default function CRMTelecallerDialer() {
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const user = currentUser();
-
-  const [overview, setOverview] = useState<CCOverview | null>(null);
-  const [leads, setLeads] = useState<CRMLead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<'leads' | 'callbacks'>('leads');
-
-  // Active call being placed/tracked, and the pending callback it's linked to (if any).
-  const [activeCall, setActiveCall] = useState<Record<string, any> | null>(null);
-  const [activeCallbackId, setActiveCallbackId] = useState<string | null>(null);
-  const idempotencyKeyRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!localStorage.getItem('crmToken')) { navigate('/crm/login'); return; }
-  }, [navigate]);
-
-  const load = useCallback(async () => {
-    try {
-      const ov = await getOverview();
-      setOverview(ov);
-      if (user.id) {
-        const myLeads = await getMyLeads(user.id).catch(() => []);
-        setLeads(myLeads);
-      }
-      setError('');
-    } catch (e: any) {
-      setError(e?.response?.data?.error || e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [user.id]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const ownAgent = overview?.agents.find(a => String(a.user_id) === String(user.id));
-  const hasPhone = !!ownAgent?.phone;
-  const isAvailable = ownAgent?.presence === 'available';
-  const hasActiveCallOnServer = !!ownAgent?.active_call_id;
-
-  const openCallbacks = (overview?.callbacks || []).filter(b => b.status === 'open');
-  const myCallbacks = (overview?.callbacks || []).filter(
-    b => b.status === 'in_progress' && String(b.owner_id) === String(user.id)
-  );
-
-  // Presence heartbeat — keeps this agent eligible to receive a dial while the tab is open and visible.
-  useEffect(() => {
-    if (!isAvailable || hasActiveCallOnServer) return;
-    const timer = setInterval(() => {
-      setPresence('available').catch(() => {});
-    }, PRESENCE_HEARTBEAT_MS);
-    return () => clearInterval(timer);
-  }, [isAvailable, hasActiveCallOnServer]);
-
-  // A backgrounded mobile browser tab stops running timers reliably — drop presence immediately
-  // rather than silently staying "available" while the telecaller isn't looking at their phone.
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'hidden' && isAvailable && !hasActiveCallOnServer) {
-        setPresence('offline').catch(() => {});
-      }
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [isAvailable, hasActiveCallOnServer]);
-
-  // Poll the active call's status until it reaches a terminal state, then show disposition options.
-  useEffect(() => {
-    if (!activeCall || TERMINAL_CALL_STATES.has(activeCall.state)) return;
-    const timer = setInterval(async () => {
-      try {
-        const { call } = await getCall(activeCall.id);
-        setActiveCall(call);
-      } catch { /* keep polling — a transient fetch failure shouldn't drop the call view */ }
-    }, CALL_POLL_MS);
-    return () => clearInterval(timer);
-  }, [activeCall]);
-
-  const togglePresence = async () => {
-    setBusy(true);
-    try {
-      await setPresence(isAvailable ? 'offline' : 'available');
-      await load();
-    } catch (e: any) {
-      toast({ title: 'Could not update status', description: e?.response?.data?.error || e.message, variant: 'destructive' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const startCall = async (to: string, callbackId?: string) => {
-    setBusy(true);
-    setError('');
-    try {
-      idempotencyKeyRef.current = crypto.randomUUID();
-      const call = await dial({ to, ...(callbackId ? { callback_id: callbackId } : {}) }, idempotencyKeyRef.current);
-      setActiveCall(call);
-      setActiveCallbackId(callbackId || null);
-    } catch (e: any) {
-      const msg = e?.response?.data?.error || e.message;
-      setError(msg);
-      toast({ title: 'Call could not be placed', description: msg, variant: 'destructive' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const takeCallback = async (callbackId: string, destination: string) => {
-    setBusy(true);
-    try {
-      await claimCallback(callbackId);
-      await load();
-      await startCall(destination, callbackId);
-    } catch (e: any) {
-      toast({ title: 'Could not claim callback', description: e?.response?.data?.error || e.message, variant: 'destructive' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const finishDisposition = async (value: Parameters<typeof setDisposition>[1]) => {
-    if (!activeCall) return;
-    setBusy(true);
-    try {
-      await setDisposition(activeCall.id, value);
-      if (activeCallbackId) {
-        await resolveCallback(activeCallbackId, `Disposition: ${value}`).catch(() => {});
-      }
-      setActiveCall(null);
-      setActiveCallbackId(null);
-      idempotencyKeyRef.current = null;
-      await load();
-      toast({ title: 'Call logged ✓' });
-    } catch (e: any) {
-      toast({ title: 'Could not save disposition', description: e?.response?.data?.error || e.message, variant: 'destructive' });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const callIsTerminal = activeCall && TERMINAL_CALL_STATES.has(activeCall.state);
-
-  return (
-    <div className="min-h-screen bg-slate-50 pb-24">
-      {/* Header */}
-      <div className="bg-[#17365D] text-white px-4 pt-10 pb-6">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-blue-200 text-xs font-semibold tracking-widest uppercase mb-1">CRM Dialer</p>
-            <h1 className="text-xl font-bold">{user.firstName || 'Telecaller'}</h1>
-            <p className="text-blue-200 text-sm mt-0.5">
-              {overview?.providerConfigured === false ? 'Exotel not configured' : isAvailable ? 'Available' : 'Offline'}
-            </p>
-          </div>
-          <button
-            onClick={() => { localStorage.removeItem('crmToken'); localStorage.removeItem('crmUserData'); navigate('/crm/login'); }}
-            className="p-2 rounded-lg hover:bg-white/10 transition-colors" title="Sign out">
-            <LogOut size={18} className="text-blue-200" />
-          </button>
-        </div>
-
-        <div className="flex gap-3 mt-4">
-          <div className="bg-white/10 rounded-xl px-3 py-2 flex-1 text-center">
-            <div className="text-lg font-bold font-mono">{leads.length}</div>
-            <div className="text-blue-200 text-xs">My leads</div>
-          </div>
-          <div className="bg-white/10 rounded-xl px-3 py-2 flex-1 text-center">
-            <div className="text-lg font-bold font-mono">{myCallbacks.length}</div>
-            <div className="text-blue-200 text-xs">My callbacks</div>
-          </div>
-          <div className="bg-white/10 rounded-xl px-3 py-2 flex-1 text-center">
-            <div className="text-lg font-bold font-mono">{openCallbacks.length}</div>
-            <div className="text-blue-200 text-xs">Open callbacks</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="px-4 -mt-3 space-y-4">
-        {error && (
-          <div role="alert" className="rounded-xl bg-red-50 border border-red-200 text-red-800 p-3 text-sm flex items-start gap-2">
-            <AlertCircle size={15} className="mt-0.5 flex-shrink-0" /> {error}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="h-20 bg-slate-100 animate-pulse rounded-xl" />
-        ) : !hasPhone ? (
-          <Card className="shadow-md border-0">
-            <CardContent className="py-6 text-center">
-              <AlertCircle size={28} className="mx-auto mb-2 text-amber-500" />
-              <p className="text-sm font-medium text-slate-700">Your dialer number isn't set up yet</p>
-              <p className="text-xs text-slate-500 mt-1">Ask your Business Head to assign your callback phone number in Contact Center → Settings before you can start calling.</p>
-            </CardContent>
-          </Card>
-        ) : activeCall ? (
-          /* Active call panel — replaces the queues while a call is in progress */
-          <Card className="shadow-md border-0">
-            <CardHeader className="pb-2 pt-4">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Phone size={15} className="text-[#0D9488]" /> {activeCall.destination}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Badge variant="outline" className="capitalize">{String(activeCall.state).replace('-', ' ')}</Badge>
-              {!callIsTerminal ? (
-                <p className="text-sm text-slate-500">Your phone is ringing — answer it to connect to {activeCall.destination}.</p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-slate-700">How did this call go?</p>
-                  <div className="grid grid-cols-1 gap-2">
-                    {DISPOSITIONS.map(d => (
-                      <Button key={d.value} variant="outline" disabled={busy}
-                        onClick={() => finishDisposition(d.value)}
-                        className="w-full justify-start border-slate-200">
-                        {d.label}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ) : (
-          <>
-            {/* Presence toggle */}
-            <Button
-              onClick={togglePresence}
-              disabled={busy || overview?.providerConfigured === false}
-              className={`w-full ${isAvailable ? 'bg-amber-600 hover:bg-amber-700' : 'bg-[#0D9488] hover:bg-[#0B7A70]'} text-white`}>
-              {isAvailable ? <><PhoneOff size={15} className="mr-2" /> Go offline</> : <><Phone size={15} className="mr-2" /> Go available</>}
-            </Button>
-
-            {/* Queue tabs */}
-            <div className="flex gap-2">
-              <Button size="sm" variant={tab === 'leads' ? 'default' : 'outline'} onClick={() => setTab('leads')} className="flex-1">My Leads</Button>
-              <Button size="sm" variant={tab === 'callbacks' ? 'default' : 'outline'} onClick={() => setTab('callbacks')} className="flex-1">Callbacks</Button>
-            </div>
-
-            {tab === 'leads' && (
-              <Card className="shadow-sm border-0">
-                <CardHeader className="pb-2 pt-4 flex-row items-center justify-between">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Users size={15} className="text-[#0D9488]" /> My Leads
-                  </CardTitle>
-                  <Button size="sm" variant="ghost" onClick={load} className="h-7"><RefreshCw size={13} /></Button>
-                </CardHeader>
-                <CardContent>
-                  {leads.length === 0 ? (
-                    <p className="text-sm text-slate-400 text-center py-6">No new leads assigned to you.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {leads.map(l => (
-                        <div key={l.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50">
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">{l.name || l.phone}</p>
-                            <p className="text-xs text-slate-400">{l.phone}{l.company ? ` · ${l.company}` : ''}</p>
-                          </div>
-                          <Button size="sm" disabled={busy || !isAvailable} onClick={() => startCall(l.phone)}
-                            className="bg-[#0D9488] hover:bg-[#0B7A70] text-white flex-shrink-0">
-                            <Phone size={13} className="mr-1" /> Call
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {!isAvailable && leads.length > 0 && (
-                    <p className="text-xs text-amber-600 mt-3 text-center">Go available to start calling.</p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {tab === 'callbacks' && (
-              <Card className="shadow-sm border-0">
-                <CardHeader className="pb-2 pt-4">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <Clock size={15} className="text-[#0D9488]" /> Callbacks
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {myCallbacks.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Mine</p>
-                      <div className="space-y-2">
-                        {myCallbacks.map(b => (
-                          <div key={b.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 truncate">{b.destination}</p>
-                              <p className="text-xs text-slate-400">{b.attempts} attempt(s) · due {new Date(b.due_at).toLocaleString('en-IN')}</p>
-                            </div>
-                            <Button size="sm" disabled={busy || !isAvailable} onClick={() => startCall(b.destination, b.id)}
-                              className="bg-[#0D9488] hover:bg-[#0B7A70] text-white flex-shrink-0">
-                              <Phone size={13} className="mr-1" /> Call
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Open</p>
-                    {openCallbacks.length === 0 ? (
-                      <p className="text-sm text-slate-400 text-center py-4">No open callbacks.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {openCallbacks.map(b => (
-                          <div key={b.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-slate-50">
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 truncate">{b.destination}</p>
-                              <p className="text-xs text-slate-400">{b.attempts} attempt(s) · due {new Date(b.due_at).toLocaleString('en-IN')}</p>
-                            </div>
-                            <Button size="sm" variant="outline" disabled={busy || !isAvailable} onClick={() => takeCallback(b.id, b.destination)}
-                              className="flex-shrink-0">
-                              <CheckCircle2 size={13} className="mr-1" /> Take
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
-      </div>
-    </div>
-  );
+import {useState,useEffect,useCallback,useRef} from 'react';
+import {useNavigate,Link} from 'react-router-dom';
+import {Phone,PhoneOff,LogOut,RefreshCw,ArrowLeft,AlertCircle} from 'lucide-react';
+import {Button} from '@/components/ui/button';
+import {Input} from '@/components/ui/input';
+import {BRAND} from '@/config/brand';
+import {getOverview,setPresence,dial,getCall,reconcileCall,setDisposition,claimCallback,getMyLeads,logoutCrm,TERMINAL_CALL_STATES,type CCOverview,type LeadPage,type Call,type Disposition} from './dialerClient';
+import './contact-center-theme.css';
+const panel='min-w-0 rounded-2xl border border-border bg-card text-card-foreground p-4 sm:p-5';
+const outcomes:[Disposition,string][]=[['appointment_followup','Appointment follow-up'],['information_provided','Information provided'],['callback_required','Callback required'],['wrong_number','Wrong number'],['no_action','No action']];
+const message=(e:any)=>e?.response?.data?.error||e.message||'Request failed. Try again.';
+type Intent={key:string;fingerprint:string};
+async function fingerprint(body:unknown){const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(body)));return [...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join('');}
+export default function CRMTelecallerDialer(){
+ const navigate=useNavigate();let user:any={};try{user=JSON.parse(localStorage.getItem('crmUserData')||'{}');}catch{}
+ const storageKey=`crmDialerIntent:${user.tenantId||''}:${user.id||''}`;
+ const [overview,setOverview]=useState<CCOverview|null>(null),[leadPage,setLeadPage]=useState<LeadPage|null>(null),[page,setPage]=useState(1),[loading,setLoading]=useState(true),[error,setError]=useState(''),[leadError,setLeadError]=useState(''),[leadLoading,setLeadLoading]=useState(false),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[tab,setTab]=useState<'leads'|'callbacks'>('leads');
+ const [activeCall,setActiveCall]=useState<Call|null>(null),[followup,setFollowup]=useState(''),[visible,setVisible]=useState(()=>document.visibilityState!=='hidden'),[locked,setLocked]=useState(false);
+ const [pending,setPending]=useState<Intent|null>(()=>{try{const value=JSON.parse(sessionStorage.getItem(storageKey)||'null');return value?.key&&/^[a-f0-9]{64}$/.test(value.fingerprint)?value:null;}catch{return null;}});
+ const intent=useRef(pending),pendingBody=useRef<{to:string;callback_id?:string}|null>(null),active=useRef<Call|null>(null),ov=useRef<CCOverview|null>(null),stopped=useRef(false),working=useRef(false),generation=useRef(0),leadGeneration=useRef(0),presenceQueue=useRef<Promise<unknown>>(Promise.resolve()),finished=useRef(new Set<string>());
+ const saveIntent=(value:Intent|null)=>{intent.current=value;setPending(value);try{if(value)sessionStorage.setItem(storageKey,JSON.stringify(value));else sessionStorage.removeItem(storageKey);}catch{/* in-memory identity remains stable */}};
+ const remember=(call:Call|null)=>{active.current=call;setActiveCall(call);};
+ const own=(value=ov.current)=>value?.agents.find(a=>String(a.user_id)===String(user.id));
+ const presence=useCallback((value:'available'|'offline')=>{
+  const task=presenceQueue.current.catch(()=>{}).then(async()=>{
+   if(value==='available'&&(stopped.current||document.visibilityState==='hidden'||active.current||own()?.active_call_id))return;
+   const result=await setPresence(value);if(!stopped.current){const next=ov.current&&{...ov.current,agents:ov.current.agents.map(a=>String(a.user_id)===String(user.id)?{...a,presence:result?.presence||value}:a)};if(next){ov.current=next;setOverview(next);}}
+  });presenceQueue.current=task;return task;
+ },[user.id]);
+ const load=useCallback(async()=>{
+  const request=++generation.current;try{
+   const value=await getOverview();if(stopped.current||request!==generation.current)return;ov.current=value;setOverview(value);
+   const agent=value.agents.find(a=>String(a.user_id)===String(user.id));
+   const candidate=active.current?.id||agent?.active_call_id||value.calls.find(c=>String(c.agent_id)===String(user.id)&&!c.disposition&&!finished.current.has(c.id))?.id;
+   if(candidate){if(!active.current){const known=value.calls.find(c=>c.id===candidate)||{id:candidate,state:'unknown',destination:'Reserved call'};active.current=known;setActiveCall(known);}const detail=await getCall(candidate);if(stopped.current||request!==generation.current)return;if(detail.call.disposition&&TERMINAL_CALL_STATES.has(detail.call.state)){finished.current.add(detail.call.id);active.current=null;setActiveCall(null);saveIntent(null);}else{active.current=detail.call;setActiveCall(detail.call);}}
+   setError('');
+  }catch(e){if(!stopped.current&&request===generation.current)setError(message(e));}finally{if(!stopped.current)setLoading(false);}
+ },[user.id]);
+ const loadLeads=useCallback(async()=>{if(!user.id)return;const request=++leadGeneration.current;setLeadLoading(true);try{const result=await getMyLeads(user.id,page);if(!stopped.current&&request===leadGeneration.current){setLeadPage(result);setLeadError('');}}catch(e){if(!stopped.current&&request===leadGeneration.current)setLeadError(message(e));}finally{if(!stopped.current&&request===leadGeneration.current)setLeadLoading(false);}},[user.id,page]);
+ useEffect(()=>{stopped.current=false;if(!localStorage.getItem('crmToken')){navigate('/crm/login');return;}void load();return()=>{stopped.current=true;generation.current++;leadGeneration.current++;if(localStorage.getItem('crmToken')&&own()?.presence==='available'&&!own()?.active_call_id&&!active.current)void presence('offline').catch(()=>{});};},[load,navigate,presence]);
+ useEffect(()=>{void loadLeads();},[loadLeads]);
+ useEffect(()=>{const timer=setInterval(()=>{if(!stopped.current&&!working.current&&document.visibilityState!=='hidden')void load();},10000);return()=>clearInterval(timer);},[load]);
+ const agent=own(overview),available=agent?.presence==='available',hasPhone=/^\+[1-9]\d{7,14}$/.test(agent?.phone||'');
+ const terminal=Boolean(activeCall&&TERMINAL_CALL_STATES.has(activeCall.state));
+ const ready=Boolean(overview?.providerConfigured&&hasPhone&&available&&!agent?.active_call_id&&!activeCall&&(!agent?.wrap_until||Date.parse(agent.wrap_until)<=Date.now())&&visible&&!locked);
+ useEffect(()=>{if(!available||agent?.active_call_id||activeCall||!visible||locked)return;const timer=setInterval(()=>{if(!working.current)void presence('available').catch(e=>{if(!stopped.current)setError(message(e));});},25000);return()=>clearInterval(timer);},[available,agent?.active_call_id,activeCall?.id,visible,locked,presence]);
+ useEffect(()=>{const change=()=>{const showing=document.visibilityState!=='hidden';setVisible(showing);if(showing){void presenceQueue.current.catch(()=>{}).then(()=>{if(!stopped.current){void load();void loadLeads();}});}else {generation.current++;if(own()?.presence==='available'&&!own()?.active_call_id&&!active.current){void presence('offline').catch(e=>{if(!stopped.current)setError(message(e));});}}};document.addEventListener('visibilitychange',change);return()=>document.removeEventListener('visibilitychange',change);},[load,loadLeads,presence]);
+ useEffect(()=>{if(!activeCall||terminal||!visible||locked)return;let cancelled=false;const timer=setInterval(async()=>{try{const result=await getCall(activeCall.id);if(!cancelled&&!stopped.current&&!working.current){active.current=result.call;setActiveCall(result.call);setError('');}}catch(e){if(!cancelled&&!stopped.current)setError(`Call status could not be refreshed. ${message(e)}`);}},5000);return()=>{cancelled=true;clearInterval(timer);};},[activeCall?.id,terminal,visible,locked]);
+ const run=async(fn:()=>Promise<void>)=>{if(working.current||stopped.current)return;working.current=true;setBusy(true);setError('');setNotice('');try{await fn();}catch(e){if(!stopped.current)setError(message(e));}finally{working.current=false;if(!stopped.current)setBusy(false);}};
+ async function place(to:string,callbackId?:string){
+  if(!ready)throw new Error('Your phone, provider and availability must be ready before calling.');
+  if(!/^\+[1-9]\d{7,14}$/.test(to))throw new Error('This customer needs a valid international phone number.');
+  const body={to,...(callbackId?{callback_id:callbackId}:{})},hash=await fingerprint(body);
+  if(intent.current&&intent.current.fingerprint!==hash)throw new Error('The previous request is unresolved. Review it before selecting another recipient.');
+  const previous=Boolean(intent.current);if(!intent.current)saveIntent({key:crypto.randomUUID(),fingerprint:hash});pendingBody.current=body;
+  try{const call=await dial(body,intent.current!.key);if(stopped.current)return;remember(call);saveIntent(null);pendingBody.current=null;await load();}
+  catch(e:any){const status=e.status||e.response?.status;if(!previous&&status>=400&&status<500&&!['IDEMPOTENCY_CONFLICT','PROVIDER_ID_PENDING'].includes(e.code))saveIntent(null);await load();throw e;}
+ }
+ const start=(to:string,callbackId?:string)=>run(()=>place(to,callbackId));
+ const refresh=()=>run(async()=>{await load();await loadLeads();});
+ const review=()=>run(async()=>{if(!active.current)return;const result=await reconcileCall(active.current.id);await load();setNotice(result.requiresOperatorReview?'The provider outcome remains uncertain. Review it in Contact Center; do not start another call.':'Provider status refreshed.');});
+ const finish=(value:Disposition)=>run(async()=>{if(!active.current)return;const at=value==='callback_required'?new Date(followup):null;if(at&&(!Number.isFinite(at.getTime())||at.getTime()<=Date.now()))throw new Error('Choose a future callback time.');const id=active.current.id;await setDisposition(id,value,at?.toISOString());if(stopped.current)return;finished.current.add(id);remember(null);saveIntent(null);pendingBody.current=null;if(document.visibilityState==='hidden')await presence('offline');setFollowup('');setNotice(value==='callback_required'?'Callback scheduled and call logged.':'Call logged.');await load();await loadLeads();});
+ const logout=async()=>{
+  if(working.current)return;working.current=true;stopped.current=true;generation.current++;leadGeneration.current++;setLocked(true);setBusy(true);setError('');
+  try{if(own()?.presence==='available'&&!own()?.active_call_id&&!active.current)await presence('offline').catch(()=>{});await logoutCrm();for(const key of ['crmToken','crmRefreshToken','crmUserData','crmUser'])localStorage.removeItem(key);if(localStorage.getItem('userType')==='crm')localStorage.removeItem('userType');for(const key of Object.keys(sessionStorage))if(key.startsWith('crmDialerIntent:'))sessionStorage.removeItem(key);navigate('/crm/login');}
+  catch(e){setError(`Sign out could not be completed. The dialer is locked; retry Sign out. ${message(e)}`);}
+  finally{working.current=false;setBusy(false);}
+ };
+ const mine=(overview?.callbacks||[]).filter(c=>String(c.owner_id)===String(user.id)&&['open','in_progress'].includes(c.status));
+ const open=(overview?.callbacks||[]).filter(c=>c.status==='open'&&!c.owner_id);
+ const pendingTasks=[...mine,...open];
+ const callCopy=activeCall?.state==='answered'?'Call connected. End the conversation on your phone, then refresh provider status.':activeCall?.state==='unknown'?'The provider outcome is uncertain. Refresh provider status before any further call.':activeCall?.state==='submitting'?'Submitting the call request. Do not start another call.':'Your phone is ringing — answer it to connect to the customer.';
+ return <main className="contact-center-theme min-h-screen p-4 sm:p-6"><div className="mx-auto max-w-3xl space-y-4">
+  <header className={`${panel} border-violet-400/25`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex min-w-0 items-center gap-3"><img src={BRAND.logo} alt={`${BRAND.name} logo`} className="h-12 w-12 shrink-0 rounded-xl bg-white object-contain p-1"/><div><p className="text-xs font-semibold text-violet-200">{BRAND.name} HealthOS · CRM</p><h1 className="text-xl font-bold">CRM Dialer</h1><p className="text-sm text-muted-foreground">{user.firstName||'Telecaller'} · {available?'Available':agent?.presence?.replaceAll('_',' ')||'Offline'}</p></div></div><Button variant="ghost" aria-label="Sign out" title="Sign out" disabled={busy} onClick={logout} className="min-h-[44px] min-w-[44px]"><LogOut/></Button></div>
+   <div className="mt-4 flex flex-wrap gap-3"><Link to="/crm/contact-center" className="inline-flex min-h-[44px] items-center gap-2 text-sm text-violet-200 underline underline-offset-4"><ArrowLeft className="h-4 w-4"/>Contact Center</Link><Button aria-label="Refresh dialer" variant="outline" disabled={busy||locked} onClick={refresh} className="ml-auto min-h-[44px]"><RefreshCw/>Refresh</Button></div>
+   <dl className="mt-4 grid grid-cols-3 gap-2 text-center">{[['New leads',leadPage?.pagination.total??'—'],['My callbacks',mine.length],['Open callbacks',open.length]].map(([name,value])=><div key={name} className="rounded-xl bg-muted p-2"><dd className="text-lg font-bold">{value}</dd><dt className="text-xs text-muted-foreground">{name}</dt></div>)}</dl>
+  </header>
+  {error&&<div role="alert" className="rounded-xl border border-red-400/30 bg-red-500/10 p-4 text-red-200">{error}</div>}{notice&&<p role="status" className="rounded-xl border border-border bg-card p-4 text-foreground">{notice}</p>}
+  {loading?<p role="status">Loading dialer…</p>:!overview?<section className={panel}><h2 className="font-semibold">Dialer data is unavailable</h2><p className="text-muted-foreground">Use Refresh to retry. Your setup has not been determined.</p></section>:<>
+   {!hasPhone&&<section className={panel}><AlertCircle className="mb-3 text-amber-200"/><h2 className="font-semibold">Your dialer number isn't set up yet</h2><p className="mt-2 text-sm text-muted-foreground">Ask your Business Head to assign your callback phone number in Contact Center → Settings before you can start calling.</p></section>}
+   {!overview.providerConfigured&&<p role="status" className="rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-amber-200">Exotel is not configured for this hospital. Telephone dialing is unavailable. Use Contact Center for configured browser calling or ask your administrator to connect an approved phone provider.</p>}
+   {activeCall?<section className={panel}><h2 className="font-semibold break-words">Call · {activeCall.destination}</h2><p className="my-3 font-semibold capitalize" role="status">{String(activeCall.state).replaceAll('-',' ')}</p>{!terminal?<><p className="text-sm text-muted-foreground">{callCopy}</p><Button variant="outline" className="mt-4 min-h-[44px]" disabled={busy||locked} onClick={review}>Refresh provider status</Button><p className="mt-3 text-sm text-muted-foreground">Recovery and native audio controls are available in Contact Center. An uncertain outcome must be reviewed before starting another call.</p></>:<><h3 className="mt-4 font-semibold">How did this call go?</h3><label className="mt-4 block text-sm" htmlFor="dialer-followup">Callback time (required for Callback required)</label><Input id="dialer-followup" aria-label="Callback time" type="datetime-local" value={followup} onChange={e=>setFollowup(e.target.value)} className="mt-2 min-h-[44px]"/><div className="mt-4 grid gap-2">{outcomes.map(([value,name])=><Button key={value} variant="outline" className="min-h-[44px] justify-start" disabled={busy||locked||(value==='callback_required'&&!followup)} onClick={()=>finish(value)}>{name}</Button>)}</div></>}</section>:<>
+    {pending&&<section className={panel}><h2 className="font-semibold">Previous call request needs review</h2><p className="mt-2 text-sm text-muted-foreground">Refresh to recover a reserved call. If no call was reserved, retry the same customer; the original request key will be reused. A different recipient is blocked until this outcome is resolved.</p>{pendingBody.current&&<Button variant="outline" className="mt-3 min-h-[44px]" disabled={busy||!ready} onClick={()=>start(pendingBody.current!.to,pendingBody.current!.callback_id)}>Retry same request</Button>}</section>}
+    {hasPhone&&<Button className="min-h-[44px] w-full" disabled={busy||locked||Boolean(agent?.active_call_id)||(!available&&!overview.providerConfigured)||!visible} onClick={()=>run(async()=>{await presence(available?'offline':'available');await load();})}>{available?<><PhoneOff/>Go offline</>:<><Phone/>Go available</>}</Button>}
+    <nav aria-label="Dialer queues" className={`${panel} flex gap-2 p-2`}>{(['leads','callbacks'] as const).map(value=><Button key={value} variant={tab===value?'default':'ghost'} aria-pressed={tab===value} className="min-h-[44px] flex-1" onClick={()=>setTab(value)}>{value==='leads'?'My Leads':'Callbacks'}</Button>)}</nav>
+    {tab==='leads'?<section className={panel}><h2 className="font-semibold">My Leads</h2><p className="mt-1 text-sm text-muted-foreground">Assigned new leads · {leadPage?.pagination.total??'—'} total</p>{leadError&&<p role="alert" className="mt-3 text-red-200">Lead list could not be refreshed: {leadError}. Use Refresh to retry.</p>}{leadLoading&&<p role="status" className="mt-2 text-muted-foreground">Loading leads…</p>}{!leadError&&!leadLoading&&leadPage?.data.length===0&&<p className="py-6 text-muted-foreground">No new leads assigned to you.</p>}{leadPage?.data.map(l=><article key={l.id} className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3"><div className="min-w-0 flex-1"><h3 className="font-medium break-words">{l.name||l.phone}</h3><p className="text-sm text-muted-foreground break-words">{l.phone}{l.company?` · ${l.company}`:''}</p></div><Button className="min-h-[44px]" disabled={busy||!ready||!/^\+[1-9]\d{7,14}$/.test(l.phone||'')} onClick={()=>start(l.phone)}><Phone/>Call</Button></article>)}{leadPage&&leadPage.pagination.totalPages>1&&<nav className="mt-4 flex flex-wrap items-center justify-between gap-2" aria-label="Lead pages"><Button variant="outline" className="min-h-[44px]" disabled={busy||leadLoading||leadPage.pagination.page<=1} onClick={()=>{const next=leadPage.pagination.page-1;setPage(next);if(next===page)void loadLeads();}}>Previous</Button><span className="text-sm text-muted-foreground">Page {leadPage.pagination.page} of {leadPage.pagination.totalPages}</span><Button variant="outline" className="min-h-[44px]" disabled={busy||leadLoading||leadPage.pagination.page>=leadPage.pagination.totalPages} onClick={()=>{const next=leadPage.pagination.page+1;setPage(next);if(next===page)void loadLeads();}}>Next</Button></nav>}</section>:<section className={panel}><h2 className="font-semibold">Callbacks</h2>{!pendingTasks.length&&<p className="py-6 text-muted-foreground">No pending callbacks.</p>}{pendingTasks.map(c=><article key={c.id} className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-3"><div className="min-w-0 flex-1"><h3 className="font-medium break-words">{c.destination}</h3><p className="text-sm text-muted-foreground">{c.owner_id?'Mine':'Open'} · {c.attempts} attempts · Due {new Date(c.due_at).toLocaleString('en-IN')}</p>{c.provider==='livekit'&&<Link to="/crm/contact-center" className="text-sm text-violet-200 underline">Return native callback in Contact Center</Link>}</div><Button variant="outline" className="min-h-[44px]" disabled={busy||!ready||c.provider==='livekit'||Date.parse(c.due_at)>Date.now()} onClick={()=>run(async()=>{if(c.status!=='in_progress')await claimCallback(c.id);await place(c.destination,c.id);})}>{c.status==='in_progress'?'Call':'Take'}</Button></article>)}</section>}
+   </>}
+  </>}
+ </div></main>;
 }

@@ -260,9 +260,27 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         if(!call)throw fail(404,'CALL_NOT_FOUND','Call not found');
         if(call.agent_id!==String(actor.id))throw fail(403,'ASSIGNED_AGENT_REQUIRED','Only the assigned agent can complete wrap-up');
         if(!terminal.has(call.state))throw fail(409,'CALL_ACTIVE','Provider must confirm the call has ended');
+        if(input.followup_at&&!Number.isFinite(Date.parse(input.followup_at)))throw fail(400,'FOLLOWUP_TIME_REQUIRED','Choose a valid callback time');
+        if(input.followup_at&&input.disposition!=='callback_required')throw fail(400,'FOLLOWUP_NOT_APPLICABLE','A callback time applies only to callback-required outcomes');
+        const followup=input.followup_at?new Date(input.followup_at).toISOString():null;
+        if(call.disposition){
+          const old=await one(c,"SELECT payload FROM cc_events WHERE tenant_uid=$1 AND call_id=$2 AND kind='wrap_up_completed' ORDER BY id DESC LIMIT 1",[uid,id]);
+          if(call.disposition===input.disposition&&(old?.payload?.followup_at||null)===followup)return {ok:true,duplicate:true};
+          throw fail(409,'DISPOSITION_CONFLICT','This call was already logged with a different outcome');
+        }
+        if(input.disposition==='callback_required'&&(!followup||Date.parse(followup)<=Date.now()||Date.parse(followup)>Date.now()+90*86400000))throw fail(400,'FOLLOWUP_TIME_REQUIRED','Choose a callback time in the next 90 days');
+        const link=await one(c,"SELECT payload->>'callbackId' AS callback_id FROM cc_events WHERE tenant_uid=$1 AND call_id=$2 AND kind IN ('dial_reserved','livekit_reserved') AND payload ? 'callbackId' ORDER BY id LIMIT 1",[uid,id]);
+        let task=link?.callback_id?await one(c,'SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2 FOR UPDATE',[uid,link.callback_id]):await one(c,'SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND call_id=$2 FOR UPDATE',[uid,id]);
+        if(link?.callback_id&&!task)throw fail(409,'CALLBACK_SCOPE_MISMATCH','The linked callback is unavailable');
+        if(link?.callback_id&&task?.status!=='in_progress')throw fail(409,'CALLBACK_CHANGED','The linked callback has changed; refresh and review it before logging this outcome');
+        if(task?.owner_id&&task.owner_id!==String(actor.id))throw fail(409,'CALLBACK_SCOPE_MISMATCH','The linked callback belongs to another agent');
+        if(input.disposition==='callback_required'){
+          if(task)await c.query("UPDATE cc_callbacks SET status='open',owner_id=$3,due_at=$4,resolution=null WHERE tenant_uid=$1 AND id=$2",[uid,task.id,String(actor.id),followup]);
+          else task=await one(c,"INSERT INTO cc_callbacks(tenant_uid,id,call_id,owner_id,status,due_at) VALUES($1,$2,$3,$4,'open',$5) RETURNING *",[uid,randomUUID(),id,String(actor.id),followup]);
+        }else if(task)await c.query("UPDATE cc_callbacks SET status='resolved',owner_id=$3,resolution=$4 WHERE tenant_uid=$1 AND id=$2",[uid,task.id,String(actor.id),`Disposition: ${input.disposition}`]);
         await c.query('UPDATE cc_calls SET disposition=$3 WHERE tenant_uid=$1 AND id=$2',[uid,id,input.disposition]);
         await c.query("UPDATE cc_agents SET presence='available',wrap_until=null,updated_at=now() WHERE tenant_uid=$1 AND user_id=$2 AND active_call_id IS NULL",[uid,String(actor.id)]);
-        await event(c,uid,id,randomUUID(),'wrap_up_completed',String(actor.id),{disposition:input.disposition});return {ok:true};
+        await event(c,uid,id,`wrapup:${id}`,'wrap_up_completed',String(actor.id),{disposition:input.disposition,followup_at:followup,callback_id:task?.id||null});return {ok:true};
       });
     },
     async ingest(uid, headers, input) {

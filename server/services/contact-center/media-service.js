@@ -34,7 +34,7 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
           VALUES($1,$2,$3,$4,'livekit',$5,'outbound',$6,$7,$8) RETURNING *`,[uid,id,key,requestHash,room,String(actor.id),input.to||'WebRTC caller',JSON.stringify(input.consent||{})]);
         await c.query("UPDATE cc_agents SET presence='busy',active_call_id=$3,updated_at=now() WHERE tenant_uid=$1 AND user_id=$2",[uid,String(actor.id),id]);
         await c.query('INSERT INTO cc_media_sessions(tenant_uid,call_id,room_name,language,transcribe) VALUES($1,$2,$3,$4,$5)',[uid,id,room,input.language||'en',Boolean(input.transcribe||input.bot)]);
-        await audit(c,uid,id,'livekit_reserved',actor.id,{pstn:Boolean(input.to),bot:Boolean(input.bot)});return call;
+        await audit(c,uid,id,'livekit_reserved',actor.id,{pstn:Boolean(input.to),bot:Boolean(input.bot),...(input.callback_id?{callbackId:input.callback_id}:{})});return call;
       });
       if(reserved.duplicate)return reserved;
       try{

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { up, harden, withMigrationOwner, TABLES as BASE_TABLES } from '../../migrations/20261020008000-contact-center.migration.js';
 import {up as extend,TABLES as MEDIA_TABLES} from '../../migrations/20261020008100-contact-center-livekit.migration.js';
@@ -133,6 +133,30 @@ try {
     assert.equal((await service.overview(uid)).callbacks.find(b=>b.id===callbacks[0].id).attempts,1);
   });
   await advancedChecks({admin,runtime,tx,base:service,uid,other,actor,check});
+  const completedCall=async()=>{const id=randomUUID();await tx(uid,c=>c.query("INSERT INTO cc_calls(tenant_uid,id,idempotency_key,request_hash,provider,direction,agent_id,destination,state) VALUES($1,$2,$3,'synthetic','exotel','outbound','1','+919999999991','completed')",[uid,id,'wrap-'+id]));return id;};
+  const followup=new Date(Date.now()+86400000).toISOString();
+  await check('Callback-required wrap-up rejects missing/past times and the wrong agent without writes',async()=>{
+    const id=await completedCall();await rejectsCode(()=>service.disposition(uid,actor,id,{disposition:'callback_required'}),'FOLLOWUP_TIME_REQUIRED');await rejectsCode(()=>service.disposition(uid,actor,id,{disposition:'callback_required',followup_at:new Date(Date.now()-1000).toISOString()}),'FOLLOWUP_TIME_REQUIRED');await rejectsCode(()=>service.disposition(uid,{id:2},id,{disposition:'callback_required',followup_at:followup}),'ASSIGNED_AGENT_REQUIRED');await rejectsCode(()=>service.disposition(other,actor,id,{disposition:'callback_required',followup_at:followup}),'CALL_NOT_FOUND');assert.equal((await service.getCall(uid,id)).disposition,null);
+  });
+  await check('Concurrent callback-required wrap-up creates exactly one scheduled task and event',async()=>{
+    const id=await completedCall();await Promise.all(Array.from({length:5},()=>service.disposition(uid,actor,id,{disposition:'callback_required',followup_at:followup})));
+    const tasks=await tx(uid,c=>c.query('SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND call_id=$2',[uid,id]));assert.equal(tasks.rowCount,1);assert.equal(tasks.rows[0].status,'open');assert.equal(tasks.rows[0].owner_id,'1');assert.equal(new Date(tasks.rows[0].due_at).toISOString(),followup);assert.equal((await tx(uid,c=>c.query("SELECT * FROM cc_events WHERE tenant_uid=$1 AND call_id=$2 AND kind='wrap_up_completed'",[uid,id]))).rowCount,1);await rejectsCode(()=>service.disposition(uid,actor,id,{disposition:'no_action'}),'DISPOSITION_CONFLICT');
+  });
+  let sourceTask;
+  const linkedCall=async()=>{const id=await completedCall();await tx(uid,c=>c.query("INSERT INTO cc_events(tenant_uid,call_id,source_key,kind,actor_id,payload) VALUES($1,$2,$3,'dial_reserved','1',$4)",[uid,id,'test-link-'+id,JSON.stringify({callbackId:sourceTask})]));return id;};
+  await check('Callback-required reschedules the claimed source task without resolving or duplicating it',async()=>{
+    const source=await completedCall();sourceTask=randomUUID();await tx(uid,c=>c.query("INSERT INTO cc_callbacks(tenant_uid,id,call_id,owner_id,status) VALUES($1,$2,$3,'1','in_progress')",[uid,sourceTask,source]));const id=await linkedCall();await service.disposition(uid,actor,id,{disposition:'callback_required',followup_at:followup});const task=(await tx(uid,c=>c.query('SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2',[uid,sourceTask]))).rows[0];assert.equal(task.status,'open');assert.equal(new Date(task.due_at).toISOString(),followup);assert.equal((await tx(uid,c=>c.query('SELECT * FROM cc_callbacks WHERE tenant_uid=$1 AND call_id=$2',[uid,id]))).rowCount,0);
+  });
+  await check('Wrap-up rolls back the task transition if call persistence fails',async()=>{
+    await service.callback(uid,actor,sourceTask,{status:'in_progress'});const id=await linkedCall();await admin.query("CREATE FUNCTION cc_qa_fail_disposition() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.disposition='wrong_number' THEN RAISE EXCEPTION 'Synthetic wrap-up failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER cc_qa_fail_disposition BEFORE UPDATE ON cc_calls FOR EACH ROW EXECUTE FUNCTION cc_qa_fail_disposition();");
+    try{await assert.rejects(()=>service.disposition(uid,actor,id,{disposition:'wrong_number'}));assert.equal((await service.getCall(uid,id)).disposition,null);assert.equal((await tx(uid,c=>c.query('SELECT status FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2',[uid,sourceTask]))).rows[0].status,'in_progress');assert.equal((await tx(uid,c=>c.query("SELECT * FROM cc_events WHERE tenant_uid=$1 AND call_id=$2 AND kind='wrap_up_completed'",[uid,id]))).rowCount,0);}finally{await admin.query('DROP TRIGGER cc_qa_fail_disposition ON cc_calls; DROP FUNCTION cc_qa_fail_disposition();');}
+  });
+  await check('A completed non-follow-up outcome resolves only its linked owned callback',async()=>{
+    const id=await linkedCall();await service.disposition(uid,actor,id,{disposition:'information_provided'});assert.equal((await tx(uid,c=>c.query('SELECT status FROM cc_callbacks WHERE tenant_uid=$1 AND id=$2',[uid,sourceTask]))).rows[0].status,'resolved');
+  });
+  await check('An unrelated callback owner blocks wrap-up atomically',async()=>{
+    await tx(uid,c=>c.query("UPDATE cc_callbacks SET owner_id='2',status='in_progress' WHERE tenant_uid=$1 AND id=$2",[uid,sourceTask]));const id=await linkedCall();await rejectsCode(()=>service.disposition(uid,actor,id,{disposition:'no_action'}),'CALLBACK_SCOPE_MISMATCH');assert.equal((await service.getCall(uid,id)).disposition,null);
+  });
   const result={database:'disposable PostgreSQL 16',passed:checks.length,checks,liveCalls:0,productionMutations:0};
   if(process.env.VOICE_QA_EVIDENCE){const {writeFile}=await import('node:fs/promises');await writeFile(process.env.VOICE_QA_EVIDENCE,JSON.stringify(result,null,2)+'\n');}
   console.log(JSON.stringify(result,null,2));

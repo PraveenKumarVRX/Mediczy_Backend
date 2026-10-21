@@ -1,0 +1,458 @@
+{
+  "recordedAt": "2026-10-21T05:46:33.110858+00:00",
+  "page": "https://app.mediqzy.com/crm/dialer",
+  "status": "audited-open-findings",
+  "inspectedGitHead": "f629e0c8ff586b8bbd0b19cef85fff87c9430594",
+  "deployedFrontendCodeCommit": "ea4b04ef",
+  "findings": [
+    {
+      "id": "DIAL-01",
+      "priority": "high",
+      "category": "functional",
+      "title": "Active-call recovery lost on reload",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-02",
+      "priority": "high",
+      "category": "functional",
+      "title": "Uncertain retry receives a new idempotency key",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-03",
+      "priority": "high",
+      "category": "functional",
+      "title": "Callback-required disposition resolves task without scheduling follow-up",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-04",
+      "priority": "high",
+      "category": "functional",
+      "title": "Hidden-page heartbeat can reverse offline presence",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-05",
+      "priority": "medium",
+      "category": "functional",
+      "title": "Sign-out retains refresh credentials without server revocation",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-06",
+      "priority": "medium",
+      "category": "functional",
+      "title": "Call controls ignore provider unavailability",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-07",
+      "priority": "medium",
+      "category": "functional",
+      "title": "Request errors masquerade as empty or missing setup",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-08",
+      "priority": "medium",
+      "category": "functional",
+      "title": "Lead queue truncated to first 50 records",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-09",
+      "priority": "medium",
+      "category": "design-accessibility",
+      "title": "Mixed theme surfaces and inadequate text contrast",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-10",
+      "priority": "medium",
+      "category": "design-accessibility",
+      "title": "Missing Mediqzy branding and contact-center visual continuity",
+      "confirmed": true,
+      "status": "open"
+    },
+    {
+      "id": "DIAL-11",
+      "priority": "medium",
+      "category": "design-accessibility",
+      "title": "Unnamed refresh control and visual-only queue selection",
+      "confirmed": true,
+      "status": "open"
+    }
+  ],
+  "counts": {
+    "confirmed": 11,
+    "high": 4,
+    "medium": 7,
+    "functional": 8,
+    "designAccessibility": 3
+  },
+  "browserEvidence": {
+    "at": "2026-10-21T05:44:04.971Z",
+    "page": "https://app.mediqzy.com/crm/dialer",
+    "productionMutations": 0,
+    "telephoneCalls": 0,
+    "observations": [
+      {
+        "id": "DIAL-01",
+        "case": "Server has active call on reload",
+        "serverCallPresent": true,
+        "activePanelShown": false,
+        "callDetailReads": 0,
+        "recoveryControlPresent": false,
+        "leadQueueShown": true
+      },
+      {
+        "id": "DIAL-02",
+        "attempts": 2,
+        "sameRecipient": true,
+        "sameIdempotencyKey": false,
+        "overviewReads": 1,
+        "reconcileAttempts": 0
+      },
+      {
+        "id": "DIAL-03",
+        "case": "outcome",
+        "disposition": "callback_required",
+        "callbackUpdate": {
+          "status": "resolved",
+          "resolution": "Disposition: callback_required"
+        },
+        "followupCreateRequests": 0,
+        "successToast": true,
+        "failureVisible": false
+      },
+      {
+        "id": "DIAL-03",
+        "case": "resolutionfailure",
+        "disposition": "callback_required",
+        "callbackUpdate": {
+          "status": "resolved",
+          "resolution": "Disposition: callback_required"
+        },
+        "followupCreateRequests": 0,
+        "successToast": true,
+        "failureVisible": false
+      },
+      {
+        "id": "DIAL-04",
+        "requestedPresence": [
+          "offline",
+          "available"
+        ],
+        "visibility": "hidden",
+        "uiStillOffersGoOffline": true
+      },
+      {
+        "id": "DIAL-06",
+        "providerConfigured": false,
+        "callEnabled": true,
+        "dialAttempts": 1,
+        "errorShown": true
+      },
+      {
+        "id": "DIAL-07",
+        "case": "Leads HTTP 503",
+        "falseEmptyState": true,
+        "errorVisible": false
+      },
+      {
+        "id": "DIAL-07",
+        "case": "Overview HTTP 503",
+        "incorrectSetupPrompt": true,
+        "refreshButtonPresent": false
+      },
+      {
+        "id": "DIAL-08",
+        "serverTotal": 75,
+        "renderedLeadRows": 50,
+        "leadQuery": {
+          "assigned_to": "authenticated existing demo staff",
+          "status": "new",
+          "limit": "50"
+        },
+        "paginationOffered": false
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "mobile",
+        "theme": "light",
+        "textContrast": [
+          {
+            "text": "Synthetic lead 1",
+            "color": "rgb(30, 41, 59)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 13.98
+          },
+          {
+            "text": "+919999999991 \u00b7 Synthetic company",
+            "color": "rgb(148, 163, 184)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 2.45
+          }
+        ],
+        "callButtonContrast": {
+          "color": "rgb(255, 255, 255)",
+          "background": [
+            13,
+            148,
+            136
+          ],
+          "ratio": 3.74
+        },
+        "brandTextPresent": false,
+        "logoPresent": false,
+        "noHorizontalOverflow": true,
+        "refreshName": "",
+        "refreshHeight": 24.5
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "mobile",
+        "theme": "dark",
+        "textContrast": [
+          {
+            "text": "Synthetic lead 1",
+            "color": "rgb(30, 41, 59)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 13.98
+          },
+          {
+            "text": "+919999999991 \u00b7 Synthetic company",
+            "color": "rgb(148, 163, 184)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 2.45
+          }
+        ],
+        "callButtonContrast": {
+          "color": "rgb(255, 255, 255)",
+          "background": [
+            13,
+            148,
+            136
+          ],
+          "ratio": 3.74
+        },
+        "brandTextPresent": false,
+        "logoPresent": false,
+        "noHorizontalOverflow": true,
+        "refreshName": "",
+        "refreshHeight": 24.5
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "desktop",
+        "theme": "light",
+        "textContrast": [
+          {
+            "text": "Synthetic lead 1",
+            "color": "rgb(30, 41, 59)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 13.98
+          },
+          {
+            "text": "+919999999991 \u00b7 Synthetic company",
+            "color": "rgb(148, 163, 184)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 2.45
+          }
+        ],
+        "callButtonContrast": {
+          "color": "rgb(255, 255, 255)",
+          "background": [
+            13,
+            148,
+            136
+          ],
+          "ratio": 3.74
+        },
+        "brandTextPresent": false,
+        "logoPresent": false,
+        "noHorizontalOverflow": true,
+        "refreshName": "",
+        "refreshHeight": 28
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "desktop",
+        "theme": "dark",
+        "textContrast": [
+          {
+            "text": "Synthetic lead 1",
+            "color": "rgb(30, 41, 59)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 13.98
+          },
+          {
+            "text": "+919999999991 \u00b7 Synthetic company",
+            "color": "rgb(148, 163, 184)",
+            "background": [
+              248,
+              250,
+              252
+            ],
+            "ratio": 2.45
+          }
+        ],
+        "callButtonContrast": {
+          "color": "rgb(255, 255, 255)",
+          "background": [
+            13,
+            148,
+            136
+          ],
+          "ratio": 3.74
+        },
+        "brandTextPresent": false,
+        "logoPresent": false,
+        "noHorizontalOverflow": true,
+        "refreshName": "",
+        "refreshHeight": 28
+      },
+      {
+        "id": "DIAL-09",
+        "case": "Unassigned dark-theme state",
+        "textColor": "rgb(51, 65, 85)",
+        "cardBackground": "rgb(2, 8, 23)"
+      },
+      {
+        "id": "DIAL-05",
+        "routedToLogin": true,
+        "refreshCredentialRetained": true,
+        "accessCredentialRetained": false,
+        "serverLogoutRequests": 0,
+        "presenceOfflineRequests": 0
+      }
+    ],
+    "pageErrors": [],
+    "limits": "Live bundle; synthetic intercepted calls, outcomes, availability and logout. Timer cases explicitly invoke captured interval handlers; no real telephone calls or patient changes.",
+    "liveBaseline": {
+      "status": 200,
+      "providerConfigured": false,
+      "agentCount": 0,
+      "livekit": true
+    },
+    "completed": true
+  },
+  "serviceFactoryEvidence": {
+    "mode": "Pure service factory; in-memory query fixture",
+    "dispositionSaved": true,
+    "callbackCreatedOrScheduled": false,
+    "productionWrites": 0
+  },
+  "sourceParity": [
+    {
+      "file": "client/src/pages/crm/CRMTelecallerDialer.tsx",
+      "sha256": "b5f111906a4c39f0c3b866994e8591d12fd5056d053aedf7d586134ad5bd87ea",
+      "matchesDeployedFrontendCommit": true
+    },
+    {
+      "file": "client/src/pages/crm/dialerClient.ts",
+      "sha256": "8906c024af3cfe5379e714d3e6208853ddede0c5004b24e84c489baa761a905d",
+      "matchesDeployedFrontendCommit": true
+    },
+    {
+      "file": "client/src/utils/api.ts",
+      "sha256": "c7b1f96827a9cbc09a091d6cae217f0f95f3054652689c6469d378079db4da88",
+      "matchesDeployedFrontendCommit": true
+    },
+    {
+      "file": "client/src/components/ui/card.tsx",
+      "sha256": "8bad317eca5b74899d868688a339a16f54995e36810c0fdfe214c057755535e0",
+      "matchesDeployedFrontendCommit": true
+    },
+    {
+      "file": "client/src/index.css",
+      "sha256": "c76d8eb039b810978349ca2b4ec8f6d0c08d55587e4666927fe4aa75476850aa",
+      "matchesDeployedFrontendCommit": true
+    },
+    {
+      "file": "server/services/contact-center/service.js",
+      "sha256": "90818793eab3d154bcbcb899660785a699dbad1f7f846caa2bdb78e5f7aa4860",
+      "matchesDeployedFrontendCommit": true,
+      "matchesRunningApiRelease": true
+    },
+    {
+      "file": "server/routes/crm.route.js",
+      "sha256": "55ed472e8fe983dbc1c1228cba6690ae10177c9b71bbd208d4a2637522d17069",
+      "matchesDeployedFrontendCommit": true,
+      "matchesRunningApiRelease": true
+    }
+  ],
+  "existingTests": {
+    "passed": 4,
+    "failed": 0,
+    "limits": "Four existing happy-path tests; they do not exercise the reported failure paths"
+  },
+  "configurationBlockers": {
+    "demoAssignedAgents": 0,
+    "exotelReady": false,
+    "livekitReady": true,
+    "dialerTransport": "Exotel agent-phone bridge; LiveKit readiness does not enable its dial() path"
+  },
+  "readability": {
+    "darkSetupTextColor": "rgb(51,65,85)",
+    "darkSetupBackground": "rgb(2,8,23)",
+    "darkSetupContrast": 1.93,
+    "leadDetailContrast": 2.45,
+    "enabledCallLabelContrast": 3.74,
+    "normalTextReference": "https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html"
+  },
+  "screenshots": [
+    "live-mobile.png",
+    "mobile-light.png",
+    "mobile-dark.png",
+    "desktop-light.png",
+    "desktop-dark.png",
+    "mobile-dark-unassigned.png"
+  ],
+  "privateEvidenceDirectory": "/home/ubuntu/dialer-audit-evidence/20261021",
+  "productionTelephoneCalls": 0,
+  "productionClinicalWrites": 0,
+  "staffOrProviderConfigChanged": false,
+  "realRefreshTokenRevocationPerformed": false,
+  "applicationFixesDeployed": false,
+  "auditArtifactsOnly": true
+}

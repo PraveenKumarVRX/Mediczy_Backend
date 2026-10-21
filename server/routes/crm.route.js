@@ -443,7 +443,7 @@ router.get('/leads', authCRM, async (req, res) => {
     const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
     const [countRes, dataRes] = await Promise.all([
       pool.query(`SELECT COUNT(*) FROM crm_leads ${where}`, params),
-      pool.query(`SELECT * FROM crm_leads ${where} ORDER BY ${sort} ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, parseInt(limit), offset])
+      pool.query(`SELECT * FROM crm_leads ${where} ORDER BY ${sort} ${order}, id ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`, [...params, parseInt(limit), offset])
     ]);
     return res.status(200).json({ success: true, data: dataRes.rows, pagination: { total: parseInt(countRes.rows[0].count), page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(parseInt(countRes.rows[0].count) / parseInt(limit)) } });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch leads' }); }

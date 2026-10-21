@@ -1,98 +1,37 @@
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
-import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import {render,screen,fireEvent,waitFor,cleanup,act} from '@testing-library/react';
+import {MemoryRouter} from 'react-router-dom';
+import {webcrypto} from 'node:crypto';
+import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
 import CRMTelecallerDialer from './CRMTelecallerDialer';
+import * as client from './dialerClient';
+vi.mock('./dialerClient',async()=>{const actual=await vi.importActual<typeof import('./dialerClient')>('./dialerClient');return {...actual,getOverview:vi.fn(),getMyLeads:vi.fn(),setPresence:vi.fn(),dial:vi.fn(),getCall:vi.fn(),setDisposition:vi.fn(),claimCallback:vi.fn(),reconcileCall:vi.fn(),logoutCrm:vi.fn()};});
+const id='11111111-1111-4111-8111-111111111111',phone='+919999999991';
+const base=()=>({providerConfigured:true,agents:[{user_id:'1',name:'Synthetic agent',phone:'+919999999990',role:'agent',presence:'available',active_call_id:null}],calls:[],callbacks:[],metrics:{total:0,active:0}});
+const call=(state='queued')=>({id,agent_id:'1',provider:'exotel',state,destination:phone});
+function mount(){return render(<MemoryRouter><CRMTelecallerDialer/></MemoryRouter>);}
+beforeEach(()=>{vi.resetAllMocks();localStorage.clear();sessionStorage.clear();localStorage.setItem('crmToken','synthetic');localStorage.setItem('crmRefreshToken','synthetic-refresh');localStorage.setItem('crmUserData',JSON.stringify({id:1,crmRole:'telecaller',firstName:'Synthetic agent'}));vi.stubGlobal('crypto',webcrypto);Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});vi.mocked(client.getOverview).mockResolvedValue(base());vi.mocked(client.getMyLeads).mockResolvedValue({data:[{id:1,name:'Synthetic lead',phone,status:'new'}],pagination:{total:1,page:1,limit:50,totalPages:1}});vi.mocked(client.setPresence).mockImplementation(async presence=>({presence}));vi.mocked(client.dial).mockResolvedValue(call());vi.mocked(client.getCall).mockResolvedValue({call:call()});vi.mocked(client.setDisposition).mockResolvedValue({ok:true});vi.mocked(client.logoutCrm).mockResolvedValue({success:true});});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks();vi.useRealTimers();});
+describe('CRM dialer recovery and task integrity',()=>{
+ it('keeps missing assignment distinct from a data failure',async()=>{vi.mocked(client.getOverview).mockRejectedValue(new Error('Overview offline'));mount();await screen.findByText('Dialer data is unavailable');expect(screen.queryByText(/number isn't set up/)).toBeNull();expect(screen.getByRole('button',{name:'Refresh dialer'})).toBeTruthy();});
+ it('shows a blocking setup state and Mediqzy brand when unassigned',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),agents:[]});mount();await screen.findByText(/dialer number isn't set up/);expect((screen.getByRole('button',{name:'Call'}) as HTMLButtonElement).disabled).toBe(true);expect(screen.getByAltText('Mediqzy logo')).toBeTruthy();});
+ it('restores an existing server call after reload',async()=>{const overview=base();overview.agents[0].active_call_id=id as any;overview.agents[0].presence='busy';vi.mocked(client.getOverview).mockResolvedValue({...overview,calls:[call()]});mount();await screen.findByText('Call · '+phone);expect(client.getCall).toHaveBeenCalledWith(id);expect(screen.getByRole('button',{name:'Refresh provider status'})).toBeTruthy();expect(client.dial).not.toHaveBeenCalled();});
+ it('restores a terminal call awaiting disposition',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),calls:[call('completed')]});vi.mocked(client.getCall).mockResolvedValue({call:call('completed')});mount();await screen.findByText('How did this call go?');});
+ it('retains recovery controls when the detail fetch fails',async()=>{const overview=base();overview.agents[0].active_call_id=id as any;vi.mocked(client.getOverview).mockResolvedValue(overview);vi.mocked(client.getCall).mockRejectedValue(new Error('Temporary detail failure'));mount();await screen.findByText('Call · Reserved call');expect(screen.getByRole('button',{name:'Refresh provider status'})).toBeTruthy();await screen.findByText('Temporary detail failure');});
+ it('places one call for a rapid double click',async()=>{let done:(c:any)=>void=()=>{};vi.mocked(client.dial).mockImplementation(()=>new Promise(resolve=>{done=resolve;}));mount();await screen.findByText('Synthetic lead');const button=screen.getByRole('button',{name:'Call'});fireEvent.click(button);fireEvent.click(button);await waitFor(()=>expect(client.dial).toHaveBeenCalledOnce());await act(async()=>done(call()));});
+ it('keeps the key for an uncertain retry, including across reload',async()=>{vi.mocked(client.dial).mockRejectedValue(Object.assign(new Error('Provider outcome unknown'),{status:502}));const first=mount();await screen.findByText('Synthetic lead');fireEvent.click(screen.getByRole('button',{name:'Call'}));await screen.findByText('Provider outcome unknown');const key=vi.mocked(client.dial).mock.calls[0][1];expect(sessionStorage.length).toBe(1);expect(sessionStorage.getItem(sessionStorage.key(0)!)).not.toContain(phone);first.unmount();mount();await screen.findByText('Synthetic lead');fireEvent.click(screen.getByRole('button',{name:'Call'}));await waitFor(()=>expect(client.dial).toHaveBeenCalledTimes(2));expect(vi.mocked(client.dial).mock.calls[1][1]).toBe(key);});
+ it('blocks another recipient while an uncertain request is pending',async()=>{vi.mocked(client.dial).mockRejectedValue(Object.assign(new Error('Unknown outcome'),{status:502}));vi.mocked(client.getMyLeads).mockResolvedValue({data:[{id:1,name:'First lead',phone,status:'new'},{id:2,name:'Second lead',phone:'+919999999992',status:'new'}],pagination:{total:2,page:1,limit:50,totalPages:1}});mount();await screen.findByText('First lead');fireEvent.click(screen.getAllByRole('button',{name:'Call'})[0]);await screen.findByText('Unknown outcome');fireEvent.click(screen.getAllByRole('button',{name:'Call'})[1]);await screen.findByText(/previous request is unresolved/);expect(client.dial).toHaveBeenCalledOnce();});
+ it('disables origination when its provider is unavailable',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),providerConfigured:false});mount();await screen.findByText('Synthetic lead');expect((screen.getByRole('button',{name:'Call'}) as HTMLButtonElement).disabled).toBe(true);});
+ it('lets an offline agent explicitly become available',async()=>{const overview=base();overview.agents[0].presence='offline';vi.mocked(client.getOverview).mockResolvedValue(overview);mount();await screen.findByRole('button',{name:'Go available'});fireEvent.click(screen.getByRole('button',{name:'Go available'}));await waitFor(()=>expect(client.setPresence).toHaveBeenCalledWith('available'));});
+ it('does not heartbeat back to available after hiding',async()=>{vi.useFakeTimers({shouldAdvanceTime:true});mount();await screen.findByText('Synthetic lead');Object.defineProperty(document,'visibilityState',{value:'hidden',configurable:true});act(()=>document.dispatchEvent(new Event('visibilitychange')));await waitFor(()=>expect(client.setPresence).toHaveBeenCalledWith('offline'));await act(async()=>{await vi.advanceTimersByTimeAsync(26000);});expect(vi.mocked(client.setPresence).mock.calls.map(c=>c[0])).toEqual(['offline']);});
+ it('shows lead errors without falsely reporting an empty queue',async()=>{vi.mocked(client.getMyLeads).mockRejectedValue(new Error('Leads offline'));mount();await screen.findByText(/Lead list could not be refreshed/);expect(screen.queryByText('No new leads assigned to you.')).toBeNull();});
+ it('paginates using server totals',async()=>{vi.mocked(client.getMyLeads).mockResolvedValue({data:[{id:1,name:'Synthetic lead',phone,status:'new'}],pagination:{total:75,page:1,limit:50,totalPages:2}});mount();await screen.findByText('Page 1 of 2');fireEvent.click(screen.getByRole('button',{name:'Next'}));await waitFor(()=>expect(client.getMyLeads).toHaveBeenCalledWith(1,2));});
+ it('schedules callback-required atomically with a future time',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),calls:[call('completed')]});vi.mocked(client.getCall).mockResolvedValue({call:call('completed')});mount();await screen.findByText('How did this call go?');expect((screen.getByRole('button',{name:'Callback required'}) as HTMLButtonElement).disabled).toBe(true);fireEvent.change(screen.getByLabelText('Callback time'),{target:{value:'2027-01-01T10:00'}});fireEvent.click(screen.getByRole('button',{name:'Callback required'}));await waitFor(()=>expect(client.setDisposition).toHaveBeenCalledWith(id,'callback_required',new Date('2027-01-01T10:00').toISOString()));await screen.findByText('Callback scheduled and call logged.');});
+ it('preserves the terminal view and error if atomic wrap-up fails',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),calls:[call('completed')]});vi.mocked(client.getCall).mockResolvedValue({call:call('completed')});vi.mocked(client.setDisposition).mockRejectedValue(new Error('Callback changed; review required'));mount();await screen.findByText('How did this call go?');fireEvent.click(screen.getByRole('button',{name:'Information provided'}));await screen.findByText('Callback changed; review required');expect(screen.getByText('How did this call go?')).toBeTruthy();expect(screen.queryByText('Call logged.')).toBeNull();});
+ it('revokes the CRM session and clears all CRM credentials on sign out',async()=>{localStorage.setItem('hospitalToken','keep');mount();await screen.findByText('Synthetic lead');fireEvent.click(screen.getByRole('button',{name:'Sign out'}));await waitFor(()=>expect(client.logoutCrm).toHaveBeenCalledOnce());await waitFor(()=>expect(localStorage.getItem('crmRefreshToken')).toBeNull());expect(localStorage.getItem('crmToken')).toBeNull();expect(localStorage.getItem('hospitalToken')).toBe('keep');expect(client.setPresence).toHaveBeenCalledWith('offline');});
+ it('locks the dialer and shows revocation failure instead of claiming sign-out succeeded',async()=>{vi.mocked(client.logoutCrm).mockRejectedValue(new Error('Revocation offline'));mount();await screen.findByText('Synthetic lead');fireEvent.click(screen.getByRole('button',{name:'Sign out'}));await screen.findByText(/Sign out could not be completed/);expect((screen.getByRole('button',{name:'Call'}) as HTMLButtonElement).disabled).toBe(true);expect(localStorage.getItem('crmRefreshToken')).toBe('synthetic-refresh');});
+ it('exposes selected queue state and a named refresh control',async()=>{mount();await screen.findByText('Synthetic lead');expect(screen.getByRole('button',{name:'My Leads'}).getAttribute('aria-pressed')).toBe('true');fireEvent.click(screen.getByRole('button',{name:'Callbacks'}));expect(screen.getByRole('button',{name:'Callbacks'}).getAttribute('aria-pressed')).toBe('true');expect(screen.getByRole('button',{name:'Refresh dialer'})).toBeTruthy();});
+ it('does not reopen a call already logged on another device',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),calls:[call('completed')]});vi.mocked(client.getCall).mockResolvedValue({call:{...call('completed'),disposition:'information_provided'}});mount();await screen.findByText('Synthetic lead');await waitFor(()=>expect(client.getCall).toHaveBeenCalledWith(id));await waitFor(()=>expect(screen.queryByText('How did this call go?')).toBeNull());});
+ it('shows connected instructions for an answered call',async()=>{vi.mocked(client.getOverview).mockResolvedValue({...base(),calls:[call('answered')]});vi.mocked(client.getCall).mockResolvedValue({call:call('answered')});mount();await screen.findByText(/Call connected. End the conversation/);expect(screen.queryByText(/Your phone is ringing/)).toBeNull();});
+ it('releases a definitively rejected request before accepting another recipient',async()=>{vi.mocked(client.dial).mockRejectedValueOnce(Object.assign(new Error('Invalid first recipient'),{status:400})).mockResolvedValue(call());vi.mocked(client.getMyLeads).mockResolvedValue({data:[{id:1,name:'First lead',phone,status:'new'},{id:2,name:'Second lead',phone:'+919999999992',status:'new'}],pagination:{total:2,page:1,limit:50,totalPages:1}});mount();await screen.findByText('First lead');fireEvent.click(screen.getAllByRole('button',{name:'Call'})[0]);await screen.findByText('Invalid first recipient');expect(sessionStorage.length).toBe(0);fireEvent.click(screen.getAllByRole('button',{name:'Call'})[1]);await waitFor(()=>expect(client.dial).toHaveBeenCalledTimes(2));expect(vi.mocked(client.dial).mock.calls[0][1]).not.toBe(vi.mocked(client.dial).mock.calls[1][1]);});
 
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
-  return { ...actual, useNavigate: () => vi.fn() };
-});
-
-const baseOverview = (overrides: Record<string, any> = {}) => ({
-  providerConfigured: true,
-  agents: [{ user_id: 1, name: 'Test Agent', phone: '+919800000000', role: 'agent', presence: 'offline', active_call_id: null }],
-  calls: [],
-  callbacks: [],
-  metrics: { total: 0, active: 0 },
-  ...overrides,
-});
-
-function mockApi(overview: Record<string, any>, extra: Record<string, (url: string, body?: any) => any> = {}) {
-  return {
-    get: vi.fn(async (url: string, config?: any) => {
-      if (url === '/crm/contact-center') return { data: overview };
-      if (url === '/crm/leads') return { data: { data: [{ id: 10, name: 'Lead One', phone: '+919811111111' }] } };
-      if (url.startsWith('/crm/contact-center/calls/')) return { data: extra.getCall ? extra.getCall(url) : {} };
-      return { data: {} };
-    }),
-    patch: vi.fn(async (url: string, body: any) => ({ data: extra.patch ? extra.patch(url, body) : {} })),
-    post: vi.fn(async (url: string, body: any) => ({ data: extra.post ? extra.post(url, body) : { id: 'call-1', state: 'queued', destination: body?.to } })),
-  };
-}
-
-vi.mock('@/utils/api', () => ({ default: { get: vi.fn(), patch: vi.fn(), post: vi.fn() } }));
-
-describe('CRM telecaller mobile dialer', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    localStorage.setItem('crmToken', 'synthetic-token');
-    localStorage.setItem('crmUserData', JSON.stringify({ id: 1, crmRole: 'telecaller', firstName: 'Riya' }));
-  });
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
-
-  it('shows a blocking empty state when the agent has no registered phone', async () => {
-    const api = (await import('@/utils/api')).default as any;
-    Object.assign(api, mockApi(baseOverview({ agents: [] })));
-    render(<CRMTelecallerDialer />);
-    await screen.findByText(/dialer number isn't set up yet/i);
-    expect(screen.queryByText('My Leads')).toBeNull();
-  });
-
-  it('lists assigned leads and lets the agent call one', async () => {
-    const api = (await import('@/utils/api')).default as any;
-    Object.assign(api, mockApi(baseOverview({ agents: [{ user_id: 1, name: 'Test Agent', phone: '+919800000000', role: 'agent', presence: 'available', active_call_id: null }] })));
-    render(<CRMTelecallerDialer />);
-    await screen.findByText('Lead One');
-    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/crm/contact-center/calls',
-      { to: '+919811111111' },
-      expect.objectContaining({ headers: expect.objectContaining({ 'Idempotency-Key': expect.any(String) }) })
-    ));
-  });
-
-  it('polls call status until terminal, then shows disposition options', async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const api = (await import('@/utils/api')).default as any;
-    let state = 'queued';
-    Object.assign(api, mockApi(
-      baseOverview({ agents: [{ user_id: 1, name: 'Test Agent', phone: '+919800000000', role: 'agent', presence: 'available', active_call_id: null }] }),
-      {
-        post: () => ({ id: 'call-1', state: 'queued', destination: '+919811111111' }),
-        getCall: () => ({ call: { id: 'call-1', state, destination: '+919811111111' }, events: [], transcripts: [], artifacts: [], recordings: [] }),
-      }
-    ));
-    render(<CRMTelecallerDialer />);
-    await screen.findByText('Lead One');
-    fireEvent.click(screen.getByRole('button', { name: 'Call' }));
-    await screen.findByText(/answer it to connect/i);
-    state = 'completed';
-    await vi.advanceTimersByTimeAsync(5000);
-    await waitFor(() => expect(screen.getByText(/how did this call go/i)).toBeTruthy());
-    fireEvent.click(screen.getByRole('button', { name: 'Wrong number' }));
-    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/crm/contact-center/calls/call-1/disposition',
-      { disposition: 'wrong_number' },
-      expect.anything()
-    ));
-  });
-
-  it('drops presence to offline when the tab is hidden while available', async () => {
-    const api = (await import('@/utils/api')).default as any;
-    Object.assign(api, mockApi(baseOverview({ agents: [{ user_id: 1, name: 'Test Agent', phone: '+919800000000', role: 'agent', presence: 'available', active_call_id: null }] })));
-    render(<CRMTelecallerDialer />);
-    await screen.findByText('Lead One');
-    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
-    document.dispatchEvent(new Event('visibilitychange'));
-    await waitFor(() => expect(api.patch).toHaveBeenCalledWith('/crm/contact-center/presence', { presence: 'offline' }, expect.anything()));
-  });
 });

@@ -16,7 +16,7 @@ Base: `/api/crm/contact-center`, JSON, CRM Bearer JWT. Tenant UID and actor come
 | `POST /calls` | Explicit agent-first call; required `Idempotency-Key`; responds 202 with durable local call record |
 | `GET /calls/:id` | Call, immutable events, redacted transcripts, reviewed/unreviewed artifacts and available recording IDs |
 | `POST /calls/:id/reconcile` | Dispatch by stored provider (native LiveKit or Exotel); cannot redial an uncertain call |
-| `POST /calls/:id/disposition` | Assigned-agent wrap-up after confirmed terminal state |
+| `POST /calls/:id/disposition` | Assigned-agent atomic wrap-up after confirmed terminal state; callback-required needs `followup_at` |
 | `POST /calls/:id/actions` | Authorized media-gateway action; unavailable gateway returns 503, not simulated success |
 | `POST /calls/:id/artifacts/:kind` | `summary`, `copilot`, `qa` draft from final segments and approved FAQ evidence |
 | `POST /calls/:id/artifacts/:kind/review` | Record human reviewer and audit event |
@@ -84,3 +84,11 @@ Existing growth journeys use `stepType:"message",channel:"voice",config:{campaig
 The overview includes non-secret `nativePstn`, `voiceProcessing`, `voiceBot` and `biometricsConfigured` capability flags. These report configured prerequisites, not worker health, model validation or clinical acceptance. Callback rows include their source call `provider`. Native `callback_id` requires the authenticated agent to own an in-progress callback and use its exact stored destination; reservation and attempt accounting are atomic. An idempotent replay does not increment attempts.
 
 The console preflights microphone access before reserving calls or redeeming guest invitations, retains recovery/end controls after connection failure, and keeps media mounted across console tabs. Guests keep their short-lived connection grant in memory for bounded retries; invitations remain single-use. Open call details refresh with the overview. Existing routing graphs can be loaded and republished under the same ID. CRM requests renew an expired access token once through `POST /api/crm/auth/refresh`; rejected refresh credentials clear only the CRM session and return to sign-in. Mutation retries preserve their body and idempotency key.
+
+## Dialer wrap-up and recovery update — 2026-10-21
+
+`POST /calls/:id/disposition` accepts `{disposition, followup_at?}`. `callback_required` requires an ISO-8601 future time within 90 days. The server derives any source callback from its immutable reservation event, validates ownership/current task state, and atomically saves the disposition, schedules/reschedules or resolves the task, releases wrap-up and writes one audit event. Identical concurrent retries return `{ok:true,duplicate:true}` without another task/event. A different subsequent outcome returns `409 DISPOSITION_CONFLICT`. No separate client callback-resolution PATCH is needed. Task changes or write failures preserve the unsaved call/task state for review and retry.
+
+The mobile dialer restores active and undisposed terminal calls from authoritative overview/detail data. Unknown outcomes expose provider reconciliation and preserve the request key/body fingerprint across retries; session storage holds only that key and SHA-256 fingerprint, not the recipient or call content. The dialer supports paginated assigned new leads and reports server totals. Lead ordering includes the unique ID as a tie breaker.
+
+A hidden dialer stops availability heartbeats and serializes its offline request after outstanding presence updates. Foreground refresh waits for that update. Sign-out calls `/api/crm/logout` to revoke refresh sessions, then clears CRM credentials; a failed revocation locks dialing and exposes a retry instead of claiming success. Late renewal responses cannot restore cleared credentials.

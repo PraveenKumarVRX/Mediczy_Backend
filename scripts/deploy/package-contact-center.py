@@ -9,7 +9,7 @@ if base.parent!=parent or out.parent!=parent or not (base/'server/index.js').is_
 revision=subprocess.check_output(['git','rev-parse',args.revision+'^{commit}'],cwd=root,text=True).strip()
 manifest=json.loads(subprocess.check_output(['git','show',revision+':docs/testing/CONTACT_CENTER_LIVEKIT_VERIFICATION_2026-10-20.json'],cwd=root))
 files=set(manifest['sourceSha256'])
-files.update(['client/src/pages/crm/contact-center-theme.css','client/src/pages/crm/contactCenterClient.ts','client/src/pages/crm/contactCenterClient.test.ts','client/src/utils/voice-permission.ts','client/src/pages/crm/ContactCenterRecovery.test.tsx','scripts/deploy/activate-contact-center.cjs','scripts/deploy/package-contact-center.py','server/scripts/qa/contact-center-release-smoke.mjs'])
+files.update(['server/routes/crm.route.js','client/src/pages/crm/CRMTelecallerDialer.tsx','client/src/pages/crm/CRMTelecallerDialer.test.tsx','client/src/pages/crm/dialerClient.ts','client/tsconfig.dialer.json','client/src/pages/crm/contact-center-theme.css','client/src/pages/crm/contactCenterClient.ts','client/src/pages/crm/contactCenterClient.test.ts','client/src/utils/voice-permission.ts','client/src/pages/crm/ContactCenterRecovery.test.tsx','scripts/deploy/activate-contact-center.cjs','scripts/deploy/package-contact-center.py','server/scripts/qa/contact-center-release-smoke.mjs'])
 out.mkdir(mode=0o750)
 subprocess.run(['rsync','-a','--exclude=.git/','--exclude=node_modules/','--exclude=dist/','--exclude=logs/','--exclude=__pycache__/','--exclude=.venv/','--exclude=venv/',str(base)+'/',str(out)+'/'],check=True)
 for relative in ['server/node_modules','client/node_modules']:
