@@ -15,11 +15,41 @@
 import express from 'express';
 import { authCorporate } from '../../middleware/corporate.middleware.js';
 import hrManagement from '../../services/corporate-hr-management.service.js';
+import Corporate from '../../models/postgres/corporate.model.postgres.js';
 
 const router = express.Router();
 
 const corporateId = (req) => req.user?.corporateId || req.user?.id;
 const actingUserId = (req) => req.user?.userId || req.user?.id;
+
+// A direct corporate login (role='corporate' in the JWT, e.g. "Test Contact"
+// signing in with the corporate's own credentials) has no `users` row at all
+// - it's a completely separate identity space, keyed by corporates.id, not
+// users.id. listHrTeam only ever queries `users`, so this identity could
+// never appear in its own HR team list no matter how the role filter was
+// tuned. Synthesize a read-only entry for it from corporates.contactPerson/
+// email, same spirit as the existing fix that already treats this role as
+// the super-admin for Invite-button visibility.
+async function withDirectLoginEntry(req, teamRows) {
+  if (req.user?.role !== 'corporate') return teamRows;
+  const corp = await Corporate.findByPk(corporateId(req));
+  if (!corp) return teamRows;
+  const [firstName, ...rest] = String(corp.contactPerson || 'Corporate Contact').trim().split(/\s+/);
+  return [
+    {
+      id: `corporate:${corp.id}`,
+      firstName: firstName || 'Corporate',
+      lastName: rest.join(' ') || 'Contact',
+      email: corp.email,
+      role: 'corporate_admin',
+      invited_by: null,
+      lastLoginAt: null,
+      createdAt: corp.createdAt,
+      isDirectLogin: true,
+    },
+    ...teamRows,
+  ];
+}
 
 const wrap = (handler) => async (req, res) => {
   try {
@@ -31,7 +61,7 @@ const wrap = (handler) => async (req, res) => {
   }
 };
 
-router.get('/team', authCorporate, wrap((req) => hrManagement.listHrTeam(corporateId(req))));
+router.get('/team', authCorporate, wrap(async (req) => withDirectLoginEntry(req, await hrManagement.listHrTeam(corporateId(req)))));
 
 router.post('/team', authCorporate, wrap((req) => hrManagement.inviteHrStaff({
   corporateId: corporateId(req),
