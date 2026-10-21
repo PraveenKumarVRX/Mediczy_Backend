@@ -15,6 +15,15 @@
  * This is the one-time backfill for employees created before that fix.
  *
  * Safe to re-run — only touches rows that are still unlinked.
+ *
+ * 2026-10-21: found live, via TEST-SK01 in Test Corporate Ltd, that a plain
+ * `JOIN users u ON lower(u.email) = lower(ce.email)` with no deterministic
+ * ordering can match the WRONG user when two users rows share an email that
+ * differs only by case (no case-insensitive uniqueness constraint on
+ * users.email) — it linked to a years-old placeholder/seed account instead
+ * of the real one. DISTINCT ON + ORDER BY below makes the match
+ * deterministic: an exact-case match wins, then a user with an actual
+ * recorded login, then the oldest id.
  */
 
 import pool from '../db/pgPool.js';
@@ -25,10 +34,11 @@ try {
   await client.query('BEGIN');
 
   const { rows: matches } = await client.query(`
-    SELECT ce.id AS ce_id, ce.corporate_id, ce."employeeId", u.id AS user_id
+    SELECT DISTINCT ON (ce.id) ce.id AS ce_id, ce.corporate_id, ce."employeeId", u.id AS user_id
     FROM corporate_employees ce
     JOIN users u ON lower(u.email) = lower(ce.email)
     WHERE ce."userId" IS NULL AND ce.email IS NOT NULL AND ce."isActive" = true
+    ORDER BY ce.id, (u.email = ce.email) DESC, (u."lastLoginAt" IS NOT NULL) DESC, u.id ASC
   `);
 
   console.log(`Found ${matches.length} existing employee record(s) matching a real user account by email`);

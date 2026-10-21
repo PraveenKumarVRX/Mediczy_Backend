@@ -116,9 +116,14 @@ export async function reactivateCorporateEmployeeAccount(userId, { client = null
  */
 async function linkUnlinkedCorporateEmployeeByEmail(user) {
   if (!user?.email) return false;
+  // Deterministic ORDER BY: an exact-case email match wins over a
+  // same-email-different-case row, then the oldest unlinked row, so this
+  // never nondeterministically picks among several candidates.
   const { rows } = await pool.query(
     `SELECT id, corporate_id, "employeeId" FROM corporate_employees
-      WHERE "userId" IS NULL AND lower(email) = lower($1) LIMIT 1`,
+      WHERE "userId" IS NULL AND lower(email) = lower($1)
+      ORDER BY (email = $1) DESC, "createdAt" ASC
+      LIMIT 1`,
     [user.email]
   );
   const unlinked = rows[0];
@@ -167,9 +172,12 @@ export async function reactivateCorporateEmployeeByIdentifier({ email, employeeI
   let userRow = null;
 
   if (email) {
+    const trimmedEmail = String(email).trim();
     const { rows } = await pool.query(
-      `SELECT id, email, status FROM users WHERE lower(email) = lower($1) LIMIT 1`,
-      [String(email).trim()]
+      `SELECT id, email, status FROM users WHERE lower(email) = lower($1)
+       ORDER BY (email = $1) DESC, ("lastLoginAt" IS NOT NULL) DESC, id ASC
+       LIMIT 1`,
+      [trimmedEmail]
     );
     userRow = rows[0] || null;
   }

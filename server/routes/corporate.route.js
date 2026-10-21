@@ -1600,11 +1600,20 @@ router.post('/employees', authCorporate, async (req, res) => {
 
     // Link to an existing user account by email, so the employee isn't left
     // permanently unlinked (blank email/department/health-status in Team portal).
+    // Two users can share an email differing only by case (no case-insensitive
+    // uniqueness constraint on users.email) — order deterministically so an
+    // exact-case match always wins over a same-email-different-case account,
+    // and a real, logged-in account wins over a never-used placeholder/seed
+    // one. Without this, a plain `LIMIT 1` with no ORDER BY can nondeterministically
+    // link to the wrong account (this is exactly how TEST-SK01 got linked to a
+    // years-old placeholder "User1234" seed account instead of the real one).
     let linkedUserId = null;
     if (normalizedEmail) {
       const [existingUser] = await postgresSequelize.query(
-        `SELECT id FROM users WHERE lower(email) = :email LIMIT 1`,
-        { replacements: { email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+        `SELECT id FROM users WHERE lower(email) = :email
+         ORDER BY (email = :exactEmail) DESC, ("lastLoginAt" IS NOT NULL) DESC, id ASC
+         LIMIT 1`,
+        { replacements: { email: normalizedEmail, exactEmail: email || normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
       );
       if (existingUser) linkedUserId = existingUser.id;
     }
@@ -1766,12 +1775,15 @@ router.post('/employees/bulk-upload', authCorporate, async (req, res) => {
           continue;
         }
       }
-      // Link to an existing user account by email, same as the single-employee create path.
+      // Link to an existing user account by email, same as the single-employee
+      // create path — deterministic ORDER BY, see the comment there.
       let linkedUserId = null;
       if (normalizedEmail) {
         const [existingUser] = await postgresSequelize.query(
-          `SELECT id FROM users WHERE lower(email) = :email LIMIT 1`,
-          { replacements: { email: normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
+          `SELECT id FROM users WHERE lower(email) = :email
+           ORDER BY (email = :exactEmail) DESC, ("lastLoginAt" IS NOT NULL) DESC, id ASC
+           LIMIT 1`,
+          { replacements: { email: normalizedEmail, exactEmail: emp.email || normalizedEmail }, type: postgresSequelize.QueryTypes.SELECT }
         );
         if (existingUser) linkedUserId = existingUser.id;
       }
