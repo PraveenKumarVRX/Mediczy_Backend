@@ -9,6 +9,8 @@ This folder contains all Mediczy platform documentation, organized by category f
 
 ## Recent source-backed assessments
 
+- [Contact-center production release (2026-10-21)](./deployment/CONTACT_CENTER_PRODUCTION_RELEASE_2026-10-21.md) — main commits, isolated backend/frontend deployment, 22-table migration, LiveKit workers, live checks and rollback.
+- [Contact-center production verification (2026-10-21)](./testing/CONTACT_CENTER_PRODUCTION_VERIFICATION_2026-10-21.json) — sanitized deployment provenance and live/unit/integration results.
 - [Exotel Contact Center implementation and activation (2026-10-20)](./deployment/CONTACT_CENTER_EXOTEL_2026-10-20.md) — source delivery, CT-01–18 status, infrastructure, remaining coding and live acceptance gates.
 - [LiveKit voice implementation and activation (2026-10-20)](./deployment/CONTACT_CENTER_LIVEKIT_CLOSURE_2026-10-20.md) — advanced media, continuous STT, reception bots, campaigns/journeys and guarded biometrics; source delivery and explicit live/model acceptance gates.
 - [LiveKit voice verification (2026-10-20)](./testing/CONTACT_CENTER_LIVEKIT_VERIFICATION_2026-10-20.json) — current tests, real synthetic RTC audio, CPU model smoke, migration rehearsal and source hashes.

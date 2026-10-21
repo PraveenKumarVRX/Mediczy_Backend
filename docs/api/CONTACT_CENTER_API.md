@@ -1,6 +1,6 @@
 # Contact Center API
 
-Implementation: 2026-10-20. Exotel and native LiveKit source; live activation pending. See the [initial delivery](../deployment/CONTACT_CENTER_EXOTEL_2026-10-20.md) and [LiveKit extension/activation record](../deployment/CONTACT_CENTER_LIVEKIT_CLOSURE_2026-10-20.md).
+Implementation: 2026-10-20; API/frontend and dedicated workers deployed 2026-10-21. See the [production release](../deployment/CONTACT_CENTER_PRODUCTION_RELEASE_2026-10-21.md) for remaining provider/model acceptance gates. See the [initial delivery](../deployment/CONTACT_CENTER_EXOTEL_2026-10-20.md) and [LiveKit extension/activation record](../deployment/CONTACT_CENTER_LIVEKIT_CLOSURE_2026-10-20.md).
 
 Base: `/api/crm/contact-center`, JSON, CRM Bearer JWT. Tenant UID and actor come exclusively from CRM authentication. A corporate login must resolve its owning healthcare tenant first. Capability `contact_center:read` is required throughout; changes require `contact_center:write`, and administration requires `contact_center:configure` (Business Head/admin).
 

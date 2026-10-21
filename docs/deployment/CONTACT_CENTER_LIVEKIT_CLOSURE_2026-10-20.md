@@ -1,5 +1,7 @@
 # Contact center: LiveKit implementation and release status
 
+**Production follow-up, 2026-10-21:** the [application/schema/worker release is now deployed](CONTACT_CENTER_PRODUCTION_RELEASE_2026-10-21.md). The status below describes the earlier source-verification snapshot; provider configuration and clinical/model acceptance remain separate.
+
 Date: 2026-10-20. This record supersedes the **source implementation** status of advanced media, streaming STT, reception bots, voice campaigns and biometric enrollment/verification in the [initial delivery](CONTACT_CENTER_EXOTEL_2026-10-20.md). It does not close production activation, clinical acceptance or biometric model validation. The original repository comparison and earlier verification record remain historical evidence.
 
 ## Delivered implementation
