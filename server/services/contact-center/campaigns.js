@@ -40,13 +40,12 @@ export function createVoiceCampaigns({tx,base,media}){
         await tx(uid,async c=>{await c.query("UPDATE cc_voice_recipients SET state=$3,next_run_at=now()+interval '1 day' WHERE tenant_uid=$1 AND id=$2",[uid,r.id,state]);const tenantId=await crmScope(c,uid);await c.query("UPDATE crm_communication_events SET status=$3 WHERE tenant_id=$1 AND metadata->>'voice_call_id'=$2",[tenantId,String(r.call_id),r.call_state]);});
       }
       const due=await tx(uid,async c=>{
-        const rows=(await c.query(`SELECT r.*,p.owner_id,p.transport,p.bot,p.timezone,p.open_time,p.close_time,p.days FROM cc_voice_recipients r JOIN cc_voice_campaigns p ON p.tenant_uid=r.tenant_uid AND p.id=r.campaign_id WHERE r.tenant_uid=$1 AND p.status='active' AND r.state IN('pending','retry') AND r.next_run_at<=now() ORDER BY r.next_run_at FOR UPDATE OF r SKIP LOCKED LIMIT 20`,[uid])).rows;
+        const rows=(await c.query(`SELECT r.*,p.owner_id,p.transport,p.bot,p.timezone,p.open_time,p.close_time,p.days FROM cc_voice_recipients r JOIN cc_voice_campaigns p ON p.tenant_uid=r.tenant_uid AND p.id=r.campaign_id WHERE r.tenant_uid=$1 AND p.status='active' AND r.state IN('pending','retry') AND r.attempts<p.max_attempts AND r.next_run_at<=now() ORDER BY r.next_run_at FOR UPDATE OF r SKIP LOCKED LIMIT 20`,[uid])).rows;
         const r=rows.find(value=>inCampaignWindow(value));if(!r)return null;
         const a=(await c.query("SELECT user_id FROM cc_agents WHERE tenant_uid=$1 AND user_id=$2 AND presence='available' AND active_call_id IS NULL AND updated_at>now()-interval '2 minutes'",[uid,r.owner_id])).rows[0];if(!a)return null;
-        let consent;try{consent=await identityConsent(c,uid,r.identity_id);}catch(e){if(e.code!=='VOICE_CONSENT_REQUIRED')throw e;await c.query("UPDATE cc_voice_recipients SET state='suppressed',error_code=$3 WHERE tenant_uid=$1 AND id=$2",[uid,r.id,e.code]);return null;}
-        const processing=r.bot?await identityConsent(c,uid,r.identity_id,'transcription'):null;
+        let consent,processing;try{consent=await identityConsent(c,uid,r.identity_id);processing=r.bot?await identityConsent(c,uid,r.identity_id,'transcription'):null;}catch(e){if(!['VOICE_CONSENT_REQUIRED','IDENTITY_NOT_FOUND'].includes(e.code))throw e;await c.query("UPDATE cc_voice_recipients SET state='suppressed',error_code=$3 WHERE tenant_uid=$1 AND id=$2",[uid,r.id,e.code]);return null;}
         const key=(await c.query("SELECT normalized_value,raw_value FROM crm_identity_keys WHERE tenant_id=$1 AND person_id=$2 AND key_type='phone' ORDER BY is_verified DESC,id LIMIT 1",[consent.tenantId,r.identity_id])).rows[0];
-        const raw=String(key?.normalized_value||key?.raw_value||'').replace(/[^+\d]/g,'');const to=phone(raw.startsWith('+')?raw:/^\d{10}$/.test(raw)?`+91${raw}`:`+${raw}`);
+        const raw=String(key?.normalized_value||key?.raw_value||'').replace(/[^+\d]/g,'');let to;try{to=phone(raw.startsWith('+')?raw:/^\d{10}$/.test(raw)?`+91${raw}`:`+${raw}`);}catch(e){if(e.code!=='INVALID_PHONE')throw e;await c.query("UPDATE cc_voice_recipients SET state='failed',error_code='INVALID_PHONE' WHERE tenant_uid=$1 AND id=$2",[uid,r.id]);return null;}
         if((await c.query('SELECT 1 FROM cc_suppressions WHERE tenant_uid=$1 AND phone=$2',[uid,to])).rowCount){await c.query("UPDATE cc_voice_recipients SET state='suppressed' WHERE tenant_uid=$1 AND id=$2",[uid,r.id]);return null;}
         await c.query("UPDATE cc_voice_recipients SET state='reserved',attempts=attempts+1,lease_until=now()+interval '2 minutes' WHERE tenant_uid=$1 AND id=$2",[uid,r.id]);return {...r,to,consent:processing?.consent||consent.consent,attempt:r.attempts+1,tenantId:consent.tenantId};
       });
@@ -59,7 +58,9 @@ export function createVoiceCampaigns({tx,base,media}){
       }catch(error){
         const existing=await tx(uid,async c=>(await c.query('SELECT * FROM cc_calls WHERE tenant_uid=$1 AND idempotency_key=$2',[uid,key])).rows[0]);
         const uncertain=existing?.state==='unknown'||!error.statusCode||error.statusCode>=500;
-        await tx(uid,c=>c.query("UPDATE cc_voice_recipients SET state=$3,call_id=$4,error_code=$5 WHERE tenant_uid=$1 AND id=$2",[uid,due.id,uncertain?'unknown':existing?'started':'pending',existing?.id||null,error.code||'VOICE_DELIVERY_FAILED']));return {processed:1,errorCode:error.code||'VOICE_DELIVERY_FAILED'};
+        const unavailable=!uncertain&&!existing&&error.code==='NO_AVAILABLE_AGENT';
+        const state=uncertain?'unknown':existing?'started':unavailable?'retry':'failed';
+        await tx(uid,c=>c.query("UPDATE cc_voice_recipients SET state=$3,call_id=$4,error_code=$5,lease_until=null,attempts=attempts-CASE WHEN $6 THEN 1 ELSE 0 END,next_run_at=now()+interval '30 seconds' WHERE tenant_uid=$1 AND id=$2",[uid,due.id,state,existing?.id||null,error.code||'VOICE_DELIVERY_FAILED',unavailable]));return {processed:1,errorCode:error.code||'VOICE_DELIVERY_FAILED'};
       }
       await tx(uid,async c=>{
         await c.query("UPDATE cc_voice_recipients SET state='started',call_id=$3,lease_until=null WHERE tenant_uid=$1 AND id=$2",[uid,due.id,call.id]);

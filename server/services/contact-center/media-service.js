@@ -44,14 +44,16 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
     async join(uid,actor,id,mode='agent'){
       const s=await session(uid,id),a=await agent(uid,actor,mode!=='agent');
       if(terminal.has(s.call_state)||s.state==='ended')throw fail(409,'CALL_ENDED','Call has ended');
+      if(s.state==='unknown')throw fail(409,'MEDIA_RECONCILIATION_REQUIRED','Media state requires operator review before another join');
       if(mode==='agent'&&s.agent_id!==a.user_id)throw fail(403,'ASSIGNED_AGENT_REQUIRED','Only the assigned agent can join this role');
       const identity=mode==='agent'?`agent-${a.user_id}`:`supervisor-${a.user_id}`;
       const primary=mode!=='whisper'?await transport.token(s.room_name,identity,{publish:['agent','barge'].includes(mode),metadata:{callId:id,role:mode}}):null;
       const coaching=['agent','whisper'].includes(mode)?await transport.token(`${s.room_name}-coach`,identity,{publish:true,metadata:{callId:id,role:mode}}):null;
-      await tx(uid,async c=>{await c.query('UPDATE cc_media_members SET revoked=true WHERE tenant_uid=$1 AND call_id=$2 AND identity=$3',[uid,id,identity]);for(const connection of [primary,coaching].filter(Boolean))await c.query('INSERT INTO cc_media_members(tenant_uid,id,call_id,identity,room_name,mode,actor_id,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,now()+interval \'2 minutes\')',[uid,randomUUID(),id,identity,connection.roomName,mode,String(actor.id)]);await audit(c,uid,id,'media_join_issued',actor.id,{mode});});
+      await tx(uid,async c=>{await c.query('UPDATE cc_media_members SET revoked=true WHERE tenant_uid=$1 AND call_id=$2 AND identity=$3',[uid,id,identity]);for(const connection of [primary,coaching].filter(Boolean))await c.query('INSERT INTO cc_media_members(tenant_uid,id,call_id,identity,room_name,mode,actor_id,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,LEAST(now()+interval \'1 hour\',(SELECT created_at+interval \'1 hour\' FROM cc_media_sessions WHERE tenant_uid=$1 AND call_id=$3)))',[uid,randomUUID(),id,identity,connection.roomName,mode,String(actor.id)]);await audit(c,uid,id,'media_join_issued',actor.id,{mode});});
       // Revoke old audio capability when switching from barge to listen/whisper.
-      if(mode==='listen')await transport.permission(s.room_name,identity,false).catch(()=>{});
-      if(mode==='whisper')await transport.remove(s.room_name,identity).catch(()=>{});
+      if(mode==='listen')await transport.permission(s.room_name,identity,false);
+      if(mode==='whisper')await transport.remove(s.room_name,identity);
+      if(['listen','barge'].includes(mode))await transport.remove(`${s.room_name}-coach`,identity);
       return {primary,coaching,identity,expiresIn:120};
     },
     async invite(uid,actor,id){const s=await session(uid,id);if(s.agent_id!==String(actor.id))throw fail(403,'ASSIGNED_AGENT_REQUIRED','Assigned agent required');if(terminal.has(s.call_state))throw fail(409,'CALL_ENDED','Call ended');const secret=randomBytes(32).toString('base64url');await tx(uid,c=>c.query("UPDATE cc_media_sessions SET guest_hash=$3,guest_expires_at=now()+interval '15 minutes' WHERE tenant_uid=$1 AND call_id=$2",[uid,id,hash(secret)]));return {callId:id,tenantUid:uid,invite:secret,expiresIn:900};},
@@ -89,12 +91,15 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
           await api.handoff(uid,id,input.targetAgentId);
         }else throw fail(400,'UNSUPPORTED_MEDIA_ACTION','Unsupported media action');
         await tx(uid,async c=>{await c.query("UPDATE cc_media_operations SET state='succeeded' WHERE tenant_uid=$1 AND call_id=$2 AND key=$3",[uid,id,key]);await audit(c,uid,id,'media_action_completed',actor.id,{action:input.action});});return {accepted:true,callId:id};
-      }catch(error){const rejected=['TRANSFER_TARGET_REQUIRED','NO_AVAILABLE_AGENT','UNSUPPORTED_MEDIA_ACTION'].includes(error.code);await tx(uid,c=>c.query('UPDATE cc_media_operations SET state=$4 WHERE tenant_uid=$1 AND call_id=$2 AND key=$3',[uid,id,key,rejected?'failed':'unknown']));throw error;}
+      }catch(error){const rejected=['TRANSFER_TARGET_REQUIRED','NO_AVAILABLE_AGENT','UNSUPPORTED_MEDIA_ACTION','HANDOFF_ALREADY_CHANGED','CALL_ENDED'].includes(error.code);await tx(uid,c=>c.query('UPDATE cc_media_operations SET state=$4 WHERE tenant_uid=$1 AND call_id=$2 AND key=$3',[uid,id,key,rejected?'failed':'unknown']));throw error;}
     },
     async handoff(uid,id,targetId){
       const s=await session(uid,id);
       const target=await tx(uid,async c=>{
         await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`${uid}:agent-assignment`]);
+        const current=await one(c,'SELECT agent_id,state FROM cc_calls WHERE tenant_uid=$1 AND id=$2 FOR UPDATE',[uid,id]);
+        if(!current||terminal.has(current.state))throw fail(409,'CALL_ENDED','Call ended before handoff');
+        if(current.agent_id!==s.agent_id)throw fail(409,'HANDOFF_ALREADY_CHANGED','Another handoff changed this call; refresh before trying again');
         const a=await one(c,`SELECT * FROM cc_agents WHERE tenant_uid=$1 AND presence='available' AND active_call_id IS NULL AND updated_at>now()-interval '2 minutes' AND ($2::text IS NULL OR user_id=$2) ORDER BY priority DESC,last_call_end NULLS FIRST FOR UPDATE SKIP LOCKED LIMIT 1`,[uid,targetId||null]);
         if(!a)return null;
         await c.query("UPDATE cc_agents SET active_call_id=$3,presence='busy' WHERE tenant_uid=$1 AND user_id=$2",[uid,a.user_id,id]);
@@ -102,8 +107,10 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
         await c.query('UPDATE cc_calls SET agent_id=$3 WHERE tenant_uid=$1 AND id=$2',[uid,id,a.user_id]);await c.query('UPDATE cc_media_members SET revoked=true WHERE tenant_uid=$1 AND call_id=$2 AND actor_id=$3',[uid,id,s.agent_id]);await audit(c,uid,id,'human_handoff_reserved','system:voice',{toAgent:a.user_id});return a;
       });
       if(!target){await tx(uid,c=>c.query('INSERT INTO cc_callbacks(tenant_uid,id,call_id) VALUES($1,$2,$3) ON CONFLICT(tenant_uid,call_id) DO NOTHING',[uid,randomUUID(),id]));throw fail(409,'NO_AVAILABLE_AGENT','No human agent is available; keep the caller connected');}
-      await transport.remove(s.room_name,`agent-${s.agent_id}`).catch(()=>{});await transport.remove(`${s.room_name}-coach`,`agent-${s.agent_id}`).catch(()=>{});
-      await transport.stopDispatch(s.room_name,s.bot_dispatch_id);await tx(uid,c=>c.query('UPDATE cc_media_sessions SET bot_dispatch_id=null WHERE tenant_uid=$1 AND call_id=$2',[uid,id]));return {agentId:target.user_id};
+      try{
+        await transport.remove(s.room_name,`agent-${s.agent_id}`);await transport.remove(`${s.room_name}-coach`,`agent-${s.agent_id}`);
+        await transport.stopDispatch(s.room_name,s.bot_dispatch_id);await tx(uid,c=>c.query('UPDATE cc_media_sessions SET bot_dispatch_id=null WHERE tenant_uid=$1 AND call_id=$2',[uid,id]));return {agentId:target.user_id};
+      }catch(error){await tx(uid,c=>c.query("UPDATE cc_media_sessions SET state='unknown' WHERE tenant_uid=$1 AND call_id=$2",[uid,id]));throw fail(502,'HANDOFF_OUTCOME_UNKNOWN','Handoff cleanup requires reconciliation before the new agent joins');}
     },
     async finish(uid,id){return tx(uid,async c=>{
       const call=await one(c,'UPDATE cc_calls SET state=\'completed\',ended_at=COALESCE(ended_at,now()),updated_at=now() WHERE tenant_uid=$1 AND id=$2 RETURNING *',[uid,id]);
@@ -115,21 +122,27 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
     async expire(uid){const expired=await tx(uid,async c=>(await c.query("SELECT call_id,room_name FROM cc_media_sessions WHERE tenant_uid=$1 AND state!='ended' AND created_at<now()-interval '1 hour'",[uid])).rows);for(const s of expired){await transport.end(s.room_name);await api.finish(uid,s.call_id);}return {expired:expired.length};},
     async webhook(uid,raw,authorization){
       const e=await transport.webhook(raw,authorization);const room=e.room?.name;
-      const s=await tx(uid,c=>one(c,'SELECT * FROM cc_media_sessions WHERE tenant_uid=$1 AND room_name=$2',[uid,room]));
-      if(!s)throw fail(404,'MEDIA_SESSION_NOT_FOUND','Webhook room is not owned by this tenant');
-      const inserted=await tx(uid,c=>audit(c,uid,s.call_id,'livekit_event','system:livekit',{event:e.event},`livekit:${e.id}`));if(!inserted.rowCount)return {duplicate:true};
-      if(e.event==='room_finished')await api.finish(uid,s.call_id);
+      const s=await tx(uid,c=>one(c,"SELECT * FROM cc_media_sessions WHERE tenant_uid=$1 AND (room_name=$2 OR room_name||'-coach'=$2)",[uid,room]));
+      // A project webhook also includes unrelated tenant rooms.
+      // Acknowledge signed unowned events without looking up or changing another tenant.
+      if(!s)return {ok:true,ignored:true};
+      const coaching=room!==s.room_name;
+      const inserted=await tx(uid,c=>audit(c,uid,s.call_id,'livekit_event','system:livekit',{event:e.event},`livekit:${e.id}`));
+      // Reapply only idempotent state/permission changes on delivery retries. The event
+      // may have committed before a previous transport request failed.
+      if(e.event==='participant_joined'&&s.state==='ended'){await transport.remove(room,e.participant?.identity);return {ok:true};}
+      if(e.event==='room_finished'&&!coaching)await api.finish(uid,s.call_id);
       if(e.event==='participant_joined'){
         const identity=e.participant?.identity;
-        if(identity==='caller'){
+        if(identity==='caller'&&!coaching){
           await tx(uid,c=>c.query("UPDATE cc_calls SET state=CASE WHEN state IN('submitting','queued','ringing','unknown') THEN 'answered' ELSE state END,answered_at=COALESCE(answered_at,now()) WHERE tenant_uid=$1 AND id=$2",[uid,s.call_id]));if(s.state==='held')await transport.hold(room,true);
         }else if(/^(agent-|supervisor-)/.test(identity||'')){
           const member=await tx(uid,c=>one(c,'SELECT * FROM cc_media_members WHERE tenant_uid=$1 AND call_id=$2 AND identity=$3 AND room_name=$4 AND NOT revoked AND expires_at>now() ORDER BY expires_at DESC LIMIT 1',[uid,s.call_id,identity,room]));
           if(!member)await transport.remove(room,identity);
         }
       }
-      if(e.event==='participant_left'&&e.participant?.identity==='caller'){await transport.end(room).catch(()=>{});await api.finish(uid,s.call_id);}
-      return {ok:true};
+      if(!coaching&&e.event==='participant_left'&&e.participant?.identity==='caller'){await transport.end(room).catch(()=>{});await api.finish(uid,s.call_id);}
+      return {ok:true,duplicate:!inserted.rowCount};
     },
     async internal(uid,headers,input){
       verifyGateway({secret:env.VOICE_INTERNAL_SECRET,...headers,body:input});const s=await session(uid,input.callId);await ensureContent(uid,s);
@@ -140,9 +153,9 @@ export function createContactMedia({tx,base,transport,llm,env=process.env}){
       if(input.type==='bootstrap')return {...metadata(uid,s),transcribe:s.transcribe,state:s.state};
       if(input.type==='transcript'){
         const a=input.segment;
-        await tx(uid,async c=>{await c.query(`INSERT INTO cc_transcripts(tenant_uid,call_id,segment_id,speaker,start_ms,end_ms,final,text,revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
-          ON CONFLICT(tenant_uid,call_id,segment_id) DO UPDATE SET text=excluded.text,end_ms=excluded.end_ms,final=excluded.final,revision=excluded.revision WHERE NOT cc_transcripts.final AND cc_transcripts.revision<excluded.revision`,[uid,s.call_id,a.id,a.speaker,a.startMs,a.endMs,a.final,redactPhiText(a.text),a.revision]);
-          if(a.final)await c.query(`INSERT INTO cc_jobs(tenant_uid,id,kind,call_id) VALUES($1,$2,'summary',$3) ON CONFLICT(tenant_uid,call_id,kind) DO UPDATE SET generation=cc_jobs.generation+1,state=CASE WHEN cc_jobs.state='running' THEN 'running' ELSE 'pending' END,attempts=0,available_at=now()+interval '5 seconds'`,[uid,randomUUID(),s.call_id]);});return {ok:true,segment:{...a,text:redactPhiText(a.text)}};
+        const saved=await tx(uid,async c=>{const changed=await c.query(`INSERT INTO cc_transcripts(tenant_uid,call_id,segment_id,speaker,start_ms,end_ms,final,text,revision) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          ON CONFLICT(tenant_uid,call_id,segment_id) DO UPDATE SET text=excluded.text,end_ms=excluded.end_ms,final=excluded.final,revision=excluded.revision WHERE NOT cc_transcripts.final AND cc_transcripts.revision<excluded.revision RETURNING *`,[uid,s.call_id,a.id,a.speaker,a.startMs,a.endMs,a.final,redactPhiText(a.text),a.revision]);
+          if(changed.rowCount&&a.final)await c.query(`INSERT INTO cc_jobs(tenant_uid,id,kind,call_id) VALUES($1,$2,'summary',$3) ON CONFLICT(tenant_uid,call_id,kind) DO UPDATE SET generation=cc_jobs.generation+1,state=CASE WHEN cc_jobs.state='running' THEN 'running' ELSE 'pending' END,attempts=0,available_at=now()+interval '5 seconds'`,[uid,randomUUID(),s.call_id]);return changed.rows[0]||one(c,'SELECT * FROM cc_transcripts WHERE tenant_uid=$1 AND call_id=$2 AND segment_id=$3',[uid,s.call_id,a.id]);});return {ok:true,segment:{id:saved.segment_id,speaker:saved.speaker,startMs:saved.start_ms,endMs:saved.end_ms,final:saved.final,text:saved.text,revision:saved.revision}};
       }
       if(input.type==='handoff')return api.handoff(uid,s.call_id);
       if(input.type==='bot_reply'){

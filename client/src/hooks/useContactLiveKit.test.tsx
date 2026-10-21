@@ -1,0 +1,12 @@
+import {act,renderHook,cleanup} from '@testing-library/react';
+import {afterEach,describe,it,expect,vi} from 'vitest';
+import {useContactLiveKit} from './useContactLiveKit';
+const {rooms}=vi.hoisted(()=>({rooms:[] as any[]}));
+vi.mock('livekit-client',()=>({Room:class{callbacks:Record<string,Function>={};localParticipant={setMicrophoneEnabled:vi.fn()};connect=vi.fn();disconnect=vi.fn();constructor(){rooms.push(this);}on(name:string,fn:Function){this.callbacks[name]=fn;}},RoomEvent:{TrackSubscribed:'track',Disconnected:'disconnected',TranscriptionReceived:'transcript'},Track:{Kind:{Audio:'audio'}}}));
+afterEach(()=>{cleanup();rooms.length=0;});
+const connection=(room:string)=>({serverUrl:'wss://synthetic.example',roomName:room,token:'synthetic'});
+describe('contact media room boundaries',()=>{
+ it('publishes whisper microphone only to the private coaching room',async()=>{const {result}=renderHook(()=>useContactLiveKit());await act(()=>result.current.connect({coaching:connection('private-coach')},'whisper'));expect(rooms).toHaveLength(1);expect(rooms[0].localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);expect(result.current.connected).toBe(true);});
+ it('keeps agent microphone out of coaching and removes all audio on unmount',async()=>{const {result,unmount}=renderHook(()=>useContactLiveKit());await act(()=>result.current.connect({primary:connection('primary'),coaching:connection('private-coach')}));expect(rooms[0].localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(true);expect(rooms[1].localParticipant.setMicrophoneEnabled).toHaveBeenCalledWith(false);const element=document.createElement('audio');act(()=>rooms[0].callbacks.track({kind:'audio',attach:()=>element}));expect(document.body.contains(element)).toBe(true);unmount();expect(document.body.contains(element)).toBe(false);expect(rooms.every(room=>room.disconnect.mock.calls.length===1)).toBe(true);});
+ it('shows received redacted final segments without allowing later interim replacement',async()=>{const {result}=renderHook(()=>useContactLiveKit());await act(()=>result.current.connect({primary:connection('primary')}));act(()=>rooms[0].callbacks.transcript([{id:'segment',text:'[REDACTED-EMAIL]',final:true}],{identity:'caller'}));act(()=>rooms[0].callbacks.transcript([{id:'segment',text:'late interim',final:false}],{identity:'caller'}));expect(result.current.transcripts).toEqual([{id:'segment',text:'[REDACTED-EMAIL]',speaker:'Caller',final:true}]);act(()=>result.current.disconnect());expect(result.current.transcripts).toEqual([]);});
+});

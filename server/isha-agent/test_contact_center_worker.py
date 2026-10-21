@@ -1,4 +1,5 @@
 import asyncio,base64,hashlib,hmac,io,json,os,sys,unittest,uuid,wave
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import AsyncMock,patch
 from pathlib import Path
@@ -8,8 +9,16 @@ import contact_center_worker as worker
 sys.path.insert(0,str(Path(__file__).parent.parent/'voice-biometrics'))
 import service as speaker
 from evaluate import upper95
+import evaluate
 
 class AudioContract(unittest.TestCase):
+ def test_repeated_audio_cannot_inflate_biometric_evaluation_counts(self):
+  with tempfile.TemporaryDirectory() as directory:
+   root=Path(directory);audio=base64.b64decode(self.wave());(root/'a.wav').write_bytes(audio);(root/'copy.wav').write_bytes(audio)
+   manifest=root/'pairs.json';manifest.write_text(json.dumps([{'enroll':'a.wav','probe':'copy.wav','same':True,'spoof':False}]))
+   with patch.object(sys,'argv',['evaluate.py',str(manifest),'--audio-root',directory,'--threshold','0.8','--output',str(root/'report.json')]),patch.object(evaluate,'encode',return_value={'embedding':[1.0]*192,'model':'synthetic','antiSpoofModel':None,'liveness':False}):
+    with self.assertRaisesRegex(ValueError,'distinct audio'):evaluate.main()
+   self.assertFalse((root/'report.json').exists())
  def test_toy_datasets_cannot_establish_a_low_false_accept_rate(self):
   self.assertGreater(upper95(0,10),.001);self.assertLess(upper95(0,5000),.001)
  def wave(self,channels=1,duration=4,silent=False):

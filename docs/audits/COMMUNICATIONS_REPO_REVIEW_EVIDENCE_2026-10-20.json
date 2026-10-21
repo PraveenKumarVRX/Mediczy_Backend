@@ -1,0 +1,659 @@
+{
+  "assessment": "MediQzy compared with Comcent CE, VoiceAgent and Astradial",
+  "observed_at_utc": "2026-10-20T13:08:20.937958+00:00",
+  "observed_at_ist": "2026-10-20T18:38:20.937958+05:30",
+  "assessment_date": "2026-10-20",
+  "repositories": {
+    "comcent-ce": {
+      "url": "https://github.com/comcent-io/comcent-ce",
+      "license": "AGPL-3.0",
+      "commit": "6ab320b39beba3c65b1b56a18555fae4b5f01f61",
+      "commit_timestamp": "2026-10-09T16:06:29+05:30",
+      "execution": "not_run"
+    },
+    "voiceagent": {
+      "url": "https://github.com/kapiljain1989/voiceagent",
+      "license": "Apache-2.0",
+      "commit": "097dfc87935112b86d13b42b31ae85faab61e2ea",
+      "commit_timestamp": "2026-06-21T23:23:44-04:00",
+      "execution": "not_run"
+    },
+    "astradial": {
+      "url": "https://github.com/astradial/astradial",
+      "license": "AGPL-3.0",
+      "commit": "3188ac5ff87b43cb8489b493a35d959b74c17e16",
+      "commit_timestamp": "2026-08-20T11:47:07+05:30",
+      "execution": "not_run"
+    }
+  },
+  "mediqzy": {
+    "head_commit": "0031ee8f46f16d475e9db9e74cb0f6c12cf5e907",
+    "working_tree_has_local_changes": true,
+    "source_is_not_proof_of_live_deployment": true
+  },
+  "scope": {
+    "upstream_source_review": true,
+    "primary_pages_browsed": [
+      "https://github.com/comcent-io/comcent-ce",
+      "https://github.com/kapiljain1989/voiceagent",
+      "https://github.com/astradial/astradial"
+    ],
+    "shallow_source_snapshots": true,
+    "third_party_code_executed": false,
+    "live_phone_calls": false,
+    "production_mutations": false,
+    "credentials_accessed": false,
+    "patient_data_accessed": false,
+    "native_smart_force_app_reviewed": false,
+    "runtime_acceptance_performed": false
+  },
+  "search_terms": [
+    "SIPREC",
+    "SIP trunk",
+    "browser dialer",
+    "ACD",
+    "IVR",
+    "transfer",
+    "supervisor",
+    "recording consent",
+    "transcription",
+    "PII",
+    "PHI",
+    "sentiment",
+    "call metrics"
+  ],
+  "synthetic_checks": [
+    {
+      "name": "Object masker preserves primitive free text",
+      "module": "server/utils/phi-masker.js",
+      "synthetic_data_only": true,
+      "free_text_string_unchanged": true,
+      "structured_phone_redacted": true,
+      "production_or_network_requests": false
+    }
+  ],
+  "gap_count": 18,
+  "gap_ids": [
+    "CT-01",
+    "CT-02",
+    "CT-03",
+    "CT-04",
+    "CT-05",
+    "CT-06",
+    "CT-07",
+    "CT-08",
+    "CT-09",
+    "CT-10",
+    "CT-11",
+    "CT-12",
+    "CT-13",
+    "CT-14",
+    "CT-15",
+    "CT-16",
+    "CT-17",
+    "CT-18"
+  ],
+  "gap_priorities": {
+    "CT-01": "P0",
+    "CT-02": "P1",
+    "CT-03": "P1",
+    "CT-04": "P1",
+    "CT-05": "P2",
+    "CT-06": "P2",
+    "CT-07": "P1",
+    "CT-08": "P1",
+    "CT-09": "P2",
+    "CT-10": "P0",
+    "CT-11": "P0",
+    "CT-12": "P1",
+    "CT-13": "P1",
+    "CT-14": "P1",
+    "CT-15": "P2",
+    "CT-16": "P2",
+    "CT-17": "P2",
+    "CT-18": "P0"
+  },
+  "findings_not_to_overstate": [
+    "MediQzy provider configuration is not a working call adapter",
+    "Chatwoot support and general messaging are partial/reusable, not universally absent",
+    "Working-tree text sentiment exists and is not acoustic sentiment or deployment evidence",
+    "Existing biometric consent/result storage is not model-backed verification",
+    "Peer source presence and README claims are not live acceptance",
+    "Comcent CE and Enterprise offerings differ",
+    "VoiceAgent default authentication and simple voiceprint need qualification",
+    "Astradial workflow entrypoints target different external ticket URLs",
+    "Object PHI masking does not redact free-text strings"
+  ],
+  "sources": [
+    {
+      "id": "C0",
+      "repository": "comcent-ce",
+      "path": "LICENSE",
+      "sha256": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+      "bytes": 34523,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/LICENSE"
+    },
+    {
+      "id": "C1",
+      "repository": "comcent-ce",
+      "path": "README.md",
+      "sha256": "7618a974b4a6880ac77c6f2bd0ef6625ceef3d6500e2e566ee29a65697ddbcfa",
+      "bytes": 9042,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/README.md"
+    },
+    {
+      "id": "C2",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/queue/queue_scheduler.ex",
+      "sha256": "54c00d8e38b8de6d847f2908241f22f7a86af38f5f3ca6ac20dd838f0b020904",
+      "bytes": 15098,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/queue/queue_scheduler.ex"
+    },
+    {
+      "id": "C3",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/number_flow_graphs.ex",
+      "sha256": "6bed46dd22e2398308f382ace819d9d405358ba0d4b724350f0376f4b064790f",
+      "bytes": 363,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/number_flow_graphs.ex"
+    },
+    {
+      "id": "C4",
+      "repository": "comcent-ce",
+      "path": "docker-compose.deploy.yaml",
+      "sha256": "9ce2a0fd24dff757f5c4b81106ed28996c3c4a7ba2ee85b51ad6bc03cf46ff2f",
+      "bytes": 14622,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/docker-compose.deploy.yaml"
+    },
+    {
+      "id": "C5",
+      "repository": "comcent-ce",
+      "path": "packages/web-app/src/lib/components/DialerWidget/CurrentCall.svelte",
+      "sha256": "51cede7036f4cb78577b46be07c0a4f10a7892f6ff870f55cf49bfebf3bd068c",
+      "bytes": 10972,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/packages/web-app/src/lib/components/DialerWidget/CurrentCall.svelte"
+    },
+    {
+      "id": "C6",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/new_call_story_processor.ex",
+      "sha256": "7797657d9acf134a702398d788be1dc4d58bb9a56cc5cee58a898ec01139543a",
+      "bytes": 24609,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/new_call_story_processor.ex"
+    },
+    {
+      "id": "C7",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/ce_stubs/charges.ex",
+      "sha256": "2acda2520801dff6e536a3b9724b14b515d35bd92fb31784ef0b57c496b432d8",
+      "bytes": 276,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/ce_stubs/charges.ex"
+    },
+    {
+      "id": "C8",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/search.ex",
+      "sha256": "67fcfcc562ad8feed0a0c6c531694978e4401836601d61606f7ace57e474d7d8",
+      "bytes": 1795,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/search.ex"
+    },
+    {
+      "id": "C9",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/webhook_pusher.ex",
+      "sha256": "9fa9055860a270e8089831d481f7c6298663104a0ae2ff5186ac9fcae65e7794",
+      "bytes": 4751,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/webhook_pusher.ex"
+    },
+    {
+      "id": "C10",
+      "repository": "comcent-ce",
+      "path": "server/lib/comcent/transcript.ex",
+      "sha256": "70e7e9e36c752807209f45976a344c968cfaef26676377c4d03168668992e2b6",
+      "bytes": 4064,
+      "url": "https://github.com/comcent-io/comcent-ce/blob/6ab320b39beba3c65b1b56a18555fae4b5f01f61/server/lib/comcent/transcript.ex"
+    },
+    {
+      "id": "V0",
+      "repository": "voiceagent",
+      "path": "LICENSE",
+      "sha256": "370ce888d7b9b2edc8802db14797b5758256aef8fbf872189bc7546dac4f8e97",
+      "bytes": 10761,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/LICENSE"
+    },
+    {
+      "id": "V1",
+      "repository": "voiceagent",
+      "path": "README.md",
+      "sha256": "6976fc2e8f243e457dc1feeaa32d991f9497393cfae158b6e57ca5cdb797f7a0",
+      "bytes": 18857,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/README.md"
+    },
+    {
+      "id": "V2",
+      "repository": "voiceagent",
+      "path": "gateway/sipserver.go",
+      "sha256": "8b99a3e510af442794f127b2c937efcb54807d1851b3cb33363dbef2473b3758",
+      "bytes": 20484,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/sipserver.go"
+    },
+    {
+      "id": "V3",
+      "repository": "voiceagent",
+      "path": "gateway/siprec.go",
+      "sha256": "fdb5f6e3103f92ef58562264628faed71fb1e4378a2c4c744749cca733e485db",
+      "bytes": 30549,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/siprec.go"
+    },
+    {
+      "id": "V4",
+      "repository": "voiceagent",
+      "path": "gateway/acd.go",
+      "sha256": "73b32df1e7ad27cf17ea26d27b1e376ae6bdef5ccdcdb3f1d26526d25e0fc850",
+      "bytes": 6191,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/acd.go"
+    },
+    {
+      "id": "V5",
+      "repository": "voiceagent",
+      "path": "gateway/supervisor.go",
+      "sha256": "32bd8000fbff41d0e9b4a6eddea62450d1f04ce9586d0f28bf262c6d007a8cd3",
+      "bytes": 10380,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/supervisor.go"
+    },
+    {
+      "id": "V6",
+      "repository": "voiceagent",
+      "path": "gateway/sentiment.go",
+      "sha256": "c9a3b637d1fbfdec5cd6ded20a9fca75873ee1d6512ce434e6b74672d81e05fe",
+      "bytes": 6682,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/sentiment.go"
+    },
+    {
+      "id": "V7",
+      "repository": "voiceagent",
+      "path": "gateway/security.go",
+      "sha256": "2c3cb798d0ac7a40184555472f76903b97439864a2a055cfa8bcd3634dc64686",
+      "bytes": 13063,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/security.go"
+    },
+    {
+      "id": "V8",
+      "repository": "voiceagent",
+      "path": "gateway/recording.go",
+      "sha256": "ded319754123eeac42c0adcb0f3937edb8d65b104c847352cae39a0aeccc35be",
+      "bytes": 8229,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/recording.go"
+    },
+    {
+      "id": "V9",
+      "repository": "voiceagent",
+      "path": "gateway/webhooks.go",
+      "sha256": "b21f6990f8903d271415a787a878efdae160b254cf0f1d5b26931281262ac4b0",
+      "bytes": 10016,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/webhooks.go"
+    },
+    {
+      "id": "V10",
+      "repository": "voiceagent",
+      "path": "gateway/rag.go",
+      "sha256": "8e16c361b211a0db5ad40069e7f5f4908ce5e9969dfeb39db2d532e675433ebd",
+      "bytes": 8227,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/rag.go"
+    },
+    {
+      "id": "V11",
+      "repository": "voiceagent",
+      "path": "gateway/auth.go",
+      "sha256": "e6429aece737ed730ca157a14b3dfc1d07ba4c30f72d6b6a0265bf44a98f4b66",
+      "bytes": 9853,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/auth.go"
+    },
+    {
+      "id": "V12",
+      "repository": "voiceagent",
+      "path": "gateway/tenant.go",
+      "sha256": "b4057502b0987f10b47306a654263f53d50b997221ff19a5c968a5e23cac4c5b",
+      "bytes": 7266,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/tenant.go"
+    },
+    {
+      "id": "V13",
+      "repository": "voiceagent",
+      "path": "gateway/main.go",
+      "sha256": "be158c56bfc238b3b7a05e97c55939a901a397028aea0bb61eb077f606d246af",
+      "bytes": 47521,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/main.go"
+    },
+    {
+      "id": "V14",
+      "repository": "voiceagent",
+      "path": "gateway/metrics.go",
+      "sha256": "9e996ffc950a93340ce44720e8c0e06f96437c819501075cc2cd795456c7f56a",
+      "bytes": 7968,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/metrics.go"
+    },
+    {
+      "id": "V15",
+      "repository": "voiceagent",
+      "path": "gateway/ivr.go",
+      "sha256": "77e91bc540cd97d2741e071703454bb8e29ba6865896a33e7b90785b02369494",
+      "bytes": 9501,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/ivr.go"
+    },
+    {
+      "id": "V16",
+      "repository": "voiceagent",
+      "path": "gateway/callcontrol.go",
+      "sha256": "0a6e63b98706c980085bd04ecb7fd764e1669f8ffefe43f7a08a632b825af7f0",
+      "bytes": 11177,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/callcontrol.go"
+    },
+    {
+      "id": "V17",
+      "repository": "voiceagent",
+      "path": "gateway/webrtc.go",
+      "sha256": "c6ba46d8509fc686213704e984babe901e5480dbaa59fde6b549e2d072336a64",
+      "bytes": 21539,
+      "url": "https://github.com/kapiljain1989/voiceagent/blob/097dfc87935112b86d13b42b31ae85faab61e2ea/gateway/webrtc.go"
+    },
+    {
+      "id": "A0",
+      "repository": "astradial",
+      "path": "LICENSE",
+      "sha256": "8486a10c4393cee1c25392769ddd3b2d6c242d6ec7928e1414efff7dfb2f07ef",
+      "bytes": 34523,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/LICENSE"
+    },
+    {
+      "id": "A1",
+      "repository": "astradial",
+      "path": "README.md",
+      "sha256": "9415554fe5f4558ad66d644db553f0481ee14aed00a5218dbc0b48c615c54e73",
+      "bytes": 6709,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/README.md"
+    },
+    {
+      "id": "A2",
+      "repository": "astradial",
+      "path": "api/src/routes/calls.js",
+      "sha256": "cf6a18acaab52288a23d99e99d79ad9980775400b34031f124d0991e5e8466bf",
+      "bytes": 18983,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/api/src/routes/calls.js"
+    },
+    {
+      "id": "A3",
+      "repository": "astradial",
+      "path": "api/src/services/ticketClassifier.js",
+      "sha256": "7a018a84425be829c65d0224a95593c9989ebdd8f9023e3e1013950bd3134309",
+      "bytes": 9818,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/api/src/services/ticketClassifier.js"
+    },
+    {
+      "id": "A4",
+      "repository": "astradial",
+      "path": "api/src/services/asterisk/dialplanGenerator.js",
+      "sha256": "b5f54004473753906d27f4043243011c379025119b40853f446abc806e0233a5",
+      "bytes": 77705,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/api/src/services/asterisk/dialplanGenerator.js"
+    },
+    {
+      "id": "A5",
+      "repository": "astradial",
+      "path": "workflow-engine/src/executors.js",
+      "sha256": "58952454aaac0876900dd598d3b2474b69849d52da2a461ada61b36dff1f008f",
+      "bytes": 10580,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/workflow-engine/src/executors.js"
+    },
+    {
+      "id": "A6",
+      "repository": "astradial",
+      "path": "SECURITY.md",
+      "sha256": "81496718bfcbe8a34ffe51ed93ce81a6c60c5f1b6204d202f2b7d2bf1b9dfad6",
+      "bytes": 4319,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/SECURITY.md"
+    },
+    {
+      "id": "A7",
+      "repository": "astradial",
+      "path": "workflow-engine/executors.js",
+      "sha256": "aa366afa4be55027e6117c890151e752b545bb7b5b53b10829bc944886deb49f",
+      "bytes": 10584,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/workflow-engine/executors.js"
+    },
+    {
+      "id": "A8",
+      "repository": "astradial",
+      "path": "workflow-engine/Dockerfile",
+      "sha256": "828e3b5b06c7bf21d573f7817939041ffb97b4ea8d4d3bbc334405ec8441472b",
+      "bytes": 134,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/workflow-engine/Dockerfile"
+    },
+    {
+      "id": "A9",
+      "repository": "astradial",
+      "path": "api/src/services/asterisk/queueService.js",
+      "sha256": "95d5424948aaf8927a2ffbbf20cd5c06c7cc280969d6e841a127ec9e54503cbc",
+      "bytes": 27512,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/api/src/services/asterisk/queueService.js"
+    },
+    {
+      "id": "A10",
+      "repository": "astradial",
+      "path": "pipecat-flow/gateway/pipeline.py",
+      "sha256": "67f82498e135b4804248e4fd3c3fdf5fcf09afb08e524e357c7dc8376e014a76",
+      "bytes": 6507,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/pipecat-flow/gateway/pipeline.py"
+    },
+    {
+      "id": "A11",
+      "repository": "astradial",
+      "path": "api/src/jobs/ticketsFromCallLogsScheduler.js",
+      "sha256": "cc3117e9faee0f980c6670a22d1a9e2cbc64a39d918a30e65411c5f4a36d91e1",
+      "bytes": 8117,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/api/src/jobs/ticketsFromCallLogsScheduler.js"
+    },
+    {
+      "id": "A12",
+      "repository": "astradial",
+      "path": "workflow-engine/package.json",
+      "sha256": "6d866b6d7bbf1d669ca518cdf9d78151bb88cfad49f670ded8fb73302a964c58",
+      "bytes": 481,
+      "url": "https://github.com/astradial/astradial/blob/3188ac5ff87b43cb8489b493a35d959b74c17e16/workflow-engine/package.json"
+    },
+    {
+      "id": "M1",
+      "repository": "mediqzy",
+      "path": "server/services/voiceCall.service.js",
+      "sha256": "c94ddc8969760ed76e236b8be6557c455458c12dd86382a1d07a10acec07577e",
+      "bytes": 20847,
+      "url": "../../server/services/voiceCall.service.js"
+    },
+    {
+      "id": "M2",
+      "repository": "mediqzy",
+      "path": "server/routes/voice-assistant.route.js",
+      "sha256": "2a3e22b4a3e76b497d00b1641ad51a62cef72f70516a12b35b2bf30ca8367022",
+      "bytes": 95851,
+      "url": "../../server/routes/voice-assistant.route.js"
+    },
+    {
+      "id": "M3",
+      "repository": "mediqzy",
+      "path": "client/src/hooks/useLiveKit.tsx",
+      "sha256": "7debc88bfbe8254bbc58cb63d06d093f5d75690902f37d5cc40251e21fae5807",
+      "bytes": 4029,
+      "url": "../../client/src/hooks/useLiveKit.tsx"
+    },
+    {
+      "id": "M4",
+      "repository": "mediqzy",
+      "path": "server/routes/omnichannel-journey.route.js",
+      "sha256": "2ed9425e4d594c91baf816b0cade4a5981a98d326558fb15906443dc625f2f4c",
+      "bytes": 12733,
+      "url": "../../server/routes/omnichannel-journey.route.js"
+    },
+    {
+      "id": "M5",
+      "repository": "mediqzy",
+      "path": "server/routes/recording.route.js",
+      "sha256": "dca988b7022d8630eff7db7ee18f031780792001548f5bbf60cb20a42e7d1b29",
+      "bytes": 15747,
+      "url": "../../server/routes/recording.route.js"
+    },
+    {
+      "id": "M6",
+      "repository": "mediqzy",
+      "path": "server/services/hospital-crm-communication-hub.service.js",
+      "sha256": "33759686c81b86445a8184f9a0cedd0531d8984d5756bc03b1e4dc30f35ed2a4",
+      "bytes": 37320,
+      "url": "../../server/services/hospital-crm-communication-hub.service.js"
+    },
+    {
+      "id": "M7",
+      "repository": "mediqzy",
+      "path": "server/services/support-chat-provider.service.js",
+      "sha256": "1dbf515fddcc363e0ea33a32e788045dcdccc70a9afea8fb57e13799dc083b14",
+      "bytes": 9340,
+      "url": "../../server/services/support-chat-provider.service.js"
+    },
+    {
+      "id": "M8",
+      "repository": "mediqzy",
+      "path": "docs/integrations/ROCKETCHAT_RETIREMENT.md",
+      "sha256": "0d4a0754c1eaa24ae8baa1f4a5f2d59e420c8562b1f3bf88ee4ec3e86c116626",
+      "bytes": 5541,
+      "url": "../../docs/integrations/ROCKETCHAT_RETIREMENT.md"
+    },
+    {
+      "id": "M9",
+      "repository": "mediqzy",
+      "path": "server/services/ai-brain/llm-provider.js",
+      "sha256": "64a6a0dc71fddcbd71581d7fa2310fdf8f9a83248d7a769182d06eea619875ec",
+      "bytes": 60430,
+      "url": "../../server/services/ai-brain/llm-provider.js"
+    },
+    {
+      "id": "M10",
+      "repository": "mediqzy",
+      "path": "server/utils/phi-masker.js",
+      "sha256": "88463d72bae6cc2e10f8232dbc3675d29ae184e04a7e2c0af153817bea67f4c2",
+      "bytes": 3889,
+      "url": "../../server/utils/phi-masker.js"
+    },
+    {
+      "id": "M11",
+      "repository": "mediqzy",
+      "path": "server/services/ai-brain/rag-pipeline.js",
+      "sha256": "e164dc41b2eec5476b7c42bd2ccc60acaa703d3e1ad9cb4785d93bff3facc260",
+      "bytes": 15337,
+      "url": "../../server/services/ai-brain/rag-pipeline.js"
+    },
+    {
+      "id": "M12",
+      "repository": "mediqzy",
+      "path": "server/services/hospital-crm-worldclass.service.js",
+      "sha256": "b95fe84570cb877070b97db9526150e66250e4204709fe6ab0424c79e5a0c6f7",
+      "bytes": 48228,
+      "url": "../../server/services/hospital-crm-worldclass.service.js"
+    },
+    {
+      "id": "M13",
+      "repository": "mediqzy",
+      "path": "server/services/chatwoot-bridge.service.js",
+      "sha256": "e3b838beaa4ca94b38a9842dcdc4cbd398c04c22589219bf32eb892d3222d4fe",
+      "bytes": 4591,
+      "url": "../../server/services/chatwoot-bridge.service.js"
+    },
+    {
+      "id": "M14",
+      "repository": "mediqzy",
+      "path": "server/services/ai-brain/sentiment-classifier.service.js",
+      "sha256": "3fa9291ca4968e36575d719a17bea77175f32da3386ef0932b2182e598f48e58",
+      "bytes": 2328,
+      "url": "../../server/services/ai-brain/sentiment-classifier.service.js"
+    },
+    {
+      "id": "M15",
+      "repository": "mediqzy",
+      "path": "server/routes/roadmap-intelligence.route.js",
+      "sha256": "5f8546e89ee123c9b421bfae1edadd31c6e9360aa3a2825174e7468b5a65a54c",
+      "bytes": 26492,
+      "url": "../../server/routes/roadmap-intelligence.route.js"
+    },
+    {
+      "id": "M16",
+      "repository": "mediqzy",
+      "path": "server/routes/nursing-ipd.route.js",
+      "sha256": "73c09699ef98512ec56a3a1759a23dc96d1500d0529ecfaa94991182ea3dbf6e",
+      "bytes": 7106,
+      "url": "../../server/routes/nursing-ipd.route.js"
+    },
+    {
+      "id": "M17",
+      "repository": "mediqzy",
+      "path": "server/routes/tts.route.js",
+      "sha256": "29c0b8970cecaf03f36022152da261a32f799436a79c49340f9d05440ca924e1",
+      "bytes": 12936,
+      "url": "../../server/routes/tts.route.js"
+    },
+    {
+      "id": "M18",
+      "repository": "mediqzy",
+      "path": "server/middleware/team.middleware.js",
+      "sha256": "8ce001197c244853512c3ea9b68c701a0c8a5332809edab98c6ddf1eee0f0e4b",
+      "bytes": 9832,
+      "url": "../../server/middleware/team.middleware.js"
+    },
+    {
+      "id": "M19",
+      "repository": "mediqzy",
+      "path": "server/models/chat.model.intelligent.js",
+      "sha256": "97ff625c2b4a2451141336c54b39a91e3f8b6935f930bd0c629f244a63ae9910",
+      "bytes": 15903,
+      "url": "../../server/models/chat.model.intelligent.js"
+    },
+    {
+      "id": "M20",
+      "repository": "mediqzy",
+      "path": "server/routes/hospital/practice.route.js",
+      "sha256": "601a78bedce9d470430c487abcff2a9beee368904eb769decb1b9d8da4327eda",
+      "bytes": 134121,
+      "url": "../../server/routes/hospital/practice.route.js"
+    },
+    {
+      "id": "M21",
+      "repository": "mediqzy",
+      "path": "server/app.js",
+      "sha256": "94472d40126e4d7b78f71f5a944f698f71229e7d8ddddf94d69bdb93e40b5bfc",
+      "bytes": 109533,
+      "url": "../../server/app.js"
+    },
+    {
+      "id": "M22",
+      "repository": "mediqzy",
+      "path": "server/services/crm-campaign-dispatcher.service.js",
+      "sha256": "4a51d0b492ca12df76cd0e34e2958c4b0403d8abe4a1c3018fa390c999b1c2d9",
+      "bytes": 8712,
+      "url": "../../server/services/crm-campaign-dispatcher.service.js"
+    },
+    {
+      "id": "M23",
+      "repository": "mediqzy",
+      "path": "server/routes/voiceConfig.route.js",
+      "sha256": "b910a80646bc188aa79b2f3f8e78072ef98284a3a67ce4eb9278581ed53cecf9",
+      "bytes": 11377,
+      "url": "../../server/routes/voiceConfig.route.js"
+    }
+  ],
+  "document": {
+    "path": "docs/audits/MEDIQZY_VS_COMCENT_VOICEAGENT_ASTRADIAL_GAPS_2026-10-20.md",
+    "sha256": "1e554feb372f3f6f48475928e11d773e3535c3ca90aeec60341fa6ea06fbfe0a"
+  },
+  "validation": {
+    "evidence_references_resolve": true,
+    "local_source_files_exist": true,
+    "ordered_gap_ids_01_through_18": true,
+    "upstream_files_identified_by_commit": true
+  }
+}

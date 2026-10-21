@@ -40,3 +40,9 @@ VOICE_ANTISPOOF_MODEL_PATH=<reviewed-local-antispoof-model>
 VOICE_ANTISPOOF_MODEL_SHA256=<approved-sha256>
 # Leave unset until the held-out evaluation passes. Never authorizes login.
 VOICE_BIOMETRIC_VALIDATION=<passed-evaluation-report-json>
+# Private model launcher: loopback TLS, dedicated interpreter, no database credentials.
+VOICE_MODEL_PYTHON=<separate-speaker-venv>/bin/python
+VOICE_MODEL_TLS_CERT=<certificate-with-localhost-san>
+VOICE_MODEL_TLS_KEY=<private-key-path-readable-only-by-service-user>
+# API only: trust the approved private CA; never disable TLS verification.
+NODE_EXTRA_CA_CERTS=<private-ca-pem-path>

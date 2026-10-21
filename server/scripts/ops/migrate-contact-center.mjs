@@ -27,7 +27,8 @@ if(apply){
 const admin=JSON.parse(aws('secretsmanager','get-secret-value','--secret-id',db.MasterUserSecret.SecretArn).SecretString);
 const client=new Client({host:expected,database:settings.POSTGRES_DATABASE,user:admin.username,password:admin.password,ssl:postgresTls({NODE_ENV:'production',POSTGRES_HOST:expected}),connectionTimeoutMillis:10000,application_name:'mediqzy-contact-center-migration'});
 const migration=readFileSync(new URL('../../migrations/20261020008000-contact-center.migration.js',import.meta.url));
-const record={at:new Date().toISOString(),mode:apply?'apply':'rollback-only',instance:db.DBInstanceIdentifier,host:expected,snapshot:apply?option('--snapshot'):null,migrationSha256:createHash('sha256').update(migration).digest('hex'),tables:TABLES.length,liveCalls:0};
+const mediaMigration=readFileSync(new URL('../../migrations/20261020008100-contact-center-livekit.migration.js',import.meta.url));
+const record={at:new Date().toISOString(),mode:apply?'apply':'rollback-only',instance:db.DBInstanceIdentifier,host:expected,snapshot:apply?option('--snapshot'):null,migrationSha256:createHash('sha256').update(migration).digest('hex'),mediaMigrationSha256:createHash('sha256').update(mediaMigration).digest('hex'),tables:ALL_TABLES.length,liveCalls:0};
 try{
   await client.connect();await client.query('BEGIN');
   await client.query("SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='60s';SELECT pg_advisory_xact_lock(hashtext('contact-center-schema'))");

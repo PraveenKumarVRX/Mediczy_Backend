@@ -9,6 +9,14 @@ This folder contains all Mediczy platform documentation, organized by category f
 
 ## Recent source-backed assessments
 
+- [Exotel Contact Center implementation and activation (2026-10-20)](./deployment/CONTACT_CENTER_EXOTEL_2026-10-20.md) — source delivery, CT-01–18 status, infrastructure, remaining coding and live acceptance gates.
+- [LiveKit voice implementation and activation (2026-10-20)](./deployment/CONTACT_CENTER_LIVEKIT_CLOSURE_2026-10-20.md) — advanced media, continuous STT, reception bots, campaigns/journeys and guarded biometrics; source delivery and explicit live/model acceptance gates.
+- [LiveKit voice verification (2026-10-20)](./testing/CONTACT_CENTER_LIVEKIT_VERIFICATION_2026-10-20.json) — current tests, real synthetic RTC audio, CPU model smoke, migration rehearsal and source hashes.
+- [Contact Center API](./api/CONTACT_CENTER_API.md) — CRM calling, queues, callbacks, recordings, transcript/AI/search and verified hook contracts.
+- [Contact Center verification (2026-10-20)](./testing/CONTACT_CENTER_IMPLEMENTATION_2026-10-20.json) — synthetic test evidence and implementation hashes; no live-call acceptance.
+- [MediQzy vs Comcent CE, VoiceAgent and Astradial (2026-10-20)](./audits/MEDIQZY_VS_COMCENT_VOICEAGENT_ASTRADIAL_GAPS_2026-10-20.md) — feature comparison, 18 prioritized communications workstreams, source limitations and implementation sequence.
+- [Communications repository review evidence (2026-10-20)](./audits/COMMUNICATIONS_REPO_REVIEW_EVIDENCE_2026-10-20.json) — pinned upstream commits, 65 inspected-source hashes and synthetic privacy-check results.
+
 - [Nursing implementation delivery and rollout record (2026-10-19)](./audits/NURSING_IMPLEMENTATION_DELIVERY_2026-10-19.md) — implementation coverage for NUR-01–18, verification evidence, and deployment gates.
 - [Nursing production release and demo access (2026-10-19)](./deployment/NURSING_PRODUCTION_RELEASE_2026-10-19.md) — live migration, private image storage, Smart Hospital demo, verification and rollback.
 - [Nursing bedside API](./api/NURSING_BEDSIDE_API.md) — assignments, chart signing, eMAR, handover, wounds, device review and export contracts.

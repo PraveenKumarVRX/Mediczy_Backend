@@ -143,9 +143,11 @@ export async function down() { throw new Error('Contact-center rollback is appli
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   if(!process.argv.includes('--check'))throw new Error('Run scripts/ops/migrate-contact-center.mjs with the separate database administrator; application credentials must not own these tables');
   const {default:pool}=await import('../db/pgPool.js');
+  const {TABLES:mediaTables}=await import('./20261020008100-contact-center-livekit.migration.js');
+  const requiredTables=[...TABLES,...mediaTables];
   try{
-    const {rows}=await pool.query(`SELECT c.relname,c.relrowsecurity,c.relforcerowsecurity,r.rolname FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner WHERE c.relnamespace='public'::regnamespace AND c.relname=ANY($1)`,[TABLES]);
-    if(rows.length!==TABLES.length||rows.some(r=>!r.relrowsecurity||!r.relforcerowsecurity||r.rolname!=='mediqzy_voice_owner'))throw new Error('Contact-center schema requires the administrator migration and ownership hardening');
+    const {rows}=await pool.query(`SELECT c.relname,c.relrowsecurity,c.relforcerowsecurity,r.rolname FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner WHERE c.relnamespace='public'::regnamespace AND c.relname=ANY($1)`,[requiredTables]);
+    if(rows.length!==requiredTables.length||rows.some(r=>!r.relrowsecurity||!r.relforcerowsecurity||r.rolname!=='mediqzy_voice_owner'))throw new Error('Contact-center schema requires the administrator migration and ownership hardening');
     console.log('Contact-center schema ownership and forced tenant RLS verified');
   }finally{await pool.end();}
 }

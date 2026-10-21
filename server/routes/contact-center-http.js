@@ -17,7 +17,7 @@ const gatewayEvent=z.object({callId:z.string().uuid(),type:z.literal('transcript
 function parse(schema,value){const result=schema.safeParse(value);if(!result.success)throw fail(400,'VALIDATION_ERROR',result.error.issues.map(e=>`${e.path.join('.')}: ${e.message}`).join('; '));return result.data;}
 const uuid=value=>parse(z.string().uuid(),value);
 const kind=value=>parse(z.enum(['summary','copilot','qa']),value);
-function handler(fn){return async(req,res)=>{try{await fn(req,res);}catch(error){const status=error.statusCode||500;res.status(status).json({success:false,error:status>=500&&!error.code?'Contact-center operation failed':error.message,code:error.code||'CONTACT_CENTER_ERROR'});}};}
+function handler(fn){return async(req,res)=>{try{await fn(req,res);}catch(error){const status=error.statusCode||500;res.status(status).json({success:false,error:status>=500?'Contact-center operation failed':error.message,code:error.statusCode?error.code||'CONTACT_CENTER_ERROR':'CONTACT_CENTER_ERROR'});}};}
 
 export function createContactCenterRouter({ service, authenticate, authorize }) {
   const router=Router();

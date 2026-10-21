@@ -3,7 +3,7 @@ from pathlib import Path
 from livekit import rtc
 
 async def main():
-    cfg=json.load(open(sys.argv[1])); rooms={k:rtc.Room() for k in cfg}; tracks={k:[] for k in cfg};frames={'caller':0,'coach':0}
+    cfg=json.load(open(sys.argv[1])); rooms={k:rtc.Room() for k in cfg}; tracks={k:[] for k in cfg};frames={'caller':0,'agent':0,'coach':0}
     tasks=[]
     async def consume(track,side):
         async for event in rtc.AudioStream(track,sample_rate=16000,num_channels=1):
@@ -16,7 +16,7 @@ async def main():
         room.on('track_subscribed',subscribed)
     await asyncio.gather(*(room.connect(cfg[side]['serverUrl'],cfg[side]['token']) for side,room in rooms.items()))
     sources=[]
-    for side in ['agent','supervisor']:
+    for side in ['agent','caller','supervisor']:
         source=rtc.AudioSource(16000,1);track=rtc.LocalAudioTrack.create_audio_track(side,source);sources.append(source)
         await rooms[side].local_participant.publish_track(track,rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
     await asyncio.sleep(1)
@@ -26,10 +26,11 @@ async def main():
         await asyncio.sleep(.02)
     await asyncio.sleep(2)
     assert 'agent-qa' in tracks['caller'],tracks
+    assert 'caller' in tracks['agent'],tracks
     assert 'supervisor-qa' in tracks['coach'],tracks
     assert 'supervisor-qa' not in tracks['caller'],tracks
-    assert frames['caller']>10 and frames['coach']>10,frames
-    result={'passed':True,'checks':['Caller receives agent audio','Agent receives private coaching audio','Caller cannot subscribe to supervisor coaching room'],'receivedFrames':frames}
+    assert all(count>10 for count in frames.values()),frames
+    result={'passed':True,'checks':['Caller receives agent audio','Agent receives caller audio','Agent receives private coaching audio','Caller cannot subscribe to supervisor coaching room'],'receivedFrames':frames}
     directory=Path(sys.argv[2]);(directory/'ready.json').write_text(json.dumps(result))
     for _ in range(200):
         if (directory/'stop.signal').exists():break

@@ -12,6 +12,7 @@ export function createLiveKitTransport({env=process.env,clients}={}){
   }
   const api=()=>{const cfg=connection();return clients||{rooms:new RoomServiceClient(cfg.host,cfg.key,cfg.secret),sip:new SipClient(cfg.host,cfg.key,cfg.secret),dispatch:new AgentDispatchClient(cfg.host,cfg.key,cfg.secret)};};
   const permissions=publish=>({canPublish:publish,canSubscribe:true,canPublishData:false,canPublishSources:[TrackSource.MICROPHONE],canUpdateMetadata:false});
+  const absent=async work=>{try{return await work();}catch(error){if(error.code!=='not_found'&&error.status!==404)throw error;}};
   return {
     ready(){try{connection();return true;}catch{return false;}},
     async create(room,metadata){await api().rooms.createRoom({name:room,metadata:JSON.stringify(metadata),emptyTimeout:180,departureTimeout:30,maxParticipants:12});await api().rooms.createRoom({name:`${room}-coach`,emptyTimeout:180,departureTimeout:30,maxParticipants:4});},
@@ -26,9 +27,9 @@ export function createLiveKitTransport({env=process.env,clients}={}){
       return api().sip.createSipParticipant(binding.outbound_trunk_id,phone(to),room,{participantIdentity:'caller',participantName:'Caller',fromNumber:phone(binding.number),hidePhoneNumber:true,ringingTimeout:45,maxCallDuration:3600,waitUntilAnswered:false});
     },
     async hold(room,held){await api().rooms.updateParticipant(room,'caller',{permission:{...permissions(!held),canSubscribe:!held}});},
-    async permission(room,identity,publish){await api().rooms.updateParticipant(room,identity,{permission:permissions(publish)});},
-    async remove(room,identity){await api().rooms.removeParticipant(room,identity);},
-    async end(room){await api().rooms.deleteRoom(room);await api().rooms.deleteRoom(`${room}-coach`).catch(()=>{});},
+    async permission(room,identity,publish){await absent(()=>api().rooms.updateParticipant(room,identity,{permission:permissions(publish)}));},
+    async remove(room,identity){await absent(()=>api().rooms.removeParticipant(room,identity));},
+    async end(room){await absent(()=>api().rooms.deleteRoom(room));await absent(()=>api().rooms.deleteRoom(`${room}-coach`));},
     async dispatch(room,kind,metadata){return api().dispatch.createDispatch(room,kind==='bot'?'mediqzy-contact-bot':'mediqzy-contact-stt',{metadata:JSON.stringify(metadata)});},
     async stopDispatch(room,id){if(id)await api().dispatch.deleteDispatch(id,room);},
     async command(room,callId,action){

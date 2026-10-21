@@ -216,7 +216,8 @@ async def bot(ctx: JobContext, bridge: Bridge, config):
             return
 
     await session.start(agent, room=ctx.room, room_options=room_io.RoomOptions(
-        participant_identity="caller", audio_input=True, audio_output=True, close_on_disconnect=True))
+        participant_identity="caller", audio_input=True, audio_output=True,
+        text_input=False, text_output=False, close_on_disconnect=True))
 
 
 async def entrypoint(ctx: JobContext):
@@ -237,4 +238,5 @@ if __name__ == "__main__":
     if mode not in ("stt", "bot"):
         raise RuntimeError("CONTACT_CENTER_WORKER_MODE must be stt or bot")
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, agent_name=f"mediqzy-contact-{mode}",
+        host="127.0.0.1", port=8871 if mode == "stt" else 8872, num_idle_processes=1,
         ws_url=os.environ["LIVEKIT_URL"], api_key=os.environ["LIVEKIT_API_KEY"], api_secret=os.environ["LIVEKIT_API_SECRET"]))

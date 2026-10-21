@@ -1,5 +1,7 @@
 # Exotel contact-center implementation and activation
 
+**Follow-up:** the [LiveKit implementation record](CONTACT_CENTER_LIVEKIT_CLOSURE_2026-10-20.md) supersedes the advanced media/STT/bot/campaign/biometric source statuses below. This initial delivery record and its verification counts are retained as historical evidence.
+
 Date: 2026-10-20. **Source implementation and synthetic verification; not a live release.** Exotel is the selected first provider. No real calls, persistent production schema changes, paid infrastructure provisioning or clinical acceptance occurred for this release. The administrator migration passed a rollback-only rehearsal against the active encrypted RDS target.
 
 The historical [repository comparison](../audits/MEDIQZY_VS_COMCENT_VOICEAGENT_ASTRADIAL_GAPS_2026-10-20.md) remains the baseline. Its evidence hashes describe the pre-implementation audit. This document tracks subsequent implementation without rewriting that evidence.

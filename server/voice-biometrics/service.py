@@ -53,7 +53,11 @@ def encode(samples):
     checked_file(directory/'embedding_model.ckpt',os.environ['VOICE_BIOMETRIC_MODEL_SHA256'])
     checked_file(directory/'hyperparams.yaml',os.environ['VOICE_SPEAKER_CONFIG_SHA256'])
     if _model is None:
-        _model=EncoderClassifier.from_hparams(source=str(directory),savedir=str(directory),run_opts={'device':os.environ.get('VOICE_SPEAKER_DEVICE','cpu')})
+        manifest=json.loads((Path(__file__).parent/'model-manifest.json').read_text())
+        for name,digest in manifest['files'].items(): checked_file(directory/name,digest)
+        # All loadables must come from the reviewed local artifact, never the
+        # mutable upstream path embedded in the original YAML.
+        _model=EncoderClassifier.from_hparams(source=str(directory),savedir=str(directory),overrides={'pretrained_path':str(directory)},run_opts={'device':os.environ.get('VOICE_SPEAKER_DEVICE','cpu')})
     audio=torch.from_numpy(samples.copy()).unsqueeze(0)
     with torch.inference_mode():
         embedding=_model.encode_batch(audio).squeeze().cpu().tolist()
