@@ -945,7 +945,12 @@ const CorporateAppointments: React.FC = () => {
                       )}
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(appointment)}>View Details</Button>
                       {appointment.status === 'scheduled' && (
-                        <Button size="sm" onClick={() => handleMarkCompleted(appointment)}>
+                        <Button
+                          size="sm"
+                          disabled={!appointment.doctorName || appointment.doctorName === 'TBD'}
+                          title={!appointment.doctorName || appointment.doctorName === 'TBD' ? 'Assign a doctor before marking this appointment completed' : undefined}
+                          onClick={() => handleMarkCompleted(appointment)}
+                        >
                           <CheckCircle className="h-3 w-3 mr-1" />Complete
                         </Button>
                       )}

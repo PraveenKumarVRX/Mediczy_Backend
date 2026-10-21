@@ -3204,6 +3204,21 @@ router.put('/appointments/:id', authCorporate, async (req, res) => {
   }
 
   try {
+    if (status === 'completed') {
+      const [[existing]] = await postgresSequelize.query(
+        `SELECT "doctorName" FROM corporate_scheduled_appointments WHERE id = :id AND corporate_id = :corporateId`,
+        { replacements: { id, corporateId } }
+      );
+      if (!existing) return res.status(404).json({ success: false, message: 'Appointment not found' });
+      const doctorName = (existing.doctorName || '').trim();
+      if (!doctorName || doctorName === 'TBD') {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot mark this appointment completed until a doctor is assigned',
+        });
+      }
+    }
+
     const [rows] = await postgresSequelize.query(
       `UPDATE corporate_scheduled_appointments SET
          status = COALESCE(:status, status),

@@ -535,15 +535,15 @@ const DoctorListBooking = () => {
   const fetchDoctorsFromApi = async (path: string, params?: Record<string, any>) => {
     const responseData = await doctorBookingService.getDoctors(path, params);
     const apiDoctors = Array.isArray(responseData?.data)
-      ? response.data.data
+      ? responseData.data
       : Array.isArray(responseData?.doctors)
-      ? response.data.doctors
+      ? responseData.doctors
       : Array.isArray(responseData?.data?.doctors)
-      ? response.data.data.doctors
+      ? responseData.data.doctors
       : Array.isArray(responseData?.data?.rows)
-      ? response.data.data.rows
+      ? responseData.data.rows
       : Array.isArray(responseData?.data?.data)
-      ? response.data.data.data
+      ? responseData.data.data
       : [];
     return apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
   };

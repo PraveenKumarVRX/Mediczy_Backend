@@ -1,11 +1,18 @@
 /**
  * Corporate Appointment Auto-No-Show Cron Job
- * Runs at midnight (00:00 IST) daily — mirrors appointment-auto-cancel-cron.js
- * but for HR-booked appointments in corporate_scheduled_appointments, which
- * the generic appointments-table cron does not touch.
+ * Mirrors appointment-auto-cancel-cron.js but for HR-booked appointments in
+ * corporate_scheduled_appointments, which the generic appointments-table
+ * cron does not touch.
  *
- * HR-booked appointments from before today that are still 'scheduled' are
- * automatically marked 'no-show'.
+ * HR-booked appointments whose date+time has passed and are still
+ * 'scheduled' are automatically marked 'no-show'. The comparison is
+ * time-aware (date + time, not just date) so a same-day appointment whose
+ * time already passed doesn't wait for the next midnight run, and the job
+ * also runs every 15 minutes (in addition to the midnight run) for that
+ * reason. This table has no 'in-progress'/'confirmed' states (the allowed
+ * set per PUT /corporate/appointments/:id is just
+ * scheduled|completed|cancelled|no-show), so unlike the generic cron there
+ * is no completed-transition case here.
  */
 
 import cron from 'node-cron';
@@ -16,7 +23,7 @@ const cancelExpiredCorporateAppointments = async () => {
   const [rows] = await postgresSequelize.query(
     `UPDATE corporate_scheduled_appointments
         SET status = 'no-show', "updatedAt" = NOW()
-      WHERE date < CURRENT_DATE
+      WHERE (date + "time"::time) < (NOW() AT TIME ZONE 'Asia/Kolkata')
         AND status = 'scheduled'
       RETURNING id`
   );
@@ -40,7 +47,22 @@ const scheduleCorporateAppointmentAutoCancel = () => {
     timezone: 'Asia/Kolkata',
   });
 
-  console.log('✅ Corporate appointment auto-no-show cron scheduled: Daily at 00:00 IST');
+  cron.schedule('*/15 * * * *', async () => {
+    try {
+      const result = await cancelExpiredCorporateAppointments();
+      if (result.cancelled > 0) {
+        console.log(`📊 Corporate same-day sweep: ${result.cancelled} appointment(s) marked as no-show`);
+      }
+      tick('corp_appt_sameday_sweep', { cancelled: result.cancelled });
+    } catch (error) {
+      tickError('corp_appt_sameday_sweep', error.message);
+      console.error('❌ Corporate appointment same-day sweep failed:', error);
+    }
+  }, {
+    timezone: 'Asia/Kolkata',
+  });
+
+  console.log('✅ Corporate appointment auto-no-show cron scheduled: Daily at 00:00 IST + every 15 min');
 };
 
 export { cancelExpiredCorporateAppointments, scheduleCorporateAppointmentAutoCancel };

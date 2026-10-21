@@ -1132,48 +1132,50 @@ const Appointments = () => {
                           <span className="ml-1 capitalize">{appointment.originalStatus || 'completed'}</span>
                         </Badge>
                         <div className="flex gap-2 mt-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-[#00FFF3]/30 text-[#00FFF3]"
-                            onClick={async () => {
-                              if (!appointment.backendId) {
-                                toast({
-                                  title: "Cannot view report",
-                                  description: "Appointment ID is missing.",
-                                  variant: "destructive",
-                                });
-                                return;
-                              }
-                              try {
-                                const data = await appointmentsService.getPrescriptionForAppointment(appointment.backendId);
-                                if (data.success && data.prescription) {
-                                  // Navigate to my prescriptions page
-                                  navigate(`/my-prescriptions?highlight=${data.prescription.id}`);
-                                } else {
+                          {appointment.originalStatus === 'completed' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-[#00FFF3]/30 text-[#00FFF3]"
+                              onClick={async () => {
+                                if (!appointment.backendId) {
                                   toast({
-                                    title: "No prescription found",
-                                    description: "No prescription has been issued for this appointment yet.",
-                                  });
-                                }
-                              } catch (error: any) {
-                                if (error.response?.status === 404) {
-                                  toast({
-                                    title: "No prescription found",
-                                    description: "No prescription has been issued for this appointment yet.",
-                                  });
-                                } else {
-                                  toast({
-                                    title: "Error",
-                                    description: "Failed to fetch prescription. Please try again.",
+                                    title: "Cannot view report",
+                                    description: "Appointment ID is missing.",
                                     variant: "destructive",
                                   });
+                                  return;
                                 }
-                              }
-                            }}
-                          >
-                            View Report
-                          </Button>
+                                try {
+                                  const data = await appointmentsService.getPrescriptionForAppointment(appointment.backendId);
+                                  if (data.success && data.prescription) {
+                                    // Navigate to my prescriptions page
+                                    navigate(`/my-prescriptions?highlight=${data.prescription.id}`);
+                                  } else {
+                                    toast({
+                                      title: "No prescription found",
+                                      description: "No prescription has been issued for this appointment yet.",
+                                    });
+                                  }
+                                } catch (error: any) {
+                                  if (error.response?.status === 404) {
+                                    toast({
+                                      title: "No prescription found",
+                                      description: "No prescription has been issued for this appointment yet.",
+                                    });
+                                  } else {
+                                    toast({
+                                      title: "Error",
+                                      description: "Failed to fetch prescription. Please try again.",
+                                      variant: "destructive",
+                                    });
+                                  }
+                                }
+                              }}
+                            >
+                              View Report
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
