@@ -38,6 +38,7 @@ const CorporateSettings: React.FC = () => {
     checkupsPerYear: 1,
     minServiceMonths: 0,
     eligibleDepartments: '',
+    minAge: 0,
     maxAge: 0,
     eligibleGrades: '',
   });
@@ -420,6 +421,18 @@ const CorporateSettings: React.FC = () => {
                   onChange={e => setEligibility(p => ({ ...p, eligibleDepartments: e.target.value }))}
                 />
                 <p className="text-xs text-slate-400">Comma-separated department names — leave blank to include all departments</p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="minAge">Minimum age for eligibility (0 = no limit)</Label>
+                <Input
+                  id="minAge"
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={eligibility.minAge}
+                  onChange={e => setEligibility(p => ({ ...p, minAge: parseInt(e.target.value, 10) || 0 }))}
+                />
+                <p className="text-xs text-slate-400">Used by "Enroll All" on Annual Health Checkup batches (e.g. an "Age 40+" batch)</p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="maxAge">Maximum age for eligibility (0 = no limit)</Label>

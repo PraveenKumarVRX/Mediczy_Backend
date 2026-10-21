@@ -104,6 +104,7 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
   // Create batch dialog
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [enrollingBatchIds, setEnrollingBatchIds] = useState<Set<number>>(new Set());
   const [newBatch, setNewBatch] = useState({ batchName: '', dueDate: '', scheduledDate: '', priority: 'normal', notes: '' });
 
   // Update enrollment dialog
@@ -181,6 +182,10 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
   };
 
   const handleEnrollAll = async (batch: AhcBatch) => {
+    if (enrollingBatchIds.has(batch.id)) return; // already in flight - a double-click was
+    // hitting ON CONFLICT DO NOTHING on the second request, which returned "0 employees
+    // enrolled" even though the first request had already enrolled everyone.
+    setEnrollingBatchIds((prev) => new Set(prev).add(batch.id));
     try {
       const { data } = await api.post(`/corporate/ahc/batches/${batch.id}/enroll-all`);
       toast({ title: 'Employees enrolled', description: data?.data?.message });
@@ -188,6 +193,8 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
       if (selectedBatch?.id === batch.id) loadEnrollments(batch);
     } catch (e: any) {
       toast({ title: 'Failed to enroll', description: e?.response?.data?.message, variant: 'destructive' });
+    } finally {
+      setEnrollingBatchIds((prev) => { const next = new Set(prev); next.delete(batch.id); return next; });
     }
   };
 
@@ -342,8 +349,9 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
                       {batch.status === 'planning' && (
                         <>
                           <Button size="sm" variant="outline" onClick={() => handleEnrollAll(batch)}
+                            disabled={enrollingBatchIds.has(batch.id)}
                             className="h-7 px-2 text-xs bg-teal-500/10 border-teal-500/30 text-teal-400">
-                            <UserPlus className="h-3 w-3 mr-1" /> Enroll All
+                            <UserPlus className="h-3 w-3 mr-1" /> {enrollingBatchIds.has(batch.id) ? 'Enrolling…' : 'Enroll All'}
                           </Button>
                           <Button size="sm" variant="outline" onClick={() => handleActivateBatch(batch, 'active')}
                             className="h-7 px-2 text-xs bg-blue-500/10 border-blue-500/30 text-blue-400">

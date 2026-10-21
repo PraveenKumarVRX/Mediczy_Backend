@@ -128,6 +128,23 @@ export async function buildCorporateMisMetrics(corporateId, periodStart, periodE
     sla_overdue: 0,
   }]);
 
+  // Doctor appointments/teleconsultations - previously entirely absent from
+  // this report, which only ever looked at lab_orders. Covers both
+  // HR-booked (corporate_scheduled_appointments) and employee self-booked
+  // (appointments, via corporate_tenant_id) in the same period.
+  const [apptRow] = await postgresSequelize.query(
+    `SELECT
+       (SELECT COUNT(*) FROM corporate_scheduled_appointments
+         WHERE corporate_id = :corporateId AND date BETWEEN :periodStart AND :periodEnd) AS hr_booked_appointments,
+       (SELECT COUNT(*) FROM corporate_scheduled_appointments
+         WHERE corporate_id = :corporateId AND status = 'completed' AND date BETWEEN :periodStart AND :periodEnd) AS hr_booked_completed,
+       (SELECT COUNT(*) FROM appointments
+         WHERE corporate_tenant_id = :corporateId AND "appointmentDate" BETWEEN :periodStart AND :periodEnd) AS employee_booked_appointments,
+       (SELECT COUNT(*) FROM appointments
+         WHERE corporate_tenant_id = :corporateId AND status = 'completed' AND "appointmentDate" BETWEEN :periodStart AND :periodEnd) AS employee_booked_completed`,
+    { replacements, type: postgresSequelize.QueryTypes.SELECT }
+  ).catch(() => [{ hr_booked_appointments: 0, hr_booked_completed: 0, employee_booked_appointments: 0, employee_booked_completed: 0 }]);
+
   const reportsUploaded = Number(reportRow?.reports_uploaded || 0);
   const onTime = Number(reportRow?.sla_on_time || 0);
   const breached = Number(reportRow?.sla_breached || 0);
@@ -140,6 +157,8 @@ export async function buildCorporateMisMetrics(corporateId, periodStart, periodE
     activatedEmployees: Number(employeeRow?.activated_employees || 0),
     bookedCheckups: Number(checkupRow?.booked_checkups || 0),
     completedCheckups: Number(checkupRow?.completed_checkups || 0),
+    bookedAppointments: Number(apptRow?.hr_booked_appointments || 0) + Number(apptRow?.employee_booked_appointments || 0),
+    completedAppointments: Number(apptRow?.hr_booked_completed || 0) + Number(apptRow?.employee_booked_completed || 0),
     reportsUploaded,
     preEmploymentReports: Number(reportRow?.pre_employment_reports || 0),
     annualReports: Number(reportRow?.annual_reports || 0),
@@ -157,6 +176,8 @@ export function misMetricsToRows(metrics) {
     { metric: 'Activated employees', value: metrics.activatedEmployees },
     { metric: 'Booked check-ups', value: metrics.bookedCheckups },
     { metric: 'Completed check-ups', value: metrics.completedCheckups },
+    { metric: 'Booked doctor appointments', value: metrics.bookedAppointments },
+    { metric: 'Completed doctor appointments', value: metrics.completedAppointments },
     { metric: 'Reports uploaded', value: metrics.reportsUploaded },
     { metric: 'Pre-employment reports', value: metrics.preEmploymentReports },
     { metric: 'Annual health check-up reports', value: metrics.annualReports },

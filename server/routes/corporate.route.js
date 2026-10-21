@@ -4264,12 +4264,14 @@ router.get('/ahc/summary', authCorporate, async (req, res) => {
     );
     const [enrollRow] = await postgresSequelize.query(
       `SELECT COUNT(*)::int AS total,
-              COUNT(*) FILTER (WHERE status = 'completed')::int AS completed,
-              COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
-              COUNT(*) FILTER (WHERE status = 'invited')::int AS invited,
-              COUNT(*) FILTER (WHERE status = 'booked')::int AS booked,
-              COUNT(*) FILTER (WHERE report_ready = true)::int AS report_ready
-         FROM corporate_ahc_enrollments WHERE corporate_id = :corporateId`,
+              COUNT(*) FILTER (WHERE e.status = 'completed')::int AS completed,
+              COUNT(*) FILTER (WHERE e.status = 'pending')::int AS pending,
+              COUNT(*) FILTER (WHERE e.status = 'invited')::int AS invited,
+              COUNT(*) FILTER (WHERE e.status = 'booked')::int AS booked,
+              COUNT(*) FILTER (WHERE e.report_ready = true)::int AS report_ready
+         FROM corporate_ahc_enrollments e
+         LEFT JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
+        WHERE e.corporate_id = :corporateId AND ce."isActive" IS NOT FALSE`,
       { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
     );
     return res.json({
@@ -4307,7 +4309,9 @@ router.get('/ahc/batches', authCorporate, async (req, res) => {
               COUNT(e.id) FILTER (WHERE e.report_ready = true)::int AS "reportReady"
          FROM corporate_ahc_batches b
          LEFT JOIN corporate_ahc_enrollments e ON e.batch_id = b.id
+         LEFT JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
         WHERE b.corporate_id = :corporateId
+          AND (e.id IS NULL OR ce."isActive" IS NOT FALSE)
         GROUP BY b.id
         ORDER BY b.batch_year DESC, b.created_at DESC`,
       { replacements: { corporateId } }
@@ -4378,7 +4382,8 @@ router.get('/ahc/batches/:id/enrollments', authCorporate, async (req, res) => {
   try {
     const [rows] = await postgresSequelize.query(
       `SELECT e.id, e.employee_id AS "employeeId", e.employee_name AS "employeeName",
-              e.department, e.status, e.booked_date AS "bookedDate", e.booked_slot AS "bookedSlot",
+              COALESCE(ce.department, e.department) AS department,
+              e.status, e.booked_date AS "bookedDate", e.booked_slot AS "bookedSlot",
               e.report_ready AS "reportReady", e.report_url AS "reportUrl",
               e.reminder_sent_at AS "reminderSentAt", e.notes,
               COALESCE(u."firstName" || ' ' || u."lastName", e.employee_name, e.employee_id) AS name,
@@ -4386,8 +4391,10 @@ router.get('/ahc/batches/:id/enrollments', authCorporate, async (req, res) => {
               (SELECT COUNT(*)::int FROM corporate_ahc_dependents d WHERE d.enrollment_id = e.id) AS dependents
          FROM corporate_ahc_enrollments e
          LEFT JOIN users u ON u.id = e.user_id
+         LEFT JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
         WHERE e.batch_id = :id AND e.corporate_id = :corporateId
-        ORDER BY e.department, name`,
+          AND ce."isActive" IS NOT FALSE
+        ORDER BY department, name`,
       { replacements: { id, corporateId } }
     );
     return res.json({ success: true, data: { enrollments: rows } });
@@ -4416,6 +4423,27 @@ router.post('/ahc/batches/:id/enroll-all', authCorporate, async (req, res) => {
       replacements.departments = departments;
     }
 
+    // Age eligibility from Settings > Eligibility (minAge/maxAge). Batch
+    // names implying an age cutoff (e.g. "Age 40+") previously enrolled
+    // everyone regardless - no age predicate existed anywhere. An employee
+    // with no known date of birth (true for most roster-only employees,
+    // which have no DOB column at all) is still included rather than
+    // silently excluded, since we can't evaluate the rule for them.
+    const [[settingsRow]] = await postgresSequelize.query(
+      `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
+      { replacements: { corporateId } }
+    );
+    const elig = settingsRow?.settings?.eligibility || {};
+    const minAge = Number(elig.minAge) || 0;
+    const maxAge = Number(elig.maxAge) || 0;
+    let ageFilter = '';
+    if (minAge > 0) {
+      ageFilter += ` AND (u."dateOfBirth" IS NULL OR DATE_PART('year', AGE(u."dateOfBirth")) >= ${minAge})`;
+    }
+    if (maxAge > 0) {
+      ageFilter += ` AND (u."dateOfBirth" IS NULL OR DATE_PART('year', AGE(u."dateOfBirth")) <= ${maxAge})`;
+    }
+
     const [result] = await postgresSequelize.query(
       `INSERT INTO corporate_ahc_enrollments (batch_id, corporate_id, employee_id, employee_name, department, user_id, status, created_at, updated_at)
        SELECT :id, :corporateId, ce."employeeId",
@@ -4423,7 +4451,7 @@ router.post('/ahc/batches/:id/enroll-all', authCorporate, async (req, res) => {
               ce.department, ce."userId", 'pending', NOW(), NOW()
          FROM corporate_employees ce
          LEFT JOIN users u ON u.id = ce."userId"
-        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true ${deptFilter}
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true ${deptFilter} ${ageFilter}
        ON CONFLICT (batch_id, employee_id) DO NOTHING
        RETURNING id`,
       { replacements }
