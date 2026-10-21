@@ -4162,7 +4162,7 @@ router.get('/consent/employees', authCorporate, async (req, res) => {
   try {
     const [rows] = await postgresSequelize.query(
       `SELECT ce."employeeId", ce.department, ce.designation,
-              COALESCE(u."firstName" || ' ' || u."lastName", ce.metadata->>'firstName' || ' ' || ce.metadata->>'lastName', ce."employeeId") AS name,
+              COALESCE(u."firstName" || ' ' || u."lastName", (ce.metadata->>'firstName') || ' ' || (ce.metadata->>'lastName'), ce."employeeId") AS name,
               COALESCE(u.email, ce.email) AS email,
               c.granted, c.granted_at AS "grantedAt", c.revoked_at AS "revokedAt", c.updated_at AS "updatedAt"
          FROM corporate_employees ce
