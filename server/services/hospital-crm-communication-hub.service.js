@@ -226,8 +226,8 @@ export async function recordCommunicationIntegrationHealth(input, actorUserId) {
   const result = await sharedPool.query(`
     UPDATE crm_marketing_integrations
     SET status = $1, health_score = $2, health_message = $3, last_health_check_at = NOW(), last_sync_at = COALESCE($4::timestamptz, last_sync_at), last_sync_status = $1, updated_at = NOW()
-    WHERE tenant_id = $5 AND id = $6
-    RETURNING *
+    WHERE tenant_id = $5 AND id = $6 AND integration_type <> 'communication'
+    RETURNING id, provider, status, health_score, health_message, last_health_check_at
   `, [input.status || 'connected', input.healthScore == null ? null : Math.max(0, Math.min(100, Number(input.healthScore))), input.healthMessage || null, input.lastSyncAt || null, id, integrationId]);
   if (!result.rows[0]) throw Object.assign(new Error('Integration not found'), { statusCode: 404 });
   return result.rows[0];

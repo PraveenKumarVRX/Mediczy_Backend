@@ -1,117 +1,165 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CheckCircle, Eye, EyeOff, LockKeyhole, RefreshCw, Save, ShieldCheck, TestTube2, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Eye, EyeOff, RefreshCw } from 'lucide-react';
 import api from '@/utils/api';
 import { hasCRMCapability } from './shared/crmRoles';
+import { CRM_CHANNEL_DEFINITIONS, configurationErrors } from '../../../../shared/crm-channel-schema.mjs';
+import './crm-settings.css';
 
-type Channel = 'email' | 'whatsapp' | 'sms' | 'calls' | 'facebook' | 'instagram' | 'linkedin' | 'google_ads' | 'youtube';
-type Integration = { channel: Channel; provider: string | null; status: string; accountRef: string | null; config: Record<string, any>; credentialsConfigured: boolean; healthScore: number | null; healthMessage: string | null; lastHealthCheckAt: string | null };
+type Field = { key: string; label: string; type: string; secret: boolean; required: boolean };
+type Definition = { id: string; label: string; group: string; managed?: boolean; providers: Record<string, { label: string; fields: Field[] }> };
+export type Integration = { channel: string; provider: string | null; status: string; accountRef: string | null; config: Record<string, string>; credentialsConfigured: boolean; credentialFields?: string[] | null; healthMessage: string | null; lastHealthCheckAt: string | null; revision: string | null; id?: number };
+const definitions = CRM_CHANNEL_DEFINITIONS as Definition[];
+const auth = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('crmToken') || ''}` } });
+const empty = (channel: string): Integration => ({ channel, provider: null, status: 'not_configured', accountRef: null, config: {}, credentialsConfigured: false, credentialFields: [], healthMessage: null, lastHealthCheckAt: null, revision: null });
 
-const CHANNELS: Array<{ id: Channel; label: string; description: string; group: string; providers: string[]; fields: Array<{ key: string; label: string; secret?: boolean; placeholder?: string }> }> = [
-  { id: 'email', label: 'Email', description: 'Tenant sender credentials for CRM campaigns and notifications.', group: 'Messaging', providers: ['smtp', 'sendgrid', 'ses'], fields: [
-    { key: 'fromEmail', label: 'From email', placeholder: 'crm@yourdomain.com' }, { key: 'fromName', label: 'From name', placeholder: 'Mediqzy Care' },
-    { key: 'smtpHost', label: 'SMTP host', placeholder: 'smtp.example.com' }, { key: 'smtpPort', label: 'SMTP port', placeholder: '587' },
-    { key: 'username', label: 'SMTP username' }, { key: 'password', label: 'SMTP password', secret: true },
-  ] },
-  { id: 'whatsapp', label: 'WhatsApp', description: 'WhatsApp Business provider used for patient conversations and templates.', group: 'Messaging', providers: ['meta', 'twilio', 'gupshup'], fields: [
-    { key: 'phoneNumberId', label: 'Phone number ID', placeholder: 'Meta phone number ID' }, { key: 'businessAccountId', label: 'Business account ID' },
-    { key: 'accessToken', label: 'Access token', secret: true }, { key: 'senderNumber', label: 'Sender number', placeholder: '+91...' },
-  ] },
-  { id: 'sms', label: 'SMS', description: 'Transactional and campaign SMS provider settings.', group: 'Messaging', providers: ['msg91', 'twilio', 'textlocal', 'custom'], fields: [
-    { key: 'senderId', label: 'Sender ID', placeholder: 'MEDIQZ' }, { key: 'apiUrl', label: 'Provider API URL', placeholder: 'https://...' }, { key: 'apiKey', label: 'API key', secret: true },
-  ] },
-  { id: 'calls', label: 'Calls', description: 'Click-to-call or telephony provider used by the CRM team. Call activity is always logged in CRM.', group: 'Voice', providers: ['twilio', 'exotel', 'knowlarity', 'manual'], fields: [
-    { key: 'accountId', label: 'Account / instance ID' }, { key: 'fromNumber', label: 'Caller ID', placeholder: '+91...' }, { key: 'authToken', label: 'Provider auth token', secret: true },
-  ] },
-  { id: 'facebook', label: 'Facebook', description: 'Meta page and social engagement credentials.', group: 'Social', providers: ['meta'], fields: [
-    { key: 'pageId', label: 'Page ID' }, { key: 'accessToken', label: 'Page access token', secret: true },
-  ] },
-  { id: 'instagram', label: 'Instagram', description: 'Instagram business account connection.', group: 'Social', providers: ['meta'], fields: [
-    { key: 'accountId', label: 'Business account ID' }, { key: 'accessToken', label: 'Access token', secret: true },
-  ] },
-  { id: 'linkedin', label: 'LinkedIn', description: 'LinkedIn organisation and campaign connection.', group: 'Social', providers: ['linkedin'], fields: [
-    { key: 'organizationId', label: 'Organization ID' }, { key: 'accessToken', label: 'Access token', secret: true },
-  ] },
-  { id: 'google_ads', label: 'Google Ads', description: 'Google Ads account for acquisition campaigns.', group: 'Social', providers: ['google_ads'], fields: [
-    { key: 'customerId', label: 'Customer ID' }, { key: 'managerId', label: 'Manager ID' }, { key: 'clientId', label: 'Client ID' }, { key: 'clientSecret', label: 'Client secret', secret: true }, { key: 'refreshToken', label: 'Refresh token', secret: true },
-  ] },
-  { id: 'youtube', label: 'YouTube', description: 'YouTube channel and campaign connection.', group: 'Social', providers: ['google'], fields: [
-    { key: 'channelId', label: 'Channel ID' }, { key: 'accessToken', label: 'Access token', secret: true },
-  ] },
-];
-
-function authHeaders() { const token = localStorage.getItem('crmToken'); return token ? { Authorization: `Bearer ${token}` } : {}; }
-
-function ChannelCard({ definition, integration, editable, onSaved }: { definition: typeof CHANNELS[number]; integration: Integration; editable: boolean; onSaved: (next: Integration) => void }) {
-  const [provider, setProvider] = useState(integration.provider || definition.providers[0]);
+function ChannelCard({ definition, integration, editable, stale, update, onDirty, onBusy, onAuthError }: { definition: Definition; integration: Integration; editable: boolean; stale: boolean; update: (value: Integration) => void; onDirty: (channel: string, dirty: boolean) => void; onBusy: (channel: string, busy: boolean) => void; onAuthError?: () => void }) {
+  const [provider, setProvider] = useState(integration.provider || Object.keys(definition.providers)[0] || '');
   const [accountRef, setAccountRef] = useState(integration.accountRef || '');
-  const [config, setConfig] = useState<Record<string, string>>(() => ({ ...(integration.config || {}) }));
+  const [config, setConfig] = useState<Record<string, string>>(integration.config || {});
   const [secrets, setSecrets] = useState<Record<string, string>>({});
-  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
-  const [busy, setBusy] = useState(false);
+  const [removed, setRemoved] = useState<string[]>([]);
+  const [shown, setShown] = useState<Record<string, boolean>>({});
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [confirm, setConfirm] = useState<'replace' | 'disable' | 'disconnect' | null>(null);
+  const card = useRef<HTMLElement>(null);
+  const fields = Object.prototype.hasOwnProperty.call(definition.providers, provider) ? definition.providers[provider].fields : [];
+  const disabled = !editable || stale || !!busy;
+  const changed = () => { setDirty(true); setNotice(''); setError(''); onDirty(definition.id, true); };
+  const resetDirty = () => { setDirty(false); onDirty(definition.id, false); setSecrets({}); setRemoved([]); setShown({}); setFieldErrors({}); };
+  const fail = (err: any) => { if (err?.response?.status === 401) onAuthError?.(); setError(err?.response?.data?.message || 'This request could not be completed. Your edits are retained.'); setFieldErrors(err?.response?.data?.fields || {}); };
 
-  useEffect(() => { setProvider(integration.provider || definition.providers[0]); setAccountRef(integration.accountRef || ''); setConfig({ ...(integration.config || {}) }); }, [integration, definition]);
-
-  const save = async () => {
-    setBusy(true); setError(''); setNotice('');
+  async function save(replaceProvider = false) {
+    const errors = configurationErrors(definition.id, provider, config);
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) { setError('Check the highlighted fields.'); return; }
+    if (integration.provider && provider !== integration.provider && !replaceProvider) { setConfirm('replace'); return; }
+    setBusy('save'); setError(''); setNotice('');
     try {
-      const credentials = Object.fromEntries(Object.entries(secrets).filter(([, value]) => value.trim() !== ''));
-      const response = await api.put(`/crm/communication-hub/integrations/${definition.id}`, { provider, accountRef, config, ...(Object.keys(credentials).length ? { credentials } : {}) }, { headers: authHeaders() });
-      onSaved(response.data.data); setSecrets({}); setNotice('Saved securely. Secret values are not returned or shown again.');
-    } catch (err: any) { setError(err?.response?.data?.message || 'Could not save channel settings'); }
-    finally { setBusy(false); }
-  };
+      const credentials = Object.fromEntries(Object.entries(secrets).filter(([, value]) => value.trim()));
+      const { data } = await api.put(`/crm/communication-hub/integrations/${definition.id}`, { provider, config, accountRef, credentials, removeCredentials: removed, expectedRevision: integration.revision, replaceProvider }, auth());
+      update(data.data); resetDirty(); setNotice('Inventory saved securely. Delivery remains managed separately.');
+    } catch (err) { fail(err); } finally { setBusy(''); }
+  }
+  async function verify() {
+    if (dirty) return;
+    setBusy('verify'); setError(''); setNotice('');
+    try { const { data } = await api.post(`/crm/communication-hub/integrations/${definition.id}/test`, { expectedRevision: integration.revision }, auth()); update(data.data); setNotice(data.data.healthMessage); }
+    catch (err) { fail(err); } finally { setBusy(''); }
+  }
+  async function action(kind: 'disable' | 'disconnect') {
+    setConfirm(null); setBusy(kind); setError(''); setNotice('');
+    try {
+      const url = `/crm/communication-hub/integrations/${definition.id}`;
+      const body = { expectedRevision: integration.revision, confirm: kind };
+      const response = kind === 'disconnect' ? await api.delete(url, { ...auth(), data: body }) : await api.post(url + '/disable', body, auth());
+      const next = kind === 'disconnect' ? empty(definition.id) : response.data.data;
+      update(next); setProvider(next.provider || Object.keys(definition.providers)[0] || ''); setConfig(next.config || {}); setAccountRef(next.accountRef || ''); resetDirty();
+      setNotice(kind === 'disconnect' ? 'Inventory record and its credentials were deleted. Live provider settings were not changed.' : 'Inventory record disabled. Live provider settings were not changed.');
+    } catch (err) { fail(err); } finally { setBusy(''); }
+  }
+  useEffect(() => { onBusy(definition.id, !!busy); return () => onBusy(definition.id, false); }, [busy, definition.id, onBusy]);
+  useEffect(() => { if (!dirty) { setProvider(integration.provider || Object.keys(definition.providers)[0] || ''); setConfig(integration.config || {}); setAccountRef(integration.accountRef || ''); } }, [integration]);
+  useEffect(() => { if (error) card.current?.querySelector<HTMLElement>('[role=alert]')?.focus(); }, [error]);
 
-  const test = async () => {
-    setBusy(true); setError(''); setNotice('');
-    try { const response = await api.post(`/crm/communication-hub/integrations/${definition.id}/test`, {}, { headers: authHeaders() }); onSaved(response.data.data); setNotice('Configuration decrypted successfully. Live provider delivery depends on its adapter.'); }
-    catch (err: any) { setError(err?.response?.data?.message || 'Configuration test failed'); }
-    finally { setBusy(false); }
-  };
-
-  return <div className="rounded-2xl bg-white/[0.03] border border-white/[0.07] p-5">
-    <div className="flex items-start justify-between gap-4 mb-4">
-      <div><h4 className="text-sm font-semibold text-white">{definition.label}</h4><p className="text-xs text-slate-500 mt-1 max-w-xl">{definition.description}</p></div>
-      <span className={`text-[10px] uppercase tracking-wide rounded-full px-2.5 py-1 ${integration.status === 'connected' ? 'bg-emerald-400/10 text-emerald-300' : integration.credentialsConfigured ? 'bg-blue-400/10 text-blue-300' : 'bg-slate-400/10 text-slate-400'}`}>{integration.status === 'not_configured' ? 'Not configured' : integration.status}</span>
-    </div>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <label className="block"><span className="text-[11px] text-slate-400">Provider</span><select disabled={!editable || busy} value={provider} onChange={(e) => setProvider(e.target.value)} className="mt-1 w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-2 text-sm text-white"><option value="">Choose provider</option>{definition.providers.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>
-      <label className="block"><span className="text-[11px] text-slate-400">Account reference <span className="text-slate-600">(optional)</span></span><input aria-label="Account reference" disabled={!editable || busy} value={accountRef} onChange={(e) => setAccountRef(e.target.value)} placeholder="Internal account / workspace ID" className="mt-1 w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-700" /></label>
-      {definition.fields.map((field) => <label key={field.key} className="block"><span className="text-[11px] text-slate-400">{field.label}{field.secret && integration.credentialsConfigured ? <span className="text-emerald-400 ml-1">(saved)</span> : null}</span><div className="relative mt-1"><input id={`${definition.id}-${field.key}`} aria-label={field.label} disabled={!editable || busy} type={field.secret && !showSecrets[field.key] ? 'password' : 'text'} value={field.secret ? (secrets[field.key] || '') : (config[field.key] || '')} onChange={(e) => field.secret ? setSecrets((current) => ({ ...current, [field.key]: e.target.value })) : setConfig((current) => ({ ...current, [field.key]: e.target.value }))} placeholder={field.secret && integration.credentialsConfigured ? 'Leave blank to keep saved secret' : field.placeholder} className="w-full rounded-lg bg-slate-950 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-slate-700 pr-10" />{field.secret && <button type="button" onClick={() => setShowSecrets((current) => ({ ...current, [field.key]: !current[field.key] }))} className="absolute right-2 top-2 text-slate-500 hover:text-white" aria-label={showSecrets[field.key] ? 'Hide secret' : 'Show secret'}>{showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>}</div></label>)}
-    </div>
-    <div className="flex flex-wrap items-center justify-between gap-3 mt-5 pt-4 border-t border-white/[0.06]">
-      <div className="flex items-center gap-2 text-[11px] text-slate-500">{integration.credentialsConfigured ? <><LockKeyhole className="h-3.5 w-3.5 text-emerald-400" /> Encrypted credentials stored</> : <><ShieldCheck className="h-3.5 w-3.5" /> No secret stored</>}{integration.lastHealthCheckAt ? <span>· checked {new Date(integration.lastHealthCheckAt).toLocaleString()}</span> : null}</div>
-      {editable && <div className="flex gap-2"><button type="button" disabled={busy || !integration.credentialsConfigured} onClick={test} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:text-white disabled:opacity-40"><TestTube2 className="h-3.5 w-3.5" /> Test</button><button type="button" disabled={busy} onClick={save} className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-400 disabled:opacity-40"><Save className="h-3.5 w-3.5" /> {busy ? 'Saving…' : 'Save securely'}</button></div>}
-    </div>
-    {notice && <p className="mt-3 text-xs text-emerald-300 flex items-center gap-1.5"><CheckCircle className="h-3.5 w-3.5" />{notice}</p>}{error && <p className="mt-3 text-xs text-rose-300 flex items-center gap-1.5"><XCircle className="h-3.5 w-3.5" />{error}</p>}
-  </div>;
+  return <section ref={card} id={`channel-${definition.id}`} aria-labelledby={`heading-${definition.id}`} className="settings-card scroll-mt-20">
+    <header className="flex flex-wrap items-center justify-between gap-3 mb-4"><h4 id={`heading-${definition.id}`} className="font-semibold">{definition.label}</h4><span className="settings-status">{definition.managed ? 'Managed separately' : integration.status === 'disabled' ? 'Inventory disabled' : integration.id || integration.provider ? 'Inventory saved' : 'No inventory record'}</span></header>
+    {definition.managed ? <><p>Exotel and LiveKit calling use the contact center’s approved provider bindings and readiness checks.</p><Link className="settings-link inline-flex min-h-[44px] items-center" to="/crm/contact-center">Open contact center</Link></> : <>
+      <p className="mb-4 text-sm settings-muted">Encrypted connection inventory. Saving here does not enable messaging or social delivery.</p>
+      <form onSubmit={e => { e.preventDefault(); if (!disabled) void save(); }} noValidate>
+        <fieldset disabled={disabled} className="grid min-w-0 grid-cols-1 md:grid-cols-2 gap-4">
+          <label htmlFor={`${definition.id}-provider`}>Provider<select id={`${definition.id}-provider`} aria-label={`${definition.label} provider`} value={provider} onChange={e => { changed(); setProvider(e.target.value); setConfig({}); setSecrets({}); setRemoved([]); setShown({}); setFieldErrors({}); }}>
+            {integration.provider && !Object.prototype.hasOwnProperty.call(definition.providers, integration.provider) && <option value={integration.provider}>Previous provider — choose a supported provider</option>}
+            {Object.entries(definition.providers).map(([key, p]) => <option key={key} value={key}>{p.label}</option>)}
+          </select></label>
+          <label htmlFor={`${definition.id}-account`}>Account reference (optional)<input id={`${definition.id}-account`} aria-label={`${definition.label} account reference`} maxLength={240} value={accountRef} onChange={e => { changed(); setAccountRef(e.target.value); }} placeholder="Internal workspace reference" /></label>
+          {fields.map(field => {
+            const id = `${definition.id}-${field.key}`, saved = field.secret && integration.provider === provider && integration.credentialFields?.includes(field.key);
+            return <div key={id} className="min-w-0"><label htmlFor={id}>{field.label}{field.required ? ' *' : ''}{saved && !removed.includes(field.key) ? <span className="ml-1 settings-saved">(saved)</span> : null}</label>
+              <div className="relative"><input id={id} aria-label={`${definition.label} ${field.label}`} aria-invalid={!!fieldErrors[field.key]} aria-describedby={fieldErrors[field.key] ? id + '-error' : undefined}
+                type={field.secret ? shown[field.key] ? 'text' : 'password' : field.type} required={field.required} maxLength={field.secret ? 16000 : 1000} min={field.type === 'number' ? 1 : undefined} max={field.type === 'number' ? 65535 : undefined}
+                autoComplete={field.secret ? 'new-password' : 'off'} value={field.secret ? secrets[field.key] || '' : config[field.key] || ''} disabled={removed.includes(field.key)}
+                className={field.secret ? 'settings-secret' : ''} placeholder={field.secret ? saved ? 'Leave blank to retain this saved field' : integration.provider === provider && integration.credentialsConfigured && integration.credentialFields == null ? 'Leave blank to keep legacy storage unchanged' : 'Enter to add this credential' : undefined}
+                onChange={e => { changed(); field.secret ? setSecrets(s => ({ ...s, [field.key]: e.target.value })) : setConfig(c => ({ ...c, [field.key]: e.target.value })); }} />
+                {field.secret && <button className="settings-eye" type="button" aria-label={`${shown[field.key] ? 'Hide' : 'Show'} ${definition.label} ${field.label}`} aria-pressed={!!shown[field.key]} onClick={() => setShown(s => ({ ...s, [field.key]: !s[field.key] }))}>{shown[field.key] ? <EyeOff size={18} /> : <Eye size={18} />}</button>}
+              </div>
+              {fieldErrors[field.key] && <p id={id + '-error'} className="settings-error mt-1 text-sm">{fieldErrors[field.key]}</p>}
+              {field.secret && integration.provider === provider && (saved || integration.credentialsConfigured && integration.credentialFields == null) && <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" className="settings-checkbox" checked={removed.includes(field.key)} onChange={e => { changed(); setRemoved(r => e.target.checked ? [...r, field.key] : r.filter(k => k !== field.key)); setSecrets(s => ({ ...s, [field.key]: '' })); }} />Remove saved {field.label} on save</label>}
+            </div>;
+          })}
+        </fieldset>
+        {dirty && <p className="mt-4 text-sm" role="status">Unsaved changes. Save or discard before refreshing or verifying storage.</p>}
+        {integration.credentialsConfigured && integration.credentialFields == null && <p className="mt-4 text-sm settings-muted">Legacy credentials are stored. Individual saved fields will be identified after the next save.</p>}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {editable && <><button type="submit" className="settings-button settings-primary" disabled={disabled}>{busy === 'save' ? 'Saving…' : 'Save inventory'}</button>
+            <button type="button" className="settings-button" disabled={disabled || dirty || !integration.credentialsConfigured || integration.status === 'disabled'} onClick={verify}>{busy === 'verify' ? 'Verifying storage…' : 'Verify encrypted storage'}</button></>}
+          {dirty && <button type="button" className="settings-button" disabled={!!busy} onClick={() => { setProvider(integration.provider || Object.keys(definition.providers)[0]); setConfig(integration.config || {}); setAccountRef(integration.accountRef || ''); resetDirty(); setError(''); setNotice('Edits discarded.'); }}>Discard edits</button>}
+        </div>
+      </form>
+    </>}
+    {(integration.provider || integration.id) && editable && <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-600 pt-4">
+      <button className="settings-button" disabled={disabled || integration.status === 'disabled'} onClick={() => setConfirm('disable')}>Disable inventory</button>
+      <button className="settings-button settings-danger" disabled={disabled} onClick={() => setConfirm('disconnect')}>Disconnect inventory</button>
+    </div>}
+    {integration.healthMessage && <p className="mt-4 text-sm settings-muted">{integration.healthMessage}</p>}
+    {integration.lastHealthCheckAt && <p className="mt-2 text-sm settings-muted">Storage checked: {new Date(integration.lastHealthCheckAt).toLocaleString()}</p>}
+    {notice && <p role="status" className="mt-4 settings-saved">{notice}</p>}
+    {error && <p role="alert" tabIndex={-1} className="mt-4 settings-error">{error}</p>}
+    {confirm && <div role="alertdialog" aria-modal="false" aria-labelledby={`${definition.id}-confirm`} className="mt-4 rounded-lg border border-amber-300 p-4">
+      <p id={`${definition.id}-confirm`}>{confirm === 'replace' ? 'Replace this inventory provider? Its previous credentials will be deleted when the new record is saved.' : confirm === 'disconnect' ? 'Delete this inventory record and its credentials? Live provider configuration is managed separately.' : 'Disable this inventory record? Live provider configuration is managed separately.'}{dirty && confirm !== 'replace' ? ' Unsaved edits will be discarded.' : ''}</p>
+      <div className="mt-3 flex flex-wrap gap-2"><button className="settings-button settings-danger" disabled={disabled} autoFocus onClick={() => { const kind = confirm; setConfirm(null); if (kind === 'replace') void save(true); else void action(kind); }}>Confirm {confirm}</button><button className="settings-button" onClick={() => setConfirm(null)}>Cancel</button></div>
+    </div>}
+  </section>;
 }
 
-export default function CRMChannelSettings({ crmUser, profileLoading = false, onAuthError }: { crmUser: any; profileLoading?: boolean; onAuthError?: () => void }) {
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const editable = hasCRMCapability(crmUser, 'communication:write');
+export default function CRMChannelSettings({ crmUser, profileLoading = false, profileError = '', onAuthError }: { crmUser: any; profileLoading?: boolean; profileError?: string; onAuthError?: () => void }) {
+  const [integrations, setIntegrations] = useState<Integration[] | null>(null);
+  const [loading, setLoading] = useState(false), [error, setError] = useState('');
+  const [dirty, setDirty] = useState<Record<string, boolean>>({});
+  const [operations, setOperations] = useState<Record<string, boolean>>({});
+  const operationRef = useRef(false);
+  const anyBusy = Object.values(operations).some(Boolean); operationRef.current = anyBusy;
+  const onBusy = useCallback((channel: string, value: boolean) => setOperations(d => d[channel] === value ? d : ({ ...d, [channel]: value })), []);
+  const dirtyRef = useRef(false);
+  const busyRef = useRef(false);
+  const editable = !profileLoading && !profileError && hasCRMCapability(crmUser, 'communication:configure');
+  const anyDirty = Object.values(dirty).some(Boolean); dirtyRef.current = anyDirty;
+  const onDirty = useCallback((channel: string, value: boolean) => setDirty(d => ({ ...d, [channel]: value })), []);
   const load = useCallback(async () => {
-    setLoading(true); setError('');
+    if (dirtyRef.current || busyRef.current || operationRef.current) return;
+    busyRef.current = true; setLoading(true); setError('');
     try {
-      const response = await api.get('/crm/communication-hub/integrations', { headers: authHeaders() });
-      setIntegrations(response.data.data || []);
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError?.(); return; }
-      const status = err?.response?.status;
-      const message = err?.response?.data?.message || 'Could not load channel settings';
-      setError(status === 503
-        ? `${message}. Ask the platform administrator to apply the CRM channel migration and configure the credential encryption key.`
-        : message);
-    } finally { setLoading(false); }
+      const { data } = await api.get('/crm/communication-hub/integrations', auth());
+      if (!data?.success || !Array.isArray(data.data) || definitions.some(d => !data.data.some((i: Integration) => i.channel === d.id))) throw new Error('Incomplete settings response');
+      setIntegrations(data.data);
+    } catch (err: any) { if (err?.response?.status === 401) onAuthError?.(); setError('Channel inventory could not be refreshed. Retry before making changes.'); }
+    finally { busyRef.current = false; setLoading(false); }
   }, [onAuthError]);
-  useEffect(() => { if (!profileLoading) load(); }, [load, profileLoading]);
-  const byChannel = useMemo(() => new Map(integrations.map((item) => [item.channel, item])), [integrations]);
-  const update = (next: Integration) => setIntegrations((current) => [...current.filter((item) => item.channel !== next.channel), next]);
-  const groups = ['Messaging', 'Voice', 'Social'];
-
-  return <section className="mt-8"><div className="flex items-start justify-between gap-4 mb-4"><div><h3 className="text-base font-semibold text-white">Communication & social channels</h3><p className="text-xs text-slate-500 mt-1 max-w-3xl">Configure tenant-owned credentials for the same email, WhatsApp, SMS, calling, and social channels available to the Team portal. Secrets are encrypted at rest and never returned to the UI.</p></div><button type="button" onClick={load} disabled={loading} className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-2 text-xs text-slate-300 hover:text-white disabled:opacity-40"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh</button></div>{!editable && <div className="mb-4 rounded-xl border border-amber-400/20 bg-amber-400/5 px-4 py-3 text-xs text-amber-200">You have read-only access. Ask a CRM marketing head or administrator to change channel credentials.</div>}{error && <div className="mb-4 rounded-xl border border-rose-400/20 bg-rose-400/5 px-4 py-3 text-xs text-rose-200">{error}</div>}{loading ? <div className="h-32 rounded-2xl bg-white/[0.03] animate-pulse" /> : <div className="space-y-7">{groups.map((group) => <div key={group}><p className="text-[10px] uppercase tracking-[0.18em] text-violet-300/70 mb-3">{group}</p><div className="space-y-4">{CHANNELS.filter((item) => item.group === group).map((definition) => <ChannelCard key={definition.id} definition={definition} integration={byChannel.get(definition.id) || { channel: definition.id, provider: null, status: 'not_configured', accountRef: null, config: {}, credentialsConfigured: false, healthScore: null, healthMessage: null, lastHealthCheckAt: null }} editable={editable} onSaved={update} />)}</div></div>)}</div>}</section>;
+  useEffect(() => { if (!profileLoading && !profileError) void load(); }, [load, profileLoading, profileError]);
+  useEffect(() => {
+    const unload = (event: BeforeUnloadEvent) => { if (dirtyRef.current) { event.preventDefault(); event.returnValue = ''; } };
+    const navigation = (event: MouseEvent) => { const a = (event.target as HTMLElement)?.closest('a'); if (dirtyRef.current && a?.href && a.origin === location.origin && a.pathname !== location.pathname && !window.confirm('Discard unsaved channel edits and leave settings?')) { event.preventDefault(); event.stopPropagation(); } };
+    const navigationApi = (window as any).navigation;
+    const navigate = (event: any) => { const target = new URL(event.destination.url); if (dirtyRef.current && event.cancelable && target.pathname !== location.pathname && target.pathname !== '/crm/login' && !window.confirm('Discard unsaved channel edits and leave settings?')) event.preventDefault(); };
+    window.addEventListener('beforeunload', unload);
+    if (navigationApi) navigationApi.addEventListener('navigate', navigate); else document.addEventListener('click', navigation, true);
+    return () => { window.removeEventListener('beforeunload', unload); navigationApi?.removeEventListener('navigate', navigate); document.removeEventListener('click', navigation, true); };
+  }, []);
+  const update = (next: Integration) => setIntegrations(current => current?.map(row => row.channel === next.channel ? next : row) || null);
+  return <section className="mt-6" aria-labelledby="channel-inventory-heading">
+    <header className="flex flex-wrap justify-between items-start gap-4"><div><h3 id="channel-inventory-heading" className="text-lg font-semibold">Connection inventory</h3><p className="settings-muted mt-2 max-w-3xl text-sm">These encrypted records are inactive for delivery. Messaging uses the platform’s provisioned providers; calling is managed in the contact center. Storage verification does not contact a provider or send a message.</p></div>
+      <button className="settings-button" onClick={load} disabled={loading || anyBusy || anyDirty || !!profileError || profileLoading}><RefreshCw size={16} aria-hidden="true" />{loading ? 'Refreshing…' : 'Refresh inventory'}</button>
+    </header>
+    {!editable && !profileLoading && !profileError && <p className="mt-4 settings-muted">Read-only access. A Business Head, Marketing Head or administrator can manage this inventory.</p>}
+    {error && <div role="alert" className="settings-card settings-error mt-4"><p>{error}{integrations ? ' Previously loaded records may be out of date.' : ''}</p><button className="settings-button mt-3" disabled={loading || anyBusy || anyDirty} onClick={load}>Retry inventory</button></div>}
+    {anyDirty && <p className="mt-3 text-sm settings-muted">Refresh is paused while edits are unsaved.</p>}
+    {loading && <p role="status" className="mt-4 settings-muted">Loading channel inventory…</p>}
+    {integrations && <><nav aria-label="Channel navigation" className="mt-5 flex flex-wrap gap-2">{definitions.map(d => <a key={d.id} href={`#channel-${d.id}`} className="settings-button">{d.label}</a>)}</nav>
+      {['Messaging', 'Voice', 'Social'].map(group => <div key={group} className="mt-6 space-y-4"><h3 className="font-semibold">{group}</h3>{definitions.filter(d => d.group === group).map(d => <ChannelCard key={d.id} definition={d} integration={integrations.find(i => i.channel === d.id)!} editable={editable} stale={!!error || loading} update={update} onDirty={onDirty} onBusy={onBusy} onAuthError={onAuthError} />)}</div>)}
+    </>}
+  </section>;
 }
-

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": { "target": "ES2022", "lib": ["ES2022", "DOM", "DOM.Iterable"] },
+  "include": [],
+  "files": ["src/vite-env.d.ts", "src/pages/crm/CRMChannelSettings.tsx", "src/pages/crm/shared/crmRoles.ts"]
+}

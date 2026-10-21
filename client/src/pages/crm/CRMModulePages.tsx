@@ -18,6 +18,8 @@ import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './s
 import LeadDetailDrawer from './shared/LeadDetailDrawer';
 import CommandPalette from './shared/CommandPalette';
 import CRMChannelSettings from './CRMChannelSettings';
+import { BRAND } from '@/config/brand';
+import './crm-settings.css';
 
 // ─── Shared sidebar nav config ─────────────────────────────────────────────────
 // Items with a `cap` are visible only to CRM roles that hold that capability
@@ -1193,71 +1195,50 @@ export function CRMReportsPage() {
 
 export function CRMSettingsPage() {
   const navigate = useNavigate();
-  const handleSettingsAuthError = useCallback(() => navigate('/crm/login', { replace: true }), [navigate]);
+  const handleSettingsAuthError = useCallback(() => {
+    for (const key of ['crmToken', 'crmRefreshToken', 'crmUserData']) localStorage.removeItem(key);
+    navigate('/crm/login', { replace: true });
+  }, [navigate]);
   const [crmUser, setCrmUser] = useState<any>(() => {
-    try {
-      const cached = localStorage.getItem('crmUserData');
-      return cached ? JSON.parse(cached) : null;
-    } catch { return null; }
+    try { return JSON.parse(localStorage.getItem('crmUserData') || 'null'); } catch { return null; }
   });
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
-
+  const [profileAttempt, setProfileAttempt] = useState(0);
   useEffect(() => {
-    const token = localStorage.getItem('crmToken');
-    if (!token) { navigate('/crm/login'); return; }
-    const fetchProfile = async () => {
-      setProfileLoading(true);
-      setProfileError('');
-      try {
-        const { data } = await api.get('/crm/profile', { headers: authHeaders() });
-        if (!data?.success || !data.crmUser) throw new Error('The CRM profile response was incomplete');
-        setCrmUser(data.crmUser);
-        // Keep the shell and settings page in sync after a role/permission change.
-        localStorage.setItem('crmUserData', JSON.stringify(data.crmUser));
-      } catch (error: any) {
-        if (error?.response?.status === 401) {
-          localStorage.removeItem('crmToken');
-          localStorage.removeItem('crmRefreshToken');
-          localStorage.removeItem('crmUserData');
-          navigate('/crm/login', { replace: true });
-          return;
-        }
-        setProfileError(error?.response?.data?.message || error?.message || 'Could not load your CRM profile.');
-      } finally {
-        setProfileLoading(false);
-      }
-    };
-    fetchProfile();
-  }, [navigate]);
-
-  return (
-    <CRMLayout title="Settings & Channels">
-      <div className="max-w-6xl">
-        <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
-          <h3 className="text-base font-semibold text-white mb-5">CRM Profile</h3>
-          {crmUser ? (
-            <div className="flex items-center gap-5">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center text-xl font-bold text-violet-300 flex-shrink-0">
-                {(crmUser.firstName?.[0] || '') + (crmUser.lastName?.[0] || '')}
-              </div>
-              <div>
-                <p className="text-lg font-bold text-white">{crmUser.firstName} {crmUser.lastName}</p>
-                <p className="text-sm text-slate-500">{crmUser.email}</p>
-                <p className="text-xs text-slate-600 mt-1">{crmUser.designation || 'CRM User'} &middot; {crmUser.department || 'Sales'}</p>
-              </div>
-            </div>
-          ) : (
-            profileLoading ? <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-white/[0.05] animate-pulse" />
-              <div className="space-y-2"><div className="h-4 w-32 bg-white/[0.05] rounded animate-pulse" /><div className="h-3 w-48 bg-white/[0.05] rounded animate-pulse" /></div>
-            </div> : <div className="rounded-xl border border-rose-400/20 bg-rose-400/5 px-4 py-3 text-sm text-rose-200">{profileError || 'CRM profile is unavailable.'}</div>
-          )}
-        </div>
-        <CRMChannelSettings crmUser={crmUser} profileLoading={profileLoading} onAuthError={handleSettingsAuthError} />
-      </div>
-    </CRMLayout>
-  );
+    if (!localStorage.getItem('crmToken')) { handleSettingsAuthError(); return; }
+    const controller = new AbortController();
+    setProfileLoading(true); setProfileError('');
+    api.get('/crm/profile', { headers: authHeaders(), signal: controller.signal }).then(({ data }) => {
+      if (controller.signal.aborted) return;
+      if (!data?.success || !data.crmUser) throw new Error('The CRM profile response was incomplete.');
+      setCrmUser(data.crmUser);
+      localStorage.setItem('crmUserData', JSON.stringify(data.crmUser));
+    }).catch((error: any) => {
+      if (controller.signal.aborted) return;
+      if (error?.response?.status === 401) { handleSettingsAuthError(); return; }
+      setProfileError('Your current CRM profile could not be verified. Cached profile details may be out of date. Editing is paused until retry succeeds.');
+    }).finally(() => { if (!controller.signal.aborted) setProfileLoading(false); });
+    return () => controller.abort();
+  }, [handleSettingsAuthError, profileAttempt]);
+  return <CRMLayout title="Settings & Channels">
+    <div className="crm-settings max-w-6xl min-w-0">
+      <header className="mb-6 flex flex-wrap items-center gap-3">
+        <img src={BRAND.logo} alt={`${BRAND.name} logo`} className="h-12 w-12 rounded-lg object-contain bg-white" />
+        <div><h2 className="text-xl font-semibold">{BRAND.name} CRM settings</h2><p className="settings-muted text-sm">Profile and connection inventory</p></div>
+      </header>
+      <section className="settings-card" aria-labelledby="crm-profile-heading">
+        <h3 id="crm-profile-heading" className="text-base font-semibold mb-4">CRM profile</h3>
+        {profileError && <div role="alert" className="settings-error mb-4"><p>{profileError}</p><button className="settings-button mt-3" onClick={() => setProfileAttempt(n => n + 1)} disabled={profileLoading}>Retry profile</button></div>}
+        {profileLoading && <p role="status" className="settings-muted mb-3">Verifying your profile…</p>}
+        {crmUser && <div className="flex items-center gap-4 min-w-0">
+          <div aria-hidden="true" className="h-12 w-12 shrink-0 rounded-xl bg-violet-900 flex items-center justify-center font-bold text-white">{(crmUser.firstName?.[0] || '') + (crmUser.lastName?.[0] || '')}</div>
+          <div className="min-w-0"><p className="font-semibold">{crmUser.firstName} {crmUser.lastName}</p><p className="settings-muted text-sm break-all">{crmUser.email}</p><p className="settings-muted text-sm mt-1">{crmUser.designation || 'CRM user'} · {crmUser.department || 'Sales'}{profileError ? ' · Cached details' : ''}</p></div>
+        </div>}
+      </section>
+      <CRMChannelSettings crmUser={crmUser} profileLoading={profileLoading} profileError={profileError} onAuthError={handleSettingsAuthError} />
+    </div>
+  </CRMLayout>;
 }
 
 // ─── Team Management — create CRM logins and assign roles ─────────────────────

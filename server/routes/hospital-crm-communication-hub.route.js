@@ -20,6 +20,7 @@ import {
   listCrmChannelIntegrations,
   upsertCrmChannelIntegration,
   testCrmChannelIntegration,
+  changeCrmChannelIntegration,
 } from '../services/crm-channel-integrations.service.js';
 
 const router = express.Router();
@@ -37,6 +38,7 @@ function tenant(req, res) {
 function fail(res, error) {
   return res.status(error.statusCode || (['42P01', '42703'].includes(error.code) ? 503 : 500)).json({
     success: false,
+    ...(error.fields ? { fields: error.fields } : {}),
     message: ['42P01', '42703'].includes(error.code) ? 'Communication hub/channel settings migration is not applied yet' : error.message,
   });
 }
@@ -64,9 +66,11 @@ router.post('/templates', action((req, tenantId) => createCommunicationHubTempla
 // Tenant-owned provider settings. Secret values are accepted only on writes,
 // encrypted at rest, and never included in list/test responses.
 router.get('/integrations', action((req, tenantId) => listCrmChannelIntegrations(tenantId)));
-router.put('/integrations/:channel', action((req, tenantId) => upsertCrmChannelIntegration(tenantId, req.params.channel, req.body, req.crmUser.id), 'communication:write'));
-router.post('/integrations/:channel/test', action((req, tenantId) => testCrmChannelIntegration(tenantId, req.params.channel), 'communication:write'));
-router.patch('/integrations/:id/health', action((req, tenantId) => recordCommunicationIntegrationHealth({ ...req.body, tenantId, integrationId: req.params.id }, req.crmUser.id), 'communication:write'));
+router.put('/integrations/:channel', action((req, tenantId) => upsertCrmChannelIntegration(tenantId, req.params.channel, req.body, req.crmUser.id), 'communication:configure'));
+router.post('/integrations/:channel/test', action((req, tenantId) => testCrmChannelIntegration(tenantId, req.params.channel, req.body, req.crmUser.id), 'communication:configure'));
+router.post('/integrations/:channel/disable', action((req, tenantId) => changeCrmChannelIntegration(tenantId, req.params.channel, 'disable', req.body, req.crmUser.id), 'communication:configure'));
+router.delete('/integrations/:channel', action((req, tenantId) => changeCrmChannelIntegration(tenantId, req.params.channel, 'disconnect', req.body, req.crmUser.id), 'communication:configure'));
+router.patch('/integrations/:id/health', action((req, tenantId) => recordCommunicationIntegrationHealth({ ...req.body, tenantId, integrationId: req.params.id }, req.crmUser.id), 'communication:configure'));
 router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id), 'communication:write'));
 
 // ─── Real send + calls, scoped to this CRM user's own leads/contacts/deals ───

@@ -137,6 +137,7 @@ export async function listIntegrations(tenant) {
 }
 
 export async function createIntegration(input, actorUserId) {
+  if (input.integrationType === 'communication') throw Object.assign(new Error('Use the authorized channel settings endpoint.'), {statusCode: 400});
   const id = tenantId(input.tenantId);
   const result = await sharedPool.query(`INSERT INTO crm_marketing_integrations (tenant_id, provider, integration_type, status, account_ref, credentials_ref, config, created_by) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8) ON CONFLICT (tenant_id, provider, integration_type) DO UPDATE SET status = EXCLUDED.status, account_ref = EXCLUDED.account_ref, credentials_ref = EXCLUDED.credentials_ref, config = EXCLUDED.config, updated_at = NOW() RETURNING *`, [id, input.provider, input.integrationType || 'ads', input.status || 'not_configured', input.accountRef || null, input.credentialsRef || null, JSON.stringify(input.config || {}), actorUserId || null]);
   return result.rows[0];
