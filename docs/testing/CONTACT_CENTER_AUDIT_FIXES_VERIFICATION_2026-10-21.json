@@ -1,0 +1,420 @@
+{
+  "recordedAt": "2026-10-21T05:25:04.124868+00:00",
+  "userFacingTime": "2026-10-21T10:55:04.124868+05:30",
+  "page": "https://app.mediqzy.com/crm/contact-center",
+  "status": "deployed-and-verified",
+  "findings": [
+    {
+      "id": "CC-AUD-01",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-02",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-03",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-04",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-05",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-06",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-07",
+      "implementation": "fixed",
+      "regression": "passed"
+    },
+    {
+      "id": "CC-AUD-08",
+      "implementation": "fixed",
+      "regression": "passed"
+    }
+  ],
+  "code": {
+    "backendCommit": "44840b54ef4beed23a90f290649da1fb45248139",
+    "frontendCommit": "cceee5856374e2a6ae6e51a702f5f8bf800a166c",
+    "mainPushed": true,
+    "backendRelease": "/home/ubuntu/mediqzy-releases/contact-center-20261021-02/server",
+    "parentRelease": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01",
+    "frontendBuild": "/home/ubuntu/mediqzy-releases/contact-center-build-20261021-02",
+    "backendManifestSha256": "62bd0c9038b1f2f97f5d3e74f723fc836a07281461b662f596dc91bd89a46b1a",
+    "reviewedOverlayFiles": 84,
+    "clientOnlyFollowup": "cceee585 resets New routing flow identity; server files unchanged",
+    "unrelatedWorkingTreeChangesExcluded": true
+  },
+  "frontend": {
+    "at": "2026-10-21T05:23:59.903Z",
+    "expectedIndexSha256": "97c88d8c12f947ab0eb2b370efa555293baa8c3815eac0c1b7224851dde045c7",
+    "checks": [
+      {
+        "path": "/",
+        "status": 200,
+        "sha256": "97c88d8c12f947ab0eb2b370efa555293baa8c3815eac0c1b7224851dde045c7",
+        "matchesBuild": true
+      },
+      {
+        "path": "/crm/contact-center",
+        "status": 200,
+        "sha256": "97c88d8c12f947ab0eb2b370efa555293baa8c3815eac0c1b7224851dde045c7",
+        "matchesBuild": true
+      }
+    ],
+    "passed": true,
+    "productionBuildPassed": true,
+    "buildTime": "1m 35s",
+    "nginxPublished": true,
+    "s3Published": true,
+    "cloudfrontInvalidationRequested": true,
+    "oldHashedAssetsRetained": true,
+    "previousEntryPointSaved": true
+  },
+  "database": {
+    "schemaChanged": false,
+    "migrationRequired": false,
+    "productionClinicalWrites": 0,
+    "forcedRlsOwnershipAndRuntimeDenialVerified": true
+  },
+  "regression": {
+    "frontend": {
+      "passed": 45,
+      "failed": 0,
+      "testFiles": 10
+    },
+    "backend": {
+      "passed": 84,
+      "failed": 0,
+      "suites": 9
+    },
+    "disposablePostgres": {
+      "passed": 57,
+      "checks": [
+        "All contact-center tables use the separate NOLOGIN owner and forced RLS",
+        "Runtime cannot disable RLS or truncate audit events",
+        "A tenant cannot select another organization provider credential reference",
+        "Agent identity is tenant-bound",
+        "Concurrent retries originate exactly one provider call",
+        "An idempotency key cannot change recipient",
+        "A busy agent cannot place a second call",
+        "Other tenant cannot read call",
+        "Pool does not retain tenant state",
+        "Database rejects a cross-tenant insert",
+        "Agent active-call references are constrained to an existing call of the same tenant",
+        "Duplicate provider event is skipped",
+        "Late callback cannot regress terminal state",
+        "Event history is immutable",
+        "Browser credentials are rotated only for the assigned account",
+        "Signed event replay is rejected",
+        "Transcripts are redacted before persistence",
+        "Search remains tenant scoped",
+        "Summary jobs produce reviewable artifacts",
+        "Copilot retrieval includes only published tenant knowledge",
+        "Vector indexing and semantic search obey tenant scope",
+        "Unconsented recording import stays denied",
+        "Suppressed destination cannot be dialed",
+        "Queue assignment respects skills and excludes busy agents",
+        "Missing gateway does not fake media success",
+        "A consented completed call imports one private recording",
+        "Retention deletes recording content and contact details",
+        "Delayed events cannot recreate expired call content",
+        "Verified inbound missed calls create one owned callback task",
+        "LiveKit room provisioning is idempotent under concurrent retries",
+        "LiveKit joins are tenant-bound and agent roles are assigned",
+        "Whisper token grants only the private coaching room",
+        "Hold action retries do not duplicate provider operations",
+        "Signed project hooks ignore unowned rooms and retry idempotent permission changes",
+        "Agent membership permits reconnects beyond initial token TTL but expires with the session",
+        "Caller invitation is single use and cannot grant coaching access",
+        "Native streaming segments are redacted, replay protected and final revisions immutable",
+        "Reception bot replies cite only approved hospital FAQ evidence",
+        "Human handoff reserves the target, revokes old agent grants and stops bot dispatch",
+        "Unavailable handoff leaves a durable callback without ending the call",
+        "Native hangup persists terminal state and blocks new media tokens",
+        "Native callback ownership and recipient checks fail before origination",
+        "Concurrent native callback retries reserve one call and increment attempts once",
+        "Republishing an existing routing identity increments its version and retires the prior version",
+        "Voice campaign recipients resolve to consented existing tenant CRM identities",
+        "Voice campaign originates once and writes a shared CRM activity",
+        "Canonical completed outcomes reconcile to the campaign recipient",
+        "Journey voice enqueue is atomic with its parent transaction and duplicate safe",
+        "Ambiguous voice campaign failures cannot automatically redial",
+        "Quiet hours cannot initiate campaign calls",
+        "A racing unavailable agent defers without consuming a campaign attempt",
+        "Withdrawn marketing consent suppresses scheduled recipients before delivery",
+        "Biometric enrollment consumes a fresh consented challenge and persists an opaque template",
+        "Unevaluated biometric similarity cannot authenticate a caller",
+        "Biometric identities and template lookup cannot cross tenants",
+        "Revocation deletes the biometric template and prevents further inference",
+        "Latest revoked consent cannot resurrect an older biometric opt-in"
+      ]
+    }
+  },
+  "production": {
+    "api": {
+      "at": "2026-10-21T05:20:34.760Z",
+      "base": "https://app.mediqzy.com",
+      "checks": [
+        {
+          "name": "Critical database health",
+          "passed": true,
+          "status": 200
+        },
+        {
+          "name": "All 22 voice tables have forced RLS and separate NOLOGIN ownership",
+          "passed": true,
+          "tables": 22
+        },
+        {
+          "name": "Runtime cannot own voice tables or truncate audit history",
+          "passed": true
+        },
+        {
+          "name": "Unscoped runtime cannot read contact-center calls",
+          "passed": true
+        },
+        {
+          "name": "Unauthenticated denial /api/crm/contact-center",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/crm/contact-center/media/readiness",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/crm/contact-center/voice-campaigns",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/field/attendance/today",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unauthenticated denial /api/v1/nursing/worklist",
+          "passed": true,
+          "status": 401
+        },
+        {
+          "name": "Unsigned LiveKit webhook denied",
+          "passed": true,
+          "status": 403
+        },
+        {
+          "name": "Invalid single-use guest invitation denied",
+          "passed": true,
+          "status": 404
+        },
+        {
+          "name": "Authenticated demo CRM read /api/crm/contact-center",
+          "passed": true,
+          "status": 200
+        },
+        {
+          "name": "Authenticated demo CRM read /api/crm/contact-center/media/readiness",
+          "passed": true,
+          "status": 200,
+          "livekit": true
+        },
+        {
+          "name": "Authenticated demo CRM read /api/crm/contact-center/voice-campaigns",
+          "passed": true,
+          "status": 200
+        }
+      ],
+      "clinicalWrites": 0,
+      "telephoneCalls": 0,
+      "authenticationMethod": "Ephemeral signed access token for existing active demo CRM staff; no role or account changes",
+      "passed": true
+    },
+    "crmBrowser": {
+      "at": "2026-10-21T05:24:00.501Z",
+      "base": "https://app.mediqzy.com",
+      "checks": [
+        {
+          "name": "CRM contact-center console renders with real authenticated API data",
+          "passed": true
+        },
+        {
+          "name": "Native LiveKit workspace renders without placing a call",
+          "passed": true
+        },
+        {
+          "name": "Campaign list renders without publishing or dialing",
+          "passed": true
+        },
+        {
+          "name": "Biometric UI requires consent and fresh challenge before capture",
+          "passed": true
+        },
+        {
+          "name": "Mobile dialer renders at phone viewport without overflow",
+          "passed": true
+        }
+      ],
+      "clinicalWrites": 0,
+      "telephoneCalls": 0,
+      "microphoneCapture": false,
+      "authentication": "Ephemeral signed access token for existing active demo CRM staff; login credentials unchanged",
+      "pageErrorCount": 0,
+      "passed": true
+    },
+    "recoveryBrowser": {
+      "at": "2026-10-21T05:24:00.507Z",
+      "base": "https://app.mediqzy.com",
+      "checks": [
+        {
+          "name": "Live readiness prevents unassigned staff from starting calls",
+          "passed": true
+        },
+        {
+          "name": "Live biometric capture stays disabled without model/storage configuration",
+          "passed": true
+        },
+        {
+          "name": "Deployed bundle sends native status refresh to LiveKit",
+          "passed": true
+        },
+        {
+          "name": "Opened detail refreshes to completed and enables wrap-up",
+          "passed": true
+        },
+        {
+          "name": "Existing flow publication retains identity over two versions",
+          "passed": true
+        },
+        {
+          "name": "Claimed native callback opens the native recipient control",
+          "passed": true
+        },
+        {
+          "name": "Expired access renews once and recovers the deployed console",
+          "passed": true
+        }
+      ],
+      "productionMutations": 0,
+      "callsPlaced": 0,
+      "microphoneCapture": false,
+      "fixtureMutations": 5,
+      "liveConfiguration": {
+        "ownAgentAssigned": false,
+        "livekit": true,
+        "nativePstn": false,
+        "biometricsConfigured": false
+      },
+      "pageErrorCount": 0,
+      "passed": true
+    },
+    "livekitAudio": {
+      "passed": true,
+      "checks": [
+        "Caller receives agent audio",
+        "Agent receives caller audio",
+        "Agent receives private coaching audio",
+        "Caller cannot subscribe to supervisor coaching room",
+        "Server-enforced caller hold",
+        "Resume restores caller permissions"
+      ],
+      "receivedFrames": {
+        "caller": 20,
+        "agent": 20,
+        "coach": 20
+      },
+      "livekitServer": "wss://msh-kw9tvxa9.livekit.cloud",
+      "phoneCalls": 0,
+      "productionDatabaseChanges": 0
+    },
+    "nursingBrowser": {
+      "baseUrl": "https://app.mediqzy.com",
+      "patientDataAccessed": false,
+      "clinicalWritesPerformed": false,
+      "checks": [
+        {
+          "route": "/nurse/login",
+          "documentNavigationStatus": 200,
+          "loginRequired": true,
+          "passwordInputPresent": true,
+          "noHorizontalOverflow": true,
+          "passed": true
+        },
+        {
+          "route": "/nurse/ward",
+          "documentNavigationStatus": null,
+          "loginRequired": true,
+          "passwordInputPresent": true,
+          "noHorizontalOverflow": true,
+          "passed": true
+        },
+        {
+          "route": "/hospital/nursing/administration",
+          "documentNavigationStatus": null,
+          "loginRequired": true,
+          "passwordInputPresent": true,
+          "noHorizontalOverflow": true,
+          "passed": true
+        }
+      ],
+      "pageErrors": [],
+      "status": "passed"
+    },
+    "processes": [
+      {
+        "name": "mediczy-server",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-02/server",
+        "restarts": 286
+      },
+      {
+        "name": "mediqzy-contact-stt",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+        "restarts": 0
+      },
+      {
+        "name": "mediqzy-contact-bot",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+        "restarts": 0
+      },
+      {
+        "name": "mediqzy-contact-center-worker",
+        "status": "online",
+        "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+        "restarts": 0
+      }
+    ],
+    "workersRetainedOnCompatiblePreviousRelease": true,
+    "pm2StateSaved": true
+  },
+  "activationRequirements": [
+    "Approved staff assignment and availability; no staff permissions fabricated",
+    "Tenant-bound approved SIP trunk/caller ID or Exotel references for PSTN",
+    "Approved private biometric model service/TLS/KMS/pinned model and representative acceptance evidence",
+    "Existing clinical/model and provider-webhook acceptance gates remain explicit"
+  ],
+  "limits": {
+    "telephoneCallsPlaced": 0,
+    "patientRecordsChanged": 0,
+    "speakerEnrollmentsPerformed": 0,
+    "browserMutationsIntercepted": true,
+    "expiredAccessBrowserTestUsesSyntheticRefreshResponse": true,
+    "realProviderRefreshRotationNotExercisedByBrowserHarness": true
+  },
+  "privateEvidenceDirectory": "/home/ubuntu/contact-center-fix-evidence/20261021"
+}

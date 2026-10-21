@@ -1,6 +1,6 @@
 # Contact-center audit remediation — 21 October 2026
 
-Status: implementation and regression verification complete; production deployment verification pending. Scope: the [eight confirmed functional audit findings](../audits/CONTACT_CENTER_FUNCTIONAL_AUDIT_2026-10-21.md), plus observed setup/readiness feedback.
+Status: **all eight audit findings fixed, deployed and verified on https://app.mediqzy.com/crm/contact-center**. Scope: the [eight confirmed functional audit findings](../audits/CONTACT_CENTER_FUNCTIONAL_AUDIT_2026-10-21.md), plus observed setup/readiness feedback.
 
 | Finding | Change |
 |---|---|
@@ -19,4 +19,15 @@ Regression verification: **45 frontend tests**, **84 backend tests across nine s
 
 The fix requires no schema migration. Release packaging preserves the current isolated production baseline and excludes unrelated working-tree changes. Dedicated media/job workers have no changed worker code or protocol in this release and can remain on their existing compatible release. Existing hashed frontend assets must be retained on both Nginx and S3 for open browser sessions.
 
-Production acceptance details will be recorded after deployment in `docs/testing/CONTACT_CENTER_AUDIT_FIXES_VERIFICATION_2026-10-21.json`. Real PSTN operation still requires approved provider/trunk references; biometric/clinical acceptance still requires the existing explicit configuration and human/model evidence. Automated browser fixtures intercept every mutation, and cannot establish real telephone or biometric accuracy.
+Production evidence is in [the remediation verification record](../testing/CONTACT_CENTER_AUDIT_FIXES_VERIFICATION_2026-10-21.json). Real PSTN operation still requires approved provider/trunk references; biometric/clinical acceptance still requires the existing explicit configuration and human/model evidence. Automated browser fixtures intercept every mutation, and cannot establish real telephone or biometric accuracy.
+
+## Production release and verification
+
+- Backend commit `44840b54`, active release `/home/ubuntu/mediqzy-releases/contact-center-20261021-02/server`; previous release `contact-center-20261021-01` retained for rollback. Frontend commit `cceee585` adds the routing editor reset only; server sources are identical between those commits. Both commits are on `origin/main`.
+- Isolated production build passed in 1m 35s with existing dependency/chunk-size warnings. Published to both Nginx and S3, with CloudFront invalidation. Public `/` and `/crm/contact-center` both match the reviewed entry-point SHA-256 `97c88d8c12f947ab0eb2b370efa555293baa8c3815eac0c1b7224851dde045c7`. Older hashed assets remain available.
+- Post-deploy: **14 API/database checks**, **5 authenticated CRM browser checks**, **7 deployed-bundle recovery/readiness checks**, **6 real LiveKit audio checks**, and **3 nursing access browser checks** passed. Both CRM browser suites reported zero JavaScript page errors. Real audio checks use generated audio and temporary rooms, including private coaching isolation and hold/resume.
+- Recovery browser checks combine actual demo read-only setup state with synthetic intercepted calls, callback claims, graph publications and access expiry. These verify the deployed JavaScript's behavior without production call/clinical mutations. Token rotation's failure/concurrency cases are also covered by unit tests; the browser harness does not rotate a real stored refresh token.
+- API process is online with one expected deployment reload (lifetime counter 285 → 286). Dedicated STT, bot and job workers remain online on the compatible previous release, with zero restarts. PM2 state was saved privately.
+- The demo still has no assigned contact-center agent, approved PSTN binding or configured biometric service/storage. The page now explains these prerequisites and disables the corresponding starts/capture. LiveKit browser transport is configured; no assigned staff IDs, telephone references or consent were invented.
+
+Private release evidence and the preceding frontend index are under `/home/ubuntu/contact-center-fix-evidence/20261021`, outside the served checkout. To roll back this application fix, activate the retained `contact-center-20261021-01` package and restore `frontend-previous-index.html` to both origins, then invalidate CloudFront. Preserve all hashed assets, the active encrypted database and existing worker processes. No database rollback or schema removal is needed.
