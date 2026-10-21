@@ -72,7 +72,8 @@ try {
 } catch (err) {
   await client.query('ROLLBACK');
   console.error('❌ corporate-employee-retroactive-linking failed:', err.message);
-  throw err;
-} finally {
   client.release();
+  process.exit(1);
 }
+client.release();
+process.exit(0);

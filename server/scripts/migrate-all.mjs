@@ -31,6 +31,7 @@ const MANIFEST = [
   { id: 'crm-social-content', cmd: 'node', args: ['migrations/20261015007000-crm-social-content.migration.js'], cwd: SERVER },
   { id: 'dedicated-installations', cmd: 'node', args: ['migrations/20261018000100-dedicated-installations.migration.js'], cwd: SERVER },
   { id: 'corporate-consent-ahc-notifications', cmd: 'node', args: ['migrations/20261018000200-corporate-consent-ahc-notifications.migration.js'], cwd: SERVER },
+  { id: 'corporate-employee-retroactive-linking', cmd: 'node', args: ['migrations/corporate-employee-retroactive-linking.migration.js'], cwd: SERVER, optional: true },
 ];
 
 // 2026-Q4 wave — migrations committed in the Oct 2026 build that were not yet in the
