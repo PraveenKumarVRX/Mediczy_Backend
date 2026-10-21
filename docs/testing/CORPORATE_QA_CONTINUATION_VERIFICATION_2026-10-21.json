@@ -1,0 +1,341 @@
+{
+  "date": "2026-10-21",
+  "apiCommit": "3d3547391879583f9385e26fc4a0099049cb724a",
+  "frontendCommit": "65fe444e",
+  "frontendIndexSha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5",
+  "automatedTests": {
+    "backendPassed": 25,
+    "frontendPassed": 3,
+    "productionBuild": "passed"
+  },
+  "productionTestMutations": 0,
+  "actualTelephoneCalls": 0,
+  "actualNotificationsSent": 0,
+  "deploymentIncident": {
+    "failedPackage": "corporate-qa-20261021-01",
+    "cause": "Missing sibling client/src/shared/emergencyKeywords.json",
+    "recovery": "API restored to established /home/ubuntu/Mediczy/server path",
+    "inactiveArtifactMarked": true
+  },
+  "cloudFrontInvalidation": {
+    "id": "I3KG6HVOZ9K9HFG5N3RZXMXWM8",
+    "status": "Completed"
+  },
+  "before": {
+    "at": "2026-10-21T08:43:55.344Z",
+    "phase": "before",
+    "productionMutations": 0,
+    "blockedMutations": 0,
+    "checks": [
+      {
+        "name": "Consent summary and active employee roster agree",
+        "passed": false
+      },
+      {
+        "name": "Direct corporate identity appears exactly once and is marked you",
+        "passed": false
+      }
+    ],
+    "pageErrors": [],
+    "api": {
+      "statuses": [
+        {
+          "path": "/api/corporate/consent/summary",
+          "status": 200
+        },
+        {
+          "path": "/api/corporate/consent/employees",
+          "status": 500
+        },
+        {
+          "path": "/api/corporate/hr/team",
+          "status": 200
+        }
+      ],
+      "summary": {
+        "total": 2,
+        "granted": 0,
+        "pending": 2,
+        "consentRate": 0
+      },
+      "directIdentityCount": 0,
+      "directIdentityNamespaceValid": true
+    },
+    "completed": true,
+    "passed": false
+  },
+  "after": {
+    "at": "2026-10-21T08:49:18.145Z",
+    "phase": "after",
+    "productionMutations": 0,
+    "blockedMutations": 0,
+    "checks": [
+      {
+        "name": "Consent summary and active employee roster agree",
+        "passed": true
+      },
+      {
+        "name": "Direct corporate identity appears exactly once and is marked you",
+        "passed": true
+      },
+      {
+        "name": "Failed employee load is not rendered as an empty list",
+        "passed": true
+      },
+      {
+        "name": "Consent retry restores the roster and clears error",
+        "passed": true
+      }
+    ],
+    "pageErrors": [],
+    "api": {
+      "statuses": [
+        {
+          "path": "/api/corporate/consent/summary",
+          "status": 200
+        },
+        {
+          "path": "/api/corporate/consent/employees",
+          "status": 200
+        },
+        {
+          "path": "/api/corporate/hr/team",
+          "status": 200
+        }
+      ],
+      "summary": {
+        "total": 2,
+        "granted": 0,
+        "pending": 2,
+        "consentRate": 0
+      },
+      "employeeCount": 2,
+      "activeGrantedCount": 0,
+      "directIdentityCount": 1,
+      "directIdentityNamespaceValid": true
+    },
+    "completed": true,
+    "passed": true
+  },
+  "sql": {
+    "checks": [
+      {
+        "name": "active roster excludes inactive, other tenant and non-health consents",
+        "passed": true,
+        "result": {
+          "total": 2,
+          "granted": 1
+        }
+      },
+      {
+        "name": "empty active roster",
+        "passed": true,
+        "result": {
+          "total": 0,
+          "granted": 0
+        }
+      },
+      {
+        "name": "revoked health consent",
+        "passed": true,
+        "result": {
+          "total": 2,
+          "granted": 0
+        }
+      }
+    ],
+    "method": "Read-only local PostgreSQL; exact route SQL over synthetic CTEs; no schema/data changes"
+  },
+  "platformSmoke": {
+    "at": "2026-10-21T08:48:42.829Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "Critical database health",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "All 22 voice tables have forced RLS and separate NOLOGIN ownership",
+        "passed": true,
+        "tables": 22
+      },
+      {
+        "name": "Runtime cannot own voice tables or truncate audit history",
+        "passed": true
+      },
+      {
+        "name": "Unscoped runtime cannot read contact-center calls",
+        "passed": true
+      },
+      {
+        "name": "Unauthenticated denial /api/crm/contact-center",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/crm/contact-center/media/readiness",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/crm/contact-center/voice-campaigns",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/field/attendance/today",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unauthenticated denial /api/v1/nursing/worklist",
+        "passed": true,
+        "status": 401
+      },
+      {
+        "name": "Unsigned LiveKit webhook denied",
+        "passed": true,
+        "status": 403
+      },
+      {
+        "name": "Invalid single-use guest invitation denied",
+        "passed": true,
+        "status": 404
+      },
+      {
+        "name": "Authenticated demo CRM read /api/crm/contact-center",
+        "passed": true,
+        "status": 200
+      },
+      {
+        "name": "Authenticated demo CRM read /api/crm/contact-center/media/readiness",
+        "passed": true,
+        "status": 200,
+        "livekit": true
+      },
+      {
+        "name": "Authenticated demo CRM read /api/crm/contact-center/voice-campaigns",
+        "passed": true,
+        "status": 200
+      }
+    ],
+    "clinicalWrites": 0,
+    "telephoneCalls": 0,
+    "authenticationMethod": "Ephemeral signed access token for existing active demo CRM staff; no role or account changes",
+    "passed": true
+  },
+  "routeSmoke": {
+    "at": "2026-10-21T08:49:18.994Z",
+    "checks": [
+      {
+        "path": "/",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/crm/settings",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/crm/contact-center",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/crm/dialer",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/corporate/compliance",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/corporate/hr-team",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/hospital/login",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      },
+      {
+        "path": "/nurse/login",
+        "status": 200,
+        "matchesBuild": true,
+        "sha256": "05a445a53f12d76c3b7af520b4d95cd5bf19796eacdfbae78302e6d37cba23b5"
+      }
+    ],
+    "passed": true
+  },
+  "sourceParity": [
+    {
+      "path": "server/routes/corporate.route.js",
+      "matchesReleaseCommit": true,
+      "sha256": "225fea60bd7994b51ecebefeddc8e388688d15da8cf00308f20635852ed1b50e"
+    },
+    {
+      "path": "server/routes/corporate/hr-management.routes.js",
+      "matchesReleaseCommit": true,
+      "sha256": "8f034ca69a2e16702c679a7dbf1da4360850ff57e044bc142a60d97301397caa"
+    },
+    {
+      "path": "server/controller/appointment.controller.js",
+      "matchesReleaseCommit": true,
+      "sha256": "f4fddbf1d516cc72ccb51fd122c22ed191d402e9a9d9d6dea94e5d325a60e481"
+    },
+    {
+      "path": "server/services/notification.service.js",
+      "matchesReleaseCommit": true,
+      "sha256": "3f129c5e5862819c4a41eeae3aa356bab600a41bf5f96ad6afcd393b49c464b2"
+    },
+    {
+      "path": "server/services/appointment-notification.service.js",
+      "matchesReleaseCommit": true,
+      "sha256": "e502d633c4063af7a38d3eaaceed2ac2b71d079499fd2757a65d831bffad1979"
+    },
+    {
+      "path": "server/utils/doctor-name.js",
+      "matchesReleaseCommit": true,
+      "sha256": "288e13b69aca69d7f48ac107bcc02b88834d7c835805cc097336891506ce1693"
+    },
+    {
+      "path": "server/utils/icalGenerator.js",
+      "matchesReleaseCommit": true,
+      "sha256": "7a58673067ac943a0aebb3b10517e4f0081e48c3fd360bd8771b4f5787c7a383"
+    },
+    {
+      "path": "client/src/pages/corporate/CorporateCompliance.tsx",
+      "matchesReleaseCommit": true,
+      "sha256": "8c3cf68647d7e76e9bede92adbfc41ada34d488bb52deffe4c743076a3f41170"
+    },
+    {
+      "path": "client/src/pages/corporate/CorporateHrTeam.tsx",
+      "matchesReleaseCommit": true,
+      "sha256": "e7336d1210266dcca856c4f53ae3dfa8f3ca1fefee3a2fa5884b54daa59df0f4"
+    }
+  ],
+  "processStatus": {
+    "at": "2026-10-21T08:50:28.589Z",
+    "processes": [
+      {
+        "name": "mediczy-server",
+        "cwd": "/home/ubuntu/Mediczy/server",
+        "status": "online",
+        "restarts": 11,
+        "uptime": 1792572442487
+      }
+    ]
+  }
+}
