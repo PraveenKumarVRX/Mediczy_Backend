@@ -497,4 +497,8 @@ const GoogleFitDashboard: React.FC = () => {
   );
 };
 
-export default GoogleFitDashboard;
+const ConfiguredGoogleFitDashboard: React.FC = () => import.meta.env.VITE_GOOGLE_CLIENT_ID
+  ? <GoogleFitDashboard />
+  : <Card><CardHeader><CardTitle>Google Fit</CardTitle><CardDescription>Google Fit connection is unavailable. Contact support to enable this integration.</CardDescription></CardHeader></Card>;
+
+export default ConfiguredGoogleFitDashboard;

@@ -1,12 +1,17 @@
 import { randomUUID, randomBytes } from 'node:crypto';
 import { fail, phone, tenant, digest, stateAfter, terminal, selectAgent, validateFlow, verifyGateway } from './policy.js';
-import { ExotelProvider } from './exotel.js';
+import { createVoiceProvider } from './providers.js';
+import { CONTACT_CENTER_PROVIDERS, contactCenterProvider } from '../../../shared/contact-center-providers.mjs';
 import { redactPhiText } from '../../utils/phi-text-redactor.js';
 
-export function createContactCenter({ tx, providerFactory = config => new ExotelProvider(config), env = process.env, llm, storage, gateway, embed }) {
+export function createContactCenter({ tx, providerFactory, env = process.env, llm, storage, gateway, embed }) {
+  providerFactory ||= cfg => createVoiceProvider(cfg, {env});
   function binding(uid,cfg) {
     let approved;try{approved=JSON.parse(env.VOICE_PROVIDER_BINDINGS||'{}')[tenant(uid)];}catch{/* fail closed */}
-    if(!approved||approved.credential_prefix!==cfg.credential_prefix||approved.number!==cfg.number||(cfg.gateway_prefix&&cfg.gateway_prefix!==approved.gateway_prefix))throw fail(503,'VOICE_BINDING_REQUIRED','The server administrator must bind this provider reference and number to this organization');
+    const provider=cfg.provider||'exotel';
+    const scoped=approved?.providers?.[provider];
+    approved=scoped?{...scoped,provider}:approved;
+    if(!approved||(approved.provider||'exotel')!==provider||approved.credential_prefix!==cfg.credential_prefix||approved.number!==cfg.number||(cfg.gateway_prefix&&cfg.gateway_prefix!==approved.gateway_prefix))throw fail(503,'VOICE_BINDING_REQUIRED','The server administrator must bind this provider reference and number to this organization');
   }
   const one = async (c, sql, args) => (await c.query(sql, args)).rows[0];
   const event = (c, uid, call, key, kind, actor, payload = {}) => c.query(`INSERT INTO cc_events(tenant_uid,call_id,source_key,kind,actor_id,payload)
@@ -29,10 +34,10 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
     const agent = await one(c, 'SELECT role FROM cc_agents WHERE tenant_uid=$1 AND user_id=$2', [uid, String(actor.id)]);
     if (!['supervisor','admin'].includes(agent?.role)) throw fail(403, 'SUPERVISOR_REQUIRED', 'An assigned contact-center supervisor is required');
   });
-  function callbackUrl(uid) {
+  function callbackUrl(uid,provider='exotel') {
     const base = env.VOICE_PUBLIC_BASE_URL;
     if (!base || !base.startsWith('https://')) throw fail(503, 'VOICE_NOT_CONFIGURED', 'A public HTTPS callback base URL is required');
-    return new URL(`/api/contact-center/hooks/exotel/${encodeURIComponent(tenant(uid))}`, base).href;
+    return new URL(`/api/contact-center/hooks/${provider==='exotel'?'exotel':`providers/${provider}`}/${encodeURIComponent(tenant(uid))}`, base).href;
   }
   function browserIdentity(cfg,actorId) {
     let accounts;try{accounts=JSON.parse(env[`${cfg.credential_prefix}_WEBRTC_ACCOUNTS`]||'{}');}catch{throw fail(503,'BROWSER_CALLING_NOT_CONFIGURED','Browser account mapping is invalid');}
@@ -56,24 +61,35 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
             COUNT(*) FILTER(WHERE state IN ('submitting','unknown','queued','ringing','answered'))::int AS active
             FROM cc_calls WHERE tenant_uid=$1 AND started_at>=now()-interval '24 hours'`, [uid]);
         let providerConfigured = false;
-        if (cfg?.enabled) { try { binding(uid,cfg);providerFactory(cfg); callbackUrl(uid); providerConfigured = true; } catch { /* only non-secret readiness */ } }
+        if (cfg?.enabled) { try { binding(uid,cfg);if((cfg.provider||'exotel')!=='zoom_phone'){providerFactory(cfg); callbackUrl(uid,cfg.provider||'exotel');} providerConfigured = true; } catch { /* only non-secret readiness */ } }
         const mediaGatewayConfigured=Boolean(gateway&&cfg?.gateway_prefix&&env[`${cfg.gateway_prefix}_URL`]?.startsWith('https://')&&env[`${cfg.gateway_prefix}_EVENT_SECRET`]);
         let sip;try{sip=JSON.parse(env.VOICE_LIVEKIT_BINDINGS||'{}')[uid];}catch{/* unavailable */}
         const voiceProcessing=Boolean(env.VOICE_INTERNAL_SECRET&&env.GROQ_API_KEY);
-        return { config: cfg, providerConfigured, agents: agents.rows, queues: queues.rows, calls: calls.rows, callbacks: callbacks.rows, flows: flows.rows, metrics,
-          capabilities: { livekit:Boolean((env.LIVEKIT_URL||env.LIVEKIT_API_URL)&&env.LIVEKIT_API_KEY&&env.LIVEKIT_API_SECRET),exotelCalling: providerConfigured, agentPhone: true,browserMedia:Boolean(cfg&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNT_TOKEN`]&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNTS`]), mediaGatewayConfigured, supervisorMedia: mediaGatewayConfigured, validatedBiometrics:false,nativePstn:Boolean(sip?.outbound_trunk_id&&/^\+[1-9]\d{7,14}$/.test(sip?.number||'')),voiceProcessing,voiceBot:voiceProcessing&&Boolean(env.ELEVENLABS_API_KEY),biometricsConfigured:Boolean(env.VOICE_BIOMETRIC_URL?.startsWith('https://')&&env.VOICE_BIOMETRIC_SECRET&&env.VOICE_BIOMETRIC_KMS_KEY&&env.VOICE_BIOMETRIC_MODEL_SHA256) } };
+        return { config: cfg, providerConfigured, providerOptions:CONTACT_CENTER_PROVIDERS, activeProvider:cfg?.provider||'exotel', agents: agents.rows, queues: queues.rows, calls: calls.rows, callbacks: callbacks.rows, flows: flows.rows, metrics,
+          capabilities: { livekit:Boolean((env.LIVEKIT_URL||env.LIVEKIT_API_URL)&&env.LIVEKIT_API_KEY&&env.LIVEKIT_API_SECRET),exotelCalling: providerConfigured&&(cfg?.provider||'exotel')==='exotel',externalPhone:cfg?.provider==='zoom_phone', agentPhone: true,browserMedia:Boolean(cfg&&(cfg.provider||'exotel')==='exotel'&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNT_TOKEN`]&&env[`${cfg.credential_prefix}_WEBRTC_ACCOUNTS`]), mediaGatewayConfigured, supervisorMedia: mediaGatewayConfigured, validatedBiometrics:false,nativePstn:Boolean(sip?.outbound_trunk_id&&/^\+[1-9]\d{7,14}$/.test(sip?.number||'')),voiceProcessing,voiceBot:voiceProcessing&&Boolean(env.ELEVENLABS_API_KEY),biometricsConfigured:Boolean(env.VOICE_BIOMETRIC_URL?.startsWith('https://')&&env.VOICE_BIOMETRIC_SECRET&&env.VOICE_BIOMETRIC_KMS_KEY&&env.VOICE_BIOMETRIC_MODEL_SHA256) } };
       });
     },
     async configure(uid, actor, input) {
-      if(input.enabled)binding(uid,input);
+      const provider=input.provider||'exotel';
+      if(!contactCenterProvider(provider))throw fail(400,'UNSUPPORTED_PROVIDER','Choose a supported calling provider');
+      if(input.recording_enabled&&!contactCenterProvider(provider).recording)throw fail(400,'RECORDING_NOT_SUPPORTED','Recordings for this provider remain in its own phone application');
+      if(input.enabled){binding(uid,{...input,provider});if(provider!=='zoom_phone')providerFactory({...input,provider,tenant_uid:uid});}
       const maximum=Number(env.VOICE_MAX_RETENTION_DAYS||3650);
       if(!Number.isInteger(maximum)||maximum<1||input.retention_days>maximum)throw fail(400,'RETENTION_POLICY','Retention exceeds the server storage policy');
       return tx(uid, async c => {
-        const value = await one(c, `INSERT INTO cc_configs(tenant_uid,credential_prefix,number,enabled,recording_enabled,retention_days,gateway_prefix)
-          VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(tenant_uid) DO UPDATE SET credential_prefix=$2,number=$3,enabled=$4,
+        const previous=await one(c,'SELECT * FROM cc_configs WHERE tenant_uid=$1 FOR UPDATE',[uid]);
+        if(previous){
+          if((previous.provider||'exotel')!==provider||previous.credential_prefix!==input.credential_prefix||previous.number!==input.number){
+            const active=await one(c,"SELECT id FROM cc_calls WHERE tenant_uid=$1 AND provider=$2 AND state IN ('submitting','unknown','queued','ringing','answered') LIMIT 1",[uid,previous.provider||'exotel']);
+            if(active)throw fail(409,'PROVIDER_IN_USE','Finish or reconcile active calls before switching provider');
+          }
+          await c.query("UPDATE cc_calls SET provider_config=$2 WHERE tenant_uid=$1 AND provider=$3 AND provider_config='{}'::jsonb",[uid,JSON.stringify(previous),previous.provider||'exotel']);
+        }
+        const value = await one(c, `INSERT INTO cc_configs(tenant_uid,credential_prefix,number,enabled,recording_enabled,retention_days,gateway_prefix,provider)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tenant_uid) DO UPDATE SET provider=$8,credential_prefix=$2,number=$3,enabled=$4,
           recording_enabled=$5,retention_days=$6,gateway_prefix=$7,updated_at=now() RETURNING *`,
-        [uid,input.credential_prefix,phone(input.number),input.enabled,input.recording_enabled,input.retention_days,input.gateway_prefix||null]);
-        await event(c, uid, null, randomUUID(), 'configuration_changed', String(actor.id), { enabled: value.enabled }); return value;
+        [uid,input.credential_prefix,phone(input.number),input.enabled,input.recording_enabled,input.retention_days,input.gateway_prefix||null,provider]);
+        await event(c, uid, null, randomUUID(), 'configuration_changed', String(actor.id), { enabled: value.enabled,provider }); return value;
       });
     },
     async saveAgent(uid, actor, input) {
@@ -98,7 +114,7 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
       });
     },
     async browserSession(uid,actor) {
-      const cfg=await config(uid),provider=providerFactory(cfg),account=browserIdentity(cfg,actor.id);
+      const cfg=await config(uid);if((cfg.provider||'exotel')!=='exotel')throw fail(409,'BROWSER_CALLING_NOT_SUPPORTED','Use this provider’s assigned agent phone');const provider=providerFactory(cfg),account=browserIdentity(cfg,actor.id);
       return tx(uid,async c=>{
       const agent=await one(c,'SELECT * FROM cc_agents WHERE tenant_uid=$1 AND user_id=$2 FOR UPDATE',[uid,String(actor.id)]);
       if(!agent)throw fail(403,'AGENT_NOT_ASSIGNED','Contact-center agent assignment is required');
@@ -132,12 +148,36 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         await event(c,uid,null,randomUUID(),'flow_version_created',String(actor.id),{ flowId:id,version:row.version,published:input.publish }); return flow;
       });
     },
+    async externalDial(uid,actor,input,key) {
+      const cfg=await config(uid);
+      if(cfg.provider!=='zoom_phone')throw fail(409,'EXTERNAL_PHONE_REQUIRED','The selected provider is not a desktop phone');
+      phone(input.to);if(!/^[\w.-]{8,120}$/.test(key||''))throw fail(400,'IDEMPOTENCY_REQUIRED','An Idempotency-Key is required');
+      await tx(uid,async c=>{
+        await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`${uid}:external:${key}`]);
+        const agent=await one(c,'SELECT * FROM cc_agents WHERE tenant_uid=$1 AND user_id=$2',[uid,String(actor.id)]);
+        if(!agent)throw fail(403,'AGENT_NOT_ASSIGNED','Contact-center agent assignment is required');
+        if(agent.active_call_id)throw fail(409,'AGENT_BUSY','Finish the active call before opening another phone');
+        if(await one(c,'SELECT phone FROM cc_suppressions WHERE tenant_uid=$1 AND phone=$2',[uid,input.to]))throw fail(409,'SUPPRESSED','This recipient is suppressed');
+        const old=await one(c,'SELECT payload FROM cc_events WHERE tenant_uid=$1 AND source_key=$2',[uid,`zoom-launch:${key}`]);
+        if(old&&old.payload.requestHash!==digest(input))throw fail(409,'IDEMPOTENCY_CONFLICT','This key was used for a different request');
+        if(input.callback_id&&!old){
+          const callback=await one(c,`SELECT b.*,v.destination FROM cc_callbacks b JOIN cc_calls v ON v.tenant_uid=b.tenant_uid AND v.id=b.call_id WHERE b.tenant_uid=$1 AND b.id=$2 FOR UPDATE OF b`,[uid,input.callback_id]);
+          if(!callback||callback.owner_id!==String(actor.id)||callback.status!=='in_progress'||callback.destination!==input.to)throw fail(409,'CALLBACK_SCOPE_MISMATCH','Claim this callback and use its customer number');
+          await c.query('UPDATE cc_callbacks SET attempts=attempts+1 WHERE tenant_uid=$1 AND id=$2',[uid,input.callback_id]);
+        }
+        await event(c,uid,null,`zoom-launch:${key}`,'external_phone_requested',String(actor.id),{provider:'zoom_phone',requestHash:digest(input),...(input.callback_id?{callbackId:input.callback_id}:{})});
+      });
+      return {provider:'zoom_phone',mode:'external',url:`zoomphonecall://${input.to}`,message:'Continue in your signed-in Zoom Phone app. Call status and recordings stay in Zoom.'};
+    },
     async dial(uid, actor, input, key) {
-      const cfg = await config(uid); const provider = providerFactory(cfg); const url = callbackUrl(uid); phone(input.to);
+      const cfg = await config(uid); if(input.expectedProvider&&(cfg.provider||'exotel')!==input.expectedProvider)throw fail(409,'PROVIDER_MISMATCH','This campaign requires its configured calling provider'); if(cfg.provider==='zoom_phone')throw fail(409,'EXTERNAL_PHONE_REQUIRED','Open Zoom Phone to place this call'); const provider = providerFactory(cfg); const url = callbackUrl(uid,cfg.provider||'exotel'); phone(input.to);
       if(input.record){if(!storage?.assertConfigured)throw fail(503,'RECORDING_STORAGE_UNAVAILABLE','Private recording storage must be configured before recording');storage.assertConfigured();}
       if (!/^[\w.-]{8,120}$/.test(key || '')) throw fail(400,'IDEMPOTENCY_REQUIRED','An Idempotency-Key is required');
       const hash = digest(input);
       const call = await tx(uid, async c => {
+        const current=await one(c,'SELECT * FROM cc_configs WHERE tenant_uid=$1 FOR SHARE',[uid]);
+        const same=['provider','number','credential_prefix','enabled','recording_enabled'].every(field=>(current?.[field]??(field==='provider'?'exotel':undefined))===(cfg[field]??(field==='provider'?'exotel':undefined)));
+        if(!same)throw fail(409,'PROVIDER_CHANGED','Calling configuration changed; reload before dialing');
         await c.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`${uid}:dial:${key}`]);
         const existing = await one(c,'SELECT * FROM cc_calls WHERE tenant_uid=$1 AND idempotency_key=$2',[uid,key]);
         if (existing) {
@@ -166,9 +206,10 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         const record = Boolean(input.record);
         if (record && (!cfg.recording_enabled || input.consent?.status!=='granted' || !input.consent?.evidence)) throw fail(409,'CONSENT_REQUIRED','Recording requires enabled policy and recorded consent evidence');
         const id=randomUUID();
-        const result = await one(c,`INSERT INTO cc_calls(tenant_uid,id,idempotency_key,request_hash,agent_id,queue_id,destination,direction,consent,recording_requested)
-          VALUES($1,$2,$3,$4,$5,$6,$7,'outbound',$8,$9) RETURNING *`,[uid,id,key,hash,assigned.user_id,input.queue_id||null,input.to,JSON.stringify(input.consent||{}),record]);
+        const result = await one(c,`INSERT INTO cc_calls(tenant_uid,id,idempotency_key,request_hash,agent_id,queue_id,destination,direction,consent,recording_requested,provider,provider_config)
+          VALUES($1,$2,$3,$4,$5,$6,$7,'outbound',$8,$9,$10,$11) RETURNING *`,[uid,id,key,hash,assigned.user_id,input.queue_id||null,input.to,JSON.stringify(input.consent||{}),record,cfg.provider||'exotel',JSON.stringify(cfg)]);
         await c.query("UPDATE cc_agents SET active_call_id=$3,presence='busy',updated_at=now() WHERE tenant_uid=$1 AND user_id=$2",[uid,assigned.user_id,id]);
+        if(input.transport==='browser'&&(cfg.provider||'exotel')!=='exotel')throw fail(409,'BROWSER_CALLING_NOT_SUPPORTED','Use this provider’s assigned agent phone');
         const browser=input.transport==='browser'?browserIdentity(cfg,assigned.user_id):null;
         await event(c,uid,id,randomUUID(),'dial_reserved',String(actor.id),{ recording: record,transport:input.transport||'phone',...(input.callback_id?{callbackId:input.callback_id}:{}) });
         return { ...result,agentPhone:browser?`sip:${browser.userName}@${provider.sid}.voip.exotel.com`:assigned.phone };
@@ -189,12 +230,18 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         await event(c,uid,call.id,`accepted:${accepted.Sid}`,'provider_accepted',String(actor.id));return result;
       });
     },
-    async reconcile(uid, sid) {
-      const cfg=await config(uid), provider=providerFactory(cfg), remote=await provider.details(sid);
+    async reconcile(uid, sid, providerId='exotel') {
+      if(!contactCenterProvider(providerId)||providerId==='zoom_phone')throw fail(400,'UNSUPPORTED_PROVIDER','Unsupported call reconciliation provider');
+      const existing=await tx(uid,c=>one(c,'SELECT * FROM cc_calls WHERE tenant_uid=$1 AND provider_sid=$2 AND provider=$3',[uid,sid,providerId]));
+      const cfg=existing?.provider_config?.credential_prefix?existing.provider_config:await config(uid);
+      if((cfg.provider||'exotel')!==providerId)throw fail(409,'PROVIDER_MISMATCH','This call belongs to a different provider');
+      binding(uid,cfg);
+      const provider=providerFactory(cfg),remote=await provider.details(sid);
       return tx(uid,async c=>{
-        let call=await one(c,'SELECT * FROM cc_calls WHERE tenant_uid=$1 AND provider_sid=$2 FOR UPDATE',[uid,remote.Sid]);
+        let call=await one(c,'SELECT * FROM cc_calls WHERE tenant_uid=$1 AND provider_sid=$2 AND provider=$3 FOR UPDATE',[uid,remote.Sid,providerId]);
         if(!call && /^[0-9a-f-]{36}$/i.test(remote.CustomField||'')) {
           call=await one(c,'SELECT * FROM cc_calls WHERE tenant_uid=$1 AND id=$2 FOR UPDATE',[uid,remote.CustomField]);
+          if(call && (call.provider||'exotel')!==providerId)throw fail(409,'PROVIDER_MISMATCH','This call belongs to a different provider');
           if(call && !call.provider_sid) await c.query('UPDATE cc_calls SET provider_sid=$3 WHERE tenant_uid=$1 AND id=$2',[uid,call.id,remote.Sid]);
         }
         if(!call&&remote.Direction==='inbound') {
@@ -204,13 +251,13 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
           const raw=String(remote.From||'');
           const caller=raw.startsWith('+')?phone(raw):/^0?\d{10}$/.test(raw)?phone(`+91${raw.slice(-10)}`):null;
           if(!caller)throw fail(400,'INVALID_CALLER','Provider caller number cannot be normalized');
-          call=await one(c,`INSERT INTO cc_calls(tenant_uid,id,idempotency_key,request_hash,provider_sid,direction,destination,state)
-            VALUES($1,$2,$3,$4,$5,'inbound',$6,'queued') ON CONFLICT(tenant_uid,provider,provider_sid) DO UPDATE SET provider_sid=excluded.provider_sid RETURNING *`,
-          [uid,randomUUID(),`inbound:${remote.Sid}`,digest({sid:remote.Sid}),remote.Sid,caller]);
+          call=await one(c,`INSERT INTO cc_calls(tenant_uid,id,idempotency_key,request_hash,provider_sid,direction,destination,state,provider,provider_config)
+            VALUES($1,$2,$3,$4,$5,'inbound',$6,'queued',$7,$8) ON CONFLICT(tenant_uid,provider,provider_sid) DO UPDATE SET provider_sid=excluded.provider_sid RETURNING *`,
+          [uid,randomUUID(),`inbound:${remote.Sid}`,digest({sid:remote.Sid,provider:providerId}),remote.Sid,caller,providerId,JSON.stringify(cfg)]);
         }
         if(!call) throw fail(404,'CALL_NOT_FOUND','No local call matches the verified provider record');
         const next=stateAfter(call.state,remote.Status);
-        const key=`exotel:${remote.Sid}:${digest({status:remote.Status,duration:remote.Duration,updated:remote.DateUpdated})}`;
+        const key=`${providerId}:${remote.Sid}:${digest({status:remote.Status,duration:remote.Duration,updated:remote.DateUpdated})}`;
         const inserted=await event(c,uid,call.id,key,'provider_status',null,{ state:next });
         if(!inserted.rowCount) return { duplicate:true,callId:call.id };
         const duration=remote.Duration==null?null:Number(remote.Duration);
@@ -367,8 +414,10 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
         WHERE e.tenant_uid=$1 AND e.model=$3 ORDER BY e.embedding<=>$2::vector LIMIT 20`,[uid,JSON.stringify(vector),env.VOICE_EMBEDDING_MODEL||'clinical-bert-768'])).rows);
     },
     async storeRecording(uid,actor,id) {
-      const call=await getCall(uid,id),cfg=await config(uid);
+      const call=await getCall(uid,id),cfg=call.provider_config?.credential_prefix?call.provider_config:await config(uid);
       contentAllowed(call,cfg);
+      if((call.provider||'exotel')!=='exotel')throw fail(409,'PROVIDER_RECORDING_EXTERNAL','Recordings remain with this provider');
+      binding(uid,cfg);
       if(!terminal.has(call.state)||!call.recording_requested||call.consent?.status!=='granted')throw fail(409,'RECORDING_NOT_PERMITTED','A completed consented recording is required');
       if(!storage)throw fail(503,'RECORDING_STORAGE_UNAVAILABLE','Recording storage is unavailable');
       const existing=await tx(uid,c=>one(c,'SELECT id,status,expires_at FROM cc_recordings WHERE tenant_uid=$1 AND call_id=$2',[uid,id]));
@@ -376,6 +425,7 @@ export function createContactCenter({ tx, providerFactory = config => new Exotel
       const remote=await providerFactory(cfg).details(call.provider_sid);
       if(!remote.RecordingUrl)throw fail(409,'RECORDING_PENDING','Provider recording is not available yet');
       const objectKey=`voice/${uid}/${id}.mp3`;
+      if((call.provider||'exotel')!=='exotel')throw fail(409,'PROVIDER_RECORDING_EXTERNAL','Recordings for this provider must be accessed through its approved connector');
       await storage.importExotel(cfg,remote,objectKey);
       return tx(uid,async c=>{
         const row=await one(c,`INSERT INTO cc_recordings(tenant_uid,id,call_id,object_key,status,expires_at) VALUES($1,$2,$3,$4,'stored',$5::timestamptz+$6*interval '1 day')

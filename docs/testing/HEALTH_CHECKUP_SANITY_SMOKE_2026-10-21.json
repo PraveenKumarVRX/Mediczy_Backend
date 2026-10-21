@@ -1,0 +1,321 @@
+{
+  "checkedAt": "2026-10-21T12:14:48.667Z",
+  "passed": true,
+  "productionBusinessMutations": 0,
+  "counts": {
+    "sanity": 18,
+    "liveApi": 25,
+    "browser": 4,
+    "backendRegressions": 48,
+    "clientRegressions": 16,
+    "browserRuntimeErrors": 0
+  },
+  "checks": {
+    "sanity": [
+      {
+        "name": "Public API health and primary dependencies",
+        "passed": true
+      },
+      {
+        "name": "API online without new restarts",
+        "passed": true
+      },
+      {
+        "name": "Runtime source matches deployed release snapshot",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "nginx index matches deployed artifact",
+        "passed": true
+      },
+      {
+        "name": "SPA route /",
+        "passed": true
+      },
+      {
+        "name": "SPA route /admin/login",
+        "passed": true
+      },
+      {
+        "name": "SPA route /admin/corporate-health-packages",
+        "passed": true
+      },
+      {
+        "name": "SPA route /corporate/annual-health-checkup",
+        "passed": true
+      },
+      {
+        "name": "SPA route /health-checkups",
+        "passed": true
+      },
+      {
+        "name": "SPA route /patient/notifications",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/index-BTS-9_jm.js",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/vendor-charts-BXn5Ohnx.js",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/vendor-pdf-DgF3Qiox.js",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/index-CsCJ6F2O.css",
+        "passed": true
+      },
+      {
+        "name": "Real package catalog persisted",
+        "passed": true
+      },
+      {
+        "name": "Active-slot uniqueness index is valid",
+        "passed": true
+      },
+      {
+        "name": "Dairy Day\u2013Agilus mappings, slots and UID references",
+        "passed": true
+      },
+      {
+        "name": "No double-booked active lab slots",
+        "passed": true
+      }
+    ],
+    "api": [
+      {
+        "name": "Admin package alias",
+        "path": "/api/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Lab scoped package alias",
+        "path": "/api/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Employee kit denial",
+        "path": "/api/kits",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Admin package alias",
+        "path": "/api/checkup-kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Lab scoped package alias",
+        "path": "/api/checkup-kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Employee kit denial",
+        "path": "/api/checkup-kits",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Admin package alias",
+        "path": "/api/lab/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Lab scoped package alias",
+        "path": "/api/lab/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Employee kit denial",
+        "path": "/api/lab/kits",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Real admin package list",
+        "path": "/api/admin/health-packages",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Real package detail",
+        "path": "/api/admin/health-packages/DAIRYDAY_AHC_SALES_2026-27_",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Corporate booking packages",
+        "path": "/api/corporate-bookings/packages?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Member profile",
+        "path": "/api/health-checkups/me",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Member packages",
+        "path": "/api/health-checkups/packages",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Member lab query succeeds",
+        "path": "/api/health-checkups/labs",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Dairy Day mapped Agilus centres",
+        "path": "/api/corporate-bookings/labs?corporateId=45&search=agilus",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Configured Agilus slots",
+        "path": "/api/health-checkups/slots?date=2026-10-22&labId=81",
+        "status": 404,
+        "expected": 404,
+        "passed": true
+      },
+      {
+        "name": "Past slot date rejected",
+        "path": "/api/health-checkups/slots?date=2020-01-01&labId=81",
+        "status": 400,
+        "expected": 400,
+        "passed": true
+      },
+      {
+        "name": "Missing lab rejected",
+        "path": "/api/health-checkups/slots?date=2026-10-22",
+        "status": 400,
+        "expected": 400,
+        "passed": true
+      },
+      {
+        "name": "Admin cannot consume employee entitlements",
+        "path": "/api/health-checkups/packages",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Corporate activation package options",
+        "path": "/api/corporate/ahc/package-options",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Unread count",
+        "path": "/api/notifications/unread-count",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Dashboard entity counts",
+        "path": "/api/admin/dashboard/stats",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Unauthenticated kit denial",
+        "path": "/api/kits",
+        "status": 401,
+        "expected": 401,
+        "passed": true
+      },
+      {
+        "name": "Unknown API returns JSON",
+        "path": "/api/admin/qa-missing-endpoint",
+        "status": 404,
+        "expected": 404,
+        "passed": true
+      }
+    ],
+    "browser": [
+      {
+        "name": "Admin renders existing Dairy Day packages without sample fallback",
+        "passed": true
+      },
+      {
+        "name": "Corporate selection is visible with contrasting text",
+        "passed": true
+      },
+      {
+        "name": "Activation requires an explicit package before invitations",
+        "passed": true
+      },
+      {
+        "name": "Activation lists the two real Dairy Day packages",
+        "passed": true
+      }
+    ]
+  },
+  "observations": {
+    "optionalDependencies": [
+      {
+        "name": "citus",
+        "state": "disconnected"
+      },
+      {
+        "name": "duckdb",
+        "state": "disconnected"
+      }
+    ],
+    "api": {
+      "status": "online",
+      "restarts": 14,
+      "uptimeSeconds": 455
+    },
+    "catalog": {
+      "total": 3,
+      "dairy_day": 2
+    },
+    "agilus": {
+      "mapped": 42,
+      "all_employees": 42,
+      "configured_slots": 42,
+      "uid_parity": 42
+    },
+    "dairyDayEmployeeAccounts": [
+      {
+        "status": "inactive",
+        "count": 175
+      }
+    ]
+  },
+  "limitations": [
+    "Dairy Day employees are inactive; member probes use an existing active corporate employee and verify denial of unrelated Agilus access."
+  ]
+}

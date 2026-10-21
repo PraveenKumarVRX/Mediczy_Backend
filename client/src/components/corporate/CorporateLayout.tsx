@@ -65,7 +65,8 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
     };
     fetchCount();
     const timer = setInterval(fetchCount, 60000);
-    return () => { cancelled = true; clearInterval(timer); };
+    window.addEventListener("corporate-notifications-changed", fetchCount);
+    return () => { cancelled = true; clearInterval(timer); window.removeEventListener("corporate-notifications-changed", fetchCount); };
   }, []);
 
   const handleLogout = () => {
@@ -88,7 +89,7 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
       </div>
 
       {/* Sidebar */}
-      <CorporateSidebar />
+      <CorporateSidebar unreadCount={unreadCount} />
 
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300 relative">

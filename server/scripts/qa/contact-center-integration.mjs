@@ -1,3 +1,4 @@
+import {up as providerSchema} from '../../migrations/20261021010000-contact-center-providers.migration.js';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createHmac, randomUUID } from 'node:crypto';
@@ -22,7 +23,7 @@ try {
   assert.equal((await admin.query('SELECT current_database() AS name')).rows[0].name,'contact_center_test');
   if(process.argv.includes('--reset'))await admin.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public; DROP ROLE IF EXISTS cc_test_runtime;');
   await admin.query("CREATE TABLE tenants(id integer PRIMARY KEY,unique_id text UNIQUE); CREATE TABLE users(id integer PRIMARY KEY,tenant_id integer,organization_id integer,status text);");
-  const client=await admin.connect();try{await client.query('BEGIN');await up(client);await extend(client);await client.query('COMMIT');}finally{client.release();}
+  const client=await admin.connect();try{await client.query('BEGIN');await up(client);await extend(client);await providerSchema(client);await client.query('COMMIT');}finally{client.release();}
   await admin.query("INSERT INTO tenants VALUES(11,'HOSPITAL_11'),(22,'CLINIC_22'); INSERT INTO users VALUES(1,11,11,'active'),(2,11,11,'active'),(3,22,22,'active');");
   // Test-only generated password, safely quoted and never printed.
   await admin.query(`CREATE ROLE cc_test_runtime LOGIN PASSWORD '${cfg.password.replaceAll("'","''")}' NOSUPERUSER NOBYPASSRLS; GRANT USAGE ON SCHEMA public TO cc_test_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA public TO cc_test_runtime; GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO cc_test_runtime;`);

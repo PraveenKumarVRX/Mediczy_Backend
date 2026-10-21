@@ -339,6 +339,7 @@ router.post('/login', authLimiter, teamLoginValidation, rejectInvalidTeamLogin, 
     const { accessToken, refreshToken } = await issueTokenPair(payload, ip);
 
     await clearFailedAttempts(email, ip);
+    const previousLoginAt = user.lastLoginAt || null;
     await user.update({ lastLoginAt: new Date() });
     await auditLoginAttempt(req, user.id, email, true);
 
@@ -347,6 +348,7 @@ router.post('/login', authLimiter, teamLoginValidation, rejectInvalidTeamLogin, 
     let storedModules    = metadata.grantedModules || null;
 
     const teamUser = {
+      lastLogin: previousLoginAt,
       id: user.id,
       email: user.email,
       firstName: user.firstName,

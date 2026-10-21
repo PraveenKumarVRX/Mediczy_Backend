@@ -114,18 +114,13 @@ const CorporateHealthPackages = () => {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       const corporateList = (data.data || []).map((corp: any) => ({
-        id: corp.id,
+        id: String(corp.id),
         name: corp.companyName
       }));
       setCorporates(corporateList);
-    } catch (err) {
-      // Sample corporates for demo
-      setCorporates([
-        { id: 'corp_001', name: 'TechCorp Solutions' },
-        { id: 'corp_002', name: 'Global Manufacturing Ltd' },
-        { id: 'corp_003', name: 'StartupHub Inc' },
-        { id: 'corp_004', name: 'HealthFirst Corporation' }
-      ]);
+    } catch (err: any) {
+      setCorporates([]);
+      setError(err?.response?.data?.message || 'Unable to load corporates');
     }
   };
 
@@ -136,71 +131,9 @@ const CorporateHealthPackages = () => {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       setPackages(data.data || []);
-    } catch (err) {
-      // Sample data for demo
-      const samplePackages: HealthCheckupPackage[] = [
-        {
-          id: 'pkg_001',
-          corporateId: 'corp_001',
-          corporateName: 'TechCorp Solutions',
-          packageName: 'Executive Health Checkup',
-          description: 'Comprehensive health screening for senior executives including cardiac, metabolic, and cancer markers',
-          tests: ['Complete Blood Count', 'Lipid Profile', 'Liver Function Test', 'Kidney Function Test', 'ECG', 'Chest X-Ray', 'USG Abdomen', 'TMT', 'HbA1c', 'PSA (for males)', 'Pap Smear (for females)'],
-          frequency: 'Annual',
-          validityPeriod: '1 Year',
-          costPerEmployee: 5000,
-          maxEmployees: 50,
-          currentEnrolled: 32,
-          status: 'Active',
-          createdAt: '2024-01-15T10:30:00Z'
-        },
-        {
-          id: 'pkg_002',
-          corporateId: 'corp_001',
-          corporateName: 'TechCorp Solutions',
-          packageName: 'Basic Health Screening',
-          description: 'Essential health checkup for all employees covering basic vital and blood tests',
-          tests: ['Complete Blood Count', 'Blood Sugar', 'Blood Pressure', 'BMI', 'Vision Test', 'Dental Checkup'],
-          frequency: 'Annual',
-          validityPeriod: '1 Year',
-          costPerEmployee: 1500,
-          maxEmployees: 200,
-          currentEnrolled: 145,
-          status: 'Active',
-          createdAt: '2024-01-15T10:30:00Z'
-        },
-        {
-          id: 'pkg_003',
-          corporateId: 'corp_002',
-          corporateName: 'Global Manufacturing Ltd',
-          packageName: 'Industrial Worker Health Package',
-          description: 'Specialized health checkup for factory workers with focus on occupational health',
-          tests: ['Complete Blood Count', 'Chest X-Ray', 'Pulmonary Function Test', 'Audiometry', 'Vision Test', 'Blood Pressure', 'Blood Sugar'],
-          frequency: 'Bi-Annual',
-          validityPeriod: '1 Year',
-          costPerEmployee: 2500,
-          maxEmployees: 400,
-          currentEnrolled: 378,
-          status: 'Active',
-          createdAt: '2024-02-10T14:15:00Z'
-        },
-        {
-          id: 'pkg_004',
-          corporateId: 'corp_004',
-          corporateName: 'HealthFirst Corporation',
-          packageName: 'Women Health Special',
-          description: 'Comprehensive women health screening covering reproductive and general health',
-          tests: ['Complete Blood Count', 'Thyroid Profile', 'Vitamin D', 'Calcium', 'Iron Studies', 'Pap Smear', 'Mammography', 'Bone Density Scan', 'USG Pelvis'],
-          frequency: 'Annual',
-          validityPeriod: '1 Year',
-          costPerEmployee: 4500,
-          maxEmployees: 75,
-          currentEnrolled: 58,
-          status: 'Active',
-          createdAt: '2024-03-05T16:20:00Z'
-        }
-      ];
-      setPackages(samplePackages);
+    } catch (err: any) {
+      setPackages([]);
+      setError(err?.response?.data?.message || 'Unable to load health packages');
     } finally {
       setLoading(false);
     }
@@ -209,23 +142,17 @@ const CorporateHealthPackages = () => {
   const fetchEmployees = async (corporateId: string) => {
     try {
       setLoading(true);
-      const { data } = await api.get(`/admin/corporates/${corporateId}/employees`, {
+      const { data } = await api.get(`/admin/corporate-employees/${corporateId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      setEmployees(data.data || []);
-    } catch (err) {
-      // Sample employees for demo
-      const sampleEmployees: Employee[] = [
-        { id: 'emp_001', employeeId: 'EMP001', name: 'Rajesh Kumar', email: 'rajesh.k@company.com', department: 'IT', designation: 'Senior Developer', isEligible: true, enrolledPackages: ['pkg_001'] },
-        { id: 'emp_002', employeeId: 'EMP002', name: 'Priya Sharma', email: 'priya.s@company.com', department: 'HR', designation: 'HR Manager', isEligible: true, enrolledPackages: ['pkg_001', 'pkg_002'] },
-        { id: 'emp_003', employeeId: 'EMP003', name: 'Amit Patel', email: 'amit.p@company.com', department: 'Finance', designation: 'Accountant', isEligible: true, enrolledPackages: [] },
-        { id: 'emp_004', employeeId: 'EMP004', name: 'Sneha Reddy', email: 'sneha.r@company.com', department: 'Marketing', designation: 'Marketing Executive', isEligible: true, enrolledPackages: ['pkg_002'] },
-        { id: 'emp_005', employeeId: 'EMP005', name: 'Vikram Singh', email: 'vikram.s@company.com', department: 'IT', designation: 'Junior Developer', isEligible: true, enrolledPackages: ['pkg_002'] },
-        { id: 'emp_006', employeeId: 'EMP006', name: 'Anita Desai', email: 'anita.d@company.com', department: 'Operations', designation: 'Operations Manager', isEligible: true, enrolledPackages: ['pkg_001'] },
-        { id: 'emp_007', employeeId: 'EMP007', name: 'Karthik Iyer', email: 'karthik.i@company.com', department: 'Sales', designation: 'Sales Manager', isEligible: false, enrolledPackages: [] },
-        { id: 'emp_008', employeeId: 'EMP008', name: 'Meera Nair', email: 'meera.n@company.com', department: 'IT', designation: 'Tech Lead', isEligible: true, enrolledPackages: ['pkg_001', 'pkg_002'] },
-      ];
-      setEmployees(sampleEmployees);
+      setEmployees((data.employees || []).filter((e: any) => e.id && e.hasAssociation && String(e.status).toLowerCase() === 'active').map((e: any) => ({
+        id:String(e.id),employeeId:e.user_employee_id || e.corporate_employee_id || '',
+        name:[e.firstName,e.lastName].filter(Boolean).join(' '),email:e.email || '',
+        department:e.department_name || '',designation:e.metadata?.designation || '',isEligible:true,enrolledPackages:[],
+      })));
+    } catch (err: any) {
+      setEmployees([]);
+      setError(err?.response?.data?.message || 'Unable to load employees');
     } finally {
       setLoading(false);
     }
@@ -275,14 +202,14 @@ const CorporateHealthPackages = () => {
   };
 
   const handleDeletePackage = async (packageId: string) => {
-    if (!confirm('Are you sure you want to delete this health package?')) return;
+    if (!confirm('Deactivate this health package? Employees will no longer be able to make new bookings with it.')) return;
     
     try {
       setLoading(true);
       await api.delete(`/admin/health-packages/${packageId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      setResult({ message: 'Health package deleted successfully' });
+      setResult({ message: 'Health package deactivated successfully' });
       fetchPackages();
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Failed to delete health package');
@@ -678,7 +605,7 @@ const CorporateHealthPackages = () => {
                         onValueChange={(val) => setNewPackage({...newPackage, corporateId: val})}
                         required
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="bg-background text-foreground">
                           <SelectValue placeholder="Select corporate" />
                         </SelectTrigger>
                         <SelectContent>
@@ -723,7 +650,7 @@ const CorporateHealthPackages = () => {
                         value={newPackage.frequency} 
                         onValueChange={(val) => setNewPackage({...newPackage, frequency: val})}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="bg-background text-foreground">
                           <SelectValue placeholder="Select frequency" />
                         </SelectTrigger>
                         <SelectContent>
@@ -739,7 +666,7 @@ const CorporateHealthPackages = () => {
                         value={newPackage.validityPeriod} 
                         onValueChange={(val) => setNewPackage({...newPackage, validityPeriod: val})}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="bg-background text-foreground">
                           <SelectValue placeholder="Select validity" />
                         </SelectTrigger>
                         <SelectContent>
@@ -775,7 +702,7 @@ const CorporateHealthPackages = () => {
                         value={newPackage.status} 
                         onValueChange={(val) => setNewPackage({...newPackage, status: val})}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="bg-background text-foreground">
                           <SelectValue placeholder="Select status" />
                         </SelectTrigger>
                         <SelectContent>

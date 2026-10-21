@@ -53,7 +53,7 @@ export function createVoiceCampaigns({tx,base,media}){
       const key=`voice-${due.id}-${due.attempt}`;let call;
       try{
         // Never pass campaign consent as recording consent. Campaigns do not record.
-        const input=due.transport==='livekit'?{to:due.to,bot:due.bot,transcribe:due.bot,language:'en',...(due.bot?{consent:{status:'granted',source:'existing_record',evidence:due.consent.proof_ref}}:{})}:{to:due.to,record:false,transport:'phone'};
+        const input=due.transport==='livekit'?{to:due.to,bot:due.bot,transcribe:due.bot,language:'en',...(due.bot?{consent:{status:'granted',source:'existing_record',evidence:due.consent.proof_ref}}:{})}:{to:due.to,record:false,transport:'phone',expectedProvider:'exotel'};
         call=due.transport==='livekit'?await media.start(uid,{id:due.owner_id},input,key):await base.dial(uid,{id:due.owner_id},input,key);
       }catch(error){
         const existing=await tx(uid,async c=>(await c.query('SELECT * FROM cc_calls WHERE tenant_uid=$1 AND idempotency_key=$2',[uid,key])).rows[0]);

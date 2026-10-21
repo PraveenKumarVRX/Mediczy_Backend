@@ -25,7 +25,7 @@ export const TASK_DEFINITIONS = [
   { key: 'appt_sameday_sweep',    name: 'Appointment Same-Day Auto-Close',       schedule: 'Every 15 min',     category: 'appointment', scheduleDesc: '*/15 * * * *' },
   { key: 'corp_appt_autocancel',  name: 'Corporate Appointment Auto-No-Show',    schedule: 'Daily midnight',   category: 'appointment', scheduleDesc: '0 0 * * *' },
   { key: 'corp_appt_sameday_sweep', name: 'Corporate Appointment Same-Day Sweep', schedule: 'Every 15 min',   category: 'appointment', scheduleDesc: '*/15 * * * *' },
-  { key: 'appt_reminder',         name: 'Appointment Reminders (24h/2h/15min)',  schedule: 'Every 30 min',     category: 'appointment', scheduleDesc: '*/30 * * * *' },
+  { key: 'appt_reminder',         name: 'Appointment Reminders (employee preferences)', schedule: 'Every minute', category: 'appointment', scheduleDesc: '* * * * *' },
   { key: 'appt_notification',     name: 'Upcoming Appointment Notifications',    schedule: 'Every 1 min',      category: 'appointment', scheduleDesc: '* * * * *' },
   { key: 'followup_automation',   name: 'Follow-Up Appointment Automation',      schedule: 'Daily 10 AM',      category: 'appointment', scheduleDesc: '0 10 * * *' },
   { key: 'wellness_event_autocomplete', name: 'Wellness Event Auto-Complete',    schedule: 'Every 15 min',     category: 'appointment', scheduleDesc: '*/15 * * * *' },

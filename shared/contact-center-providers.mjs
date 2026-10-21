@@ -1,0 +1,10 @@
+/** Public voice-provider catalog; never contains credentials or implies account readiness. */
+export const CONTACT_CENTER_PROVIDERS = [
+  {id:'exotel',label:'Exotel',mode:'agent_phone',numberLabel:'ExoPhone',description:'Calls your assigned agent phone first, then connects the customer.',setup:'Use an approved Exotel account and ExoPhone.',credentialSuffixes:['SID','API_KEY','API_TOKEN'],recording:true},
+  {id:'telecmi',label:'TeleCMI',mode:'connector',numberLabel:'Business number',description:'Connects your assigned TeleCMI agent to the customer.',setup:'Connect your TeleCMI account through the approved calling connector.',credentialSuffixes:['CONNECTOR_URL','CONNECTOR_SECRET','CONNECTOR_ACCOUNT'],recording:false},
+  {id:'zoom_phone',label:'Zoom Phone',mode:'desktop',numberLabel:'Zoom caller ID',description:'Opens the signed-in Zoom Phone app to place the call. Call status and recordings stay in Zoom.',setup:'Agents need a licensed Zoom Phone account and the signed-in desktop app.',credentialSuffixes:[],recording:false},
+  {id:'airtel_iq',label:'Airtel IQ',mode:'connector',numberLabel:'Airtel virtual number',description:'Connects your assigned agent phone through Airtel IQ.',setup:'Connect your contracted Airtel IQ Voice API through the approved calling connector.',credentialSuffixes:['CONNECTOR_URL','CONNECTOR_SECRET','CONNECTOR_ACCOUNT'],recording:false},
+  {id:'twilio',label:'Twilio',mode:'connector',numberLabel:'Twilio caller ID',description:'Connects your assigned agent phone through Twilio Voice.',setup:'Connect your Twilio Voice account through the approved calling connector.',credentialSuffixes:['CONNECTOR_URL','CONNECTOR_SECRET','CONNECTOR_ACCOUNT'],recording:false},
+  {id:'plivo',label:'Plivo',mode:'connector',numberLabel:'Plivo caller ID',description:'Connects your assigned agent phone through Plivo Voice.',setup:'Connect your Plivo Voice account through the approved calling connector.',credentialSuffixes:['CONNECTOR_URL','CONNECTOR_SECRET','CONNECTOR_ACCOUNT'],recording:false},
+];
+export const contactCenterProvider = id => CONTACT_CENTER_PROVIDERS.find(p=>p.id===(id||'exotel'));

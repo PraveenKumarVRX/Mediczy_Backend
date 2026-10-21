@@ -425,7 +425,7 @@ const CorporateAppointments: React.FC = () => {
 
   const handleSendReminder = async (appointment: Appointment) => {
     try {
-      await api.post(`/corporate/appointments/${encodeURIComponent(appointment.id)}/remind`);
+      await api.post(`/corporate/appointments/${encodeURIComponent(appointment.id)}/remind`, { source: appointment.source || 'hr_booked' });
       toast({ title: 'Reminder sent', description: `Reminder sent to ${appointment.employeeName}` });
     } catch (error: any) {
       toast({ title: 'Failed to send reminder', description: error?.response?.data?.message || 'Please try again.', variant: 'destructive' });
@@ -639,7 +639,7 @@ const CorporateAppointments: React.FC = () => {
                         <span className="flex-1 text-blue-100">{selectedProvider.name}</span>
                         {selectedProvider.city && <span className="text-xs text-slate-400">{selectedProvider.city}</span>}
                         <button type="button" className="ml-1 text-slate-400 hover:text-slate-200"
-                          onClick={() => setAppointmentForm(p => ({ ...p, facility: '' }))}>✕</button>
+                          onClick={() => setAppointmentForm(p => apptMeta?.apiType === 'doctor' ? { ...p, facility: '', doctorName: '', doctorId: '' } : { ...p, facility: '' })}>✕</button>
                       </div>
                     )}
 
@@ -674,7 +674,7 @@ const CorporateAppointments: React.FC = () => {
                                 key={prov.id}
                                 type="button"
                                 className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-slate-800 transition-colors ${isSelected ? 'bg-blue-900/30' : ''}`}
-                                onClick={() => setAppointmentForm(p => ({ ...p, facility: prov.name }))}
+                                onClick={() => setAppointmentForm(p => prov.providerType === 'doctor' ? { ...p, doctorName: prov.name, doctorId: prov.id, facility: prov.name } : { ...p, facility: prov.name })}
                               >
                                 <span className={`flex-shrink-0 flex items-center justify-center h-7 w-7 rounded-full ${meta.color}`}>
                                   <meta.Icon className="h-3.5 w-3.5" />
@@ -695,8 +695,8 @@ const CorporateAppointments: React.FC = () => {
                 );
               })()}
 
-              {/* Doctor / Consultant name */}
-              <div className="grid gap-2">
+              {/* Doctor / Consultant name for facility bookings */}
+              {APPOINTMENT_TYPES.find(t => t.value === appointmentForm.appointmentType)?.apiType !== 'doctor' && <div className="grid gap-2">
                 <Label htmlFor="doctorName">Doctor / Consultant <span className="text-slate-500 font-normal text-xs">(optional)</span></Label>
                 <div className="relative">
                   <Input
@@ -750,7 +750,7 @@ const CorporateAppointments: React.FC = () => {
                     <CheckCircle className="h-3 w-3" /> Doctor selected from directory
                   </p>
                 )}
-              </div>
+              </div>}
 
               {/* Date + Time */}
               <div className="grid grid-cols-2 gap-4">
@@ -930,7 +930,7 @@ const CorporateAppointments: React.FC = () => {
                     </div>
 
                     <div className="flex gap-2">
-                      {appointment.status === 'scheduled' && (
+                      {appointment.status === 'scheduled' && appointment.source !== 'employee_booked' && (
                         <>
                           <Button variant="ghost" size="sm" onClick={() => handleSendReminder(appointment)} title="Send Reminder">
                             <Bell className="h-3 w-3" />
@@ -944,7 +944,7 @@ const CorporateAppointments: React.FC = () => {
                         </>
                       )}
                       <Button variant="outline" size="sm" onClick={() => handleViewDetails(appointment)}>View Details</Button>
-                      {appointment.status === 'scheduled' && (
+                      {appointment.status === 'scheduled' && appointment.source !== 'employee_booked' && !/consultation|specialist referral/i.test(appointment.appointmentType) && (
                         <Button
                           size="sm"
                           disabled={!appointment.doctorName || appointment.doctorName === 'TBD'}

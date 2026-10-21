@@ -53,3 +53,18 @@ export const findSlotConflict = (appointments, slotTime, { excludeId } = {}) => 
     }) || null
   );
 };
+
+/** Booking schedules are published in India time, independent of the server timezone. */
+export const appointmentSlotInstant = (date, time) => {
+  const day = String(date || '');
+  const start = getSlotStartTime(time);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(start)) return null;
+  const parsedDay = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(parsedDay.getTime()) || parsedDay.toISOString().slice(0, 10) !== day) return null;
+  const value = new Date(`${day}T${start}:00+05:30`);
+  return Number.isNaN(value.getTime()) ? null : value;
+};
+export const isFutureAppointmentSlot = (date, time, now = Date.now()) => {
+  const instant = appointmentSlotInstant(date, time);
+  return instant !== null && instant.getTime() > Number(now);
+};

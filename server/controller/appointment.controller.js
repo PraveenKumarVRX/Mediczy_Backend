@@ -1,3 +1,4 @@
+import { appointmentSlotInstant } from '../utils/appointmentSlotTime.js';
 import { validationResult } from 'express-validator';
 import Appointment from '../models/appointment.model.intelligent.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
@@ -43,8 +44,8 @@ const getAppointmentDateTime = (appointment) => {
     return null;
   }
 
-  const candidate = new Date(`${datePart}T${timePart}:00`);
-  return Number.isNaN(candidate.getTime()) ? null : candidate;
+  const candidate = appointmentSlotInstant(datePart, timePart);
+  return candidate;
 };
 
 const canCancelOrReschedule = (appointment, minimumHours = 2) => {
@@ -212,8 +213,8 @@ export const createAppointment = async (req, res) => {
     const dbConsultationType = mapConsultationTypeForDb(requestedConsultationType);
     const normalizedSymptoms = normalizeSymptoms(symptoms);
 
-    const requestedSlot = new Date(`${appointmentDate}T${appointmentTime}:00`);
-    if (Number.isNaN(requestedSlot.getTime())) {
+    const requestedSlot = appointmentSlotInstant(appointmentDate, appointmentTime);
+    if (!requestedSlot) {
       return res.status(400).json({
         success: false,
         message: 'Invalid appointment date/time'

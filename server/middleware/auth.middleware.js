@@ -148,7 +148,7 @@ export const authUser = async (req, res, next) => {
   const token = resolveAuthToken(req);
 
   if (!token) {
-    return res.status(401).json({ message: "unauthorized token" });
+    return res.status(401).json({ success:false, code:"authentication_required", message:"Authentication required" });
   }
 
   if (DEV_TOKEN_ALLOWLIST.has(token)) {

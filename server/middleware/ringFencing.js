@@ -236,6 +236,9 @@ const USER_TYPE_PERMISSIONS = {
   },
   admin: {
     allowedPaths: [
+      '/api/kits',
+      '/api/checkup-kits',
+      '/api/lab/kits',
       // roadmap-intelligence: ONLY the operational analytics sub-routes are exposed (tenant-scoped, RLS-backed, role-gated in
       // the router). The clinical decision-support / consent sub-routes (pgx, voice-biometrics, ar-surgical-plans, trials,
       // sdoh, wounds, revenue-cycle) stay OFF until a SaMD classification and clinical validation approve them —
@@ -260,6 +263,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/surveillance',  // module route (RBAC enforced per route)
       '/api/abdm',  // module route (RBAC enforced per route)
       '/api/admin',
+      '/api/corporate-bookings',
       '/api/db',
       '/api/superadmin', // Super admin tenant/organization management
       '/api/platform', // Platform management routes
@@ -335,6 +339,9 @@ const USER_TYPE_PERMISSIONS = {
   },
   team: {
     allowedPaths: [
+      '/api/kits',
+      '/api/checkup-kits',
+      '/api/lab/kits',
       '/api/team',
       '/api/admin',  // Allow access to admin routes for team members
       '/api/users',
@@ -552,6 +559,9 @@ const USER_TYPE_PERMISSIONS = {
   },
   lab: {
     allowedPaths: [
+      '/api/kits',
+      '/api/checkup-kits',
+      '/api/lab/kits',
       '/api/lab',
       '/api/lab/dashboard',
       '/api/lab/tests',

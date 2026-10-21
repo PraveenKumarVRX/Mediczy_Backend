@@ -1,0 +1,30 @@
+{
+  "releasedOn": "2026-10-21",
+  "sourceBase": "a1254c33313b82389823ebf07d307b8c58e1bbb8",
+  "sourceSnapshotSha256": "904e683eec444d0fd4ebcfcea2ca3c331176dc5dd6849ca9ea460dd6eeaf0bdb",
+  "workingTreeSnapshot": true,
+  "apiPath": "/home/ubuntu/Mediczy/server",
+  "frontendArtifact": "/home/ubuntu/mediqzy-releases/health-checkup-20261021/client/dist",
+  "indexSha256": "1eff27693e6bf62337dc03e408cdd8ead231b12cea6f0ac4049e9e2d0279c538",
+  "migration": "20261021009000-corporate-health-package-catalog",
+  "catalogPackages": 3,
+  "dairyDayPackages": 2,
+  "agilusLabRecordsMapped": 42,
+  "cloudFrontInvalidation": {
+    "id": "I3BZ9SCPIHIKQSHU8TVGII71HN",
+    "status": "Completed"
+  },
+  "validation": {
+    "backendTests": 51,
+    "clientTests": 16,
+    "liveReadOnlyApiChecks": 25,
+    "browserChecks": 4,
+    "publicRoutes": 6,
+    "browserRuntimeErrors": 0
+  },
+  "apiRestartCount": 14,
+  "oldHashedAssetsRetained": true,
+  "limitations": [
+    "Dairy Day employees are inactive; member probes use an existing active corporate employee and verify denial of unrelated Agilus access."
+  ]
+}

@@ -329,7 +329,7 @@ const CorporateWellnessCalendar: React.FC = () => {
       // a failed session look identical to the user otherwise.
       const [activitiesRes, empRes, benefitsRes] = await Promise.allSettled([
         api.get('/corporate/wellness-calendar/activities'),
-        api.get('/corporate/dashboard/employees-health'),
+        api.get('/corporate/employees'),
         api.get('/corporate/my-benefits'),
       ]);
 
@@ -369,7 +369,7 @@ const CorporateWellnessCalendar: React.FC = () => {
 
       const empData = empRes.status === 'fulfilled' ? (empRes.value.data?.data?.employees || []) : [];
       setEmployees(empData.map((e: any) => ({
-        id: String(e.id),
+        id: String(e.employeeId || e.id),
         name: e.name,
         email: e.email || '',
         department: e.department || '',

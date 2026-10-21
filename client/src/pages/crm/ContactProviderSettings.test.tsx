@@ -1,0 +1,14 @@
+import {useState} from 'react';
+import {render,screen,fireEvent,cleanup,waitFor} from '@testing-library/react';
+import {afterEach,describe,it,expect,vi} from 'vitest';
+import ContactProviderSettings from './ContactProviderSettings';
+const initial={provider:'exotel',credential_prefix:'VOICE_OLD',number:'+918012345678',enabled:true,recording_enabled:true,retention_days:30};
+function show(){const save=vi.fn(async()=>{});function Harness(){const [config,setConfig]=useState(initial);return <ContactProviderSettings config={config} savedConfig={initial} busy={false} onChange={setConfig} onSave={save}/>;}render(<Harness/>);return save;}
+afterEach(cleanup);
+describe('calling-provider setup',()=>{
+ it('offers named providers alongside existing Exotel',()=>{show();const providers=screen.getByLabelText('Calling provider');expect([...providers.querySelectorAll('option')].map(o=>o.textContent)).toEqual(['Exotel','TeleCMI','Zoom Phone','Airtel IQ','Twilio','Plivo']);});
+ it('retains the existing provider draft when switching away and back',()=>{show();fireEvent.change(screen.getByLabelText('ExoPhone'),{target:{value:'+918099999999'}});fireEvent.change(screen.getByLabelText('Calling provider'),{target:{value:'telecmi'}});expect(screen.getByText(/Calling stays unavailable/)).toBeTruthy();expect((screen.getByLabelText('Business number') as HTMLInputElement).value).toBe('');fireEvent.change(screen.getByLabelText('Calling provider'),{target:{value:'exotel'}});expect((screen.getByLabelText('ExoPhone') as HTMLInputElement).value).toBe('+918099999999');});
+ it('requires explicit confirmation to replace the active provider',async()=>{const save=show();fireEvent.change(screen.getByLabelText('Calling provider'),{target:{value:'airtel_iq'}});fireEvent.change(screen.getByLabelText('Airtel virtual number'),{target:{value:'+918012345679'}});fireEvent.click(screen.getByRole('button',{name:'Save connection'}));expect(save).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'Confirm provider switch'}));await waitFor(()=>expect(save).toHaveBeenCalledOnce());expect(save.mock.calls[0][0]).toMatchObject({provider:'airtel_iq',enabled:false,recording_enabled:false,credential_prefix:'VOICE_AIRTEL_IQ'});});
+ it('explains Zoom client launch and does not offer local recording',()=>{show();fireEvent.change(screen.getByLabelText('Calling provider'),{target:{value:'zoom_phone'}});expect(screen.getByText(/signed-in desktop app/)).toBeTruthy();expect(screen.getByLabelText('Enable Zoom Phone launch')).toBeTruthy();expect(screen.queryByText('Allow recording after consent')).toBeNull();});
+ it('blocks invalid connection values before save',()=>{const save=show();fireEvent.change(screen.getByLabelText('ExoPhone'),{target:{value:'invalid'}});expect((screen.getByRole('button',{name:'Save connection'}) as HTMLButtonElement).disabled).toBe(true);expect(save).not.toHaveBeenCalled();});
+});

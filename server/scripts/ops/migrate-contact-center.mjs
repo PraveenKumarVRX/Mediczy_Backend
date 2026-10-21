@@ -1,3 +1,4 @@
+import {up as providers} from '../../migrations/20261021010000-contact-center-providers.migration.js';
 /** Separate administrator connection. Default: transactional rollback rehearsal. */
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -28,13 +29,16 @@ const admin=JSON.parse(aws('secretsmanager','get-secret-value','--secret-id',db.
 const client=new Client({host:expected,database:settings.POSTGRES_DATABASE,user:admin.username,password:admin.password,ssl:postgresTls({NODE_ENV:'production',POSTGRES_HOST:expected}),connectionTimeoutMillis:10000,application_name:'mediqzy-contact-center-migration'});
 const migration=readFileSync(new URL('../../migrations/20261020008000-contact-center.migration.js',import.meta.url));
 const mediaMigration=readFileSync(new URL('../../migrations/20261020008100-contact-center-livekit.migration.js',import.meta.url));
-const record={at:new Date().toISOString(),mode:apply?'apply':'rollback-only',instance:db.DBInstanceIdentifier,host:expected,snapshot:apply?option('--snapshot'):null,migrationSha256:createHash('sha256').update(migration).digest('hex'),mediaMigrationSha256:createHash('sha256').update(mediaMigration).digest('hex'),tables:ALL_TABLES.length,liveCalls:0};
+const providerMigration=readFileSync(new URL('../../migrations/20261021010000-contact-center-providers.migration.js',import.meta.url));
+const record={providerMigrationSha256:createHash('sha256').update(providerMigration).digest('hex'),at:new Date().toISOString(),mode:apply?'apply':'rollback-only',instance:db.DBInstanceIdentifier,host:expected,snapshot:apply?option('--snapshot'):null,migrationSha256:createHash('sha256').update(migration).digest('hex'),mediaMigrationSha256:createHash('sha256').update(mediaMigration).digest('hex'),tables:ALL_TABLES.length,liveCalls:0};
 try{
   await client.connect();await client.query('BEGIN');
   await client.query("SET LOCAL lock_timeout='5s';SET LOCAL statement_timeout='60s';SELECT pg_advisory_xact_lock(hashtext('contact-center-schema'))");
-  await withMigrationOwner(client,async()=>{await up(client);await extend(client);await harden(client,settings.POSTGRES_USER,ALL_TABLES);});
+  await withMigrationOwner(client,async()=>{await up(client);await extend(client);await providers(client);await harden(client,settings.POSTGRES_USER,ALL_TABLES);});
   const {rows}=await client.query("SELECT c.relname,c.relrowsecurity,c.relforcerowsecurity,r.rolname FROM pg_class c JOIN pg_roles r ON r.oid=c.relowner WHERE c.relnamespace='public'::regnamespace AND c.relname=ANY($1)",[ALL_TABLES]);
   if(rows.length!==ALL_TABLES.length||rows.some(r=>!r.relrowsecurity||!r.relforcerowsecurity||r.rolname!=='mediqzy_voice_owner'))throw new Error('Ownership or RLS verification failed');
+  const column=await client.query("SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='cc_calls' AND column_name='provider_config' AND data_type='jsonb'");
+  if(column.rows.length!==1)throw new Error('Provider history column verification failed');
   await client.query(apply?'COMMIT':'ROLLBACK');record.result='passed';
 }catch(error){await client.query('ROLLBACK').catch(()=>{});record.result='failed';record.errorCode=error.code||'MIGRATION_FAILED';process.exitCode=1;}
 finally{await client.end();writeFileSync(evidence,JSON.stringify(record,null,2)+'\n',{mode:0o600});}

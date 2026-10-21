@@ -100,6 +100,29 @@ const CorporateSettings: React.FC = () => {
   const [integrations, setIntegrations] = useState({ hrms: false, insuranceApi: false, telemedicine: false, wearables: false, calendar: false });
   const [planInfo, setPlanInfo] = useState<{ linkedPlan: boolean; planName?: string; maxEmployees?: number | null } | null>(null);
 
+  const [rosterOptions, setRosterOptions] = useState<{ departments: string[]; grades: string[] }>({ departments: [], grades: [] });
+  useEffect(() => {
+    api.get('/corporate/employees').then(({ data }) => {
+      const rows = data?.data?.employees || data?.data || [];
+      if (!Array.isArray(rows)) return;
+      setRosterOptions({
+        departments: [...new Set(rows.map((r: any) => r.department || 'General'))].sort() as string[],
+        grades: [...new Set(rows.map((r: any) => r.designation).filter(Boolean))].sort() as string[],
+      });
+    }).catch(() => {});
+  }, []);
+  const eligibilityOptions = (field: 'eligibleDepartments' | 'eligibleGrades', options: string[]) => {
+    const selected = String(eligibility[field] || '').split(',').map(v => v.trim()).filter(Boolean);
+    return <div className="space-y-2" role="group" aria-label={field === 'eligibleDepartments' ? 'Eligible departments' : 'Eligible job grades'}>
+      <p className="text-xs text-slate-400">Select from the employee roster. Leave all unchecked to include everyone.</p>
+      {[...new Set([...options, ...selected])].map(value => <label key={value} className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={selected.includes(value)} onChange={e => setEligibility(p => ({ ...p, [field]: (e.target.checked ? [...selected, value] : selected.filter(v => v !== value)).join(',') }))} />
+        {value}
+      </label>)}
+      {!options.length && <p className="text-xs text-slate-400">No roster values available.</p>}
+    </div>;
+  };
+
   const loadSettings = async () => {
     try {
       const [{ data }, eligRes, benefitsRes] = await Promise.all([
@@ -414,13 +437,7 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="eligibleDepartments">Eligible departments</Label>
-                <Input
-                  id="eligibleDepartments"
-                  placeholder="Comma-separated, leave blank for all"
-                  value={eligibility.eligibleDepartments}
-                  onChange={e => setEligibility(p => ({ ...p, eligibleDepartments: e.target.value }))}
-                />
-                <p className="text-xs text-slate-400">Comma-separated department names — leave blank to include all departments</p>
+                {eligibilityOptions('eligibleDepartments', rosterOptions.departments)}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="minAge">Minimum age for eligibility (0 = no limit)</Label>
@@ -447,13 +464,7 @@ const CorporateSettings: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="eligibleGrades">Eligible job grades / designations</Label>
-                <Input
-                  id="eligibleGrades"
-                  placeholder="Comma-separated, leave blank for all"
-                  value={eligibility.eligibleGrades}
-                  onChange={e => setEligibility(p => ({ ...p, eligibleGrades: e.target.value }))}
-                />
-                <p className="text-xs text-slate-400">Comma-separated grades or designations — leave blank to include all</p>
+                {eligibilityOptions('eligibleGrades', rosterOptions.grades)}
               </div>
               <Button onClick={handleSaveEligibility} disabled={isSavingEligibility} className="w-full sm:w-auto">
                 <Save className="h-4 w-4 mr-2" />

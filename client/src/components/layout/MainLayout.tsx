@@ -1,3 +1,4 @@
+import { useServerNotifications } from '@/hooks/useServerNotifications';
 import { Sidebar } from "./Sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,6 @@ import ChatApplet from "@/components/chat/ChatApplet";
 import GlobalSearch from "@/components/GlobalSearch";
 import SupportChatWidget from "@/components/SupportChatWidget";
 import { FloatingDrISHA } from "@/components/FloatingDrISHA";
-import aiHealthServices from "@/services/aiHealthServices";
 import { lazy, Suspense } from "react";
 import { useVideoCall } from "@/context/VideoCallContext";
 import { getUserDashboardUxMeta } from "@/config/userDashboardUxMeta";
@@ -195,52 +195,12 @@ const MainLayout = ({ children }: MainLayoutProps) => {
     currentDoctor,
   ]);
 
-  // ── Real-time AI notifications from backend ──
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-
-  const timeAgo = useCallback((dateStr: string) => {
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diffMin = Math.round((now - then) / 60000);
-    if (diffMin < 1) return 'just now';
-    if (diffMin < 60) return `${diffMin}m ago`;
-    const diffHr = Math.round(diffMin / 60);
-    if (diffHr < 24) return `${diffHr}h ago`;
-    const diffDay = Math.round(diffHr / 24);
-    return `${diffDay}d ago`;
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-    const fetchNotifications = async () => {
-      // Skip AI notifications for non-patient portals (team, admin, nurse, etc.)
-      // They use separate dashboards and these calls use the wrong token context
-      const currentUserType = localStorage.getItem('userType');
-      if (currentUserType && currentUserType !== 'user') return;
-      try {
-        const res = await aiHealthServices.getSmartNotifications({ limit: 10 });
-        if (mounted && res.success && res.notifications.length > 0) {
-          setNotifications(res.notifications.map(n => ({
-            id: n.id,
-            title: n.title,
-            description: n.message,
-            time: timeAgo(n.created_at),
-            type: (n.type === 'medication_reminder' ? 'prescription' :
-                   n.type === 'appointment_reminder' ? 'appointment' :
-                   n.type === 'lab_result' ? 'report' : 'alert') as Notification['type'],
-            link: n.action_url || '/smart-health',
-            read: n.status === 'read',
-          })));
-        }
-      } catch {
-        // Silently fail — fallback to empty
-      }
-    };
-    fetchNotifications();
-    // Refresh every 2 minutes
-    const interval = setInterval(fetchNotifications, 120000);
-    return () => { mounted = false; clearInterval(interval); };
-  }, [timeAgo]);
+  const serverNotifications = useServerNotifications({limit:10,enabled:isPatientUser});
+  const notifications = serverNotifications.notifications.map(n => ({
+    id:n.id, title:n.title, description:n.message,
+    time:n.timestamp.toLocaleString(), type:n.type === 'appointment' ? 'appointment' : 'alert',
+    link:n.actionUrl || '/patient/notifications', read:n.read,
+  }));
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -257,7 +217,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = serverNotifications.unreadCount;
   const uxMeta = useMemo(() => getUserDashboardUxMeta(location.pathname), [location.pathname]);
   const showUserUxStrip = !isTeamUser && !isNurseRoute && !isAssistantRoute && !isAdminUser;
 
@@ -356,7 +316,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
                       >
                         <Link 
                           to={note.link}
-                          onClick={() => setNotificationOpen(false)}
+                          onClick={() => { setNotificationOpen(false); if (!note.read) void serverNotifications.markAsRead(note.id); }}
                           className={`flex items-start gap-3 px-3 py-3 cursor-pointer transition-colors w-full ${
                             note.read 
                               ? 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700' 
@@ -405,7 +365,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
                   <div className="p-2">
                     <Link
                       to="/patient/notifications"
-                      onClick={() => setNotificationOpen(false)}
+                      onClick={() => { setNotificationOpen(false); if (!note.read) void serverNotifications.markAsRead(note.id); }}
                       className="block text-center text-sm text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300 font-medium py-2 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-colors"
                     >
                       View all notifications

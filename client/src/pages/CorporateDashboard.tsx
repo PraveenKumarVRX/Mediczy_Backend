@@ -162,10 +162,10 @@ const CorporateDashboard = () => {
         companyName: parsed?.name || parsed?.companyName || "Corporate Portal",
         logo: parsed?.logo || null,
         adminName: parsed?.contactPerson || "Admin",
-        plan: parsed?.type || parsed?.packageType || "Standard",
+        plan: "Loading plan…",
       };
     } catch {
-      return { companyName: "Corporate Portal", logo: null, adminName: "Admin", plan: "Standard" };
+      return { companyName: "Corporate Portal", logo: null, adminName: "Admin", plan: "Loading plan…" };
     }
   });
   
@@ -226,14 +226,15 @@ const CorporateDashboard = () => {
       }
       setError(null);
       
-      const [summaryRes, healthRes, employeesRes, appointmentsRes, participationRes, ageDistRes, utilizationRes] = await Promise.all([
+      const [summaryRes, healthRes, employeesRes, appointmentsRes, participationRes, ageDistRes, utilizationRes, benefitsRes] = await Promise.all([
         api.get("/corporate/dashboard/summary").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/health-analytics").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/employees-health").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/appointments").catch(() => ({ data: null })),
         api.get("/corporate/analytics/participation").catch(() => ({ data: null })),
         api.get("/corporate/dashboard/age-distribution").catch(() => ({ data: null })),
-        api.get("/corporate/analytics/monthly-utilization").catch(() => ({ data: null }))
+        api.get("/corporate/analytics/monthly-utilization").catch(() => ({ data: null })),
+        api.get("/corporate/my-benefits").catch(() => ({ data: null }))
       ]);
 
       setSummary(summaryRes.data?.data || null);
@@ -251,7 +252,7 @@ const CorporateDashboard = () => {
           ...prev,
           companyName: cp.organization || prev.companyName,
           adminName: cp.contactPerson || prev.adminName,
-          plan: cp.packageType || prev.plan,
+          plan: benefitsRes.data?.data?.plan?.planName || 'No plan configured',
         }));
       }
     } catch (err: any) {
@@ -646,10 +647,6 @@ const CorporateDashboard = () => {
                   <div className={cn("p-2 rounded-xl transition-colors bg-blue-500/10 group-hover:bg-emerald-500/20")}>
                     <Users className={cn("w-5 h-5 transition-colors text-blue-500 group-hover:text-emerald-500")} />
                   </div>
-                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    +5%
-                  </Badge>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Total Employees</p>
@@ -667,10 +664,6 @@ const CorporateDashboard = () => {
                   <div className={cn("p-2 rounded-xl transition-colors bg-emerald-500/10 group-hover:bg-emerald-500/20")}>
                     <Activity className={cn("w-5 h-5 transition-colors text-emerald-500")} />
                   </div>
-                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    +8%
-                  </Badge>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Monitored</p>
@@ -688,10 +681,6 @@ const CorporateDashboard = () => {
                   <div className={cn("p-2 rounded-xl transition-colors bg-green-500/10 group-hover:bg-emerald-500/20")}>
                     <CheckCircle className={cn("w-5 h-5 transition-colors text-green-500 group-hover:text-emerald-500")} />
                   </div>
-                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
-                    <TrendingUp className="w-3 h-3 mr-1" />
-                    +12%
-                  </Badge>
                 </div>
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Healthy</p>

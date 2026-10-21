@@ -33,7 +33,7 @@ import { createDoctorTemplatesRouter } from './doctor/templates.routes.js';
 import { createDoctorMessagesRouter } from './doctor/messages.routes.js';
 import { createDoctorBillingRouter } from './doctor/billing.routes.js';
 import { toArray, normalizeDoctorProfile } from '../utils/doctorNormalizer.js';
-import { isSlotBooked, normalizeSlotKey } from '../utils/appointmentSlotTime.js';
+import { isSlotBooked, normalizeSlotKey, isFutureAppointmentSlot } from '../utils/appointmentSlotTime.js';
 
 const router = express.Router();
 const { Notification, FCMToken } = notificationServiceModule;
@@ -1023,7 +1023,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           slotDuration
         ).map(slot => ({
           time: slot,
-          available: !isBooked(slot) && !isSlotBlocked(slot),
+          available: isFutureAppointmentSlot(date, slot) && !isBooked(slot) && !isSlotBlocked(slot),
           blocked: isSlotBlocked(slot)
         }))
         : [];
@@ -1038,7 +1038,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
           return {
             time: slot,
-            available: !isBooked(slot) && !isSlotBlocked(slot),
+            available: isFutureAppointmentSlot(date, slot) && !isBooked(slot) && !isSlotBlocked(slot),
             blocked: isSlotBlocked(slot),
             location: location ? {
               name: location.name,

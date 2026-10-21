@@ -102,6 +102,11 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
   // Create batch dialog
+  const [activationBatch, setActivationBatch] = useState<AhcBatch | null>(null);
+  const [packageOptions, setPackageOptions] = useState<{id:string;name:string}[]>([]);
+  const [activationPackage, setActivationPackage] = useState('');
+  const [activating, setActivating] = useState(false);
+  const [reminding, setReminding] = useState<Set<number>>(new Set());
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [enrollingBatchIds, setEnrollingBatchIds] = useState<Set<number>>(new Set());
@@ -199,23 +204,36 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
   };
 
   const handleSendReminders = async (batch: AhcBatch) => {
+    if (reminding.has(batch.id)) return;
+    setReminding(previous => new Set(previous).add(batch.id));
     try {
       const { data } = await api.post(`/corporate/ahc/batches/${batch.id}/send-reminders`);
       toast({ title: 'Reminders sent', description: data?.data?.message });
       loadData();
     } catch {
       toast({ title: 'Failed to send reminders', variant: 'destructive' });
-    }
+    } finally { setReminding(previous => {const next=new Set(previous);next.delete(batch.id);return next;}); }
   };
 
   const handleActivateBatch = async (batch: AhcBatch, status: string) => {
+    if (status === 'active' && !activationBatch) {
+      try {
+        const {data}=await api.get('/corporate/ahc/package-options');
+        setPackageOptions(data?.data?.packages || []);
+        setActivationPackage('');setActivationBatch(batch);
+      } catch { toast({title:'Unable to load configured health packages',variant:'destructive'}); }
+      return;
+    }
+    if (activating) return;
+    setActivating(true);
     try {
-      await api.put(`/corporate/ahc/batches/${batch.id}`, { status });
+      await api.put(`/corporate/ahc/batches/${batch.id}`, { status, packageId: activationPackage || undefined });
+      setActivationBatch(null);
       toast({ title: `Batch ${status}` });
       loadData();
-    } catch {
-      toast({ title: 'Failed to update batch', variant: 'destructive' });
-    }
+    } catch (error: any) {
+      toast({ title: 'Failed to update batch', description:error?.response?.data?.message, variant: 'destructive' });
+    } finally { setActivating(false); }
   };
 
   const openEditEnroll = (e: Enrollment) => {
@@ -322,6 +340,7 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
                       <div className="flex items-center gap-2 flex-wrap">
                         <h3 className="font-semibold text-slate-100">{batch.batchName}</h3>
                         <Badge className={`text-xs ${STATUS_COLORS[batch.status] || ''}`}>{batch.status}</Badge>
+                        {batch.status === 'planning' && batch.scheduledDate && new Date(batch.scheduledDate).getTime() < Date.now() && <Badge className="text-amber-300">Awaiting activation — start date passed</Badge>}
                         <Badge className={`text-xs ${PRIORITY_COLORS[batch.priority] || ''}`}>{batch.priority}</Badge>
                         <span className="text-xs text-slate-500">FY {batch.batchYear}</span>
                       </div>
@@ -360,7 +379,7 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
                         </>
                       )}
                       {batch.status === 'active' && (
-                        <Button size="sm" variant="outline" onClick={() => handleSendReminders(batch)}
+                        <Button size="sm" variant="outline" disabled={reminding.has(batch.id)} onClick={() => handleSendReminders(batch)}
                           className="h-7 px-2 text-xs bg-amber-500/10 border-amber-500/30 text-amber-400">
                           <Bell className="h-3 w-3 mr-1" /> Remind
                         </Button>
@@ -515,7 +534,16 @@ const CorporateAnnualHealthCheckup: React.FC = () => {
         </Card>
 
         {/* Create batch dialog */}
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog open={!!activationBatch} onOpenChange={open => {if(!open&&!activating)setActivationBatch(null);}}>
+        <DialogContent><DialogHeader><DialogTitle>Activate checkup batch</DialogTitle><DialogDescription>Select the package employees will receive. Active enrolled employees with linked accounts will be invited.</DialogDescription></DialogHeader>
+          <Label htmlFor="activation-package">Health checkup package</Label>
+          <Select value={activationPackage} onValueChange={setActivationPackage}><SelectTrigger id="activation-package" className="bg-background text-foreground"><SelectValue placeholder="Select a package" /></SelectTrigger><SelectContent>{packageOptions.map(p=><SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent></Select>
+          {!packageOptions.length && <p>No packages configured. Ask an administrator to create a health checkup package for this corporate.</p>}
+          <Button disabled={!activationPackage || activating} onClick={()=>activationBatch&&handleActivateBatch(activationBatch,'active')}>{activating?'Activating…':'Activate and invite employees'}</Button>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="bg-slate-900 border-slate-700 text-slate-100">
             <DialogHeader>
               <DialogTitle>Create Checkup Batch</DialogTitle>

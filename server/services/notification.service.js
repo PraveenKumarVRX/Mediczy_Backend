@@ -1052,7 +1052,7 @@ class NotificationService {
     if (userType) {
       where.userType = userType;
     }
-    if (unreadOnly) where.status = { [postgresSequelize.Sequelize.Op.ne]: 'read' };
+    if (unreadOnly) where.isRead = false;
     if (type) where.type = type;
 
     const notifications = await Notification.findAndCountAll({
@@ -1063,7 +1063,7 @@ class NotificationService {
     });
 
     // Build unread count query
-    const unreadWhere = { userId, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } };
+    const unreadWhere = { userId, isRead: false };
     if (userType) {
       unreadWhere.userType = userType;
     }

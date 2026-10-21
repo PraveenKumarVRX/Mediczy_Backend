@@ -682,47 +682,20 @@ export const getDashboardStats = async (req, res) => {
       LIMIT 5
     `);
     
-    // Get masterdata counts from files
-    const PROVIDERS_BASE = '/tmp/rag_cache/all_providers';
-    const LABS_BASE = '/tmp/rag_cache/profiles_enhanced';
-    
-    let hospitalCount = 0;
-    let labCount = 0;
-    let clinicCount = 0;
-    let pharmacyCount = 0;
-    let corporateCount = 0;
-    let doctorCountMaster = 0;
-    
-    try {
-      const [hospitalFiles, labFiles, clinicFiles, pharmacyFiles, corporateFiles] = await Promise.all([
-        fs.readdir(path.join(PROVIDERS_BASE, 'hospitals')).catch(() => []),
-        fs.readdir(LABS_BASE).catch(() => []),
-        fs.readdir(path.join(PROVIDERS_BASE, 'clinics')).catch(() => []),
-        fs.readdir(path.join(PROVIDERS_BASE, 'pharmacies')).catch(() => []),
-        fs.readdir(path.join(PROVIDERS_BASE, 'corporates')).catch(() => [])
-      ]);
-      
-      hospitalCount = hospitalFiles.length;
-      labCount = labFiles.length;
-      clinicCount = clinicFiles.length;
-      pharmacyCount = pharmacyFiles.length;
-      corporateCount = corporateFiles.length;
-      
-      // Get doctors count from Excel
-      const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
-      const workbook = await XLSX.readFile(doctorsFile);
-      const sheetName = workbook.SheetNames[0];
-      const doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-      doctorCountMaster = doctors.length;
-    } catch (error) {
-      console.error('Error reading masterdata counts:', error);
-    }
+    const [entityCounts] = await postgresSequelize.query(`SELECT
+      (SELECT COUNT(*) FROM hospitals)::int AS hospitals,
+      (SELECT COUNT(*) FROM labs)::int AS labs,
+      (SELECT COUNT(*) FROM provider_clinics)::int AS clinics,
+      (SELECT COUNT(*) FROM pharmacies)::int AS pharmacies,
+      (SELECT COUNT(*) FROM corporates)::int AS corporates`);
+    const { hospitals: hospitalCount, labs: labCount, clinics: clinicCount,
+      pharmacies: pharmacyCount, corporates: corporateCount } = entityCounts[0];
 
     const stats = {
       users: userCount,
       activeUsers: activeUsersCount,
       adminUsers: adminUsersCount,
-      doctors: doctorCountDB + doctorCountMaster, // Combine DB and masterdata doctors
+      doctors: doctorCountDB,
       nurses: nursesCount,
       labs: labCount,
       clinics: clinicCount,

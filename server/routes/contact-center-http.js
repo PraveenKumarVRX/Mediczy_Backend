@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { tenant, fail } from '../services/contact-center/policy.js';
 
 const tags=z.array(z.string().trim().min(1).max(40)).max(20).default([]);
-const config=z.object({credential_prefix:z.string().regex(/^VOICE_[A-Z0-9_]{3,60}$/),number:z.string().regex(/^\+[1-9]\d{7,14}$/),enabled:z.boolean().default(false),recording_enabled:z.boolean().default(false),retention_days:z.number().int().min(1).max(3650).default(30),gateway_prefix:z.string().regex(/^VOICE_[A-Z0-9_]{3,60}$/).nullable().optional()}).strict();
+const config=z.object({provider:z.enum(['exotel','telecmi','zoom_phone','airtel_iq','twilio','plivo']).default('exotel'),credential_prefix:z.string().regex(/^VOICE_[A-Z0-9_]{3,60}$/),number:z.string().regex(/^\+[1-9]\d{7,14}$/),enabled:z.boolean().default(false),recording_enabled:z.boolean().default(false),retention_days:z.number().int().min(1).max(3650).default(30),gateway_prefix:z.string().regex(/^VOICE_[A-Z0-9_]{3,60}$/).nullable().optional()}).strict();
 const agent=z.object({user_id:z.coerce.number().int().positive(),name:z.string().trim().min(1).max(100),phone:z.string(),role:z.enum(['agent','supervisor','admin']).default('agent'),skills:tags,languages:tags,priority:z.number().int().min(0).max(100).default(1)}).strict();
 const queue=z.object({id:z.string().uuid().optional(),name:z.string().trim().min(1).max(100),skills:tags,languages:tags,wrap_seconds:z.number().int().min(0).max(1800).default(60),timeout_seconds:z.number().int().min(15).max(3600).default(120)}).strict();
 const dial=z.object({to:z.string().regex(/^\+[1-9]\d{7,14}$/),queue_id:z.string().uuid().optional(),callback_id:z.string().uuid().optional(),transport:z.enum(['phone','browser']).default('phone'),record:z.boolean().default(false),consent:z.object({status:z.enum(['granted','denied']),source:z.enum(['verbal','written','existing_record']),evidence:z.string().trim().min(5).max(500)}).strict().optional()}).strict();
@@ -31,6 +31,7 @@ export function createContactCenterRouter({ service, media, authenticate, author
   router.get('/knowledge',handler(async(req,res)=>res.json(await service.knowledge(uid(req)))));
   router.put('/knowledge',configure,handler(async(req,res)=>res.json(await service.saveKnowledge(uid(req),req.crmUser,parse(z.object({id:z.string().uuid().optional(),title:z.string().min(3).max(150),body:z.string().min(10).max(12000),published:z.boolean().default(false)}).strict(),req.body)))));
   router.put('/config',configure,handler(async(req,res)=>res.json(await service.configure(uid(req),req.crmUser,parse(config,req.body)))));
+  router.post('/external-dial',write,handler(async(req,res)=>res.json(await service.externalDial(uid(req),req.crmUser,parse(z.object({to:z.string().regex(/^\+[1-9]\d{7,14}$/),callback_id:z.string().uuid().optional()}).strict(),req.body),req.get('Idempotency-Key')))));
   router.put('/agents',configure,handler(async(req,res)=>res.json(await service.saveAgent(uid(req),req.crmUser,parse(agent,req.body)))));
   router.patch('/presence',write,handler(async(req,res)=>res.json(await service.presence(uid(req),req.crmUser,parse(z.enum(['available','offline','busy']),req.body.presence)))));
   router.post('/browser-session',write,handler(async(req,res)=>{res.set('Cache-Control','no-store');res.json(await service.browserSession(uid(req),req.crmUser));}));
@@ -38,7 +39,7 @@ export function createContactCenterRouter({ service, media, authenticate, author
   router.post('/flows',configure,handler(async(req,res)=>res.json(await service.saveFlow(uid(req),req.crmUser,parse(flow,req.body)))));
   router.post('/calls',write,handler(async(req,res)=>res.status(202).json(await service.dial(uid(req),req.crmUser,parse(dial,req.body),req.get('Idempotency-Key')))));
   router.get('/calls/:id',handler(async(req,res)=>res.json(await service.callDetail(uid(req),uuid(req.params.id)))));
-  router.post('/calls/:id/reconcile',write,handler(async(req,res)=>{const call=await service.getCall(uid(req),uuid(req.params.id));if(call.provider==='livekit'){if(!media)throw fail(503,'MEDIA_NOT_CONFIGURED','Native media is unavailable');return res.json(await media.reconcile(uid(req),call.id));}if(!call.provider_sid)throw fail(409,'PROVIDER_ID_PENDING','Provider identifier is not available; do not redial automatically');res.json(await service.reconcile(uid(req),call.provider_sid));}));
+  router.post('/calls/:id/reconcile',write,handler(async(req,res)=>{const call=await service.getCall(uid(req),uuid(req.params.id));if(call.provider==='livekit'){if(!media)throw fail(503,'MEDIA_NOT_CONFIGURED','Native media is unavailable');return res.json(await media.reconcile(uid(req),call.id));}if(!call.provider_sid)throw fail(409,'PROVIDER_ID_PENDING','Provider identifier is not available; do not redial automatically');res.json(call.provider&&call.provider!=='exotel'?await service.reconcile(uid(req),call.provider_sid,call.provider):await service.reconcile(uid(req),call.provider_sid));}));
   router.post('/calls/:id/actions',write,handler(async(req,res)=>res.json(await service.mediaAction(uid(req),req.crmUser,uuid(req.params.id),parse(action,req.body)))));
   router.post('/calls/:id/disposition',write,handler(async(req,res)=>res.json(await service.disposition(uid(req),req.crmUser,uuid(req.params.id),parse(disposition,req.body)))));
   router.post('/calls/:id/artifacts/:kind',write,handler(async(req,res)=>res.json(await service.artifact(uid(req),req.crmUser,uuid(req.params.id),kind(req.params.kind)))));
@@ -60,6 +61,11 @@ export function createContactCenterHooks({service,limiter}) {
   router.post('/exotel/:tenant',handler(async(req,res)=>{
     const sid=parse(z.string().regex(/^[A-Za-z0-9]{16,64}$/),req.body.CallSid||req.body.Sid||req.body.Call?.Sid);
     await service.reconcile(tenant(req.params.tenant),sid);res.json({ok:true});
+  }));
+  router.post('/providers/:provider/:tenant',handler(async(req,res)=>{
+    const provider=parse(z.enum(['telecmi','airtel_iq','twilio','plivo']),req.params.provider);
+    const sid=parse(z.string().regex(/^[A-Za-z0-9_-]{8,128}$/),req.body.CallSid||req.body.Sid);
+    await service.reconcile(tenant(req.params.tenant),sid,provider);res.json({ok:true});
   }));
   router.post('/gateway/:tenant',handler(async(req,res)=>{
     parse(gatewayEvent,req.body);

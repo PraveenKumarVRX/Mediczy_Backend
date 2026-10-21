@@ -11,7 +11,6 @@ import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface Notification {
@@ -88,6 +87,7 @@ const CorporateNotifications: React.FC = () => {
       }));
 
       setNotifications(mapped);
+      window.dispatchEvent(new Event("corporate-notifications-changed"));
     } catch (error: any) {
       toast({
         title: 'Failed to load notifications',
@@ -127,6 +127,7 @@ const CorporateNotifications: React.FC = () => {
   const handleMarkAsRead = async (id: string) => {
     try {
       await api.post(`/corporate/notifications/${id}/read`);
+      window.dispatchEvent(new Event("corporate-notifications-changed"));
       setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
     } catch (error: any) {
       toast({
@@ -140,6 +141,7 @@ const CorporateNotifications: React.FC = () => {
   const handleMarkAllAsRead = async () => {
     try {
       await api.post('/corporate/notifications/read-all');
+      window.dispatchEvent(new Event("corporate-notifications-changed"));
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       toast({ title: 'All notifications marked as read' });
     } catch (error: any) {
@@ -193,7 +195,7 @@ const CorporateNotifications: React.FC = () => {
           description="Stay updated with company health initiatives, alerts, and announcements"
           gradient="from-pink-500 to-pink-700"
           badge={unreadCount > 0 ? `${unreadCount} Unread` : undefined}
-          showSearch={true}
+          showSearch={false}
           searchPlaceholder="Search notifications..."
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}

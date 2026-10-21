@@ -1,3 +1,4 @@
+import { sendPreferenceReminders } from './appointment-preference-reminders.service.js';
 import cron from 'node-cron';
 import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
@@ -5,13 +6,9 @@ import { Op } from 'sequelize';
 import { tick, tickError, beginJob } from '../utils/cronRegistry.js';
 import n8nService from './n8n.service.js';
 
-/**
- * Appointment Reminder Automation Service
- * 
- * Automatically sends multi-stage reminders for upcoming appointments:
- * - 24 hours before: Email + SMS + WhatsApp + Push
- * - 2 hours before: SMS + Push
- * - 15 minutes before: Urgent push notification
+/** Sends appointment reminders at each employee's saved lead time.
+ * The personal inbox record and deduplication marker commit atomically;
+ * selected push and email transports run after that commit.
  */
 
 class AppointmentReminderService {
@@ -30,95 +27,31 @@ class AppointmentReminderService {
 
     this.isRunning = true;
 
-    // Run every 30 minutes to check for reminders
-    cron.schedule('*/30 * * * *', async () => {
+    // Check every minute so a 15- or 30-minute preference is not skipped.
+    cron.schedule('* * * * *', async () => {
       if (!(await beginJob('appt_reminder'))) return;
       await this.checkAndSendReminders();
     });
 
-    console.log('✅ Appointment reminder automation started (checks every 30 minutes)');
+    console.log('✅ Appointment reminder automation started (checks every minute)');
   }
 
   /**
    * Check appointments and send reminders based on time windows
    */
   async checkAndSendReminders() {
-    console.log('🔔 Checking for appointment reminders...');
-    
     try {
-      const now = new Date();
-      const twentyFourHoursLater = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-      const twoHoursLater = new Date(now.getTime() + 2 * 60 * 60 * 1000);
-      const fifteenMinutesLater = new Date(now.getTime() + 15 * 60 * 1000);
-      const twentyThreeHoursLater = new Date(now.getTime() + 23 * 60 * 60 * 1000);
-      const oneHourLater = new Date(now.getTime() + 1 * 60 * 60 * 1000);
-      const tenMinutesLater = new Date(now.getTime() + 10 * 60 * 1000);
-
-      // Get all upcoming appointments (scheduled or confirmed)
-      const upcomingAppointments = await Appointment.findAll({
-        where: {
-          status: {
-            [Op.in]: ['scheduled', 'confirmed', 'pending']
-          },
-          appointmentDate: {
-            [Op.gte]: now.toISOString().split('T')[0]
-          }
-        }
-      });
-
-      let sent24h = 0;
-      let sent2h = 0;
-      let sent15min = 0;
-
-      for (const appointment of upcomingAppointments) {
-        try {
-          const appointmentDateTime = this.parseAppointmentDateTime(
-            appointment.appointmentDate,
-            appointment.appointmentTime
-          );
-
-          if (!appointmentDateTime) continue;
-
-          // 24-hour reminder window (23-24 hours before)
-          if (appointmentDateTime > twentyThreeHoursLater && 
-              appointmentDateTime <= twentyFourHoursLater &&
-              !appointment.reminder24hSent) {
-            await this.send24HourReminder(appointment);
-            await appointment.update({ reminder24hSent: true });
-            sent24h++;
-          }
-
-          // 2-hour reminder window (1-2 hours before)
-          if (appointmentDateTime > oneHourLater && 
-              appointmentDateTime <= twoHoursLater &&
-              !appointment.reminder2hSent) {
-            await this.send2HourReminder(appointment);
-            await appointment.update({ reminder2hSent: true });
-            sent2h++;
-          }
-
-          // 15-minute reminder window (10-15 minutes before)
-          if (appointmentDateTime > tenMinutesLater && 
-              appointmentDateTime <= fifteenMinutesLater &&
-              !appointment.reminder15minSent) {
-            await this.send15MinuteReminder(appointment);
-            await appointment.update({ reminder15minSent: true });
-            sent15min++;
-          }
-
-        } catch (error) {
-          console.error(`Error processing appointment ${appointment.id}:`, error.message);
-        }
-      }
-
-      if (sent24h + sent2h + sent15min > 0) {
-        console.log(`✅ Reminders sent: 24h=${sent24h}, 2h=${sent2h}, 15min=${sent15min}`);
-      }
-      tick('appt_reminder', { sent24h, sent2h, sent15min });
-
+      const result = await sendPreferenceReminders({ delivery: async ({ appointment, preferences, decision }) => {
+        const channels = Array.isArray(preferences.reminderChannels) ? preferences.reminderChannels : ['push','email'];
+        if (preferences.push !== false && channels.includes('push'))
+          await notificationService.sendPush(appointment.userId,'patient','Appointment Reminder',decision.message,{appointmentId:String(appointment.id)},'/appointments');
+        if (preferences.email !== false && channels.includes('email'))
+          await notificationService.sendEmail(appointment.userId,'patient','Appointment Reminder',decision.message,'appointment_reminder',{});
+      }});
+      tick('appt_reminder', result);
     } catch (error) {
-      console.error('❌ Error in appointment reminder check:', error);
       tickError('appt_reminder', error.message);
+      console.error('[appointment-reminder]', error.message);
     }
   }
 

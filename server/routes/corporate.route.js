@@ -1,3 +1,4 @@
+import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
@@ -2814,7 +2815,8 @@ router.get('/wellness-calendar/activities', authCorporate, async (req, res) => {
               location, organizer AS speaker,
               max_participants AS capacity,
               registered_count AS registered,
-              status, color
+              status, color, participant_selection AS "participantSelection",
+              total_invited AS "totalInvited", invites_sent AS "invitesSent"
        FROM corporate_wellness_events
        WHERE corporate_id = :corporateId
        ORDER BY event_date ASC`,
@@ -2870,19 +2872,19 @@ router.post('/wellness-calendar/activities', authCorporate, async (req, res) => 
         const [[deptCount]] = await postgresSequelize.query(
           `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true AND department = ANY(ARRAY[:selectedDepartments])`,
           { replacements: { corporateId, selectedDepartments } }
-        ).then((r) => [r]);
+        );
         totalInvited = deptCount?.cnt || 0;
       } else if (participantSelection === 'custom' && Array.isArray(selectedEmployeeIds) && selectedEmployeeIds.length) {
         const [[customCount]] = await postgresSequelize.query(
           `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true AND "employeeId" = ANY(ARRAY[:selectedEmployeeIds])`,
           { replacements: { corporateId, selectedEmployeeIds } }
-        ).then((r) => [r]);
+        );
         totalInvited = customCount?.cnt || 0;
       } else {
         const [[allCount]] = await postgresSequelize.query(
           `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
           { replacements: { corporateId } }
-        ).then((r) => [r]);
+        );
         totalInvited = allCount?.cnt || 0;
       }
     } catch (countErr) {
@@ -2992,54 +2994,32 @@ router.delete('/wellness-calendar/activities/:id', authCorporate, async (req, re
 router.post('/wellness-calendar/activities/:id/send-invites', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
-    const eventId = parseInt(req.params.id, 10);
-    if (!eventId) return res.status(400).json({ success: false, message: 'Invalid activity ID' });
-
-    const { participantSelection, participantIds } = req.body;
-    const totalInvited = Array.isArray(participantIds) ? participantIds.length : (req.body.totalParticipants || 0);
-
-    const updated = await postgresSequelize.query(
-      `UPDATE corporate_wellness_events SET
-         invites_sent = TRUE,
-         invites_sent_at = NOW(),
-         notify_employees = TRUE,
-         participant_selection = :participantSelection,
-         total_invited = :totalInvited,
-         updated_at = NOW()
-       WHERE id = :eventId AND corporate_id = :corporateId
-       RETURNING id`,
-      {
-        replacements: { eventId, corporateId, participantSelection: participantSelection || 'all', totalInvited },
-        type: postgresSequelize.QueryTypes.UPDATE
-      }
-    );
-    if (!updated || !updated[0] || updated[0].length === 0) {
-      return res.status(404).json({ success: false, message: 'Activity not found' });
-    }
-
-    // Persist who was actually invited so the employee calendar can show
-    // real per-employee RSVP state instead of nothing (previously no
-    // per-recipient record existed at all -- only this aggregate count).
-    let actuallyInvited = 0;
-    if (Array.isArray(participantIds) && participantIds.length > 0) {
-      const [rows] = await postgresSequelize.query(
-        `INSERT INTO corporate_wellness_event_rsvps (event_id, "userId", "employeeId", status)
-         SELECT :eventId, ce."userId", ce."employeeId", 'pending'
-         FROM corporate_employees ce
-         WHERE ce.corporate_id = :corporateId
-           AND ce."employeeId" IN (:participantIds)
-           AND ce."userId" IS NOT NULL
-         ON CONFLICT (event_id, "userId") DO NOTHING
-         RETURNING id`,
-        { replacements: { eventId, corporateId, participantIds } }
-      );
-      actuallyInvited = rows.length;
-    }
-
-    res.json({ success: true, message: `Invites sent to ${actuallyInvited || totalInvited} participants` });
+    const eventId = Number(req.params.id);
+    if (!Number.isSafeInteger(eventId) || eventId < 1) return res.status(400).json({ success: false, message: 'Invalid activity ID' });
+    const selection = req.body.participantSelection || 'all';
+    const participantIds = Array.isArray(req.body.participantIds) ? req.body.participantIds.map(String) : [];
+    if (!['all','department','custom'].includes(selection) || (selection !== 'all' && !participantIds.length))
+      return res.status(400).json({ success: false, message: 'Select employees to invite' });
+    const result = await postgresSequelize.transaction(async transaction => {
+      const query = (sql, replacements) => postgresSequelize.query(sql, { replacements, transaction, type: postgresSequelize.QueryTypes.SELECT });
+      const [event] = await query(`SELECT id FROM corporate_wellness_events WHERE id=:eventId AND corporate_id=:corporateId AND status IN ('upcoming','ongoing') FOR UPDATE`, { eventId, corporateId });
+      if (!event) return null;
+      await query(`INSERT INTO corporate_wellness_event_rsvps (event_id,"userId","employeeId",status)
+        SELECT :eventId,ce."userId",ce."employeeId",'pending' FROM corporate_employees ce
+        WHERE ce.corporate_id=:corporateId AND ce."isActive"=true AND ce."userId" IS NOT NULL
+          ${selection === 'all' ? '' : 'AND ce."employeeId" IN (:participantIds)'}
+        ON CONFLICT (event_id,"userId") DO NOTHING RETURNING id`, { eventId, corporateId, ...(participantIds.length ? {participantIds} : {}) });
+      const [count] = await query(`SELECT COUNT(*)::int AS total FROM corporate_wellness_event_rsvps WHERE event_id=:eventId`, { eventId });
+      await query(`UPDATE corporate_wellness_events SET invites_sent=true,invites_sent_at=NOW(),notify_employees=true,
+        participant_selection=:selection,total_invited=:total,updated_at=NOW()
+        WHERE id=:eventId AND corporate_id=:corporateId RETURNING id`, {eventId,corporateId,selection,total:count.total});
+      return count.total;
+    });
+    if (result === null) return res.status(404).json({success:false,message:'Upcoming activity not found'});
+    return res.json({success:true,message:`Invites sent to ${result} participants`,data:{invited:result}});
   } catch (error) {
-    console.error('Error sending invites:', error);
-    res.status(500).json({ success: false, message: 'Failed to send invites', error: error.message });
+    console.error('Error sending invites:',error.message);
+    return res.status(500).json({success:false,message:'Failed to send invites'});
   }
 });
 
@@ -3256,10 +3236,13 @@ router.put('/appointments/:id', authCorporate, async (req, res) => {
   try {
     if (status === 'completed') {
       const [[existing]] = await postgresSequelize.query(
-        `SELECT "doctorName" FROM corporate_scheduled_appointments WHERE id = :id AND corporate_id = :corporateId`,
+        `SELECT "doctorName", "appointmentType" FROM corporate_scheduled_appointments WHERE id = :id AND corporate_id = :corporateId`,
         { replacements: { id, corporateId } }
       );
       if (!existing) return res.status(404).json({ success: false, message: 'Appointment not found' });
+      if (/consultation|specialist referral/i.test(existing.appointmentType || '')) {
+        return res.status(403).json({ success: false, message: 'Doctor consultations must be completed by the treating clinician' });
+      }
       const doctorName = (existing.doctorName || '').trim();
       if (!doctorName || doctorName === 'TBD') {
         return res.status(400).json({
@@ -4290,6 +4273,13 @@ router.post('/reports/:id/log-access', authCorporate, async (req, res) => {
 // Annual Health Checkup (AHC) management
 // ---------------------------------------------------------------------------
 
+router.get('/ahc/package-options', authCorporate, async (req,res) => {
+  try {
+    const packages=await postgresSequelize.query(`SELECT id::text AS id,name FROM corporate_health_package_catalog WHERE is_active=true AND metadata->>'kind'='health_checkup' AND metadata->>'corporateId'=:corporateId ORDER BY name`,{replacements:{corporateId:String(req.user?.corporateId || req.user?.organization_id)},type:postgresSequelize.QueryTypes.SELECT});
+    return res.json({success:true,data:{packages}});
+  } catch { return res.status(500).json({success:false,message:'Unable to load configured health packages'}); }
+});
+
 router.get('/ahc/summary', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.json({ success: true, data: { batches: 0, enrolled: 0, completed: 0, pending: 0 } });
@@ -4304,13 +4294,13 @@ router.get('/ahc/summary', authCorporate, async (req, res) => {
     const [enrollRow] = await postgresSequelize.query(
       `SELECT COUNT(*)::int AS total,
               COUNT(*) FILTER (WHERE e.status = 'completed')::int AS completed,
-              COUNT(*) FILTER (WHERE e.status = 'pending')::int AS pending,
+              COUNT(*) FILTER (WHERE e.status IN ('pending','invited'))::int AS pending,
               COUNT(*) FILTER (WHERE e.status = 'invited')::int AS invited,
               COUNT(*) FILTER (WHERE e.status = 'booked')::int AS booked,
               COUNT(*) FILTER (WHERE e.report_ready = true)::int AS report_ready
          FROM corporate_ahc_enrollments e
-         LEFT JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
-        WHERE e.corporate_id = :corporateId AND ce."isActive" IS NOT FALSE`,
+         JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
+        WHERE e.corporate_id = :corporateId AND ce."isActive" = true`,
       { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
     );
     return res.json({
@@ -4344,10 +4334,11 @@ router.get('/ahc/batches', authCorporate, async (req, res) => {
               b.created_at AS "createdAt",
               COUNT(e.id)::int AS enrolled,
               COUNT(e.id) FILTER (WHERE e.status = 'completed')::int AS completed,
-              COUNT(e.id) FILTER (WHERE e.status = 'pending')::int AS pending,
+              COUNT(e.id) FILTER (WHERE e.status IN ('pending','invited'))::int AS pending,
               COUNT(e.id) FILTER (WHERE e.report_ready = true)::int AS "reportReady"
          FROM corporate_ahc_batches b
          LEFT JOIN corporate_ahc_enrollments e ON e.batch_id = b.id
+           AND EXISTS (SELECT 1 FROM corporate_employees roster WHERE roster.corporate_id=e.corporate_id AND roster."employeeId"=e.employee_id AND roster."isActive"=true)
          LEFT JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
         WHERE b.corporate_id = :corporateId
           AND (e.id IS NULL OR ce."isActive" IS NOT FALSE)
@@ -4397,6 +4388,11 @@ router.put('/ahc/batches/:id', authCorporate, async (req, res) => {
   const { id } = req.params;
   const { status, priority, notes, dueDate, scheduledDate } = req.body || {};
   try {
+    if (status === 'active') {
+      const data=await activateAhcBatch({corporateId,batchId:id,packageId:req.body?.packageId});
+      return res.json({success:true,data});
+    }
+    if (status && !['planning','completed','cancelled'].includes(status)) return res.status(400).json({success:false,message:'Invalid batch status'});
     await postgresSequelize.query(
       `UPDATE corporate_ahc_batches SET
          status = COALESCE(:status, status),
@@ -4410,6 +4406,7 @@ router.put('/ahc/batches/:id', authCorporate, async (req, res) => {
     );
     return res.json({ success: true });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({success:false,message:err.message});
     console.error('[corporate] ahc update batch error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update AHC batch' });
   }
@@ -4420,17 +4417,22 @@ router.get('/ahc/batches/:id/enrollments', authCorporate, async (req, res) => {
   const { id } = req.params;
   try {
     const [rows] = await postgresSequelize.query(
-      `SELECT e.id, e.employee_id AS "employeeId", e.employee_name AS "employeeName",
-              COALESCE(ce.department, e.department) AS department,
+      `SELECT e.id, e.employee_id AS "employeeId",
+              COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u."firstName", u."lastName")), ''),
+                       NULLIF(TRIM(CONCAT_WS(' ', ce.metadata->>'firstName', ce.metadata->>'lastName')), ''),
+                       e.employee_name, e.employee_id) AS "employeeName",
+              COALESCE(NULLIF(ce.department, ''), NULLIF(e.department, ''), 'General') AS department,
               e.status, e.booked_date AS "bookedDate", e.booked_slot AS "bookedSlot",
               e.report_ready AS "reportReady", e.report_url AS "reportUrl",
               e.reminder_sent_at AS "reminderSentAt", e.notes,
-              COALESCE(u."firstName" || ' ' || u."lastName", e.employee_name, e.employee_id) AS name,
+              COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u."firstName", u."lastName")), ''),
+                       NULLIF(TRIM(CONCAT_WS(' ', ce.metadata->>'firstName', ce.metadata->>'lastName')), ''),
+                       e.employee_name, e.employee_id) AS name,
               COALESCE(u.email, '') AS email,
               (SELECT COUNT(*)::int FROM corporate_ahc_dependents d WHERE d.enrollment_id = e.id) AS dependents
          FROM corporate_ahc_enrollments e
-         LEFT JOIN users u ON u.id = e.user_id
          LEFT JOIN corporate_employees ce ON ce."employeeId" = e.employee_id AND ce.corporate_id = e.corporate_id
+         LEFT JOIN users u ON u.id = COALESCE(ce."userId", e.user_id)
         WHERE e.batch_id = :id AND e.corporate_id = :corporateId
           AND ce."isActive" IS NOT FALSE
         ORDER BY department, name`,
@@ -4530,25 +4532,9 @@ router.post('/ahc/batches/:id/send-reminders', authCorporate, async (req, res) =
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   const { id } = req.params;
   try {
-    // Mark reminder_sent_at for all pending/invited enrollments in this batch
-    const [result] = await postgresSequelize.query(
-      `UPDATE corporate_ahc_enrollments SET reminder_sent_at = NOW(), updated_at = NOW()
-        WHERE batch_id = :id AND corporate_id = :corporateId AND status IN ('pending', 'invited')
-        RETURNING id, employee_id`,
-      { replacements: { id, corporateId } }
-    );
-    // Insert notification for each employee who has a linked user
-    await postgresSequelize.query(
-      `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, employee_id, created_at)
-       SELECT :corporateId, 'appointment_reminder',
-              'Annual Health Checkup Reminder',
-              'Your annual health checkup is due. Please schedule your appointment at the earliest.',
-              'high', false, e.employee_id, NOW()
-         FROM corporate_ahc_enrollments e
-        WHERE e.batch_id = :id AND e.corporate_id = :corporateId AND e.status IN ('pending','invited')`,
-      { replacements: { id, corporateId } }
-    );
-    return res.json({ success: true, data: { reminded: result.length, message: `Reminders sent to ${result.length} employees` } });
+    const reminded = await remindAhcBatch({corporateId,batchId:id});
+    if (reminded === null) return res.status(404).json({success:false,message:'Batch not found'});
+    return res.json({success:true,data:{reminded,message:`Reminders sent to ${reminded} employees`}});
   } catch (err) {
     console.error('[corporate] ahc send reminders error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to send reminders' });
@@ -4656,15 +4642,16 @@ router.get('/all-appointments', authCorporate, async (req, res) => {
       await setRlsContext(tx, { orgId: 0, userId: 0, isPlatformAdmin: true });
       const [rows] = await postgresSequelize.query(
         `SELECT a.id,
-                u."employee_id" AS "employeeId",
+                ce."employeeId" AS "employeeId",
                 CONCAT(u."firstName", ' ', u."lastName") AS "employeeName",
-                u.department_name AS department,
-                COALESCE(a."consultationType", a.type, 'Teleconsultation') AS type,
+                COALESCE(NULLIF(ce.department,''),'General') AS department,
+                COALESCE(a."consultationType"::text, 'Teleconsultation') AS type,
                 a."doctorName", NULL AS facility, a."appointmentDate"::text AS date,
-                a."appointmentTime"::text AS time, a.status, a.reason AS notes,
+                a."appointmentTime"::text AS time, a.status, NULL AS notes,
                 a."createdAt", 'employee_booked' AS source
          FROM appointments a
-         JOIN users u ON u.id = a."patientId"
+         JOIN users u ON u.id = a."userId"
+         JOIN corporate_employees ce ON ce."userId"=a."userId" AND ce.corporate_id=:corporateId
          WHERE a.corporate_tenant_id = :corporateId
            AND (:status IS NULL OR a.status = :status)
          ORDER BY a."appointmentDate" DESC, a."appointmentTime" DESC`,
@@ -4687,17 +4674,21 @@ router.post('/appointments/:apptId/remind', authCorporate, async (req, res) => {
   const { apptId } = req.params;
   try {
     // apptId may belong to either source table (hr_booked vs employee_booked) — check both.
-    const [hrRows] = await postgresSequelize.query(
-      `SELECT date::text AS date, time FROM corporate_scheduled_appointments
-        WHERE id = :apptId AND corporate_id = :corporateId`,
+    const source = req.body?.source || 'hr_booked';
+    if (!['hr_booked','employee_booked'].includes(source)) return res.status(400).json({success:false,message:'Invalid appointment source'});
+    const [hrRows] = source === 'employee_booked' ? [[]] : await postgresSequelize.query(
+      `SELECT a.date::text AS date, a.time, a.status, ce."userId" AS "userId"
+         FROM corporate_scheduled_appointments a
+         JOIN corporate_employees ce ON ce.corporate_id=a.corporate_id AND ce."employeeId"=a."employeeId" AND ce."isActive"=true
+        WHERE a.id = :apptId AND a.corporate_id = :corporateId`,
       { replacements: { apptId, corporateId } }
     );
     let apptRow = hrRows[0] || null;
-    if (!apptRow) {
+    if (!apptRow && source === 'employee_booked') {
       await postgresSequelize.transaction(async (tx) => {
         await setRlsContext(tx, { orgId: 0, userId: 0, isPlatformAdmin: true });
         const [rows] = await postgresSequelize.query(
-          `SELECT a."appointmentDate"::text AS date, a."appointmentTime"::text AS time
+          `SELECT a."appointmentDate"::text AS date, a."appointmentTime"::text AS time, a."userId", a.status
              FROM appointments a
             WHERE a.id = :apptId AND a.corporate_tenant_id = :corporateId`,
           { replacements: { apptId, corporateId }, transaction: tx }
@@ -4708,15 +4699,18 @@ router.post('/appointments/:apptId/remind', authCorporate, async (req, res) => {
     if (!apptRow) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
-    const apptDateTime = new Date(`${apptRow.date}T${apptRow.time || '00:00'}:00`);
-    if (!Number.isNaN(apptDateTime.getTime()) && apptDateTime.getTime() < Date.now()) {
+    if (!apptRow.userId) return res.status(409).json({ success: false, message: 'Employee has no linked account for reminders' });
+    if (['cancelled', 'completed', 'no_show', 'no-show'].includes(String(apptRow.status).toLowerCase()))
+      return res.status(400).json({ success: false, message: 'Appointment is no longer upcoming' });
+    const time = String(apptRow.time || '00:00').slice(0, 8);
+    const apptDateTime = new Date(`${apptRow.date.slice(0, 10)}T${time.length === 5 ? time + ':00' : time}+05:30`);
+    if (Number.isNaN(apptDateTime.getTime()) || apptDateTime.getTime() < Date.now()) {
       return res.status(400).json({ success: false, message: 'Cannot send a reminder for an appointment that has already passed' });
     }
     await postgresSequelize.query(
-      `INSERT INTO corporate_notifications (corporate_id, type, title, message, priority, read, created_at)
-       VALUES (:corporateId, 'appointment_reminder', 'Appointment Reminder',
-               'You have an upcoming health appointment. Please be on time.', 'high', false, NOW())`,
-      { replacements: { corporateId } }
+      `INSERT INTO notifications ("userId","userType",type,title,message,"isRead",status,channels,"webRoute","createdAt","updatedAt")
+       VALUES (:userId,'patient','reminder','Appointment Reminder',:message,false,'sent',ARRAY['app'],'/appointments',NOW(),NOW())`,
+      { replacements: { userId: apptRow.userId, message: `Your health appointment is on ${apptRow.date.slice(0, 10)} at ${time.slice(0, 5)} IST. Please be on time.` } }
     );
     return res.json({ success: true, message: 'Reminder sent' });
   } catch (err) {
@@ -4878,14 +4872,14 @@ router.get('/analytics/participation', authCorporate, async (req, res) => {
       { replacements: { corporateId } }
     );
     const total = parseInt(totalRow[0]?.total || 0, 10);
-    // Participating = had at least one appointment or AHC enrollment
+    // Participation requires completed care; enrollment and unused bookings are not usage.
     const [participantRows] = await postgresSequelize.query(
       `SELECT COUNT(DISTINCT ce."employeeId") AS cnt
        FROM corporate_employees ce
        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
          AND (
-           EXISTS (SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId")
-           OR EXISTS (SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId")
+           EXISTS (SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId" AND LOWER(a.status) = 'completed')
+           OR EXISTS (SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId" AND e.status = 'completed')
          )`,
       { replacements: { corporateId } }
     );
@@ -4900,8 +4894,9 @@ router.get('/analytics/participation', authCorporate, async (req, res) => {
     const teleconsultationsThisMonth = parseInt(tcRows[0]?.cnt || 0, 10);
     // Pending checkups from AHC enrollments
     const [pendRow] = await postgresSequelize.query(
-      `SELECT COUNT(*) AS cnt FROM corporate_ahc_enrollments
-       WHERE corporate_id = :corporateId AND status IN ('pending','invited')`,
+      `SELECT COUNT(*) AS cnt FROM corporate_ahc_enrollments e
+       JOIN corporate_employees ce ON ce.corporate_id=e.corporate_id AND ce."employeeId"=e.employee_id AND ce."isActive"=true
+       WHERE e.corporate_id = :corporateId AND e.status IN ('pending','invited')`,
       { replacements: { corporateId } }
     );
     const pendingCheckups = parseInt(pendRow[0]?.cnt || 0, 10);
@@ -4910,9 +4905,9 @@ router.get('/analytics/participation', authCorporate, async (req, res) => {
       `SELECT ce.department,
               COUNT(*) AS total,
               COUNT(CASE WHEN EXISTS (
-                SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId"
+                SELECT 1 FROM corporate_scheduled_appointments a WHERE a.corporate_id = :corporateId AND a."employeeId" = ce."employeeId" AND LOWER(a.status) = 'completed'
               ) OR EXISTS (
-                SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId"
+                SELECT 1 FROM corporate_ahc_enrollments e WHERE e.corporate_id = :corporateId AND e.employee_id = ce."employeeId" AND e.status = 'completed'
               ) THEN 1 END) AS participating
        FROM corporate_employees ce
        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce.department IS NOT NULL

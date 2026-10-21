@@ -13,17 +13,15 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import AppRoutes from "@/routes";
 import { queryClient } from "@/lib/queryClient";
 
+const OptionalGoogleProvider = ({ children }: {children: React.ReactNode}) => {
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  return clientId ? <GoogleOAuthProvider clientId={clientId}>{children}</GoogleOAuthProvider> : <>{children}</>;
+};
+
 const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
-      <GoogleOAuthProvider
-        clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}
-        onScriptLoadError={() => {
-          if (import.meta.env.DEV) {
-            console.error("Google Script failed to load");
-          }
-        }}
-      >
+      <OptionalGoogleProvider>
         <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
           <TooltipProvider>
             <Toaster />
@@ -51,7 +49,7 @@ const App = () => (
             </BrowserRouter>
           </TooltipProvider>
         </ThemeProvider>
-      </GoogleOAuthProvider>
+      </OptionalGoogleProvider>
     </QueryClientProvider>
   </ErrorBoundary>
 );

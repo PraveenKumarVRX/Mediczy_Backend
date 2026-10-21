@@ -1033,7 +1033,7 @@ export default function CorporateHealthBooking() {
                         {eligibilityLoading ? 'Checking eligibility…' :
                           employeeEligibility.length > 0
                             ? `${employeeEligibility.filter(e => e.available).length} of ${employeeEligibility.length} benefit(s) available`
-                            : 'No plans assigned — showing all packages'}
+                            : packages.length ? 'No employee benefits assigned — select a configured package' : 'No health packages configured for this corporate'}
                       </span>
                     )}
                   </CardTitle>

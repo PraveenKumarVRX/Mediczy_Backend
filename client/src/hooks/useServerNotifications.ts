@@ -1,3 +1,4 @@
+import { notificationText } from "@/utils/notification-text";
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/utils/api";
@@ -59,6 +60,7 @@ const mapType = (type: string): NotificationUiType => {
 };
 
 export interface UseServerNotificationsOptions {
+  enabled?: boolean;
   page?: number;
   limit?: number;
   unreadOnly?: boolean;
@@ -67,7 +69,7 @@ export interface UseServerNotificationsOptions {
 
 export const useServerNotifications = (options: UseServerNotificationsOptions = {}) => {
   const queryClient = useQueryClient();
-  const { page = 1, limit = 50, unreadOnly = false, type } = options;
+  const { enabled = true, page = 1, limit = 50, unreadOnly = false, type } = options;
 
   const queryKey = useMemo(
     () => ["notifications", { page, limit, unreadOnly, type }],
@@ -76,6 +78,7 @@ export const useServerNotifications = (options: UseServerNotificationsOptions = 
 
   const notificationsQuery = useQuery({
     queryKey,
+    enabled,
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set("page", String(page));
@@ -87,15 +90,18 @@ export const useServerNotifications = (options: UseServerNotificationsOptions = 
       return list as ServerNotification[];
     },
     retry: false,
+    refetchInterval: 60000,
   });
 
   const unreadCountQuery = useQuery({
     queryKey: ["notificationsUnreadCount"],
+    enabled,
     queryFn: async () => {
       const { data } = await api.get("/notifications/unread-count");
       return Number((data as any)?.unreadCount || 0);
     },
     retry: false,
+    refetchInterval: 60000,
   });
 
   const markAsRead = useMutation({
@@ -132,12 +138,12 @@ export const useServerNotifications = (options: UseServerNotificationsOptions = 
     const list = notificationsQuery.data || [];
     return list.map((n) => ({
       id: n.id,
-      title: n.title,
-      message: n.message,
+      title: notificationText(n.title),
+      message: notificationText(n.message),
       type: mapType(n.type),
       timestamp: new Date(n.createdAt || n.updatedAt || Date.now()),
-      read: n.status === "read" || n.isRead === true,
-      actionUrl: n.actionUrl || null,
+      read: n.isRead ?? n.status === "read",
+      actionUrl: n.actionUrl || (n as any).webRoute || null,
       data: n.data,
     }));
   }, [notificationsQuery.data]);

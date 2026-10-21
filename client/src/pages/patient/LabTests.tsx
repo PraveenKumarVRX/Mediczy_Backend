@@ -1488,7 +1488,7 @@ const LabTests = () => {
                   {test.notes && (
                     <div className="p-2 bg-gray-50 dark:bg-slate-700 rounded-md text-sm">
                       <span className="font-medium text-gray-700 dark:text-slate-300">Notes:</span>
-                      <p className="text-gray-600 dark:text-slate-400 mt-1">{test.notes}</p>
+                      <p className="text-gray-600 dark:text-slate-400 mt-1">{test.notes.replace(/\[Req:[^\]]*\]/g, '').trim() || 'No additional notes'}</p>
                     </div>
                   )}
                   {test.results && (

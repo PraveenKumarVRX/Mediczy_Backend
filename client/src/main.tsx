@@ -4,7 +4,7 @@ import App from './App.tsx'
 import './index.css'
 
 // ── Required environment variable validation ────────────────────────────────
-const REQUIRED_ENV_VARS = ['VITE_API_URL', 'VITE_GOOGLE_CLIENT_ID'] as const;
+const REQUIRED_ENV_VARS = ['VITE_API_URL'] as const;
 for (const key of REQUIRED_ENV_VARS) {
   if (!import.meta.env[key]) {
     console.error(`[startup] Missing required environment variable: ${key}. Some features may not work.`);

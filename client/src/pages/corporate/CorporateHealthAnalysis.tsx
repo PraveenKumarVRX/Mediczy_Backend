@@ -23,9 +23,9 @@ interface HealthMetric {
 interface DepartmentHealth {
   department: string;
   totalEmployees: number;
-  healthScore: number;
+  healthScore: number | null;
   checkupCompletion: number;
-  atRiskCount: number;
+  atRiskCount: number | null;
 }
 
 // No pre-fabricated fallback data — the page shows what the API returns.
@@ -43,6 +43,7 @@ const CorporateHealthAnalysis: React.FC = () => {
 
   const [healthMetrics, setHealthMetrics] = useState<HealthMetric[]>(FALLBACK_METRICS);
   const [departmentHealth, setDepartmentHealth] = useState<DepartmentHealth[]>(FALLBACK_DEPTS);
+  const [hasHealthScore, setHasHealthScore] = useState(false);
   const [overallStats, setOverallStats] = useState({
     averageHealthScore: 0, totalEmployees: 0, checkupCompletionRate: 0,
     highRiskEmployees: 0, mediumRiskEmployees: 0, lowRiskEmployees: 0,
@@ -56,6 +57,7 @@ const CorporateHealthAnalysis: React.FC = () => {
       });
       const d = (data as any)?.data;
       if (d) {
+        setHasHealthScore(d.averageRiskScore != null);
         // Map API response to our shape
         const total = d.totalEmployees ?? 0;
         const rd = d.riskDistribution || {};
@@ -63,29 +65,24 @@ const CorporateHealthAnalysis: React.FC = () => {
           setOverallStats({
             averageHealthScore: Math.round(d.averageRiskScore ?? 0),
             totalEmployees: total,
-            checkupCompletionRate: d.monitoredEmployees && total
-              ? Math.round((d.monitoredEmployees / total) * 100) : 0,
+            checkupCompletionRate: total && Array.isArray(d.departmentRisks)
+              ? Math.round(d.departmentRisks.reduce((sum: number, r: any) => sum + (r.totalEmployees || 0) * (r.checkupCompletion || 0), 0) / total) : 0,
             highRiskEmployees: (rd.high ?? 0) + (rd.critical ?? 0),
             mediumRiskEmployees: rd.medium ?? 0,
             lowRiskEmployees: rd.low ?? 0,
           });
         }
-        // Always update health metrics from live data (even if no chronic
-        // conditions are on file yet — show zeros rather than invented numbers).
-        setHealthMetrics(total > 0 ? [
-          { category: 'Physical Health', score: Math.max(0, 100 - Math.round(((rd.high ?? 0) / total) * 100)), trend: 'up', change: 0, totalEmployees: total, atRisk: rd.high ?? 0 },
-          { category: 'Mental Wellness', score: Math.round(d.healthyEmployees ? (d.healthyEmployees / total) * 100 : 0), trend: 'stable', change: 0, totalEmployees: total, atRisk: rd.medium ?? 0 },
-          { category: 'Preventive Care', score: d.monitoredEmployees ? Math.round((d.monitoredEmployees / total) * 100) : 0, trend: 'stable', change: 0, totalEmployees: total, atRisk: rd.critical ?? 0 },
-          { category: 'Chronic Conditions', score: Math.max(0, 100 - Math.round(((d.atRiskEmployees ?? 0) / total) * 100)), trend: 'stable', change: 0, totalEmployees: total, atRisk: d.atRiskEmployees ?? 0 },
-        ] : []);
+        // Aggregate risk categories do not establish physical, mental or chronic-condition scores.
+        // Only show category scores when a measured category score is provided.
+        setHealthMetrics(Array.isArray(d.healthMetrics) ? d.healthMetrics : []);
         // Map real department breakdown from the server
         if (Array.isArray(d.departmentRisks)) {
           setDepartmentHealth(d.departmentRisks.map((r: any) => ({
             department: r.department,
             totalEmployees: r.totalEmployees ?? 0,
-            healthScore: r.avgRiskScore != null ? Math.max(0, 100 - Math.round(r.avgRiskScore)) : 0,
-            checkupCompletion: 0,
-            atRiskCount: r.highRisk ?? 0,
+            healthScore: r.avgRiskScore != null ? Math.max(0, 100 - Math.round(r.avgRiskScore)) : null,
+            checkupCompletion: r.checkupCompletion ?? 0,
+            atRiskCount: r.highRisk ?? null,
           })));
         }
         setUsingFallback(false);
@@ -127,7 +124,7 @@ const CorporateHealthAnalysis: React.FC = () => {
       {
         Section: 'Overview',
         Metric: 'Average Health Score',
-        Value: `${overallStats.averageHealthScore}%`,
+        Value: hasHealthScore ? `${overallStats.averageHealthScore}%` : 'No data',
         TimeRange: timeRange,
         Department: selectedDepartment,
       },
@@ -167,7 +164,7 @@ const CorporateHealthAnalysis: React.FC = () => {
         Section: 'Department Health',
         DepartmentName: d.department,
         TotalEmployees: d.totalEmployees,
-        HealthScore: `${d.healthScore}%`,
+        HealthScore: d.healthScore == null ? 'No data' : `${d.healthScore}%`,
         CheckupCompletion: `${d.checkupCompletion}%`,
         AtRiskCount: d.atRiskCount,
         TimeRange: timeRange,
@@ -192,17 +189,17 @@ const CorporateHealthAnalysis: React.FC = () => {
           onRefresh={loadData}
           isRefreshing={isLoading}
           stats={[
-            { label: 'Avg Health Score', value: `${overallStats.averageHealthScore}%`, trend: 'up', trendValue: '3%' },
+            { label: 'Avg Health Score', value: hasHealthScore ? `${overallStats.averageHealthScore}%` : 'No data',  },
             { label: 'Total Employees', value: overallStats.totalEmployees },
-            { label: 'Checkup Rate', value: `${overallStats.checkupCompletionRate}%`, trend: 'up', trendValue: '5%' },
-            { label: 'High Risk', value: overallStats.highRiskEmployees, trend: 'down', trendValue: '2' },
+            { label: 'Checkup Rate', value: `${overallStats.checkupCompletionRate}%`,  },
+            { label: 'High Risk', value: overallStats.highRiskEmployees,  },
           ]}
         />
         <div className="flex gap-3 items-center flex-wrap">
           {usingFallback && (
             <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-400">
               <AlertTriangle className="h-3.5 w-3.5" />
-              Showing sample data — live data unavailable
+              Live health data unavailable
             </div>
           )}
           <Select value={timeRange} onValueChange={setTimeRange}>
@@ -246,7 +243,7 @@ const CorporateHealthAnalysis: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className={`text-2xl font-bold ${getScoreColor(overallStats.averageHealthScore)}`}>
-              {overallStats.averageHealthScore}%
+              {hasHealthScore ? `${overallStats.averageHealthScore}%` : 'No data'}
             </div>
             <p className="text-xs text-muted-foreground">
               Across {overallStats.totalEmployees} employees
@@ -274,7 +271,7 @@ const CorporateHealthAnalysis: React.FC = () => {
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{overallStats.highRiskEmployees}</div>
             <p className="text-xs text-muted-foreground">
-              {((overallStats.highRiskEmployees / overallStats.totalEmployees) * 100).toFixed(1)}% of workforce
+              {(overallStats.totalEmployees ? (overallStats.highRiskEmployees / overallStats.totalEmployees) * 100 : 0).toFixed(1)}% of workforce
             </p>
           </CardContent>
         </Card>
@@ -287,7 +284,7 @@ const CorporateHealthAnalysis: React.FC = () => {
           <CardContent>
             <div className="text-2xl font-bold text-yellow-600">{overallStats.mediumRiskEmployees}</div>
             <p className="text-xs text-muted-foreground">
-              {((overallStats.mediumRiskEmployees / overallStats.totalEmployees) * 100).toFixed(1)}% of workforce
+              {(overallStats.totalEmployees ? (overallStats.mediumRiskEmployees / overallStats.totalEmployees) * 100 : 0).toFixed(1)}% of workforce
             </p>
           </CardContent>
         </Card>
@@ -301,6 +298,7 @@ const CorporateHealthAnalysis: React.FC = () => {
         </CardHeader>
         <CardContent>
           <div className="grid gap-6 md:grid-cols-2">
+            {healthMetrics.length === 0 && <p className="text-sm text-slate-400">No measured health scores available.</p>}
             {healthMetrics.map((metric) => (
               <Card key={metric.category}>
                 <CardContent className="pt-6">
@@ -364,8 +362,8 @@ const CorporateHealthAnalysis: React.FC = () => {
                       <h3 className="font-semibold text-lg">{dept.department}</h3>
                       <p className="text-sm text-slate-400">{dept.totalEmployees} employees</p>
                     </div>
-                    <Badge variant={dept.atRiskCount > 15 ? 'destructive' : dept.atRiskCount > 8 ? 'default' : 'secondary'}>
-                      {dept.atRiskCount} at risk
+                    <Badge variant={(dept.atRiskCount ?? 0) > 15 ? 'destructive' : (dept.atRiskCount ?? 0) > 8 ? 'default' : 'secondary'}>
+                      {dept.atRiskCount == null ? 'Not assessed' : `${dept.atRiskCount} at risk`}
                     </Badge>
                   </div>
 
@@ -373,15 +371,15 @@ const CorporateHealthAnalysis: React.FC = () => {
                     <div>
                       <p className="text-sm text-slate-400 mb-2">Health Score</p>
                       <div className="flex items-baseline gap-2">
-                        <span className={`text-2xl font-bold ${getScoreColor(dept.healthScore)}`}>
-                          {dept.healthScore}
+                        <span className={`text-2xl font-bold ${getScoreColor(dept.healthScore ?? 0)}`}>
+                          {dept.healthScore == null ? 'No data' : dept.healthScore}
                         </span>
                         <span className="text-sm text-slate-400">/ 100</span>
                       </div>
                       <div className="w-full bg-slate-700 rounded-full h-1.5 mt-2">
                         <div 
-                          className={`h-1.5 rounded-full ${getProgressColor(dept.healthScore)}`}
-                          style={{ width: `${dept.healthScore}%` }}
+                          className={`h-1.5 rounded-full ${getProgressColor(dept.healthScore ?? 0)}`}
+                          style={{ width: `${dept.healthScore == null ? 'No data' : dept.healthScore}%` }}
                         />
                       </div>
                     </div>
@@ -438,8 +436,8 @@ const CorporateHealthAnalysis: React.FC = () => {
           <div className="h-[300px] flex items-center justify-center bg-slate-800/40 rounded-lg">
             <div className="text-center text-slate-400">
               <Brain className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Interactive trend charts will be displayed here</p>
-              <p className="text-sm mt-2">Showing health metrics over {timeRange}</p>
+              <p>No historical measurements available</p>
+              <p className="text-sm mt-2">Selected period: {timeRange}</p>
             </div>
           </div>
         </CardContent>

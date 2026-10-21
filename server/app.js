@@ -187,6 +187,8 @@ import aggregatorRouter from './routes/aggregator.route.js';
 import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
 import cartRouter from './routes/cart.route.js';
 import employeeNetworkRouter from './routes/employee-network.route.js';
+import healthPackageKitsRouter from './routes/health-package-kits.route.js';
+import adminHealthPackagesRouter from './routes/admin-health-packages.route.js';
 import corporateBookingsRouter from './routes/corporate-bookings.route.js';
 import healthCheckupRouter from './routes/health-checkup.route.js';
 import hospitalRouter from './routes/hospital.route.js';
@@ -1409,6 +1411,8 @@ app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
 mountLabRoutes(app, 'catalog'); // lab routes — see routes/lab/registry.js
 app.use("/api/employee", employeeNetworkRouter); // Corporate employee network (my-labs, my-hospitals, my-clinics)
+app.use(["/api/kits", "/api/checkup-kits", "/api/lab/kits"], healthPackageKitsRouter);
+app.use("/api/admin/health-packages", adminHealthPackagesRouter);
 app.use("/api/corporate-bookings", corporateBookingsRouter); // Team member books corporate health checkups + notifies employees
 app.use("/api/health-checkups", healthCheckupRouter); // Patient individual/corporate health-checkup booking flow
 app.use("/api/cart", cartRouter); // Lab test cart management
@@ -2088,6 +2092,8 @@ startParkingOverstayCron();
 // ============== Surveillance: frame-log purge (daily) ==============
 import { startSurveillancePurgeCron } from './services/surveillance-purge-cron.service.js';
 startSurveillancePurgeCron();
+
+app.use('/api', (req, res) => res.status(404).json({success:false,code:'not_found',message:'API endpoint not found'}));
 
 // Final catch-all error handler -- must be the last middleware. Anything
 // that reaches here (including async route errors forwarded by

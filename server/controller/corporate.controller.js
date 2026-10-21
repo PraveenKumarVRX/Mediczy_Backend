@@ -416,22 +416,25 @@ export const getCorporateHealthAnalytics = async (req, res) => {
       percentage: totalEmployees > 0 ? Math.round((parseInt(r.cnt, 10) / totalEmployees) * 100) : 0,
     }));
 
-    // Department breakdown
+    // Use the HR roster, including employees whose profile has no department.
     const deptRows = await postgresSequelize.query(
-      `SELECT u.department_name AS department, COUNT(*) AS total_employees
-       FROM users u
-       JOIN user_associations ua ON ua."userId" = u.id
-       WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
-         AND u.department_name IS NOT NULL AND u.department_name <> ''
-       GROUP BY u.department_name
+      `SELECT COALESCE(NULLIF(ce.department,''),'General') AS department,
+              COUNT(*)::int AS total_employees,
+              COUNT(*) FILTER (WHERE EXISTS (
+                SELECT 1 FROM corporate_ahc_enrollments e
+                WHERE e.corporate_id=ce.corporate_id AND e.employee_id=ce."employeeId" AND e.status='completed'
+              ))::int AS completed
+       FROM corporate_employees ce
+       WHERE ce.corporate_id=:corporateId AND ce."isActive"=true
+       GROUP BY COALESCE(NULLIF(ce.department,''),'General')
        ORDER BY total_employees DESC`,
       { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
-    ).catch(() => []);
-
-    const departmentRisks = deptRows.map((r) => ({
+    );
+    const departmentRisks = deptRows.map(r => ({
       department: r.department,
-      totalEmployees: parseInt(r.total_employees, 10),
-      highRisk: 0,
+      totalEmployees: Number(r.total_employees),
+      checkupCompletion: Number(r.total_employees) ? Math.round(Number(r.completed) / Number(r.total_employees) * 100) : 0,
+      highRisk: null,
       avgRiskScore: null,
     }));
 

@@ -11,7 +11,7 @@ describe('patient health-checkup booking contract', () => {
     expect(migration).toContain('CREATE TABLE IF NOT EXISTS health_checkup_bookings');
     expect(migration).toContain('package_snapshot JSONB');
     expect(migration).toContain('payment_order_id');
-    expect(migration).toContain('client.connect()');
+    expect(migration).toContain('db.connect()');
     expect(read('scripts/migrate-all.mjs')).toContain('health-checkup-bookings');
   });
 

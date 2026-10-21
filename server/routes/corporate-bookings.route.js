@@ -72,7 +72,7 @@ function mapCorporateReportTypeToPatientReportType(reportType, mimeType) {
 
 // Require team or admin role
 function requireTeamOrAdmin(req, res, next) {
-  const role = req.user?.role;
+  const role = req.user?.isAdmin ? 'admin' : req.user?.isTeam ? 'team' : req.user?.role;
   if (!['team', 'admin', 'super_admin', 'team_member', 'team_lead'].includes(role)) {
     return res.status(403).json({ success: false, message: 'Team or admin access required' });
   }
@@ -80,7 +80,7 @@ function requireTeamOrAdmin(req, res, next) {
 }
 
 async function assertCorporateAccessForId(req, res, corporateId) {
-  const role = req.user?.role;
+  const role = req.user?.isAdmin ? 'admin' : req.user?.isTeam ? 'team' : req.user?.role;
   const isAdmin = req.user?.isAdmin === true || role === 'admin' || role === 'super_admin';
   if (isAdmin) return true;
 
@@ -181,20 +181,19 @@ router.get('/employees', authUser, requireTeamOrAdmin, requireCorporateAccess, a
     const searchTerm = `%${search}%`;
 
     const employees = await postgresSequelize.query(
-      `SELECT
+      `SELECT DISTINCT
          u.id,
          u."firstName",
          u."lastName",
          u.email,
          u."phoneNumber",
          u.gender,
-         u."dateOfBirth"
-       FROM user_associations ua
-       JOIN users u ON u.id = ua."userId"
-       WHERE ua."entityType" = 'corporate'
-         AND ua."entityId" = :corporateId
-         AND ua.role = 'employee'
-         AND ua.status = 'active'
+         u."dateOfBirth",
+         ce."employeeId", COALESCE(NULLIF(ce.department,''),'General') AS department
+       FROM users u
+       LEFT JOIN corporate_employees ce ON ce."userId"=u.id AND ce.corporate_id=:corporateId
+       LEFT JOIN user_associations ua ON ua."userId"=u.id AND ua."entityId"=:corporateId AND ua."entityType"='corporate' AND ua.role='employee' AND ua.status='active'
+       WHERE (ce."isActive"=true OR (ce.id IS NULL AND ua."userId" IS NOT NULL))
          AND (
            LOWER(u."firstName" || ' ' || u."lastName") LIKE LOWER(:search)
            OR LOWER(u.email) LIKE LOWER(:search)
@@ -282,8 +281,7 @@ router.get('/my-corporate', authUser, requireTeamOrAdmin, async (req, res) => {
 
     // Also get a quick employee count
     const [{ count: employeeCount }] = await postgresSequelize.query(
-      `SELECT COUNT(*) AS count FROM user_associations
-       WHERE "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee' AND status = 'active'`,
+      `SELECT COUNT(*) AS count FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
       { replacements: { corporateId: corporate.id }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
@@ -414,6 +412,7 @@ router.get('/packages', authUser, requireTeamOrAdmin, requireCorporateAccess, as
     const cid = parseInt(corporateId);
 
     // 1. Team-created packages stored in user_health_packages
+    const catalogRows = await postgresSequelize.query(`SELECT id::text AS id,name,features AS "packageDetails" FROM corporate_health_package_catalog WHERE is_active=true AND metadata->>'kind'='health_checkup' AND metadata->>'corporateId'=:corporateId`,{replacements:{corporateId:String(cid)},type:postgresSequelize.QueryTypes.SELECT});
     const uhpRows = await postgresSequelize.query(
       `SELECT DISTINCT ON ("packageId")
          "packageId"    AS id,
@@ -426,7 +425,7 @@ router.get('/packages', authUser, requireTeamOrAdmin, requireCorporateAccess, as
       { replacements: { corporateId: cid }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
-    const uhpPackages = uhpRows.map(p => {
+    const uhpPackages = [...catalogRows,...uhpRows.filter(p=>!catalogRows.some(c=>c.id===p.id))].map(p => {
       const details = typeof p.packageDetails === 'string'
         ? JSON.parse(p.packageDetails)
         : (p.packageDetails || {});

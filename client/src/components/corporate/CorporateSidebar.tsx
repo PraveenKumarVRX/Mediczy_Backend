@@ -41,7 +41,7 @@ interface SidebarItem {
 const mainNavItems: SidebarItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/corporate/dashboard" },
   { icon: Gauge, label: "Command Center", href: "/corporate/command-center" },
-  { icon: Bell, label: "Notifications", href: "/corporate/notifications", badge: 3 },
+  { icon: Bell, label: "Notifications", href: "/corporate/notifications" },
   { icon: Users, label: "Employees", href: "/corporate/employees" },
   { icon: UserCog, label: "User Management", href: "/corporate/user-management" },
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },
@@ -70,7 +70,7 @@ const systemItems: SidebarItem[] = [
   { icon: HelpCircle, label: "Help & Support", href: "/corporate/help" },
 ];
 
-const CorporateSidebar = () => {
+const CorporateSidebar = ({ unreadCount = 0 }: { unreadCount?: number }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
@@ -106,7 +106,7 @@ const CorporateSidebar = () => {
 
   const visibleMainNavItems = mainNavItems.filter(
     (item) => item.href !== '/corporate/wellness-calendar' || hasHealthCalendar
-  );
+  ).map(item => item.href === '/corporate/notifications' ? { ...item, badge: unreadCount || undefined } : item);
 
   const handleLogout = () => {
     localStorage.removeItem("token");

@@ -184,7 +184,7 @@ const AdminLogin = () => {
             </div>
 
             <div className="flex flex-col space-y-2">
-              <h1 className="text-2xl font-semibold tracking-tight">Welcome Back</h1>
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Welcome Back</h1>
               <p className="text-sm text-muted-foreground">
                 Sign in to access the admin dashboard.
               </p>
