@@ -15,7 +15,7 @@ async function check(name,path,auth,validate,status=200){
 try{
  const [corporate]=await select(`SELECT id FROM corporates WHERE id=3 AND LOWER(status)='active'`);
  const [admin]=await select(`SELECT id FROM users WHERE "isAdmin"=true AND status='active' ORDER BY id LIMIT 1`);
- const [crm]=await select(`SELECT u.id FROM users u WHERE u.status='active' AND (u.role::text='crm' OR u.metadata->>'crmRole' IS NOT NULL) AND (u.organization_uid IS NOT NULL OR u.tenant_id IS NOT NULL) ORDER BY u.id LIMIT 1`);
+ const [crm]=await select(`SELECT u.id FROM users u WHERE u.status='active' AND u.metadata->>'crmRole' IN ('admin','business_head') AND (u.organization_uid IS NOT NULL OR u.tenant_id IS NOT NULL) ORDER BY (u.metadata->>'crmRole'='admin') DESC,u.id LIMIT 1`);
  if(!corporate||!admin)throw new Error('Existing active corporate and admin identities required');
  const hr=token(corporate,{role:'corporate',userType:'corporate',corporateId:corporate.id,organization_id:corporate.id});
  const adminToken=token(admin,{role:'admin',userType:'admin',isAdmin:true});

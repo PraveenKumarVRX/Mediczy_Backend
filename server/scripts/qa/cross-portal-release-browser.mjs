@@ -6,7 +6,7 @@ import {postgresSequelize as db} from '../../db/postgres-sequelize.js';
 const output=process.env.CROSS_PORTAL_BROWSER_OUTPUT;if(!output)throw new Error('CROSS_PORTAL_BROWSER_OUTPUT private path required');
 const base='https://app.mediqzy.com';
 const result={at:new Date().toISOString(),productionMutations:0,liveCalls:0,blockedMutations:0,checks:[],pageErrors:[]};
-const [crm]=await db.query(`SELECT id,metadata FROM users WHERE status='active' AND (role::text='crm' OR metadata->>'crmRole' IS NOT NULL) AND (organization_uid IS NOT NULL OR tenant_id IS NOT NULL) ORDER BY id LIMIT 1`,{type:db.QueryTypes.SELECT});
+const [crm]=await db.query(`SELECT id,metadata FROM users WHERE status='active' AND metadata->>'crmRole' IN ('admin','business_head') AND (organization_uid IS NOT NULL OR tenant_id IS NOT NULL) ORDER BY (metadata->>'crmRole'='admin') DESC,id LIMIT 1`,{type:db.QueryTypes.SELECT});
 await db.close();
 const sign=(role,id)=>jwt.sign({id,userId:id,tokenType:'access',role,userType:role,...(role==='corporate'?{corporateId:id,organization_id:id}:{isCRM:true})},process.env.JWT_SECRET,{expiresIn:600});
 const browser=await puppeteer.launch({headless:true,executablePath:'/snap/bin/chromium',args:['--no-sandbox','--disable-dev-shm-usage']});
@@ -17,7 +17,7 @@ async function pageFor(role,id){
  await page.evaluateOnNewDocument(({role,id,token,crmRole})=>{
   localStorage.clear();sessionStorage.clear();localStorage.setItem('userType',role);localStorage.setItem(role+'Token',token);
   localStorage.setItem(role==='crm'?'crmUserData':'corporateData',JSON.stringify({id,role,crmRole,companyName:'Test Corporate Ltd',name:'Test Corporate Ltd'}));
- },{role,id,token:sign(role,id),crmRole:crm?.metadata?.crmRole||'crm_admin'});
+ },{role,id,token:sign(role,id),crmRole:crm?.metadata?.crmRole||'sales_rep'});
  await page.setRequestInterception(true);page.on('request',async request=>{
   try{const url=new URL(request.url());
    if(url.origin!==base&&!['data:','blob:'].includes(url.protocol))return await request.abort();
