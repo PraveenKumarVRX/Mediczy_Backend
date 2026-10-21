@@ -2840,42 +2840,79 @@ router.get('/wellness-calendar/activities', authCorporate, async (req, res) => {
 router.post('/wellness-calendar/activities', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
-    const { title, description, type, date, startTime, endTime, location, speaker, capacity, theme } = req.body;
+    const { title, description, type, date, startTime, endTime, location, speaker, capacity, theme,
+      participantSelection = 'all', selectedDepartments, selectedEmployeeIds } = req.body;
 
     if (!title || !date) {
       return res.status(400).json({ success: false, message: 'title and date are required' });
     }
 
-    const todayStr = new Date().toISOString().slice(0, 10);
-    if (String(date).slice(0, 10) < todayStr) {
-      return res.status(400).json({ success: false, message: 'Activity date cannot be in the past' });
+    // Date-only comparison let a same-day activity through even when its
+    // start time had already passed (QA: form pre-fills today 10:00-12:00 at
+    // 11:40 PM with no warning) - compare the full date+time instead.
+    const activityStart = new Date(`${String(date).slice(0, 10)}T${startTime || '00:00'}:00`);
+    if (!Number.isNaN(activityStart.getTime()) && activityStart.getTime() < Date.now()) {
+      return res.status(400).json({ success: false, message: 'Activity date/time cannot be in the past' });
     }
 
     const themeName = theme || WELLNESS_THEMES[new Date(date).getMonth()]?.name || null;
 
+    // Compute the target headcount server-side, from live corporate_employees
+    // data, at creation time - not just when "Send Invites" is clicked. The
+    // create-time toast previously showed a correct client-computed count
+    // ("added for 3 participants") while the stored total_invited stayed 0
+    // until invites were sent, so event details looked inconsistent/wrong
+    // ("Target Participants: 0") for an event nobody had actually invited yet.
+    let totalInvited = 0;
+    try {
+      if (participantSelection === 'department' && Array.isArray(selectedDepartments) && selectedDepartments.length) {
+        const [[deptCount]] = await postgresSequelize.query(
+          `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true AND department = ANY(ARRAY[:selectedDepartments])`,
+          { replacements: { corporateId, selectedDepartments } }
+        ).then((r) => [r]);
+        totalInvited = deptCount?.cnt || 0;
+      } else if (participantSelection === 'custom' && Array.isArray(selectedEmployeeIds) && selectedEmployeeIds.length) {
+        const [[customCount]] = await postgresSequelize.query(
+          `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true AND "employeeId" = ANY(ARRAY[:selectedEmployeeIds])`,
+          { replacements: { corporateId, selectedEmployeeIds } }
+        ).then((r) => [r]);
+        totalInvited = customCount?.cnt || 0;
+      } else {
+        const [[allCount]] = await postgresSequelize.query(
+          `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+          { replacements: { corporateId } }
+        ).then((r) => [r]);
+        totalInvited = allCount?.cnt || 0;
+      }
+    } catch (countErr) {
+      console.error('⚠️ Could not compute wellness-activity target headcount:', countErr.message);
+    }
+
     const [rows] = await postgresSequelize.query(
       `INSERT INTO corporate_wellness_events
          (corporate_id, title, description, event_type, event_date, event_time, end_time,
-          location, organizer, max_participants, status, color)
+          location, organizer, max_participants, status, color, participant_selection, total_invited)
        VALUES (:corporateId, :title, :description, :type, :date, :startTime, :endTime,
-               :location, :speaker, :capacity, 'upcoming', 'teal')
+               :location, :speaker, :capacity, 'upcoming', 'teal', :participantSelection, :totalInvited)
        RETURNING id, title, description, event_type AS type,
                  TO_CHAR(event_date, 'YYYY-MM-DD') AS date,
                  TO_CHAR(event_time, 'HH24:MI') AS "startTime",
                  TO_CHAR(end_time, 'HH24:MI') AS "endTime",
                  location, organizer AS speaker, max_participants AS capacity,
-                 registered_count AS registered, status, color`,
+                 registered_count AS registered, status, color,
+                 participant_selection AS "participantSelection", total_invited AS "totalInvited"`,
       {
         replacements: {
           corporateId, title: title.trim(), description: description || null,
           type: type || 'talk', date, startTime: startTime || null, endTime: endTime || null,
           location: location || null, speaker: speaker || null,
           capacity: capacity ? parseInt(capacity, 10) : 50,
+          participantSelection, totalInvited,
         },
         type: postgresSequelize.QueryTypes.INSERT
       }
     );
-    const newActivity = { ...(Array.isArray(rows) ? rows[0] : rows), theme: themeName, invitesSent: false, totalInvited: 0 };
+    const newActivity = { ...(Array.isArray(rows) ? rows[0] : rows), theme: themeName, invitesSent: false };
 
     res.json({ success: true, message: 'Activity created successfully', data: newActivity });
   } catch (error) {

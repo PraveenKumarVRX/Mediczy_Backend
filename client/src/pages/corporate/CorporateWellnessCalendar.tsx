@@ -481,6 +481,11 @@ const CorporateWellnessCalendar: React.FC = () => {
       toast({ title: 'End time must be after start time', variant: 'destructive' });
       return;
     }
+    const activityStart = new Date(`${format(newActivity.date, 'yyyy-MM-dd')}T${newActivity.startTime}:00`);
+    if (!Number.isNaN(activityStart.getTime()) && activityStart.getTime() < Date.now()) {
+      toast({ title: 'Activity date/time cannot be in the past', description: 'Pick an upcoming date or a later start time.', variant: 'destructive' });
+      return;
+    }
     const theme = WELLNESS_THEMES[newActivity.date.getMonth()];
     const participantCount = getParticipantCount();
     try {
@@ -495,6 +500,9 @@ const CorporateWellnessCalendar: React.FC = () => {
         speaker: newActivity.speaker,
         capacity: newActivity.capacity,
         theme: theme.name,
+        participantSelection: newActivity.participantSelection,
+        selectedDepartments: newActivity.selectedDepartments,
+        selectedEmployeeIds: newActivity.selectedEmployeeIds,
       });
       const created = data?.data;
       if (!created) throw new Error('No activity returned from server');
@@ -503,14 +511,12 @@ const CorporateWellnessCalendar: React.FC = () => {
         ...created,
         id: String(created.id),
         theme: created.theme || theme.name,
-        // Participant-targeting criteria and reminder preferences are only
-        // persisted server-side once invites are actually sent — kept
-        // client-side here so the "Send Invites" step can reuse them.
-        participantSelection: newActivity.participantSelection,
         selectedDepartments: newActivity.selectedDepartments,
         selectedEmployeeIds: newActivity.selectedEmployeeIds,
         invitesSent: false,
-        totalInvited: participantCount,
+        // totalInvited now comes from the server (live-computed from
+        // corporate_employees, not the client's possibly-stale count).
+        totalInvited: created.totalInvited ?? participantCount,
         reminders: newActivity.reminders
       };
       setActivities(prev => [...prev, activity]);

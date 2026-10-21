@@ -8,6 +8,7 @@ import { startAllKafkaConsumers } from "../services/kafka-consumers.service.js";
 import scheduleDeviceMonitoring from "../scripts/device-monitoring-cron.js";
 import scheduleAppointmentAutoCancel from "../scripts/appointment-auto-cancel-cron.js";
 import scheduleCorporateAppointmentAutoCancel from "../scripts/corporate-appointment-auto-cancel-cron.js";
+import scheduleWellnessEventAutoComplete from "../scripts/wellness-event-auto-complete-cron.js";
 
 /**
  * Initialization Controller
@@ -116,6 +117,7 @@ class InitializationController {
       console.log('📅 Starting appointment auto-cancel cron jobs...');
       scheduleAppointmentAutoCancel();
       scheduleCorporateAppointmentAutoCancel();
+      scheduleWellnessEventAutoComplete();
 
       // Membership validation cron jobs
       console.log('👤 Starting membership validation cron jobs...');
