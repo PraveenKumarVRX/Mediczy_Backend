@@ -2,6 +2,8 @@
 
 Page: https://app.mediqzy.com/crm/settings. Audit only; application behavior and production configuration were not changed.
 
+**Resolution:** the 14 findings below were addressed in the subsequent [settings release](../deployment/CRM_SETTINGS_FIXES_2026-10-21.md). This document preserves the original observations. Acceptance uses `crm-settings-release-browser.mjs` and the new transaction/permission tests; the original audit scripts describe historical behavior.
+
 Authenticated production reads used the existing demo Business Head. Both profile and integration APIs returned 200; nine channels were returned, none with saved credentials. The real page incorrectly showed read-only access and zero save buttons. Controlled browser scenarios used the deployed JavaScript with intercepted synthetic profiles/settings and blocked every production mutation. Eighteen observations cover five roles, save/test/refresh/error cases and six desktop/mobile/theme combinations. Service scenarios executed the exact service source with an in-memory pool and synthetic encryption key. No real credentials, settings, calls, messages or consent records were changed. No browser runtime errors occurred.
 
 ## Findings
