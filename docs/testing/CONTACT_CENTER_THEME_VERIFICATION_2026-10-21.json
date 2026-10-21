@@ -1,0 +1,684 @@
+{
+  "recordedAt": "2026-10-21T05:37:37.987477+00:00",
+  "status": "deployed-and-verified",
+  "page": "https://app.mediqzy.com/crm/contact-center",
+  "codeCommit": "ea4b04efeafb9ee812a3afb3edbeaf00d9ae32e6",
+  "mainPushed": true,
+  "scope": "Contact-center theme, controls, Mediqzy branding, responsive layout and guest join only",
+  "sourceSha256": {
+    "client/scripts/contact-center-theme-browser.mjs": "e7f3f0c6355c201d8f27c610f095a74908f62c5cc3a241577fd5be93909987f1",
+    "client/src/pages/ContactVoiceJoin.tsx": "009a35f87533296dd7830d2cb0a21be1d9c0d4e397066c0cbf17f8141577e888",
+    "client/src/pages/crm/CRMContactCenterPage.tsx": "973448a49d5c7a3ea55cf3bd522fd693835e4076107c18c7500b51472b96b534",
+    "client/src/pages/crm/ContactVoiceTools.tsx": "f8485d24cbe5b51a747824d03d6773b25aa5cfd20a7fae6ea787697bfc92cf5b",
+    "client/src/pages/crm/contact-center-theme.css": "3bdf3e50f3baf07c92210f67f1d4a637aa4f569332efbb077ee182c3fba0456f",
+    "scripts/deploy/package-contact-center.py": "18a1404a0a4616485d8a434f1e5d80a3123d661bfaa3ad2f994411274e509d5f"
+  },
+  "before": [
+    {
+      "mode": "light",
+      "bodyColor": "rgb(2, 8, 23)",
+      "panelColor": "rgb(2, 8, 23)",
+      "panelBackground": "rgb(255, 255, 255)"
+    },
+    {
+      "mode": "dark",
+      "bodyColor": "rgb(248, 250, 252)",
+      "panelColor": "rgb(248, 250, 252)",
+      "panelBackground": "rgb(255, 255, 255)"
+    }
+  ],
+  "frontend": {
+    "at": "2026-10-21T05:36:13.399Z",
+    "expectedIndexSha256": "a6468aa6529ae47d4e497dd6b9eaf32147243196e0517bc5df94626e93e8f962",
+    "checks": [
+      {
+        "path": "/",
+        "status": 200,
+        "sha256": "a6468aa6529ae47d4e497dd6b9eaf32147243196e0517bc5df94626e93e8f962",
+        "matchesBuild": true
+      },
+      {
+        "path": "/crm/contact-center",
+        "status": 200,
+        "sha256": "a6468aa6529ae47d4e497dd6b9eaf32147243196e0517bc5df94626e93e8f962",
+        "matchesBuild": true
+      }
+    ],
+    "passed": true,
+    "productionBuildPassed": true,
+    "buildTime": "1m 35s",
+    "isolatedBuild": "/home/ubuntu/mediqzy-releases/contact-center-build-20261021-03",
+    "nginxAndS3Published": true,
+    "cloudfrontInvalidationRequested": true,
+    "olderHashedAssetsRetained": true,
+    "previousIndexSaved": true
+  },
+  "workflowRegression": {
+    "passed": 45,
+    "failed": 0,
+    "testFiles": 10
+  },
+  "localVisual": {
+    "passed": true,
+    "scenarios": 41
+  },
+  "deployedVisual": {
+    "at": "2026-10-21T05:36:22.784Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "desktop-light-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-light-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "desktop-dark-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-light-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-calls",
+        "passed": true,
+        "testedTextNodes": 33,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-livekit",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-callbacks",
+        "passed": true,
+        "testedTextNodes": 29,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-search",
+        "passed": true,
+        "testedTextNodes": 21,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-routing",
+        "passed": true,
+        "testedTextNodes": 45,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-knowledge",
+        "passed": true,
+        "testedTextNodes": 25,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-campaigns",
+        "passed": true,
+        "testedTextNodes": 37,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-voice-identity",
+        "passed": true,
+        "testedTextNodes": 23,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-settings",
+        "passed": true,
+        "testedTextNodes": 39,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-dark-call-detail",
+        "passed": true,
+        "testedTextNodes": 54,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 8,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      },
+      {
+        "name": "mobile-guest-join",
+        "passed": true,
+        "testedTextNodes": 6,
+        "minimumContrast": 5.67,
+        "gradientSkipped": 0,
+        "failures": [],
+        "brandVisible": true,
+        "themedPanels": true,
+        "noHorizontalOverflow": true
+      }
+    ],
+    "screenshots": [
+      "desktop-light-calls.png",
+      "desktop-light-livekit.png",
+      "desktop-light-callbacks.png",
+      "desktop-light-search.png",
+      "desktop-light-routing.png",
+      "desktop-light-knowledge.png",
+      "desktop-light-campaigns.png",
+      "desktop-light-voice-identity.png",
+      "desktop-light-settings.png",
+      "desktop-light-call-detail.png",
+      "desktop-dark-calls.png",
+      "desktop-dark-livekit.png",
+      "desktop-dark-callbacks.png",
+      "desktop-dark-search.png",
+      "desktop-dark-routing.png",
+      "desktop-dark-knowledge.png",
+      "desktop-dark-campaigns.png",
+      "desktop-dark-voice-identity.png",
+      "desktop-dark-settings.png",
+      "desktop-dark-call-detail.png",
+      "mobile-light-calls.png",
+      "mobile-light-livekit.png",
+      "mobile-light-callbacks.png",
+      "mobile-light-search.png",
+      "mobile-light-routing.png",
+      "mobile-light-knowledge.png",
+      "mobile-light-campaigns.png",
+      "mobile-light-voice-identity.png",
+      "mobile-light-settings.png",
+      "mobile-light-call-detail.png",
+      "mobile-dark-calls.png",
+      "mobile-dark-livekit.png",
+      "mobile-dark-callbacks.png",
+      "mobile-dark-search.png",
+      "mobile-dark-routing.png",
+      "mobile-dark-knowledge.png",
+      "mobile-dark-campaigns.png",
+      "mobile-dark-voice-identity.png",
+      "mobile-dark-settings.png",
+      "mobile-dark-call-detail.png",
+      "mobile-guest-join.png"
+    ],
+    "productionMutations": 0,
+    "microphoneCapture": false,
+    "fixture": "Synthetic calls/callbacks/routing/knowledge/campaigns; every API request intercepted",
+    "contrastScope": "Visible enabled solid-background text and form values in contact workspace; gradient header and disabled controls excluded",
+    "pageErrors": [],
+    "passed": true
+  },
+  "minimumCheckedContrast": 5.67,
+  "totalCheckedTextNodes": 1330,
+  "deployedCrmBrowser": {
+    "at": "2026-10-21T05:36:22.776Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "CRM contact-center console renders with real authenticated API data",
+        "passed": true
+      },
+      {
+        "name": "Native LiveKit workspace renders without placing a call",
+        "passed": true
+      },
+      {
+        "name": "Campaign list renders without publishing or dialing",
+        "passed": true
+      },
+      {
+        "name": "Biometric UI requires consent and fresh challenge before capture",
+        "passed": true
+      },
+      {
+        "name": "Mobile dialer renders at phone viewport without overflow",
+        "passed": true
+      }
+    ],
+    "clinicalWrites": 0,
+    "telephoneCalls": 0,
+    "microphoneCapture": false,
+    "authentication": "Ephemeral signed access token for existing active demo CRM staff; login credentials unchanged",
+    "pageErrorCount": 0,
+    "passed": true
+  },
+  "deployedRecoveryBrowser": {
+    "at": "2026-10-21T05:36:22.773Z",
+    "base": "https://app.mediqzy.com",
+    "checks": [
+      {
+        "name": "Live readiness prevents unassigned staff from starting calls",
+        "passed": true
+      },
+      {
+        "name": "Live biometric capture stays disabled without model/storage configuration",
+        "passed": true
+      },
+      {
+        "name": "Deployed bundle sends native status refresh to LiveKit",
+        "passed": true
+      },
+      {
+        "name": "Opened detail refreshes to completed and enables wrap-up",
+        "passed": true
+      },
+      {
+        "name": "Existing flow publication retains identity over two versions",
+        "passed": true
+      },
+      {
+        "name": "Claimed native callback opens the native recipient control",
+        "passed": true
+      },
+      {
+        "name": "Expired access renews once and recovers the deployed console",
+        "passed": true
+      }
+    ],
+    "productionMutations": 0,
+    "callsPlaced": 0,
+    "microphoneCapture": false,
+    "fixtureMutations": 5,
+    "liveConfiguration": {
+      "ownAgentAssigned": false,
+      "livekit": true,
+      "nativePstn": false,
+      "biometricsConfigured": false
+    },
+    "pageErrorCount": 0,
+    "passed": true
+  },
+  "processes": [
+    {
+      "name": "mediczy-server",
+      "status": "online",
+      "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-02/server",
+      "restarts": 286
+    },
+    {
+      "name": "mediqzy-contact-stt",
+      "status": "online",
+      "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+      "restarts": 0
+    },
+    {
+      "name": "mediqzy-contact-bot",
+      "status": "online",
+      "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+      "restarts": 0
+    },
+    {
+      "name": "mediqzy-contact-center-worker",
+      "status": "online",
+      "cwd": "/home/ubuntu/mediqzy-releases/contact-center-20261021-01/server",
+      "restarts": 0
+    }
+  ],
+  "apiOrWorkersRestarted": false,
+  "databaseMigrated": false,
+  "patientRecordsChanged": false,
+  "realTelephoneCallsPlaced": false,
+  "clinicalOrBiometricAcceptanceChanged": false,
+  "unrelatedWorkingTreeEditsExcluded": true,
+  "privateEvidenceDirectory": "/home/ubuntu/contact-center-theme-evidence/20261021"
+}

@@ -1,0 +1,15 @@
+# Contact-center theme and branding correction — 21 October 2026
+
+The deployed contact-center workspace mixed hard-coded white cards with inherited foreground colors. With the site theme set to dark, browser inspection confirmed panel text `rgb(248,250,252)` on `rgb(255,255,255)`. Previous functional smoke checks did not measure visual contrast.
+
+The workspace now uses a scoped dark CRM palette consistent with the existing sidebar, independent of the saved site-wide theme. Cards, headings, metric values, helper text, tables, selected tabs, buttons, selects, text areas, placeholders and focus rings use explicit coordinated tokens. All nine tabs and the guest call-join screen share the correction. The header displays the existing logo from the shared Mediqzy brand configuration, Mediqzy HealthOS identification, and the CRM's violet accents. Forms and action groups wrap at mobile widths.
+
+The CSS is scoped to `.contact-center-theme`; global site preferences and other portal palettes are not changed. Calling, permission, consent and authentication behavior are retained. This is a frontend release; no database migration, API restart, staff setup or provider changes are required.
+
+Local verification passed **45 frontend workflow tests** and **41 browser visual scenarios**: nine tabs and opened call detail at desktop/mobile widths with both saved light/dark preferences, plus guest join. Checked visible enabled text on solid backgrounds has a minimum **5.67:1** contrast. Disabled controls and the decorative gradient header are excluded from that numerical contrast check and were visually inspected. Screenshots show loaded Mediqzy branding, matching dark panels and no horizontal overflow. Browser fixtures use synthetic records and intercept all API calls; they place no calls and change no clinical records.
+
+**Deployed and verified on production.** Frontend commit `ea4b04ef` is pushed to main. The isolated build passed in 1m 35s and was published to Nginx and S3 with CloudFront invalidation; old hashed assets remain available. Both public entry points match the reviewed build. All **41 visual scenarios passed again against the deployed bundle**, with 1,330 checked text nodes and minimum checked contrast 5.67:1. The five actual-data CRM browser checks and seven deployed call-recovery/readiness checks also passed, with zero JavaScript errors. API and worker processes remained online without restarts. See [the verification record](../testing/CONTACT_CENTER_THEME_VERIFICATION_2026-10-21.json). Private screenshots and detailed evidence are stored outside the served checkout under `/home/ubuntu/contact-center-theme-evidence/20261021`.
+
+To load the updated styles in an already-open browser tab, hard-refresh the page. Existing signed-in sessions and call records are retained.
+
+Rollback: restore `frontend-previous-index.html` from the private evidence directory to the Nginx origin and S3, then invalidate CloudFront. Keep all hashed assets. This frontend-only release needs no database or backend rollback.
