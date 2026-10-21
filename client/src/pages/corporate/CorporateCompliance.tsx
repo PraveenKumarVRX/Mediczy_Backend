@@ -54,6 +54,7 @@ const CorporateCompliance: React.FC = () => {
   const [consentSummary, setConsentSummary] = useState<ConsentSummary>({ total: 0, granted: 0, pending: 0, consentRate: 0 });
   const [consentEmployees, setConsentEmployees] = useState<ConsentEmployee[]>([]);
   const [consentLoading, setConsentLoading] = useState(false);
+  const [consentError, setConsentError] = useState('');
   const [consentSearch, setConsentSearch] = useState('');
   const [consentFilter, setConsentFilter] = useState<'all' | 'granted' | 'pending'>('all');
   const [updatingConsent, setUpdatingConsent] = useState<string | null>(null);
@@ -66,14 +67,19 @@ const CorporateCompliance: React.FC = () => {
 
   const loadConsent = useCallback(async () => {
     setConsentLoading(true);
+    setConsentError('');
     try {
       const [summaryRes, empRes] = await Promise.all([
-        api.get('/corporate/consent/summary').catch(() => ({ data: null })),
-        api.get('/corporate/consent/employees').catch(() => ({ data: null })),
+        api.get('/corporate/consent/summary'),
+        api.get('/corporate/consent/employees'),
       ]);
-      if (summaryRes.data?.data) setConsentSummary(summaryRes.data.data);
-      if (empRes.data?.data?.employees) setConsentEmployees(empRes.data.data.employees);
+      if (!summaryRes.data?.success || !summaryRes.data?.data || !empRes.data?.success || !Array.isArray(empRes.data?.data?.employees)) {
+        throw new Error('Consent data was incomplete. Please retry.');
+      }
+      setConsentSummary(summaryRes.data.data);
+      setConsentEmployees(empRes.data.data.employees);
     } catch {
+      setConsentError('Consent data could not be refreshed. Previously loaded data may be out of date.');
       toast({ title: 'Failed to load consent data', variant: 'destructive' });
     } finally {
       setConsentLoading(false);
@@ -206,7 +212,7 @@ const CorporateCompliance: React.FC = () => {
               <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl">
                 <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
                 <p className="text-sm text-amber-300">{consentSummary.pending} employees have not yet given data processing consent. Create consent records to begin tracking.</p>
-                <Button size="sm" onClick={handleBulkRequest} className="ml-auto shrink-0 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30">
+                <Button size="sm" onClick={handleBulkRequest} disabled={consentLoading || !!consentError} className="ml-auto shrink-0 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30">
                   Create Pending Records
                 </Button>
               </div>
@@ -230,7 +236,7 @@ const CorporateCompliance: React.FC = () => {
                         </button>
                       ))}
                     </div>
-                    <Button variant="outline" size="sm" onClick={exportConsentCSV}
+                    <Button variant="outline" size="sm" onClick={exportConsentCSV} disabled={consentLoading || !!consentError}
                       className="h-8 bg-slate-800/60 border-slate-700/60 text-slate-400 hover:text-white">
                       <Download className="h-3.5 w-3.5 mr-1" /> Export
                     </Button>
@@ -238,10 +244,14 @@ const CorporateCompliance: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent>
+                {consentError && <div role="alert" className="mb-4 rounded-lg border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-200">
+                  <p>{consentError}</p>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={loadConsent} disabled={consentLoading}>Retry consent data</Button>
+                </div>}
                 {consentLoading ? (
                   <div className="text-center py-8 text-slate-500">Loading…</div>
                 ) : filteredConsent.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500">No employees found</div>
+                  !consentError && <div className="text-center py-8 text-slate-500">No employees found</div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -277,14 +287,14 @@ const CorporateCompliance: React.FC = () => {
                             <td className="py-3 text-right">
                               <div className="flex justify-end gap-1">
                                 {emp.granted !== true && (
-                                  <Button size="sm" variant="outline" disabled={updatingConsent === emp.employeeId}
+                                  <Button size="sm" variant="outline" disabled={consentLoading || !!consentError || updatingConsent === emp.employeeId}
                                     onClick={() => handleConsentToggle(emp, true)}
                                     className="h-7 px-2 text-xs bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20">
                                     <CheckCircle className="h-3 w-3 mr-1" /> Grant
                                   </Button>
                                 )}
                                 {emp.granted === true && (
-                                  <Button size="sm" variant="outline" disabled={updatingConsent === emp.employeeId}
+                                  <Button size="sm" variant="outline" disabled={consentLoading || !!consentError || updatingConsent === emp.employeeId}
                                     onClick={() => handleConsentToggle(emp, false)}
                                     className="h-7 px-2 text-xs bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20">
                                     <XCircle className="h-3 w-3 mr-1" /> Revoke

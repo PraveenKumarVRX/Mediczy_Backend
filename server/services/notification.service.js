@@ -14,6 +14,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import whatsappService from './whatsapp.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
+import { doctorDisplayName, renderNotificationTemplate } from '../utils/doctor-name.js';
 
 // Initialize SMS service
 const smsService = new SMSService();
@@ -297,15 +298,7 @@ class NotificationService {
 
   // Parse template with variables
   parseTemplate(template, variables) {
-    let result = template;
-    for (const [key, value] of Object.entries(variables)) {
-      let val = String(value ?? '');
-      // Strip an existing "Dr." prefix from doctorName to prevent "Dr. Dr." duplication
-      // (some callers already prefix the name; templates add "Dr." before {{doctorName}})
-      if (key === 'doctorName') val = val.replace(/^Dr\.\s*/i, '').trim();
-      result = result.replace(new RegExp(`{{${key}}}`, 'g'), val);
-    }
-    return result;
+    return renderNotificationTemplate(template, variables);
   }
 
   // ============================================
@@ -786,7 +779,7 @@ class NotificationService {
       <div style="background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-top: 25px;">
         <h3 style="color: #333; margin: 0 0 15px 0; font-size: 16px;">Appointment Details</h3>
         <table width="100%" style="font-size: 14px;">
-          ${variables.doctorName ? `<tr><td style="color: #6c757d; padding: 5px 0;">Doctor:</td><td style="color: #333; font-weight: 500;">Dr. ${variables.doctorName}</td></tr>` : ''}
+          ${variables.doctorName ? `<tr><td style="color: #6c757d; padding: 5px 0;">Doctor:</td><td style="color: #333; font-weight: 500;">${doctorDisplayName(variables.doctorName)}</td></tr>` : ''}
           ${variables.patientName ? `<tr><td style="color: #6c757d; padding: 5px 0;">Patient:</td><td style="color: #333; font-weight: 500;">${variables.patientName}</td></tr>` : ''}
           ${variables.date ? `<tr><td style="color: #6c757d; padding: 5px 0;">Date:</td><td style="color: #333; font-weight: 500;">${variables.date}</td></tr>` : ''}
           ${variables.time ? `<tr><td style="color: #6c757d; padding: 5px 0;">Time:</td><td style="color: #333; font-weight: 500;">${variables.time}</td></tr>` : ''}

@@ -9,6 +9,7 @@ import { User } from '../models/user.model.intelligent.js';
 import { Doctor } from '../models/index.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import { doctorDisplayName } from '../utils/doctor-name.js';
 
 class AppointmentNotificationService {
   constructor(io) {
@@ -121,10 +122,10 @@ class AppointmentNotificationService {
       type: 'appointment_reminder',
       urgency: 'info',
       title: 'Upcoming Video Consultation',
-      message: `Your appointment with Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName} starts in 15 minutes`,
+      message: `Your appointment with ${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))} starts in 15 minutes`,
       appointmentId: appointment.id,
       appointmentTime: appointment.appointmentTime,
-      doctorName: `Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName}`,
+      doctorName: `${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))}`,
       roomId,
       meetingLink,
       timeRemaining: '15 minutes',
@@ -163,10 +164,10 @@ class AppointmentNotificationService {
       type: 'appointment_reminder',
       urgency: 'warning',
       title: 'Video Consultation Starting Soon',
-      message: `Your appointment with Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName} starts in 5 minutes. Please get ready!`,
+      message: `Your appointment with ${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))} starts in 5 minutes. Please get ready!`,
       appointmentId: appointment.id,
       appointmentTime: appointment.appointmentTime,
-      doctorName: `Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName}`,
+      doctorName: `${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))}`,
       roomId,
       meetingLink,
       timeRemaining: '5 minutes',
@@ -207,10 +208,10 @@ class AppointmentNotificationService {
       type: 'incoming_call',
       urgency: 'urgent',
       title: '🔔 Video Consultation Starting Now!',
-      message: `Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName} is ready to see you`,
+      message: `${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))} is ready to see you`,
       appointmentId: appointment.id,
       appointmentTime: appointment.appointmentTime,
-      doctorName: `Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName}`,
+      doctorName: `${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))}`,
       doctorSpecialization: appointment.specialization,
       roomId,
       meetingLink,
@@ -256,10 +257,10 @@ class AppointmentNotificationService {
       type: 'incoming_call',
       urgency: 'critical',
       title: '📞 Video Call - Join Now!',
-      message: `Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName} is calling you`,
+      message: `${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))} is calling you`,
       appointmentId: appointment.id,
       appointmentTime: appointment.appointmentTime,
-      doctorName: `Dr. ${appointment.doctor?.firstName} ${appointment.doctor?.lastName}`,
+      doctorName: `${doctorDisplayName([appointment.doctor?.firstName, appointment.doctor?.lastName].filter(Boolean).join(' '))}`,
       doctorSpecialization: appointment.specialization,
       roomId,
       meetingLink,

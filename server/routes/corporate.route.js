@@ -4135,20 +4135,21 @@ router.post('/notifications/send', authCorporate, async (req, res) => {
 
 router.get('/consent/summary', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
-  if (!corporateId) return res.json({ success: true, data: { total: 0, granted: 0, pending: 0 } });
+  if (!corporateId) return res.json({ success: true, data: { total: 0, granted: 0, pending: 0, consentRate: 0 } });
   try {
-    // Total active employees
-    const [totalRow] = await postgresSequelize.query(
-      `SELECT COUNT(*)::int AS cnt FROM corporate_employees WHERE corporate_id = :corporateId AND "isActive" = true`,
+    // Count the same active roster as /consent/employees. Historical consent
+    // records for removed employees must not inflate the grant rate.
+    const [summary] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE c.granted = true)::int AS granted
+         FROM corporate_employees ce
+         LEFT JOIN corporate_employee_consents c
+           ON c.corporate_id = ce.corporate_id AND c.employee_id = ce."employeeId" AND c.consent_type = 'health_data'
+        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true`,
       { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
     );
-    const total = totalRow?.cnt || 0;
-    const [grantedRow] = await postgresSequelize.query(
-      `SELECT COUNT(*)::int AS cnt FROM corporate_employee_consents
-        WHERE corporate_id = :corporateId AND granted = true AND consent_type = 'health_data'`,
-      { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
-    );
-    const granted = grantedRow?.cnt || 0;
+    const total = summary?.total || 0;
+    const granted = summary?.granted || 0;
     return res.json({ success: true, data: { total, granted, pending: total - granted, consentRate: total > 0 ? Math.round((granted / total) * 100) : 0 } });
   } catch (err) {
     console.error('[corporate] consent summary error:', err.message);

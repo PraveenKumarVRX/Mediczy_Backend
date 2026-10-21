@@ -4,6 +4,8 @@
  * Compatible with Google Calendar, Apple Calendar, Outlook, etc.
  */
 
+import { doctorDisplayName } from './doctor-name.js';
+
 /**
  * Format date to iCal format: YYYYMMDDTHHMMSSZ
  * @param {Date|string} date - Date object or ISO string
@@ -102,7 +104,7 @@ export const generateICalFile = (appointment) => {
   const timestamp = formatICalDate(now);
   
   // Build description
-  let description = `Medical Appointment with ${doctorName}`;
+  let description = `Medical Appointment with ${doctorDisplayName(doctorName)}`;
   if (specialization) {
     description += `\\n\\nSpecialization: ${escapeICalText(specialization)}`;
   }
@@ -136,7 +138,7 @@ export const generateICalFile = (appointment) => {
   }
   
   // Build summary (title)
-  const summary = `Medical Appointment - Dr. ${doctorName}`;
+  const summary = `Medical Appointment - ${doctorDisplayName(doctorName)}`;
   
   // Build alarm (reminder) - 1 day before
   const alarmTrigger = '-P1D'; // 1 day before
@@ -166,7 +168,7 @@ export const generateICalFile = (appointment) => {
     // Reminder alarm
     'BEGIN:VALARM',
     'ACTION:DISPLAY',
-    `DESCRIPTION:Reminder: Appointment with Dr. ${doctorName}`,
+    `DESCRIPTION:Reminder: Appointment with ${doctorDisplayName(doctorName)}`,
     `TRIGGER:${alarmTrigger}`,
     'END:VALARM',
     'END:VEVENT',

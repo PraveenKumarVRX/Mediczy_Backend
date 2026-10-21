@@ -21,7 +21,8 @@ import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 const MAX_HR_STAFF = 15;
 
 interface HrTeamMember {
-  id: number;
+  id: number | string;
+  isDirectLogin?: boolean;
   firstName: string | null;
   lastName: string | null;
   email: string;
@@ -78,7 +79,9 @@ const CorporateHrTeam = () => {
   const ownId = useMemo(decodeOwnUserId, []);
   // Direct corporate login has role='corporate' in the JWT (not a users-table row)
   const ownRole = useMemo(() => decodeJwtPayload()?.role, []);
-  const me = useMemo(() => team.find((m) => Number(m.id) === ownId) || null, [team, ownId]);
+  const me = useMemo(() => team.find((m) => ownRole === 'corporate'
+    ? m.isDirectLogin === true
+    : !m.isDirectLogin && Number(m.id) === ownId) || null, [team, ownId, ownRole]);
   const isSuperAdmin = me?.role === 'corporate_admin' || ownRole === 'corporate';
 
   const fetchTeam = async () => {
@@ -190,7 +193,8 @@ const CorporateHrTeam = () => {
     }
   };
 
-  const seatsUsed = team.length;
+  // The direct corporate identity is a display alias, not an invited users seat.
+  const seatsUsed = team.filter((member) => !member.isDirectLogin).length;
 
   return (
     <CorporateLayout title="HR Team" subtitle="Manage who has HR access to the corporate portal">
@@ -272,7 +276,7 @@ const CorporateHrTeam = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {team.map((member) => {
-                      const isSelf = Number(member.id) === ownId;
+                      const isSelf = member.id === me?.id;
                       const isAdminRow = member.role === 'corporate_admin';
                       const isCmoRow = member.role === 'corporate_cmo';
                       const isOhcRow = member.role === 'corporate_ohc';
