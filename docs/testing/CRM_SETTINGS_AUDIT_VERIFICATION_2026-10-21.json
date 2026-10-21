@@ -1,0 +1,3922 @@
+{
+  "date": "2026-10-21",
+  "page": "https://app.mediqzy.com/crm/settings",
+  "auditOnly": true,
+  "productionMutations": 0,
+  "findingCounts": {
+    "high": 5,
+    "medium": 8,
+    "low": 1
+  },
+  "browser": {
+    "at": "2026-10-21T06:13:28.941Z",
+    "page": "https://app.mediqzy.com/crm/settings",
+    "observations": [
+      {
+        "id": "SET-01",
+        "role": "business_head",
+        "readOnlyBanner": true,
+        "saveButtons": 0
+      },
+      {
+        "id": "SET-01",
+        "role": "marketing_head",
+        "readOnlyBanner": true,
+        "saveButtons": 0
+      },
+      {
+        "id": "SET-01",
+        "role": "telecaller",
+        "readOnlyBanner": true,
+        "saveButtons": 0
+      },
+      {
+        "id": "SET-01",
+        "role": "sales_rep",
+        "readOnlyBanner": true,
+        "saveButtons": 0
+      },
+      {
+        "id": "SET-01",
+        "role": "admin",
+        "readOnlyBanner": false,
+        "saveButtons": 9
+      },
+      {
+        "id": "SET-05",
+        "testRequestBody": {},
+        "displayedEmailAfterTest": "saved@example.invalid",
+        "successNotice": true,
+        "providerFailureShown": false
+      },
+      {
+        "id": "SET-06",
+        "emailAfterRefresh": "saved@example.invalid",
+        "secretDraftCleared": true
+      },
+      {
+        "id": "SET-07",
+        "errorVisible": true,
+        "unconfiguredCards": 9,
+        "saveButtons": 9
+      },
+      {
+        "id": "SET-08",
+        "profileErrorVisible": false,
+        "cachedProfileShown": true,
+        "editableUsingCachedRole": true
+      },
+      {
+        "id": "SET-03",
+        "provider": "sendgrid",
+        "fieldsBefore": [
+          "email-fromEmail",
+          "email-fromName",
+          "email-smtpHost",
+          "email-smtpPort",
+          "email-username",
+          "email-password"
+        ],
+        "fieldsAfter": [
+          "email-fromEmail",
+          "email-fromName",
+          "email-smtpHost",
+          "email-smtpPort",
+          "email-username",
+          "email-password"
+        ],
+        "sendgridApiKeyInput": false
+      },
+      {
+        "id": "SET-09",
+        "invalidRequestSent": true,
+        "successNotice": true,
+        "inputType": "text"
+      },
+      {
+        "id": "SET-10",
+        "visibleError": true,
+        "accessibleAnnouncement": false
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "desktop",
+        "theme": "light",
+        "testedTextNodes": 137,
+        "contrastFailures": [
+          {
+            "text": "reviewer@example.invalid",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Audit fixture",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "CRM",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Configure tenant-owned credentials for the same email, WhatsApp, SMS, ",
+            "ratio": 4.05,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              10,
+              14,
+              26
+            ]
+          },
+          {
+            "text": "Tenant sender credentials for CRM campaigns and notifications.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Encrypted credentials stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7 checked",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "10/21/2026, 12:00:00 AM",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "WhatsApp Business provider used for patient conversations and template",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Transactional and campaign SMS provider settings.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Click-to-call or telephony provider used by the CRM team. Call activit",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Meta page and social engagement credentials.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Instagram business account connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "LinkedIn organisation and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Google Ads account for acquisition campaigns.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "YouTube channel and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Mediqzy Care",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "587",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Leave blank to keep saved secret",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Meta phone number ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "MEDIQZ",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "https://...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          }
+        ],
+        "minimumContrast": 1.95,
+        "noHorizontalOverflow": true,
+        "overflowPixels": 0,
+        "showSecretTarget": {
+          "width": 16,
+          "height": 16
+        },
+        "brandTextPresent": true,
+        "canonicalLogoPresent": false,
+        "totalInputs": 38
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "desktop",
+        "theme": "dark",
+        "testedTextNodes": 137,
+        "contrastFailures": [
+          {
+            "text": "reviewer@example.invalid",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Audit fixture",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "CRM",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Configure tenant-owned credentials for the same email, WhatsApp, SMS, ",
+            "ratio": 4.05,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              10,
+              14,
+              26
+            ]
+          },
+          {
+            "text": "Tenant sender credentials for CRM campaigns and notifications.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Encrypted credentials stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7 checked",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "10/21/2026, 12:00:00 AM",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "WhatsApp Business provider used for patient conversations and template",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Transactional and campaign SMS provider settings.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Click-to-call or telephony provider used by the CRM team. Call activit",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Meta page and social engagement credentials.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Instagram business account connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "LinkedIn organisation and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Google Ads account for acquisition campaigns.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "YouTube channel and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Mediqzy Care",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "587",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Leave blank to keep saved secret",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Meta phone number ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "MEDIQZ",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "https://...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          }
+        ],
+        "minimumContrast": 1.95,
+        "noHorizontalOverflow": true,
+        "overflowPixels": 0,
+        "showSecretTarget": {
+          "width": 16,
+          "height": 16
+        },
+        "brandTextPresent": true,
+        "canonicalLogoPresent": false,
+        "totalInputs": 38
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "mobile",
+        "theme": "light",
+        "testedTextNodes": 137,
+        "contrastFailures": [
+          {
+            "text": "reviewer@example.invalid",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Audit fixture",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "CRM",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Configure tenant-owned credentials for the same email, WhatsApp, SMS, ",
+            "ratio": 4.05,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              10,
+              14,
+              26
+            ]
+          },
+          {
+            "text": "Tenant sender credentials for CRM campaigns and notifications.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Encrypted credentials stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7 checked",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "10/21/2026, 12:00:00 AM",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "WhatsApp Business provider used for patient conversations and template",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Transactional and campaign SMS provider settings.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Click-to-call or telephony provider used by the CRM team. Call activit",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Meta page and social engagement credentials.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Instagram business account connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "LinkedIn organisation and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Google Ads account for acquisition campaigns.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "YouTube channel and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Mediqzy Care",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "587",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Leave blank to keep saved secret",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Meta phone number ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "MEDIQZ",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "https://...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          }
+        ],
+        "minimumContrast": 1.95,
+        "noHorizontalOverflow": true,
+        "overflowPixels": 0,
+        "showSecretTarget": {
+          "width": 14,
+          "height": 14
+        },
+        "brandTextPresent": false,
+        "canonicalLogoPresent": false,
+        "totalInputs": 38
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "mobile",
+        "theme": "dark",
+        "testedTextNodes": 137,
+        "contrastFailures": [
+          {
+            "text": "reviewer@example.invalid",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Audit fixture",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "CRM",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Configure tenant-owned credentials for the same email, WhatsApp, SMS, ",
+            "ratio": 4.05,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              10,
+              14,
+              26
+            ]
+          },
+          {
+            "text": "Tenant sender credentials for CRM campaigns and notifications.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Encrypted credentials stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7 checked",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "10/21/2026, 12:00:00 AM",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "WhatsApp Business provider used for patient conversations and template",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Transactional and campaign SMS provider settings.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Click-to-call or telephony provider used by the CRM team. Call activit",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Meta page and social engagement credentials.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Instagram business account connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "LinkedIn organisation and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Google Ads account for acquisition campaigns.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "YouTube channel and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Mediqzy Care",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "587",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Leave blank to keep saved secret",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Meta phone number ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "MEDIQZ",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "https://...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          }
+        ],
+        "minimumContrast": 1.95,
+        "noHorizontalOverflow": true,
+        "overflowPixels": 0,
+        "showSecretTarget": {
+          "width": 14,
+          "height": 14
+        },
+        "brandTextPresent": false,
+        "canonicalLogoPresent": false,
+        "totalInputs": 38
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "narrow-mobile",
+        "theme": "light",
+        "testedTextNodes": 137,
+        "contrastFailures": [
+          {
+            "text": "reviewer@example.invalid",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Audit fixture",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "CRM",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Configure tenant-owned credentials for the same email, WhatsApp, SMS, ",
+            "ratio": 4.05,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              10,
+              14,
+              26
+            ]
+          },
+          {
+            "text": "Tenant sender credentials for CRM campaigns and notifications.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Encrypted credentials stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7 checked",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "10/21/2026, 12:00:00 AM",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "WhatsApp Business provider used for patient conversations and template",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Transactional and campaign SMS provider settings.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Click-to-call or telephony provider used by the CRM team. Call activit",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Meta page and social engagement credentials.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Instagram business account connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "LinkedIn organisation and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Google Ads account for acquisition campaigns.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "YouTube channel and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Mediqzy Care",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "587",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Leave blank to keep saved secret",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Meta phone number ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "MEDIQZ",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "https://...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          }
+        ],
+        "minimumContrast": 1.95,
+        "noHorizontalOverflow": true,
+        "overflowPixels": 0,
+        "showSecretTarget": {
+          "width": 14,
+          "height": 14
+        },
+        "brandTextPresent": false,
+        "canonicalLogoPresent": false,
+        "totalInputs": 38
+      },
+      {
+        "id": "DESIGN",
+        "viewport": "narrow-mobile",
+        "theme": "dark",
+        "testedTextNodes": 137,
+        "contrastFailures": [
+          {
+            "text": "reviewer@example.invalid",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Audit fixture",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "CRM",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Configure tenant-owned credentials for the same email, WhatsApp, SMS, ",
+            "ratio": 4.05,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              10,
+              14,
+              26
+            ]
+          },
+          {
+            "text": "Tenant sender credentials for CRM campaigns and notifications.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Encrypted credentials stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "\u00b7 checked",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "10/21/2026, 12:00:00 AM",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "WhatsApp Business provider used for patient conversations and template",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Transactional and campaign SMS provider settings.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Click-to-call or telephony provider used by the CRM team. Call activit",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Meta page and social engagement credentials.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Instagram business account connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "LinkedIn organisation and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Google Ads account for acquisition campaigns.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "YouTube channel and campaign connection.",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "(optional)",
+            "ratio": 2.4,
+            "color": "rgb(71, 85, 105)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "No secret stored",
+            "ratio": 3.82,
+            "color": "rgb(100, 116, 139)",
+            "background": [
+              17.349999999999998,
+              21.23,
+              32.87
+            ]
+          },
+          {
+            "text": "Save securely",
+            "ratio": 4.23,
+            "color": "rgb(255, 255, 255)",
+            "background": [
+              139,
+              92,
+              246
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Mediqzy Care",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "587",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Leave blank to keep saved secret",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Meta phone number ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "MEDIQZ",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "https://...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "+91...",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          },
+          {
+            "text": "Internal account / workspace ID",
+            "ratio": 1.95,
+            "color": "rgb(51, 65, 85)",
+            "background": [
+              2,
+              6,
+              23
+            ]
+          }
+        ],
+        "minimumContrast": 1.95,
+        "noHorizontalOverflow": true,
+        "overflowPixels": 0,
+        "showSecretTarget": {
+          "width": 14,
+          "height": 14
+        },
+        "brandTextPresent": false,
+        "canonicalLogoPresent": false,
+        "totalInputs": 38
+      }
+    ],
+    "pageErrors": [],
+    "productionMutations": 0,
+    "fixtureMutations": 3,
+    "method": "Read-only existing demo account; synthetic intercepted profile and integration fixtures; no credential saves, tests, sends or calls reach production",
+    "liveBaseline": {
+      "profileStatus": 200,
+      "profileRole": "business_head",
+      "isAdmin": false,
+      "integrationStatus": 200,
+      "channelCount": 9,
+      "configuredChannels": [],
+      "readOnlyBanner": true,
+      "saveButtonCount": 0
+    },
+    "completed": true
+  },
+  "service": {
+    "at": "2026-10-21T06:14:23.571Z",
+    "method": "Exact workspace service source with pool import replaced by in-memory query stub; synthetic AES key; no network or production SQL",
+    "observations": [
+      {
+        "id": "SET-04",
+        "beforeKeys": [
+          "clientSecret",
+          "refreshToken"
+        ],
+        "afterPartialRotationKeys": [
+          "clientSecret"
+        ],
+        "omittedRefreshTokenRetained": false
+      },
+      {
+        "id": "SET-09",
+        "unsupportedProviderAccepted": true,
+        "invalidEmailAccepted": true,
+        "invalidPortAccepted": true
+      },
+      {
+        "id": "SET-05",
+        "testSucceedsWithSyntheticInvalidCredentials": true,
+        "testHealthMessage": "Credentials decrypted successfully; live provider delivery is adapter-dependent",
+        "providerNetworkCalls": 0,
+        "healthScore": null
+      },
+      {
+        "id": "SET-02",
+        "credentialRoutesUseCapability": "communication:write",
+        "roles": [
+          {
+            "crmRole": "business_head",
+            "serverAllows": true
+          },
+          {
+            "crmRole": "marketing_head",
+            "serverAllows": true
+          },
+          {
+            "crmRole": "marketing",
+            "serverAllows": true
+          },
+          {
+            "crmRole": "telecaller",
+            "serverAllows": true
+          },
+          {
+            "crmRole": "conversion",
+            "serverAllows": true
+          },
+          {
+            "crmRole": "sales_rep",
+            "serverAllows": true
+          }
+        ]
+      }
+    ],
+    "productionMutations": 0,
+    "completed": true
+  },
+  "sourceParity": [
+    {
+      "path": "client/src/pages/crm/CRMModulePages.tsx",
+      "matchesDeployedCommit": true
+    },
+    {
+      "path": "client/src/pages/crm/CRMChannelSettings.tsx",
+      "matchesDeployedCommit": true
+    },
+    {
+      "path": "client/src/pages/crm/shared/crmRoles.ts",
+      "matchesDeployedCommit": true
+    },
+    {
+      "path": "server/config/crm-roles.config.js",
+      "matchesDeployedCommit": true,
+      "matchesActiveApi": true
+    },
+    {
+      "path": "server/routes/hospital-crm-communication-hub.route.js",
+      "matchesDeployedCommit": true,
+      "matchesActiveApi": true
+    },
+    {
+      "path": "server/services/crm-channel-integrations.service.js",
+      "matchesDeployedCommit": true,
+      "matchesActiveApi": true
+    },
+    {
+      "path": "server/services/hospital-crm-communication-hub.service.js",
+      "matchesDeployedCommit": true,
+      "matchesActiveApi": true
+    }
+  ]
+}
