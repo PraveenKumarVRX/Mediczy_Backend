@@ -1,0 +1,447 @@
+{
+  "at": "2026-10-21T14:20:00.195Z",
+  "sourceCommit": "2c3f97ca0caae43f377e2576dfb089d8b1a6be48",
+  "deployed": true,
+  "verified": true,
+  "indexSha256": "76be950eaaaf27574666df261a7b84ae974a7fcf2f2ebfdec7f7b523c5ea99a6",
+  "cloudFrontInvalidation": {
+    "id": "I3HAF6VZIFL03Y8GNG0E14MUPA",
+    "status": "Completed"
+  },
+  "validation": {
+    "backendTests": 185,
+    "clientTests": 15,
+    "disposablePostgresChecks": 63,
+    "productionDatabaseReadOnlyPreflight": 4,
+    "liveReadOnlyApiChecks": 39,
+    "liveBrowserChecks": 10,
+    "liveSanityChecks": 21,
+    "browserRuntimeErrors": 0,
+    "productionSmokeMutations": 0,
+    "liveTestCalls": 0
+  },
+  "checks": {
+    "cross-portal-api-smoke.json": [
+      {
+        "name": "HR active roster matches database",
+        "path": "/api/corporate/employees",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "HR inactive roster can be listed",
+        "path": "/api/corporate/employees?status=inactive",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "HR notification inbox",
+        "path": "/api/corporate/notifications",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "HR unread badge matches inbox",
+        "path": "/api/corporate/notifications/unread-count",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "HR analytics has real roster departments and absent unmeasured scores",
+        "path": "/api/corporate/dashboard/health-analytics",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Participation excludes unused enrollment",
+        "path": "/api/corporate/analytics/participation",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Combined HR and employee appointments returns valid scoped rows",
+        "path": "/api/corporate/all-appointments",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "AHC batches",
+        "path": "/api/corporate/ahc/batches",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "AHC enrollment names and departments resolve",
+        "path": "/api/corporate/ahc/batches/1/enrollments",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "HR wellness events include invitation metadata",
+        "path": "/api/corporate/wellness-calendar/activities",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Team report and certificate employee picker resolves the HR roster",
+        "path": "/api/corporate-bookings/employees?corporateId=3",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Corporate package billing source",
+        "path": "/api/corporate/my-benefits",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Unauthenticated contact center denied",
+        "path": "/api/crm/contact-center",
+        "status": 401,
+        "expected": 401,
+        "passed": true
+      },
+      {
+        "name": "Contact center exposes six providers without changing configuration",
+        "path": "/api/crm/contact-center",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      }
+    ],
+    "health-checkup-api-smoke.json": [
+      {
+        "name": "Admin package alias",
+        "path": "/api/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Lab scoped package alias",
+        "path": "/api/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Employee kit denial",
+        "path": "/api/kits",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Admin package alias",
+        "path": "/api/checkup-kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Lab scoped package alias",
+        "path": "/api/checkup-kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Employee kit denial",
+        "path": "/api/checkup-kits",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Admin package alias",
+        "path": "/api/lab/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Lab scoped package alias",
+        "path": "/api/lab/kits?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Employee kit denial",
+        "path": "/api/lab/kits",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Real admin package list",
+        "path": "/api/admin/health-packages",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Real package detail",
+        "path": "/api/admin/health-packages/DAIRYDAY_AHC_SALES_2026-27_",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Corporate booking packages",
+        "path": "/api/corporate-bookings/packages?corporateId=45",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Member profile",
+        "path": "/api/health-checkups/me",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Member packages",
+        "path": "/api/health-checkups/packages",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Member lab query succeeds",
+        "path": "/api/health-checkups/labs",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Dairy Day mapped Agilus centres",
+        "path": "/api/corporate-bookings/labs?corporateId=45&search=agilus",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Configured Agilus slots",
+        "path": "/api/health-checkups/slots?date=2026-10-22&labId=81",
+        "status": 404,
+        "expected": 404,
+        "passed": true
+      },
+      {
+        "name": "Past slot date rejected",
+        "path": "/api/health-checkups/slots?date=2020-01-01&labId=81",
+        "status": 400,
+        "expected": 400,
+        "passed": true
+      },
+      {
+        "name": "Missing lab rejected",
+        "path": "/api/health-checkups/slots?date=2026-10-22",
+        "status": 400,
+        "expected": 400,
+        "passed": true
+      },
+      {
+        "name": "Admin cannot consume employee entitlements",
+        "path": "/api/health-checkups/packages",
+        "status": 403,
+        "expected": 403,
+        "passed": true
+      },
+      {
+        "name": "Corporate activation package options",
+        "path": "/api/corporate/ahc/package-options",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Unread count",
+        "path": "/api/notifications/unread-count",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Dashboard entity counts",
+        "path": "/api/admin/dashboard/stats",
+        "status": 200,
+        "expected": 200,
+        "passed": true
+      },
+      {
+        "name": "Unauthenticated kit denial",
+        "path": "/api/kits",
+        "status": 401,
+        "expected": 401,
+        "passed": true
+      },
+      {
+        "name": "Unknown API returns JSON",
+        "path": "/api/admin/qa-missing-endpoint",
+        "status": 404,
+        "expected": 404,
+        "passed": true
+      }
+    ],
+    "cross-portal-browser.json": [
+      {
+        "name": "HR notifications have one search input",
+        "passed": true
+      },
+      {
+        "name": "HR health analysis has no fixed improvement badges",
+        "passed": true
+      },
+      {
+        "name": "HR employee status filter is visible",
+        "passed": true
+      },
+      {
+        "name": "Contact-center provider selector lists all six providers",
+        "passed": true
+      },
+      {
+        "name": "Airtel setup explains required server connection",
+        "passed": true
+      },
+      {
+        "name": "Zoom uses the explicit external phone path",
+        "passed": true
+      }
+    ],
+    "health-checkup-browser.json": [
+      {
+        "name": "Admin renders existing Dairy Day packages without sample fallback",
+        "passed": true
+      },
+      {
+        "name": "Corporate selection is visible with contrasting text",
+        "passed": true
+      },
+      {
+        "name": "Activation requires an explicit package before invitations",
+        "passed": true
+      },
+      {
+        "name": "Activation lists the two real Dairy Day packages",
+        "passed": true
+      }
+    ],
+    "deployment-sanity.json": [
+      {
+        "name": "Public API health and primary dependencies",
+        "passed": true
+      },
+      {
+        "name": "API online without new restarts",
+        "passed": true
+      },
+      {
+        "name": "Runtime source matches deployed release snapshot",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "nginx index matches deployed artifact",
+        "passed": true
+      },
+      {
+        "name": "SPA route /",
+        "passed": true
+      },
+      {
+        "name": "SPA route /admin/login",
+        "passed": true
+      },
+      {
+        "name": "SPA route /admin/corporate-health-packages",
+        "passed": true
+      },
+      {
+        "name": "SPA route /corporate/annual-health-checkup",
+        "passed": true
+      },
+      {
+        "name": "SPA route /health-checkups",
+        "passed": true
+      },
+      {
+        "name": "SPA route /patient/notifications",
+        "passed": true
+      },
+      {
+        "name": "SPA route /corporate/notifications",
+        "passed": true
+      },
+      {
+        "name": "SPA route /corporate/health-analysis",
+        "passed": true
+      },
+      {
+        "name": "SPA route /crm/contact-center",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/index-DjvjexOz.js",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/vendor-charts-BXn5Ohnx.js",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/vendor-pdf-DgF3Qiox.js",
+        "passed": true
+      },
+      {
+        "name": "Published entry asset /assets/index-CsCJ6F2O.css",
+        "passed": true
+      },
+      {
+        "name": "Real package catalog persisted",
+        "passed": true
+      },
+      {
+        "name": "Active-slot uniqueness index is valid",
+        "passed": true
+      },
+      {
+        "name": "Dairy Day\u2013Agilus mappings, slots and UID references",
+        "passed": true
+      },
+      {
+        "name": "No double-booked active lab slots",
+        "passed": true
+      }
+    ]
+  },
+  "limitations": [
+    "TeleCMI/Airtel/Twilio/Plivo require approved configured server connectors; Zoom requires the licensed desktop client. No provider account settings were changed.",
+    "The broader report still has open MFA/report-consent and reporting workflows; this release publishes the implemented fixes."
+  ],
+  "optionalDependencies": [
+    {
+      "name": "citus",
+      "state": "disconnected"
+    },
+    {
+      "name": "duckdb",
+      "state": "disconnected"
+    }
+  ]
+}

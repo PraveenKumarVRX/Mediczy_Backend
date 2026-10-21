@@ -1,6 +1,6 @@
 # Cross-portal sync remediation — 21 October 2026
 
-Status: implementation in progress. These changes have not been deployed. This is not a claim that every failed or partial report row is resolved.
+Status: implemented changes deployed and verified on 21 October 2026. The broader report remains in progress; this is not a claim that every failed or partial report row is resolved. See [release verification](CROSS_PORTAL_RELEASE_VERIFICATION_2026-10-21.json).
 
 ## Implemented in this pass
 
@@ -37,4 +37,4 @@ Existing real diagnostic provider mappings and package activation were deployed 
 
 ## Release boundary
 
-Preserve unrelated working-tree changes. The pending contact-center provider schema is not yet migrated in production. Do not restart the API into an unverified schema or claim live retest success from unit fixtures. Validate current frontend source, database migrations, scoped API behavior and browser flows before rollout.
+Preserve unrelated working-tree changes. The contact-center provider migration was applied with the separate administrator connection after a fresh encrypted recovery snapshot. Production API, browser and deployment checks passed. Provider setup remains required before activating new vendor calling. The evidence and rollback snapshot are described in [the release record](../deployment/CROSS_PORTAL_RELEASE_2026-10-21.md).
