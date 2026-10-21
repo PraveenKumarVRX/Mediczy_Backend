@@ -208,7 +208,30 @@ router.get('/employees', authUser, requireTeamOrAdmin, requireCorporateAccess, a
       }
     );
 
-    return res.json({ success: true, employees });
+    // Roster-only employees (HR added them, but no app account is linked yet)
+    // have no users.id, so a report can't be attached to them at all - but
+    // they shouldn't be invisible to this search either (QA: "latha" is a
+    // real employee, search just returned nothing). Surface them separately
+    // so the UI can explain why they can't be selected, instead of the
+    // search looking like it found nothing.
+    let rosterOnlyMatches = [];
+    if (employees.length === 0) {
+      rosterOnlyMatches = await postgresSequelize.query(
+        `SELECT ce."employeeId", ce.email, ce.metadata
+           FROM corporate_employees ce
+          WHERE ce.corporate_id = :corporateId
+            AND ce."userId" IS NULL
+            AND ce."isActive" = true
+            AND (
+              LOWER(COALESCE(ce.metadata->>'firstName','') || ' ' || COALESCE(ce.metadata->>'lastName','')) LIKE LOWER(:search)
+              OR LOWER(COALESCE(ce.email, '')) LIKE LOWER(:search)
+            )
+          LIMIT 10`,
+        { replacements: { corporateId: parseInt(corporateId), search: searchTerm }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+    }
+
+    return res.json({ success: true, employees, rosterOnlyMatches });
   } catch (err) {
     console.error('[corporate-bookings] GET /employees error:', err);
     return res.status(500).json({ success: false, message: err.message });

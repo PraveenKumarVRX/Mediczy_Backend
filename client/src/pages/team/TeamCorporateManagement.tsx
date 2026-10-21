@@ -5444,7 +5444,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
         .map(e => e.id);
     }
     const empCount = resolvedEmployeeIds === 'all'
-      ? selectedCorporate.employeeCount || employees.length
+      ? employees.length || selectedCorporate.employeeCount || 0
       : (resolvedEmployeeIds as string[]).length;
     const token = localStorage.getItem('teamToken');
     const results = await Promise.allSettled(assigningNetworks.map(partner =>
@@ -5986,7 +5986,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 <Badge className="bg-slate-900 text-white hover:bg-slate-900">{selectedCorporate.companyName}</Badge>
                 <Badge variant="outline" className="border bg-card text-foreground/80">ID: {selectedCorporate.uniqueId || `ID-${selectedCorporate.id}`}</Badge>
                 <Badge variant="outline" className="border bg-card text-foreground/80">{selectedCorporate.industry || 'Industry N/A'}</Badge>
-                <Badge variant="outline" className="border bg-card text-foreground/80">Employees: {selectedCorporate.employeeCount || 0}</Badge>
+                <Badge variant="outline" className="border bg-card text-foreground/80">Employees: {employees.length || selectedCorporate.employeeCount || 0}</Badge>
                 <Badge variant="outline" className="border bg-card text-foreground/80">Plan: {selectedCorporate.packageType || 'Not Set'}</Badge>
               </CardContent>
             </Card>
@@ -6015,7 +6015,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Total Employees</p>
-                        <p className="text-2xl font-bold">{selectedCorporate.employeeCount || 0}</p>
+                        <p className="text-2xl font-bold">{employees.length || selectedCorporate.employeeCount || 0}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -6758,10 +6758,10 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                             <TableCell>{emp.designation}</TableCell>
                             <TableCell>
                               <Badge className={`${
-                                emp.healthStatus === 'Excellent' || emp.healthStatus === 'Good' 
-                                  ? 'bg-green-100 text-green-800' 
-                                  : emp.healthStatus === 'Fair' 
-                                    ? 'bg-yellow-100 text-yellow-800' 
+                                ['excellent', 'good'].includes(String(emp.healthStatus).toLowerCase())
+                                  ? 'bg-green-100 text-green-800'
+                                  : ['fair', 'moderate'].includes(String(emp.healthStatus).toLowerCase())
+                                    ? 'bg-yellow-100 text-yellow-800'
                                     : 'bg-gray-100 text-gray-800'
                               }`}>
                                 {emp.healthStatus}
@@ -9490,7 +9490,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 <div className="border rounded-lg p-4 bg-green-50/50">
                   <div className="flex items-center gap-2 text-green-700 font-medium">
                     <CheckCircle className="h-5 w-5" />
-                    All {selectedCorporate?.employeeCount || employees.length} employees will be assigned
+                    All {employees.length || selectedCorporate?.employeeCount || 0} employees will be assigned
                   </div>
                   <p className="text-sm text-muted-foreground mt-1">
                     Every employee in the corporate will get access to {assigningNetworks.length > 1 ? `these ${assigningNetworks.length} partners` : `this ${assigningNetworks[0]?.type}`}.
@@ -9638,12 +9638,12 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 {assigningNetworks.length > 1 ? `Assign ${assigningNetworks.length} Partners to ` : 'Assign to '}
                 {
                   networkAssignMode === 'all'
-                    ? `All ${selectedCorporate?.employeeCount || employees.length}`
+                    ? `All ${employees.length || selectedCorporate?.employeeCount || 0}`
                     : networkAssignMode === 'department'
                     ? `${employees.filter(e => selectedDepartmentsForAssign.includes(e.department)).length}`
                     : `${selectedEmployeesForAssign.length}`
                 } Employee{(
-                  networkAssignMode === 'all' ? (selectedCorporate?.employeeCount || employees.length) :
+                  networkAssignMode === 'all' ? (employees.length || selectedCorporate?.employeeCount || 0) :
                   networkAssignMode === 'department' ? employees.filter(e => selectedDepartmentsForAssign.includes(e.department)).length :
                   selectedEmployeesForAssign.length
                 ) !== 1 ? 's' : ''}
@@ -9792,7 +9792,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                     <SelectValue placeholder="Select assignment type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Employees ({selectedCorporate?.employeeCount || 0})</SelectItem>
+                    <SelectItem value="all">All Employees ({employees.length || selectedCorporate?.employeeCount || 0})</SelectItem>
                     <SelectItem value="department">By Department</SelectItem>
                     <SelectItem value="custom">Select Specific Employees</SelectItem>
                   </SelectContent>
@@ -9805,7 +9805,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                   <span className="font-medium">
                     {selectedEmployeesForAssign.length > 0 
                       ? `${selectedEmployeesForAssign.length} employees selected`
-                      : `All ${selectedCorporate?.employeeCount || 0} employees will be assigned`
+                      : `All ${employees.length || selectedCorporate?.employeeCount || 0} employees will be assigned`
                     }
                   </span>
                 </div>

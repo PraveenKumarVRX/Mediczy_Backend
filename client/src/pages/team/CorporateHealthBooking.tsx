@@ -163,6 +163,7 @@ export default function CorporateHealthBooking() {
   // ── employee search ──
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [employeeSuggestions, setEmployeeSuggestions] = useState<Employee[]>([]);
+  const [rosterOnlyMatches, setRosterOnlyMatches] = useState<Array<{ employeeId: string; email: string; metadata?: { firstName?: string; lastName?: string } }>>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [empLoading, setEmpLoading] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -424,9 +425,11 @@ export default function CorporateHealthBooking() {
       try {
         const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id}&search=${encodeURIComponent(val)}`);
         setEmployeeSuggestions(r.data.employees || []);
+        setRosterOnlyMatches(r.data.rosterOnlyMatches || []);
         setShowSuggestions(true);
       } catch {
         setEmployeeSuggestions([]);
+        setRosterOnlyMatches([]);
       } finally {
         setEmpLoading(false);
       }
@@ -850,10 +853,22 @@ export default function CorporateHealthBooking() {
                     )}
 
                     {showSuggestions && employeeSuggestions.length === 0 && !empLoading && employeeSearch.length >= 2 && (
-                      <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3">
+                      <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3 space-y-2">
                         <p className="text-sm text-muted-foreground flex items-center gap-2">
                           <AlertCircle className="h-4 w-4" /> No employees found for "{employeeSearch}"
                         </p>
+                        {rosterOnlyMatches.length > 0 && (
+                          <div className="text-xs text-amber-600 border-t pt-2">
+                            {rosterOnlyMatches.map((m) => (
+                              <p key={m.employeeId}>
+                                {(m.metadata?.firstName || m.metadata?.lastName)
+                                  ? `${m.metadata?.firstName || ''} ${m.metadata?.lastName || ''}`.trim()
+                                  : m.email || m.employeeId} is on the employee roster but hasn't created an app
+                                account yet — a report can be uploaded once they sign up.
+                              </p>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

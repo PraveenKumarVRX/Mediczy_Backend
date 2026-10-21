@@ -1379,7 +1379,7 @@ router.get('/employees', authCorporate, async (req, res) => {
           isActive: r.isActive,
           exitDate: r.exitDate ? r.exitDate.toString().slice(0, 10) : '',
           exitReason: meta.exitReason || '',
-          healthStatus: Number(r.overdue_count || 0) > 0 ? 'moderate' : 'good',
+          healthStatus: Number(r.report_count || 0) === 0 ? 'unassessed' : (Number(r.overdue_count || 0) > 0 ? 'moderate' : 'good'),
           lastCheckup: r.last_checkup ? r.last_checkup.toString().slice(0, 10) : '',
           insurancePlan: 'Standard Plan',
           appStatus,

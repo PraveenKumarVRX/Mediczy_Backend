@@ -26,7 +26,7 @@ interface Employee {
   department: string;
   designation: string;
   joiningDate: string;
-  healthStatus: 'excellent' | 'good' | 'moderate' | 'poor';
+  healthStatus: 'excellent' | 'good' | 'moderate' | 'poor' | 'unassessed';
   lastCheckup: string;
   insurancePlan: string;
   preEmploymentReports?: number;
@@ -516,6 +516,7 @@ const CorporateEmployees: React.FC = () => {
             { label: 'Excellent Health', value: employees.filter(e => e.healthStatus === 'excellent').length },
             { label: 'Good Health', value: employees.filter(e => e.healthStatus === 'good').length },
             { label: 'Needs Attention', value: employees.filter(e => e.healthStatus === 'moderate' || e.healthStatus === 'poor').length },
+            { label: 'Not Assessed', value: employees.filter(e => e.healthStatus === 'unassessed' as any).length },
           ]}
           actions={
             <Button onClick={() => setIsBulkUploadOpen(true)} variant="outline" size="sm" className="bg-white/10 hover:bg-white/20 text-white border-white/20">

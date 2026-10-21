@@ -42,6 +42,8 @@ export function normalizeAssociationEmployee(row) {
     metadata: meta,
     corporate_employee_id: row.corporate_employee_id || employeeId || null,
     user_employee_id: row.user_employee_id || employeeId || null,
+    department_name: row.department_name || row.ce_department || meta.department || null,
+    healthStatus: row.healthStatus || 'unassessed',
     hasAssociation: true,
     ...buildWelcomeFlags({ ...row, hasAssociation: true }),
   };
@@ -81,6 +83,7 @@ export function normalizeRosterEmployee(row) {
     requirePasswordChange: row.requirePasswordChange ?? true,
     welcomeEmailStatus: row.welcomeEmailStatus || null,
     welcomeEmailSentAt: row.welcomeEmailSentAt || null,
+    healthStatus: row.healthStatus || 'unassessed',
     hasAssociation,
     ...buildWelcomeFlags({ id: row.id, email: row.email || meta.email, hasAssociation }),
   };
@@ -145,6 +148,7 @@ export const CORPORATE_EMPLOYEE_ASSOCIATION_SQL = `
          ua.metadata, ua.status, ua."startDate",
          ce.id AS corporate_employee_row_id,
          ce."employeeId" AS corporate_employee_id,
+         COALESCE(ce.department, 'General') AS ce_department,
          uhp."packageId" AS "currentPackageId",
          uhp."packageName" AS "currentPackageName",
          uhp."validTo" AS "packageValidTo",
@@ -154,6 +158,9 @@ export const CORPORATE_EMPLOYEE_ASSOCIATION_SQL = `
          (u.metadata->>'requirePasswordChange')::boolean AS "requirePasswordChange",
          wd.status AS "welcomeEmailStatus",
          wd.updated_at AS "welcomeEmailSentAt",
+         CASE WHEN COALESCE(hr.report_count, 0) = 0 THEN 'unassessed'
+              WHEN COALESCE(hr.overdue_count, 0) > 0 THEN 'moderate'
+              ELSE 'good' END AS "healthStatus",
          true AS has_association
   FROM users u
   JOIN user_associations ua ON u.id = ua."userId"
@@ -165,6 +172,12 @@ export const CORPORATE_EMPLOYEE_ASSOCIATION_SQL = `
     WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
     ORDER BY "validTo" DESC LIMIT 1
   ) uhp ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*) AS report_count,
+           COUNT(*) FILTER (WHERE chr.sla_status IN ('breached', 'pending_overdue')) AS overdue_count
+    FROM corporate_health_reports chr
+    WHERE chr.corporate_id = :corporateId AND chr.employee_id = u.id
+  ) hr ON true
   LEFT JOIN LATERAL (
     SELECT status, updated_at
     FROM corporate_welcome_email_deliveries
@@ -201,14 +214,16 @@ export const CORPORATE_WELCOME_PREPARE_BULK_SQL = `
 `;
 
 export const CORPORATE_EMPLOYEE_ROSTER_SQL = `
-  SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
+  SELECT u.id,
+         COALESCE(NULLIF(ce.email, ''), u.email) AS email,
+         u."firstName", u."lastName", u."phoneNumber",
          u.address_city, u.address_state, u."address_zipCode",
          u.department_name, u.employee_id AS user_employee_id,
          u.gender, u."dateOfBirth",
          ua.metadata, ua.status, ua."startDate",
          ce.id AS corporate_employee_row_id,
          ce."employeeId" AS corporate_employee_id,
-         ce.department AS ce_department,
+         COALESCE(ce.department, 'General') AS ce_department,
          ce.designation AS ce_designation,
          ce."joiningDate",
          ce."isActive" AS ce_is_active,
@@ -222,6 +237,10 @@ export const CORPORATE_EMPLOYEE_ROSTER_SQL = `
          (u.metadata->>'requirePasswordChange')::boolean AS "requirePasswordChange",
          wd.status AS "welcomeEmailStatus",
          wd.updated_at AS "welcomeEmailSentAt",
+         CASE WHEN u.id IS NULL THEN 'unassessed'
+              WHEN COALESCE(hr.report_count, 0) = 0 THEN 'unassessed'
+              WHEN COALESCE(hr.overdue_count, 0) > 0 THEN 'moderate'
+              ELSE 'good' END AS "healthStatus",
          (ua.id IS NOT NULL) AS has_association
   FROM corporate_employees ce
   LEFT JOIN users u ON u.id = ce."userId"
@@ -236,6 +255,12 @@ export const CORPORATE_EMPLOYEE_ROSTER_SQL = `
     WHERE "userId" = u.id AND corporate_id = :corporateId AND status = 'active'
     ORDER BY "validTo" DESC LIMIT 1
   ) uhp ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*) AS report_count,
+           COUNT(*) FILTER (WHERE chr.sla_status IN ('breached', 'pending_overdue')) AS overdue_count
+    FROM corporate_health_reports chr
+    WHERE chr.corporate_id = :corporateId AND chr.employee_id = u.id
+  ) hr ON u.id IS NOT NULL
   LEFT JOIN LATERAL (
     SELECT status, updated_at
     FROM corporate_welcome_email_deliveries
