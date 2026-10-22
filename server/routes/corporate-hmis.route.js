@@ -6,11 +6,16 @@ import {
   recordEligibilityCheck,
   issueFitnessCertificate, getFitnessCertificatesByPatient,
   issueReturnToWorkClearance,
-  getFitnessCertificatesForOrganization, getFitnessCertificateById,
+  getFitnessCertificatesForOrganization, getFitnessCertificateById, getCorporateCertificatesByIds,
 } from '../services/corporate-hmis.service.js';
 import { fitnessCertificatePdfFileName, resolveFitnessCertificatePdfPath } from '../services/fitness-certificate-pdf.service.js';
 
+import { buildCertificateArchive } from '../services/corporate-certificate-archive.service.js';
+import { corporateAccessAudit } from '../services/corporate-access-audit.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+
 const router = express.Router();
+const accessAudit = corporateAccessAudit(postgresSequelize);
 
 // Fitness certificates and return-to-work clearances are clinical
 // documents — issuing them should come from the corporate's own clinical
@@ -115,6 +120,28 @@ router.get('/fitness-certificates', authCorporate, async (req, res) => {
   }
 });
 
+// Download existing issued PDFs, with all-or-nothing tenant validation.
+router.post('/fitness-certificates/download-zip', authCorporate, async (req, res) => {
+  try {
+    const buffer = await buildCertificateArchive({
+      ids: req.body?.certificateIds, corporateId: corporateIdOf(req),
+      findCertificates: getCorporateCertificatesByIds,
+      resolvePath: resolveFitnessCertificatePdfPath, fileName: fitnessCertificatePdfFileName,
+    });
+    await accessAudit.record(req, {
+      resourceId: 'certificates:bulk',
+      title: `Certificate PDFs: ${[...new Set(req.body.certificateIds)].join(', ')}`,
+      action: 'download',
+    });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="fitness-certificates.zip"');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(buffer);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.statusCode ? err.message : 'Certificate archive could not be downloaded' });
+  }
+});
+
 // GET /api/v1/occupational-health/fitness-certificate/:id/pdf
 router.get('/fitness-certificate/:id/pdf', authCorporate, async (req, res) => {
   try {
@@ -126,6 +153,8 @@ router.get('/fitness-certificate/:id/pdf', authCorporate, async (req, res) => {
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ success: false, message: 'Certificate PDF not available' });
     }
+    await accessAudit.record(req, { resourceId: `certificate:${cert.id}`, title: 'Fitness certificate PDF', action: 'download' });
+    res.setHeader('Cache-Control', 'no-store');
     return res.download(filePath, fitnessCertificatePdfFileName(cert));
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -551,9 +551,9 @@ const CorporateSettings: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label>SSO (Single Sign-On)</Label>
-                  <p className="text-sm text-slate-400">Enable SSO for employee logins</p>
+                  <p className="text-sm text-slate-400">Not available — no identity provider is connected. Employee logins use their existing credentials.</p>
                 </div>
-                <Switch checked={security.sso} onCheckedChange={v => setSecurity(p => ({ ...p, sso: v }))} />
+                <Switch checked={false} disabled aria-label="Single sign-on (not available)" />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="sessionTimeout">Session Timeout (minutes)</Label>

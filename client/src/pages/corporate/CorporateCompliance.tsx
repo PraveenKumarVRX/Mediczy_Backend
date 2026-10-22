@@ -320,7 +320,7 @@ const CorporateCompliance: React.FC = () => {
                   <div>
                     <CardTitle className="text-slate-100 text-base">Report Access Audit Log</CardTitle>
                     <CardDescription className="text-slate-500 text-xs mt-1">
-                      Every report view and download is recorded here. {auditTotal} total entries.
+                      Report exports, health-record access, consent and employee status changes. {auditTotal} total entries.
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2">
@@ -354,7 +354,7 @@ const CorporateCompliance: React.FC = () => {
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-slate-700/60 text-slate-400 text-xs uppercase">
-                          <th className="text-left pb-2 font-medium">Report</th>
+                          <th className="text-left pb-2 font-medium">Resource</th>
                           <th className="text-left pb-2 font-medium">Action</th>
                           <th className="text-left pb-2 font-medium">Accessed By</th>
                           <th className="text-left pb-2 font-medium">IP</th>

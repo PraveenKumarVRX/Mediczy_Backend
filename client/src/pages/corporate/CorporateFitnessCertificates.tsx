@@ -32,6 +32,7 @@ const CorporateFitnessCertificates = () => {
   const { toast } = useToast();
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [downloadingZip, setDownloadingZip] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
@@ -101,6 +102,35 @@ const CorporateFitnessCertificates = () => {
       .catch(() => toast({ title: 'Download failed', variant: 'destructive' }));
   };
 
+  const downloadZip = async () => {
+    if (downloadingZip) return;
+    const ids = filtered.filter(c => selectedIds.size === 0 || selectedIds.has(c.id)).map(c => c.id);
+    if (!ids.length || ids.length > 100) {
+      toast({ title: 'Select between 1 and 100 certificates', variant: 'destructive' });
+      return;
+    }
+    setDownloadingZip(true);
+    try {
+      const response = await api.post('/v1/occupational-health/fitness-certificates/download-zip', { certificateIds: ids }, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([response.data], { type: 'application/zip' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'fitness-certificates.zip';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      let message = 'Please try again.';
+      try {
+        const body = error?.response?.data;
+        const details = body instanceof Blob ? JSON.parse(await body.text()) : body;
+        message = details?.message || message;
+      } catch { /* Preserve a useful fallback if the server did not send JSON. */ }
+      toast({ title: 'PDF download failed', description: message, variant: 'destructive' });
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
+
   return (
     <CorporateLayout title="Fitness Certificates" subtitle="Medical Examination Reports and Fitness Certificates for your employees">
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 p-4 sm:p-6 space-y-6">
@@ -111,7 +141,11 @@ const CorporateFitnessCertificates = () => {
           gradient="from-emerald-600 to-emerald-800"
           badge={{ text: `${certificates.length} issued`, variant: 'emerald' }}
           actions={
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={downloadZip} disabled={loading || downloadingZip || !filtered.length}>
+                {downloadingZip ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileDown className="h-4 w-4 mr-1" />}
+                {selectedIds.size ? 'Download selected PDFs' : 'Download PDFs'}
+              </Button>
               <Button variant="outline" size="sm" onClick={() => exportCSV(filtered)} title="Export all visible rows as CSV">
                 <FileDown className="h-4 w-4 mr-1" /> Export CSV
               </Button>

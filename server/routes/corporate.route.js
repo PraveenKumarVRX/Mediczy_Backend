@@ -1,5 +1,6 @@
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import express from 'express';
+import { corporateAccessAudit } from '../services/corporate-access-audit.service.js';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authCorporate } from '../middleware/corporate.middleware.js';
@@ -40,6 +41,7 @@ import {
 } from '../services/corporate-benefit-wallet.service.js';
 
 const router = express.Router();
+const accessAudit = corporateAccessAudit(postgresSequelize);
 
 const toCsv = (rows, headers) => {
   const escapeCell = (value) => {
@@ -1670,25 +1672,29 @@ router.put('/employees/:id', authCorporate, async (req, res) => {
   else if (appStatus === 'active') metadataPatch = { appAccessDisabled: false };
 
   try {
-    const [rows] = await postgresSequelize.query(
-      `UPDATE corporate_employees SET
-         business_unit=COALESCE(:businessUnit, business_unit),
-         department=COALESCE(:department, department),
-         designation=COALESCE(:designation, designation),
-         "joiningDate"=COALESCE(:joiningDate, "joiningDate"),
-         metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
-         "updatedAt"=NOW()
-       WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING *`,
-      {
-        replacements: {
-          corporateId, id,
-          businessUnit: businessUnit || null, department: department || null, designation: designation || null, joiningDate: joiningDate || null,
-          metadataPatch: metadataPatch ? JSON.stringify(metadataPatch) : null,
-        },
-      }
-    );
-    if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
-    return res.json({ success: true, data: { employee: { ...rows[0], businessUnit: rows[0].business_unit || businessUnit || '', ...(req.body || {}) } } });
+    const outcome = await postgresSequelize.transaction(async (transaction) => {
+      const [rows] = await postgresSequelize.query(
+        `UPDATE corporate_employees SET
+           business_unit=COALESCE(:businessUnit, business_unit),
+           department=COALESCE(:department, department),
+           designation=COALESCE(:designation, designation),
+           "joiningDate"=COALESCE(:joiningDate, "joiningDate"),
+           metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
+           "updatedAt"=NOW()
+         WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING *`,
+        {
+          transaction, replacements: {
+            corporateId, id,
+            businessUnit: businessUnit || null, department: department || null, designation: designation || null, joiningDate: joiningDate || null,
+            metadataPatch: metadataPatch ? JSON.stringify(metadataPatch) : null,
+          },
+        }
+      );
+      if (!rows.length) return { statusCode: 404, body: { success: false, message: 'Employee not found' } };
+      await accessAudit.record(req, { resourceId: `employee:${id}`, title: 'Employee profile and app access', action: metadataPatch ? (appStatus === 'inactive' ? 'disable_app' : 'enable_app') : 'update' }, transaction);
+      return { statusCode: 200, body: { success: true, data: { employee: { ...rows[0], businessUnit: rows[0].business_unit || businessUnit || '', ...(req.body || {}) } } } };
+    });
+    return res.status(outcome.statusCode).json(outcome.body);
   } catch (err) {
     console.error('[corporate] PUT /employees error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update employee' });
@@ -1702,17 +1708,21 @@ router.delete('/employees/:id', authCorporate, async (req, res) => {
   const metadataPatch = exitReason ? JSON.stringify({ exitReason }) : null;
 
   try {
-    const [rows] = await postgresSequelize.query(
-      `UPDATE corporate_employees SET
-         "isActive"=false,
-         "exitDate"=COALESCE(:exitDate::date, "exitDate", CURRENT_DATE),
-         metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
-         "updatedAt"=NOW()
-       WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id`,
-      { replacements: { corporateId, id, exitDate: exitDate || null, metadataPatch } }
-    );
-    if (!rows.length) return res.status(404).json({ success: false, message: 'Employee not found' });
-    return res.json({ success: true });
+    const outcome = await postgresSequelize.transaction(async (transaction) => {
+      const [rows] = await postgresSequelize.query(
+        `UPDATE corporate_employees SET
+           "isActive"=false,
+           "exitDate"=COALESCE(:exitDate::date, "exitDate", CURRENT_DATE),
+           metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
+           "updatedAt"=NOW()
+         WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id`,
+        { transaction, replacements: { corporateId, id, exitDate: exitDate || null, metadataPatch } }
+      );
+      if (!rows.length) return { statusCode: 404, body: { success: false, message: 'Employee not found' } };
+      await accessAudit.record(req, { resourceId: `employee:${id}`, title: 'Employee offboarding', action: 'deactivate' }, transaction);
+      return { statusCode: 200, body: { success: true } };
+    });
+    return res.status(outcome.statusCode).json(outcome.body);
   } catch (err) {
     console.error('[corporate] DELETE /employees error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to delete employee' });
@@ -2184,6 +2194,8 @@ router.get('/reports/:id/preview', authCorporate, async (req, res) => {
 });
 
 router.get('/reports/:id/download', authCorporate, async (req, res) => {
+  try {
+  res.setHeader('Cache-Control', 'no-store');
   const corporateId = resolveCorporateIdFromUser(req.user);
   const { id } = req.params;
   const [rows] = await postgresSequelize.query(
@@ -2215,6 +2227,11 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
          FROM insurance_claims ic
          JOIN user_associations ua ON ua."userId" = ic.patient_id
         WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
+          AND EXISTS (SELECT 1 FROM corporate_employees ce
+            JOIN corporate_employee_consents consent ON consent.corporate_id = ce.corporate_id
+              AND consent.employee_id = ce."employeeId" AND consent.consent_type = 'health_data'
+              AND consent.granted = true AND consent.revoked_at IS NULL
+            WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce."userId" = ic.patient_id)
         ORDER BY ic.submitted_date DESC`,
       { replacements: { corporateId } }
     );
@@ -2227,6 +2244,11 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
          JOIN user_associations ua ON ua."userId" = r.patient_id
          JOIN users u ON u.id = r.patient_id
         WHERE ua."entityId" = :corporateId AND ua."entityType" = 'corporate'
+          AND EXISTS (SELECT 1 FROM corporate_employees ce
+            JOIN corporate_employee_consents consent ON consent.corporate_id = ce.corporate_id
+              AND consent.employee_id = ce."employeeId" AND consent.consent_type = 'health_data'
+              AND consent.granted = true AND consent.revoked_at IS NULL
+            WHERE ce.corporate_id = :corporateId AND ce."isActive" = true AND ce."userId" = r.patient_id)
         ORDER BY r.created_at DESC`,
       { replacements: { corporateId } }
     );
@@ -2243,6 +2265,7 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
     reportHeaders = ['employeeId', 'department', 'designation', 'firstName', 'lastName', 'email'];
   }
 
+  await accessAudit.record(req, { resourceId: report.id, title: report.title, action: 'download' });
   const format = String(req.query.format || report.format || 'csv').toLowerCase();
 
   if (format === 'excel') {
@@ -2282,6 +2305,11 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename=RPT${report.id}.csv`);
   return res.status(200).send(csv);
+  } catch (error) {
+    console.error('[corporate] report export failed:', error.message);
+    if (!res.headersSent) return res.status(500).json({ success: false, message: 'Report could not be downloaded' });
+    res.destroy();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -2298,6 +2326,8 @@ router.put('/risk-monitor/alerts', authCorporate, async (req, res) => {
 });
 
 router.get('/risk-monitor/export', authCorporate, async (req, res) => {
+  try {
+  res.setHeader('Cache-Control', 'no-store');
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   let rows = [];
   if (corporateId) {
@@ -2315,15 +2345,24 @@ router.get('/risk-monitor/export', authCorporate, async (req, res) => {
           WHERE patient_id = ce."userId" ORDER BY created_at DESC LIMIT 1
        ) r ON true
        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true
+         AND EXISTS (SELECT 1 FROM corporate_employee_consents consent
+           WHERE consent.corporate_id = ce.corporate_id AND consent.employee_id = ce."employeeId"
+             AND consent.consent_type = 'health_data' AND consent.granted = true AND consent.revoked_at IS NULL)
        ORDER BY ce."createdAt" DESC`,
       { replacements: { corporateId } }
     );
     rows = dbRows;
   }
+  await accessAudit.record(req, { resourceId: 'risk-monitor', title: 'Employee risk export', action: 'export' });
   const csv = toCsv(rows, ['employeeId', 'name', 'department', 'healthStatus', 'lastCheckup']);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename=risk-monitor.csv');
   return res.status(200).send(csv);
+  } catch (error) {
+    console.error('[corporate] report export failed:', error.message);
+    if (!res.headersSent) return res.status(500).json({ success: false, message: 'Report could not be downloaded' });
+    res.destroy();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -3921,9 +3960,10 @@ function normalizeHealthRecord(row) {
   };
 }
 
-async function buildEmployeeHealthRecordSheet(corporateId, employeeKey) {
+async function buildEmployeeHealthRecordSheet(corporateId, employeeKey, req) {
   const employee = await resolveCorporateEmployee(corporateId, employeeKey);
   if (!employee) return null;
+  await accessAudit.requireHealthConsent(req, employee);
 
   const records = employee.userId ? await postgresSequelize.query(
     `SELECT
@@ -4006,10 +4046,13 @@ router.get('/employees/:id/health-records', authCorporate, async (req, res) => {
   try {
     const corporateId = resolveCorporateIdFromUser(req.user);
     if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
-    const sheet = await buildEmployeeHealthRecordSheet(corporateId, req.params.id);
+    const sheet = await buildEmployeeHealthRecordSheet(corporateId, req.params.id, req);
     if (!sheet) return res.status(404).json({ success: false, message: 'Employee not found' });
+    await accessAudit.record(req, { resourceId: `employee:${sheet.employee.employeeId}`, title: 'Employee health records', action: 'view' });
+    res.setHeader('Cache-Control', 'no-store');
     return res.json({ success: true, data: sheet });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, code: error.code, message: error.message });
     console.error('[corporate] GET employee health records error:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch employee health records' });
   }
@@ -4017,9 +4060,10 @@ router.get('/employees/:id/health-records', authCorporate, async (req, res) => {
 
 router.get('/employees/:id/health-records/export', authCorporate, async (req, res) => {
   try {
-    const corporateId = resolveCorporateIdFromUser(req.user);
+    res.setHeader('Cache-Control', 'no-store');
+  const corporateId = resolveCorporateIdFromUser(req.user);
     if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
-    const sheet = await buildEmployeeHealthRecordSheet(corporateId, req.params.id);
+    const sheet = await buildEmployeeHealthRecordSheet(corporateId, req.params.id, req);
     if (!sheet) return res.status(404).json({ success: false, message: 'Employee not found' });
 
     const rows = sheet.allRecords.map((record) => ({
@@ -4057,9 +4101,11 @@ router.get('/employees/:id/health-records/export', authCorporate, async (req, re
     ]);
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    await accessAudit.record(req, { resourceId: `employee:${sheet.employee.employeeId}`, title: 'Employee health records', action: 'export' });
     res.setHeader('Content-Disposition', `attachment; filename=${sheet.employee.employeeId || req.params.id}-health-records.csv`);
     return res.status(200).send(csv);
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, code: error.code, message: error.message });
     console.error('[corporate] export employee health records error:', error);
     return res.status(500).json({ success: false, message: 'Failed to export employee health records' });
   }
@@ -4168,23 +4214,33 @@ router.post('/consent/record', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.status(403).json({ success: false, message: 'No corporate context' });
   const { employeeId, granted, notes } = req.body || {};
+  if (typeof granted !== 'boolean') return res.status(400).json({ success: false, message: 'granted must be a boolean' });
   if (!employeeId) return res.status(400).json({ success: false, message: 'employeeId required' });
   try {
-    await postgresSequelize.query(
-      `INSERT INTO corporate_employee_consents (corporate_id, employee_id, consent_type, granted, granted_at, revoked_at, notes, created_at, updated_at)
-       VALUES (:corporateId, :employeeId, 'health_data', :granted,
-               CASE WHEN :granted THEN NOW() ELSE NULL END,
-               CASE WHEN NOT :granted THEN NOW() ELSE NULL END,
-               :notes, NOW(), NOW())
-       ON CONFLICT (corporate_id, employee_id, consent_type) DO UPDATE
-         SET granted = EXCLUDED.granted,
-             granted_at = CASE WHEN EXCLUDED.granted THEN NOW() ELSE corporate_employee_consents.granted_at END,
-             revoked_at = CASE WHEN NOT EXCLUDED.granted THEN NOW() ELSE NULL END,
-             notes = COALESCE(EXCLUDED.notes, corporate_employee_consents.notes),
-             updated_at = NOW()`,
-      { replacements: { corporateId, employeeId, granted: !!granted, notes: notes || null } }
-    );
-    return res.json({ success: true });
+    const outcome = await postgresSequelize.transaction(async (transaction) => {
+      const [employees] = await postgresSequelize.query(
+        `SELECT id FROM corporate_employees WHERE corporate_id=:corporateId AND "employeeId"=:employeeId AND "isActive"=true`,
+        { transaction, replacements: { corporateId, employeeId } }
+      );
+      if (!employees.length) return { statusCode: 404, body: { success: false, message: 'Employee not found' } };
+      await postgresSequelize.query(
+        `INSERT INTO corporate_employee_consents (corporate_id, employee_id, consent_type, granted, granted_at, revoked_at, notes, created_at, updated_at)
+         VALUES (:corporateId, :employeeId, 'health_data', :granted,
+                 CASE WHEN :granted THEN NOW() ELSE NULL END,
+                 CASE WHEN NOT :granted THEN NOW() ELSE NULL END,
+                 :notes, NOW(), NOW())
+         ON CONFLICT (corporate_id, employee_id, consent_type) DO UPDATE
+           SET granted = EXCLUDED.granted,
+               granted_at = CASE WHEN EXCLUDED.granted THEN NOW() ELSE corporate_employee_consents.granted_at END,
+               revoked_at = CASE WHEN NOT EXCLUDED.granted THEN NOW() ELSE NULL END,
+               notes = COALESCE(EXCLUDED.notes, corporate_employee_consents.notes),
+               updated_at = NOW()`,
+        { transaction, replacements: { corporateId, employeeId, granted: !!granted, notes: notes || null } }
+      );
+      await accessAudit.record(req, { resourceId: `employee:${employeeId}`, title: 'Health-data consent', action: granted ? 'consent_grant' : 'consent_revoke' }, transaction);
+      return { statusCode: 200, body: { success: true } };
+    });
+    return res.status(outcome.statusCode).json(outcome.body);
   } catch (err) {
     console.error('[corporate] consent record error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to record consent' });
@@ -4219,8 +4275,13 @@ router.post('/consent/bulk-request', authCorporate, async (req, res) => {
 router.get('/audit-log', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
   if (!corporateId) return res.json({ success: true, data: { entries: [] } });
-  const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
-  const offset = parseInt(req.query.offset || '0', 10);
+  const parsedLimit = Number(req.query.limit ?? 100);
+  const parsedOffset = Number(req.query.offset ?? 0);
+  if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || !Number.isInteger(parsedOffset) || parsedOffset < 0) {
+    return res.status(400).json({ success: false, message: 'Invalid audit pagination' });
+  }
+  const limit = Math.min(parsedLimit, 500);
+  const offset = parsedOffset;
   try {
     const [rows] = await postgresSequelize.query(
       `SELECT id, report_id AS "reportId", report_title AS "reportTitle",
@@ -4243,30 +4304,10 @@ router.get('/audit-log', authCorporate, async (req, res) => {
   }
 });
 
-// Inject audit logging into the existing download route by patching the
-// response after the existing handler fires a download. Rather than rewriting
-// the handler we add a thin post-download logging route that the client calls
-// immediately after a successful download.
-router.post('/reports/:id/log-access', authCorporate, async (req, res) => {
-  const corporateId = req.user?.corporateId || req.user?.organization_id;
-  if (!corporateId) return res.json({ success: true });
-  const { id } = req.params;
-  const { action = 'download', reportTitle } = req.body || {};
-  const user = req.user;
-  const name = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.email || 'HR';
-  try {
-    await postgresSequelize.query(
-      `INSERT INTO corporate_report_access_log
-         (corporate_id, report_id, report_title, accessed_by_type, accessed_by_user_id, accessed_by_name, action, ip_address, accessed_at)
-       VALUES (:corporateId, :reportId, :reportTitle, 'hr', :userId, :name, :action, :ip, NOW())`,
-      { replacements: { corporateId, reportId: id, reportTitle: reportTitle || null, userId: user?.id || null, name, action, ip: req.ip || null } }
-    );
-    return res.json({ success: true });
-  } catch (err) {
-    // Non-fatal — don't block the UI if audit logging fails
-    console.warn('[corporate] audit log insert warning:', err.message);
-    return res.json({ success: true });
-  }
+// Compatibility for cached clients. Access is recorded by the actual server
+// operation; client claims cannot create or duplicate audit evidence.
+router.post('/reports/:id/log-access', authCorporate, (req, res) => {
+  return res.json({ success: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -4423,7 +4464,11 @@ router.get('/ahc/batches/:id/enrollments', authCorporate, async (req, res) => {
                        e.employee_name, e.employee_id) AS "employeeName",
               COALESCE(NULLIF(ce.department, ''), NULLIF(e.department, ''), 'General') AS department,
               e.status, e.booked_date AS "bookedDate", e.booked_slot AS "bookedSlot",
-              e.report_ready AS "reportReady", e.report_url AS "reportUrl",
+              e.report_ready AS "reportReady",
+              CASE WHEN EXISTS (SELECT 1 FROM corporate_employee_consents consent
+                WHERE consent.corporate_id=e.corporate_id AND consent.employee_id=e.employee_id
+                  AND consent.consent_type='health_data' AND consent.granted=true AND consent.revoked_at IS NULL)
+                THEN e.report_url ELSE NULL END AS "reportUrl",
               e.reminder_sent_at AS "reminderSentAt", e.notes,
               COALESCE(NULLIF(TRIM(CONCAT_WS(' ', u."firstName", u."lastName")), ''),
                        NULLIF(TRIM(CONCAT_WS(' ', ce.metadata->>'firstName', ce.metadata->>'lastName')), ''),
@@ -4450,54 +4495,58 @@ router.post('/ahc/batches/:id/enroll-all', authCorporate, async (req, res) => {
   const { id } = req.params;
   const { departments } = req.body || {};  // optional: filter by department
   try {
-    // Verify the batch belongs to this corporate
-    const [batchRows] = await postgresSequelize.query(
-      `SELECT id FROM corporate_ahc_batches WHERE id = :id AND corporate_id = :corporateId`,
-      { replacements: { id, corporateId } }
-    );
-    if (!batchRows[0]) return res.status(404).json({ success: false, message: 'Batch not found' });
+    const outcome = await postgresSequelize.transaction(async (transaction) => {
+      // Verify the batch belongs to this corporate
+      const [batchRows] = await postgresSequelize.query(
+        `SELECT id FROM corporate_ahc_batches WHERE id = :id AND corporate_id = :corporateId`,
+        { transaction, replacements: { id, corporateId } }
+      );
+      if (!batchRows[0]) return { statusCode: 404, body: { success: false, message: 'Batch not found' } };
 
-    let deptFilter = '';
-    const replacements = { id, corporateId };
-    if (Array.isArray(departments) && departments.length) {
-      deptFilter = `AND ce.department = ANY(ARRAY[:departments])`;
-      replacements.departments = departments;
-    }
+      let deptFilter = '';
+      const replacements = { id, corporateId };
+      if (Array.isArray(departments) && departments.length) {
+        deptFilter = `AND ce.department = ANY(ARRAY[:departments])`;
+        replacements.departments = departments;
+      }
 
-    // Age eligibility from Settings > Eligibility (minAge/maxAge). Batch
-    // names implying an age cutoff (e.g. "Age 40+") previously enrolled
-    // everyone regardless - no age predicate existed anywhere. An employee
-    // with no known date of birth (true for most roster-only employees,
-    // which have no DOB column at all) is still included rather than
-    // silently excluded, since we can't evaluate the rule for them.
-    const [[settingsRow]] = await postgresSequelize.query(
-      `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
-      { replacements: { corporateId } }
-    );
-    const elig = settingsRow?.settings?.eligibility || {};
-    const minAge = Number(elig.minAge) || 0;
-    const maxAge = Number(elig.maxAge) || 0;
-    let ageFilter = '';
-    if (minAge > 0) {
-      ageFilter += ` AND (u."dateOfBirth" IS NULL OR DATE_PART('year', AGE(u."dateOfBirth")) >= ${minAge})`;
-    }
-    if (maxAge > 0) {
-      ageFilter += ` AND (u."dateOfBirth" IS NULL OR DATE_PART('year', AGE(u."dateOfBirth")) <= ${maxAge})`;
-    }
+      // Age eligibility from Settings > Eligibility (minAge/maxAge). Batch
+      // names implying an age cutoff (e.g. "Age 40+") previously enrolled
+      // everyone regardless - no age predicate existed anywhere. An employee
+      // with no known date of birth (true for most roster-only employees,
+      // which have no DOB column at all) is still included rather than
+      // silently excluded, since we can't evaluate the rule for them.
+      const [[settingsRow]] = await postgresSequelize.query(
+        `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
+        { transaction, replacements: { corporateId } }
+      );
+      const elig = settingsRow?.settings?.eligibility || {};
+      const minAge = Number(elig.minAge) || 0;
+      const maxAge = Number(elig.maxAge) || 0;
+      let ageFilter = '';
+      if (minAge > 0) {
+        ageFilter += ` AND (u."dateOfBirth" IS NULL OR DATE_PART('year', AGE(u."dateOfBirth")) >= ${minAge})`;
+      }
+      if (maxAge > 0) {
+        ageFilter += ` AND (u."dateOfBirth" IS NULL OR DATE_PART('year', AGE(u."dateOfBirth")) <= ${maxAge})`;
+      }
 
-    const [result] = await postgresSequelize.query(
-      `INSERT INTO corporate_ahc_enrollments (batch_id, corporate_id, employee_id, employee_name, department, user_id, status, created_at, updated_at)
-       SELECT :id, :corporateId, ce."employeeId",
-              TRIM(COALESCE(u."firstName" || ' ' || u."lastName", (ce.metadata->>'firstName')::text || ' ' || (ce.metadata->>'lastName')::text, ce."employeeId")),
-              ce.department, ce."userId", 'pending', NOW(), NOW()
-         FROM corporate_employees ce
-         LEFT JOIN users u ON u.id = ce."userId"
-        WHERE ce.corporate_id = :corporateId AND ce."isActive" = true ${deptFilter} ${ageFilter}
-       ON CONFLICT (batch_id, employee_id) DO NOTHING
-       RETURNING id`,
-      { replacements }
-    );
-    return res.json({ success: true, data: { enrolled: result.length, message: `${result.length} employees enrolled` } });
+      const [result] = await postgresSequelize.query(
+        `INSERT INTO corporate_ahc_enrollments (batch_id, corporate_id, employee_id, employee_name, department, user_id, status, created_at, updated_at)
+         SELECT :id, :corporateId, ce."employeeId",
+                TRIM(COALESCE(u."firstName" || ' ' || u."lastName", (ce.metadata->>'firstName')::text || ' ' || (ce.metadata->>'lastName')::text, ce."employeeId")),
+                ce.department, ce."userId", 'pending', NOW(), NOW()
+           FROM corporate_employees ce
+           LEFT JOIN users u ON u.id = ce."userId"
+          WHERE ce.corporate_id = :corporateId AND ce."isActive" = true ${deptFilter} ${ageFilter}
+         ON CONFLICT (batch_id, employee_id) DO NOTHING
+         RETURNING id`,
+        { transaction, replacements }
+      );
+      await accessAudit.record(req, { resourceId: `ahc:${id}`, title: `${result.length} employees enrolled`, action: 'enroll' }, transaction);
+      return { statusCode: 200, body: { success: true, data: { enrolled: result.length, message: `${result.length} employees enrolled` } } };
+    });
+    return res.status(outcome.statusCode).json(outcome.body);
   } catch (err) {
     console.error('[corporate] ahc enroll-all error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to enroll employees' });
@@ -4572,13 +4621,19 @@ router.patch('/employees/bulk-status', authCorporate, async (req, res) => {
   if (!Array.isArray(employeeIds) || !employeeIds.length) return res.status(400).json({ success: false, message: 'employeeIds required' });
   if (!['activate', 'deactivate'].includes(action)) return res.status(400).json({ success: false, message: 'action must be activate or deactivate' });
   try {
-    const [result] = await postgresSequelize.query(
-      `UPDATE corporate_employees SET "isActive" = :active, "updatedAt" = NOW()
-       WHERE corporate_id = :corporateId AND "employeeId" IN (:ids)
-       RETURNING "employeeId"`,
-      { replacements: { active: action === 'activate', corporateId, ids: employeeIds } }
-    );
-    return res.json({ success: true, data: { updated: result.length, action } });
+    const outcome = await postgresSequelize.transaction(async (transaction) => {
+      const [result] = await postgresSequelize.query(
+        `UPDATE corporate_employees SET "isActive" = :active, "updatedAt" = NOW()
+         WHERE corporate_id = :corporateId AND "employeeId" IN (:ids)
+         RETURNING "employeeId"`,
+        { transaction, replacements: { active: action === 'activate', corporateId, ids: employeeIds } }
+      );
+      for (const employee of result) {
+        await accessAudit.record(req, { resourceId: `employee:${employee.employeeId}`, title: 'Employee status', action }, transaction);
+      }
+      return { statusCode: 200, body: { success: true, data: { updated: result.length, action } } };
+    });
+    return res.status(outcome.statusCode).json(outcome.body);
   } catch (err) {
     console.error('[corporate] bulk-status error:', err.message);
     return res.status(500).json({ success: false, message: 'Failed to update employees' });

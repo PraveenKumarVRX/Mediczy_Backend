@@ -327,3 +327,11 @@ export async function issueReturnToWorkClearance({
   );
   return result[0];
 }
+
+/** Fetch only requested certificates within the authenticated corporate. */
+export async function getCorporateCertificatesByIds(organizationId, ids) {
+  return sequelize.query(
+    `SELECT * FROM fitness_certificates WHERE organization_id = :organizationId AND id IN (:ids) ORDER BY id`,
+    { replacements: { organizationId, ids }, type: QueryTypes.SELECT }
+  );
+}
