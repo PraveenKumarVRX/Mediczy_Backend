@@ -1,3 +1,4 @@
+import CorporateCertificateUpload from "@/components/corporate/CorporateCertificateUpload";
 import { useEffect, useMemo, useState } from 'react';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
@@ -139,7 +140,7 @@ const CorporateFitnessCertificates = () => {
           title="Fitness Certificates"
           description="Every MER / General Fitness Certificate issued to an employee — from a camp, clinic visit, or your own OHC."
           gradient="from-emerald-600 to-emerald-800"
-          badge={{ text: `${certificates.length} issued`, variant: 'emerald' }}
+          badge={{ text: `${certificates.length} records`, variant: 'emerald' }}
           actions={
             <div className="flex items-center gap-2 flex-wrap">
               <Button variant="outline" size="sm" onClick={downloadZip} disabled={loading || downloadingZip || !filtered.length}>
@@ -158,6 +159,8 @@ const CorporateFitnessCertificates = () => {
             </div>
           }
         />
+
+        <CorporateCertificateUpload onUploaded={load} />
 
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />

@@ -43,6 +43,9 @@ const CorporateLogin = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
+  const ssoHandoff = new URLSearchParams(window.location.search).get("sso") === "complete";
+  const [ssoCompany,setSsoCompany] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [isPending, setIsPending] = useState(false);
 
@@ -70,7 +73,7 @@ const CorporateLogin = () => {
   }, [navigate]);
 
   const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
+    resolver: ssoHandoff ? undefined : zodResolver(formSchema),
     defaultValues: { identifier: "", password: "" },
   });
 
@@ -79,9 +82,9 @@ const CorporateLogin = () => {
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     // The server validator accepts `username` OR `email`; send whichever this is.
     const { identifier, password } = values;
-    const credentials = identifier.includes("@")
-      ? { email: identifier.toLowerCase(), password }
-      : { username: identifier, password };
+    const credentials = ssoHandoff ? { sso: true, password: '', code: mfaCode || undefined } : identifier.includes("@")
+      ? { email: identifier.toLowerCase(), password, code: mfaCode || undefined }
+      : { username: identifier, password, code: mfaCode || undefined };
     loginMutation.mutate(
       { credentials, loginType: "corporate" },
       {
@@ -99,6 +102,7 @@ const CorporateLogin = () => {
                 type: data.corporate.packageType,
                 packageType: data.corporate.packageType,
                 role: data.user?.role,
+                corporateAccess: data.user?.corporateAccess,
               })
             );
           }
@@ -117,7 +121,7 @@ const CorporateLogin = () => {
           
           // The Chief Medical Officer's whole job is the OHC; land them there directly instead of
           // the general corporate dashboard they have no particular use for.
-          navigate(data?.user?.role === "corporate_cmo" ? "/corporate/ohc" : "/corporate/dashboard");
+          navigate(data?.user?.corporateAccess && (data.user.corporateAccess.level !== "staff" || ["departments","businessUnits","branches"].some(key=>data.user.corporateAccess[key]?.length)) ? "/corporate/assigned-employees" : data?.user?.role === "corporate_cmo" ? "/corporate/ohc" : "/corporate/dashboard");
         },
         onError: (error) => {
           if ((error as any)?.response?.data?.pending) { setIsPending(true); return; }
@@ -212,6 +216,8 @@ const CorporateLogin = () => {
               )}
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <div className="space-y-2"><label htmlFor="corporate-mfa-code" className="text-sm font-medium">Authenticator code (if enabled)</label><Input id="corporate-mfa-code" value={mfaCode} onChange={event=>setMfaCode(event.target.value.replace(/\D/g,'').slice(0,6))} autoComplete="one-time-code" inputMode="numeric" placeholder="6-digit code" /></div>
+                  {!ssoHandoff && <>
                   <FormField
                     control={form.control}
                     name="identifier"
@@ -263,6 +269,7 @@ const CorporateLogin = () => {
                     )}
                   />
 
+                  </>}
                   <Button
                     type="submit"
                     className="w-full"
@@ -273,6 +280,7 @@ const CorporateLogin = () => {
                 </form>
               </Form>
 
+              {!ssoHandoff && <div className="space-y-2 mt-4"><label htmlFor="sso-company" className="text-sm font-medium">Company account email or corporate code for SSO</label><Input id="sso-company" value={ssoCompany} onChange={event=>setSsoCompany(event.target.value)} /><Button type="button" variant="outline" className="w-full" disabled={!ssoCompany.trim()} onClick={()=>window.location.assign('/api/corporate/security/sso/start?company='+encodeURIComponent(ssoCompany.trim()))}>Sign in with company SSO</Button></div>}
               <Separator className="my-6" />
 
               <div className="space-y-3 text-sm text-muted-foreground">

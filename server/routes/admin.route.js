@@ -1,3 +1,4 @@
+import { corporateDisplayName } from '../utils/corporate-data-quality.js';
 import express from 'express';
 import { body } from 'express-validator';
 import { listCronLeases } from '../services/cron-lease.service.js';
@@ -1279,7 +1280,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       RETURNING id, uid, unique_id, "companyName", email, status
     `, {
       replacements: {
-        companyName,
+        companyName: corporateDisplayName(companyName),
         contactPerson: contactPerson || companyName,
         email: email.toLowerCase(),
         phoneNumber: phoneNumber || '',

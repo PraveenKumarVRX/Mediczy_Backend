@@ -1,3 +1,5 @@
+import CorporateDoctorAvailability from "@/components/corporate/CorporateDoctorAvailability";
+import { Button } from "@/components/ui/button";
 import React, { useEffect, useState } from 'react';
 import { Stethoscope, Search, Star } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +23,7 @@ interface Doctor {
 
 const CorporateDoctorPartners: React.FC = () => {
   const { toast } = useToast();
+  const [selectedDoctor,setSelectedDoctor] = useState<Doctor | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [search, setSearch] = useState('');
   const [specialization, setSpecialization] = useState('');
@@ -96,6 +99,7 @@ const CorporateDoctorPartners: React.FC = () => {
                     </span>
                     {doc.fee != null && <span className="text-slate-500">₹{doc.fee} / consult</span>}
                   </div>
+                  <Button size="sm" variant="outline" onClick={()=>setSelectedDoctor(doc)}>Scheduling windows</Button>
                   {doc.registrationNumber && (
                     <p className="text-xs text-slate-400">Reg. No: {doc.registrationNumber}</p>
                   )}
@@ -105,6 +109,7 @@ const CorporateDoctorPartners: React.FC = () => {
           </div>
         )}
       </div>
+      <CorporateDoctorAvailability doctor={selectedDoctor} onClose={()=>setSelectedDoctor(null)} />
     </CorporateLayout>
   );
 };

@@ -201,13 +201,10 @@ const CorporateReports: React.FC = () => {
         params: { format: report.format },
       });
 
-      // The backend only ever sends a real PDF for format=PDF; both 'Excel'
-      // and 'CSV' are actually CSV content server-side (see corporate.route.js
-      // report-download route) - the ext/mime here reflect what's really sent,
-      // not the report's cosmetic format label.
-      const isPdf = report.format === 'PDF';
-      const ext = isPdf ? 'pdf' : 'csv';
-      const blob = new Blob([response.data], { type: isPdf ? 'application/pdf' : 'text/csv' });
+      const format = String(report.format).toLowerCase();
+      const ext = format === 'pdf' ? 'pdf' : format === 'excel' ? 'xlsx' : 'csv';
+      const mime = response.headers['content-type'] || (ext === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : ext === 'pdf' ? 'application/pdf' : 'text/csv');
+      const blob = new Blob([response.data], { type: mime });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

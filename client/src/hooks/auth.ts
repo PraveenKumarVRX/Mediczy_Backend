@@ -303,7 +303,7 @@ const login = async ({ credentials, loginType }: { credentials: any; loginType: 
     throw new Error('loginType is required for login.');
   }
 
-  const endpoint = LOGIN_ENDPOINTS[loginType];
+  const endpoint = loginType === "corporate" && credentials.sso ? "/corporate/security/sso/complete" : LOGIN_ENDPOINTS[loginType];
   if (!endpoint) {
     throw new Error(`Unsupported loginType: ${loginType}`);
   }
@@ -367,7 +367,7 @@ export const useLogin = () => {
     {
       // Corporate HR signs in with a username rather than an email (users.email is UNIQUE, so an
       // HR person's work address cannot also back their employee account), so either is accepted.
-      credentials: { email?: string; username?: string; password: string };
+      credentials: { email?: string; username?: string; password: string; code?: string; sso?: boolean };
       loginType: ValidLoginType;
     }
   >({

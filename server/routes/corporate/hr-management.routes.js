@@ -65,6 +65,7 @@ router.get('/team', authCorporate, wrap(async (req) => withDirectLoginEntry(req,
 
 router.post('/team', authCorporate, wrap((req) => hrManagement.inviteHrStaff({
   corporateId: corporateId(req),
+  directCorporateLogin: req.user?.role === 'corporate',
   invitedByUserId: actingUserId(req),
   firstName: req.body.firstName,
   lastName: req.body.lastName,
@@ -76,12 +77,14 @@ router.post('/team', authCorporate, wrap((req) => hrManagement.inviteHrStaff({
 
 router.delete('/team/:userId', authCorporate, wrap((req) => hrManagement.removeHrStaff({
   corporateId: corporateId(req),
+  directCorporateLogin: req.user?.role === 'corporate',
   requestedByUserId: actingUserId(req),
   targetUserId: req.params.userId,
 })));
 
 router.post('/team/:userId/promote', authCorporate, wrap((req) => hrManagement.transferSuperHr({
   corporateId: corporateId(req),
+  directCorporateLogin: req.user?.role === 'corporate',
   requestedByUserId: actingUserId(req),
   newAdminUserId: req.params.userId,
 })));

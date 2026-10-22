@@ -1,3 +1,4 @@
+import { corporateMfaLogin } from '../services/corporate-mfa.service.js';
 import { validationResult } from 'express-validator';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
@@ -168,9 +169,11 @@ export const corporateLogin = async (req, res) => {
 
         // Built inline rather than via User.prototype.generateAuthToken() — that method
         // currently throws (JWT_CONFIG import-cycle issue), unrelated to this fallback.
-        const jwtLib = (await import('jsonwebtoken')).default;
-        const token = jwtLib.sign(
+        const mfaClaims = await corporateMfaLogin({ role: hrUser.role, id: hrUser.id, userId: hrUser.id, corporateId: scopedCorporate.id }, req.body.code, req.id);
+        const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
+        const {accessToken:token,refreshToken} = await issuePortalTokenPair(
           {
+            ...mfaClaims,
             id: hrUser.id,
             userId: hrUser.id,
             corporateId: scopedCorporate.id,
@@ -181,14 +184,14 @@ export const corporateLogin = async (req, res) => {
             organization_type: hrUser.organization_type,
             tenant_id: hrUser.tenant_id,
           },
-          JWT_CONFIG.SECRET,
-          { expiresIn: process.env.JWT_ACCESS_TTL || '15m' },
+          {portal:'corporate',deviceFp:req.headers['x-device-fingerprint']||null},
         );
         await hrUser.update({ lastLoginAt: new Date() }).catch(() => {});
         await auditLoginAttempt(req, hrUser.id, loginIdentifier, true);
         return res.status(200).json({
           success: true,
           token,
+          refreshToken,
           user: {
             id: hrUser.id,
             email: hrUser.email,
@@ -197,6 +200,7 @@ export const corporateLogin = async (req, res) => {
             lastName: hrUser.lastName,
             role: hrUser.role,
             corporateId: scopedCorporate.id,
+            corporateAccess: hrUser.metadata?.corporateAccess || null,
           },
           corporate: scopedCorporate,
         });
@@ -219,11 +223,14 @@ export const corporateLogin = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
+    const mfaClaims = await corporateMfaLogin({ role: 'corporate', id: corporateRecord.id, corporateId: corporateRecord.id }, req.body.code, req.id);
+
     // Issue JTI-tracked token (enables revocation + device fingerprint)
     const { issuePortalTokenPair } = await import('../services/token-revocation.service.js');
     const deviceFp = req.headers['x-device-fingerprint'] || null;
     const { accessToken: token, refreshToken } = await issuePortalTokenPair(
       {
+        ...mfaClaims,
         id: corporateRecord.id,
         userId: corporateRecord.id,
         corporateId: corporateRecord.id,
@@ -254,6 +261,7 @@ export const corporateLogin = async (req, res) => {
       corporate: corporateRecord,
     });
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, code: error.code, message: error.message });
     console.error('Corporate login error:', error);
     return res.status(500).json({ success: false, message: 'Failed to login corporate user' });
   }

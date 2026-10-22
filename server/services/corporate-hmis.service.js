@@ -246,10 +246,11 @@ export async function issueFitnessCertificate(data) {
 }
 
 export async function getFitnessCertificatesByPatient(patientId, organizationId) {
-  return sequelize.query(
+  const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE patient_id = :patientId AND organization_id = :organizationId ORDER BY created_at DESC`,
     { replacements: { patientId, organizationId }, type: QueryTypes.SELECT }
   );
+  return rows.map(certificateListEntry);
 }
 
 export async function getFitnessCertificateById(id) {
@@ -284,18 +285,20 @@ export async function getFitnessCertificatesIssuedByClinicStaff(clinicStaffId, l
 
 /** Every certificate an employer's HR should be able to see, across all their employees. */
 export async function getFitnessCertificatesForOrganization(organizationId, limit = 200) {
-  return sequelize.query(
+  const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE organization_id = :organizationId ORDER BY created_at DESC LIMIT :limit`,
     { replacements: { organizationId, limit }, type: QueryTypes.SELECT }
   );
+  return rows.map(certificateListEntry);
 }
 
 /** An employee's own certificates, regardless of which employer/clinic issued them. */
 export async function getFitnessCertificatesForPatientOnly(patientId, limit = 100) {
-  return sequelize.query(
+  const rows = await sequelize.query(
     `SELECT * FROM fitness_certificates WHERE patient_id = :patientId ORDER BY created_at DESC LIMIT :limit`,
     { replacements: { patientId, limit }, type: QueryTypes.SELECT }
   );
+  return rows.map(certificateListEntry);
 }
 
 // ── Return-to-work clearance ──────────────────────────────────────────────────
@@ -334,4 +337,11 @@ export async function getCorporateCertificatesByIds(organizationId, ids) {
     `SELECT * FROM fitness_certificates WHERE organization_id = :organizationId AND id IN (:ids) ORDER BY id`,
     { replacements: { organizationId, ids }, type: QueryTypes.SELECT }
   );
+}
+
+/** Encryption storage metadata is for server-side retrieval only. */
+export function certificateListEntry(certificate) {
+  const data = certificate.certificate_data || {};
+  const { storage, uploadedBy, ...publicData } = data;
+  return { ...certificate, certificate_data: publicData };
 }

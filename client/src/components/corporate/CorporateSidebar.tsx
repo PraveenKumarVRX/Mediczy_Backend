@@ -59,6 +59,7 @@ const managementItems: SidebarItem[] = [
   { icon: ShieldCheck, label: "Fitness Certificates", href: "/corporate/fitness-certificates" },
   { icon: Stethoscope, label: "Occupational Health Clinic", href: "/corporate/ohc" },
   { icon: Stethoscope, label: "Doctor Partners", href: "/corporate/doctor-partners" },
+  { icon: TrendingUp, label: "Program Analytics", href: "/corporate/programs" },
   { icon: TrendingUp, label: "Reports", href: "/corporate/reports" },
   { icon: FileText, label: "Complaints", href: "/corporate/complaints" },
   { icon: Shield, label: "Compliance", href: "/corporate/compliance" },
@@ -74,6 +75,7 @@ const CorporateSidebar = ({ unreadCount = 0 }: { unreadCount?: number }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [restricted,setRestricted] = useState(false);
   const [corporateName, setCorporateName] = useState<string>('');
   // Wellness Calendar is a Team-configured plan feature (features.healthCalendar),
   // not universal -- default true to avoid hiding it for the common case while
@@ -91,6 +93,8 @@ const CorporateSidebar = ({ unreadCount = 0 }: { unreadCount?: number }) => {
       // ignore
     }
 
+    api.get('/corporate/access/me').then(response=>setRestricted(Boolean(response.data?.data?.restricted))).catch(()=>{});
+
     api.get('/corporate/my-benefits')
       .then((res) => {
         const platformFeatures = res.data?.data?.plan?.platformFeatures ?? res.data?.plan?.platformFeatures;
@@ -104,7 +108,7 @@ const CorporateSidebar = ({ unreadCount = 0 }: { unreadCount?: number }) => {
       });
   }, []);
 
-  const visibleMainNavItems = mainNavItems.filter(
+  const visibleMainNavItems = restricted ? [{ icon: Users, label: "Assigned Employees", href: "/corporate/assigned-employees" }] : mainNavItems.filter(
     (item) => item.href !== '/corporate/wellness-calendar' || hasHealthCalendar
   ).map(item => item.href === '/corporate/notifications' ? { ...item, badge: unreadCount || undefined } : item);
 
@@ -221,7 +225,7 @@ const CorporateSidebar = ({ unreadCount = 0 }: { unreadCount?: number }) => {
             </p>
           )}
           <div className="space-y-0.5">
-            {managementItems.map((item) => (
+            {(restricted ? managementItems.filter(item=>item.href==='/corporate/doctor-partners') : managementItems).map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
           </div>
@@ -235,7 +239,7 @@ const CorporateSidebar = ({ unreadCount = 0 }: { unreadCount?: number }) => {
             </p>
           )}
           <div className="space-y-0.5">
-            {systemItems.map((item) => (
+            {(restricted ? [] : systemItems).map((item) => (
               <NavItem key={item.href} item={item} />
             ))}
           </div>

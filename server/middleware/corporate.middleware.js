@@ -9,6 +9,11 @@
  */
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
+import User from '../models/postgres/user.model.postgres.js';
+import organizationUid from '../services/organization-uid.service.js';
+import { enforceCorporateAccess, normalizeCorporateAccess } from '../services/corporate-access-policy.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { requireCorporateMfa } from '../services/corporate-mfa.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { Corporate } from '../models/index.js';
 import { isTokenRevoked } from '../services/token-revocation.service.js';
@@ -87,6 +92,21 @@ export const authCorporate = async (req, res, next) => {
       });
     }
 
+    let actor = null;
+    if (isScopedHrUser) {
+      actor = await User.findByPk(decoded.userId || decoded.id);
+      if (!actor || actor.status !== 'active' || !['corporate_admin','hr_staff','corporate_cmo','corporate_ohc'].includes(actor.role)
+        || !await organizationUid.userBelongsToCorporate(actor, corporate.id)) {
+        return res.status(403).json({ success: false, message: 'Your corporate team access is no longer active' });
+      }
+    } else if (decoded.role !== 'corporate' || Number(decoded.id) !== Number(corporate.id)) {
+      return res.status(403).json({ success: false, message: 'Invalid corporate identity' });
+    }
+    const account = { id: corporate.id, corporateId: corporate.id, userId: actor?.id || corporate.id, role: actor?.role || 'corporate' };
+    await requireCorporateMfa(account, decoded);
+    req.corporateToken = decoded;
+    req.corporateAccess = actor?.metadata?.corporateAccess ? normalizeCorporateAccess(actor.metadata.corporateAccess) : null;
+
     req.corporateUser = {
       id: corporate.id,
       email: corporate.email,
@@ -100,15 +120,17 @@ export const authCorporate = async (req, res, next) => {
       id: corporate.id,
       corporateId: corporate.id,
       userId: decoded.userId || decoded.id || corporate.id,
-      email: corporate.email,
-      role: decoded.role || 'corporate',
+      email: actor?.email || corporate.email,
+      role: actor?.role || decoded.role || 'corporate',
       userType: 'corporate',
       organization_id: decoded.organization_id || decoded.organizationId || null,
       tenant_id: decoded.tenant_id || decoded.tenantId || null,
     };
     req.userRole = 'corporate';
+    await enforceCorporateAccess(req, postgresSequelize);
     next();
   } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, code: error.code, message: error.message });
     console.error('[authCorporate] error:', error.message);
     return res.status(500).json({ success: false, message: 'Authentication error' });
   }

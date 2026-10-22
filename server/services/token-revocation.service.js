@@ -27,70 +27,20 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 // Max active refresh tokens per user per device fingerprint (0 = unlimited)
 const MAX_TOKENS_PER_DEVICE = parseInt(process.env.MAX_REFRESH_TOKENS_PER_DEVICE || '5', 10);
 
-// ─── One-time table bootstrap ─────────────────────────────────────────────────
+// Migration-owned authentication storage. Never perform runtime DDL or issue
+// untracked credentials when its storage is unavailable.
 let _tableReady = false;
-let _unifiedTableReady = false;
 async function ensureTable() {
   if (_tableReady) return;
-  try {
-    await sharedPool.query(`
-      CREATE TABLE IF NOT EXISTS portal_refresh_tokens (
-        jti         UUID        PRIMARY KEY,
-        user_id     TEXT        NOT NULL,
-        portal      TEXT        NOT NULL,
-        device_fp   TEXT,
-        expires_at  TIMESTAMPTZ NOT NULL,
-        revoked     BOOLEAN     NOT NULL DEFAULT FALSE,
-        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_prt_user_portal ON portal_refresh_tokens (user_id, portal);
-      CREATE INDEX IF NOT EXISTS idx_prt_expires     ON portal_refresh_tokens (expires_at);
-      CREATE INDEX IF NOT EXISTS idx_prt_jti         ON portal_refresh_tokens (jti);
-    `);
-    _tableReady = true;
-  } catch (err) {
-    console.error('[token-revocation] table bootstrap error:', err.message);
+  const {rows}=await sharedPool.query(`SELECT table_name FROM information_schema.tables
+    WHERE table_schema=current_schema() AND table_name IN ('portal_refresh_tokens','api_v2_refresh_tokens')`);
+  const present=new Set(rows.map(row=>row.table_name));
+  if(!present.has('portal_refresh_tokens')||!present.has('api_v2_refresh_tokens')) {
+    throw Object.assign(new Error('Authentication storage is not migrated'),{code:'AUTH_SCHEMA_NOT_READY',status:503});
   }
+  _tableReady=true;
 }
-
-async function ensureUnifiedTable() {
-  if (_unifiedTableReady) return;
-  try {
-    await sharedPool.query(`
-      CREATE TABLE IF NOT EXISTS api_v2_refresh_tokens (
-        id             BIGSERIAL   PRIMARY KEY,
-        jti            UUID        NOT NULL UNIQUE,
-        user_id        INTEGER     NOT NULL,
-        role           VARCHAR(50) NOT NULL,
-        token_hash     VARCHAR(64) NOT NULL,
-        expires_at     TIMESTAMPTZ NOT NULL,
-        revoked        BOOLEAN     NOT NULL DEFAULT FALSE,
-        revoked_at     TIMESTAMPTZ,
-        replaced_by_jti UUID,
-        ip_address     TEXT,
-        user_agent     TEXT,
-        created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_user_role ON api_v2_refresh_tokens(user_id, role);
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_expires_at ON api_v2_refresh_tokens(expires_at);
-      CREATE INDEX IF NOT EXISTS idx_api_v2_refresh_tokens_revoked ON api_v2_refresh_tokens(revoked);
-    `);
-    _unifiedTableReady = true;
-  } catch (err) {
-    console.error('[token-revocation] unified table bootstrap error:', err.message);
-  }
-}
-
-// Bootstrap on module load (non-blocking).
-// If the pool has no password configured, ensureTable() will fail; we log a
-// warning so ops can see the issue rather than silently failing open.
-ensureTable().catch((err) => {
-  console.error(
-    '[token-revocation] WARN: Table bootstrap failed — isTokenRevoked() will ' +
-    'fail-open (return false) until DB is available. Cause:', err.message
-  );
-});
+const ensureUnifiedTable=ensureTable;
 
 // ─── Issue a token pair for a portal ─────────────────────────────────────────
 /**
@@ -105,6 +55,10 @@ ensureTable().catch((err) => {
  * @param {string}  [opts.refreshTtl='30d']
  * @returns {{ accessToken, refreshToken, jti }}
  */
+export const portalIdentityKey = (payload, portal) => portal === 'corporate'
+  ? `${payload.role === 'corporate' ? 'corporate' : 'corporate-user'}:${payload.id || payload.userId}`
+  : String(payload.id || payload.userId || payload.doctorId || payload.labId || '');
+
 export async function issuePortalTokenPair(payload, {
   portal,
   deviceFp = null,
@@ -115,7 +69,7 @@ export async function issuePortalTokenPair(payload, {
   await ensureUnifiedTable();
 
   const jti = randomUUID();
-  const userId = String(payload.id || payload.userId || payload.doctorId || payload.labId || '');
+  const userId = portalIdentityKey(payload, portal);
 
   const accessToken = jwt.sign(
     { ...payload, jti, tokenType: 'access' },
@@ -127,7 +81,7 @@ export async function issuePortalTokenPair(payload, {
   const expiresAt = new Date(Date.now() + refreshTtlMs);
 
   const refreshToken = jwt.sign(
-    { jti, userId, portal, tokenType: 'refresh' },
+    { jti, userId, portal, tokenType: 'refresh', ...(portal === 'corporate' ? { accountId: payload.id || payload.userId, accountType: payload.role === 'corporate' ? 'corporate' : 'user', corporateId: payload.corporateId } : {}), ...(portal === 'corporate' && payload.mfaVerified ? { mfaVerified: true, mfaFactorId: payload.mfaFactorId, mfaAt: payload.mfaAt } : {}) },
     JWT_CONFIG.SECRET,
     { expiresIn: refreshTtl }
   );
@@ -158,7 +112,7 @@ export async function issuePortalTokenPair(payload, {
     }
   } catch (err) {
     console.error('[token-revocation] insert error:', err.message);
-    // Non-fatal — token still works, revocation just won't be server-tracked
+    throw Object.assign(new Error('Authentication session could not be persisted'), {status:503, code:'AUTH_SESSION_UNAVAILABLE'});
   }
 
   return { accessToken, refreshToken, jti };
@@ -218,6 +172,9 @@ export async function rotatePortalRefreshToken(refreshToken, {
       return null;
     }
 
+    if (portal === 'corporate' && decoded.mfaVerified && portalIdentityKey(nextPayload, portal) === userId) {
+      Object.assign(nextPayload, { mfaVerified: true, mfaFactorId: decoded.mfaFactorId, mfaAt: decoded.mfaAt });
+    }
     await revokeToken(jti);
     const rotated = await issuePortalTokenPair(nextPayload, { portal, deviceFp, accessTtl });
     return rotated;
@@ -389,9 +346,9 @@ export async function revokeAllForUser(userId, portal = null) {
  */
 export async function isTokenRevoked(jti) {
   if (!jti) return false;
-  await ensureTable();
-  await ensureUnifiedTable();
   try {
+    await ensureTable();
+    await ensureUnifiedTable();
     // Check unified table first (Team/CRM/Hospital/API-v2)
     const apiV2 = await sharedPool.query(
       `SELECT revoked FROM api_v2_refresh_tokens WHERE jti = $1 LIMIT 1`,
@@ -423,7 +380,7 @@ export async function isTokenRevoked(jti) {
     return false;
   } catch (err) {
     console.error('[token-revocation] isTokenRevoked error:', err.message);
-    return false; // Fail open — don't break every request on DB hiccup
+    return true; // Deny requests when revocation cannot be checked
   }
 }
 

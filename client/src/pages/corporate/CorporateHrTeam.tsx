@@ -1,3 +1,4 @@
+import CorporateAccessManagement from "@/components/corporate/CorporateAccessManagement";
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -233,6 +234,8 @@ const CorporateHrTeam = () => {
             </div>
           }
         />
+
+        {!loading && isSuperAdmin && <CorporateAccessManagement />}
 
         {!loading && !isSuperAdmin && (
           <Card className="!p-0 bg-amber-500/[0.06] border-amber-500/20">

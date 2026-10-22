@@ -1,3 +1,5 @@
+import CorporateSsoSettings from "@/components/corporate/CorporateSsoSettings";
+import CorporateMfaSettings from "@/components/corporate/CorporateMfaSettings";
 import React, { useEffect, useState } from 'react';
 import { Settings, Bell, Lock, Users, Building2, CreditCard, Globe, Save, Cog, CheckSquare } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -536,25 +538,8 @@ const CorporateSettings: React.FC = () => {
               <CardDescription>Manage security and access permissions</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Two-Factor Authentication</Label>
-                  {/* Previously a live-looking Switch writing to local React state only. Toggling
-                      it implied 2FA was enforced on admin accounts; it is not implemented at
-                      all. Disabled and labelled so the gap is visible instead of implied. */}
-                  <p className="text-sm text-slate-400">
-                    Not enforced — MFA is not implemented. No admin account requires a second factor.
-                  </p>
-                </div>
-                <Switch checked={false} disabled aria-label="Two-factor authentication (not available)" />
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>SSO (Single Sign-On)</Label>
-                  <p className="text-sm text-slate-400">Not available — no identity provider is connected. Employee logins use their existing credentials.</p>
-                </div>
-                <Switch checked={false} disabled aria-label="Single sign-on (not available)" />
-              </div>
+              <CorporateMfaSettings />
+              <CorporateSsoSettings />
               <div className="grid gap-2">
                 <Label htmlFor="sessionTimeout">Session Timeout (minutes)</Label>
                 <Input id="sessionTimeout" type="number" min="5" max="480" value={security.sessionTimeout} onChange={e => setSecurity(p => ({ ...p, sessionTimeout: e.target.value }))} />

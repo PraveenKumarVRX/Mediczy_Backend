@@ -20,6 +20,7 @@
  * only) since clinical/claims scrutiny and HR-team administration are
  * deliberately kept separate.
  */
+import { randomBytes } from 'node:crypto';
 import User from '../models/postgres/user.model.postgres.js';
 import Corporate from '../models/postgres/corporate.model.postgres.js';
 import welcomeEmailService from './welcome-email.service.js';
@@ -52,11 +53,19 @@ async function hrTeamIds(corporateId, { activeOnly = true } = {}) {
 }
 
 function genTempPassword() {
-  const raw = [...Array(12)].map(() => Math.random().toString(36)[2] || '0').join('');
+  const raw = randomBytes(18).toString('base64url');
   return `Hr${raw}@1`;
 }
 
-async function requireActiveSuperAdmin(corporateId, actingUserId) {
+async function requireActiveSuperAdmin(corporateId, actingUserId, directCorporateLogin = false) {
+  if (directCorporateLogin) {
+    const corporate = await Corporate.findByPk(corporateId);
+    if (!corporate || !['active','pending'].includes(String(corporate.status).toLowerCase())) {
+      throw Object.assign(new Error('Active corporate account required'), { statusCode: 403 });
+    }
+    const team = await listHrTeam(corporateId);
+    return team.find(member => member.role === 'corporate_admin') || { id: null, role: 'corporate_admin' };
+  }
   const actor = await User.findByPk(actingUserId);
   if (!actor) throw new Error('Acting user not found');
   if (
@@ -84,8 +93,8 @@ export async function listHrTeam(corporateId) {
   return rows;
 }
 
-export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, lastName, email, phoneNumber, registrationNumber, role = 'hr_staff' }) {
-  await requireActiveSuperAdmin(corporateId, invitedByUserId);
+export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, lastName, email, phoneNumber, registrationNumber, role = 'hr_staff', directCorporateLogin = false }) {
+  await requireActiveSuperAdmin(corporateId, invitedByUserId, directCorporateLogin);
 
   if (!INVITABLE_ROLES.includes(role)) {
     throw new Error(`role must be one of: ${INVITABLE_ROLES.join(', ')}`);
@@ -138,7 +147,7 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
     organization_type: 'corporate',
     organization_id: corporateId,
     status: 'active',
-    invited_by: invitedByUserId,
+    invited_by: directCorporateLogin ? null : invitedByUserId,
     ...(medicalRegistration ? { metadata: { registrationNumber: medicalRegistration } } : {}),
   });
   // organization_id above stays the corporates id this service has always written; the UID is what
@@ -187,8 +196,8 @@ export async function inviteHrStaff({ corporateId, invitedByUserId, firstName, l
   };
 }
 
-export async function removeHrStaff({ corporateId, requestedByUserId, targetUserId }) {
-  const admin = await requireActiveSuperAdmin(corporateId, requestedByUserId);
+export async function removeHrStaff({ corporateId, requestedByUserId, targetUserId, directCorporateLogin = false }) {
+  const admin = await requireActiveSuperAdmin(corporateId, requestedByUserId, directCorporateLogin);
 
   if (Number(targetUserId) === Number(admin.id)) {
     throw new Error('The super-HR cannot remove themselves — transfer ownership first');
@@ -214,8 +223,8 @@ export async function removeHrStaff({ corporateId, requestedByUserId, targetUser
  * per org) means this MUST demote the old admin before promoting the
  * new one within the same transaction, or the promotion will fail.
  */
-export async function transferSuperHr({ corporateId, requestedByUserId, newAdminUserId }) {
-  const admin = await requireActiveSuperAdmin(corporateId, requestedByUserId);
+export async function transferSuperHr({ corporateId, requestedByUserId, newAdminUserId, directCorporateLogin = false }) {
+  const admin = await requireActiveSuperAdmin(corporateId, requestedByUserId, directCorporateLogin);
 
   const successor = await User.findByPk(newAdminUserId);
   if (
@@ -230,10 +239,10 @@ export async function transferSuperHr({ corporateId, requestedByUserId, newAdmin
 
   const sequelize = User.sequelize;
   return sequelize.transaction(async (t) => {
-    await admin.update({ role: 'hr_staff' }, { transaction: t });
+    if (admin.id) await admin.update({ role: 'hr_staff' }, { transaction: t });
     await successor.update({ role: 'corporate_admin' }, { transaction: t });
     return {
-      previousAdmin: { id: admin.id, email: admin.email, role: 'hr_staff' },
+      previousAdmin: admin.id ? { id: admin.id, email: admin.email, role: 'hr_staff' } : null,
       newAdmin: { id: successor.id, email: successor.email, role: 'corporate_admin' },
     };
   });

@@ -1,0 +1,224 @@
+{
+  "at": "2026-10-22T08:23:10.094Z",
+  "passed": true,
+  "backendTests": 141,
+  "clientTests": 13,
+  "localDatabaseChecks": 41,
+  "productionChecks": [
+    {
+      "name": "Measured monthly analytics",
+      "passed": true
+    },
+    {
+      "name": "Invalid reporting year rejected",
+      "passed": true
+    },
+    {
+      "name": "Owner access context",
+      "passed": true
+    },
+    {
+      "name": "Owner team permissions",
+      "passed": true
+    },
+    {
+      "name": "MFA status available",
+      "passed": true
+    },
+    {
+      "name": "SSO configuration available without secret",
+      "passed": true
+    },
+    {
+      "name": "Corporate credentials cannot submit employee ratings",
+      "passed": true
+    },
+    {
+      "name": "Corporate credentials cannot read patient certificates",
+      "passed": true
+    },
+    {
+      "name": "Audit list is available",
+      "passed": true
+    },
+    {
+      "name": "Audit rejects invalid pagination",
+      "passed": true
+    },
+    {
+      "name": "Certificate list remains available",
+      "passed": true
+    },
+    {
+      "name": "ZIP rejects empty selection before audit or document access",
+      "passed": true
+    },
+    {
+      "name": "ZIP rejects invalid selection",
+      "passed": true
+    },
+    {
+      "name": "ZIP rejects nonexistent bigint certificate without precision loss",
+      "passed": true
+    },
+    {
+      "name": "Unconsented health dossier is denied",
+      "passed": true
+    },
+    {
+      "name": "Unconsented health dossier export is denied",
+      "passed": true
+    },
+    {
+      "name": "ZIP rejects a different corporate certificate",
+      "passed": true
+    },
+    {
+      "name": "Published real SSO configuration",
+      "passed": true
+    },
+    {
+      "name": "Published authenticator enrollment",
+      "passed": true
+    },
+    {
+      "name": "Published annual utilization and budget",
+      "passed": true
+    },
+    {
+      "name": "Published certificate page offers actual PDF ZIP downloads",
+      "passed": true
+    },
+    {
+      "name": "Published PDF upload form",
+      "passed": true
+    },
+    {
+      "name": "Browser runtime has no errors",
+      "passed": true
+    },
+    {
+      "name": "HR active roster matches database",
+      "path": "/api/corporate/employees",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "HR inactive roster can be listed",
+      "path": "/api/corporate/employees?status=inactive",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "HR notification inbox",
+      "path": "/api/corporate/notifications",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "HR unread badge matches inbox",
+      "path": "/api/corporate/notifications/unread-count",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "HR analytics has real roster departments and absent unmeasured scores",
+      "path": "/api/corporate/dashboard/health-analytics",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "Participation excludes unused enrollment",
+      "path": "/api/corporate/analytics/participation",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "Combined HR and employee appointments returns valid scoped rows",
+      "path": "/api/corporate/all-appointments",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "AHC batches",
+      "path": "/api/corporate/ahc/batches",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "AHC enrollment names and departments resolve",
+      "path": "/api/corporate/ahc/batches/1/enrollments",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "HR wellness events include invitation metadata",
+      "path": "/api/corporate/wellness-calendar/activities",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "Team report and certificate employee picker resolves the HR roster",
+      "path": "/api/corporate-bookings/employees?corporateId=3",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "Corporate package billing source",
+      "path": "/api/corporate/my-benefits",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    },
+    {
+      "name": "Unauthenticated contact center denied",
+      "path": "/api/crm/contact-center",
+      "status": 401,
+      "expected": 401,
+      "passed": true
+    },
+    {
+      "name": "Contact center exposes six providers without changing configuration",
+      "path": "/api/crm/contact-center",
+      "status": 200,
+      "expected": 200,
+      "passed": true
+    }
+  ],
+  "productionClinicalMutations": 0,
+  "productionAcceptanceConfigurationMutations": 0,
+  "migrationsApplied": 3,
+  "duplicateActiveNameGroups": 0,
+  "duplicateEmailGroups": 0,
+  "indexSha256": "4d4d8b79515081d81f53cb055d0cdcc24186bac267e989170767dd2c184df3b3",
+  "cloudFrontInvalidation": "I1RGJ8DUGXK13FMCNUTLKBSG01",
+  "cloudFrontStatus": "Completed",
+  "pm2Status": "online",
+  "pm2Restarts": 18,
+  "typecheck": {
+    "globalPassed": false,
+    "diagnosticOutputLines": 2337,
+    "newDiagnosticsAfterBaselineNormalization": 0,
+    "normalization": "Ignore shifted lines and added optional code/sso credential properties in existing insurer/NGO/PSU password diagnostics"
+  },
+  "entityUid": {
+    "violations": 0,
+    "existingWarnings": 1
+  },
+  "externalInputs": [
+    "Customer OIDC issuer/client credentials and provider acceptance",
+    "Verified TEST-SK01 contact values",
+    "Authoritative identity evidence for historical clinical-name corrections"
+  ]
+}

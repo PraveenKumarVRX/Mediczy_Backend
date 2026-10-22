@@ -1,3 +1,4 @@
+import organizationUid from '../services/organization-uid.service.js';
 import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import {
@@ -58,18 +59,16 @@ const tryRotateCorporateRefreshToken = async (refreshToken, req) => {
     portal: 'corporate',
     deviceFp,
     resolvePayload: async (payload) => {
-      const corporate = await Corporate.findByPk(payload.userId);
-      if (!corporate) return null;
-      const status = String(corporate.status || '').toLowerCase();
-      if (!['active', 'pending'].includes(status)) return null;
-      return {
-        id: corporate.id,
-        userId: corporate.id,
-        corporateId: corporate.id,
-        email: corporate.email,
-        role: 'corporate',
-        userType: 'corporate',
-      };
+      if (payload.accountType === 'user') {
+        const user = await User.findByPk(payload.accountId);
+        const corporate = await Corporate.findByPk(payload.corporateId);
+        if (!user || user.status !== 'active' || user.organization_type !== 'corporate' || !['corporate_admin','hr_staff','corporate_cmo','corporate_ohc'].includes(user.role)
+          || !corporate || !['active','pending'].includes(String(corporate.status).toLowerCase()) || !await organizationUid.userBelongsToCorporate(user,corporate.id)) return null;
+        return {id:user.id,userId:user.id,corporateId:corporate.id,email:user.email,role:user.role,userType:'corporate',organization_id:user.organization_id,organization_type:'corporate',tenant_id:user.tenant_id};
+      }
+      const corporate = await Corporate.findByPk(payload.accountId || payload.userId);
+      if (!corporate || !['active','pending'].includes(String(corporate.status || '').toLowerCase())) return null;
+      return {id:corporate.id,userId:corporate.id,corporateId:corporate.id,email:corporate.email,role:'corporate',userType:'corporate'};
     },
   });
 

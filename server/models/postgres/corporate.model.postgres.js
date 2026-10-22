@@ -1,3 +1,4 @@
+import { corporateDisplayName } from '../../utils/corporate-data-quality.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../../config/auth.config.js';
@@ -31,6 +32,7 @@ const Corporate = postgresSequelize.define('Corporate', {
   },
   companyName: {
     type: DataTypes.STRING(255),
+    set(value) { this.setDataValue('companyName',typeof value === 'string' ? corporateDisplayName(value) : value); },
     allowNull: false,
     validate: {
       notEmpty: true

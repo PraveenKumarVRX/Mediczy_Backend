@@ -1,4 +1,8 @@
 import express from 'express';
+import { createCorporateCertificateUploadRouter } from './corporate-certificate-upload.route.js';
+import { uploadEncryptedReport, downloadDecryptedReport } from '../services/minio-upload.service.js';
+import { getS3Client } from '../services/s3-presign.service.js';
+import { DeleteObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import { authCorporate } from '../middleware/corporate.middleware.js';
 import {
@@ -127,6 +131,7 @@ router.post('/fitness-certificates/download-zip', authCorporate, async (req, res
       ids: req.body?.certificateIds, corporateId: corporateIdOf(req),
       findCertificates: getCorporateCertificatesByIds,
       resolvePath: resolveFitnessCertificatePdfPath, fileName: fitnessCertificatePdfFileName,
+      loadPdf: async cert => cert.certificate_data?.storage ? (await downloadDecryptedReport(cert.certificate_data.storage)).buffer : null,
     });
     await accessAudit.record(req, {
       resourceId: 'certificates:bulk',
@@ -148,6 +153,13 @@ router.get('/fitness-certificate/:id/pdf', authCorporate, async (req, res) => {
     const cert = await getFitnessCertificateById(req.params.id);
     if (!cert || Number(cert.organization_id) !== Number(corporateIdOf(req))) {
       return res.status(404).json({ success: false, message: 'Certificate not found' });
+    }
+    if (cert.certificate_data?.storage) {
+      const {buffer}=await downloadDecryptedReport(cert.certificate_data.storage);
+      await accessAudit.record(req,{resourceId:`certificate:${cert.id}`,title:'Uploaded fitness certificate PDF',action:'download'});
+      res.setHeader('Cache-Control','no-store');res.setHeader('Content-Type','application/pdf');
+      res.setHeader('Content-Disposition',`attachment; filename="${fitnessCertificatePdfFileName(cert)}"`);
+      return res.send(buffer);
     }
     const filePath = resolveFitnessCertificatePdfPath(cert);
     if (!fs.existsSync(filePath)) {
@@ -173,4 +185,8 @@ router.post('/return-to-work', authCorporate, async (req, res) => {
   }
 });
 
+router.use(createCorporateCertificateUploadRouter({
+ database: postgresSequelize, authenticate: authCorporate, uploadEncrypted: uploadEncryptedReport,
+ removeEncrypted: uploaded => getS3Client().send(new DeleteObjectCommand({Bucket:uploaded.bucket,Key:uploaded.key})), audit: accessAudit,
+}));
 export default router;

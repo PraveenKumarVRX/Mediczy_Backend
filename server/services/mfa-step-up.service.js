@@ -264,3 +264,34 @@ export async function disableMfa({ userId, organizationId, code, requestId }) {
 }
 
 export default { ensureMfaSchemaReady, generateTotpSecret, totpCode, verifyTotp, getMfaStatus, beginEnrollment, verifyEnrollment, issueStepUpToken, disableMfa };
+
+/** Consume one TOTP counter under a row lock for password+MFA portal login. */
+export async function verifyLoginFactor({ userId, organizationId, code, requestId }) {
+  await ensureMfaSchemaReady();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const factor = await readFactor(client, userId, organizationId, 'active');
+    if (!factor) fail('MFA_NOT_ENABLED', 'MFA is not enabled for this account', 409);
+    const secret = decryptSecret(factor.secret_ciphertext);
+    const now = Date.now();
+    let counter = null;
+    if (/^\d{6}$/.test(String(code || ''))) {
+      for (const drift of [-1, 0, 1]) {
+        const timestamp = now + drift * STEP_SECONDS * 1000;
+        if (crypto.timingSafeEqual(Buffer.from(totpCode(secret, timestamp)), Buffer.from(String(code)))) counter = Math.floor(timestamp / (STEP_SECONDS * 1000));
+      }
+    }
+    const consumed = factor.last_used_at ? Math.floor(new Date(factor.last_used_at).getTime() / (STEP_SECONDS * 1000)) : -1;
+    if (counter === null || counter <= consumed) {
+      await audit(client, { userId: userKey(userId), organizationId: tenantKey(organizationId), eventType: 'login_failed', factorId: factor.id, success: false, requestId });
+      await client.query('COMMIT');
+      fail('MFA_CODE_INVALID', 'Enter a fresh authenticator code', 401);
+    }
+    await client.query('UPDATE mfa_factors SET last_used_at=$2,updated_at=NOW() WHERE id=$1', [factor.id, new Date(counter * STEP_SECONDS * 1000)]);
+    await audit(client, { userId: userKey(userId), organizationId: tenantKey(organizationId), eventType: 'login_verified', factorId: factor.id, requestId });
+    await client.query('COMMIT');
+    return { mfaVerified: true, mfaFactorId: factor.id, mfaAt: new Date(now).toISOString() };
+  } catch (error) { await client.query('ROLLBACK').catch(() => {}); throw error; }
+  finally { client.release(); }
+}

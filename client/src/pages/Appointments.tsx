@@ -1,3 +1,4 @@
+import EmployeeCareFeedback from "@/components/corporate/EmployeeCareFeedback";
 import MainLayout from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -902,7 +903,8 @@ const Appointments = () => {
           </CardContent>
         </Card>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <EmployeeCareFeedback />
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="grid w-full grid-cols-3 bg-[#1A2333] p-1 rounded-lg">
             <TabsTrigger value="upcoming" className="data-[state=active]:bg-[#00FFF3] data-[state=active]:text-[#0B1120]">
               Upcoming

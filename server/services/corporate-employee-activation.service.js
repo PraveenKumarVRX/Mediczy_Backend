@@ -17,6 +17,7 @@ export async function hasActiveCorporateEmployment(userId) {
         AND ua."entityType" = 'corporate'
         AND ua.role = 'employee'
         AND ua.status = 'active'
+        AND NOT EXISTS(SELECT 1 FROM corporate_employees ce WHERE ce."userId"=ua."userId" AND ce.corporate_id=ua."entityId" AND ce."isActive"=false)
       LIMIT 1`,
     [userId]
   );
@@ -43,6 +44,7 @@ export async function reactivateCorporateEmployeeAccount(userId, { client = null
         AND ua."entityType" = 'corporate'
         AND ua.role = 'employee'
         AND ua.status = 'active'
+        AND NOT EXISTS(SELECT 1 FROM corporate_employees ce WHERE ce."userId"=ua."userId" AND ce.corporate_id=ua."entityId" AND ce."isActive"=false)
       ORDER BY ua."createdAt" DESC
       LIMIT 1`,
     [userId]
@@ -67,8 +69,8 @@ export async function reactivateCorporateEmployeeAccount(userId, { client = null
   await q(
     `UPDATE user_associations
         SET status = 'active', "updatedAt" = NOW()
-      WHERE "userId" = $1 AND "entityType" = 'corporate' AND role = 'employee'`,
-    [userId]
+      WHERE "userId" = $1 AND "entityType" = 'corporate' AND "entityId"=$2 AND role = 'employee'`,
+    [userId, corporateId]
   );
 
   await q(
@@ -88,6 +90,8 @@ export async function reactivateCorporateEmployeeAccount(userId, { client = null
             JOIN subscription_plans sp ON sp.id = us2.plan_id
            WHERE us2.user_id = $1
              AND sp.type = 'CORPORATE'
+             AND sp.is_active = true AND us2.status = 'ACTIVE'
+             AND (us2.end_date IS NULL OR us2.end_date >= NOW())
              AND (sp.metadata->>'corporateId')::int = $2
            ORDER BY us2.updated_at DESC NULLS LAST
            LIMIT 1
@@ -121,7 +125,7 @@ async function linkUnlinkedCorporateEmployeeByEmail(user) {
   // never nondeterministically picks among several candidates.
   const { rows } = await pool.query(
     `SELECT id, corporate_id, "employeeId" FROM corporate_employees
-      WHERE "userId" IS NULL AND lower(email) = lower($1)
+      WHERE "userId" IS NULL AND "isActive"=true AND lower(email) = lower($1)
       ORDER BY (email = $1) DESC, "createdAt" ASC
       LIMIT 1`,
     [user.email]

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { jest } from '@jest/globals';
+import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
 import { corporateAccessAudit } from '../services/corporate-access-audit.service.js';
 
 const req = { user: { role: 'corporate', corporateId: 3, id: 3, userId: 3, email: 'hr@example.invalid' }, ip: '127.0.0.1' };
@@ -10,7 +11,7 @@ function handler(method, path, database, extra = {}) {
   const start = source.indexOf('async (req, res) => {', marker);
   const end = source.indexOf('\n});', start);
   return vm.runInNewContext(`(${source.slice(start, end)}\n})`, {
-    postgresSequelize: database, accessAudit: corporateAccessAudit(database),
+    synchronizeCorporateEmployment, postgresSequelize: database, accessAudit: corporateAccessAudit(database),
     console: { error() {} }, ...extra,
   });
 }

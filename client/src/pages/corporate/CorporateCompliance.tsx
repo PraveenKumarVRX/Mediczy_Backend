@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
-import { exportToCSV } from '@/utils/exportToExcel';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,27 +124,15 @@ const CorporateCompliance: React.FC = () => {
     }
   };
 
-  const exportConsentCSV = () => {
-    exportToCSV(consentEmployees.map(e => ({
-      EmployeeID: e.employeeId,
-      Name: e.name,
-      Email: e.email,
-      Department: e.department,
-      ConsentGranted: e.granted ? 'Yes' : e.granted === false ? 'No' : 'Pending',
-      GrantedAt: e.grantedAt ? new Date(e.grantedAt).toLocaleDateString('en-IN') : '',
-    })), { filename: 'consent-report' });
+  const exportCompliance = async (type: 'consents' | 'audit') => {
+    try {
+      const response=await api.get(`/corporate/programs/compliance/${type}/export`,{responseType:'blob'});
+      const url=URL.createObjectURL(new Blob([response.data],{type:'text/csv'}));const link=document.createElement('a');
+      link.href=url;link.download=`${type}-report.csv`;link.click();URL.revokeObjectURL(url);
+    }catch{toast({title:'Compliance export failed',variant:'destructive'});}
   };
-
-  const exportAuditCSV = () => {
-    exportToCSV(auditEntries.map(e => ({
-      ReportTitle: e.reportTitle,
-      Action: e.action,
-      AccessedBy: e.accessedByName,
-      Role: e.accessedByType,
-      IPAddress: e.ipAddress,
-      AccessedAt: new Date(e.accessedAt).toLocaleString('en-IN'),
-    })), { filename: 'audit-log' });
-  };
+  const exportConsentCSV=()=>exportCompliance('consents');
+  const exportAuditCSV=()=>exportCompliance('audit');
 
   const filteredConsent = consentEmployees.filter(e => {
     const matchSearch = !consentSearch || e.name?.toLowerCase().includes(consentSearch.toLowerCase()) || e.employeeId.toLowerCase().includes(consentSearch.toLowerCase());

@@ -39,6 +39,9 @@ const MANIFEST = [
 // manifest. Run via import+up() (arity-aware) rather than a child `node <file>` because
 // 11 of them have no direct-run block. Idempotent (IF NOT EXISTS); re-running is safe.
 const NEW_MIGRATIONS_2026Q4 = [
+  '20261022010000-corporate-scheduling-doctor-uid.migration.js',
+  '20261022011000-corporate-sso-sessions.migration.js',
+  '20261022012000-corporate-identity-uniqueness.migration.js',
   '20261015000100-lab-quality-control.migration.js',
   '20261015000200-department-schema-hardening.migration.js',
   '20261015000300-blood-bank-schema-hardening.migration.js',
@@ -173,7 +176,7 @@ async function runNew2026Migrations() {
       console.log(`  Done: ${name}`);
     } catch (e) {
       // This atomic clinical migration must fail visibly on historical conflicts.
-      if (name === '20261019000100-nursing-workflow-integrity.migration.js') throw e;
+      if (name === '20261019000100-nursing-workflow-integrity.migration.js' || name.startsWith('2026102201')) throw e;
       if (/already exists|duplicate|exists/i.test(e.message || '')) console.log(`  Skipped (exists): ${name}`);
       else throw e;
     }

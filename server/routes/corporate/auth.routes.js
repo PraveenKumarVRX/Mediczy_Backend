@@ -204,6 +204,7 @@ router.post('/register', registerLimiter, corpUploadFields, async (req, res) => 
       docs, idCardMeta: idCard });
   } catch (err) {
     if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    if(err.name === 'SequelizeUniqueConstraintError' || err.original?.code === '23505')return res.status(409).json({success:false,message:'An account with this company name or email already exists'});
     console.error('Corporate registration error:', err);
     res.status(500).json({ success: false, message: 'Registration failed', error: err.message });
   }

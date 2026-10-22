@@ -1,7 +1,22 @@
+import jwtSso from 'jsonwebtoken';
+import { JWT_CONFIG as JWT_SSO_CONFIG } from '../config/auth.config.js';
+import { encrypt as encryptSsoSecret, decrypt as decryptSsoSecret } from '../utils/encryption.js';
+const JWT_SSO_SECRET = JWT_SSO_CONFIG.SECRET;
 import { activateAhcBatch, remindAhcBatch } from '../services/ahc-activation.service.js';
 import express from 'express';
+import { synchronizeCorporateEmployment } from '../services/corporate-employment-sync.service.js';
+import { prepareCorporateSchedule } from '../services/corporate-scheduling.service.js';
+import { createCorporateSsoRouter } from './corporate-sso.route.js';
+import { protectedSettings } from '../services/corporate-sso.service.js';
+import { corporateMfaLogin } from '../services/corporate-mfa.service.js';
+import { createCorporateAccessRouter } from './corporate-access.route.js';
+import { createCorporateSecurityRouter } from './corporate-security.route.js';
+import * as corporateMfa from '../services/mfa-step-up.service.js';
+import { corporateMfaIdentity } from '../services/corporate-mfa.service.js';
+import { createCorporateProgramsRouter } from './corporate-programs.route.js';
 import { corporateAccessAudit } from '../services/corporate-access-audit.service.js';
 import { body } from 'express-validator';
+import { patientAccountOnly } from '../middleware/patient-account.middleware.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authCorporate } from '../middleware/corporate.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
@@ -40,6 +55,20 @@ import {
   resolveEmployeeCorporate,
 } from '../services/corporate-benefit-wallet.service.js';
 
+const corporatePasswordMatches = async (user, password) => {
+    const { default: bcrypt } = await import('bcrypt');
+    const { default: Account } = user.role === 'corporate'
+      ? await import('../models/postgres/corporate.model.postgres.js')
+      : await import('../models/postgres/user.model.postgres.js');
+    const account = await Account.findByPk(user.role === 'corporate' ? user.corporateId : user.userId);
+    return Boolean(account?.password && await bcrypt.compare(password, account.password));
+  };
+
+const authEmployee = (req,res,next) => authUser(req,res,()=>patientAccountOnly(req,res,next));
+const authCorporateOrEmployee = (req,res,next) => {
+  const claims=jwtSso.decode(req.headers.authorization?.replace('Bearer ',''));
+  return claims?.role==='corporate'||claims?.userType==='corporate' ? authCorporate(req,res,next) : authEmployee(req,res,next);
+};
 const router = express.Router();
 const accessAudit = corporateAccessAudit(postgresSequelize);
 
@@ -59,142 +88,8 @@ const toCsv = (rows, headers) => {
   return lines.join('\n');
 };
 
-// Employees (corporate HR view)
-let corporateEmployees = [
-  {
-    id: 'EMP001',
-    employeeId: 'EMP001',
-    name: 'Rajesh Kumar',
-    email: 'rajesh.kumar@company.com',
-    phone: '+91 98765 43210',
-    department: 'Engineering',
-    designation: 'Senior Software Engineer',
-    joiningDate: '2020-06-15',
-    healthStatus: 'good',
-    lastCheckup: '2025-11-15',
-    insurancePlan: 'Premium Plan',
-  },
-  {
-    id: 'EMP002',
-    employeeId: 'EMP002',
-    name: 'Priya Sharma',
-    email: 'priya.sharma@company.com',
-    phone: '+91 98765 43211',
-    department: 'Human Resources',
-    designation: 'HR Manager',
-    joiningDate: '2019-03-10',
-    healthStatus: 'excellent',
-    lastCheckup: '2025-12-01',
-    insurancePlan: 'Premium Plan',
-  },
-  {
-    id: 'EMP003',
-    employeeId: 'EMP003',
-    name: 'Amit Patel',
-    email: 'amit.patel@company.com',
-    phone: '+91 98765 43212',
-    department: 'Sales',
-    designation: 'Sales Executive',
-    joiningDate: '2021-08-20',
-    healthStatus: 'moderate',
-    lastCheckup: '2025-10-10',
-    insurancePlan: 'Standard Plan',
-  },
-  {
-    id: 'EMP004',
-    employeeId: 'EMP004',
-    name: 'Neha Sharma',
-    email: 'neha.sharma@company.com',
-    phone: '+91 98765 43213',
-    department: 'Finance',
-    designation: 'Financial Analyst',
-    joiningDate: '2020-11-01',
-    healthStatus: 'good',
-    lastCheckup: '2025-11-20',
-    insurancePlan: 'Premium Plan',
-  },
-  {
-    id: 'EMP005',
-    employeeId: 'EMP005',
-    name: 'Arjun Mehta',
-    email: 'arjun.mehta@company.com',
-    phone: '+91 98765 43214',
-    department: 'Marketing',
-    designation: 'Marketing Manager',
-    joiningDate: '2018-07-15',
-    healthStatus: 'excellent',
-    lastCheckup: '2025-12-05',
-    insurancePlan: 'Premium Plan',
-  },
-  {
-    id: 'EMP006',
-    employeeId: 'EMP006',
-    name: 'Riya Patel',
-    email: 'riya.patel@company.com',
-    phone: '+91 98765 43215',
-    department: 'Engineering',
-    designation: 'Product Designer',
-    joiningDate: '2022-01-10',
-    healthStatus: 'good',
-    lastCheckup: '2025-10-25',
-    insurancePlan: 'Standard Plan',
-  },
-  {
-    id: 'EMP007',
-    employeeId: 'EMP007',
-    name: 'Karan Verma',
-    email: 'karan.verma@company.com',
-    phone: '+91 98765 43216',
-    department: 'Operations',
-    designation: 'Operations Lead',
-    joiningDate: '2019-09-20',
-    healthStatus: 'moderate',
-    lastCheckup: '2025-09-15',
-    insurancePlan: 'Standard Plan',
-  },
-  {
-    id: 'EMP008',
-    employeeId: 'EMP008',
-    name: 'Sneha Kulkarni',
-    email: 'sneha.kulkarni@company.com',
-    phone: '+91 98765 43217',
-    department: 'Finance',
-    designation: 'Accountant',
-    joiningDate: '2021-04-05',
-    healthStatus: 'excellent',
-    lastCheckup: '2025-11-30',
-    insurancePlan: 'Premium Plan',
-  },
-  {
-    id: 'EMP009',
-    employeeId: 'EMP009',
-    name: 'Vikram Singh',
-    email: 'vikram.singh@company.com',
-    phone: '+91 98765 43218',
-    department: 'Sales',
-    designation: 'Sales Manager',
-    joiningDate: '2017-12-01',
-    healthStatus: 'good',
-    lastCheckup: '2025-10-18',
-    insurancePlan: 'Premium Plan',
-  },
-  {
-    id: 'EMP010',
-    employeeId: 'EMP010',
-    name: 'Divya Nair',
-    email: 'divya.nair@company.com',
-    phone: '+91 98765 43219',
-    department: 'Human Resources',
-    designation: 'HR Executive',
-    joiningDate: '2022-06-15',
-    healthStatus: 'good',
-    lastCheckup: '2025-11-10',
-    insurancePlan: 'Standard Plan',
-  },
-];
-
 // Risk monitor alert configuration
-let corporateRiskAlertsConfig = {
+const DEFAULT_RISK_ALERTS = {
   enabled: true,
   notifyEmail: true,
   notifySms: false,
@@ -290,81 +185,8 @@ router.put('/profile', authCorporate, async (req, res) => {
   }
 });
 
-// Mock corporate plans data - replace with database queries in production
-const corporatePlans = [
-  {
-    id: 'corp-plan-1',
-    planName: 'Standard Health Plan',
-    corporateName: 'Tech Corp India',
-    validFrom: '2025-01-01',
-    validTo: '2025-12-31',
-    planType: 'Standard',
-    benefits: [
-      {
-        category: 'OPD Coverage',
-        description: 'General physician consultations',
-        coverage: '₹5,000 per year',
-        limit: '10 consultations'
-      },
-      {
-        category: 'Diagnostics',
-        description: 'Blood tests and X-rays',
-        coverage: '₹3,000 per year',
-        limit: '5 tests'
-      }
-    ],
-    features: {
-      opdCoverage: true,
-      ipdCoverage: false,
-      maternityCoverage: false,
-      dentalCoverage: true,
-      pharmacyCoverage: true,
-      diagnosticsCoverage: true,
-      homecareCoverage: false,
-      ambulanceCoverage: true
-    }
-  },
-  {
-    id: 'corp-plan-2',
-    planName: 'Premium Health Plan',
-    corporateName: 'Global Solutions Ltd',
-    validFrom: '2025-01-01',
-    validTo: '2025-12-31',
-    planType: 'Premium',
-    benefits: [
-      {
-        category: 'OPD Coverage',
-        description: 'Specialist consultations',
-        coverage: '₹15,000 per year',
-        limit: '20 consultations'
-      },
-      {
-        category: 'IPD Coverage',
-        description: 'Hospitalization coverage',
-        coverage: '₹2,00,000 per year',
-        limit: 'Up to 10 days'
-      },
-      {
-        category: 'Maternity',
-        description: 'Maternity and newborn care',
-        coverage: '₹50,000 per year',
-        limit: 'Normal delivery'
-      }
-    ],
-    features: {
-      opdCoverage: true,
-      ipdCoverage: true,
-      maternityCoverage: true,
-      dentalCoverage: true,
-      pharmacyCoverage: true,
-      diagnosticsCoverage: true,
-      homecareCoverage: true,
-      ambulanceCoverage: true
-    }
-  }
-];
-
-const DEFAULT_PLAN_TEMPLATE = corporatePlans[0];
+// Unmeasured coverage and dates stay absent instead of inheriting demo entitlements.
+const DEFAULT_PLAN_TEMPLATE = { id: null, planName: 'No assigned plan', corporateName: '', validFrom: null, validTo: null, planType: '', benefits: [], features: {}, coverage: {} };
 
 async function getActiveUserPlan(userId) {
   return await UserPlan.findOne({
@@ -384,8 +206,8 @@ function normalizePlanPayload(planRecord, userPlan, userContext) {
     id: planData.id || planRecord?.id || userPlan?.membershipPlanId || DEFAULT_PLAN_TEMPLATE.id,
     planName: planData.planName || planData.name || DEFAULT_PLAN_TEMPLATE.planName,
     corporateName: userContext?.corporateName || userContext?.companyName || planData.corporateName || DEFAULT_PLAN_TEMPLATE.corporateName,
-    validFrom: userPlan?.startDate || planData.validFrom || '2024-01-01',
-    validTo: userPlan?.endDate || planData.validTo || '2024-12-31',
+    validFrom: userPlan?.startDate || planData.validFrom || null,
+    validTo: userPlan?.endDate || planData.validTo || null,
     planType: planData.planType || planData.tier || DEFAULT_PLAN_TEMPLATE.planType,
     benefits: planData.benefits || DEFAULT_PLAN_TEMPLATE.benefits,
     features: {
@@ -404,11 +226,11 @@ function buildUsageSnapshot(userPlan) {
   const benefitLimits = userPlan?.appliedLimits?.benefitLimits || userPlan?.plan?.benefitLimits || {};
   return {
     opdUsed: usage.opdVisits || usage.opdUsed || 0,
-    opdLimit: benefitLimits.opdVisits || benefitLimits.opdLimit || 10,
+    opdLimit: benefitLimits.opdVisits ?? benefitLimits.opdLimit ?? null,
     diagnosticsUsed: usage.diagnostics || usage.diagnosticsUsed || 0,
-    diagnosticsLimit: benefitLimits.diagnostics || benefitLimits.diagnosticsLimit || 5,
+    diagnosticsLimit: benefitLimits.diagnostics ?? benefitLimits.diagnosticsLimit ?? null,
     amountUsed: usage.benefitINR?.total || usage.amountUsed || 0,
-    amountLimit: benefitLimits.totalBenefitINR || benefitLimits.amountLimit || 8000
+    amountLimit: benefitLimits.totalBenefitINR ?? benefitLimits.amountLimit ?? null
   };
 }
 
@@ -530,7 +352,7 @@ function mapSubscriptionPlanToCorporatePlan(planRow, corporateName) {
   };
 }
 
-router.get('/my-benefits', authUser, async (req, res) => {
+router.get('/my-benefits', authCorporateOrEmployee, async (req, res) => {
   try {
     // Resolve real company name from corporates table (JWT doesn't carry it)
     let resolvedCompanyName = req.user?.corporateName || req.user?.companyName;
@@ -683,7 +505,7 @@ router.get('/benefit-wallet/network-providers', authCorporate, async (req, res) 
 });
 
 // Employee-facing version — same directory, no corporate-admin gate.
-router.get('/my-benefit-wallet/network-providers', authUser, async (req, res) => {
+router.get('/my-benefit-wallet/network-providers', authEmployee, async (req, res) => {
   try {
     const corp = await resolveEmployeeCorporate(req.user.id);
     if (!corp) return res.json({ success: true, data: { providers: [] } });
@@ -819,7 +641,7 @@ router.post('/benefit-wallet/authorizations/:authorizationId/cancel', authCorpor
   }
 });
 
-router.get('/my-benefit-wallet', authUser, async (req, res) => {
+router.get('/my-benefit-wallet', authEmployee, async (req, res) => {
   try {
     const wallet = await getEmployeeBenefitWallet(req.user.id);
     return res.json({ success: true, data: wallet });
@@ -829,7 +651,7 @@ router.get('/my-benefit-wallet', authUser, async (req, res) => {
   }
 });
 
-router.post('/benefit-wallet/authorizations', authUser, async (req, res) => {
+router.post('/benefit-wallet/authorizations', authEmployee, async (req, res) => {
   try {
     const authorization = await requestBenefitAuthorization(req.user.id, req.body || {});
     return res.status(201).json({
@@ -847,7 +669,7 @@ router.post('/benefit-wallet/authorizations', authUser, async (req, res) => {
 // Employee self-service tier upgrade/downgrade — for programs that offer
 // selectable tiers (a base allocation plus one or more optional, higher
 // tiers; whatever amounts the program was actually configured with).
-router.post('/my-benefit-wallet/:walletId/select-tier', authUser, async (req, res) => {
+router.post('/my-benefit-wallet/:walletId/select-tier', authEmployee, async (req, res) => {
   try {
     const walletId = parseInt(req.params.walletId, 10);
     if (!Number.isInteger(walletId) || walletId <= 0) {
@@ -868,7 +690,7 @@ router.post('/my-benefit-wallet/:walletId/select-tier', authUser, async (req, re
 // Checkup, Once per year"), not a fabricated multi-tier package catalog --
 // no such catalog exists anywhere in the platform's real data. Employee
 // enrollment/validity comes from user_health_packages when present.
-router.get('/health-checkups', authUser, async (req, res) => {
+router.get('/health-checkups', authEmployee, async (req, res) => {
   try {
     const isCorporateSession = req.user?.role === 'corporate' || req.user?.userType === 'corporate';
     let corporateId = req.user?.corporateId || req.user?.organization_id;
@@ -1040,7 +862,7 @@ const mapCheckupBooking = (r) => ({
   claimAmount: 0,
 });
 
-router.get('/my-appointments', authUser, async (req, res) => {
+router.get('/my-appointments', authEmployee, async (req, res) => {
   try {
     const [rows] = await postgresSequelize.query(
       `SELECT * FROM corporate_checkup_bookings WHERE "userId" = :userId ORDER BY date DESC, "createdAt" DESC LIMIT 25`,
@@ -1062,7 +884,7 @@ router.get('/my-appointments', authUser, async (req, res) => {
   }
 });
 
-router.post('/book-checkup', authUser, async (req, res) => {
+router.post('/book-checkup', authEmployee, async (req, res) => {
   try {
     const { checkupId, preferredDate, preferredTime, location, hospital, specialInstructions } = req.body || {};
 
@@ -1143,7 +965,7 @@ router.get('/plans', async (req, res) => {
     });
     const payload = plans.length
       ? plans.map(plan => normalizePlanPayload(plan.toJSON(), null, {}))
-      : corporatePlans;
+      : [];
     res.json({
       success: true,
       data: payload
@@ -1159,14 +981,14 @@ router.get('/plans', async (req, res) => {
 });
 
 // Get specific plan details
-router.get('/plans/:planId', authUser, async (req, res) => {
+router.get('/plans/:planId', authCorporateOrEmployee, async (req, res) => {
   try {
     const { planId } = req.params;
     let plan = await MembershipPlan.findOne({ where: { id: planId } });
     if (plan) {
       plan = normalizePlanPayload(plan.toJSON(), null, req.user);
     } else {
-      plan = corporatePlans.find(p => p.id === planId);
+      plan = null;
     }
     
     if (!plan) {
@@ -1190,79 +1012,28 @@ router.get('/plans/:planId', authUser, async (req, res) => {
   }
 });
 
-// Enroll in a corporate plan
-router.post('/enroll', authUser, async (req, res) => {
-  try {
-    const { planId, corporateCode } = req.body;
-    const userId = req.user.id;
-
-    if (!planId || !corporateCode) {
-      return res.status(400).json({
-        success: false,
-        message: 'Plan ID and corporate code are required'
-      });
-    }
-
-    // In production, validate corporate code and create enrollment
-    res.json({
-      success: true,
-      message: 'Successfully enrolled in corporate plan',
-      data: {
-        enrollmentId: `ENR-${Date.now()}`,
-        planId,
-        enrolledAt: new Date().toISOString()
-      }
-    });
-  } catch (error) {
-    console.error('Error enrolling in plan:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to enroll in plan',
-      error: error.message
-    });
-  }
+// Enrollment acknowledges only an actual employer-provisioned plan; it never
+// grants arbitrary benefits merely because a caller supplies a plan ID.
+router.post('/enroll', authEmployee, async (req, res) => {
+  const {planId,corporateCode}=req.body||{};
+  if(!planId||!corporateCode)return res.status(400).json({success:false,message:'Plan ID and corporate code are required'});
+  try{
+    const [employee]=await postgresSequelize.query(`SELECT ce.id FROM corporate_employees ce JOIN corporates c ON c.id=ce.corporate_id WHERE ce."userId"=:userId AND ce."isActive"=true AND c.unique_id=:code AND LOWER(c.status)='active'`,{replacements:{userId:req.user.id,code:String(corporateCode)},type:postgresSequelize.QueryTypes.SELECT});
+    if(!employee)return res.status(403).json({success:false,message:'An active employee invitation from this corporate is required'});
+    const assigned=await UserPlan.findOne({where:{userId:req.user.id,membershipPlanId:planId,status:'active'}});
+    if(!assigned)return res.status(409).json({success:false,message:'This plan is not assigned by your employer. Ask HR to synchronize your benefits.'});
+    return res.json({success:true,data:{enrollmentId:assigned.id,planId:assigned.membershipPlanId,enrolledAt:assigned.startDate}});
+  }catch{return res.status(500).json({success:false,message:'Corporate enrollment could not be verified'});}
 });
 
-// Get claims history
-router.get('/claims', authUser, async (req, res) => {
-  try {
-    const userId = req.user.id;
-    
-    // Mock claims data
-    const claims = [
-      {
-        id: 'CLM-001',
-        date: '2025-11-20',
-        type: 'OPD Consultation',
-        amount: 1500,
-        status: 'Approved',
-        approvedAmount: 1500,
-        doctor: 'Dr. Sarah Johnson',
-        specialization: 'General Physician'
-      },
-      {
-        id: 'CLM-002',
-        date: '2025-11-15',
-        type: 'Diagnostic Test',
-        amount: 1000,
-        status: 'Pending',
-        approvedAmount: null,
-        testName: 'Complete Blood Count'
-      }
-    ];
-
-    res.json({
-      success: true,
-      data: claims
+router.get('/claims', authEmployee, async (req,res)=>{
+  try{
+    const claims=await postgresSequelize.transaction(async transaction=>{
+      await setRlsContext(transaction,{orgId:req.user.tenant_id||req.user.organization_id||0,userId:req.user.id});
+      return postgresSequelize.query(`SELECT id,claim_number AS "claimNumber",submitted_date AS date,claim_type AS type,claim_amount AS amount,status FROM insurance_claims WHERE patient_id=:userId ORDER BY submitted_date DESC`,{replacements:{userId:req.user.id},type:postgresSequelize.QueryTypes.SELECT,transaction});
     });
-  } catch (error) {
-    console.error('Error fetching claims:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch claims',
-      error: error.message
-    });
-  }
+    return res.json({success:true,data:claims});
+  }catch{return res.status(500).json({success:false,message:'Claims could not be loaded'});}
 });
 
 // ---------------------------------------------------------------------------
@@ -1444,7 +1215,7 @@ router.get('/employees', authCorporate, async (req, res) => {
 
   // Only fall back to demo data when there is no real corporate context
   if (employees.length === 0 && !corporateId) {
-    employees = [...corporateEmployees];
+    return res.status(403).json({success:false,message:'Corporate context is required'});
   }
 
   if (department && department !== 'all') {
@@ -1715,10 +1486,11 @@ router.delete('/employees/:id', authCorporate, async (req, res) => {
            "exitDate"=COALESCE(:exitDate::date, "exitDate", CURRENT_DATE),
            metadata=CASE WHEN :metadataPatch::jsonb IS NOT NULL THEN COALESCE(metadata, '{}'::jsonb) || :metadataPatch::jsonb ELSE metadata END,
            "updatedAt"=NOW()
-         WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id`,
+         WHERE corporate_id=:corporateId AND "employeeId"=:id RETURNING id,"employeeId","userId"`,
         { transaction, replacements: { corporateId, id, exitDate: exitDate || null, metadataPatch } }
       );
       if (!rows.length) return { statusCode: 404, body: { success: false, message: 'Employee not found' } };
+      await synchronizeCorporateEmployment(postgresSequelize,corporateId,rows,false,transaction);
       await accessAudit.record(req, { resourceId: `employee:${id}`, title: 'Employee offboarding', action: 'deactivate' }, transaction);
       return { statusCode: 200, body: { success: true } };
     });
@@ -2317,12 +2089,21 @@ router.get('/reports/:id/download', authCorporate, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 router.get('/risk-monitor/alerts', authCorporate, async (req, res) => {
-  return res.json({ success: true, data: { config: corporateRiskAlertsConfig } });
+  try {
+    const [rows]=await postgresSequelize.query('SELECT settings FROM corporate_settings WHERE corporate_id=:corporateId',{replacements:{corporateId:req.user.corporateId}});
+    return res.json({success:true,data:{config:rows[0]?.settings?.riskAlerts||DEFAULT_RISK_ALERTS}});
+  }catch{return res.status(500).json({success:false,message:'Risk alert settings could not be loaded'});}
 });
-
 router.put('/risk-monitor/alerts', authCorporate, async (req, res) => {
-  corporateRiskAlertsConfig = { ...corporateRiskAlertsConfig, ...(req.body || {}) };
-  return res.json({ success: true, data: { config: corporateRiskAlertsConfig } });
+  const config=req.body,thresholds=config?.thresholds;
+  if(['enabled','notifyEmail','notifySms'].some(key=>typeof config?.[key]!=='boolean')||!thresholds||['medium','high','critical'].some(key=>typeof thresholds[key]!=='number'||!Number.isFinite(thresholds[key])||thresholds[key]<0||thresholds[key]>100)||thresholds.medium>thresholds.high||thresholds.high>thresholds.critical)return res.status(400).json({success:false,message:'Provide valid alert channels and increasing thresholds from 0 to 100'});
+  const clean={enabled:config.enabled,notifyEmail:config.notifyEmail,notifySms:config.notifySms,thresholds:{medium:thresholds.medium,high:thresholds.high,critical:thresholds.critical}};
+  try{
+    await postgresSequelize.transaction(async transaction=>{
+      await postgresSequelize.query(`INSERT INTO corporate_settings(corporate_id,settings) VALUES(:corporateId,jsonb_build_object('riskAlerts',:config::jsonb)) ON CONFLICT(corporate_id) DO UPDATE SET settings=jsonb_set(corporate_settings.settings,'{riskAlerts}',:config::jsonb),"updatedAt"=NOW()`,{transaction,replacements:{corporateId:req.user.corporateId,config:JSON.stringify(clean)}});
+      await accessAudit.record(req,{resourceId:'risk-alerts',title:'Risk alert preferences',action:'update'},transaction);
+    });return res.json({success:true,data:{config:clean}});
+  }catch{return res.status(500).json({success:false,message:'Risk alert settings could not be saved'});}
 });
 
 router.get('/risk-monitor/export', authCorporate, async (req, res) => {
@@ -2708,44 +2489,13 @@ router.get('/claims/management/:id/download', authCorporate, async (req, res) =>
 // path; this corporate router only reviews/manages what lands there.
 
 // Get network hospitals/providers
-router.get('/network-providers', authUser, async (req, res) => {
-  try {
-    const { city, type } = req.query;
-    
-    // Mock network providers
-    const providers = [
-      {
-        id: 'PRV-001',
-        name: 'Apollo Hospital',
-        type: 'Hospital',
-        city: 'Bangalore',
-        address: 'Jayanagar, Bangalore',
-        phone: '080-12345678',
-        specialties: ['Cardiology', 'Orthopedics', 'General Surgery']
-      },
-      {
-        id: 'PRV-002',
-        name: 'Manipal Hospital',
-        type: 'Hospital',
-        city: 'Bangalore',
-        address: 'HAL Airport Road, Bangalore',
-        phone: '080-87654321',
-        specialties: ['Neurology', 'Oncology', 'Pediatrics']
-      }
-    ];
-
-    res.json({
-      success: true,
-      data: providers
-    });
-  } catch (error) {
-    console.error('Error fetching network providers:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch network providers',
-      error: error.message
-    });
-  }
+router.get('/network-providers', authCorporateOrEmployee, async(req,res)=>{
+ try{
+  const corporateId=req.user.userType==='corporate'?req.user.corporateId:(await resolveEmployeeCorporate(req.user.id))?.corporateId;
+  if(!corporateId)return res.json({success:true,data:[]});
+  const providers=await listBenefitNetworkProviders(corporateId,req.query.category||null);
+  return res.json({success:true,data:providers});
+ }catch{return res.status(500).json({success:false,message:'Network providers could not be loaded'});}
 });
 
 // ---------------------------------------------------------------------------
@@ -2753,7 +2503,7 @@ router.get('/network-providers', authUser, async (req, res) => {
 // ---------------------------------------------------------------------------
 
 // In-memory store for wellness activities
-let wellnessActivities = [];
+
 
 const WELLNESS_THEMES = [
   { month: 0, name: 'New Year Wellness Kickoff', description: 'Start the year with health goals and resolutions' },
@@ -2771,78 +2521,12 @@ const WELLNESS_THEMES = [
 ];
 
 // Generate sample wellness activities
-const generateWellnessActivities = () => {
-  const currentYear = new Date().getFullYear();
-  const sampleActivities = [
-    { title: 'New Year Health Goals Workshop', type: 'workshop', month: 0, day: 5 },
-    { title: 'BMI & Body Composition Check', type: 'screening', month: 0, day: 15 },
-    { title: 'Cardiac Health Awareness Talk', type: 'talk', month: 1, day: 8 },
-    { title: 'Heart Health Screening Camp', type: 'health-camp', month: 1, day: 14 },
-    { title: 'CPR & First Aid Demo', type: 'demonstration', month: 1, day: 20 },
-    { title: 'Healthy Cooking Webinar', type: 'webinar', month: 2, day: 10 },
-    { title: 'Nutrition Counseling Sessions', type: 'talk', month: 2, day: 18 },
-    { title: 'Calorie Counting Challenge', type: 'challenge', month: 2, day: 1 },
-    { title: 'Stress Management Workshop', type: 'workshop', month: 3, day: 7 },
-    { title: 'Meditation & Mindfulness Session', type: 'demonstration', month: 3, day: 15 },
-    { title: 'Office Fitness Challenge', type: 'challenge', month: 4, day: 1 },
-    { title: 'Yoga & Stretching Demo', type: 'demonstration', month: 4, day: 12 },
-    { title: 'Eye Checkup Camp', type: 'health-camp', month: 5, day: 10 },
-    { title: 'Hydration Challenge', type: 'challenge', month: 6, day: 1 },
-    { title: 'Annual Health Checkup Camp', type: 'health-camp', month: 7, day: 5 },
-    { title: 'Diabetes Risk Assessment', type: 'screening', month: 8, day: 10 },
-    { title: 'Breast Cancer Awareness Session', type: 'talk', month: 9, day: 8 },
-    { title: 'Prostate Health Screening', type: 'screening', month: 10, day: 10 },
-    { title: 'Sleep Hygiene Webinar', type: 'webinar', month: 11, day: 5 },
-  ];
-
-  return sampleActivities.map((act, index) => {
-    const theme = WELLNESS_THEMES[act.month];
-    return {
-      id: `act-${index + 1}`,
-      title: act.title,
-      description: `Join us for ${act.title.toLowerCase()} as part of our ${theme.name} initiative.`,
-      type: act.type,
-      date: `${currentYear}-${String(act.month + 1).padStart(2, '0')}-${String(act.day).padStart(2, '0')}`,
-      startTime: '10:00',
-      endTime: '12:00',
-      location: act.type === 'webinar' ? 'Online (Zoom)' : 'Conference Room A',
-      speaker: ['Dr. Priya Sharma', 'Dr. Rajesh Kumar', 'Wellness Coach Anita', 'Dr. Vikram Singh'][index % 4],
-      capacity: act.type === 'webinar' ? 500 : act.type === 'health-camp' ? 200 : 50,
-      registered: Math.floor(Math.random() * 40) + 10,
-      status: new Date(`${currentYear}-${String(act.month + 1).padStart(2, '0')}-${String(act.day).padStart(2, '0')}`) < new Date() ? 'completed' : 'scheduled',
-      theme: theme.name,
-      participantSelection: 'all',
-      invitesSent: index < 10,
-      totalInvited: index < 10 ? 200 : 0,
-      reminders: { enabled: true, fifteenDays: true, threeDays: true, oneDayBefore: true }
-    };
-  });
-};
-
-// Initialize wellness activities
-if (wellnessActivities.length === 0) {
-  wellnessActivities = generateWellnessActivities();
-}
-
 // Base wellness-calendar route — redirect to activities summary so the aggregator
 // router's /:id catch-all doesn't intercept it and crash with a type-cast error.
 router.get('/wellness-calendar', authCorporate, async (req, res) => {
-  try {
-    res.json({
-      success: true,
-      data: {
-        activities: wellnessActivities,
-        themes: WELLNESS_THEMES,
-        total: wellnessActivities.length
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching wellness calendar:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch wellness calendar' });
-  }
+  return res.redirect(307,'/api/corporate/wellness-calendar/activities');
 });
 
-// Get wellness calendar activities
 router.get('/wellness-calendar/activities', authCorporate, async (req, res) => {
   try {
     const corporateId = req.user?.corporateId || req.user?.organization_id;
@@ -3063,7 +2747,7 @@ router.post('/wellness-calendar/activities/:id/send-invites', authCorporate, asy
 });
 
 // Get employee events (for employee wellness calendar view) — real, per-corporate DB data
-router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
+router.get('/wellness-calendar/employee/events', authEmployee, async (req, res) => {
   try {
     const [assoc] = await postgresSequelize.query(
       `SELECT ua."entityId" AS "corporateId" FROM user_associations ua
@@ -3109,7 +2793,7 @@ router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
 // Real RSVP submission -- was previously a client-only `setTimeout` with no
 // backend call at all, so an employee's response was never actually
 // recorded anywhere and HR had no real registered-employee data.
-router.post('/wellness-calendar/employee/events/:id/rsvp', authUser, async (req, res) => {
+router.post('/wellness-calendar/employee/events/:id/rsvp', authEmployee, async (req, res) => {
   const eventId = parseInt(req.params.id, 10);
   const { status } = req.body || {};
   if (!eventId) return res.status(400).json({ success: false, message: 'Invalid event ID' });
@@ -3174,7 +2858,7 @@ router.get('/settings', authCorporate, async (req, res) => {
       `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
       { replacements: { corporateId } }
     );
-    return res.json({ success: true, data: { settings: rows[0]?.settings || {} } });
+    return res.json({ success: true, data: { settings: protectedSettings(rows[0]?.settings) } });
   } catch (error) {
     console.error('[corporate] GET /settings error:', error.message);
     return res.status(500).json({ success: false, message: 'Failed to load settings' });
@@ -3186,7 +2870,8 @@ router.put('/settings', authCorporate, async (req, res) => {
   if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
 
   try {
-    const updates = req.body || {};
+    if(!['corporate','corporate_admin'].includes(req.user.role))return res.status(403).json({success:false,message:'Only Super HR can change corporate settings'});
+    const updates = protectedSettings(req.body);
     const [rows] = await postgresSequelize.query(
       `INSERT INTO corporate_settings (corporate_id, settings)
        VALUES (:corporateId, CAST(:updates AS JSONB))
@@ -3196,7 +2881,7 @@ router.put('/settings', authCorporate, async (req, res) => {
        RETURNING settings`,
       { replacements: { corporateId, updates: JSON.stringify(updates) } }
     );
-    return res.json({ success: true, message: 'Settings saved successfully', data: { settings: rows[0].settings } });
+    return res.json({ success: true, message: 'Settings saved successfully', data: { settings: protectedSettings(rows[0].settings) } });
   } catch (error) {
     console.error('[corporate] PUT /settings error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to save settings', error: error.message });
@@ -3225,40 +2910,23 @@ const mapScheduledAppointment = (r) => ({
 });
 
 router.post('/appointments', authCorporate, async (req, res) => {
-  const corporateId = req.user?.corporateId || req.user?.organization_id;
-  if (!corporateId) return res.status(400).json({ success: false, message: 'Corporate ID missing from token' });
-
   try {
-    const { employeeId, employeeName, department, appointmentType, doctorName, facility, date, time, notes } = req.body;
-
-    if (!employeeId || !appointmentType || !date || !time) {
-      return res.status(400).json({
-        success: false,
-        message: 'Employee, appointment type, date, and time are required'
-      });
-    }
-
-    const [[row]] = await postgresSequelize.query(
-      `INSERT INTO corporate_scheduled_appointments
-         (corporate_id, "employeeId", "employeeName", department, "appointmentType", "doctorName", facility, date, time, status, notes)
-       VALUES (:corporateId, :employeeId, :employeeName, :department, :appointmentType, :doctorName, :facility, :date, :time, 'scheduled', :notes)
-       RETURNING *`,
-      {
-        replacements: {
-          corporateId, employeeId, employeeName: employeeName || 'Unknown Employee', department: department || 'General',
-          appointmentType, doctorName: doctorName || 'TBD', facility: facility || 'Main Medical Center', date, time, notes: notes || '',
-        },
-      }
-    );
-
-    res.status(201).json({
-      success: true,
-      message: 'Appointment scheduled successfully',
-      data: { appointment: mapScheduledAppointment(row) }
+    const corporateId=req.user.corporateId;
+    if(!req.body.appointmentType) return res.status(400).json({success:false,message:'Appointment type is required'});
+    const row=await postgresSequelize.transaction(async transaction=>{
+      const schedule=await prepareCorporateSchedule(postgresSequelize,corporateId,req.body,transaction);
+      const [[created]]=await postgresSequelize.query(
+        `INSERT INTO corporate_scheduled_appointments
+          (corporate_id,"employeeId","employeeName",department,"appointmentType","doctorName",doctor_uid,facility,date,time,status,notes)
+         VALUES (:corporateId,:employeeId,:employeeName,:department,:appointmentType,:doctorName,:doctorUid,:facility,:date,:time,'scheduled',:notes) RETURNING *`,
+        {transaction,replacements:{...schedule,corporateId,appointmentType:String(req.body.appointmentType).slice(0,150),facility:req.body.facility||'',notes:req.body.notes||''}});
+      await accessAudit.record(req,{resourceId:`schedule:${created.id}`,title:'Employee care scheduled',action:'create'},transaction);
+      return created;
     });
-  } catch (error) {
-    console.error('[corporate] POST /appointments error:', error.message);
-    res.status(500).json({ success: false, message: 'Failed to schedule appointment', error: error.message });
+    return res.status(201).json({success:true,data:{appointment:mapScheduledAppointment(row)}});
+  }catch(error){
+    const conflict=(error.original?.code||error.parent?.code)==='23505';
+    return res.status(conflict?409:error.statusCode||500).json({success:false,message:conflict?'The doctor already has an HR appointment at this time':error.statusCode?error.message:'Appointment could not be scheduled'});
   }
 });
 
@@ -3273,6 +2941,12 @@ router.put('/appointments/:id', authCorporate, async (req, res) => {
   }
 
   try {
+    let reschedule = null;
+    if (date || time) {
+      const [existing] = await postgresSequelize.query(`SELECT * FROM corporate_scheduled_appointments WHERE id=:id AND corporate_id=:corporateId`, {replacements:{id,corporateId},type:postgresSequelize.QueryTypes.SELECT});
+      if(!existing)return res.status(404).json({success:false,message:'Appointment not found'});
+      reschedule=await prepareCorporateSchedule(postgresSequelize,corporateId,{...existing,date:date||String(existing.date).slice(0,10),time:time||existing.time});
+    }
     if (status === 'completed') {
       const [[existing]] = await postgresSequelize.query(
         `SELECT "doctorName", "appointmentType" FROM corporate_scheduled_appointments WHERE id = :id AND corporate_id = :corporateId`,
@@ -3299,11 +2973,13 @@ router.put('/appointments/:id', authCorporate, async (req, res) => {
          notes = COALESCE(:notes, notes),
          "updatedAt" = NOW()
        WHERE id = :id AND corporate_id = :corporateId RETURNING *`,
-      { replacements: { id, corporateId, status: status || null, date: date || null, time: time || null, notes: notes || null } }
+      { replacements: { id, corporateId, status: status || null, date: reschedule?.date || null, time: reschedule?.time || null, notes: notes || null } }
     );
     if (!rows.length) return res.status(404).json({ success: false, message: 'Appointment not found' });
     res.json({ success: true, data: { appointment: mapScheduledAppointment(rows[0]) } });
   } catch (error) {
+    if(error.statusCode)return res.status(error.statusCode).json({success:false,message:error.message});
+    if((error.original?.code||error.parent?.code)==='23505')return res.status(409).json({success:false,message:'The doctor already has an HR appointment at this time'});
     console.error('[corporate] PUT /appointments/:id error:', error.message);
     res.status(500).json({ success: false, message: 'Failed to update appointment', error: error.message });
   }
@@ -3573,7 +3249,7 @@ async function computeActivityStreak(userId) {
   return streak;
 }
 
-router.get('/gamification/employee/challenges', authUser, async (req, res) => {
+router.get('/gamification/employee/challenges', authEmployee, async (req, res) => {
   try {
     const ctx = await resolveEmployeeContext(req.user.id);
     if (!ctx) return res.json({ success: true, data: { challenges: [] } });
@@ -3633,7 +3309,7 @@ router.get('/gamification/employee/challenges', authUser, async (req, res) => {
   }
 });
 
-router.post('/gamification/employee/challenges/:id/join', authUser, async (req, res) => {
+router.post('/gamification/employee/challenges/:id/join', authEmployee, async (req, res) => {
   const { id } = req.params;
   try {
     const ctx = await resolveEmployeeContext(req.user.id);
@@ -3663,7 +3339,7 @@ router.post('/gamification/employee/challenges/:id/join', authUser, async (req, 
   }
 });
 
-router.get('/gamification/employee/stats', authUser, async (req, res) => {
+router.get('/gamification/employee/stats', authEmployee, async (req, res) => {
   try {
     const ctx = await resolveEmployeeContext(req.user.id);
     if (!ctx || !ctx.employeeId) {
@@ -3729,7 +3405,7 @@ router.get('/gamification/employee/stats', authUser, async (req, res) => {
 
 // Department-level rankings: average real score across each department's
 // participants, for the corporate's currently active/completed challenges.
-router.get('/gamification/employee/teams', authUser, async (req, res) => {
+router.get('/gamification/employee/teams', authEmployee, async (req, res) => {
   try {
     const ctx = await resolveEmployeeContext(req.user.id);
     if (!ctx) return res.json({ success: true, data: { teams: [] } });
@@ -3779,7 +3455,7 @@ router.get('/gamification/employee/teams', authUser, async (req, res) => {
 });
 
 // Winners: real top-3 participants of each completed challenge.
-router.get('/gamification/employee/winners', authUser, async (req, res) => {
+router.get('/gamification/employee/winners', authEmployee, async (req, res) => {
   try {
     const ctx = await resolveEmployeeContext(req.user.id);
     if (!ctx) return res.json({ success: true, data: { winners: [] } });
@@ -3820,7 +3496,7 @@ router.get('/gamification/employee/winners', authUser, async (req, res) => {
 // Employee-facing leaderboard view for a single challenge -- same real
 // scoring as the HR endpoint above, but scoped/authorized for authUser
 // sessions (an HR-only authCorporate token can't view this).
-router.get('/gamification/employee/challenges/:id/leaderboard', authUser, async (req, res) => {
+router.get('/gamification/employee/challenges/:id/leaderboard', authEmployee, async (req, res) => {
   const { id } = req.params;
   try {
     const ctx = await resolveEmployeeContext(req.user.id);
@@ -4118,12 +3794,7 @@ router.get('/employees/:id', authCorporate, async (req, res) => {
     if (employee) {
       return res.json({ success: true, data: { employee } });
     }
-    const { id } = req.params;
-    const demoEmployee = corporateEmployees.find(e => e.id === id || e.employeeId === id);
-    if (!demoEmployee) {
-      return res.status(404).json({ success: false, message: 'Employee not found' });
-    }
-    res.json({ success: true, data: { employee: demoEmployee } });
+    return res.status(404).json({ success: false, message: 'Employee not found' });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to fetch employee', error: error.message });
   }
@@ -4623,11 +4294,15 @@ router.patch('/employees/bulk-status', authCorporate, async (req, res) => {
   try {
     const outcome = await postgresSequelize.transaction(async (transaction) => {
       const [result] = await postgresSequelize.query(
-        `UPDATE corporate_employees SET "isActive" = :active, "updatedAt" = NOW()
+        `UPDATE corporate_employees SET "isActive" = :active,
+           "exitDate"=CASE WHEN :active THEN NULL ELSE COALESCE("exitDate",CURRENT_DATE) END,
+           metadata=jsonb_set(COALESCE(metadata,'{}')||jsonb_build_object('appAccessDisabled',NOT :active),'{employmentHistory}',COALESCE(metadata->'employmentHistory','[]')||jsonb_build_array(jsonb_build_object('active',:active,'changedAt',NOW()))),
+           "updatedAt" = NOW()
          WHERE corporate_id = :corporateId AND "employeeId" IN (:ids)
-         RETURNING "employeeId"`,
+         RETURNING "employeeId","userId"`,
         { transaction, replacements: { active: action === 'activate', corporateId, ids: employeeIds } }
       );
+      await synchronizeCorporateEmployment(postgresSequelize,corporateId,result,action==='activate',transaction);
       for (const employee of result) {
         await accessAudit.record(req, { resourceId: `employee:${employee.employeeId}`, title: 'Employee status', action }, transaction);
       }
@@ -4894,7 +4569,7 @@ router.get('/settings/data', authCorporate, async (req, res) => {
       `SELECT settings FROM corporate_settings WHERE corporate_id = :corporateId`,
       { replacements: { corporateId } }
     );
-    return res.json({ success: true, data: { settings: rows[0]?.settings || {} } });
+    return res.json({ success: true, data: { settings: protectedSettings(rows[0]?.settings) } });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to load settings' });
   }
@@ -4902,7 +4577,9 @@ router.get('/settings/data', authCorporate, async (req, res) => {
 
 router.put('/settings/data', authCorporate, async (req, res) => {
   const corporateId = req.user?.corporateId || req.user?.organization_id;
-  const { settings } = req.body || {};
+  if(!req.body?.settings || typeof req.body.settings !== 'object' || Array.isArray(req.body.settings))return res.status(400).json({success:false,message:'settings object required'});
+  const settings = protectedSettings(req.body.settings);
+  if(!['corporate','corporate_admin'].includes(req.user.role))return res.status(403).json({success:false,message:'Only Super HR can change corporate settings'});
   if (!settings || typeof settings !== 'object') return res.status(400).json({ success: false, message: 'settings object required' });
   try {
     await postgresSequelize.query(
@@ -5033,4 +4710,30 @@ router.get('/analytics/monthly-utilization', authCorporate, async (req, res) => 
   }
 });
 
+router.use(createCorporateSsoRouter({
+  database: postgresSequelize, authenticate: authCorporate, limiter: authLimiter, passwordMatches: corporatePasswordMatches, audit: accessAudit,
+  loginMfa: corporateMfaLogin,
+  encrypt: value => encryptSsoSecret(value), decrypt: value => decryptSsoSecret(value),
+  sign: (payload, options) => jwtSso.sign(payload, JWT_SSO_SECRET, { ...options, algorithm: 'HS256', issuer: 'mediqzy-corporate-sso', audience: 'mediqzy-corporate-sso' }),
+  verify: token => jwtSso.verify(token, JWT_SSO_SECRET, { algorithms: ['HS256'], issuer: 'mediqzy-corporate-sso', audience: 'mediqzy-corporate-sso' }),
+  accessToken: async payload => {const {issuePortalTokenPair}=await import('../services/token-revocation.service.js');const pair=await issuePortalTokenPair(payload,{portal:'corporate'});return {token:pair.accessToken,refreshToken:pair.refreshToken};},
+}));
+router.use(createCorporateAccessRouter({ database: postgresSequelize, authenticate: authCorporate, audit: accessAudit }));
+router.use(createCorporateSecurityRouter({
+  authenticate: authCorporate, limiter: authLimiter, mfa: corporateMfa, identity: corporateMfaIdentity,
+  passwordMatches: corporatePasswordMatches,
+  tokenFor: async (req, proof) => {
+    const { exp, iat, nbf, ...claims } = req.corporateToken;
+    const {issuePortalTokenPair}=await import('../services/token-revocation.service.js');
+    const pair=await issuePortalTokenPair({...claims,...proof},{portal:'corporate',deviceFp:req.headers['x-device-fingerprint']||null});
+    return {token:pair.accessToken,refreshToken:pair.refreshToken};
+  },
+}));
+router.use(createCorporateProgramsRouter({
+  database: postgresSequelize, authenticate: authCorporate, authenticateEmployee: authEmployee, audit: accessAudit,
+  withClinicalContext: async (transaction, action) => {
+    await setRlsContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
+    return action();
+  },
+}));
 export default router;

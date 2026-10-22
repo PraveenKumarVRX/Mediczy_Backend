@@ -1451,25 +1451,13 @@ const CorporateWellnessCalendar: React.FC = () => {
                                 size="sm"
                                 variant="outline"
                                 className="h-7 text-xs gap-1"
-                                onClick={() => {
-                                  const rows = [
-                                    ['Employee ID', 'Name', 'Department', 'Status', 'Registered At'],
-                                    ...registrations.map(r => [
-                                      r.employeeId || '',
-                                      r.employeeName || '',
-                                      r.department || '',
-                                      r.status || '',
-                                      r.invitedAt ? new Date(r.invitedAt).toLocaleDateString() : '',
-                                    ]),
-                                  ];
-                                  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-                                  const blob = new Blob([csv], { type: 'text/csv' });
-                                  const url = URL.createObjectURL(blob);
-                                  const a = document.createElement('a');
-                                  a.href = url;
-                                  a.download = `registrations-${selectedActivity?.title?.replace(/\s+/g, '-') ?? 'activity'}-${new Date().toISOString().slice(0, 10)}.csv`;
-                                  a.click();
-                                  URL.revokeObjectURL(url);
+                                onClick={async () => {
+                                  if(!selectedActivity)return;
+                                  try{
+                                    const response=await api.get(`/corporate/programs/wellness/${encodeURIComponent(selectedActivity.id)}/registrations/export`,{responseType:'blob'});
+                                    const url=URL.createObjectURL(new Blob([response.data],{type:'text/csv'}));const link=document.createElement('a');
+                                    link.href=url;link.download=`wellness-registrations-${selectedActivity.id}.csv`;link.click();URL.revokeObjectURL(url);
+                                  }catch{toast({title:'Registration export failed',variant:'destructive'});}
                                 }}
                               >
                                 <Download className="h-3 w-3" />

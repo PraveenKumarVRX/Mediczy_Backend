@@ -579,6 +579,8 @@ const CorporateAppointments         = lazy(() => import("@/pages/corporate/Corpo
 const CorporateHealthAnalysis       = lazy(() => import("@/pages/corporate/CorporateHealthAnalysis"));
 const CorporateDepartments          = lazy(() => import("@/pages/corporate/CorporateDepartments"));
 const CorporateClaims               = lazy(() => import("@/pages/corporate/CorporateClaims"));
+const CorporateAssignedEmployees = lazy(() => import("@/pages/corporate/CorporateAssignedEmployees"));
+const CorporateProgramAnalytics = lazy(() => import("@/pages/corporate/CorporateProgramAnalytics"));
 const CorporateFitnessCertificates  = lazy(() => import("@/pages/corporate/CorporateFitnessCertificates"));
 const CorporateReports              = lazy(() => import("@/pages/corporate/CorporateReports"));
 const CorporateComplaints           = lazy(() => import("@/pages/corporate/CorporateComplaints"));
@@ -1654,6 +1656,8 @@ const AppRoutes = () => {
         <Route path="/corporate/health-analysis"         element={<CorporateHealthAnalysis />} />
         <Route path="/corporate/departments"             element={<CorporateDepartments />} />
         <Route path="/corporate/claims"                  element={<CorporateClaims />} />
+        <Route path="/corporate/assigned-employees" element={<CorporateAssignedEmployees />} />
+        <Route path="/corporate/programs" element={<CorporateProgramAnalytics />} />
         <Route path="/corporate/fitness-certificates"    element={<CorporateFitnessCertificates />} />
         <Route path="/corporate/ohc"                     element={<CorporateOhc />} />
         {/* Occupational Health Clinic doctors and staff: their own sign-in and workspace */}
