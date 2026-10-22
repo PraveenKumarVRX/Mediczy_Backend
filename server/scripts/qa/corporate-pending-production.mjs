@@ -50,7 +50,9 @@ try {
     } catch { try { await request.abort(); } catch {} }
   });
   await page.goto(base + '/corporate/settings', { waitUntil: 'networkidle2', timeout: 60000 });
-  await page.evaluate(() => [...document.querySelectorAll('[role=tab]')].find(element => element.textContent.includes('Security'))?.click());
+  for (const tab of await page.$$('[role=tab]')) {
+    if (await tab.evaluate(element => element.textContent.includes('Security'))) { await tab.click(); break; }
+  }
   await page.waitForSelector('[aria-label="Single sign-on (not available)"]', { timeout: 15000 });
   check('Published SSO control is visibly unavailable', await page.$eval('[aria-label="Single sign-on (not available)"]', element => element.disabled && element.getAttribute('aria-checked') === 'false'));
   await page.goto(base + '/corporate/fitness-certificates', { waitUntil: 'networkidle2', timeout: 60000 });
@@ -60,4 +62,7 @@ try {
   writeFileSync(output, JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
   console.log(JSON.stringify({ passed: result.passed, checks: checks.length, failed: checks.filter(item => !item.passed) }));
   if (!result.passed) process.exitCode = 1;
+} catch (error) {
+  writeFileSync(output, JSON.stringify({ passed: false, checks, pageErrors, error: error.message }, null, 2) + '\n', { mode: 0o600 });
+  throw error;
 } finally { if (browser) await browser.close(); await db.close(); }

@@ -30,4 +30,10 @@ The consent checks above cover the identified corporate dossier/export/AHC paths
 
 ## Deployment
 
-Pending final rollout verification. Private recovery copies and command evidence are retained at `/home/ubuntu/corporate-pending-evidence/20261022/`. No schema migration is required. Rollback restores the three previous API source files, reloads `mediczy-server`, and restores the prior frontend index; old hashed frontend assets must be retained.
+Deployed product commit `4b9ab314` through the established PM2 workspace API path and a fresh frontend artifact at `/home/ubuntu/mediqzy-releases/corporate-pending-20261022/client/dist`. Nginx and S3 are published, retaining older hashed assets. API health returned a brief 502 during startup, then 200; PM2 is online with restart count stable at 17.
+
+All **26 live checks passed**: 14 existing cross-portal API regressions and 12 new API/browser checks. The new checks verify denied access to unconsented dossiers and CSVs, ZIP validation, an unavailable or foreign certificate, current audit access and pagination, published SSO messaging, published PDF ZIP controls and no browser runtime errors. No clinical records, consent grants, employee statuses, appointments or notifications were changed for verification. Real successful PDF archive contents were tested with local synthetic documents; no production clinical document was downloaded for acceptance.
+
+Production/nginx/artifact index SHA-256: `701c9f01966f31b0f814537cdd5f1e17ab21051c513d1e6d6014e43062a437f8`.
+
+Evidence: [sanitized release verification](../testing/CORPORATE_PENDING_TASKS_VERIFICATION_2026-10-22.json). Runtime source hashes are in `.deploy/corporate-pending-live-release.json`. Private recovery copies and command evidence are retained at `/home/ubuntu/corporate-pending-evidence/20261022/`. No schema migration is required. Rollback restores the three previous API source files, reloads `mediczy-server`, and restores the prior frontend index; old hashed frontend assets must be retained.
