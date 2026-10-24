@@ -1,0 +1,34 @@
+{
+  "releasedOn": "2026-10-24T23:58:10.905274+05:30",
+  "productCommit": "9b9330e4",
+  "branch": "main",
+  "apiPath": "/home/ubuntu/Mediczy/server",
+  "frontendArtifact": "/home/ubuntu/mediqzy-releases/field-force-20261024-9b9330e4/client/dist",
+  "indexSha256": "cdc6a15e6e7148b75a823442c3caa1eef6b16927e269e3b89d526ad523203282",
+  "frontendPublicHashMatches": true,
+  "cloudFront": {
+    "id": "IEIORDQFJW4GLHVALOIA0YQ8SB",
+    "status": "Completed"
+  },
+  "checks": {
+    "regressionPassed": 64,
+    "postgresIntegrationScenariosPassed": 7,
+    "publicApiPassed": 20,
+    "marketingApiPassed": 20,
+    "crmBrowserPagesPassed": 35,
+    "smartForceBrowserPassed": 1,
+    "portalRoutes": "ALL PASSED",
+    "canonicalSanitySmoke": "GO",
+    "entityUidViolations": 0,
+    "entityUidWarnings": 1
+  },
+  "databaseMigrations": 0,
+  "productionTestWrites": 0,
+  "oldHashedAssetsRetained": true,
+  "privateEvidence": "/home/ubuntu/field-force-release-evidence/20261024",
+  "limitations": [
+    "Login was not exercised; live smoke used short-lived tokens for designated QA accounts.",
+    "Device push delivery, idle-session policy and physical-device QA remain outside this release verification.",
+    "Entity UID audit reports a pre-existing reference coverage warning."
+  ]
+}

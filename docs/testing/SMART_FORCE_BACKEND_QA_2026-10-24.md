@@ -1,6 +1,6 @@
 # Smart Force backend QA remediation — 24 October 2026
 
-Scope: backend changes only. No mobile source or existing user changes were edited. No deployment or production data repair was performed.
+Scope: backend changes only. No mobile source or existing user changes were edited. The initial implementation performed no deployment or production data repair. Deployment verification is recorded below.
 
 ## Implemented
 
@@ -32,3 +32,17 @@ Tests exercise Express routes with mocked database responses; they validate requ
 - Disabled organization features (campaign publishing, services, community meetings, conversational assistance) need capability/provider decisions, not unconditional enablement.
 - Mobile presentation, receipt parsing, selection controls, manager report navigation, cancellation controls, list envelopes, crash handling and refresh behavior remain with the mobile work. New backend endpoints do not add mobile controls.
 - Actual-device QA retest, database integration validation and deployment remain outstanding. This document does not certify every report item resolved.
+
+## Production release follow-up
+
+The product changes were committed and pushed to `main` as `9b9330e4`. The API was reloaded under PM2 and its process configuration saved. The clean source archive built successfully; its frontend was published to the local Nginx directory and S3 without deleting previous hashed assets. CloudFront invalidation `IEIORDQFJW4GLHVALOIA0YQ8SB` completed. Built, local and public index SHA-256 values agree.
+
+Verification passed: 64 focused regression tests; seven disposable local PostgreSQL scenarios using production column metadata; 20 live API checks on each public hostname; 35 CRM browser pages plus a separate Smart Force page check; portal route sanity; and the canonical sanity/smoke runner with production service configuration (`GO`, zero critical failures). The first canonical attempt used the local LiveKit default and failed; rerunning through the production SSM environment resolved that configuration mismatch. These runs did not change production business records. The Entity UID verifier found zero violations and one existing reference-coverage warning.
+
+The local PostgreSQL scenarios execute the real routes with synthetic accounts, mocked authentication, local-only connections and a disposable schema. They verify notification atomicity/rollback, quota conservation, tour-plan protection, expense month storage, report retry identity, February boundaries and lead-stage consistency. The schema uses production column metadata and relevant unique keys; it is not a complete production constraint clone.
+
+Live API/browser checks use short-lived server-signed tokens for designated QA identities; login and physical-device behavior were not tested. Push delivery and idle-session follow-up remain open. No database migration or historical data repair was applied.
+
+Release evidence: [sanitized release manifest](SMART_FORCE_RELEASE_2026-10-24.json). Private logs and previous route/index files are retained under `/home/ubuntu/field-force-release-evidence/20261024`.
+
+Rollback: restore the two `*.previous.js` route files from that private evidence directory to their original `server/routes/` paths and reload `mediczy-server` with PM2. Restore `previous-index.html` locally and `previous-s3-index.html` to S3, then invalidate CloudFront. Retained hashed assets support the previous frontend entry point. Verify health and smoke checks after any rollback.
