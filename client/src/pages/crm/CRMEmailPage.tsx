@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { CRMLayout } from './CRMModulePages';
 
 // ─── Auth helper (same pattern as other CRM pages) ─────────────────────────
 function authHeaders() {
@@ -111,7 +112,7 @@ const SIG_KEY = 'crm_email_sig_v1';
 const DEFAULT_SIG = '-- \nBest regards,\nMediqzy CRM';
 
 // ─── FormatButton ────────────────────────────────────────────────────────────
-const FormatButton: React.FC<{ icon: React.ElementType; title: string; onClick: (e: React.MouseEvent) => void }> =
+const FormatButton: React.FC<{ icon: React.ComponentType<{ className?: string }>; title: string; onClick: (e: React.MouseEvent) => void }> =
   ({ icon: Icon, title, onClick }) => (
     <button type="button" title={title} onMouseDown={onClick}
       className="w-7 h-7 flex items-center justify-center rounded hover:bg-white/[0.08] text-slate-400 hover:text-white transition-colors">
@@ -585,6 +586,7 @@ const CRMEmailPage: React.FC = () => {
 
   // ── JSX ───────────────────────────────────────────────────────────
   return (
+    <CRMLayout title="Email">
     <div className="flex-1 flex flex-col gap-4 p-6 min-h-0">
       <input ref={fileInputRef} type="file" multiple className="hidden" onChange={e => handleFileAdd(e.target.files)} />
 
@@ -1222,6 +1224,7 @@ const CRMEmailPage: React.FC = () => {
         </div>
       )}
     </div>
+    </CRMLayout>
   );
 };
 

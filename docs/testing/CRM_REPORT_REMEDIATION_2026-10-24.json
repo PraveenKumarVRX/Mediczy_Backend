@@ -1,0 +1,701 @@
+{
+  "report_date": "2026-10-24",
+  "deployed": false,
+  "counts": {
+    "fail": 20,
+    "partial": 26,
+    "pass": 39
+  },
+  "findings": [
+    {
+      "id": 1,
+      "module": "CRM",
+      "case": "Report finding 1",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Copilot queries enforce organization scope. Pipeline Summary uses deterministic counts and names of current deals; forecast uses the full scoped deal set."
+    },
+    {
+      "id": 2,
+      "module": "CRM",
+      "case": "Report finding 2",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "AI Insights uses the same tenant-scoped legacy lead set as Leads; entity-specific reads and score writes are scoped too."
+    },
+    {
+      "id": 3,
+      "module": "CRM",
+      "case": "Report finding 3",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Team users are deduplicated; employee-profile joins select one record; managers with reports are excluded from Unassigned; zero metrics render empty bars."
+    },
+    {
+      "id": 4,
+      "module": "CRM",
+      "case": "Report finding 4",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Team performance includes scoped field leads and visits. Field leads already represented in CRM are excluded from the additional lead total."
+    },
+    {
+      "id": 5,
+      "module": "CRM",
+      "case": "Report finding 5",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Lead creation checks normalized email and phone within the tenant and returns a visible 409 duplicate message."
+    },
+    {
+      "id": 6,
+      "module": "CRM",
+      "case": "Report finding 6",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Save buttons lock immediately with a ref and pending state. Tenant advisory locks serialize duplicate checking and creation in one transaction."
+    },
+    {
+      "id": 7,
+      "module": "CRM",
+      "case": "Report finding 7",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Lead detail offers Convert to deal. Saving links the lead, marks it converted, and synchronizes its v2 record atomically."
+    },
+    {
+      "id": 8,
+      "module": "CRM",
+      "case": "Report finding 8",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Deal forms have lead and contact pickers and prefill contact details. Foreign references are checked against the authenticated tenant."
+    },
+    {
+      "id": 9,
+      "module": "CRM",
+      "case": "Report finding 9",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Frontend and backend reject negative or non-finite deal values."
+    },
+    {
+      "id": 10,
+      "module": "CRM",
+      "case": "Report finding 10",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "New open deals reject an expected close date before today; existing historical records remain editable."
+    },
+    {
+      "id": 11,
+      "module": "CRM",
+      "case": "Report finding 11",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Pipeline stage summaries open the corresponding filtered deal list; individual cards open a scoped deal detail form."
+    },
+    {
+      "id": 12,
+      "module": "CRM",
+      "case": "Report finding 12",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Dashboard explicitly labels the probability-weighted amount as weighted pipeline."
+    },
+    {
+      "id": 13,
+      "module": "CRM",
+      "case": "Report finding 13",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Funnel badges show each status as a share of all leads, with no misleading down-arrow. Lead-to-deal conversion uses all leads as denominator. Deal creation links leads and saves contacts."
+    },
+    {
+      "id": 14,
+      "module": "CRM",
+      "case": "Report finding 14",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Deal contact details create or reuse a scoped CRM contact and persist the contact link. Migration backfills historical deal contacts."
+    },
+    {
+      "id": 15,
+      "module": "CRM",
+      "case": "Report finding 15",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Activity form can select a lead, deal, or contact; API validates and persists those links."
+    },
+    {
+      "id": 16,
+      "module": "CRM",
+      "case": "Report finding 16",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Marketing lists and nested routes enforce creator ownership. Imports create/reuse scoped CRM contacts, including on repeat imports. Migration links historical list members when the owner has an explicit tenant relationship."
+    },
+    {
+      "id": 17,
+      "module": "CRM",
+      "case": "Report finding 17",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Suppression email validation rejects commas and separators, including CSV import validation."
+    },
+    {
+      "id": 18,
+      "module": "CRM",
+      "case": "Report finding 18",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Forecast uses saved probability, including zero; stage predictions no longer overwrite it. Bulk lead scores and health counts use consistent rules, rather than invented model scores."
+    },
+    {
+      "id": 19,
+      "module": "CRM",
+      "case": "Report finding 19",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Profile displays the authoritative CRM role. Backend no longer invents Sales Representative / Sales defaults."
+    },
+    {
+      "id": 20,
+      "module": "CRM",
+      "case": "Report finding 20",
+      "original_status": "Fail",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Scans and visible lead issues align with CRM Leads. Governance exposes legacy record links and readable field names. Identity checks recognize person_id; repaired issues are resolved on rescan."
+    },
+    {
+      "id": 21,
+      "module": "CRM",
+      "case": "Report finding 21",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Node types use readable labels while preserving stored machine codes."
+    },
+    {
+      "id": 22,
+      "module": "CRM",
+      "case": "Report finding 22",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Social trigger/channel/category options have readable labels; locale input explains the language code."
+    },
+    {
+      "id": 23,
+      "module": "CRM",
+      "case": "Report finding 23",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Calendar highlights today, disables past-day creation, and chooses a future time for today. API rejects new or changed backdated plans while allowing caption-only corrections to historical drafts."
+    },
+    {
+      "id": 24,
+      "module": "CRM",
+      "case": "Report finding 24",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Zero-count funnel and pipeline bars have zero width; empty funnels have no percentage badges."
+    },
+    {
+      "id": 25,
+      "module": "CRM",
+      "case": "Report finding 25",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Telephone dialing requires a configured provider and an available assigned agent. Browser-call configuration is explicitly distinguished from telephone setup."
+    },
+    {
+      "id": 26,
+      "module": "CRM",
+      "case": "Report finding 26",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Competitor wording is removed; rupee revenue uses the Indian Rupee icon."
+    },
+    {
+      "id": 27,
+      "module": "CRM",
+      "case": "Report finding 27",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Nurture enrollment uses the shared lead search picker and its resolved v2 ID."
+    },
+    {
+      "id": 28,
+      "module": "CRM",
+      "case": "Report finding 28",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Specialty KPIs show available measured lead, appointment, and revenue values. Unavailable measurements show an explicit dash instead of fabricated values."
+    },
+    {
+      "id": 29,
+      "module": "CRM",
+      "case": "Report finding 29",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Diagnostic totals include persisted api_lab_bookings using tenant_uid, with source-reference deduplication. Repeated totals are replaced with conversion rates, and rupee icons are corrected. Browser-local lab appointment drafts are not server bookings; deployed source reconciliation is still required."
+    },
+    {
+      "id": 30,
+      "module": "CRM",
+      "case": "Report finding 30",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Content workflow links to the native content calendar to create content."
+    },
+    {
+      "id": 31,
+      "module": "CRM",
+      "case": "Report finding 31",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Consent defaults to Unknown, requiring an explicit opt-in decision. Channel options use readable labels."
+    },
+    {
+      "id": 32,
+      "module": "CRM",
+      "case": "Report finding 32",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Touchpoint capture uses a campaign selector populated from the scoped dashboard."
+    },
+    {
+      "id": 33,
+      "module": "CRM",
+      "case": "Report finding 33",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Feedback and rating fields start empty, are required, and state their 0\u201310 / 1\u20135 ranges; review platform labels are readable."
+    },
+    {
+      "id": 34,
+      "module": "CRM",
+      "case": "Report finding 34",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Header explains active / total team counts; duplicate members are removed, fixture suffixes are stripped from display, and missing departments say Not assigned."
+    },
+    {
+      "id": 35,
+      "module": "CRM",
+      "case": "Report finding 35",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Governance has a capability-gated, tenant-scoped audit-log endpoint and viewer."
+    },
+    {
+      "id": 36,
+      "module": "CRM",
+      "case": "Report finding 36",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Lead rows display both email and phone; status and priority labels are capitalized."
+    },
+    {
+      "id": 37,
+      "module": "CRM",
+      "case": "Report finding 37",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Lead details already existed in this checkout. Corrected context resolution to use the session tenant and reject foreign lead IDs, enabling the search drawer and shared picker."
+    },
+    {
+      "id": 38,
+      "module": "CRM",
+      "case": "Report finding 38",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Deal form shows inline errors for email, value, probability, missing title, past close dates, and server failures."
+    },
+    {
+      "id": 39,
+      "module": "CRM",
+      "case": "Report finding 39",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Pipeline includes real deal cards, stage filtering, drag/drop moves, accessible stage selectors, and Won/Lost columns."
+    },
+    {
+      "id": 40,
+      "module": "CRM",
+      "case": "Report finding 40",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Lead, deal, and contact creation/updates write completed system activities and audit records in the same transaction."
+    },
+    {
+      "id": 41,
+      "module": "CRM",
+      "case": "Report finding 41",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Saving a past-scheduled activity requires an explicit warning confirmation in the UI; historical activity logging remains possible."
+    },
+    {
+      "id": 42,
+      "module": "CRM",
+      "case": "Report finding 42",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Email Inbox is wrapped in CRMLayout, restoring navigation and shared chrome."
+    },
+    {
+      "id": 43,
+      "module": "CRM",
+      "case": "Report finding 43",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "List creation/detail retained; ownership guards and contact linking also apply to list access and imports."
+    },
+    {
+      "id": 44,
+      "module": "CRM",
+      "case": "Report finding 44",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Template editor includes a visual message field and retains HTML source editing and the sandboxed preview already present in this checkout."
+    },
+    {
+      "id": 45,
+      "module": "CRM",
+      "case": "Report finding 45",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Untouched new leads are capped below Hot. System creation notes are not engagement. Bulk scores are deterministic and do not invent a Demo action."
+    },
+    {
+      "id": 46,
+      "module": "CRM",
+      "case": "Report finding 46",
+      "original_status": "Partial",
+      "implementation": "Addressed in code; deployed UAT pending",
+      "notes": "Reports distinguish lead stages from all seven deal stages, including Discovery, and support CSV export. Revenue/team/deal aggregates are tenant-scoped."
+    },
+    {
+      "id": 47,
+      "module": "CRM",
+      "case": "Report finding 47",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 48,
+      "module": "CRM",
+      "case": "Report finding 48",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 49,
+      "module": "CRM",
+      "case": "Report finding 49",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 50,
+      "module": "CRM",
+      "case": "Report finding 50",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 51,
+      "module": "CRM",
+      "case": "Report finding 51",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 52,
+      "module": "CRM",
+      "case": "Report finding 52",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 53,
+      "module": "CRM",
+      "case": "Report finding 53",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 54,
+      "module": "CRM",
+      "case": "Report finding 54",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 55,
+      "module": "CRM",
+      "case": "Report finding 55",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 56,
+      "module": "CRM",
+      "case": "Report finding 56",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 57,
+      "module": "CRM",
+      "case": "Report finding 57",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 58,
+      "module": "CRM",
+      "case": "Report finding 58",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 59,
+      "module": "CRM",
+      "case": "Report finding 59",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 60,
+      "module": "CRM",
+      "case": "Report finding 60",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 61,
+      "module": "CRM",
+      "case": "Report finding 61",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 62,
+      "module": "CRM",
+      "case": "Report finding 62",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 63,
+      "module": "CRM",
+      "case": "Report finding 63",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 64,
+      "module": "CRM",
+      "case": "Report finding 64",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 65,
+      "module": "CRM",
+      "case": "Report finding 65",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 66,
+      "module": "CRM",
+      "case": "Report finding 66",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 67,
+      "module": "CRM",
+      "case": "Report finding 67",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 68,
+      "module": "CRM",
+      "case": "Report finding 68",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 69,
+      "module": "CRM",
+      "case": "Report finding 69",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 70,
+      "module": "CRM",
+      "case": "Report finding 70",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 71,
+      "module": "CRM",
+      "case": "Report finding 71",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 72,
+      "module": "CRM",
+      "case": "Report finding 72",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 73,
+      "module": "CRM",
+      "case": "Report finding 73",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 74,
+      "module": "CRM",
+      "case": "Report finding 74",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 75,
+      "module": "CRM",
+      "case": "Report finding 75",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 76,
+      "module": "CRM",
+      "case": "Report finding 76",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 77,
+      "module": "CRM",
+      "case": "Report finding 77",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 78,
+      "module": "CRM",
+      "case": "Report finding 78",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 79,
+      "module": "CRM",
+      "case": "Report finding 79",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 80,
+      "module": "CRM",
+      "case": "Report finding 80",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 81,
+      "module": "CRM",
+      "case": "Report finding 81",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 82,
+      "module": "CRM",
+      "case": "Report finding 82",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 83,
+      "module": "CRM",
+      "case": "Report finding 83",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 84,
+      "module": "CRM",
+      "case": "Report finding 84",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    },
+    {
+      "id": 85,
+      "module": "CRM",
+      "case": "Report finding 85",
+      "original_status": "Pass",
+      "implementation": "Original pass retained; deployed regression pending",
+      "notes": "Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed."
+    }
+  ],
+  "verification": {
+    "frontend_tests_passed": 29,
+    "backend_tests_passed": 14,
+    "isolated_database_checks_passed": 27,
+    "production_frontend_build": "passed",
+    "repository_typecheck": "fails on existing errors; no diagnostics in changed CRM frontend files",
+    "existing_extensions_schema_suite": "fails on existing runtime DDL in underwriting/email routes",
+    "live_uat": "not run",
+    "production_data_modified": false
+  }
+}

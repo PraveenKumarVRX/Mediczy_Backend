@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,7 @@ import {
   UserCog, Contact, List, Bot, UserPlus, Filter, Inbox, GitBranch, MessageCircle, MapPin, Smartphone,
 } from 'lucide-react';
 import api from '@/utils/api';
+import LeadPicker, { type ResolvedLead } from './shared/LeadPicker';
 import { hasCRMCapability, CRM_ROLES, CRM_ROLE_LIST, CRM_ROLE_LABELS } from './shared/crmRoles';
 import LeadDetailDrawer from './shared/LeadDetailDrawer';
 import CommandPalette from './shared/CommandPalette';
@@ -299,6 +300,9 @@ function SourceBadge({ source }: { source: string }) {
 
 export function CRMLeadsPage() {
   const [leads, setLeads] = useState<any[]>([]);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -335,13 +339,18 @@ export function CRMLeadsPage() {
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+    setSaveError('');
+    savingRef.current = true; setSaving(true);
     try {
+      if (!form.name.trim()) throw new Error('Lead name is required');
       if (editLead) await api.put(`/crm/leads/${editLead.id}`, form, { headers: authHeaders() });
       else await api.post('/crm/leads', form, { headers: authHeaders() });
       setShowForm(false); setEditLead(null);
       setForm({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' });
       fetchLeads();
-    } catch {}
+    } catch (err: any) { setSaveError(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not save. Check the fields and try again.'); }
+    finally { savingRef.current = false; setSaving(false); }
   };
 
   const handleDelete = async (id: number) => {
@@ -449,8 +458,9 @@ export function CRMLeadsPage() {
                   className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
             </div>
-            <div className="flex justify-end">
-              <Button onClick={handleSave} className="bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white rounded-xl">
+            <div className="flex flex-col items-end gap-2">
+              {saveError && <p role="alert" className="text-sm text-red-300">{saveError}</p>}
+              <Button disabled={saving} onClick={handleSave} className="bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white rounded-xl">
                 <Save className="h-4 w-4 mr-1.5" /> {editLead ? 'Update' : 'Create'}
               </Button>
             </div>
@@ -481,12 +491,12 @@ export function CRMLeadsPage() {
                       <td className={`${tdClass} pl-5`}>
                         <button onClick={() => setDetailLeadId(l.id)} className="text-left hover:text-violet-300 transition-colors">
                           <p className="font-medium text-white">{l.name}</p>
-                          <p className="text-[11px] text-slate-600 mt-0.5">{l.email || l.phone || ''}</p>
+                          <p className="text-[11px] text-slate-600 mt-0.5">{[l.email, l.phone].filter(Boolean).join(' · ')}</p>
                         </button>
                       </td>
                       <td className={`${tdClass} text-slate-400`}>{l.company || '—'}</td>
-                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[l.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{l.status}</span></td>
-                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${priorityBadge[l.priority] || ''}`}>{l.priority}</span></td>
+                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize border ${statusBadge[l.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{l.status}</span></td>
+                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize border ${priorityBadge[l.priority] || ''}`}>{l.priority}</span></td>
                       <td className={tdClass}><SourceBadge source={l.source} /></td>
                       <td className={`${tdClass} text-[11px] text-slate-600`}>{new Date(l.created_at).toLocaleDateString()}</td>
                       <td className={`${tdClass} pr-5 text-right`}>
@@ -515,16 +525,33 @@ export function CRMLeadsPage() {
 
 export function CRMDealsPage() {
   const [deals, setDeals] = useState<any[]>([]);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [search, setSearch] = useState('');
-  const [stageFilter, setStageFilter] = useState('all');
+  const [stageFilter, setStageFilter] = useState(() => new URLSearchParams(window.location.search).get('stage') || 'all');
+  const [dealContactId, setDealContactId] = useState('');
+  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
+  useEffect(() => { api.get('/crm/contacts', { headers: authHeaders(), params: { limit: 100 } }).then(r => setAvailableContacts(r.data?.data || [])).catch(() => {}); }, []);
+  const [selectedLead, setSelectedLead] = useState<ResolvedLead | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editDeal, setEditDeal] = useState<any>(null);
   const [form, setForm] = useState({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', company: '', notes: '' });
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('lead');
+    if (!id) return;
+    api.get(`/crm/leads/${id}`, { headers: authHeaders() }).then(({ data }) => {
+      const lead = data.data;
+      setSelectedLead({ legacyLeadId: lead.id, v2LeadId: null, identityId: null, contactId: null, name: lead.name, email: lead.email, phone: lead.phone });
+      setForm(f => ({ ...f, title: `${lead.name} opportunity`, contact_name: lead.name, contact_email: lead.email || '', company: lead.company || '' }));
+      setShowForm(true);
+    }).catch(() => setSaveError('Could not load the selected lead'));
+  }, []);
   const stages = ['qualification', 'discovery', 'proposal', 'negotiation', 'contract', 'won', 'lost'];
   const stageBadge: Record<string, string> = {
     qualification: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
@@ -551,12 +578,22 @@ export function CRMDealsPage() {
   useEffect(() => { fetchDeals(); }, [fetchDeals]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+    setSaveError('');
+    savingRef.current = true; setSaving(true);
     try {
-      const payload = { ...form, value: parseFloat(form.value) || 0, probability: parseInt(form.probability) || 10 };
+      const value = Number(form.value || 0), probability = Number(form.probability);
+      if (!form.title.trim()) { setSaveError('Deal title is required'); return; }
+      if (!Number.isFinite(value) || value < 0) { setSaveError('Value must be zero or greater'); return; }
+      if (!Number.isFinite(probability) || probability < 0 || probability > 100) { setSaveError('Probability must be between 0 and 100'); return; }
+      if (form.contact_email && !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(form.contact_email)) { setSaveError('Enter a valid contact email'); return; }
+      if (!editDeal && !['won','lost'].includes(form.stage) && form.expected_close && form.expected_close < new Date().toLocaleDateString('en-CA')) { setSaveError('Expected close date cannot be in the past'); return; }
+      const payload = { ...form, contact_id: dealContactId || editDeal?.contact_id || null, lead_id: selectedLead?.legacyLeadId || editDeal?.lead_id || null, value: parseFloat(form.value) || 0, probability: Number(form.probability) };
       if (editDeal) await api.put(`/crm/deals/${editDeal.id}`, payload, { headers: authHeaders() });
       else await api.post('/crm/deals', payload, { headers: authHeaders() });
       setShowForm(false); setEditDeal(null); fetchDeals();
-    } catch {}
+    } catch (err: any) { setSaveError(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not save. Check the fields and try again.'); }
+    finally { savingRef.current = false; setSaving(false); }
   };
 
   const handleDelete = async (id: number) => {
@@ -565,11 +602,20 @@ export function CRMDealsPage() {
   };
 
   const openEdit = (deal: any) => {
-    setEditDeal(deal);
+    setEditDeal(deal); setDealContactId(deal.contact_id ? String(deal.contact_id) : ''); setSelectedLead(null); setSaveError('');
     setForm({ title: deal.title, value: deal.value?.toString() || '', stage: deal.stage, probability: deal.probability?.toString() || '10', expected_close: deal.expected_close?.split('T')[0] || '', contact_name: deal.contact_name || '', contact_email: deal.contact_email || '', company: deal.company || '', notes: deal.notes || '' });
     setShowForm(true);
   };
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('open');
+    if (params.get('new')) setShowForm(true);
+    if (!id) return;
+    api.get(`/crm/deals/${id}`, { headers: authHeaders() }).then(({data}) => {
+      openEdit(data.data); navigate('/crm/deals', { replace:true });
+    }).catch(() => setSaveError('Could not open this deal'));
+  }, [navigate]);
   const fmtCurr = (v: any) => `₹${(parseFloat(v || 0)).toLocaleString('en-IN')}`;
 
   return (
@@ -588,7 +634,7 @@ export function CRMDealsPage() {
               {stages.map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </div>
-          <Button onClick={() => { setEditDeal(null); setForm({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', company: '', notes: '' }); setShowForm(true); }}
+          <Button onClick={() => { setEditDeal(null); setDealContactId(''); setSelectedLead(null); setSaveError(''); setForm({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', company: '', notes: '' }); setShowForm(true); }}
             className="h-10 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl shadow-lg shadow-blue-600/20">
             <Plus className="h-4 w-4 mr-1.5" /> New Deal
           </Button>
@@ -600,6 +646,8 @@ export function CRMDealsPage() {
               <h3 className="text-sm font-semibold text-white">{editDeal ? 'Edit Deal' : 'Create New Deal'}</h3>
               <button onClick={() => { setShowForm(false); setEditDeal(null); }} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
             </div>
+            <div className="space-y-1"><Label className="text-slate-300">Link existing lead</Label><LeadPicker value={selectedLead} onSelect={lead => { setSelectedLead(lead); if (lead) setForm(f => ({ ...f, contact_name: lead.name, contact_email: lead.email || '' })); }} /></div>
+            <select aria-label="Linked contact" value={dealContactId} onChange={e => { setDealContactId(e.target.value); const c=availableContacts.find(c => String(c.id)===e.target.value); if (c) setForm(f => ({ ...f, contact_name:c.name, contact_email:c.email || '', company:c.company || '' })); }} className="h-10 rounded-lg bg-slate-900 px-3 text-white"><option value="">Select existing contact (optional)</option>{availableContacts.map(c => <option key={c.id} value={c.id}>{c.name} {c.email}</option>)}</select>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { label: 'Title *', field: 'title', placeholder: 'Deal title' },
@@ -629,8 +677,9 @@ export function CRMDealsPage() {
                   className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
             </div>
-            <div className="flex justify-end">
-              <Button onClick={handleSave} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl">
+            <div className="flex flex-col items-end gap-2">
+              {saveError && <p role="alert" className="text-sm text-red-300">{saveError}</p>}
+              <Button disabled={saving} onClick={handleSave} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl">
                 <Save className="h-4 w-4 mr-1.5" /> {editDeal ? 'Update' : 'Create'}
               </Button>
             </div>
@@ -662,7 +711,7 @@ export function CRMDealsPage() {
                         <p className="text-[11px] text-slate-600 mt-0.5">{d.contact_name || d.contact_email || ''}</p>
                       </td>
                       <td className={`${tdClass} font-semibold text-emerald-400`}>{fmtCurr(d.value)}</td>
-                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${stageBadge[d.stage] || ''}`}>{d.stage}</span></td>
+                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize border ${stageBadge[d.stage] || ''}`}>{d.stage}</span></td>
                       <td className={`${tdClass} text-slate-400`}>{d.probability}%</td>
                       <td className={`${tdClass} text-slate-500`}>{d.company || '—'}</td>
                       <td className={`${tdClass} text-[11px] text-slate-600`}>{d.expected_close ? new Date(d.expected_close).toLocaleDateString() : '—'}</td>
@@ -691,6 +740,9 @@ export function CRMDealsPage() {
 
 export function CRMContactsPage() {
   const [contacts, setContacts] = useState<any[]>([]);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -714,11 +766,15 @@ export function CRMContactsPage() {
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+    setSaveError('');
+    savingRef.current = true; setSaving(true);
     try {
       if (editContact) await api.put(`/crm/contacts/${editContact.id}`, form, { headers: authHeaders() });
       else await api.post('/crm/contacts', form, { headers: authHeaders() });
       setShowForm(false); setEditContact(null); fetchContacts();
-    } catch {}
+    } catch (err: any) { setSaveError(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not save. Check the fields and try again.'); }
+    finally { savingRef.current = false; setSaving(false); }
   };
 
   const handleDelete = async (id: number) => {
@@ -775,8 +831,9 @@ export function CRMContactsPage() {
                   className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
             </div>
-            <div className="flex justify-end">
-              <Button onClick={handleSave} className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl">
+            <div className="flex flex-col items-end gap-2">
+              {saveError && <p role="alert" className="text-sm text-red-300">{saveError}</p>}
+              <Button disabled={saving} onClick={handleSave} className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl">
                 <Save className="h-4 w-4 mr-1.5" /> {editContact ? 'Update' : 'Create'}
               </Button>
             </div>
@@ -830,12 +887,22 @@ export function CRMContactsPage() {
 
 export function CRMActivitiesPage() {
   const [activities, setActivities] = useState<any[]>([]);
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [typeFilter, setTypeFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ type: 'call', title: '', description: '', scheduled_at: '' });
+  const [selectedLead, setSelectedLead] = useState<ResolvedLead | null>(null);
+  const [activityContactId, setActivityContactId] = useState('');
+  const [availableContacts, setAvailableContacts] = useState<any[]>([]);
+  useEffect(() => { api.get('/crm/contacts', { headers: authHeaders(), params: { limit: 100 } }).then(r => setAvailableContacts(r.data?.data || [])).catch(() => {}); }, []);
+  const [activityDealId, setActivityDealId] = useState('');
+  const [availableDeals, setAvailableDeals] = useState<any[]>([]);
+  useEffect(() => { api.get('/crm/deals', { headers: authHeaders(), params: { limit: 100 } }).then(r => setAvailableDeals(r.data?.data || [])).catch(() => {}); }, []);
   const navigate = useNavigate();
 
   const types = ['call', 'email', 'meeting', 'task', 'note', 'followup'];
@@ -862,10 +929,16 @@ export function CRMActivitiesPage() {
   useEffect(() => { fetchActivities(); }, [fetchActivities]);
 
   const handleSave = async () => {
+    if (savingRef.current) return;
+    setSaveError('');
+    savingRef.current = true; setSaving(true);
     try {
-      await api.post('/crm/activities', form, { headers: authHeaders() });
+      if (!form.title.trim()) { setSaveError('Activity title is required'); return; }
+      if (form.scheduled_at && new Date(form.scheduled_at).getTime() < Date.now() && !window.confirm('This activity is scheduled in the past and will appear overdue. Save it?')) return;
+      await api.post('/crm/activities', { ...form, lead_id: selectedLead?.legacyLeadId || null, deal_id: activityDealId || null, contact_id: activityContactId || null }, { headers: authHeaders() });
       setShowForm(false); setForm({ type: 'call', title: '', description: '', scheduled_at: '' }); fetchActivities();
-    } catch {}
+    } catch (err: any) { setSaveError(err.response?.data?.message || err.response?.data?.error || err.message || 'Could not save. Check the fields and try again.'); }
+    finally { savingRef.current = false; setSaving(false); }
   };
 
   const handleComplete = async (id: number) => {
@@ -898,6 +971,8 @@ export function CRMActivitiesPage() {
               <h3 className="text-sm font-semibold text-white">Log New Activity</h3>
               <button onClick={() => setShowForm(false)} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
             </div>
+            <LeadPicker value={selectedLead} onSelect={setSelectedLead} /><select aria-label="Linked contact" value={activityContactId} onChange={e => setActivityContactId(e.target.value)} className="h-10 rounded-lg bg-slate-900 text-white"><option value="">Select contact (optional)</option>{availableContacts.map(c => <option key={c.id} value={c.id}>{c.name} {c.email}</option>)}</select>
+            <select aria-label="Linked deal" value={activityDealId} onChange={e => setActivityDealId(e.target.value)} className="h-10 rounded-lg bg-slate-900 text-white"><option value="">Select deal (optional)</option>{availableDeals.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}</select>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
                 <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Type</label>
@@ -922,8 +997,9 @@ export function CRMActivitiesPage() {
                   className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
             </div>
-            <div className="flex justify-end">
-              <Button onClick={handleSave} className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-xl">
+            <div className="flex flex-col items-end gap-2">
+              {saveError && <p role="alert" className="text-sm text-red-300">{saveError}</p>}
+              <Button disabled={saving} onClick={handleSave} className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-xl">
                 <Save className="h-4 w-4 mr-1.5" /> Log Activity
               </Button>
             </div>
@@ -969,6 +1045,10 @@ export function CRMActivitiesPage() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function CRMPipelinePage() {
+  const [boardDeals, setBoardDeals] = useState<any[]>([]);
+  const [boardError, setBoardError] = useState('');
+  const [boardVersion, setBoardVersion] = useState(0);
+  const moveDeal = async (id: number, stage: string) => { try { await api.put(`/crm/deals/${id}`, { stage }, { headers: authHeaders() }); setBoardVersion(v => v + 1); setBoardError(''); } catch (e: any) { setBoardError(e.response?.data?.message || 'Could not move deal'); } };
   const [pipeline, setPipeline] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -978,6 +1058,8 @@ export function CRMPipelinePage() {
     discovery:     { label: 'Discovery', color: 'text-blue-400', border: 'border-blue-500/20', bg: 'bg-blue-500/10' },
     proposal:      { label: 'Proposal', color: 'text-violet-400', border: 'border-violet-500/20', bg: 'bg-violet-500/10' },
     negotiation:   { label: 'Negotiation', color: 'text-amber-400', border: 'border-amber-500/20', bg: 'bg-amber-500/10' },
+    won: { label: 'Won', color: 'text-emerald-400', border: 'border-emerald-500/20', bg: 'bg-emerald-500/10' },
+    lost: { label: 'Lost', color: 'text-red-400', border: 'border-red-500/20', bg: 'bg-red-500/10' },
     contract:      { label: 'Contract', color: 'text-purple-400', border: 'border-purple-500/20', bg: 'bg-purple-500/10' },
   };
 
@@ -986,20 +1068,27 @@ export function CRMPipelinePage() {
       try {
         const { data } = await api.get('/crm/deals/pipeline', { headers: authHeaders() });
         if (data.success) setPipeline(data.data);
+        const allDeals: any[] = [];
+        let page = 1, totalPages = 1;
+        do {
+          const response = await api.get('/crm/deals', { headers: authHeaders(), params: { page, limit: 100 } });
+          allDeals.push(...(response.data?.data || [])); totalPages = response.data?.pagination?.totalPages || 1; page++;
+        } while (page <= totalPages);
+        setBoardDeals(allDeals);
       } catch (err: any) { if (err.response?.status === 401) navigate('/crm/login'); }
       finally { setLoading(false); }
     };
     fetchPipeline();
-  }, [navigate]);
+  }, [navigate, boardVersion]);
 
   const fmtCurr = (v: any) => `₹${(parseFloat(v || 0)).toLocaleString('en-IN')}`;
-  const orderedStages = ['qualification', 'discovery', 'proposal', 'negotiation', 'contract'];
+  const orderedStages = ['qualification', 'discovery', 'proposal', 'negotiation', 'contract', 'won', 'lost'];
   const pipelineMap = Object.fromEntries(pipeline.map(p => [p.stage, p]));
-  const totalPipeline = pipeline.reduce((s, p) => s + parseFloat(p.total_value || 0), 0);
-  const totalWeighted = pipeline.reduce((s, p) => s + parseFloat(p.weighted_value || 0), 0);
+  const totalPipeline = pipeline.filter(p => !['won','lost'].includes(p.stage)).reduce((s, p) => s + parseFloat(p.total_value || 0), 0);
+  const totalWeighted = pipeline.filter(p => !['won','lost'].includes(p.stage)).reduce((s, p) => s + parseFloat(p.weighted_value || 0), 0);
 
   return (
-    <CRMLayout title="Sales Pipeline">
+    <CRMLayout title="Sales Pipeline">{boardError && <p role="alert" className="text-red-300">{boardError}</p>}
       {loading ? (
         <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin mx-auto" /></div>
       ) : (
@@ -1009,7 +1098,7 @@ export function CRMPipelinePage() {
               <p className="text-3xl font-bold text-white tracking-tight">{fmtCurr(totalPipeline)}</p>
               <p className="text-sm text-slate-500 mt-0.5">Total pipeline value &middot; {fmtCurr(totalWeighted)} weighted</p>
             </div>
-            <Link to="/crm/deals">
+            <Link to="/crm/deals?new=1">
               <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl shadow-lg shadow-blue-600/20">
                 <Plus className="h-4 w-4 mr-1.5" /> New Deal
               </Button>
@@ -1022,16 +1111,23 @@ export function CRMPipelinePage() {
               const data = pipelineMap[stage] || { count: 0, total_value: '0', weighted_value: '0' };
               const pct = totalPipeline > 0 ? (parseFloat(data.total_value || '0') / totalPipeline * 100) : 0;
               return (
-                <div key={stage} className={`p-5 rounded-2xl bg-white/[0.03] border ${cfg.border} hover:bg-white/[0.05] transition-all duration-200`}>
+                <div key={stage} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); const id = Number(e.dataTransfer.getData('text/crm-deal')); if (id) void moveDeal(id, stage); }} role="button" tabIndex={0} onClick={() => navigate(`/crm/deals?stage=${stage}`)} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') navigate(`/crm/deals?stage=${stage}`); }} className={`cursor-pointer p-5 rounded-2xl bg-white/[0.03] border ${cfg.border} hover:bg-white/[0.05] transition-all duration-200`}>
                   <div className="flex items-center justify-between mb-4">
                     <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${cfg.color}`}>{cfg.label}</span>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${cfg.bg} ${cfg.color}`}>{parseInt(data.count)}</span>
                   </div>
                   <p className="text-xl font-bold text-white">{fmtCurr(data.total_value)}</p>
                   <p className="text-[10px] text-slate-600 mt-0.5">Weighted: {fmtCurr(data.weighted_value)}</p>
+                  <div className="mt-3 space-y-2" onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                    {boardDeals.filter(d => d.stage === stage).map(deal => <div key={deal.id} draggable onDragStart={e => e.dataTransfer.setData('text/crm-deal', String(deal.id))} className="rounded-xl border border-white/10 bg-slate-900 p-3">
+                      <Link className="text-sm text-white hover:text-violet-300" to={`/crm/deals?open=${deal.id}`}>{deal.title}</Link>
+                      <p className="my-2 text-xs text-slate-400">{fmtCurr(deal.value)} · {deal.probability}%</p>
+                      <select aria-label={`Move ${deal.title} to stage`} value={deal.stage} onChange={e => void moveDeal(deal.id, e.target.value)} className="w-full rounded bg-slate-800 p-1 text-xs text-white">{orderedStages.map(s => <option key={s} value={s}>{stageConfig[s].label}</option>)}</select>
+                    </div>)}
+                  </div>
                   <div className="mt-4 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
                     <div className={`h-full rounded-full transition-all duration-700 bg-gradient-to-r from-violet-500 to-blue-500`}
-                      style={{ width: `${Math.max(pct, 3)}%` }} />
+                      style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               );
@@ -1078,6 +1174,12 @@ export function CRMReportsPage() {
 
   return (
     <CRMLayout title="Reports">
+      <Button className="mb-4" disabled={loading} onClick={() => {
+        const cell = (value: any) => '"' + String(value ?? '').replace(/^[=+@-]/, "'$&").replace(/"/g, '""') + '"';
+        const rows = [['Report', 'Metric', 'Value'], ...funnel.map(f => ['Sales funnel', f.stage, f.count]), ['Revenue', 'Total', revenue?.totals?.total_revenue || 0], ['Revenue', 'Deals won', revenue?.totals?.total_won || 0], ...teamPerf.map(t => ['Team', t.name || [t.firstName,t.lastName].filter(Boolean).join(' ') || t.email || t.id, t.total_leads || t.leads || t.lead_count || 0])];
+        const url = URL.createObjectURL(new Blob([rows.map(row => row.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a'); link.href = url; link.download = 'crm-reports.csv'; link.click(); URL.revokeObjectURL(url);
+      }}>Export reports (CSV)</Button>
       {loading ? (
         <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin mx-auto" /></div>
       ) : (
@@ -1098,7 +1200,7 @@ export function CRMReportsPage() {
                       <span className="text-slate-300 font-semibold">{f.count}</span>
                     </div>
                     <div className="h-2 bg-white/[0.04] rounded-full overflow-hidden">
-                      <div className={`h-full ${funnelColors[i] || 'bg-slate-500'} rounded-full transition-all duration-700`} style={{ width: `${Math.max(pct, 3)}%` }} />
+                      <div className={`h-full ${funnelColors[i] || 'bg-slate-500'} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 );
@@ -1233,7 +1335,7 @@ export function CRMSettingsPage() {
         {profileLoading && <p role="status" className="settings-muted mb-3">Verifying your profile…</p>}
         {crmUser && <div className="flex items-center gap-4 min-w-0">
           <div aria-hidden="true" className="h-12 w-12 shrink-0 rounded-xl bg-violet-900 flex items-center justify-center font-bold text-white">{(crmUser.firstName?.[0] || '') + (crmUser.lastName?.[0] || '')}</div>
-          <div className="min-w-0"><p className="font-semibold">{crmUser.firstName} {crmUser.lastName}</p><p className="settings-muted text-sm break-all">{crmUser.email}</p><p className="settings-muted text-sm mt-1">{crmUser.designation || 'CRM user'} · {crmUser.department || 'Sales'}{profileError ? ' · Cached details' : ''}</p></div>
+          <div className="min-w-0"><p className="font-semibold">{crmUser.firstName} {crmUser.lastName}</p><p className="settings-muted text-sm break-all">{crmUser.email}</p><p className="settings-muted text-sm mt-1">{CRM_ROLE_LABELS[crmUser.crmRole] || crmUser.crmRole || 'CRM user'} · {crmUser.department || 'No department assigned'}{profileError ? ' · Cached details' : ''}</p></div>
         </div>}
       </section>
       <CRMChannelSettings crmUser={crmUser} profileLoading={profileLoading} profileError={profileError} onAuthError={handleSettingsAuthError} />
@@ -1265,7 +1367,7 @@ export function CRMTeamPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '', managerUserId: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP as string, department: '', designation: '', managerUserId: '' });
   const managers = members.filter((m) => m.crmRole === CRM_ROLES.BUSINESS_HEAD || m.crmRole === CRM_ROLES.MARKETING_HEAD);
   const [submitting, setSubmitting] = useState(false);
 
@@ -1301,7 +1403,7 @@ export function CRMTeamPage() {
     try {
       const { data } = await api.post('/crm/team/users', { ...form, managerUserId: form.managerUserId || null }, { headers: authHeaders() });
       setNotice(data.message || 'CRM login created.');
-      setForm({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP, department: '', designation: '', managerUserId: '' });
+      setForm({ firstName: '', lastName: '', email: '', phone: '', crmRole: CRM_ROLES.SALES_REP as string, department: '', designation: '', managerUserId: '' });
       setShowForm(false);
       await loadMembers();
     } catch (e: any) {

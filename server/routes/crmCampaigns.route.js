@@ -1,4 +1,5 @@
 import express from 'express';
+import { marketingRecordReference } from '../services/crm/validation.js';
 import multer from 'multer';
 import XLSX from '../utils/excel-compat.js';
 import crypto from 'crypto';
@@ -12,7 +13,7 @@ import { snapshotCampaignRecipients, sendCampaignRecipient } from '../services/c
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const emailRegex = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/i;
 const campaignQueue = new Queue('crm-campaign-queue', { connection: createRedisConnection() });
 
 async function ensureTables() {
@@ -236,19 +237,45 @@ router.get("/public/click/:token", async (req, res) => {
 
 router.use(authCRM);
 
-router.get('/senders', async (_req, res) => {
-  res.json({ success: true, data: (await sharedPool.query(`SELECT * FROM crm_marketing_senders ORDER BY is_default DESC,created_at DESC`)).rows });
+// Legacy marketing records have actor ownership. Fail closed for nested routes
+// before importing recipients, previewing content, mutating, or dispatching.
+router.use(async (req, res, next) => {
+  try {
+    let reference;
+    try { reference = marketingRecordReference(req.path); } catch { return res.status(404).json({ success:false, message:'Marketing record not found' }); }
+    if (reference) {
+      const tables = { lists: 'crm_marketing_lists', templates: 'crm_marketing_templates', campaigns: 'crm_marketing_campaigns' };
+      const result = reference.kind === 'list-members'
+        ? await sharedPool.query(`SELECT m.id FROM crm_marketing_list_members m JOIN crm_marketing_lists l ON l.id=m.list_id WHERE m.id=$1 AND l.created_by=$2`, [reference.id, req.crmUser.id])
+        : await sharedPool.query(`SELECT id FROM ${tables[reference.kind]} WHERE id=$1 AND created_by=$2`, [reference.id, req.crmUser.id]);
+      if (!result.rows.length) return res.status(404).json({ success: false, message: 'Marketing record not found' });
+    }
+    if (req.body?.sender_id) {
+      const result = await sharedPool.query(`SELECT id FROM crm_marketing_senders WHERE id=$1 AND created_by=$2`, [req.body.sender_id, req.crmUser.id]);
+      if (!result.rows.length) return res.status(404).json({ success:false, message:'Sender not found' });
+    }
+    if (req.body?.list_ids?.length) {
+      const result = await sharedPool.query(`SELECT id FROM crm_marketing_lists WHERE id=ANY($1::bigint[]) AND created_by=$2`, [req.body.list_ids, req.crmUser.id]);
+      if (new Set(result.rows.map(r => String(r.id))).size !== new Set(req.body.list_ids.map(String)).size) return res.status(404).json({ success:false, message:'List not found' });
+    }
+    next();
+  } catch (error) { next(error); }
+});
+
+
+router.get('/senders', async (req, res) => {
+  res.json({ success: true, data: (await sharedPool.query(`SELECT * FROM crm_marketing_senders WHERE created_by=$1 ORDER BY is_default DESC,created_at DESC`, [req.crmUser.id])).rows });
 });
 router.post('/senders', async (req, res) => {
   const { name, email, reply_to, provider='smtp', is_verified=true, is_default=false } = req.body;
   if (!name || !email) return res.status(400).json({ success: false, message: 'name and email are required' });
-  if (is_default) await sharedPool.query(`UPDATE crm_marketing_senders SET is_default=false`);
+  if (is_default) await sharedPool.query(`UPDATE crm_marketing_senders SET is_default=false WHERE created_by=$1`, [req.crmUser.id]);
   const { rows } = await sharedPool.query(`INSERT INTO crm_marketing_senders (name,email,reply_to,provider,is_verified,is_default,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`, [name,email,reply_to||null,provider,!!is_verified,!!is_default,req.crmUser.id]);
   res.status(201).json({ success: true, data: rows[0] });
 });
 
-router.get('/lists', async (_req, res) => {
-  const { rows } = await sharedPool.query(`SELECT l.*,COUNT(m.id)::int AS member_count FROM crm_marketing_lists l LEFT JOIN crm_marketing_list_members m ON m.list_id=l.id GROUP BY l.id ORDER BY l.created_at DESC`);
+router.get('/lists', async (req, res) => {
+  const { rows } = await sharedPool.query(`SELECT l.*,COUNT(m.id)::int AS member_count FROM crm_marketing_lists l LEFT JOIN crm_marketing_list_members m ON m.list_id=l.id WHERE l.created_by=$1 GROUP BY l.id ORDER BY l.created_at DESC`, [req.crmUser.id]);
   res.json({ success: true, data: rows });
 });
 router.post('/lists', async (req, res) => {
@@ -267,6 +294,7 @@ router.get('/lists/:id', async (req, res) => {
   res.json({ success: true, data: { ...list.rows[0], members: members.rows, imports: imports.rows } });
 });
 router.post('/lists/:id/import', upload.single('file'), async (req, res) => {
+  if (!req.crmUser.tenantUid) return res.status(400).json({ success:false,message:'Organization context is required' });
   if (!req.file) return res.status(400).json({ success: false, message: 'file is required' });
   const workbook = await XLSX.read(req.file.buffer, { type: 'buffer' });
   const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '' });
@@ -284,13 +312,24 @@ router.post('/lists/:id/import', upload.single('file'), async (req, res) => {
     const r = rows[i]; const email = String(r.EMAIL || r.email || r.Email || '').trim().toLowerCase();
     if (!emailRegex.test(email)) { errors.push({ row:i+2,email,error:'Invalid email' }); continue; }
     const inserted = await sharedPool.query(`INSERT INTO crm_marketing_list_members (list_id,email,first_name,last_name,company,city,state,source,metadata) VALUES ($1,$2,$3,$4,$5,$6,$7,'import',$8) ON CONFLICT (list_id,email) DO NOTHING RETURNING id`, [req.params.id,email,r.FIRST_NAME||r.first_name||null,r.LAST_NAME||r.last_name||null,r.COMPANY||r.company||r.HOSPITAL_NAME||null,r.CITY||r.city||null,r.STATE||r.state||null,JSON.stringify(r)]);
-    if (inserted.rows.length) valid++; else duplicate++;
+    const created = inserted.rows.length > 0;
+    if (!created) {
+      const existing = await sharedPool.query(`SELECT id FROM crm_marketing_list_members WHERE list_id=$1 AND LOWER(email)=$2 LIMIT 1`, [req.params.id,email]);
+      inserted.rows = existing.rows;
+    }
+    if (inserted.rows.length) {
+      const name = [r.FIRST_NAME || r.first_name, r.LAST_NAME || r.last_name].filter(Boolean).join(' ') || email;
+      let contact = await sharedPool.query(`SELECT id FROM crm_contacts WHERE tenant_uid=$1 AND LOWER(email)=$2 ORDER BY id LIMIT 1`, [req.crmUser.tenantUid, email]);
+      if (!contact.rows.length) contact = await sharedPool.query(`INSERT INTO crm_contacts (name,email,company,created_by,tenant_uid) VALUES ($1,$2,$3,$4,$5) RETURNING id`, [name, email, r.COMPANY || r.company || null, req.crmUser.id, req.crmUser.tenantUid]);
+      await sharedPool.query(`UPDATE crm_marketing_list_members SET contact_id=$1 WHERE id=$2`, [contact.rows[0].id, inserted.rows[0].id]);
+      if (created) valid++; else duplicate++;
+    } else duplicate++;
   }
   await sharedPool.query(`UPDATE crm_marketing_imports SET status='completed',valid_rows=$1,invalid_rows=$2,duplicate_rows=$3,error_report=$4,completed_at=NOW() WHERE id=$5`, [valid,errors.length,duplicate,JSON.stringify(errors),importId]);
   res.status(201).json({ success: true, data: { importId,totalRows:rows.length,validRows:valid,invalidRows:errors.length,duplicateRows:duplicate,errors } });
 });
 
-router.get('/templates', async (_req, res) => res.json({ success:true, data:(await sharedPool.query(`SELECT * FROM crm_marketing_templates ORDER BY created_at DESC`)).rows }));
+router.get('/templates', async (req, res) => res.json({ success:true, data:(await sharedPool.query(`SELECT * FROM crm_marketing_templates WHERE created_by=$1 ORDER BY created_at DESC`, [req.crmUser.id])).rows }));
 router.post('/templates', async (req, res) => {
   const { name, subject='', preheader='', html_content='', text_content='', category='general', variables=[] } = req.body;
   if (!name) return res.status(400).json({ success:false, message:'name is required' });
@@ -298,8 +337,8 @@ router.post('/templates', async (req, res) => {
   res.status(201).json({ success:true, data:rows[0] });
 });
 
-router.get('/campaigns', async (_req, res) => {
-  const { rows } = await sharedPool.query(`SELECT c.*,s.name AS sender_name,s.email AS sender_email,COUNT(r.id)::int AS recipient_count,COUNT(r.id) FILTER (WHERE r.status='sent')::int AS sent_count,COUNT(r.id) FILTER (WHERE r.status='failed')::int AS failed_count FROM crm_marketing_campaigns c LEFT JOIN crm_marketing_senders s ON s.id=c.sender_id LEFT JOIN crm_marketing_campaign_recipients r ON r.campaign_id=c.id GROUP BY c.id,s.id ORDER BY c.created_at DESC`);
+router.get('/campaigns', async (req, res) => {
+  const { rows } = await sharedPool.query(`SELECT c.*,s.name AS sender_name,s.email AS sender_email,COUNT(r.id)::int AS recipient_count,COUNT(r.id) FILTER (WHERE r.status='sent')::int AS sent_count,COUNT(r.id) FILTER (WHERE r.status='failed')::int AS failed_count FROM crm_marketing_campaigns c LEFT JOIN crm_marketing_senders s ON s.id=c.sender_id LEFT JOIN crm_marketing_campaign_recipients r ON r.campaign_id=c.id WHERE c.created_by=$1 GROUP BY c.id,s.id ORDER BY c.created_at DESC`, [req.crmUser.id]);
   res.json({ success:true, data:rows });
 });
 router.post('/campaigns', async (req,res) => {

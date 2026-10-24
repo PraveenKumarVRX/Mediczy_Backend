@@ -1,4 +1,6 @@
 import express from 'express';
+import { recordCRMChange } from '../services/crm/record-change.js';
+import { validateDeal, validEmail } from '../services/crm/validation.js';
 import { body, validationResult } from 'express-validator';
 import { createHash, randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -11,7 +13,7 @@ import sharedPool from '../db/pgPool.js';
 import { handleLeadStatusChange } from '../services/crm-lead-automation.service.js';
 import { syncLegacyLeadToV2, removeLegacyLeadFromV2, resolveV2LeadByLegacyId, CRM_V2_DEFAULT_TENANT_ID } from '../services/crm-v2-sync.service.js';
 import { listCrmCommunicationLog, listCrmCallActivity } from '../services/hospital-crm-communication-hub.service.js';
-import { DEFAULT_CRM_ROLE } from '../config/crm-roles.config.js';
+import { DEFAULT_CRM_ROLE, CRM_ROLE_LABELS } from '../config/crm-roles.config.js';
 
 const router = express.Router();
 
@@ -240,8 +242,8 @@ router.post('/login', authLimiter, [
       crmRole,
       isAdmin: user.isAdmin || false,
       tenantId: metadata.tenantId || user.tenant_id || user.organizationId || user.organization_id || null,
-      designation: user.designation || 'Sales Representative',
-      department: user.department || 'Sales',
+      designation: user.designation || CRM_ROLE_LABELS[crmRole] || 'CRM user',
+      department: user.department || null,
       permissions: metadata.crmPermissions || ['leads', 'deals', 'contacts', 'activities', 'reports']
     };
 
@@ -351,8 +353,8 @@ router.get('/profile', authCRM, async (req, res) => {
       role: user.role || 'crm',
       crmRole: user.crmRole,
       isAdmin: user.isAdmin || false,
-      designation: user.designation || 'Sales Representative',
-      department: user.department || 'Sales',
+      designation: user.designation || CRM_ROLE_LABELS[user.crmRole] || 'CRM user',
+      department: user.department || null,
       permissions: user.permissions || [],
       tenantId: user.tenantId || null,
     },
@@ -452,9 +454,21 @@ router.get('/leads', authCRM, async (req, res) => {
 router.post('/leads', authCRM, [body('name').notEmpty().withMessage('Lead name is required')], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
+  if (!req.crmUser.tenantUid || !req.crmUser.tenantId) return res.status(400).json({ success: false, message: 'Organization context is required' });
+  if (!validEmail(req.body.email)) return res.status(400).json({ success: false, message: 'Enter a valid email' });
+  let client;
   try {
+    client = await sharedPool.connect();
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [req.crmUser.tenantUid]);
     const { name, email, phone, company, designation, source, status, priority, notes, tags, next_followup } = req.body;
-    const { rows } = await sharedPool.query(
+    const duplicate = await client.query(`SELECT id FROM crm_leads WHERE id IN
+      (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid=$1) AND
+      (($2::text IS NOT NULL AND LOWER(TRIM(email))=LOWER(TRIM($2))) OR
+       ($3::text IS NOT NULL AND regexp_replace(phone, '[^0-9]', '', 'g')=regexp_replace($3, '[^0-9]', '', 'g'))) LIMIT 1`,
+      [req.crmUser.tenantUid, email?.trim() || null, phone?.trim() || null]);
+    if (duplicate.rows.length) { await client.query('ROLLBACK'); return res.status(409).json({ success: false, message: 'A lead with this email or phone already exists', leadId: duplicate.rows[0].id }); }
+    const { rows } = await client.query(
       `INSERT INTO crm_leads (name, email, phone, company, designation, source, status, priority, notes, tags, next_followup, assigned_to, created_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [name, email||null, phone||null, company||null, designation||null, source||'manual', status||'new', priority||'medium', notes||null, JSON.stringify(tags||[]), next_followup||null, req.crmUser.id, req.crmUser.id]
@@ -462,9 +476,12 @@ router.post('/leads', authCRM, [body('name').notEmpty().withMessage('Lead name i
     // Associate the new lead's v2 twin with the CREATOR's tenant (not the hardcoded default), so it
     // belongs to — and is visible to — only that tenant. Works for tenants-table tenants
     // (hospital/clinic/broker); corporate-tenant uid derivation is a known follow-up (see notes).
-    syncLegacyLeadToV2(rows[0].id, req.crmUser.tenantId || undefined).catch(() => {});
+    await syncLegacyLeadToV2(rows[0].id, req.crmUser.tenantId, { db: client, strict: true });
+    await recordCRMChange(client, req.crmUser, 'lead', rows[0], 'created');
+    await client.query('COMMIT');
     return res.status(201).json({ success: true, data: rows[0] });
-  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create lead' }); }
+  } catch (error) { if (client) await client.query('ROLLBACK'); return res.status(500).json({ success: false, message: 'Failed to create lead' }); }
+  finally { client?.release(); }
 });
 
 router.get('/leads/:id', authCRM, async (req, res) => {
@@ -473,7 +490,7 @@ router.get('/leads/:id', authCRM, async (req, res) => {
     const scope = scopeLeadToTenant('id', req.crmUser.tenantUid, params);
     const { rows } = await sharedPool.query(`SELECT * FROM crm_leads WHERE id = $1 AND ${scope}`, params);
     if (!rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
-    const activities = await sharedPool.query(`SELECT * FROM crm_activities WHERE lead_id = $1 ORDER BY created_at DESC LIMIT 50`, [req.params.id]);
+    const activities = await sharedPool.query(`SELECT * FROM crm_activities WHERE lead_id = $1 AND tenant_uid=$2 ORDER BY created_at DESC LIMIT 50`, [req.params.id, req.crmUser.tenantUid]);
     return res.status(200).json({ success: true, data: { ...rows[0], activities: activities.rows } });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch lead' }); }
 });
@@ -485,7 +502,9 @@ router.get('/leads/:id', authCRM, async (req, res) => {
 router.get('/leads/:id/context', authCRM, async (req, res) => {
   try {
     const legacyLeadId = parseInt(req.params.id, 10);
-    const v2 = await resolveV2LeadByLegacyId(legacyLeadId);
+    const visible = await sharedPool.query(`SELECT 1 FROM crm_leads_v2 WHERE legacy_lead_id=$1 AND tenant_uid=$2`, [legacyLeadId, req.crmUser.tenantUid]);
+    if (!visible.rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
+    const v2 = await resolveV2LeadByLegacyId(legacyLeadId, req.crmUser.tenantId);
 
     let segments = [];
     let automationExecutions = [];
@@ -508,9 +527,9 @@ router.get('/leads/:id/context', authCRM, async (req, res) => {
       ]);
       segments = segRes.rows;
       automationExecutions = autoRes.rows;
-      communications = await listCrmCommunicationLog({ leadId: legacyLeadId, limit: 20 }).catch(() => []);
+      communications = await listCrmCommunicationLog({ tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid, leadId: legacyLeadId, limit: 20 }).catch(() => []);
     }
-    calls = await listCrmCallActivity({ leadId: legacyLeadId, limit: 20 }).catch(() => []);
+    calls = await listCrmCallActivity({ tenantUid: req.crmUser.tenantUid, leadId: legacyLeadId, limit: 20 }).catch(() => []);
 
     return res.status(200).json({
       success: true,
@@ -523,18 +542,20 @@ router.get('/leads/:id/context', authCRM, async (req, res) => {
 });
 
 router.put('/leads/:id', authCRM, async (req, res) => {
+  let client;
   try {
+    client = await sharedPool.connect(); await client.query('BEGIN');
     const { name, email, phone, company, designation, source, status, priority, notes, tags, assigned_to, next_followup } = req.body;
 
     const prevParams = [req.params.id];
     const prevScope = scopeLeadToTenant('id', req.crmUser.tenantUid, prevParams);
-    const prevRes = await sharedPool.query(`SELECT status FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
-    if (!prevRes.rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
+    const prevRes = await client.query(`SELECT status FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
+    if (!prevRes.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Lead not found' }); }
     const previousStatus = prevRes.rows[0].status;
 
     const upParams = [name, email, phone, company, designation, source, status, priority, notes, tags?JSON.stringify(tags):null, assigned_to, next_followup, req.params.id];
     const upScope = scopeLeadToTenant('id', req.crmUser.tenantUid, upParams); // tenant guard on the write
-    const { rows } = await sharedPool.query(
+    const { rows } = await client.query(
       `UPDATE crm_leads SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone),
        company=COALESCE($4,company), designation=COALESCE($5,designation), source=COALESCE($6,source),
        status=COALESCE($7,status), priority=COALESCE($8,priority), notes=COALESCE($9,notes), tags=COALESCE($10,tags),
@@ -543,18 +564,20 @@ router.put('/leads/:id', authCRM, async (req, res) => {
        updated_at=NOW() WHERE id=$13 AND ${upScope} RETURNING *`,
       upParams
     );
-    if (!rows.length) return res.status(404).json({ success: false, message: 'Lead not found' });
+    if (!rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Lead not found' }); }
 
     const newStatus = rows[0].status;
-    if (status && newStatus !== previousStatus) {
-      handleLeadStatusChange(rows[0].id, previousStatus, newStatus).catch(() => {});
-    }
+
     // Keep the twin on the lead's own tenant (the updater is the same tenant, enforced by the scope
     // guard above) — never let a re-sync move the lead to the hardcoded default tenant.
-    syncLegacyLeadToV2(rows[0].id, req.crmUser.tenantId || undefined).catch(() => {});
+    await syncLegacyLeadToV2(rows[0].id, req.crmUser.tenantId, { db: client, strict: true });
 
+    await recordCRMChange(client, req.crmUser, 'lead', rows[0], 'updated');
+    await client.query('COMMIT');
+    if (status && newStatus !== previousStatus) handleLeadStatusChange(rows[0].id, previousStatus, newStatus).catch(() => {});
     return res.status(200).json({ success: true, data: rows[0] });
-  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to update lead' }); }
+  } catch (error) { if (client) await client.query('ROLLBACK'); return res.status(500).json({ success: false, message: 'Failed to update lead' }); }
+  finally { client?.release(); }
 });
 
 router.delete('/leads/:id', authCRM, async (req, res) => {
@@ -563,7 +586,7 @@ router.delete('/leads/:id', authCRM, async (req, res) => {
     const delScope = scopeLeadToTenant('id', req.crmUser.tenantUid, delParams);
     const { rowCount } = await sharedPool.query(`DELETE FROM crm_leads WHERE id = $1 AND ${delScope}`, delParams);
     if (!rowCount) return res.status(404).json({ success: false, message: 'Lead not found' });
-    removeLegacyLeadFromV2(req.params.id).catch(() => {});
+    removeLegacyLeadFromV2(req.params.id, req.crmUser.tenantId).catch(() => {});
     return res.status(200).json({ success: true, message: 'Lead deleted' });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete lead' }); }
 });
@@ -577,8 +600,8 @@ router.get('/deals/pipeline', authCRM, async (req, res) => {
     const { rows } = await sharedPool.query(`
       SELECT stage, COUNT(*) AS count, COALESCE(SUM(value),0) AS total_value,
              COALESCE(SUM(value*probability/100.0),0) AS weighted_value
-      FROM crm_deals WHERE stage NOT IN ('won','lost')
-      GROUP BY stage ORDER BY CASE stage WHEN 'qualification' THEN 1 WHEN 'discovery' THEN 2 WHEN 'proposal' THEN 3 WHEN 'negotiation' THEN 4 WHEN 'contract' THEN 5 ELSE 6 END`);
+      FROM crm_deals WHERE tenant_uid=$1
+      GROUP BY stage ORDER BY CASE stage WHEN 'qualification' THEN 1 WHEN 'discovery' THEN 2 WHEN 'proposal' THEN 3 WHEN 'negotiation' THEN 4 WHEN 'contract' THEN 5 ELSE 6 END`, [req.crmUser.tenantUid || null]);
     return res.status(200).json({ success: true, data: rows });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch pipeline' }); }
 });
@@ -605,39 +628,89 @@ router.get('/deals', authCRM, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch deals' }); }
 });
 
-router.post('/deals', authCRM, [body('title').notEmpty().withMessage('Deal title is required')], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
+router.get('/deals/:id', authCRM, async (req, res) => {
   try {
-    const { title, lead_id, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags } = req.body;
-    const { rows } = await sharedPool.query(
-      `INSERT INTO crm_deals (title,lead_id,value,currency,stage,probability,expected_close,contact_name,contact_email,contact_phone,company,notes,tags,assigned_to,created_by,tenant_uid)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
-      [title, lead_id||null, value||0, currency||'INR', stage||'qualification', probability||10, expected_close||null, contact_name||null, contact_email||null, contact_phone||null, company||null, notes||null, JSON.stringify(tags||[]), req.crmUser.id, req.crmUser.id, req.crmUser.tenantUid || null]
-    );
-    if (lead_id) { await sharedPool.query(`UPDATE crm_leads SET deal_id=$1, updated_at=NOW() WHERE id=$2 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $3 AND legacy_lead_id IS NOT NULL)`, [rows[0].id, lead_id, req.crmUser.tenantUid || null]); }
-    return res.status(201).json({ success: true, data: rows[0] });
-  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create deal' }); }
+    const { rows } = await sharedPool.query(`SELECT * FROM crm_deals WHERE id=$1 AND tenant_uid=$2`, [req.params.id, req.crmUser.tenantUid || null]);
+    if (!rows.length) return res.status(404).json({ success:false, message:'Deal not found' });
+    return res.json({ success:true, data:rows[0] });
+  } catch (error) { return res.status(500).json({ success:false, message:'Could not load deal' }); }
 });
 
-router.put('/deals/:id', authCRM, async (req, res) => {
+async function validateCRMReferences(req, res, next) {
   try {
+  if (!req.crmUser.tenantUid) return res.status(400).json({ success: false, message: 'Organization context is required' });
+  for (const [field, table] of [['lead_id', 'crm_leads'], ['deal_id', 'crm_deals'], ['contact_id', 'crm_contacts']]) {
+    if (!req.body[field]) continue;
+    const predicate = table === 'crm_leads' ? 'id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid=$2)' : 'tenant_uid=$2';
+    const { rows } = await sharedPool.query(`SELECT id FROM ${table} WHERE id=$1 AND ${predicate}`, [req.body[field], req.crmUser.tenantUid]);
+    if (!rows.length) return res.status(404).json({ success: false, message: `Selected ${field.replace('_id','')} was not found` });
+  }
+  next();
+  } catch (error) { next(error); }
+}
+
+router.post('/deals', authCRM, validateCRMReferences, [body('title').notEmpty().withMessage('Deal title is required')], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
+  const message = validateDeal(req.body, { creating: true });
+  if (message) return res.status(400).json({ success: false, message });
+  let client;
+  try {
+    client = await sharedPool.connect();
+    await client.query('BEGIN');
+    const { title, lead_id, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags } = req.body;
+    const { rows } = await client.query(
+      `INSERT INTO crm_deals (title,lead_id,value,currency,stage,probability,expected_close,contact_name,contact_email,contact_phone,company,notes,tags,assigned_to,created_by,tenant_uid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+      [title, lead_id||null, value||0, currency||'INR', stage||'qualification', stage==='won' ? 100 : stage==='lost' ? 0 : probability ?? 10, expected_close||null, contact_name||null, contact_email||null, contact_phone||null, company||null, notes||null, JSON.stringify(tags||[]), req.crmUser.id, req.crmUser.id, req.crmUser.tenantUid || null]
+    );
+    if (stage === 'won' || stage === 'lost') await client.query(`UPDATE crm_deals SET won_at=CASE WHEN $1='won' THEN NOW() ELSE NULL END, lost_at=CASE WHEN $1='lost' THEN NOW() ELSE NULL END WHERE id=$2 AND tenant_uid=$3`, [stage, rows[0].id, req.crmUser.tenantUid]);
+    if (lead_id) { await client.query(`UPDATE crm_leads SET deal_id=$1, status='converted', converted_at=COALESCE(converted_at,NOW()), updated_at=NOW() WHERE id=$2 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $3 AND legacy_lead_id IS NOT NULL)`, [rows[0].id, lead_id, req.crmUser.tenantUid || null]); }
+    if (contact_name?.trim()) {
+      await client.query(`INSERT INTO crm_contacts (name,email,phone,company,lead_id,created_by,tenant_uid)
+        SELECT $1,$2,$3,$4,$5,$6,$7 WHERE NOT EXISTS
+        (SELECT 1 FROM crm_contacts WHERE tenant_uid=$7 AND (($2::text IS NOT NULL AND LOWER(email)=LOWER($2)) OR ($2::text IS NULL AND name=$1)))`,
+        [contact_name.trim(), contact_email || null, contact_phone || null, company || null, lead_id || null, req.crmUser.id, req.crmUser.tenantUid]);
+    }
+    const contact = req.body.contact_id ? { rows: [{ id: req.body.contact_id }] } : await client.query(`SELECT id FROM crm_contacts WHERE tenant_uid=$1 AND (($2::text IS NOT NULL AND LOWER(email)=LOWER($2)) OR ($2::text IS NULL AND name=$3)) ORDER BY id LIMIT 1`, [req.crmUser.tenantUid, contact_email || null, contact_name || null]);
+    if (contact.rows[0]) { await client.query(`UPDATE crm_deals SET contact_id=$1 WHERE id=$2 AND tenant_uid=$3`, [contact.rows[0].id, rows[0].id, req.crmUser.tenantUid]); rows[0].contact_id=contact.rows[0].id; }
+    if (lead_id) await syncLegacyLeadToV2(lead_id, req.crmUser.tenantId, { db: client, strict: true });
+    await recordCRMChange(client, req.crmUser, 'deal', rows[0], 'created');
+    await client.query('COMMIT');
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) { if (client) await client.query('ROLLBACK'); return res.status(500).json({ success: false, message: 'Failed to create deal' }); }
+  finally { client?.release(); }
+});
+
+router.put('/deals/:id', authCRM, validateCRMReferences, async (req, res) => {
+  const message = validateDeal(req.body);
+  if (message) return res.status(400).json({ success: false, message });
+  let client;
+  try {
+    client = await sharedPool.connect(); await client.query('BEGIN');
     const { title, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags, assigned_to, lost_reason } = req.body;
-    const { rows } = await sharedPool.query(
+    const { rows } = await client.query(
       `UPDATE crm_deals SET title=COALESCE($1,title), value=COALESCE($2,value), currency=COALESCE($3,currency),
        stage=COALESCE($4,stage), probability=CASE WHEN $4='won' THEN 100 WHEN $4='lost' THEN 0 ELSE COALESCE($5,probability) END,
        expected_close=COALESCE($6,expected_close), contact_name=COALESCE($7,contact_name), contact_email=COALESCE($8,contact_email),
        contact_phone=COALESCE($9,contact_phone), company=COALESCE($10,company), notes=COALESCE($11,notes), tags=COALESCE($12,tags),
-       assigned_to=COALESCE($13,assigned_to),
+       assigned_to=COALESCE($13,assigned_to), contact_id=COALESCE($17,contact_id), lead_id=COALESCE($18,lead_id),
        won_at=CASE WHEN $4='won' AND won_at IS NULL THEN NOW() ELSE won_at END,
        lost_at=CASE WHEN $4='lost' AND lost_at IS NULL THEN NOW() ELSE lost_at END,
        lost_reason=CASE WHEN $4='lost' THEN COALESCE($14,lost_reason) ELSE lost_reason END,
        updated_at=NOW() WHERE id=$15 AND tenant_uid=$16 RETURNING *`,
-      [title, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags?JSON.stringify(tags):null, assigned_to, lost_reason, req.params.id, req.crmUser.tenantUid || null]
+      [title, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags?JSON.stringify(tags):null, assigned_to, lost_reason, req.params.id, req.crmUser.tenantUid || null, req.body.contact_id || null, req.body.lead_id || null]
     );
-    if (!rows.length) return res.status(404).json({ success: false, message: 'Deal not found' });
+    if (!rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Deal not found' }); }
+    if (req.body.lead_id) {
+      await client.query(`UPDATE crm_leads SET deal_id=$1,status='converted',converted_at=COALESCE(converted_at,NOW()),updated_at=NOW() WHERE id=$2 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid=$3)`, [rows[0].id, req.body.lead_id, req.crmUser.tenantUid]);
+      await syncLegacyLeadToV2(req.body.lead_id, req.crmUser.tenantId, { db:client, strict:true });
+    }
+    await recordCRMChange(client, req.crmUser, 'deal', rows[0], 'updated');
+    await client.query('COMMIT');
     return res.status(200).json({ success: true, data: rows[0] });
-  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to update deal' }); }
+  } catch (error) { if (client) await client.query('ROLLBACK'); return res.status(500).json({ success: false, message: 'Failed to update deal' }); }
+  finally { client?.release(); }
 });
 
 router.delete('/deals/:id', authCRM, async (req, res) => {
@@ -671,15 +744,15 @@ router.get('/activities', authCRM, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch activities' }); }
 });
 
-router.post('/activities', authCRM, [body('type').notEmpty(), body('title').notEmpty()], async (req, res) => {
+router.post('/activities', authCRM, validateCRMReferences, [body('type').notEmpty(), body('title').notEmpty()], async (req, res) => {
   const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
   try {
-    const { type, title, description, lead_id, deal_id, scheduled_at } = req.body;
+    const { type, title, description, lead_id, deal_id, contact_id, scheduled_at } = req.body;
     const { rows } = await sharedPool.query(
-      `INSERT INTO crm_activities (type,title,description,lead_id,deal_id,scheduled_at,created_by,tenant_uid) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [type, title, description||null, lead_id||null, deal_id||null, scheduled_at||null, req.crmUser.id, req.crmUser.tenantUid || null]
+      `INSERT INTO crm_activities (type,title,description,lead_id,deal_id,scheduled_at,created_by,tenant_uid,contact_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [type, title, description||null, lead_id||null, deal_id||null, scheduled_at||null, req.crmUser.id, req.crmUser.tenantUid || null, contact_id || null]
     );
-    if (lead_id) { await sharedPool.query(`UPDATE crm_leads SET last_contacted=NOW(), updated_at=NOW() WHERE id=$1 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $2 AND legacy_lead_id IS NOT NULL)`, [lead_id, req.crmUser.tenantUid || null]); }
+    if (lead_id && ['call','email','meeting','whatsapp','sms'].includes(type) && (!scheduled_at || new Date(scheduled_at).getTime() <= Date.now())) { await sharedPool.query(`UPDATE crm_leads SET last_contacted=NOW(), updated_at=NOW() WHERE id=$1 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $2 AND legacy_lead_id IS NOT NULL)`, [lead_id, req.crmUser.tenantUid || null]); }
     return res.status(201).json({ success: true, data: rows[0] });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create activity' }); }
 });
@@ -721,32 +794,42 @@ router.get('/contacts', authCRM, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch contacts' }); }
 });
 
-router.post('/contacts', authCRM, [body('name').notEmpty()], async (req, res) => {
+router.post('/contacts', authCRM, validateCRMReferences, [body('name').notEmpty()], async (req, res) => {
   const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
+  let client;
   try {
+    client = await sharedPool.connect(); await client.query('BEGIN');
     const { name, email, phone, company, designation, address, city, state, tags, notes, lead_id } = req.body;
-    const { rows } = await sharedPool.query(
+    const { rows } = await client.query(
       `INSERT INTO crm_contacts (name,email,phone,company,designation,address,city,state,tags,notes,lead_id,created_by,tenant_uid)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
       [name, email||null, phone||null, company||null, designation||null, address||null, city||null, state||null, JSON.stringify(tags||[]), notes||null, lead_id||null, req.crmUser.id, req.crmUser.tenantUid || null]
     );
+    await recordCRMChange(client, req.crmUser, 'contact', rows[0], 'created');
+    await client.query('COMMIT');
     return res.status(201).json({ success: true, data: rows[0] });
-  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to create contact' }); }
+  } catch (error) { if (client) await client.query('ROLLBACK'); return res.status(500).json({ success: false, message: 'Failed to create contact' }); }
+  finally { client?.release(); }
 });
 
-router.put('/contacts/:id', authCRM, async (req, res) => {
+router.put('/contacts/:id', authCRM, validateCRMReferences, async (req, res) => {
+  let client;
   try {
+    client = await sharedPool.connect(); await client.query('BEGIN');
     const { name, email, phone, company, designation, address, city, state, tags, notes } = req.body;
-    const { rows } = await sharedPool.query(
+    const { rows } = await client.query(
       `UPDATE crm_contacts SET name=COALESCE($1,name), email=COALESCE($2,email), phone=COALESCE($3,phone),
        company=COALESCE($4,company), designation=COALESCE($5,designation), address=COALESCE($6,address),
        city=COALESCE($7,city), state=COALESCE($8,state), tags=COALESCE($9,tags), notes=COALESCE($10,notes),
        updated_at=NOW() WHERE id=$11 AND tenant_uid=$12 RETURNING *`,
       [name, email, phone, company, designation, address, city, state, tags?JSON.stringify(tags):null, notes, req.params.id, req.crmUser.tenantUid || null]
     );
-    if (!rows.length) return res.status(404).json({ success: false, message: 'Contact not found' });
+    if (!rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Contact not found' }); }
+    await recordCRMChange(client, req.crmUser, 'contact', rows[0], 'updated');
+    await client.query('COMMIT');
     return res.status(200).json({ success: true, data: rows[0] });
-  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to update contact' }); }
+  } catch (error) { if (client) await client.query('ROLLBACK'); return res.status(500).json({ success: false, message: 'Failed to update contact' }); }
+  finally { client?.release(); }
 });
 
 router.delete('/contacts/:id', authCRM, async (req, res) => {
@@ -763,21 +846,16 @@ router.delete('/contacts/:id', authCRM, async (req, res) => {
 
 router.get('/reports/sales-funnel', authCRM, async (req, res) => {
   try {
-    // Tenant-scope the lead counts via the v2 twin ($1 reused). Deal counts are empty (no tenant
-    // column yet) — left as-is until deals get tenancy.
-    const ls = `AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $1 AND legacy_lead_id IS NOT NULL)`;
     const { rows } = await sharedPool.query(`
-      SELECT unnest(ARRAY['new','contacted','qualified','proposal','negotiation','converted','lost']) AS stage,
-      unnest(ARRAY[
-        (SELECT COUNT(*) FROM crm_leads WHERE status='new' ${ls}),
-        (SELECT COUNT(*) FROM crm_leads WHERE status='contacted' ${ls}),
-        (SELECT COUNT(*) FROM crm_leads WHERE status='qualified' ${ls}),
-        (SELECT COUNT(*) FROM crm_deals WHERE stage IN ('proposal')),
-        (SELECT COUNT(*) FROM crm_deals WHERE stage IN ('negotiation','contract')),
-        (SELECT COUNT(*) FROM crm_deals WHERE stage='won'),
-        (SELECT COUNT(*) FROM crm_deals WHERE stage='lost')+(SELECT COUNT(*) FROM crm_leads WHERE status='lost' ${ls})
-      ]) AS count`, [req.crmUser.tenantUid || null]);
-    return res.status(200).json({ success: true, data: rows });
+      SELECT status AS stage, COUNT(*) AS count, 'lead' AS entity_type FROM crm_leads
+      WHERE id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid=$1) GROUP BY status
+      UNION ALL
+      SELECT stage, COUNT(*), 'deal' FROM crm_deals WHERE tenant_uid=$1 GROUP BY stage`, [req.crmUser.tenantUid || null]);
+    const leadStages = ['new','contacted','qualified','converted','lost'];
+    const dealStages = ['qualification','discovery','proposal','negotiation','contract','won','lost'];
+    const data = [...leadStages.map(stage => ({ stage: `Lead · ${stage}`, count: rows.find(r => r.entity_type==='lead' && r.stage===stage)?.count || 0 })),
+      ...dealStages.map(stage => ({ stage: `Deal · ${stage}`, count: rows.find(r => r.entity_type==='deal' && r.stage===stage)?.count || 0 }))];
+    return res.json({ success: true, data });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to generate funnel' }); }
 });
 
@@ -787,11 +865,11 @@ router.get('/reports/revenue', authCRM, async (req, res) => {
     const days = parseInt(period) || 30;
     const { rows } = await sharedPool.query(`
       SELECT DATE_TRUNC('day',won_at) AS date, COUNT(*) AS deals_won, SUM(value) AS revenue
-      FROM crm_deals WHERE stage='won' AND won_at >= NOW()-($1||' days')::INTERVAL
-      GROUP BY DATE_TRUNC('day',won_at) ORDER BY date ASC`, [days.toString()]);
+      FROM crm_deals WHERE tenant_uid=$2 AND stage='won' AND won_at >= NOW()-($1||' days')::INTERVAL
+      GROUP BY DATE_TRUNC('day',won_at) ORDER BY date ASC`, [days.toString(), req.crmUser.tenantUid || null]);
     const totals = await sharedPool.query(`
       SELECT COUNT(*) AS total_won, COALESCE(SUM(value),0) AS total_revenue
-      FROM crm_deals WHERE stage='won' AND won_at >= NOW()-($1||' days')::INTERVAL`, [days.toString()]);
+      FROM crm_deals WHERE tenant_uid=$2 AND stage='won' AND won_at >= NOW()-($1||' days')::INTERVAL`, [days.toString(), req.crmUser.tenantUid || null]);
     return res.status(200).json({ success: true, data: { daily: rows, totals: totals.rows[0] }, period: days });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to generate revenue report' }); }
 });
@@ -808,8 +886,8 @@ router.get('/reports/team-performance', authCRM, async (req, res) => {
         COUNT(DISTINCT a.id) AS total_activities
       FROM users u
       LEFT JOIN crm_leads l ON l.assigned_to=u.id AND l.id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $1 AND legacy_lead_id IS NOT NULL)
-      LEFT JOIN crm_deals d ON d.assigned_to=u.id
-      LEFT JOIN crm_activities a ON a.created_by=u.id
+      LEFT JOIN crm_deals d ON d.assigned_to=u.id AND d.tenant_uid=$1
+      LEFT JOIN crm_activities a ON a.created_by=u.id AND a.tenant_uid=$1
       WHERE u.role IN ('team','admin') OR u."isTeam"=true OR u."isAdmin"=true
       GROUP BY u.id, u."firstName", u."lastName", u.email
       HAVING COUNT(DISTINCT l.id)+COUNT(DISTINCT d.id)+COUNT(DISTINCT a.id)>0
@@ -856,16 +934,16 @@ router.get('/funnel-analytics', authCRM, async (req, res) => {
           COUNT(*) FILTER (WHERE stage='contract')      AS contract,
           COUNT(*) FILTER (WHERE stage='won' OR won_at IS NOT NULL) AS won,
           COALESCE(SUM(value) FILTER (WHERE (stage='won' OR won_at IS NOT NULL) AND won_at >= NOW() - INTERVAL '30 days'), 0) AS won_value_30d
-        FROM crm_deals
-      `),
+        FROM crm_deals WHERE tenant_uid=$1
+      `, [req.crmUser.tenantUid || null]),
       sharedPool.query(`
         SELECT
           COALESCE(AVG(EXTRACT(EPOCH FROM (won_at - created_at))/86400) FILTER (WHERE won_at IS NOT NULL), 0)::NUMERIC(8,1) AS avg_deal_days,
           COUNT(*) FILTER (WHERE won_at >= NOW() - INTERVAL '7 days')  AS deals_won_7d,
           COUNT(*) FILTER (WHERE won_at >= NOW() - INTERVAL '30 days') AS deals_won_30d,
           COALESCE(SUM(value) FILTER (WHERE won_at >= NOW() - INTERVAL '30 days'), 0) AS revenue_30d
-        FROM crm_deals
-      `),
+        FROM crm_deals WHERE tenant_uid=$1
+      `, [req.crmUser.tenantUid || null]),
     ]);
 
     const r = rfqFunnel.rows[0];

@@ -28,6 +28,8 @@ import {
 } from '../services/hospital-crm-worldclass.service.js';
 import { createAssignmentRule, createBudgetOrCost, createSlaRule, createTask, getMarketingHeadDashboard } from '../services/hospital-crm-worldclass-extra.service.js';
 
+import sharedPool from '../db/pgPool.js';
+
 const router = express.Router();
 router.use(authCRM);
 
@@ -58,6 +60,11 @@ const action = (handler, capability = 'worldclass:read') => async (req, res) => 
   }
   try { return res.json({ success: true, data: await handler(req, tenantId) }); } catch (error) { return fail(res, error); }
 };
+
+router.get('/audit-log', action(async (req, tenantId) => {
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+  return (await sharedPool.query(`SELECT id, entity_type, entity_id, event_type, actor_user_id, reason, created_at FROM crm_audit_log WHERE tenant_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2`, [tenantId, limit])).rows;
+}, 'dashboard:business-head'));
 
 router.post('/communications', action((req, tenantId) => createCommunicationEvent({ ...req.body, tenantId }, req.crmUser.id), 'worldclass:write'));
 router.get('/communications/timeline', action((req, tenantId) => listCommunicationTimeline(tenantId, req.query)));

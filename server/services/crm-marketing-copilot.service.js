@@ -3,7 +3,7 @@
  * Helps manage campaigns, leads, deals, and sales pipeline.
  */
 
-import sharedPool from '../db/pgPool.js';
+import { crmQuery } from './crm/scoped-query.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import {
   bulkScoreLeads,
@@ -11,32 +11,30 @@ import {
   optimizeCampaign,
   forecastRevenue,
   analyzePipelineHealth,
-  generateDashboardInsights,
 } from './ai-crm.service.js';
 import { generateAssistedEmailDraft } from './ai-email-arg.service.js';
 
-async function q(sql, params = []) {
-  const { rows } = await sharedPool.query(sql, params);
+async function q(crmUser, sql, params = []) {
+  const { rows } = await crmQuery(crmUser, sql, params);
   return rows;
 }
 
-async function q1(sql, params = []) {
-  const rows = await q(sql, params);
+async function q1(crmUser, sql, params = []) {
+  const rows = await q(crmUser, sql, params);
   return rows[0] ?? null;
 }
 
-export async function getMarketingContext() {
+export async function getMarketingContext(crmUser) {
   const [
     leadStats,
     dealStats,
-    hotLeads,
     recentLeads,
     deals,
     campaigns,
     lists,
     funnel,
   ] = await Promise.all([
-    q1(`SELECT
+    q1(crmUser,`SELECT
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE status = 'new')::int AS new_count,
           COUNT(*) FILTER (WHERE status = 'contacted')::int AS contacted,
@@ -46,29 +44,24 @@ export async function getMarketingContext() {
           COUNT(*) FILTER (WHERE source = 'marketing-website')::int AS web_leads,
           COUNT(*) FILTER (WHERE COALESCE(score, 0) >= 70)::int AS hot_count
         FROM crm_leads`),
-    q1(`SELECT
+    q1(crmUser,`SELECT
           COUNT(*)::int AS total,
           COUNT(*) FILTER (WHERE stage NOT IN ('won','lost'))::int AS active,
           COALESCE(SUM(value) FILTER (WHERE stage NOT IN ('won','lost')), 0)::float AS pipeline_value,
           COUNT(*) FILTER (WHERE stage = 'won')::int AS won_count
         FROM crm_deals`),
-    q(`SELECT id, name, company, source, status, COALESCE(score, 0) AS score, phone, email
-       FROM crm_leads
-       WHERE status NOT IN ('converted','lost')
-       ORDER BY COALESCE(score, 0) DESC, created_at DESC
-       LIMIT 8`),
-    q(`SELECT id, name, company, source, status, COALESCE(score, 0) AS score, created_at AS "createdAt"
+    q(crmUser,`SELECT id, name, company, source, status, COALESCE(score, 0) AS score, created_at AS "createdAt"
        FROM crm_leads ORDER BY created_at DESC LIMIT 5`),
-    q(`SELECT id, title, stage, value, currency, probability, company
+    q(crmUser,`SELECT id, title, stage, value, currency, probability, company
        FROM crm_deals WHERE stage NOT IN ('lost')
        ORDER BY value DESC NULLS LAST LIMIT 8`),
-    q(`SELECT id, name, subject, status, recipient_count, sent_at AS "sentAt", created_at AS "createdAt"
+    q(crmUser,`SELECT id, name, subject, status, recipient_count, sent_at AS "sentAt", created_at AS "createdAt"
        FROM crm_marketing_campaigns ORDER BY created_at DESC LIMIT 6`).catch(() => []),
-    q(`SELECT l.id, l.name, COUNT(m.id)::int AS member_count
+    q(crmUser,`SELECT l.id, l.name, COUNT(m.id)::int AS member_count
        FROM crm_marketing_lists l
        LEFT JOIN crm_marketing_list_members m ON m.list_id = l.id
        GROUP BY l.id ORDER BY l.created_at DESC LIMIT 6`).catch(() => []),
-    q1(`SELECT
+    q1(crmUser,`SELECT
           COUNT(*) FILTER (WHERE status = 'new')::int AS new_leads,
           COUNT(*) FILTER (WHERE status = 'contacted')::int AS contacted,
           COUNT(*) FILTER (WHERE status = 'qualified')::int AS qualified,
@@ -76,23 +69,27 @@ export async function getMarketingContext() {
         FROM crm_leads`),
   ]);
 
-  const openLeads = await q(
-    `SELECT id, name, company, source, status, COALESCE(score, 0) AS score,
+  const openLeads = await q(crmUser,
+    `SELECT id, name, email, phone, company, source, status, COALESCE(score, 0) AS score,
             last_contacted AS "lastContactAt", created_at AS "createdAt"
      FROM crm_leads WHERE status NOT IN ('converted','lost')
-     ORDER BY COALESCE(score, 0) DESC LIMIT 30`
+     ORDER BY COALESCE(score, 0) DESC`
   );
 
+  const forecastDeals = await q(crmUser, `SELECT id, title, value, stage, probability, updated_at AS "updatedAt", created_at AS "createdAt", expected_close AS "expectedCloseDate" FROM crm_deals WHERE stage NOT IN ('lost','closed lost')`);
   const [forecast, pipelineHealth] = await Promise.all([
-    Promise.resolve(forecastRevenue(deals)),
-    analyzePipelineHealth(openLeads, deals),
+    Promise.resolve(forecastRevenue(forecastDeals)),
+    analyzePipelineHealth(openLeads, forecastDeals.filter(d => !['won','closed won'].includes(d.stage))),
   ]);
 
+  const scores = await bulkScoreLeads(openLeads);
+  const scoreMap = new Map(scores.map(s => [s.id, s]));
+  if (leadStats) leadStats.hot_count = scores.filter(s => s.tier === 'Hot').length;
   return {
     leadStats: leadStats || {},
     dealStats: dealStats || {},
     funnel: funnel || {},
-    hotLeads,
+    hotLeads: openLeads.map(l => ({ ...l, ...scoreMap.get(l.id) })).sort((a,b) => b.score-a.score).filter(l => l.tier === 'Hot').slice(0,8),
     recentLeads,
     deals,
     campaigns,
@@ -144,7 +141,7 @@ function parseActionsFromReply(content = '') {
 }
 
 export async function marketingCopilotChat({ messages = [], crmUser = {} }) {
-  const context = await getMarketingContext();
+  const context = await getMarketingContext(crmUser);
   const systemPrompt = buildSystemPrompt(context, crmUser);
 
   const llmMessages = [
@@ -190,13 +187,13 @@ export async function marketingCopilotChat({ messages = [], crmUser = {} }) {
 export async function executeMarketingAction(tool, params = {}, crmUser = {}) {
   switch (tool) {
     case 'bulk_score': {
-      const leads = await q(
-        `SELECT id, name, company, source, status, score, created_at AS "createdAt", last_contacted AS "lastContactAt"
+      const leads = await q(crmUser,
+        `SELECT id, name, email, phone, company, source, status, score, created_at AS "createdAt", last_contacted AS "lastContactAt"
          FROM crm_leads WHERE status NOT IN ('converted','lost') LIMIT 100`
       );
       const scores = await bulkScoreLeads(leads);
       await Promise.all(scores.map(s =>
-        sharedPool.query(`UPDATE crm_leads SET score = $1, updated_at = NOW() WHERE id = $2`, [s.score, s.id])
+        crmQuery(crmUser, `UPDATE crm_leads SET score = $1, updated_at = NOW() WHERE id = $2`, [s.score, s.id])
       ));
       return {
         tool,
@@ -221,9 +218,9 @@ export async function executeMarketingAction(tool, params = {}, crmUser = {}) {
     case 'optimize_campaign': {
       const campaignId = Number(params.campaignId);
       if (!campaignId) throw new Error('campaignId required');
-      const campaign = await q1(`SELECT * FROM crm_marketing_campaigns WHERE id = $1`, [campaignId]);
+      const campaign = await q1(crmUser,`SELECT * FROM crm_marketing_campaigns WHERE id = $1`, [campaignId]);
       if (!campaign) throw new Error('Campaign not found');
-      const stats = await q1(
+      const stats = await q1(crmUser,
         `SELECT COUNT(*)::int AS sent,
                 COUNT(*) FILTER (WHERE opened_at IS NOT NULL)::int AS opened,
                 COUNT(*) FILTER (WHERE clicked_at IS NOT NULL)::int AS clicked
@@ -247,14 +244,16 @@ export async function executeMarketingAction(tool, params = {}, crmUser = {}) {
     }
 
     case 'pipeline_summary': {
-      const context = await getMarketingContext();
-      const insights = await generateDashboardInsights({
-        leads: context.leadStats,
-        deals: context.dealStats,
-        funnel: context.funnel,
-        hotLeads: context.leadStats?.hot_count,
-        pipelineValue: context.dealStats?.pipeline_value,
-      });
+      const context = await getMarketingContext(crmUser);
+      const total = Number(context.leadStats?.total || 0), contacted = Number(context.leadStats?.contacted || 0);
+      const openDeals = context.deals.filter(d => !['won','lost','closed won','closed lost'].includes(d.stage));
+      const insights = {
+        insights: [
+          { title: 'Lead pipeline', body: `${contacted} of ${total} leads are contacted. ${Number(context.leadStats?.fb_leads || 0)} leads came from Facebook.`, type:'info' },
+          { title: 'Active deals', body: openDeals.length ? openDeals.map(d => `${d.title}: ₹${Number(d.value || 0).toLocaleString('en-IN')}`).join('; ') : 'No active deals.', type:'info' },
+        ],
+        topAction: { title: total ? 'Review follow-ups' : 'Capture your first lead', description: total ? 'Open Leads to review current engagement and next actions.' : 'Add a lead to start tracking your pipeline.', priority:'medium' },
+      };
       return {
         tool,
         summary: 'Pipeline summary generated.',

@@ -33,17 +33,17 @@ function normalizePhone(phone) {
   return phone ? String(phone).replace(/[^\d+]/g, '') : null;
 }
 
-export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT_TENANT_ID) {
+export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT_TENANT_ID, { db = sharedPool, strict = false } = {}) {
   if (!legacyLeadId) return null;
   try {
-    const { rows } = await sharedPool.query(`SELECT * FROM crm_leads WHERE id = $1`, [legacyLeadId]);
+    const { rows } = await db.query(`SELECT * FROM crm_leads WHERE id = $1`, [legacyLeadId]);
     const lead = rows[0];
     if (!lead) return null;
 
     const normalizedEmail = normalizeEmail(lead.email);
     const normalizedPhone = normalizePhone(lead.phone);
 
-    const existingV2 = await sharedPool.query(
+    const existingV2 = await db.query(
       `SELECT id, person_id, contact_id FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id = $2`,
       [tenantId, legacyLeadId]
     );
@@ -53,23 +53,23 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
 
     if (existingV2.rows[0]) {
       ({ person_id: identityId, contact_id: contactId } = existingV2.rows[0]);
-      await sharedPool.query(
+      await db.query(
         `UPDATE crm_person_identities SET first_name = $1, display_name = $1 WHERE id = $2`,
         [lead.name, identityId]
       );
-      await sharedPool.query(
+      await db.query(
         `UPDATE crm_contacts_v2 SET name = $1, full_name = $1, phone_e164 = $2, email = $3 WHERE id = $4`,
         [lead.name, normalizedPhone, normalizedEmail, contactId]
       );
     } else {
-      const identity = await sharedPool.query(
+      const identity = await db.query(
         `INSERT INTO crm_person_identities (tenant_id, person_type, first_name, display_name, status, metadata)
          VALUES ($1, 'corporate_contact', $2, $2, 'active', $3) RETURNING id`,
         [tenantId, lead.name, JSON.stringify({ origin: 'crm_v2_sync', legacy_lead_id: legacyLeadId })]
       );
       identityId = identity.rows[0].id;
 
-      const contact = await sharedPool.query(
+      const contact = await db.query(
         `INSERT INTO crm_contacts_v2 (tenant_id, person_id, contact_type, name, full_name, phone_e164, email, consent_status, metadata)
          VALUES ($1, $2, 'lead', $3, $3, $4, $5, 'unknown', $6) RETURNING id`,
         [tenantId, identityId, lead.name, normalizedPhone, normalizedEmail, JSON.stringify({ legacy_contact: true, legacy_lead_id: legacyLeadId })]
@@ -78,7 +78,7 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
     }
 
     if (normalizedEmail) {
-      await sharedPool.query(
+      await db.query(
         `INSERT INTO crm_identity_keys (tenant_id, person_id, key_type, normalized_value, raw_value, source)
          VALUES ($1, $2, 'email', $3, $4, $5)
          ON CONFLICT (tenant_id, key_type, normalized_value) DO NOTHING`,
@@ -86,7 +86,7 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
       );
     }
     if (normalizedPhone) {
-      await sharedPool.query(
+      await db.query(
         `INSERT INTO crm_identity_keys (tenant_id, person_id, key_type, normalized_value, raw_value, source)
          VALUES ($1, $2, 'phone', $3, $4, $5)
          ON CONFLICT (tenant_id, key_type, normalized_value) DO NOTHING`,
@@ -95,7 +95,7 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
     }
 
     const sourceLabel = lead.source || 'unknown';
-    const taxo = await sharedPool.query(
+    const taxo = await db.query(
       `INSERT INTO crm_source_taxonomy (tenant_id, channel, source, display_name)
        VALUES ($1, $2, $2, $2)
        ON CONFLICT (tenant_id, channel, source, COALESCE(medium, ''), COALESCE(campaign, ''))
@@ -111,16 +111,17 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
     const score = Math.max(0, Math.min(100, Number(lead.score) || 0));
 
     if (existingV2.rows[0]) {
-      await sharedPool.query(
+      await db.query(
         `UPDATE crm_leads_v2 SET lifecycle_stage = $1, status = $2, priority = $3, score = $4,
            source_taxonomy_id = $5, updated_at = NOW()
          WHERE id = $6 AND tenant_id = $7`,
         [lifecycleStage, status, priority, score, sourceTaxonomyId, existingV2.rows[0].id, tenantId]
       );
+      await db.query(`UPDATE crm_leads_v2 SET owner_user_id=$1, identity_id=COALESCE(identity_id,person_id) WHERE id=$2 AND tenant_id=$3`, [lead.assigned_to || lead.created_by || null, existingV2.rows[0].id, tenantId]);
       return existingV2.rows[0].id;
     }
 
-    const inserted = await sharedPool.query(
+    const inserted = await db.query(
       `INSERT INTO crm_leads_v2
          (tenant_id, person_id, contact_id, legacy_lead_id, lifecycle_stage, status, priority, score,
           source_taxonomy_id, source_detail, metadata, created_at, updated_at)
@@ -133,9 +134,11 @@ export async function syncLegacyLeadToV2(legacyLeadId, tenantId = CRM_V2_DEFAULT
         lead.created_at,
       ]
     );
+    await db.query(`UPDATE crm_leads_v2 SET owner_user_id=$1, identity_id=COALESCE(identity_id,person_id) WHERE id=$2 AND tenant_id=$3`, [lead.assigned_to || lead.created_by || null, inserted.rows[0].id, tenantId]);
     return inserted.rows[0].id;
   } catch (err) {
     console.warn('[CRM v2 sync] failed for legacy lead', legacyLeadId, ':', err.message);
+    if (strict) throw err;
     return null;
   }
 }

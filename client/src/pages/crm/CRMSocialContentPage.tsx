@@ -132,9 +132,10 @@ export default function CRMSocialContentPage() {
   }, [posts]);
 
   const openNewPost = (date?: Date) => {
+    if (date && dateKey(date) < dateKey(new Date())) return;
     const nextForm = emptyForm();
     if (date) {
-      const planned = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0);
+      const planned = dateKey(date) === dateKey(new Date()) ? new Date(Date.now() + 3600000) : new Date(date.getFullYear(), date.getMonth(), date.getDate(), 9, 0);
       nextForm.plannedAt = localDateTime(planned.toISOString());
     }
     setEditingId(null);
@@ -267,8 +268,8 @@ export default function CRMSocialContentPage() {
                 return (
                   <div key={dateKey(date)} className={`min-h-24 border-b border-r border-white/[0.06] p-1.5 sm:min-h-28 sm:p-2 ${outsideMonth ? 'bg-white/[0.015]' : ''}`}>
                     <div className="flex items-center justify-between">
-                      <span className={`text-xs ${outsideMonth ? 'text-slate-700' : 'text-slate-400'}`}>{date.getDate()}</span>
-                      <button onClick={() => openNewPost(date)} className="rounded p-0.5 text-slate-600 hover:bg-white/10 hover:text-violet-300" aria-label={`Create post for ${date.toLocaleDateString()}`}><Plus className="h-3 w-3" /></button>
+                      <span className={`text-xs ${dateKey(date) === dateKey(new Date()) ? 'rounded-full bg-violet-600 px-2 py-1 text-white' : outsideMonth ? 'text-slate-700' : 'text-slate-400'}`}>{date.getDate()}</span>
+                      <button disabled={dateKey(date) < dateKey(new Date())} onClick={() => openNewPost(date)} className="rounded p-0.5 text-slate-600 hover:bg-white/10 hover:text-violet-300" aria-label={`Create post for ${date.toLocaleDateString()}`}><Plus className="h-3 w-3" /></button>
                     </div>
                     <div className="mt-1 space-y-1">
                       {dayPosts.slice(0, 3).map((post) => (
@@ -341,7 +342,7 @@ export default function CRMSocialContentPage() {
                   <div className="max-h-36 space-y-2 overflow-y-auto">{(selected.comments || []).map((item) => <div key={item.id} className="rounded-lg bg-white/[0.04] p-2"><p className="text-xs text-slate-300">{item.body}</p><p className="mt-1 text-[10px] text-slate-600">{readableDate(item.createdAt)}</p></div>)}{!selected.comments?.length && <p className="text-[11px] text-slate-600">No review comments yet.</p>}</div>
                   <div className="mt-2 flex gap-2"><input maxLength={2000} value={comment} onChange={(event) => setComment(event.target.value)} className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] px-2 text-xs text-white" placeholder="Add an internal comment" /><button disabled={saving || !comment.trim()} className="h-9 rounded-lg bg-white/[0.08] px-3 text-xs text-slate-200 disabled:opacity-40">Add</button></div>
                 </form>
-                <details className="mt-3 border-t border-white/[0.06] pt-3"><summary className="cursor-pointer text-xs text-slate-500">Activity history</summary><div className="mt-2 space-y-2">{(selected.events || []).map((event) => <p key={event.id} className="text-[10px] text-slate-500">{event.action.replaceAll('_', ' ')} · {readableDate(event.createdAt)}</p>)}</div></details>
+                <details className="mt-3 border-t border-white/[0.06] pt-3"><summary className="cursor-pointer text-xs text-slate-500">Activity history</summary><div className="mt-2 space-y-2">{(selected.events || []).map((event) => <p key={event.id} className="text-[10px] text-slate-500">{event.action.replace(/_/g, ' ')} · {readableDate(event.createdAt)}</p>)}</div></details>
               </section>
             )}
 

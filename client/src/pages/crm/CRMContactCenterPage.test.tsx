@@ -3,7 +3,7 @@ import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
 import CRMContactCenterPage from './CRMContactCenterPage';
 vi.mock('./CRMModulePages',()=>({CRMLayout:({children}:{children:React.ReactNode})=><div>{children}</div>}));
 vi.mock('@/hooks/useExotelPhone',()=>({useExotelPhone:()=>({state:'offline',connected:false,hasCall:false,connect:vi.fn(),disconnect:vi.fn(),control:vi.fn()})}));
-const overview=(configured=false)=>({providerConfigured:configured,config:null,agents:[],queues:[],calls:[],callbacks:[],flows:[],metrics:{total:0,active:0,provider_duration_seconds:0},capabilities:{browserMedia:false}});
+const overview=(configured=false)=>({providerConfigured:configured,config:null,agents:configured?[{user_id:1,name:'QA agent',presence:'available',role:'agent'}]:[],queues:[],calls:[],callbacks:[],flows:[],metrics:{total:0,active:0,provider_duration_seconds:0},capabilities:{browserMedia:false}});
 describe('contact-center operator console',()=>{
   beforeEach(()=>{localStorage.clear();localStorage.setItem('crmToken','synthetic-token');localStorage.setItem('crmUserData',JSON.stringify({id:1,crmRole:'telecaller'}));});
   afterEach(()=>{cleanup();vi.unstubAllGlobals();});
@@ -14,6 +14,12 @@ describe('contact-center operator console',()=>{
     fireEvent.change(screen.getByLabelText('Customer number'),{target:{value:'+919876543210'}});
     expect((screen.getByRole('button',{name:'Start call'}) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByRole('button',{name:'Settings'})).toBeNull();
+  });
+  it('disables dialing when the provider is configured but no agent is available',async()=>{
+    vi.stubGlobal('fetch',vi.fn(async()=>({ok:true,json:async()=>({...overview(true),agents:[]})})));
+    render(<CRMContactCenterPage/>); await screen.findByLabelText('Customer number');
+    fireEvent.change(screen.getByLabelText('Customer number'),{target:{value:'+919876543210'}});
+    expect((screen.getByRole('button',{name:'Start call'}) as HTMLButtonElement).disabled).toBe(true);
   });
   it('uses an idempotency key and authenticated server scope for a call',async()=>{
     const fetcher=vi.fn(async(url:string,options:RequestInit={})=>({ok:true,json:async()=>String(url).endsWith('/calls')?{id:'call-id'}:String(url).endsWith('/calls/call-id')?{call:{id:'call-id',destination:'+919876543210',state:'queued'},transcripts:[],artifacts:[]}:overview(true)}));

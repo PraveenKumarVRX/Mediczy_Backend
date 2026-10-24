@@ -132,6 +132,8 @@ export const authCRM = async (req, res, next) => {
       corporateUid,                     // set only for corporate-context CRM users (per-corporate sub-filter)
       permissions: metadata.crmPermissions || decoded.crmPermissions || [],
       crmRole: metadata.crmRole || decoded.crmRole || DEFAULT_CRM_ROLE,
+      designation: metadata.designation || null,
+      department: metadata.department || null,
     };
 
     next();

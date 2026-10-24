@@ -8,6 +8,8 @@ import { up as communicationHubUp } from '../migrations/20260909000002-hospital-
 import { up as chatwootUp } from '../migrations/20261003000000-chatwoot-bridge.migration.js';
 import { up as crmSocialContentUp } from '../migrations/20261015007000-crm-social-content.migration.js';
 
+import { up as reportRemediationUp } from '../migrations/20261024000000-crm-report-remediation.migration.js';
+
 const client = await pool.connect();
 try {
   await client.query('BEGIN');
@@ -24,6 +26,7 @@ try {
   await communicationHubUp(client);
   await chatwootUp(client);
   await crmSocialContentUp(client);
+  await reportRemediationUp(client);
   await client.query('COMMIT');
   console.log('Hospital CRM migrations completed');
 } catch (error) {

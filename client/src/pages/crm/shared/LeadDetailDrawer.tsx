@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Activity, Bot, Filter, Loader2, Mail, MessageCircle, PhoneCall, Send, Smartphone, X } from 'lucide-react';
 import api from '@/utils/api';
+import { Link } from 'react-router-dom';
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('crmToken') || ''}` });
 
@@ -76,6 +77,7 @@ export default function LeadDetailDrawer({ leadId, onClose }: { leadId: number; 
             <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="h-5 w-5" /></button>
           </div>
           <div className="flex gap-2 mt-3">
+            {!lead.deal_id && <Link to={`/crm/deals?lead=${lead.id}`} className="rounded-lg bg-violet-600 px-3 py-1 text-xs text-white">Convert to deal</Link>}
             <span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[lead.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{lead.status}</span>
             {!context?.v2 && <span className="px-2.5 py-1 rounded-lg text-[11px] font-medium border border-amber-500/20 bg-amber-500/10 text-amber-300">Not yet synced to v2 — segments/automations unavailable</span>}
           </div>

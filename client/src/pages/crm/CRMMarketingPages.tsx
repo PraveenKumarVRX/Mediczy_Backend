@@ -894,6 +894,13 @@ export function CRMTemplatesPage() {
           <h3 className="text-white font-semibold">{selected ? 'Edit Template' : 'New Template'}</h3>
           <input className={inp} placeholder="Template name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
           <input className={inp} placeholder="Default subject" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} />
+          <label className="block text-xs text-slate-400">Visual message editor</label>
+          <div contentEditable suppressContentEditableWarning role="textbox" aria-label="Template message" className={`${inp} min-h-32 py-3 whitespace-pre-wrap`} onBlur={e => {
+            const text = e.currentTarget.innerText;
+            const html = text.split('\n').map(line => '<p>' + line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</p>').join('');
+            setForm(f => ({ ...f, text_content: text, html_content: html }));
+          }}>{form.text_content}</div>
+          <label className="block text-xs text-slate-400">HTML source (optional)</label>
           <textarea className={`${inp} h-48 py-3 font-mono text-xs`} placeholder="<html>…</html>" value={form.html_content} onChange={(e) => setForm({ ...form, html_content: e.target.value })} />
           <textarea className={`${inp} h-24 py-3`} placeholder="Plain-text version" value={form.text_content} onChange={(e) => setForm({ ...form, text_content: e.target.value })} />
           <div className="flex gap-2">

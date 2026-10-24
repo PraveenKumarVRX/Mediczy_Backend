@@ -158,7 +158,7 @@ const CRMDashboard = () => {
               trend: `+${l?.new_leads || 0} new`,
             },
             {
-              title: 'Active Deals', value: fmt(d?.active_count), sub: fmtCurr(d?.weighted_pipeline) + ' pipeline',
+              title: 'Active Deals', value: fmt(d?.active_count), sub: fmtCurr(d?.weighted_pipeline) + ' weighted pipeline',
               icon: Briefcase, gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-500/10', text: 'text-blue-400',
               trend: `${d?.won_count || 0} won`,
             },
@@ -237,16 +237,16 @@ const CRMDashboard = () => {
                     <div className="flex justify-between text-[11px] mb-1.5">
                       <div className="flex items-center gap-1.5">
                         <span className="text-slate-400">{label}</span>
-                        {i > 0 && (
+                        {total > 0 && (
                           <span className={`text-[9px] font-semibold px-1 py-0.5 rounded ${convFromPrev >= 50 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
-                            {convFromPrev}%↓
+                            {p}% of leads
                           </span>
                         )}
                       </div>
                       <span className={`font-bold ${text}`}>{value || 0}</span>
                     </div>
                     <div className="h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                      <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${Math.max(p, 2)}%` }} />
+                      <div className={`h-full ${color} rounded-full transition-all duration-700`} style={{ width: `${p}%` }} />
                     </div>
                   </div>
                 );
@@ -255,7 +255,7 @@ const CRMDashboard = () => {
             <div className="mt-4 flex items-center justify-between py-2 px-3 rounded-xl bg-violet-500/5 border border-violet-500/10">
               <span className="text-[11px] text-slate-500">Lead→Deal Rate</span>
               <span className="text-sm font-bold text-violet-400">
-                {pct(f?.leads?.converted || 0, f?.leads?.new_leads || 1)}%
+                {pct(f?.leads?.converted || 0, l?.total || 0)}%
               </span>
             </div>
           </div>
@@ -286,7 +286,7 @@ const CRMDashboard = () => {
                   <div key={label} className="flex items-center gap-3">
                     <span className="text-[10px] text-slate-500 w-24">{label}</span>
                     <div className="flex-1 h-2 bg-white/[0.04] rounded-full overflow-hidden">
-                      <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.max(p, 2)}%` }} />
+                      <div className={`h-full ${color} rounded-full`} style={{ width: `${p}%` }} />
                     </div>
                     <span className="text-xs font-semibold text-slate-300 w-6 text-right">{v}</span>
                   </div>

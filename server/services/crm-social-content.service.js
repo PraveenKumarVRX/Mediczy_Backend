@@ -31,7 +31,7 @@ function parseDate(value, fieldName, { allowNull = false, futureOnly = false } =
   return date;
 }
 
-function validateContent(input) {
+function validateContent(input, { futurePlan = true } = {}) {
   const output = {};
   const caption = String(input.caption || '').trim();
   if (!caption || caption.length > MAX_CAPTION_LENGTH) {
@@ -78,7 +78,7 @@ function validateContent(input) {
   if (tags.length > 20) throw fail('Provide no more than 20 tags.');
   output.tags = [...new Set(tags.map((tag) => String(tag).trim()).filter(Boolean))];
   if (output.tags.some((tag) => tag.length > 40)) throw fail('Each tag must be 40 characters or fewer.');
-  output.plannedAt = parseDate(input.plannedAt, 'Planned date', { allowNull: true });
+  output.plannedAt = parseDate(input.plannedAt, 'Planned date', { allowNull: true, futureOnly: futurePlan });
   return output;
 }
 
@@ -200,7 +200,7 @@ export async function updatePost(tenantUid, rawId, input, user) {
     );
     if (!current.rows[0]) return null;
     if (!['draft', 'rejected'].includes(current.rows[0].status)) throw fail('Only draft or rejected posts can be edited.', 409);
-    const content = validateContent({ ...current.rows[0], ...input });
+    const content = validateContent({ ...current.rows[0], ...input }, { futurePlan: requestedFields.includes('plannedAt') && new Date(input.plannedAt).valueOf() !== new Date(current.rows[0].plannedAt).valueOf() });
     const updatedFields = fields.filter(([key]) => requestedFields.includes(key));
     const values = [tenantUid, id];
     const assignments = updatedFields.map(([key, column, serialize]) => {

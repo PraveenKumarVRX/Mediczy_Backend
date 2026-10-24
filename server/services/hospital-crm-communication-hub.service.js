@@ -561,9 +561,10 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
   }
 }
 
-export async function listCrmCallActivity({ leadId, dealId, limit } = {}) {
+export async function listCrmCallActivity({ tenantUid, leadId, dealId, limit } = {}) {
   const conditions = [`a.type = 'call'`];
   const params = [];
+  if (tenantUid) { params.push(tenantUid); conditions.push(`a.tenant_uid=$${params.length}`); }
   if (leadId) { params.push(positiveInt(leadId)); conditions.push(`a.lead_id = $${params.length}`); }
   if (dealId) { params.push(positiveInt(dealId)); conditions.push(`a.deal_id = $${params.length}`); }
   params.push(Math.min(Math.max(positiveInt(limit) || 50, 1), 200));
@@ -579,14 +580,14 @@ export async function listCrmCallActivity({ leadId, dealId, limit } = {}) {
   return rows;
 }
 
-export async function listCrmCommunicationLog({ leadId, dealId, channel, limit } = {}) {
+export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dealId, channel, limit } = {}) {
   const cappedLimit = Math.min(Math.max(positiveInt(limit) || 50, 1), 200);
 
   // Leads are mirrored into crm_leads_v2 — read their message history from
   // crm_communication_events (the table sendCrmMessage now writes to), shaped
   // to match the legacy row contract the Communication Hub UI already expects.
   if (leadId && !dealId) {
-    const v2 = await resolveV2LeadByLegacyId(positiveInt(leadId)).catch(() => null);
+    const v2 = await resolveV2LeadByLegacyId(positiveInt(leadId), tenantId).catch(() => null);
     if (v2) {
       const params = [v2.tenant_id, v2.id];
       let channelClause = '';
@@ -608,6 +609,7 @@ export async function listCrmCommunicationLog({ leadId, dealId, channel, limit }
   // Fallback — deal-sourced sends, or a lead whose v2 mirror hasn't caught up yet.
   const conditions = [`a.type IN ('email', 'whatsapp', 'sms')`];
   const params = [];
+  if (tenantUid) { params.push(tenantUid); conditions.push(`a.tenant_uid=$${params.length}`); }
   if (leadId) { params.push(positiveInt(leadId)); conditions.push(`a.lead_id = $${params.length}`); }
   if (dealId) { params.push(positiveInt(dealId)); conditions.push(`a.deal_id = $${params.length}`); }
   if (channel && CHANNELS.has(channel)) { params.push(channel); conditions.push(`a.type = $${params.length}`); }

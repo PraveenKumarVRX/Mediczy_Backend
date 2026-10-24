@@ -60,6 +60,7 @@ function ruleBasedLeadScore(lead) {
   else if (recency < 7)  score += 7;
   else if (recency < 14) score += 4;
   else if (recency > 60) score -= 15;
+  if (!lead.lastContactAt && ['new', ''].includes((lead.status || '').toLowerCase())) score = Math.min(score, 44);
   return Math.max(0, Math.min(100, score));
 }
 
@@ -78,6 +79,7 @@ export function quickScoreLead(lead) {
 
 export async function scoreLead(lead, activities = []) {
   const rulesScore = ruleBasedLeadScore(lead);
+  if (!lead.lastContactAt && !activities.some(a => ['call','email','meeting','whatsapp','sms'].includes(a.type || a.activityType))) return quickScoreLead(lead);
 
   const activitySummary = activities.slice(-10).map(
     a => `${a.type ?? a.activityType}: ${a.title ?? a.description ?? ''}`
@@ -120,39 +122,7 @@ function tierFromScore(s) {
 }
 
 export async function bulkScoreLeads(leads) {
-  if (!leads?.length) return [];
-
-  const summaries = leads.map((l, i) => ({
-    idx: i,
-    name: l.name,
-    company: l.company,
-    source: l.source,
-    status: l.status,
-    daysSinceContact: daysSince(l.lastContactAt ?? l.createdAt),
-  }));
-
-  const ai = await aiJSON(
-    `You are a B2B healthcare sales AI. Score each lead 0-100.
-Return ONLY valid JSON: {"scores":[{"idx":integer,"score":integer,"tier":"Hot|Warm|Cold|Dead","nextAction":"Call|Email|Demo|Nurture|Disqualify"},...]}`,
-    `Score these ${summaries.length} leads:\n${JSON.stringify(summaries)}`,
-    Math.min(2048, summaries.length * 80 + 256),
-  );
-
-  const aiMap = {};
-  if (ai?.scores) ai.scores.forEach(s => { aiMap[s.idx] = s; });
-
-  return leads.map((l, i) => {
-    const rules = ruleBasedLeadScore(l);
-    const aiRow = aiMap[i];
-    return {
-      id: l.id,
-      name: l.name,
-      score: aiRow?.score ?? rules,
-      tier:  aiRow?.tier  ?? tierFromScore(rules),
-      nextAction: aiRow?.nextAction ?? null,
-      source: aiRow ? 'ai' : 'rules',
-    };
-  });
+  return (leads || []).map(lead => ({ id: lead.id, name: lead.name, ...quickScoreLead(lead) }));
 }
 
 // ─── Deal Prediction ──────────────────────────────────────────────────────────
@@ -271,7 +241,8 @@ export function forecastRevenue(deals) {
 
   deals.forEach(d => {
     const stage = (d.stage ?? d.status ?? '').toLowerCase();
-    const prob  = WIN_PROB[stage] ?? 0.1;
+    if (['lost', 'closed lost'].includes(stage)) return;
+    const prob = ['won', 'closed won'].includes(stage) ? 1 : d.probability != null && Number.isFinite(Number(d.probability)) ? Math.max(0, Math.min(100, Number(d.probability))) / 100 : (WIN_PROB[stage] ?? 0.1);
     const value = parseFloat(d.value) || 0;
 
     weighted    += value * prob;
@@ -303,22 +274,14 @@ export function forecastRevenue(deals) {
 
 export async function analyzePipelineHealth(leads, deals) {
   const stalledDeals  = deals.filter(d => daysSince(d.updatedAt) > 21).length;
-  const hotLeads      = leads.filter(l => (l.score ?? 0) >= 70).length;
-  const coldLeads     = leads.filter(l => (l.score ?? 0) < 30).length;
+  const hotLeads      = leads.filter(l => quickScoreLead(l).score >= 70).length;
+  const coldLeads     = leads.filter(l => quickScoreLead(l).score < 30).length;
   const totalDealVal  = deals.reduce((s, d) => s + (parseFloat(d.value) || 0), 0);
   const avgDealAge    = deals.length
     ? Math.round(deals.reduce((s, d) => s + daysSince(d.createdAt), 0) / deals.length)
     : 0;
 
-  const ai = await aiJSON(
-    `You are a revenue intelligence AI for a B2B healthcare company. Analyse pipeline health.
-Return ONLY valid JSON:
-{"healthScore":integer,"status":"Healthy|Needs Attention|At Risk|Critical","observations":["...","...","..."],"alerts":["..."],"opportunities":["...","..."]}`,
-    `Pipeline snapshot: ${JSON.stringify({ totalLeads: leads.length, hotLeads, coldLeads, totalDeals: deals.length, stalledDeals, totalDealValue: Math.round(totalDealVal), avgDealAgeDays: avgDealAge })}`,
-    768,
-  );
-
-  return ai ?? {
+  return {
     healthScore: stalledDeals > deals.length * 0.4 ? 45 : 70,
     status: stalledDeals > deals.length * 0.4 ? 'Needs Attention' : 'Healthy',
     observations: [`${stalledDeals} deals stalled for 21+ days.`],

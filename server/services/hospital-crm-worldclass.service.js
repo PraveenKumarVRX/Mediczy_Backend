@@ -428,16 +428,19 @@ export async function refreshAnalyticsMarts(tenantId, { metricDate, actorUserId 
 
 export async function runDataQualityScan(tenantId, actorUserId) {
   const tenant = requireTenant(tenantId);
+  await sharedPool.query(`UPDATE crm_data_quality_issues q SET status='resolved' WHERE q.tenant_id=$1 AND q.status='open' AND q.entity_type='lead' AND EXISTS (
+    SELECT 1 FROM crm_leads_v2 l WHERE l.id=q.entity_id AND l.tenant_id=q.tenant_id AND
+    ((q.issue_type='missing_owner' AND l.owner_user_id IS NOT NULL) OR (q.issue_type='missing_identity' AND COALESCE(l.identity_id,l.person_id) IS NOT NULL) OR (q.issue_type='missing_source' AND l.source_taxonomy_id IS NOT NULL)))`, [tenant]);
   const result = await sharedPool.query(
     `WITH candidates AS (
       SELECT id, 'lead'::text AS entity_type, 'missing_owner'::text AS issue_type, 'high'::text AS severity, 'owner_user_id'::text AS field_name
-        FROM crm_leads_v2 WHERE tenant_id = $1 AND status = 'open' AND owner_user_id IS NULL
+        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND status = 'open' AND owner_user_id IS NULL
       UNION ALL
       SELECT id, 'lead', 'missing_source', 'medium', 'source_taxonomy_id'
-        FROM crm_leads_v2 WHERE tenant_id = $1 AND source_taxonomy_id IS NULL
+        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND source_taxonomy_id IS NULL
       UNION ALL
       SELECT id, 'lead', 'missing_identity', 'high', 'identity_id'
-        FROM crm_leads_v2 WHERE tenant_id = $1 AND identity_id IS NULL
+        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND COALESCE(identity_id, person_id) IS NULL
     )
     INSERT INTO crm_data_quality_issues (tenant_id, entity_type, entity_id, issue_type, severity, field_name)
     SELECT $1, c.entity_type, c.id, c.issue_type, c.severity, c.field_name FROM candidates c
@@ -557,8 +560,11 @@ export async function calculateAttribution(input, actorUserId) {
 export async function getDataQualityIssues(tenantId, { status = "open", limit = 100 } = {}) {
   const tenant = requireTenant(tenantId);
   const result = await sharedPool.query(
-    `SELECT * FROM crm_data_quality_issues
-      WHERE tenant_id = $1 AND status = $2
+    `SELECT q.*, l.legacy_lead_id, COALESCE(lv.name, 'Journey lead') AS entity_name
+      FROM crm_data_quality_issues q
+      LEFT JOIN crm_leads_v2 l ON q.entity_type='lead' AND l.id=q.entity_id AND l.tenant_id=q.tenant_id
+      LEFT JOIN crm_leads lv ON lv.id=l.legacy_lead_id
+      WHERE q.tenant_id = $1 AND q.status = $2 AND (q.entity_type <> 'lead' OR l.legacy_lead_id IS NOT NULL)
       ORDER BY detected_at ASC LIMIT $3`,
     [tenant, status, Math.min(Math.max(Number(limit) || 100, 1), 500)]
   );
@@ -614,6 +620,9 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
          AND (u."isTeam" = TRUE OR u."isAdmin" = TRUE OR u.role IN ('team', 'admin') OR u.metadata->>'isCRM' = 'true' OR u.metadata->>'crmAccess' = 'true' OR u.metadata ? 'crmRole')
     )
     SELECT tm.user_id,
+           (SELECT COUNT(*)::int FROM field_leads f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND f.created_at >= $2::timestamptz AND f.created_at < $3::timestamptz) AS field_leads,
+           (SELECT COUNT(*)::int FROM field_leads f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND f.created_at >= $2::timestamptz AND f.created_at < $3::timestamptz AND NOT EXISTS (SELECT 1 FROM crm_leads_v2 l WHERE l.tenant_id=$1 AND l.legacy_lead_id=f.crm_lead_id AND l.owner_user_id=tm.user_id AND l.created_at >= $2::timestamptz AND l.created_at < $3::timestamptz)) AS unlinked_field_leads,
+           (SELECT COUNT(*)::int FROM field_visits f WHERE f.tenant_id=$1 AND f.user_id=tm.user_id AND COALESCE(f.planned_at,f.created_at) >= $2::timestamptz AND COALESCE(f.planned_at,f.created_at) < $3::timestamptz) AS field_visits,
            tm.first_name,
            tm.last_name,
            tm.email,
@@ -632,7 +641,7 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
            COALESCE((SELECT COUNT(*) FROM crm_tasks t WHERE t.tenant_id = $1 AND t.assigned_to_user_id = tm.user_id AND t.status NOT IN ('completed', 'cancelled') AND t.due_at < NOW()), 0)::int AS overdue_tasks,
            COALESCE((SELECT COUNT(*) FROM crm_communication_events c WHERE c.tenant_id = $1 AND c.owner_user_id = tm.user_id AND c.created_at >= $2::timestamptz AND c.created_at < $3::timestamptz), 0)::int AS touchpoints
       FROM team_members tm
-      LEFT JOIN crm_employee_profiles ep ON ep.tenant_id = $1 AND ep.user_id = tm.user_id
+      LEFT JOIN LATERAL (SELECT * FROM crm_employee_profiles p WHERE p.tenant_id=$1 AND p.user_id=tm.user_id ORDER BY p.id DESC LIMIT 1) ep ON TRUE
      WHERE ($4 = '' OR tm.role_key = $4)
        AND ($5 = '' OR CONCAT_WS(' ', tm.first_name, tm.last_name, tm.email, tm.department_name) ILIKE '%' || $5 || '%')
      ORDER BY converted_leads DESC, revenue DESC, leads DESC, tm.first_name ASC NULLS LAST`;
@@ -662,12 +671,13 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
     sharedPool.query(trendQuery, [tenant, start, end, roleFilter]),
   ]);
 
-  const members = membersResult.rows.map((row) => {
-    const leads = numberOrZero(row.leads);
+  const members = [...new Map(membersResult.rows.map(row => [String(row.user_id), row])).values()].map((row) => {
+    const leads = numberOrZero(row.leads) + numberOrZero(row.unlinked_field_leads);
     const converted = numberOrZero(row.converted_leads);
     const tasks = numberOrZero(row.tasks);
     return {
       ...row,
+      leads,
       employee_name: [row.first_name, row.last_name].filter(Boolean).join(' ') || row.email || `User ${row.user_id}`,
       role: row.role_key,
       conversion_rate: leads ? (converted / leads) * 100 : null,
@@ -708,6 +718,7 @@ export async function getBusinessHeadTeamDashboard(tenantId, { from, to, role, s
   }
   const teamGroups = members.reduce((groups, row) => {
     const managerId = intOrNull(row.manager_user_id);
+    if (!managerId && managerIds.some(id => String(id) === String(row.user_id))) return groups;
     const key = managerId ?? 'unassigned';
     const info = managerId ? managerNames[managerId] : null;
     const current = groups[key] || {

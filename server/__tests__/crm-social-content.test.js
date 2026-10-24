@@ -60,6 +60,22 @@ describe('CRM social content workflow', () => {
     expect(insert[1]).toEqual(expect.arrayContaining(['HOSP01', 'A health awareness post', ['instagram', 'linkedin']]));
   });
 
+  test('rejects planning a new post in the past before opening a transaction', async () => {
+    await expect(content.createPost('HOSP01', { caption:'A post', platforms:['instagram'], plannedAt:new Date(Date.now()-86400000).toISOString() }, user)).rejects.toMatchObject({statusCode:400});
+    expect(pool.connect).not.toHaveBeenCalled();
+  });
+
+  test('allows a caption correction without rescheduling an old draft', async () => {
+    client.query.mockImplementation(async sql => {
+      if (String(sql).includes('SELECT status, caption')) return {rows:[{status:'draft',caption:'Old',platforms:['instagram'],plannedAt:new Date(Date.now()-86400000).toISOString()}]};
+      if (String(sql).includes('UPDATE crm_social_posts')) return {rows:[{status:'draft'}]};
+      if (String(sql).includes('SELECT id, unique_id AS')) return {rows:[{id:'5',status:'draft'}]};
+      return {rows:[]};
+    });
+    await expect(content.updatePost('HOSP01','5',{caption:'Corrected caption'},user)).resolves.toMatchObject({id:'5'});
+    expect(client.query.mock.calls.at(-1)[0]).toBe('COMMIT');
+  });
+
   test('does not allow the author to approve their own post', async () => {
     client.query.mockImplementation(async (sql) => {
       if (sql === 'BEGIN' || sql === 'ROLLBACK') return { rows: [] };
