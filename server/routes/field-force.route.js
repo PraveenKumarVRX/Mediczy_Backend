@@ -135,11 +135,12 @@ router.get('/attendance/history', authTeam, FF, async (req, res) => {
 
   let where = `WHERE user_id = $1`;
   const params = [uid];
+  if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return res.status(400).json({ error: 'month must be YYYY-MM' });
   if (month) {
     params.push(month + '-01');
     where += ` AND date >= $${params.length}`;
-    params.push(month + '-31');
-    where += ` AND date <= $${params.length}`;
+    params.push(month + '-01');
+    where += ` AND date < ($${params.length}::date + INTERVAL '1 month')`;
   }
 
   try {
@@ -197,6 +198,9 @@ router.post('/visits', authTeam, FF, async (req, res) => {
   if (!entity_name || !(purpose || visit_type)) {
     return res.status(400).json({ error: 'entity_name and purpose (or visit_type) are required' });
   }
+  if (planned_at && (!Number.isFinite(Date.parse(planned_at)) || new Date(planned_at).toISOString().slice(0, 10) < today())) {
+    return res.status(400).json({ error: 'planned_at must be today or a future date' });
+  }
   const uid = req.user.id;
   const tid = tenantId(req);
 
@@ -221,6 +225,20 @@ router.post('/visits', authTeam, FF, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+
+// A planned visit can be cancelled only by its owner in the same tenant.
+router.patch('/visits/:id/cancel', authTeam, FF, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(
+      `UPDATE field_visits SET status='cancelled', updated_at=NOW()
+       WHERE id=$1 AND user_id=$2 AND tenant_id=$3 AND status='planned' RETURNING *`,
+      [req.params.id, req.user.id, tenantId(req)]
+    );
+    if (!rows.length) return res.status(409).json({ error: 'Visit not found or no longer planned' });
+    res.json(rows[0]);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // PATCH /visits/:id/check-in
@@ -384,6 +402,12 @@ router.post('/daily-report', authTeam, FF, async (req, res) => {
   ).catch(() => ({ rows: [] }));
 
   try {
+    const { rows: [actual] } = await sharedPool.query(
+      `SELECT COUNT(*) FILTER (WHERE DATE(COALESCE(planned_at,created_at))=$3::date) AS planned,
+              COUNT(*) FILTER (WHERE status='completed' AND DATE(check_out_at)=$3::date) AS completed,
+              COUNT(*) FILTER (WHERE status='missed' AND DATE(COALESCE(planned_at,created_at))=$3::date) AS missed
+       FROM field_visits WHERE user_id=$1 AND tenant_id=$2`, [uid, tid, d]
+    );
     const { rows } = await sharedPool.query(
       `INSERT INTO daily_field_reports
          (user_id, report_date, attendance_id,
@@ -407,13 +431,13 @@ router.post('/daily-report', authTeam, FF, async (req, res) => {
        RETURNING *`,
       [
         uid, d, att.rows[0]?.id || null,
-        planned_visits || 0, completed_visits || 0, missed_visits || 0,
+        Number(actual.planned), Number(actual.completed), Number(actual.missed),
         leads_generated || 0, follow_ups_done || 0,
-        key_achievements || null, challenges || null, next_day_plan || null,
+        key_achievements || req.body.summary || null, challenges || req.body.issues_faced || null, next_day_plan || null,
         tid,
       ]
     );
-    res.status(201).json(rows[0]);
+    res.status(201).json({ ...rows[0], report_id: rows[0].id });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -470,7 +494,7 @@ router.get('/travel', authTeam, FF, async (req, res) => {
   const params = [uid];
   const conds = ['user_id = $1'];
   if (month) { params.push(month + '-01'); conds.push(`travel_date >= $${params.length}`);
-    params.push(month + '-31'); conds.push(`travel_date <= $${params.length}`); }
+    params.push(month + '-01'); conds.push(`travel_date <= $${params.length}`); }
   if (status) { params.push(status); conds.push(`status = $${params.length}`); }
   try {
     const { rows } = await sharedPool.query(
@@ -490,7 +514,9 @@ router.post('/expenses', authTeam, FF, async (req, res) => {
   // Accept both this table's native fields (claim_month/title) and the doc's documented
   // ones (claim_date/claim_type/total_amount) so a client built against either works.
   const { travel_request_id, claim_month, title, notes, claim_date, claim_type, total_amount } = req.body;
-  const resolvedMonth = claim_month || (claim_date ? claim_date.slice(0, 7) + '-01' : null);
+  const resolvedMonth = (claim_month || claim_date || today()).slice(0, 7);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(resolvedMonth)) return res.status(400).json({ error: 'claim_month must be YYYY-MM' });
+  if (total_amount != null && (typeof total_amount === 'boolean' || !Number.isFinite(Number(total_amount)) || Number(total_amount) <= 0)) return res.status(400).json({ error: 'total_amount must be positive' });
   const resolvedTitle = title || (claim_type ? `${claim_type} claim` : null);
   if (!resolvedMonth || !resolvedTitle)
     return res.status(400).json({ error: 'claim_month (or claim_date) and title (or claim_type) are required' });
@@ -940,7 +966,7 @@ router.get('/my/targets', authTeam, FF, async (req, res) => {
          ((t.month || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date AS period_end,
          COALESCE(
            (SELECT COUNT(*) FROM field_visits v
-            WHERE v.user_id = $1 AND DATE(v.created_at) BETWEEN (t.month || '-01')::date AND ((t.month || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date),0
+            WHERE v.user_id = $1 AND v.tenant_id = $2 AND v.status='completed' AND DATE(v.check_out_at) BETWEEN (t.month || '-01')::date AND ((t.month || '-01')::date + INTERVAL '1 month' - INTERVAL '1 day')::date),0
          ) AS visits_done,
          COALESCE(
            (SELECT COUNT(*) FROM field_leads l
@@ -999,7 +1025,7 @@ router.get('/my/scorecard', authTeam, FF, async (req, res) => {
       sharedPool.query(
         `SELECT COUNT(*) AS claims,
            SUM(total_amount) AS total_claimed,
-           SUM(CASE WHEN status='approved' THEN total_amount ELSE 0 END) AS approved_amount
+           SUM(CASE WHEN status IN ('approved','paid') THEN COALESCE(approved_amount,0) ELSE 0 END) AS approved_amount
          FROM field_expense_claims WHERE user_id=$1 AND tenant_id=$2
          AND DATE(created_at) BETWEEN $3 AND $4`,
         [uid, tid, monthStart, monthEnd]
@@ -1125,10 +1151,13 @@ router.post('/tour-plans', authTeam, FF, async (req, res) => {
       `INSERT INTO field_tour_plans (user_id, tenant_id, month, beat_dates, notes)
        VALUES ($1,$2,$3::date,$4,$5)
        ON CONFLICT (user_id, month)
-       DO UPDATE SET beat_dates=$4, notes=$5, status='draft', updated_at=NOW()
+       DO UPDATE SET beat_dates=$4, notes=$5, status='draft',
+         reviewed_by=NULL, reviewed_at=NULL, review_note=NULL, submitted_at=NULL, updated_at=NOW()
+       WHERE field_tour_plans.status IN ('draft','rejected') AND field_tour_plans.tenant_id=$2
        RETURNING *`,
       [uid, tid, month, JSON.stringify(beat_dates || {}), notes || null]
     );
+    if (!rows.length) return res.status(409).json({ error: 'An approved or submitted tour plan cannot be overwritten' });
     res.status(201).json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1392,10 +1421,10 @@ router.get('/leads', authTeam, FF, async (req, res) => {
   const tid = tenantId(req);
   const params = [uid, tid];
   const conds = ['user_id=$1', 'tenant_id=$2'];
-  if (status) { params.push(status); conds.push(`status=$${params.length}`); }
+  if (status) { params.push(status); conds.push(`pipeline_stage=$${params.length}`); }
   try {
     const { rows } = await sharedPool.query(
-      `SELECT * FROM field_leads WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT 100`,
+      `SELECT *, pipeline_stage AS status FROM field_leads WHERE ${conds.join(' AND ')} ORDER BY created_at DESC LIMIT 100`,
       params
     );
     res.json(rows);

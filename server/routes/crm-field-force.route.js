@@ -24,6 +24,27 @@ function tid(req) { return req.crmUser.tenantId || 1; }
 function thisMonth() { return new Date().toISOString().slice(0, 7); }
 function today()     { return new Date().toISOString().slice(0, 10); }
 
+
+// Manager review of persisted daily reports, restricted to this tenant.
+router.get('/daily-reports', authCRM, FF_READ, async (req, res) => {
+  const { date, exec_id } = req.query;
+  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)))) {
+    return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+  }
+  if (exec_id && !/^\d+$/.test(exec_id)) return res.status(400).json({ error: 'exec_id must be numeric' });
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.*, (u."firstName" || ' ' || u."lastName") AS exec_name
+       FROM daily_field_reports r JOIN users u ON u.id=r.user_id
+       WHERE r.tenant_id=$1 AND ($2::date IS NULL OR r.report_date=$2::date)
+         AND ($3::bigint IS NULL OR r.user_id=$3::bigint)
+       ORDER BY r.report_date DESC, r.id DESC LIMIT 100`,
+      [tid(req), date || null, exec_id || null]
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── SUMMARY KPIs ─────────────────────────────────────────────────────────────
 
 // GET /summary  — dashboard KPI chips
@@ -239,18 +260,27 @@ router.get('/expenses/:id', authCRM, FF_READ, async (req, res) => {
 // PATCH /expenses/:id/approve
 router.patch('/expenses/:id/approve', authCRM, FF_MANAGE, async (req, res) => {
   const { approved_amount, approval_notes } = req.body;
+  if (approved_amount == null || typeof approved_amount === 'boolean' || String(approved_amount).trim() === '' || !Number.isFinite(Number(approved_amount)) || Number(approved_amount) < 0) return res.status(400).json({ error: 'approved_amount must be a non-negative number' });
   const tenantId = tid(req);
   const reviewerId = req.crmUser.id;
   try {
     const { rows } = await pool.query(
-      `UPDATE field_expense_claims
+      `WITH decision AS (
+       UPDATE field_expense_claims
        SET status = 'approved', approved_amount = $3, approval_notes = $4,
            reviewed_by = $5, reviewed_at = NOW(), updated_at = NOW()
-       WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
-       RETURNING *`,
-      [req.params.id, tenantId, approved_amount || null, approval_notes || null, reviewerId]
+       WHERE id = $1 AND tenant_id = $2 AND status = 'submitted' AND $3 <= total_amount
+       RETURNING *
+       ), notification AS (
+         INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+         SELECT user_id, tenant_id, 'approval', 'Expense ' || status,
+                COALESCE(approval_notes, rejection_reason, ''),
+                jsonb_build_object('id', id, 'resource', 'field_expense_claims', 'status', status)
+         FROM decision RETURNING id
+       ) SELECT decision.* FROM decision CROSS JOIN notification`,
+      [req.params.id, tenantId, Number(approved_amount), approval_notes || null, reviewerId]
     );
-    if (!rows.length) return res.status(404).json({ error: 'Claim not found or not in submitted state' });
+    if (!rows.length) return res.status(404).json({ error: 'Claim not found, not submitted, or approved amount exceeds claimed amount' });
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -265,11 +295,19 @@ router.patch('/expenses/:id/reject', authCRM, FF_MANAGE, async (req, res) => {
   const reviewerId = req.crmUser.id;
   try {
     const { rows } = await pool.query(
-      `UPDATE field_expense_claims
+      `WITH decision AS (
+       UPDATE field_expense_claims
        SET status = 'rejected', rejection_reason = $3,
            reviewed_by = $4, reviewed_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2 AND status = 'submitted'
-       RETURNING *`,
+       RETURNING *
+       ), notification AS (
+         INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+         SELECT user_id, tenant_id, 'approval', 'Expense ' || status,
+                COALESCE(approval_notes, rejection_reason, ''),
+                jsonb_build_object('id', id, 'resource', 'field_expense_claims', 'status', status)
+         FROM decision RETURNING id
+       ) SELECT decision.* FROM decision CROSS JOIN notification`,
       [req.params.id, tenantId, rejection_reason, reviewerId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Claim not found or not in submitted state' });
@@ -466,12 +504,12 @@ router.get('/leads', authCRM, FF_READ, async (req, res) => {
   const tenantId = tid(req);
   const params = [tenantId];
   const conds  = ['l.tenant_id = $1'];
-  if (status)    { params.push(status);    conds.push(`l.status = $${params.length}`); }
+  if (status)    { params.push(status);    conds.push(`l.pipeline_stage = $${params.length}`); }
   if (exec_id)   { params.push(exec_id);   conds.push(`l.user_id = $${params.length}`); }
   if (lead_type) { params.push(lead_type); conds.push(`l.lead_type = $${params.length}`); }
   try {
     const { rows } = await pool.query(
-      `SELECT l.*, (u."firstName" || ' ' || u."lastName") AS exec_name
+      `SELECT l.*, l.pipeline_stage AS status, (u."firstName" || ' ' || u."lastName") AS exec_name
        FROM field_leads l JOIN users u ON u.id = l.user_id
        WHERE ${conds.join(' AND ')}
        ORDER BY l.created_at DESC`,
@@ -731,10 +769,18 @@ router.patch('/approvals/exceptions/:id/approve', authCRM, FF_MANAGE, async (req
   const reviewerId = req.crmUser?.id;
   try {
     const { rows } = await pool.query(
-      `UPDATE field_visit_exceptions SET status='approved', reviewed_by=$2,
+      `WITH decision AS (
+       UPDATE field_visit_exceptions SET status='approved', reviewed_by=$2,
          reviewed_at=NOW(), review_note=$3, updated_at=NOW()
-       WHERE id=$1 AND status='pending' RETURNING *`,
-      [req.params.id, reviewerId, review_note || null]
+       WHERE id=$1 AND status='pending' AND tenant_id=$4 RETURNING *
+       ), notification AS (
+         INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+         SELECT user_id, tenant_id, 'approval', 'Visit exception ' || status,
+                COALESCE(review_note, ''),
+                jsonb_build_object('id', id, 'resource', 'field_visit_exceptions', 'status', status)
+         FROM decision RETURNING id
+       ) SELECT decision.* FROM decision CROSS JOIN notification`,
+      [req.params.id, reviewerId, review_note || null, tid(req)]
     );
     if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
     res.json(rows[0]);
@@ -751,10 +797,18 @@ router.patch('/approvals/exceptions/:id/reject', authCRM, FF_MANAGE, async (req,
   if (!resolvedNote) return res.status(400).json({ error: 'review_note (or rejection_reason) required for rejection' });
   try {
     const { rows } = await pool.query(
-      `UPDATE field_visit_exceptions SET status='rejected', reviewed_by=$2,
+      `WITH decision AS (
+       UPDATE field_visit_exceptions SET status='rejected', reviewed_by=$2,
          reviewed_at=NOW(), review_note=$3, updated_at=NOW()
-       WHERE id=$1 AND status='pending' RETURNING *`,
-      [req.params.id, reviewerId, resolvedNote]
+       WHERE id=$1 AND status='pending' AND tenant_id=$4 RETURNING *
+       ), notification AS (
+         INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+         SELECT user_id, tenant_id, 'approval', 'Visit exception ' || status,
+                COALESCE(review_note, ''),
+                jsonb_build_object('id', id, 'resource', 'field_visit_exceptions', 'status', status)
+         FROM decision RETURNING id
+       ) SELECT decision.* FROM decision CROSS JOIN notification`,
+      [req.params.id, reviewerId, resolvedNote, tid(req)]
     );
     if (!rows.length) return res.status(404).json({ error: 'Exception not found or already reviewed' });
     res.json(rows[0]);
@@ -769,10 +823,18 @@ router.patch('/approvals/tour-plans/:id/approve', authCRM, FF_MANAGE, async (req
   const reviewerId = req.crmUser?.id;
   try {
     const { rows } = await pool.query(
-      `UPDATE field_tour_plans SET status='approved', reviewed_by=$2,
+      `WITH decision AS (
+       UPDATE field_tour_plans SET status='approved', reviewed_by=$2,
          reviewed_at=NOW(), review_note=$3, updated_at=NOW()
-       WHERE id=$1 AND status='submitted' RETURNING *`,
-      [req.params.id, reviewerId, review_note || null]
+       WHERE id=$1 AND status='submitted' AND tenant_id=$4 RETURNING *
+       ), notification AS (
+         INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+         SELECT user_id, tenant_id, 'approval', 'Tour plan ' || status,
+                COALESCE(review_note, ''),
+                jsonb_build_object('id', id, 'resource', 'field_tour_plans', 'status', status)
+         FROM decision RETURNING id
+       ) SELECT decision.* FROM decision CROSS JOIN notification`,
+      [req.params.id, reviewerId, review_note || null, tid(req)]
     );
     if (!rows.length) return res.status(404).json({ error: 'Tour plan not found or not submitted' });
     res.json(rows[0]);
@@ -789,10 +851,18 @@ router.patch('/approvals/tour-plans/:id/reject', authCRM, FF_MANAGE, async (req,
   const reviewerId = req.crmUser?.id;
   try {
     const { rows } = await pool.query(
-      `UPDATE field_tour_plans SET status='rejected', reviewed_by=$2,
+      `WITH decision AS (
+       UPDATE field_tour_plans SET status='rejected', reviewed_by=$2,
          reviewed_at=NOW(), review_note=$3, updated_at=NOW()
-       WHERE id=$1 AND status='submitted' RETURNING *`,
-      [req.params.id, reviewerId, resolvedNote]
+       WHERE id=$1 AND status='submitted' AND tenant_id=$4 RETURNING *
+       ), notification AS (
+         INSERT INTO field_notifications (user_id, tenant_id, type, title, body, data)
+         SELECT user_id, tenant_id, 'approval', 'Tour plan ' || status,
+                COALESCE(review_note, ''),
+                jsonb_build_object('id', id, 'resource', 'field_tour_plans', 'status', status)
+         FROM decision RETURNING id
+       ) SELECT decision.* FROM decision CROSS JOIN notification`,
+      [req.params.id, reviewerId, resolvedNote, tid(req)]
     );
     if (!rows.length) return res.status(404).json({ error: 'Tour plan not found' });
     res.json(rows[0]);
@@ -827,7 +897,7 @@ router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
       [req.params.id, tenantId, resolvedStage, req.crmUser?.id, resolvedNote || null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
-    res.json(rows[0]);
+    res.json({ ...rows[0], status: rows[0].pipeline_stage });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -837,6 +907,7 @@ router.patch('/leads/:id/stage', authCRM, FF_READ, async (req, res) => {
 router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
   const { contract_value, mou_document_url, note, notes } = req.body; // doc documents `notes` (plural)
   const resolvedNote = note || notes;
+  if (contract_value == null || typeof contract_value === 'boolean' || !Number.isFinite(Number(contract_value)) || Number(contract_value) <= 0) return res.status(400).json({ error: 'contract_value must be a positive number' });
   const tenantId = tid(req);
   try {
     const { rows } = await pool.query(
@@ -854,7 +925,7 @@ router.patch('/leads/:id/convert', authCRM, FF_MANAGE, async (req, res) => {
        req.crmUser?.id, resolvedNote||null]
     );
     if (!rows.length) return res.status(404).json({ error: 'Lead not found' });
-    res.json(rows[0]);
+    res.json({ ...rows[0], status: rows[0].pipeline_stage });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1105,7 +1176,8 @@ router.get('/cme-events/:id/speakers', authCRM, FF_READ, async (req, res) => {
 
 // POST /cme-events/:id/speakers
 router.post('/cme-events/:id/speakers', authCRM, FF_MANAGE, async (req, res) => {
-  const { doctor_crm_id, speaker_name, speciality, speaker_type, honorarium, compliance_cleared, notes } = req.body;
+  const { doctor_crm_id, speciality, speaker_type, honorarium, compliance_cleared, notes } = req.body;
+  const speaker_name = req.body.speaker_name || req.body.name;
   const tenantId = tid(req);
   if (!speaker_name) return res.status(400).json({ error: 'speaker_name required' });
   try {
@@ -1255,7 +1327,7 @@ router.post('/targets/reallocate', authCRM, FF_MANAGE, async (req, res) => {
   const { from_user_id, to_user_id, target_type, transfer_qty, amount, reason } = req.body;
   const qty = Number(transfer_qty ?? amount); // doc calls this transfer_qty; amount kept as a fallback alias
   const column = TARGET_COLUMN[target_type || 'visits'];
-  if (!from_user_id || !to_user_id || !qty || !column) {
+  if (!from_user_id || !to_user_id || String(from_user_id) === String(to_user_id) || !Number.isFinite(qty) || qty <= 0 || (target_type !== 'revenue' && !Number.isInteger(qty)) || !column) {
     return res.status(400).json({ error: `from_user_id, to_user_id, transfer_qty required; target_type must be one of ${Object.keys(TARGET_COLUMN).join(', ')}` });
   }
   const tenantId = tid(req);
@@ -1265,11 +1337,24 @@ router.post('/targets/reallocate', authCRM, FF_MANAGE, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(
-      `UPDATE field_targets SET ${column} = GREATEST(0, COALESCE(${column},0) - $3), updated_at=NOW()
-       WHERE user_id=$1 AND tenant_id=$2 AND month=$4`,
+    const members = await client.query(
+      `SELECT id FROM users WHERE id=ANY($1::bigint[]) AND tenant_id=$2
+         AND "isTeam"=TRUE AND metadata->'permissions' ? 'Field Force' FOR SHARE`,
+      [[from_user_id, to_user_id], tenantId]
+    );
+    if (members.rows.length !== 2) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Both executives must belong to this field team' });
+    }
+    const debit = await client.query(
+      `UPDATE field_targets SET ${column} = COALESCE(${column},0) - $3, updated_at=NOW()
+       WHERE user_id=$1 AND tenant_id=$2 AND month=$4 AND COALESCE(${column},0) >= $3 RETURNING id`,
       [from_user_id, tenantId, qty, monthKey]
     );
+    if (!debit.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Source executive has insufficient quota' });
+    }
     const existing = await client.query(
       `SELECT id FROM field_targets WHERE user_id=$1 AND tenant_id=$2 AND month=$3`,
       [to_user_id, tenantId, monthKey]
