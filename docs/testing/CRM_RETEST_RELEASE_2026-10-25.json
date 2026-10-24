@@ -1,0 +1,56 @@
+{
+  "releasedOn": "2026-10-25T00:34:26.499619+05:30",
+  "productCommit": "e5dabf31e1263a1bf479caa388c0b1f6cd894828",
+  "frontendCommit": "45c5c94d",
+  "branch": "main",
+  "frontendArtifact": "/home/ubuntu/mediqzy-releases/crm-retest-20261025-45c5c94d/client/dist",
+  "indexSha256": "8253ba5db1971a14e9380b2c83af2c6f60bde5387a9c30ae575029e1b62ec9ce",
+  "publicBuildMatches": true,
+  "cloudFront": {
+    "id": "IAU15WBWS0Z1B9NBPFRV15APH3",
+    "status": "Completed"
+  },
+  "verification": {
+    "backendRegressionsPassed": 78,
+    "postgresWorkflowTestsPassed": 21,
+    "uiTestsPassed": 19,
+    "liveApiChecksPassed": 10,
+    "browserPagesPassed": 35,
+    "targetedBrowserScenariosPassed": 7,
+    "portalRoutes": "ALL PASSED",
+    "canonicalSanitySmoke": "GO",
+    "entityUidViolations": 0,
+    "entityUidWarnings": 1,
+    "health": "healthy"
+  },
+  "observed": {
+    "before": {
+      "visibleLeads": 3,
+      "growthLeads": 4
+    },
+    "after": {
+      "visibleLeads": 3,
+      "growthLeads": 3,
+      "openPipeline": 5000,
+      "weightedForecast": 2500,
+      "allRecoveryLeadsVisible": true,
+      "linkedPhonesPresent": true
+    }
+  },
+  "dataRepair": {
+    "migration": "20261025000000-crm-retest-contact-phones",
+    "dealsUpdated": 2,
+    "contactsUpdated": 2,
+    "idempotencyVerified": true,
+    "existingPhonesOverwritten": 0
+  },
+  "externalMessagesSent": 0,
+  "realCallsPlaced": 0,
+  "oldHashedAssetsRetained": true,
+  "privateEvidence": "/home/ubuntu/crm-release-evidence/20261025",
+  "limitations": [
+    "Live smoke uses short-lived server-signed tokens for the designated QA identity; login was not retested.",
+    "Real outbound calls and messages were not exercised.",
+    "Entity UID verifier reports one existing reference coverage warning."
+  ]
+}
