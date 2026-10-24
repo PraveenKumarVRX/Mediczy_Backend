@@ -668,7 +668,7 @@ router.post('/deals', authCRM, validateCRMReferences, [body('title').notEmpty().
     if (lead_id) { await client.query(`UPDATE crm_leads SET deal_id=$1, status='converted', converted_at=COALESCE(converted_at,NOW()), updated_at=NOW() WHERE id=$2 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid = $3 AND legacy_lead_id IS NOT NULL)`, [rows[0].id, lead_id, req.crmUser.tenantUid || null]); }
     if (contact_name?.trim()) {
       await client.query(`INSERT INTO crm_contacts (name,email,phone,company,lead_id,created_by,tenant_uid)
-        SELECT $1,$2,$3,$4,$5,$6,$7 WHERE NOT EXISTS
+        SELECT $1::varchar,$2::varchar,$3::varchar,$4::varchar,$5::bigint,$6::integer,$7::text WHERE NOT EXISTS
         (SELECT 1 FROM crm_contacts WHERE tenant_uid=$7 AND (($2::text IS NOT NULL AND LOWER(email)=LOWER($2)) OR ($2::text IS NULL AND name=$1)))`,
         [contact_name.trim(), contact_email || null, contact_phone || null, company || null, lead_id || null, req.crmUser.id, req.crmUser.tenantUid]);
     }

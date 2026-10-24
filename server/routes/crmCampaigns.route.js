@@ -296,8 +296,14 @@ router.get('/lists/:id', async (req, res) => {
 router.post('/lists/:id/import', upload.single('file'), async (req, res) => {
   if (!req.crmUser.tenantUid) return res.status(400).json({ success:false,message:'Organization context is required' });
   if (!req.file) return res.status(400).json({ success: false, message: 'file is required' });
-  const workbook = await XLSX.read(req.file.buffer, { type: 'buffer' });
-  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '' });
+  let rows;
+  try {
+    const fileType = /\.csv$/i.test(req.file.originalname) || req.file.mimetype === 'text/csv' ? 'csv' : 'xlsx';
+    const workbook = await XLSX.read(req.file.buffer, { type: 'buffer', fileType });
+    rows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { defval: '' });
+  } catch {
+    return res.status(400).json({ success: false, message: 'Upload a valid CSV or XLSX file' });
+  }
   let valid=0, duplicate=0; const errors=[];
   const bucket = getUploadsBucket();
   let s3Key = null;

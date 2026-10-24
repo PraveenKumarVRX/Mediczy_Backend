@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { Readable } from 'node:stream';
 import ExcelJS from 'exceljs';
 
 function columnNumberToName(columnNumber) {
@@ -170,7 +171,11 @@ function bookAppendSheet(workbook, worksheet, name) {
 async function readInternal(input, options = {}) {
   const workbook = new ExcelJS.Workbook();
   if (Buffer.isBuffer(input)) {
-    await workbook.xlsx.load(input);
+    if (options.fileType === 'csv') {
+      await workbook.csv.read(Readable.from([input]), { map: value => value, parserOptions: { ignoreEmpty: true } });
+    } else {
+      await workbook.xlsx.load(input);
+    }
   } else if (typeof input === 'string') {
     await workbook.xlsx.readFile(input);
   } else {
