@@ -665,12 +665,22 @@ router.post('/deals', authCRM, validateCRMReferences, [body('title').notEmpty().
     await client.query('BEGIN');
     const { title, lead_id, value, currency, stage, probability, expected_close, notes, tags } = req.body;
     let { contact_name, contact_email, contact_phone, company } = req.body;
+    if (req.body.contact_id) {
+      const { rows: [contact] } = await client.query(`SELECT name,email,phone,company FROM crm_contacts WHERE id=$1 AND tenant_uid=$2 FOR SHARE`, [req.body.contact_id, req.crmUser.tenantUid]);
+      if (!contact) { await client.query('ROLLBACK'); return res.status(404).json({ success:false, message:'Selected contact was not found' }); }
+      contact_name = contact_name || contact.name;
+      contact_email = contact_email || contact.email;
+      contact_phone = contact_phone || contact.phone;
+      company = company || contact.company;
+    }
     if (lead_id) {
       const { rows: [lead] } = await client.query(`SELECT name,email,phone,company FROM crm_leads WHERE id=$1 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid=$2) FOR SHARE`, [lead_id, req.crmUser.tenantUid]);
       if (!lead) { await client.query('ROLLBACK'); return res.status(404).json({ success:false, message:'Selected lead was not found' }); }
-      contact_name = contact_name || lead.name;
-      contact_email = contact_email || lead.email;
-      contact_phone = contact_phone || lead.phone;
+      if (!req.body.contact_id) {
+        contact_name = contact_name || lead.name;
+        contact_email = contact_email || lead.email;
+        contact_phone = contact_phone || lead.phone;
+      }
       company = company || lead.company;
     }
     const { rows } = await client.query(

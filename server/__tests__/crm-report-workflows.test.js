@@ -123,6 +123,12 @@ describeLocal('CRM report: real HTTP routes and disposable PostgreSQL',()=>{
  it('rejects malformed spreadsheet uploads with a visible 400 response',async()=>{
   const r=await request(app).post(`/crm/campaigns/lists/${listId}/import`).attach('file',Buffer.from('not an XLSX archive'),'invalid.xlsx');expect(r.status).toBe(400);expect(r.body.message).toMatch(/valid CSV or XLSX/);
  });
+ it('does not copy the lead phone onto an explicitly selected different contact',async()=>{
+  const {rows:[contact]}=await db.query("INSERT INTO crm_contacts(name,email,tenant_uid,created_by) VALUES('Different person',NULL,'HAAAAA',1) RETURNING id");
+  const response=await request(app).post('/crm/deals').send({title:'Different contact deal',lead_id:leadId,contact_id:contact.id,value:0});
+  expect(response.status).toBe(201);expect(response.body.data.contact_name).toBe('Different person');expect(response.body.data.contact_phone).toBeNull();expect(response.body.data.contact_email).toBeNull();
+  expect((await db.query('SELECT phone FROM crm_contacts WHERE id=$1',[contact.id])).rows[0].phone).toBeNull();
+ });
  it('growth metrics and recovery exclude unlinked and foreign leads and show canonical names',async()=>{
   const {getGrowthDashboard,listRecoveryQueue,scanRecoveryQueue}=await import('../services/hospital-crm-growth.service.js');
   const {rows:[hidden]}=await db.query(`INSERT INTO crm_leads_v2(tenant_id,status,lifecycle_stage,score,created_at) VALUES(1,'open','new',50,NOW()-INTERVAL '1 day') RETURNING id`);
