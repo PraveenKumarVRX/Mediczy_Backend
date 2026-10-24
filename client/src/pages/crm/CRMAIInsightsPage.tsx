@@ -136,7 +136,7 @@ function WinBar({ pct }: { pct: number }) {
 function fmt(n: number, currency = 'INR') {
   if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(1)}Cr`;
   if (n >= 100_000)    return `₹${(n / 100_000).toFixed(1)}L`;
-  if (n >= 1_000)      return `₹${(n / 1_000).toFixed(0)}K`;
+  if (n >= 1_000)      return `₹${(n / 1_000).toLocaleString('en-IN', { maximumFractionDigits: 1 })}K`;
   return `₹${n}`;
 }
 
@@ -261,7 +261,7 @@ function LeadScoreTable({
                       disabled={scoring === l.id}
                       className="text-slate-500 hover:text-violet-400 transition-colors"
                     >
-                      {scoring === l.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {scoring === l.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <><Sparkles className="h-3 w-3" /> Get next action</>}
                     </button>
                   )}
                 </td>
@@ -560,7 +560,7 @@ export default function CRMAIInsightsPage() {
               },
               {
                 label: 'Pipeline',
-                value: fmt(hub.deals.reduce((s, d) => s + d.value, 0)),
+                value: fmt(hub.deals.reduce((s, d) => s + (Number(d.value) || 0), 0)),
                 icon: <BarChart3 className="h-5 w-5 text-violet-400" />,
                 color: 'text-violet-300',
               },

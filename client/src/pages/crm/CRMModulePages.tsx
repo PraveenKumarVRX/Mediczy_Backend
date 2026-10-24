@@ -344,8 +344,12 @@ export function CRMLeadsPage() {
     savingRef.current = true; setSaving(true);
     try {
       if (!form.name.trim()) throw new Error('Lead name is required');
-      if (editLead) await api.put(`/crm/leads/${editLead.id}`, form, { headers: authHeaders() });
-      else await api.post('/crm/leads', form, { headers: authHeaders() });
+      const convert = form.status === 'converted' && !editLead?.deal_id;
+      const payload = convert ? { ...form, status: editLead?.status || 'new' } : form;
+      const response = editLead
+        ? await api.put(`/crm/leads/${editLead.id}`, payload, { headers: authHeaders() })
+        : await api.post('/crm/leads', payload, { headers: authHeaders() });
+      if (convert) { navigate(`/crm/deals?lead=${response.data.data.id}`); return; }
       setShowForm(false); setEditLead(null);
       setForm({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' });
       fetchLeads();
@@ -501,6 +505,7 @@ export function CRMLeadsPage() {
                       <td className={`${tdClass} text-[11px] text-slate-600`}>{new Date(l.created_at).toLocaleDateString()}</td>
                       <td className={`${tdClass} pr-5 text-right`}>
                         <div className="flex items-center justify-end gap-1">
+                          {!l.deal_id && <Link to={`/crm/deals?lead=${l.id}`} className="rounded-lg px-2 py-1 text-xs text-violet-300 hover:bg-violet-500/10">Convert to deal</Link>}
                           <button onClick={() => openEdit(l)} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors"><Edit className="h-3.5 w-3.5" /></button>
                           <button onClick={() => handleDelete(l.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
@@ -539,7 +544,7 @@ export function CRMDealsPage() {
   const [selectedLead, setSelectedLead] = useState<ResolvedLead | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editDeal, setEditDeal] = useState<any>(null);
-  const [form, setForm] = useState({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', company: '', notes: '' });
+  const [form, setForm] = useState({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', contact_phone: '', company: '', notes: '' });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -548,7 +553,7 @@ export function CRMDealsPage() {
     api.get(`/crm/leads/${id}`, { headers: authHeaders() }).then(({ data }) => {
       const lead = data.data;
       setSelectedLead({ legacyLeadId: lead.id, v2LeadId: null, identityId: null, contactId: null, name: lead.name, email: lead.email, phone: lead.phone });
-      setForm(f => ({ ...f, title: `${lead.name} opportunity`, contact_name: lead.name, contact_email: lead.email || '', company: lead.company || '' }));
+      setForm(f => ({ ...f, title: `${lead.name} opportunity`, contact_name: lead.name, contact_email: lead.email || '', contact_phone: lead.phone || '', company: lead.company || '' }));
       setShowForm(true);
     }).catch(() => setSaveError('Could not load the selected lead'));
   }, []);
@@ -603,7 +608,7 @@ export function CRMDealsPage() {
 
   const openEdit = (deal: any) => {
     setEditDeal(deal); setDealContactId(deal.contact_id ? String(deal.contact_id) : ''); setSelectedLead(null); setSaveError('');
-    setForm({ title: deal.title, value: deal.value?.toString() || '', stage: deal.stage, probability: deal.probability?.toString() || '10', expected_close: deal.expected_close?.split('T')[0] || '', contact_name: deal.contact_name || '', contact_email: deal.contact_email || '', company: deal.company || '', notes: deal.notes || '' });
+    setForm({ title: deal.title, value: deal.value?.toString() || '', stage: deal.stage, probability: deal.probability?.toString() || '10', expected_close: deal.expected_close?.split('T')[0] || '', contact_name: deal.contact_name || '', contact_email: deal.contact_email || '', contact_phone: deal.contact_phone || '', company: deal.company || '', notes: deal.notes || '' });
     setShowForm(true);
   };
 
@@ -634,7 +639,7 @@ export function CRMDealsPage() {
               {stages.map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </div>
-          <Button onClick={() => { setEditDeal(null); setDealContactId(''); setSelectedLead(null); setSaveError(''); setForm({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', company: '', notes: '' }); setShowForm(true); }}
+          <Button onClick={() => { setEditDeal(null); setDealContactId(''); setSelectedLead(null); setSaveError(''); setForm({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', contact_phone: '', company: '', notes: '' }); setShowForm(true); }}
             className="h-10 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl shadow-lg shadow-blue-600/20">
             <Plus className="h-4 w-4 mr-1.5" /> New Deal
           </Button>
@@ -646,8 +651,8 @@ export function CRMDealsPage() {
               <h3 className="text-sm font-semibold text-white">{editDeal ? 'Edit Deal' : 'Create New Deal'}</h3>
               <button onClick={() => { setShowForm(false); setEditDeal(null); }} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
             </div>
-            <div className="space-y-1"><Label className="text-slate-300">Link existing lead</Label><LeadPicker value={selectedLead} onSelect={lead => { setSelectedLead(lead); if (lead) setForm(f => ({ ...f, contact_name: lead.name, contact_email: lead.email || '' })); }} /></div>
-            <select aria-label="Linked contact" value={dealContactId} onChange={e => { setDealContactId(e.target.value); const c=availableContacts.find(c => String(c.id)===e.target.value); if (c) setForm(f => ({ ...f, contact_name:c.name, contact_email:c.email || '', company:c.company || '' })); }} className="h-10 rounded-lg bg-slate-900 px-3 text-white"><option value="">Select existing contact (optional)</option>{availableContacts.map(c => <option key={c.id} value={c.id}>{c.name} {c.email}</option>)}</select>
+            <div className="space-y-1"><Label className="text-slate-300">Link existing lead</Label><LeadPicker value={selectedLead} onSelect={lead => { setSelectedLead(lead); if (lead) setForm(f => ({ ...f, contact_name: lead.name, contact_email: lead.email || '', contact_phone: lead.phone || '' })); }} /></div>
+            <select aria-label="Linked contact" value={dealContactId} onChange={e => { setDealContactId(e.target.value); const c=availableContacts.find(c => String(c.id)===e.target.value); if (c) setForm(f => ({ ...f, contact_name:c.name, contact_email:c.email || '', contact_phone:c.phone || '', company:c.company || '' })); }} className="h-10 rounded-lg bg-slate-900 px-3 text-white"><option value="">Select existing contact (optional)</option>{availableContacts.map(c => <option key={c.id} value={c.id}>{c.name} {c.email}</option>)}</select>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { label: 'Title *', field: 'title', placeholder: 'Deal title' },
@@ -656,6 +661,7 @@ export function CRMDealsPage() {
                 { label: 'Expected Close', field: 'expected_close', type: 'date' },
                 { label: 'Contact Name', field: 'contact_name', placeholder: 'Contact' },
                 { label: 'Contact Email', field: 'contact_email', placeholder: 'Email', type: 'email' },
+                { label: 'Contact Phone', field: 'contact_phone', placeholder: 'Phone', type: 'tel' },
                 { label: 'Company', field: 'company', placeholder: 'Company' },
               ].map(({ label, field, placeholder, type }) => (
                 <div key={field} className="space-y-1">
@@ -1021,9 +1027,9 @@ export function CRMActivitiesPage() {
                   ${isOverdue ? 'bg-red-500/[0.04] border-red-500/20' : a.completed_at ? 'bg-emerald-500/[0.03] border-emerald-500/10' : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'}`}>
                   <div className={`p-2.5 rounded-xl ${badge.bg}`}><Icon className="h-4 w-4" /></div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${a.completed_at ? 'line-through text-slate-600' : 'text-white'}`}>{a.title}</p>
+                    <p className={`text-sm font-medium ${a.completed_at ? (a.type === 'note' ? 'text-slate-400' : 'line-through text-slate-600') : 'text-white'}`}>{a.title}</p>
                     {a.description && <p className="text-[11px] text-slate-600 mt-0.5">{a.description}</p>}
-                    {a.scheduled_at && <p className="text-[10px] text-slate-600 mt-1 flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(a.scheduled_at).toLocaleString()}</p>}
+                    {(a.scheduled_at || a.completed_at || a.created_at) && <p className="text-[10px] text-slate-600 mt-1 flex items-center gap-1"><Clock className="h-3 w-3" />{a.scheduled_at ? 'Scheduled: ' : a.completed_at ? 'Completed: ' : 'Created: '}{new Date(a.scheduled_at || a.completed_at || a.created_at).toLocaleString()}</p>}
                   </div>
                   <div className="flex items-center gap-1">
                     {!a.completed_at && <button onClick={() => handleComplete(a.id)} className="p-2 rounded-lg hover:bg-emerald-500/10 text-slate-600 hover:text-emerald-400 transition-colors"><CheckCircle className="h-4 w-4" /></button>}

@@ -456,6 +456,7 @@ router.post('/leads', authCRM, [body('name').notEmpty().withMessage('Lead name i
   if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
   if (!req.crmUser.tenantUid || !req.crmUser.tenantId) return res.status(400).json({ success: false, message: 'Organization context is required' });
   if (!validEmail(req.body.email)) return res.status(400).json({ success: false, message: 'Enter a valid email' });
+  if (req.body.status === 'converted') return res.status(409).json({ success:false, message:'Create a linked deal to convert this lead' });
   let client;
   try {
     client = await sharedPool.connect();
@@ -549,9 +550,13 @@ router.put('/leads/:id', authCRM, async (req, res) => {
 
     const prevParams = [req.params.id];
     const prevScope = scopeLeadToTenant('id', req.crmUser.tenantUid, prevParams);
-    const prevRes = await client.query(`SELECT status FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
+    const prevRes = await client.query(`SELECT status, deal_id FROM crm_leads WHERE id = $1 AND ${prevScope}`, prevParams);
     if (!prevRes.rows.length) { await client.query('ROLLBACK'); return res.status(404).json({ success: false, message: 'Lead not found' }); }
     const previousStatus = prevRes.rows[0].status;
+    if (status === 'converted' && previousStatus !== 'converted' && !prevRes.rows[0].deal_id) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success:false, message:'Create a linked deal to convert this lead' });
+    }
 
     const upParams = [name, email, phone, company, designation, source, status, priority, notes, tags?JSON.stringify(tags):null, assigned_to, next_followup, req.params.id];
     const upScope = scopeLeadToTenant('id', req.crmUser.tenantUid, upParams); // tenant guard on the write
@@ -658,7 +663,16 @@ router.post('/deals', authCRM, validateCRMReferences, [body('title').notEmpty().
   try {
     client = await sharedPool.connect();
     await client.query('BEGIN');
-    const { title, lead_id, value, currency, stage, probability, expected_close, contact_name, contact_email, contact_phone, company, notes, tags } = req.body;
+    const { title, lead_id, value, currency, stage, probability, expected_close, notes, tags } = req.body;
+    let { contact_name, contact_email, contact_phone, company } = req.body;
+    if (lead_id) {
+      const { rows: [lead] } = await client.query(`SELECT name,email,phone,company FROM crm_leads WHERE id=$1 AND id IN (SELECT legacy_lead_id FROM crm_leads_v2 WHERE tenant_uid=$2) FOR SHARE`, [lead_id, req.crmUser.tenantUid]);
+      if (!lead) { await client.query('ROLLBACK'); return res.status(404).json({ success:false, message:'Selected lead was not found' }); }
+      contact_name = contact_name || lead.name;
+      contact_email = contact_email || lead.email;
+      contact_phone = contact_phone || lead.phone;
+      company = company || lead.company;
+    }
     const { rows } = await client.query(
       `INSERT INTO crm_deals (title,lead_id,value,currency,stage,probability,expected_close,contact_name,contact_email,contact_phone,company,notes,tags,assigned_to,created_by,tenant_uid)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
@@ -673,7 +687,9 @@ router.post('/deals', authCRM, validateCRMReferences, [body('title').notEmpty().
         [contact_name.trim(), contact_email || null, contact_phone || null, company || null, lead_id || null, req.crmUser.id, req.crmUser.tenantUid]);
     }
     const contact = req.body.contact_id ? { rows: [{ id: req.body.contact_id }] } : await client.query(`SELECT id FROM crm_contacts WHERE tenant_uid=$1 AND (($2::text IS NOT NULL AND LOWER(email)=LOWER($2)) OR ($2::text IS NULL AND name=$3)) ORDER BY id LIMIT 1`, [req.crmUser.tenantUid, contact_email || null, contact_name || null]);
-    if (contact.rows[0]) { await client.query(`UPDATE crm_deals SET contact_id=$1 WHERE id=$2 AND tenant_uid=$3`, [contact.rows[0].id, rows[0].id, req.crmUser.tenantUid]); rows[0].contact_id=contact.rows[0].id; }
+    if (contact.rows[0]) {
+      if (contact_phone) await client.query(`UPDATE crm_contacts SET phone=COALESCE(NULLIF(phone,''),$1) WHERE id=$2 AND tenant_uid=$3`, [contact_phone, contact.rows[0].id, req.crmUser.tenantUid]);
+      await client.query(`UPDATE crm_deals SET contact_id=$1 WHERE id=$2 AND tenant_uid=$3`, [contact.rows[0].id, rows[0].id, req.crmUser.tenantUid]); rows[0].contact_id=contact.rows[0].id; }
     if (lead_id) await syncLegacyLeadToV2(lead_id, req.crmUser.tenantId, { db: client, strict: true });
     await recordCRMChange(client, req.crmUser, 'deal', rows[0], 'created');
     await client.query('COMMIT');

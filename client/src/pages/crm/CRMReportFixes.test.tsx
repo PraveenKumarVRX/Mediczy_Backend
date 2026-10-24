@@ -57,3 +57,18 @@ describe('CRM QA report fixes', () => {
     show(<CRMPipelinePage/>); expect(await screen.findByRole('link',{name:'QA deal'})).toBeTruthy(); expect(screen.getAllByText('Won')[0]).toBeTruthy(); expect(screen.getAllByText('Lost')[0]).toBeTruthy();
   });
 });
+
+describe('24 October retest regressions', () => {
+  it('offers a direct conversion action for a lead without a deal', async () => {
+    get.mockResolvedValue({data:{success:true,data:[{id:101,name:'Conversion lead',status:'qualified',priority:'medium',source:'manual',created_at:'2026-10-24'}],pagination:{total:1,totalPages:1}}} as never);
+    show(<CRMLeadsPage/>);
+    expect((await screen.findByRole('link',{name:'Convert to deal'})).getAttribute('href')).toBe('/crm/deals?lead=101');
+  });
+  it('loads the lead phone into the deal form from the conversion link', async () => {
+    window.history.replaceState({},'', '/crm/deals?lead=101');
+    get.mockImplementation(async (url: any) => ({data:{success:true,data:url==='/crm/leads/101'?{id:101,name:'Conversion lead',phone:'9000000004',email:'lead@example.invalid'}:[],pagination:{total:0,totalPages:1}}}) as never);
+    show(<CRMDealsPage/>);
+    expect(await screen.findByDisplayValue('9000000004')).toBeTruthy();
+    window.history.replaceState({},'', '/');
+  });
+});

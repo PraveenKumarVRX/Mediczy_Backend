@@ -22,7 +22,7 @@ const {up:core}=await import('../migrations/20261015003700-crm-core-governance.m
 const {up:remediation}=await import('../migrations/20261024000000-crm-report-remediation.migration.js');
 const {default:router}=await import('../routes/crm.route.js');
 const app=express();app.use(express.json());app.use('/crm',router);
-const options={host:'127.0.0.1',port:55490,user:userInfo().username,ssl:false};
+const options={host:process.env.CRM_LOCAL_PG_HOST||'127.0.0.1',port:Number(process.env.CRM_LOCAL_PG_PORT||55490),user:userInfo().username,ssl:false};
 const admin=new pg.Pool({...options,database:'postgres'}),database=`crm_workflow_qa_${process.pid}`;
 const describeLocal=process.env.CRM_LOCAL_PG_TESTS==='true'?describe:describe.skip;
 let leadId,dealId,listId;
@@ -42,8 +42,11 @@ describeLocal('CRM report: real HTTP routes and disposable PostgreSQL',()=>{
     CREATE TABLE crm_automations(id bigserial,name text,action_type text);CREATE TABLE crm_automation_executions(id bigserial,status text,scheduled_at timestamptz,completed_at timestamptz,error text,automation_id int,tenant_id int,lead_id int,created_at timestamptz);`);
   const source=readFileSync(new URL('../migrations/20260908000001-hospital-crm-worldclass-domains.sql',import.meta.url),'utf8');
   await db.query(source.match(/CREATE TABLE IF NOT EXISTS crm_audit_log \([\s\S]*?\n\);/)[0]);
+  await db.query(source);
+  await db.query(readFileSync(new URL('../migrations/20260908000002-hospital-crm-growth-automation.sql',import.meta.url),'utf8'));
   await remediation(db);
   const {up:marketing}=await import('../migrations/20261015003800-crm-campaigns-governance.migration.js');await marketing();
+  const {default:growthRouter}=await import('../routes/hospital-crm-growth.route.js');app.use('/crm/growth',growthRouter);
   const {default:marketingRouter}=await import('../routes/crmCampaigns.route.js');app.use('/crm/campaigns',marketingRouter);
  },30000);
  afterAll(async()=>{await db?.end();await admin.query(`DROP DATABASE IF EXISTS ${database}`);await admin.end();});
@@ -62,11 +65,16 @@ describeLocal('CRM report: real HTTP routes and disposable PostgreSQL',()=>{
   const r=await request(app).post('/crm/deals').send({title:'Invalid synthetic deal',...invalid});expect(r.status).toBe(400);expect(r.body.message).toBeTruthy();
   expect(Number((await db.query('SELECT COUNT(*) n FROM crm_deals')).rows[0].n)).toBe(0);
  });
+ it('requires a linked deal before changing a lead to converted',async()=>{
+  expect((await request(app).put(`/crm/leads/${leadId}`).send({status:'converted'})).status).toBe(409);
+  expect((await request(app).get(`/crm/leads/${leadId}`)).body.data.status).toBe('new');
+ });
  it('creates a linked deal, persists its contact, converts the lead, and preserves zero probability',async()=>{
   const r=await request(app).post('/crm/deals').send({title:'Synthetic linked deal',lead_id:leadId,value:5000,probability:0,stage:'discovery',contact_name:'Synthetic workflow lead',contact_email:'workflow@example.invalid'});
   expect(r.status).toBe(201);dealId=r.body.data.id;expect(r.body.data.probability).toBe(0);expect(r.body.data.contact_id).toBeTruthy();
   const lead=(await request(app).get(`/crm/leads/${leadId}`)).body.data;expect(lead.status).toBe('converted');expect(String(lead.deal_id)).toBe(String(dealId));
-  const contacts=(await request(app).get('/crm/contacts')).body.data;expect(contacts.some(c=>c.email==='workflow@example.invalid')).toBe(true);
+  const contacts=(await request(app).get('/crm/contacts')).body.data;expect(contacts.find(c=>c.email==='workflow@example.invalid').phone).toBe('9000000991');
+  expect(r.body.data.contact_phone).toBe('9000000991');
  });
  it('logs an activity linked to the same lead, deal and contact',async()=>{
   const contact=(await db.query('SELECT id FROM crm_contacts LIMIT 1')).rows[0].id;
@@ -114,6 +122,37 @@ describeLocal('CRM report: real HTTP routes and disposable PostgreSQL',()=>{
  });
  it('rejects malformed spreadsheet uploads with a visible 400 response',async()=>{
   const r=await request(app).post(`/crm/campaigns/lists/${listId}/import`).attach('file',Buffer.from('not an XLSX archive'),'invalid.xlsx');expect(r.status).toBe(400);expect(r.body.message).toMatch(/valid CSV or XLSX/);
+ });
+ it('growth metrics and recovery exclude unlinked and foreign leads and show canonical names',async()=>{
+  const {getGrowthDashboard,listRecoveryQueue,scanRecoveryQueue}=await import('../services/hospital-crm-growth.service.js');
+  const {rows:[hidden]}=await db.query(`INSERT INTO crm_leads_v2(tenant_id,status,lifecycle_stage,score,created_at) VALUES(1,'open','new',50,NOW()-INTERVAL '1 day') RETURNING id`);
+  const {rows:[foreign]}=await db.query(`INSERT INTO crm_leads_v2(tenant_id,status,lifecycle_stage,score,created_at) VALUES(2,'open','new',50,NOW()-INTERVAL '1 day') RETURNING id`);
+  await db.query(`INSERT INTO crm_growth_recovery_cases(tenant_id,lead_id,case_type,status) VALUES(1,$1,'speed_to_lead','open'),(2,$2,'speed_to_lead','open')`,[hidden.id,foreign.id]);
+  const before=await db.query('SELECT COUNT(*) AS n FROM crm_growth_recovery_cases');
+  expect((await request(app).get(`/crm/growth/scoring/leads/${hidden.id}/history`)).status).toBe(404);
+  expect((await request(app).get(`/crm/growth/scoring/leads/${foreign.id}/history`)).status).toBe(404);
+  expect((await request(app).get('/crm/growth/dashboard')).status).toBe(200);
+  const empty=await listRecoveryQueue(1,{},'HAAAAA');expect(empty).toHaveLength(0);
+  expect((await db.query('SELECT COUNT(*) AS n FROM crm_growth_recovery_cases')).rows[0].n).toBe(before.rows[0].n);
+  const dashboard=await getGrowthDashboard(1,{},'HAAAAA');
+  const visible=(await request(app).get('/crm/leads')).body.pagination.total;
+  expect(dashboard.summary.leads).toBe(Number(visible));
+  const {rows:[twin]}=await db.query('SELECT id FROM crm_leads_v2 WHERE legacy_lead_id=$1',[leadId]);
+  await db.query("UPDATE crm_leads_v2 SET status='open',created_at=NOW()-INTERVAL '1 day' WHERE id=$1",[twin.id]);
+  const scanned=await scanRecoveryQueue(1,1,'HAAAAA');expect(scanned.every(row=>String(row.lead_id)===String(twin.id))).toBe(true);expect(scanned).toHaveLength(1);
+  const queue=await listRecoveryQueue(1,{},'HAAAAA');expect(queue).toHaveLength(1);expect(Number(queue[0].legacy_lead_id)).toBe(Number(leadId));expect(queue[0].display_name).toBe('Synthetic workflow lead');
+  expect(await scanRecoveryQueue(1,1,'HAAAAA')).toHaveLength(0);
+  await expect(getGrowthDashboard(1,{},null)).rejects.toMatchObject({statusCode:400});
+ });
+ it('repairs only blank linked contact phones and is idempotent',async()=>{
+  const {up:repair}=await import('../migrations/20261025000000-crm-retest-contact-phones.migration.js');
+  await db.query("UPDATE crm_contacts SET phone=NULL WHERE lead_id=$1",[leadId]);
+  await db.query("UPDATE crm_deals SET contact_phone=NULL WHERE id=$1",[dealId]);
+  const first=await repair(db);expect(first).toEqual({dealsUpdated:1,contactsUpdated:1});
+  expect(await repair(db)).toEqual({dealsUpdated:0,contactsUpdated:0});
+  await db.query("UPDATE crm_contacts SET phone='9000000555' WHERE lead_id=$1",[leadId]);
+  expect(await repair(db)).toEqual({dealsUpdated:0,contactsUpdated:0});
+  expect((await db.query('SELECT phone FROM crm_contacts WHERE lead_id=$1',[leadId])).rows[0].phone).toBe('9000000555');
  });
  it('deletes the lead and removes its mirror from the correct tenant',async()=>{
   expect((await request(app).delete(`/crm/leads/${leadId}`)).status).toBe(200);

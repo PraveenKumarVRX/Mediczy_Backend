@@ -63,7 +63,10 @@ const action = (handler, capability = 'worldclass:read') => async (req, res) => 
 
 router.get('/audit-log', action(async (req, tenantId) => {
   const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
-  return (await sharedPool.query(`SELECT id, entity_type, entity_id, event_type, actor_user_id, reason, created_at FROM crm_audit_log WHERE tenant_id=$1 ORDER BY created_at DESC, id DESC LIMIT $2`, [tenantId, limit])).rows;
+  return (await sharedPool.query(`SELECT a.id, a.entity_type, a.entity_id, a.event_type, a.actor_user_id, a.reason, a.created_at,
+    NULLIF(TRIM(CONCAT_WS(' ',u."firstName",u."lastName")), '') AS actor_name
+    FROM crm_audit_log a LEFT JOIN users u ON u.id=a.actor_user_id AND u.tenant_id=a.tenant_id
+    WHERE a.tenant_id=$1 ORDER BY a.created_at DESC, a.id DESC LIMIT $2`, [tenantId, limit])).rows;
 }, 'dashboard:business-head'));
 
 router.post('/communications', action((req, tenantId) => createCommunicationEvent({ ...req.body, tenantId }, req.crmUser.id), 'worldclass:write'));

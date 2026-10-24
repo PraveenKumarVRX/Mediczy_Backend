@@ -78,7 +78,7 @@ export default function LeadDetailDrawer({ leadId, onClose }: { leadId: number; 
           </div>
           <div className="flex gap-2 mt-3">
             {!lead.deal_id && <Link to={`/crm/deals?lead=${lead.id}`} className="rounded-lg bg-violet-600 px-3 py-1 text-xs text-white">Convert to deal</Link>}
-            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[lead.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{lead.status}</span>
+            <span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[lead.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{lead.status.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
             {!context?.v2 && <span className="px-2.5 py-1 rounded-lg text-[11px] font-medium border border-amber-500/20 bg-amber-500/10 text-amber-300">Not yet synced to v2 — segments/automations unavailable</span>}
           </div>
           <div className="flex gap-1 mt-4 overflow-x-auto">
@@ -92,7 +92,7 @@ export default function LeadDetailDrawer({ leadId, onClose }: { leadId: number; 
               <div className="text-xs uppercase tracking-wide text-slate-600 mb-2">Details</div>
               <dl className="grid grid-cols-2 gap-3 text-sm">
                 <div><dt className="text-slate-600 text-xs">Priority</dt><dd className="text-white capitalize">{lead.priority}</dd></div>
-                <div><dt className="text-slate-600 text-xs">Source</dt><dd className="text-white">{lead.source}</dd></div>
+                <div><dt className="text-slate-600 text-xs">Source</dt><dd className="text-white">{String(lead.source || 'Unknown').replace(/[_-]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</dd></div>
                 <div><dt className="text-slate-600 text-xs">Created</dt><dd className="text-white">{new Date(lead.created_at).toLocaleDateString()}</dd></div>
                 <div><dt className="text-slate-600 text-xs">Last contacted</dt><dd className="text-white">{lead.last_contacted ? new Date(lead.last_contacted).toLocaleDateString() : '—'}</dd></div>
               </dl>

@@ -72,7 +72,7 @@ export function quickScoreLead(lead) {
     tier: tierFromScore(score),
     confidence: 'medium',
     factors: [],
-    nextAction: null,
+    nextAction: lead.status === 'qualified' ? 'Review requirements' : lead.status === 'contacted' ? 'Follow up' : 'Make first contact',
     source: 'rules',
   };
 }
@@ -109,7 +109,7 @@ Rule-based score: ${rulesScore}. Refine or confirm.`,
     tier: tierFromScore(rulesScore),
     confidence: 'low',
     factors: [],
-    nextAction: null,
+    nextAction: lead.status === 'qualified' ? 'Review requirements' : lead.status === 'contacted' ? 'Follow up' : 'Make first contact',
     source: 'rules',
   };
 }
@@ -161,7 +161,7 @@ Base win probability from stage rules: ${baseWin}%`,
     expectedCloseDays: 30,
     risks: daysInStage > 30 ? ['No stage movement in 30+ days'] : [],
     strengths: [],
-    nextAction: null,
+    nextAction: 'Review deal progress',
     source: 'rules',
   };
 }
@@ -241,7 +241,7 @@ export function forecastRevenue(deals) {
 
   deals.forEach(d => {
     const stage = (d.stage ?? d.status ?? '').toLowerCase();
-    if (['lost', 'closed lost'].includes(stage)) return;
+    if (['won', 'closed won', 'lost', 'closed lost'].includes(stage)) return;
     const prob = ['won', 'closed won'].includes(stage) ? 1 : d.probability != null && Number.isFinite(Number(d.probability)) ? Math.max(0, Math.min(100, Number(d.probability))) / 100 : (WIN_PROB[stage] ?? 0.1);
     const value = parseFloat(d.value) || 0;
 
@@ -258,7 +258,6 @@ export function forecastRevenue(deals) {
 
   const monthly = Object.entries(monthMap)
     .sort(([a], [b]) => a.localeCompare(b))
-    .slice(0, 6)
     .map(([month, amount]) => ({ month, amount: Math.round(amount) }));
 
   return {
@@ -266,7 +265,7 @@ export function forecastRevenue(deals) {
     optimistic:  Math.round(optimistic),
     pessimistic: Math.round(pessimistic),
     monthly,
-    dealCount: deals.length,
+    dealCount: deals.filter(d => !['won','closed won','lost','closed lost'].includes((d.stage ?? d.status ?? '').toLowerCase())).length,
   };
 }
 

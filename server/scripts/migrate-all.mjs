@@ -30,6 +30,7 @@ const MANIFEST = [
   { id: 'corporate-health-package-catalog', cmd: 'node', args: ['migrations/20261021009000-corporate-health-package-catalog.migration.js'], cwd: SERVER },
   { id: 'crm-brightbean-chat-adoption', cmd: 'node', args: ['migrations/20261015006900-crm-brightbean-chat-adoption.migration.js'], cwd: SERVER },
   { id: 'crm-report-remediation', cmd: 'node', args: ['migrations/20261024000000-crm-report-remediation.migration.js'], cwd: SERVER },
+  { id: 'crm-retest-contact-phones', cmd: 'node', args: ['migrations/20261025000000-crm-retest-contact-phones.migration.js'], cwd: SERVER },
   { id: 'crm-social-content', cmd: 'node', args: ['migrations/20261015007000-crm-social-content.migration.js'], cwd: SERVER },
   { id: 'dedicated-installations', cmd: 'node', args: ['migrations/20261018000100-dedicated-installations.migration.js'], cwd: SERVER },
   { id: 'corporate-consent-ahc-notifications', cmd: 'node', args: ['migrations/20261018000200-corporate-consent-ahc-notifications.migration.js'], cwd: SERVER },

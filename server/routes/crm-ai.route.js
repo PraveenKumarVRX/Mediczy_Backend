@@ -368,7 +368,7 @@ router.get('/revenue/forecast', authCRM, async (req, res) => {
     const deals = await q(req.crmUser,
       `SELECT id, title, value, currency, stage, probability, expected_close AS "expectedCloseDate",
               created_at AS "createdAt"
-       FROM crm_deals WHERE stage NOT IN ('lost','closed lost') LIMIT 500`,
+       FROM crm_deals WHERE stage NOT IN ('won','closed won','lost','closed lost')`,
     );
     const forecast = forecastRevenue(deals);
     res.json({ data: forecast });
@@ -502,8 +502,8 @@ router.get('/hub', authCRM, async (req, res) => {
       q(req.crmUser,`SELECT id, title, value, currency, stage, probability,
                 expected_close AS "expectedCloseDate",
                 updated_at AS "updatedAt", created_at AS "createdAt"
-         FROM crm_deals WHERE stage NOT IN ('lost','closed lost')
-         ORDER BY value DESC LIMIT 50`),
+         FROM crm_deals WHERE stage NOT IN ('won','closed won','lost','closed lost')
+         ORDER BY value DESC`),
       q(req.crmUser,`SELECT id, name, subject, status, created_at AS "createdAt"
          FROM crm_marketing_campaigns ORDER BY created_at DESC LIMIT 10`).catch(() => []),
     ]);
