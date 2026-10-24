@@ -426,21 +426,25 @@ export async function refreshAnalyticsMarts(tenantId, { metricDate, actorUserId 
   });
 }
 
-export async function runDataQualityScan(tenantId, actorUserId) {
+export async function runDataQualityScan(tenantId, actorUserId, db = sharedPool) {
   const tenant = requireTenant(tenantId);
-  await sharedPool.query(`UPDATE crm_data_quality_issues q SET status='resolved' WHERE q.tenant_id=$1 AND q.status='open' AND q.entity_type='lead' AND EXISTS (
+  await db.query(`UPDATE crm_data_quality_issues q SET status='resolved' WHERE q.tenant_id=$1 AND q.status='open' AND q.entity_type='lead' AND EXISTS (
     SELECT 1 FROM crm_leads_v2 l WHERE l.id=q.entity_id AND l.tenant_id=q.tenant_id AND
     ((q.issue_type='missing_owner' AND l.owner_user_id IS NOT NULL) OR (q.issue_type='missing_identity' AND COALESCE(l.identity_id,l.person_id) IS NOT NULL) OR (q.issue_type='missing_source' AND l.source_taxonomy_id IS NOT NULL)))`, [tenant]);
-  const result = await sharedPool.query(
+  await db.query(`UPDATE crm_data_quality_issues q SET status='resolved'
+    WHERE q.tenant_id=$1 AND q.status='open' AND q.entity_type='lead' AND EXISTS (
+      SELECT 1 FROM crm_leads_v2 l WHERE l.id=q.entity_id AND l.tenant_id=q.tenant_id
+        AND l.legacy_lead_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM crm_leads legacy WHERE legacy.id=l.legacy_lead_id))`, [tenant]);
+  const result = await db.query(
     `WITH candidates AS (
       SELECT id, 'lead'::text AS entity_type, 'missing_owner'::text AS issue_type, 'high'::text AS severity, 'owner_user_id'::text AS field_name
-        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND status = 'open' AND owner_user_id IS NULL
+        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM crm_leads legacy WHERE legacy.id=crm_leads_v2.legacy_lead_id) AND status = 'open' AND owner_user_id IS NULL
       UNION ALL
       SELECT id, 'lead', 'missing_source', 'medium', 'source_taxonomy_id'
-        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND source_taxonomy_id IS NULL
+        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM crm_leads legacy WHERE legacy.id=crm_leads_v2.legacy_lead_id) AND source_taxonomy_id IS NULL
       UNION ALL
       SELECT id, 'lead', 'missing_identity', 'high', 'identity_id'
-        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND COALESCE(identity_id, person_id) IS NULL
+        FROM crm_leads_v2 WHERE tenant_id = $1 AND legacy_lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM crm_leads legacy WHERE legacy.id=crm_leads_v2.legacy_lead_id) AND COALESCE(identity_id, person_id) IS NULL
     )
     INSERT INTO crm_data_quality_issues (tenant_id, entity_type, entity_id, issue_type, severity, field_name)
     SELECT $1, c.entity_type, c.id, c.issue_type, c.severity, c.field_name FROM candidates c
@@ -450,7 +454,7 @@ export async function runDataQualityScan(tenantId, actorUserId) {
     RETURNING *`,
     [tenant]
   );
-  if (result.rows.length) await writeAudit(sharedPool, { tenantId: tenant, entityType: 'data_quality', eventType: 'scan_completed', actorUserId, newValue: { created: result.rows.length } });
+  if (result.rows.length) await writeAudit(db, { tenantId: tenant, entityType: 'data_quality', eventType: 'scan_completed', actorUserId, newValue: { created: result.rows.length } });
   return result.rows;
 }
 
@@ -557,14 +561,14 @@ export async function calculateAttribution(input, actorUserId) {
 }
 
 
-export async function getDataQualityIssues(tenantId, { status = "open", limit = 100 } = {}) {
+export async function getDataQualityIssues(tenantId, { status = "open", limit = 100 } = {}, db = sharedPool) {
   const tenant = requireTenant(tenantId);
-  const result = await sharedPool.query(
+  const result = await db.query(
     `SELECT q.*, l.legacy_lead_id, COALESCE(lv.name, 'Journey lead') AS entity_name
       FROM crm_data_quality_issues q
       LEFT JOIN crm_leads_v2 l ON q.entity_type='lead' AND l.id=q.entity_id AND l.tenant_id=q.tenant_id
       LEFT JOIN crm_leads lv ON lv.id=l.legacy_lead_id
-      WHERE q.tenant_id = $1 AND q.status = $2 AND (q.entity_type <> 'lead' OR l.legacy_lead_id IS NOT NULL)
+      WHERE q.tenant_id = $1 AND q.status = $2 AND (q.entity_type <> 'lead' OR lv.id IS NOT NULL)
       ORDER BY detected_at ASC LIMIT $3`,
     [tenant, status, Math.min(Math.max(Number(limit) || 100, 1), 500)]
   );
