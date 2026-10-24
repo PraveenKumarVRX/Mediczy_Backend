@@ -107,6 +107,11 @@ describeLocal('CRM report: real HTTP routes and disposable PostgreSQL',()=>{
   expect(Number((await db.query('SELECT COUNT(*) n FROM crm_contacts WHERE email=$1',['import@example.invalid'])).rows[0].n)).toBe(1);
   expect((await db.query('SELECT contact_id FROM crm_marketing_list_members WHERE id=$1',[member[0].id])).rows[0].contact_id).toBeTruthy();
  });
+ it('continues accepting valid XLSX imports through the same endpoint',async()=>{
+  const {default:ExcelJS}=await import('exceljs');const workbook=new ExcelJS.Workbook();const sheet=workbook.addWorksheet('Contacts');sheet.addRow(['email','first_name','company']);sheet.addRow(['xlsx@example.invalid','Synthetic workbook','QA']);
+  const r=await request(app).post(`/crm/campaigns/lists/${listId}/import`).attach('file',Buffer.from(await workbook.xlsx.writeBuffer()),'synthetic.xlsx');expect(r.status).toBe(201);expect(r.body.data.validRows).toBe(1);
+  expect(Number((await db.query('SELECT COUNT(*) n FROM crm_contacts WHERE email=$1',['xlsx@example.invalid'])).rows[0].n)).toBe(1);
+ });
  it('rejects malformed spreadsheet uploads with a visible 400 response',async()=>{
   const r=await request(app).post(`/crm/campaigns/lists/${listId}/import`).attach('file',Buffer.from('not an XLSX archive'),'invalid.xlsx');expect(r.status).toBe(400);expect(r.body.message).toMatch(/valid CSV or XLSX/);
  });

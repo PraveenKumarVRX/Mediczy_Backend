@@ -1,6 +1,6 @@
 {
   "releasedOn": "2026-10-24T10:44:03.914973+05:30",
-  "productSourceCommit": "f4b0c4d5c9f2c7bc4b68053639e23b6d2cac602a",
+  "productSourceCommit": "d679391925e80a52ce16b6c71c536bcf096ed37d",
   "frontendCommit": "cd8dec15f60a3bdc0639c64b05ad42232c530408",
   "apiPath": "/home/ubuntu/Mediczy/server",
   "frontendArtifact": "/home/ubuntu/mediqzy-releases/crm-20261024-cd8dec15/client/dist",
@@ -37,8 +37,8 @@
     "client/src/pages/crm/shared/LeadDetailDrawer.tsx": "1a6d3e27f998d3b8982b9fe93ab3b53edc1173b87ec8eca2b25cc68c66046c47",
     "server/middleware/crm.middleware.js": "2c5278d2b7c3ffa1db2a1fa0d5f52af7a003ad8ced66b2cff67ee6f9cb8004b3",
     "server/routes/crm-ai.route.js": "5834eb7917aded46e496735fc04ae0884e8204178774e8ad2194bbe9fe76e19d",
-    "server/routes/crm.route.js": "8afa3459716eef2c5ef086afea6f7e93f68867f340aefb3267d7b03a24f931f6",
-    "server/routes/crmCampaigns.route.js": "d1f9b8d1a960f647d4e28202be4a71e7e2d8bafb63e8bdcc88af6b6be0656764",
+    "server/routes/crm.route.js": "fd3015f8eef7cb7b07b6c9a1ef18934d6a402922a4d8c34aa24bf507cea860a0",
+    "server/routes/crmCampaigns.route.js": "5a8eac8ddff38344f5324f08740dcb8f2bb87c9387f432a2b4088d34696ed201",
     "server/routes/hospital-crm-worldclass.route.js": "c3528920e00cd4d30a7ab7fdc85197db51e1f2e2c702b14d122e43e22d71d695",
     "server/services/ai-crm.service.js": "a3cc1bd23b70e57b27429737ac7d383f67c449c83363dfa513777605da6eefe7",
     "server/services/crm-marketing-copilot.service.js": "ad31bdef6978c20cf3e93ba10b3cc932a82baa446c8f4d42d8deee31b80cd560",
@@ -49,6 +49,43 @@
     "server/services/crm/validation.js": "17b534210c0af5d5c46e649f48978899839298c6bf8e46e253b85b2195f10fdc",
     "server/services/hospital-crm-communication-hub.service.js": "a165d51cfd168c35518fa35d9244b0273d31ed035b2d8a5f55c7d13d107bb104",
     "server/services/hospital-crm-specialty.service.js": "7cc75767220c31f4451227a81d827692a31bbd5aa9396461c7267d4e878d5a2d",
-    "server/services/hospital-crm-worldclass.service.js": "fd59fcacd76058a5df33f3499d6f2758546e569f5ce5dabf806db4f91b7846e5"
+    "server/services/hospital-crm-worldclass.service.js": "fd59fcacd76058a5df33f3499d6f2758546e569f5ce5dabf806db4f91b7846e5",
+    "server/utils/excel-compat.js": "c68e424c06b2f7ffc488b57af2984d6b8ffe69cef7dc2c98e9839d1660e38081"
+  },
+  "initialProductSourceCommit": "f4b0c4d5c9f2c7bc4b68053639e23b6d2cac602a",
+  "lastVerifiedOn": "2026-10-24T12:50:49.680450+05:30",
+  "retestReport": "docs/testing/CRM_SANITY_SMOKE_RETEST_2026-10-24.json",
+  "retestSummary": {
+    "originalFailedFindings": {
+      "passed": 20,
+      "failed": 0
+    },
+    "reportedDefectsRetested": {
+      "pass": 42,
+      "partial": 4,
+      "fail": 0
+    },
+    "canonicalSanitySmoke": "GO after API stabilized",
+    "portalRouteSanity": "ALL PASSED",
+    "frontend": {
+      "suitesPassed": 8,
+      "testsPassed": 79
+    },
+    "backend": {
+      "suitesPassed": 16,
+      "suitesFailed": 2,
+      "testsPassed": 160,
+      "testsFailed": 2,
+      "testsTotal": 162
+    },
+    "isolatedSqlChecksPassed": 27,
+    "livePageSmokePassed": 35,
+    "liveUiChecksPassed": 27,
+    "liveApiSmokePassed": 21,
+    "liveAccessDenialChecksPassed": 7,
+    "liveSemanticChecksPassed": 13,
+    "previewExportChecksPassed": 2,
+    "teamBarChecksPassed": 1,
+    "entityUidViolations": 0
   }
 }

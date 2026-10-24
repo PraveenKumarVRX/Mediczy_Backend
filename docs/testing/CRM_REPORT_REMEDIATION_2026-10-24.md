@@ -128,3 +128,7 @@ node server/scripts/qa/crm-report-isolation.mjs
 | 83 | Pass | Report finding 83 | Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed. |
 | 84 | Pass | Report finding 84 | Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed. |
 | 85 | Pass | Report finding 85 | Passed in the supplied report. Retained as a rollout regression case; no live retest is claimed. |
+
+## Comprehensive failure retest follow-up
+
+The [failure retest and sanity/smoke report](CRM_SANITY_SMOKE_RETEST_2026-10-24.md) records the post-deployment test of all original failures, two additional write/import fixes deployed as `d6793919`, all 35 visible CRM pages, and the two outstanding broader backend schema-governance failures.

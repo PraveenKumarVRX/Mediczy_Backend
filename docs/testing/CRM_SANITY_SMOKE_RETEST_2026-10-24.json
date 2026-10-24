@@ -1,0 +1,864 @@
+{
+  "testedOn": "2026-10-24T12:50:49.680450+05:30",
+  "codeCommit": "d679391925e80a52ce16b6c71c536bcf096ed37d",
+  "overall": "CRM defect retests and runtime smoke pass; broader backend schema governance still has two failing tests",
+  "summary": {
+    "originalFailedFindings": {
+      "passed": 20,
+      "failed": 0
+    },
+    "reportedDefectsRetested": {
+      "pass": 42,
+      "partial": 4,
+      "fail": 0
+    },
+    "canonicalSanitySmoke": "GO after API stabilized",
+    "portalRouteSanity": "ALL PASSED",
+    "frontend": {
+      "suitesPassed": 8,
+      "testsPassed": 79
+    },
+    "backend": {
+      "suitesPassed": 16,
+      "suitesFailed": 2,
+      "testsPassed": 160,
+      "testsFailed": 2,
+      "testsTotal": 162
+    },
+    "isolatedSqlChecksPassed": 27,
+    "livePageSmokePassed": 35,
+    "liveUiChecksPassed": 27,
+    "liveApiSmokePassed": 21,
+    "liveAccessDenialChecksPassed": 7,
+    "liveSemanticChecksPassed": 13,
+    "previewExportChecksPassed": 2,
+    "teamBarChecksPassed": 1,
+    "entityUidViolations": 0
+  },
+  "newRegressionsFixedAndDeployed": [
+    {
+      "issue": "Deal/contact creation SQL parameter inference error (42P08)",
+      "fix": "Explicit PostgreSQL parameter casts in INSERT SELECT",
+      "commit": "d6793919"
+    },
+    {
+      "issue": "CSV import parsed CSV as an XLSX ZIP archive",
+      "fix": "Explicit CSV reader, preserved XLSX path, malformed upload 400",
+      "commit": "d6793919"
+    }
+  ],
+  "outstandingBackendChecks": [
+    {
+      "suite": "crm-extensions-schema.test.js",
+      "failure": "Email/underwriting routes retain runtime CREATE/ALTER DDL outside migrations."
+    },
+    {
+      "suite": "crm-campaigns-schema.test.js",
+      "failure": "Campaign route retains runtime schema DDL."
+    }
+  ],
+  "testBoundaries": [
+    "Write, duplicate/concurrency, conversion, activity and import scenarios used disposable local PostgreSQL and real HTTP route handlers with synthetic authentication and external send/storage adapters disabled.",
+    "Live UI mutation requests were blocked; no production business fixtures were created.",
+    "No real emails, WhatsApp/SMS messages, social actions or phone calls were sent.",
+    "One canonical run overlapped the API reload and saw transient 502 responses. The final run after stable health returned GO.",
+    "Pass denotes the reported defect verified at the stated layer; it is not full external-provider acceptance."
+  ],
+  "privateEvidence": "/home/ubuntu/crm-test-evidence/20261024",
+  "cases": [
+    {
+      "finding": 1,
+      "originalStatus": "Fail",
+      "title": "Copilot pipeline summary",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Copilot count/source totals and Pipeline Summary use visible records"
+      ]
+    },
+    {
+      "finding": 2,
+      "originalStatus": "Fail",
+      "title": "AI hidden leads",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: AI lead IDs are a subset of visible CRM leads"
+      ]
+    },
+    {
+      "finding": 3,
+      "originalStatus": "Fail",
+      "title": "Team hierarchy and empty bars",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Team members are unique and managers do not recur under Unassigned",
+        "Live team progress bars: Zero-metric team groups use empty progress bars"
+      ]
+    },
+    {
+      "finding": 4,
+      "originalStatus": "Fail",
+      "title": "Smart-Force counts",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Field lead/visit counts match scoped source records in the same period"
+      ]
+    },
+    {
+      "finding": 5,
+      "originalStatus": "Fail",
+      "title": "Duplicate lead detection",
+      "result": "pass",
+      "evidence": [
+        "Isolated HTTP: concurrent email/phone duplicate requests return one 201 plus 409; normalized phone duplicate is rejected."
+      ]
+    },
+    {
+      "finding": 6,
+      "originalStatus": "Fail",
+      "title": "Create double-click protection",
+      "result": "pass",
+      "evidence": [
+        "Frontend pending-state double-click test plus real PostgreSQL concurrent HTTP submissions."
+      ]
+    },
+    {
+      "finding": 7,
+      "originalStatus": "Fail",
+      "title": "Lead-to-deal conversion",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Lead detail opens from search URL and exposes Convert to deal",
+        "Isolated HTTP: linked deal converts its lead; live detail exposes the conversion action."
+      ]
+    },
+    {
+      "finding": 8,
+      "originalStatus": "Fail",
+      "title": "Deal lead/contact selection",
+      "result": "pass",
+      "evidence": [
+        "Live browser: New Deal provides existing lead and contact selectors",
+        "Isolated HTTP: stored lead/contact associations; live form pickers."
+      ]
+    },
+    {
+      "finding": 9,
+      "originalStatus": "Fail",
+      "title": "Negative deal values",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Negative deal value shows inline validation and makes no write request",
+        "Isolated HTTP 400 and live inline validation; no production write attempted."
+      ]
+    },
+    {
+      "finding": 10,
+      "originalStatus": "Fail",
+      "title": "Past close dates",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Past expected close shows inline validation and makes no write request",
+        "Isolated HTTP 400 and live inline past-date validation."
+      ]
+    },
+    {
+      "finding": 11,
+      "originalStatus": "Fail",
+      "title": "Pipeline stage click",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Pipeline renders deal cards and Won/Lost stages and stage click filters deals"
+      ]
+    },
+    {
+      "finding": 12,
+      "originalStatus": "Fail",
+      "title": "Weighted pipeline labels",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Saved weighted deal value agrees across dashboard, pipeline, AI and Copilot",
+        "Live browser: Dashboard clearly labels weighted pipeline and funnel badges have no drop arrows"
+      ]
+    },
+    {
+      "finding": 13,
+      "originalStatus": "Fail",
+      "title": "Funnel/contact consistency",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Linked deals resolve to visible leads and persisted visible contacts",
+        "Live browser: Dashboard clearly labels weighted pipeline and funnel badges have no drop arrows"
+      ]
+    },
+    {
+      "finding": 14,
+      "originalStatus": "Fail",
+      "title": "Deal contacts persisted",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Linked deals resolve to visible leads and persisted visible contacts",
+        "Isolated HTTP: deal contact is persisted and contact_id resolves; existing live links checked."
+      ]
+    },
+    {
+      "finding": 15,
+      "originalStatus": "Fail",
+      "title": "Activity record links",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Activity form selects lead, deal and contact",
+        "Isolated HTTP activity links to lead, deal and contact; live pickers checked."
+      ]
+    },
+    {
+      "finding": 16,
+      "originalStatus": "Fail",
+      "title": "List member ownership/linkage",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Visible marketing lists obey creator ownership and members resolve to CRM records",
+        "Isolated HTTP: CSV imports create scoped contacts; repeat imports repair links without duplication; foreign list access denied."
+      ]
+    },
+    {
+      "finding": 17,
+      "originalStatus": "Fail",
+      "title": "Suppression email validation",
+      "result": "pass",
+      "evidence": [
+        "Isolated HTTP: trailing-comma email returns 400 and suppression table stays empty."
+      ]
+    },
+    {
+      "finding": 18,
+      "originalStatus": "Fail",
+      "title": "AI forecast and hot counts",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Saved weighted deal value agrees across dashboard, pipeline, AI and Copilot"
+      ]
+    },
+    {
+      "finding": 19,
+      "originalStatus": "Fail",
+      "title": "Profile role consistency",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Profile and team use the same authoritative CRM role"
+      ]
+    },
+    {
+      "finding": 20,
+      "originalStatus": "Fail",
+      "title": "Governance issue scope and repair links",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Governance issue links stay within visible leads and audit log is accessible"
+      ]
+    },
+    {
+      "finding": 21,
+      "originalStatus": "Partial",
+      "title": "Flow node labels",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Flow palette uses readable node labels"
+      ]
+    },
+    {
+      "finding": 22,
+      "originalStatus": "Partial",
+      "title": "Social dropdown labels",
+      "result": "partial",
+      "evidence": [
+        "Live browser: Social dropdowns show readable labels while preserving machine values"
+      ],
+      "limitation": "Provider connections, Instagram/WhatsApp actions and real message delivery were not exercised; readable UI options passed."
+    },
+    {
+      "finding": 23,
+      "originalStatus": "Partial",
+      "title": "Calendar past dates and today",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Calendar highlights today and disables create buttons on past dates"
+      ]
+    },
+    {
+      "finding": 24,
+      "originalStatus": "Partial",
+      "title": "Empty funnel display",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Dashboard clearly labels weighted pipeline and funnel badges have no drop arrows",
+        "Frontend empty-data fixture: all five funnel bars have width 0%, with no percentage/drop badges."
+      ]
+    },
+    {
+      "finding": 25,
+      "originalStatus": "Partial",
+      "title": "Contact-center calling readiness",
+      "result": "partial",
+      "evidence": [
+        "Live browser: Calling stays disabled without an available assigned agent"
+      ],
+      "limitation": "Unconfigured calling correctly stays disabled. No real telephone call or provider media session was placed."
+    },
+    {
+      "finding": 26,
+      "originalStatus": "Partial",
+      "title": "Growth branding and currency",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Growth branding is clean and nurture enrollment searches leads rather than typing IDs"
+      ]
+    },
+    {
+      "finding": 27,
+      "originalStatus": "Partial",
+      "title": "Nurture enrollment lead picker",
+      "result": "partial",
+      "evidence": [
+        "Live browser: Growth branding is clean and nurture enrollment searches leads rather than typing IDs"
+      ],
+      "limitation": "Lead picker and resolved context were checked. Enrollment that could trigger WhatsApp/SMS/email was not performed."
+    },
+    {
+      "finding": 28,
+      "originalStatus": "Partial",
+      "title": "Specialty KPI values",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Specialty KPI cards include measured values or an explicit unavailable marker"
+      ]
+    },
+    {
+      "finding": 29,
+      "originalStatus": "Partial",
+      "title": "Diagnostic booking sources",
+      "result": "partial",
+      "evidence": [
+        "Live API/data comparison: Diagnostic bookings equal persisted CRM/API sources with source-reference deduplication",
+        "Live browser: Diagnostic page uses conversion ratios and a rupee icon"
+      ],
+      "limitation": "Persisted CRM/API booking totals agree and conversion UI passed. Positive lab ingestion and browser-local appointment-source reconciliation remain unverified."
+    },
+    {
+      "finding": 30,
+      "originalStatus": "Partial",
+      "title": "Content creation link",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Digital Content workflow links to content creation"
+      ]
+    },
+    {
+      "finding": 31,
+      "originalStatus": "Partial",
+      "title": "Consent default and channel labels",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Consent starts Unknown and channels use readable labels"
+      ]
+    },
+    {
+      "finding": 32,
+      "originalStatus": "Partial",
+      "title": "Campaign selector",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Attribution form offers campaign selection rather than a raw ID field"
+      ]
+    },
+    {
+      "finding": 33,
+      "originalStatus": "Partial",
+      "title": "Feedback/rating defaults and labels",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Feedback and review scores start empty with required range labels"
+      ]
+    },
+    {
+      "finding": 34,
+      "originalStatus": "Partial",
+      "title": "Team counts/developer labels",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Team members are unique and managers do not recur under Unassigned",
+        "Live browser: Team header explains active/total and hides fixture suffixes",
+        "Live team progress bars: Zero-metric team groups use empty progress bars"
+      ]
+    },
+    {
+      "finding": 35,
+      "originalStatus": "Partial",
+      "title": "Audit-log viewer",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Governance issue links stay within visible leads and audit log is accessible",
+        "Live browser: Governance offers the audit-log viewer"
+      ]
+    },
+    {
+      "finding": 36,
+      "originalStatus": "Partial",
+      "title": "Lead phone/status display",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Lead rows display both phone and email with readable status styling"
+      ]
+    },
+    {
+      "finding": 37,
+      "originalStatus": "Partial",
+      "title": "Global search detail",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Global-search lead IDs open tenant-scoped detail and context",
+        "Live browser: Lead detail opens from search URL and exposes Convert to deal"
+      ]
+    },
+    {
+      "finding": 38,
+      "originalStatus": "Partial",
+      "title": "Inline deal validation",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Invalid probability shows inline validation and makes no write request",
+        "Live browser: Invalid contact email shows inline validation and makes no write request",
+        "Live inline invalid-email/probability messages plus isolated HTTP validation."
+      ]
+    },
+    {
+      "finding": 39,
+      "originalStatus": "Partial",
+      "title": "Deal cards and stage movement",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Pipeline renders deal cards and Won/Lost stages and stage click filters deals",
+        "Isolated HTTP moves deal and verifies weighted pipeline/dashboard; live card/selector/stage navigation checks."
+      ]
+    },
+    {
+      "finding": 40,
+      "originalStatus": "Partial",
+      "title": "Automatic system activities",
+      "result": "pass",
+      "evidence": [
+        "Isolated HTTP creates one completed system activity and one audit record atomically with the lead."
+      ]
+    },
+    {
+      "finding": 41,
+      "originalStatus": "Partial",
+      "title": "Past-activity warning",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Past activity schedule requires an explicit warning; cancel performs no write"
+      ]
+    },
+    {
+      "finding": 42,
+      "originalStatus": "Partial",
+      "title": "Email CRM navigation",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Email Inbox retains CRM sidebar navigation"
+      ]
+    },
+    {
+      "finding": 43,
+      "originalStatus": "Partial",
+      "title": "List detail and CSV import",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Visible marketing lists obey creator ownership and members resolve to CRM records",
+        "Isolated HTTP: CSV quoted fields, invalid email rejection, repeat imports, XLSX compatibility, malformed upload 400."
+      ]
+    },
+    {
+      "finding": 44,
+      "originalStatus": "Partial",
+      "title": "Visual template editor/preview",
+      "result": "pass",
+      "evidence": [
+        "Live browser: Templates offer visual editing and sandboxed preview when content is present",
+        "Live preview/export interaction: Templates offer visual editing and sandboxed preview when content is present"
+      ]
+    },
+    {
+      "finding": 45,
+      "originalStatus": "Partial",
+      "title": "Grounded lead scoring",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Untouched new leads are not scored Hot with a fabricated Demo action",
+        "Deterministic scoring regression tests plus live active-lead score sanity."
+      ]
+    },
+    {
+      "finding": 46,
+      "originalStatus": "Partial",
+      "title": "Funnel stages and CSV export",
+      "result": "pass",
+      "evidence": [
+        "Live API/data comparison: Reports distinguish all lead/deal stages including Discovery",
+        "Live browser: Reports have a CSV export control",
+        "Live preview/export interaction: Reports have a CSV export control"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "path": "/crm/dashboard",
+      "status": 200,
+      "heading": "Command Center",
+      "mainText": 1223,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/dashboard",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/agent",
+      "status": 200,
+      "heading": "Agent Operator",
+      "mainText": 362,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/agent",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/flow-builder",
+      "status": 200,
+      "heading": "Visual Flow Builder",
+      "mainText": 429,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/flow-builder",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/social-growth",
+      "status": 200,
+      "heading": "Social Growth",
+      "mainText": 482,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/social-growth",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/social-content",
+      "status": 200,
+      "heading": "Social Content Calendar",
+      "mainText": 563,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/social-content",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital",
+      "status": 200,
+      "heading": "Hospital CRM Foundation",
+      "mainText": 842,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/command-center",
+      "status": 200,
+      "heading": "Command Center",
+      "mainText": 740,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/command-center",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/communication-hub",
+      "status": 200,
+      "heading": "Communication Hub",
+      "mainText": 928,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/communication-hub",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/contact-center",
+      "status": 200,
+      "heading": "Contact Center",
+      "mainText": 737,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/contact-center",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/dialer",
+      "status": 200,
+      "heading": "CRM Dialer",
+      "mainText": 557,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/dialer",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/growth",
+      "status": 200,
+      "heading": "Growth Automation",
+      "mainText": 1204,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/growth",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/specialties",
+      "status": 200,
+      "heading": "Specialty Growth",
+      "mainText": 1261,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/specialties",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/diagnostics",
+      "status": 200,
+      "heading": "Diagnostic Chain Growth",
+      "mainText": 704,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/diagnostics",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/digital",
+      "status": 200,
+      "heading": "Digital Growth Hub",
+      "mainText": 923,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/digital",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/operations",
+      "status": 200,
+      "heading": "Patient Journey Operations",
+      "mainText": 439,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/operations",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/engagement",
+      "status": 200,
+      "heading": "Patient Engagement Hub",
+      "mainText": 539,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/engagement",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/acquisition",
+      "status": 200,
+      "heading": "Acquisition & Attribution",
+      "mainText": 408,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/acquisition",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/experience",
+      "status": 200,
+      "heading": "Patient Experience & Reputation",
+      "mainText": 380,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/experience",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/people",
+      "status": 200,
+      "heading": "Business Head Team Dashboard",
+      "mainText": 2404,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/people",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/hospital/governance",
+      "status": 200,
+      "heading": "Governance & Integration Health",
+      "mainText": 464,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/hospital/governance",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/leads",
+      "status": 200,
+      "heading": "Leads",
+      "mainText": 434,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/leads",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/deals",
+      "status": 200,
+      "heading": "Deals",
+      "mainText": 211,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/deals",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/pipeline",
+      "status": 200,
+      "heading": "Sales Pipeline",
+      "mainText": 364,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/pipeline",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/contacts",
+      "status": 200,
+      "heading": "Contacts",
+      "mainText": 207,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/contacts",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/activities",
+      "status": 200,
+      "heading": "Activities",
+      "mainText": 118,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/activities",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/emails",
+      "status": 200,
+      "heading": "Email",
+      "mainText": 204,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/emails",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/marketing-copilot",
+      "status": 200,
+      "heading": "Marketing Copilot",
+      "mainText": 877,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/marketing-copilot",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/campaigns",
+      "status": 200,
+      "heading": "Campaigns",
+      "mainText": 125,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/campaigns",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/lists",
+      "status": 200,
+      "heading": "Marketing Lists",
+      "mainText": 47,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/lists",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/templates",
+      "status": 200,
+      "heading": "Email Templates",
+      "mainText": 89,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/templates",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/senders",
+      "status": 200,
+      "heading": "Senders",
+      "mainText": 297,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/senders",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/suppressions",
+      "status": 200,
+      "heading": "Suppressions",
+      "mainText": 197,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/suppressions",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/ai-insights",
+      "status": 200,
+      "heading": "AI Insights",
+      "mainText": 553,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/ai-insights",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/reports",
+      "status": 200,
+      "heading": "Reports",
+      "mainText": 431,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/reports",
+      "login": false,
+      "passed": true
+    },
+    {
+      "path": "/crm/settings",
+      "status": 200,
+      "heading": "Settings & Channels",
+      "mainText": 2721,
+      "hasErrorBoundary": false,
+      "currentPath": "/crm/settings",
+      "login": false,
+      "passed": true
+    }
+  ]
+}

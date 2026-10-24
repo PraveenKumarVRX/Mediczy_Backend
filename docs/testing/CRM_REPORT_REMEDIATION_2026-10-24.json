@@ -723,5 +723,43 @@
     "focusedLocalChecks": 72,
     "entityUidViolations": 0,
     "privateEvidence": "/home/ubuntu/crm-release-evidence/20261024"
+  },
+  "latestRetest": {
+    "report": "docs/testing/CRM_SANITY_SMOKE_RETEST_2026-10-24.json",
+    "testedOn": "2026-10-24T12:50:49.680450+05:30",
+    "codeCommit": "d679391925e80a52ce16b6c71c536bcf096ed37d",
+    "summary": {
+      "originalFailedFindings": {
+        "passed": 20,
+        "failed": 0
+      },
+      "reportedDefectsRetested": {
+        "pass": 42,
+        "partial": 4,
+        "fail": 0
+      },
+      "canonicalSanitySmoke": "GO after API stabilized",
+      "portalRouteSanity": "ALL PASSED",
+      "frontend": {
+        "suitesPassed": 8,
+        "testsPassed": 79
+      },
+      "backend": {
+        "suitesPassed": 16,
+        "suitesFailed": 2,
+        "testsPassed": 160,
+        "testsFailed": 2,
+        "testsTotal": 162
+      },
+      "isolatedSqlChecksPassed": 27,
+      "livePageSmokePassed": 35,
+      "liveUiChecksPassed": 27,
+      "liveApiSmokePassed": 21,
+      "liveAccessDenialChecksPassed": 7,
+      "liveSemanticChecksPassed": 13,
+      "previewExportChecksPassed": 2,
+      "teamBarChecksPassed": 1,
+      "entityUidViolations": 0
+    }
   }
 }

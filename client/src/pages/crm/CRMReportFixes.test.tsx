@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import api from '@/utils/api';
+import CRMDashboard from './CRMDashboard';
 import { HospitalCRMEngagementPage, HospitalCRMExperiencePage } from './HospitalCRMOperationsPages';
 import { CRMLeadsPage, CRMDealsPage, CRMPipelinePage } from './CRMModulePages';
 vi.mock('@/utils/api', () => ({ default: { get:vi.fn(), post:vi.fn(), put:vi.fn(), delete:vi.fn() } }));
@@ -41,6 +42,15 @@ describe('CRM QA report fixes', () => {
     expect((screen.getByLabelText('Feedback score (0 to 10)') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Review rating (1 to 5)') as HTMLInputElement).value).toBe('');
     expect((screen.getByLabelText('Feedback score (0 to 10)') as HTMLInputElement).required).toBe(true);
+  });
+  it('renders zero-width funnel bars and no drop badges for an empty CRM', async () => {
+    get.mockResolvedValue({data:{success:true,data:{leads:{total:'0',new_leads:'0',contacted:'0',qualified:'0',converted:'0',lost:'0'},deals:{total:'0',total_value:'0',weighted_pipeline:'0'},activities:{},contacts:{total:'0'},rfq:{},velocity:{}}}} as never);
+    show(<CRMDashboard/>);
+    const heading=await screen.findByText('Lead Funnel');
+    const panel=heading.parentElement!.parentElement!.parentElement!;
+    const bars=[...panel.querySelectorAll<HTMLElement>('[style]')].filter(e=>e.style.width.endsWith('%'));
+    expect(bars).toHaveLength(5);expect(bars.every(b=>b.style.width==='0%')).toBe(true);
+    expect(panel.textContent).not.toContain('%↓');expect(panel.textContent).not.toContain('% of leads');
   });
   it('shows won and lost columns and a real deal card on the pipeline', async () => {
     get.mockImplementation(async (url: any) => ({data:{success:true,data:url.includes('pipeline') ? [{stage:'discovery',count:1,total_value:5000,weighted_value:2500}] : [{id:1,title:'QA deal',stage:'discovery',value:5000,probability:50}], pagination:{totalPages:1}}}) as never);
