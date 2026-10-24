@@ -37,7 +37,7 @@ node server/scripts/qa/crm-report-isolation.mjs
 - API source: `f4b0c4d5c9f2c7bc4b68053639e23b6d2cac602a` on `main`.
 - Frontend source: `cd8dec15f60a3bdc0639c64b05ad42232c530408`; isolated clean build completed successfully.
 - Recovery snapshot: `crm-pre-release-20261024-cd8dec15`. Older S3 assets and the previous entry page were retained. Application rollback must preserve the additive migration and all subsequent production writes.
-- Evidence and source hashes: [release manifest](../../.deploy/crm-report-live-release.json). Private backups/access material are outside the repository.
+- Evidence and source hashes: [release manifest](CRM_PRODUCTION_RELEASE_2026-10-24.json). Private backups/access material are outside the repository.
 
 ## Finding register
 
