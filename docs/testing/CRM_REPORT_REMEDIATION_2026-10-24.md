@@ -1,24 +1,24 @@
 # CRM test-report remediation — 24 October 2026
 
-The supplied report contains 85 findings: 20 Fail, 26 Partial, and 39 Pass. This register maps all findings to the current implementation. “Addressed in code” is not a claim that app.mediqzy.com has been deployed or retested.
+The supplied report contains 85 findings: 20 Fail, 26 Partial, and 39 Pass. This register maps all findings to the deployed implementation. Production rollout and representative live verification are complete; a full replay of every original case and live provider UAT is not claimed.
 
 ## Verification
 
 - Production frontend build: passed (`npm run build --prefix client`). Existing third-party browser-externalization and bundle-size warnings remain.
 - Frontend: 29 tests passed across CRMReportFixes, CRMContactCenterPage, and CRMChannelSettings.
-- Backend: 14 tests passed across intelligence, core schema, and social-content suites.
+- Backend: 16 tests passed across intelligence, core schema, social-content, and deleted-lead governance suites. The PostgreSQL governance suite runs with CRM_LOCAL_PG_TESTS=true against the disposable local server.
 - Disposable PostgreSQL: 27 checks passed. These execute scope-filtered SQL with two organizations, blocked foreign reads/updates, validation edge cases, repeated migrations, historical contact/lead linking, import backfills, and completed activity/audit persistence.
 - The full repository TypeScript check reports existing errors across unrelated modules. The final run reported no diagnostics for the changed CRM frontend files; it is not a clean repository-wide typecheck.
 - The existing CRM extensions schema suite fails because crmEmail and underwriting routes still contain runtime DDL. Those pre-existing DDL paths are outside this report's behavioral fixes; the new AI scope helper and core routes contain no runtime DDL.
-- No live organization records, credentials, messaging configuration, outbound messages, or calls were changed or exercised. All database fixtures used a disposable PostgreSQL cluster bound to 127.0.0.1:55490.
+- Local database fixtures used a disposable PostgreSQL cluster bound to 127.0.0.1:55490. The authorized deployment applied CRM contact/link/ownership backfills and a governance rescan. Credentials and messaging configuration were unchanged; outbound messages and calls were not exercised.
 
 ## Rollout and remaining verification
 
-Apply `server/migrations/20261024000000-crm-report-remediation.migration.js` through the normal deployment environment **before deploying the new API**. It adds CRM contact links, backfills deal contacts and unambiguous email-based lead links, restores missing mirrored ownership/identity, and connects imported list members only where their owner's explicit tenant relationship can be resolved. It is registered in both migration runners and tested for repeat execution.
+Applied `server/migrations/20261024000000-crm-report-remediation.migration.js` through the production SSM environment before reloading the API. An encrypted RDS recovery snapshot was available first; a rollback-only rehearsal passed. For subsequent rollouts, apply this idempotent migration before deploying the API. It adds CRM contact links, backfills deal contacts and unambiguous email-based lead links, restores missing mirrored ownership/identity, and connects imported list members only where their owner's explicit tenant relationship can be resolved. It is registered in both migration runners and tested for repeat execution.
 
 The migration does not delete duplicate leads, remove developer-labelled records, guess owners for unowned historical imports, or import browser-local lab fixtures. Marketing tables that lack organization ownership columns are restricted to their creator; a future organization-wide sharing policy needs an explicit ownership migration. Unknown specialty measurements remain unavailable until source data exists.
 
-After deployment, rerun the supplied workflow under CRM Admin plus a second organization. Verify that one organization's IDs cannot be read, updated, scored, used in activity/deal references, or accessed through nested marketing URLs by the other. Reconcile finding 29 with the deployed lab booking source: persisted API bookings are integrated; local-storage appointments in LabModulePages are not persisted booking events. Live social, email, WhatsApp, SMS, and calling integrations still require their configured-provider UAT.
+The deployed release passed 21 public API checks as the designated CRM Admin test account, 7 foreign-record/reference/encoded-path denial checks, and 10 read-only CRM browser pages. The public frontend hash matches the release artifact and CloudFront invalidation completed. A deleted lead mirror discovered during rollout was excluded from scans and issue lists, covered by two PostgreSQL regression tests, and deployed as follow-up `f4b0c4d5`; rescan and browser recheck now show zero visible issues. Continue the full supplied workflow under CRM Admin plus a second organization. Verify that one organization's IDs cannot be read, updated, scored, used in activity/deal references, or accessed through nested marketing URLs by the other. Reconcile finding 29 with the deployed lab booking source: persisted API bookings are integrated; local-storage appointments in LabModulePages are not persisted booking events. Live social, email, WhatsApp, SMS, and calling integrations still require their configured-provider UAT.
 
 ## Reproducing the database checks
 
@@ -31,6 +31,13 @@ CRM_QA_DIR=$(mktemp -d /tmp/mediqzy-crm-qa.XXXXXX)
 node server/scripts/qa/crm-report-isolation.mjs
 /usr/lib/postgresql/16/bin/pg_ctl -D "$CRM_QA_DIR" stop
 ```
+
+## Production release
+
+- API source: `f4b0c4d5c9f2c7bc4b68053639e23b6d2cac602a` on `main`.
+- Frontend source: `cd8dec15f60a3bdc0639c64b05ad42232c530408`; isolated clean build completed successfully.
+- Recovery snapshot: `crm-pre-release-20261024-cd8dec15`. Older S3 assets and the previous entry page were retained. Application rollback must preserve the additive migration and all subsequent production writes.
+- Evidence and source hashes: [release manifest](../../.deploy/crm-report-live-release.json). Private backups/access material are outside the repository.
 
 ## Finding register
 
