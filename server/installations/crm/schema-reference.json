@@ -1,0 +1,259 @@
+{
+  "entity_kinds": [
+    {
+      "kind": "corporate",
+      "prefix": "C",
+      "label": "Corporate",
+      "is_org": true,
+      "tenant_type": "corporate"
+    },
+    {
+      "kind": "hospital",
+      "prefix": "H",
+      "label": "Hospital",
+      "is_org": true,
+      "tenant_type": "hospital"
+    },
+    {
+      "kind": "clinic",
+      "prefix": "K",
+      "label": "Clinic",
+      "is_org": true,
+      "tenant_type": "clinic"
+    },
+    {
+      "kind": "lab",
+      "prefix": "L",
+      "label": "Lab",
+      "is_org": true,
+      "tenant_type": "lab"
+    },
+    {
+      "kind": "pharmacy",
+      "prefix": "P",
+      "label": "Pharmacy",
+      "is_org": true,
+      "tenant_type": "pharmacy"
+    },
+    {
+      "kind": "ambulance",
+      "prefix": "B",
+      "label": "Ambulance",
+      "is_org": true,
+      "tenant_type": "ambulance"
+    },
+    {
+      "kind": "homecare",
+      "prefix": "M",
+      "label": "Homecare",
+      "is_org": true,
+      "tenant_type": "homecare"
+    },
+    {
+      "kind": "diagnostic_centre",
+      "prefix": "Y",
+      "label": "Diagnostic centre",
+      "is_org": true,
+      "tenant_type": null
+    },
+    {
+      "kind": "ngo",
+      "prefix": "G",
+      "label": "NGO",
+      "is_org": true,
+      "tenant_type": "ngo"
+    },
+    {
+      "kind": "tpa",
+      "prefix": "X",
+      "label": "TPA",
+      "is_org": true,
+      "tenant_type": "tpa"
+    },
+    {
+      "kind": "insurance_company",
+      "prefix": "I",
+      "label": "Insurance company",
+      "is_org": true,
+      "tenant_type": "insurer"
+    },
+    {
+      "kind": "broker",
+      "prefix": "V",
+      "label": "Insurance broker",
+      "is_org": true,
+      "tenant_type": "broker"
+    },
+    {
+      "kind": "wellness_company",
+      "prefix": "W",
+      "label": "Wellness company",
+      "is_org": true,
+      "tenant_type": null
+    },
+    {
+      "kind": "psu",
+      "prefix": "S",
+      "label": "PSU",
+      "is_org": true,
+      "tenant_type": "psu"
+    },
+    {
+      "kind": "aggregator",
+      "prefix": "Z",
+      "label": "Aggregator",
+      "is_org": true,
+      "tenant_type": "aggregator"
+    },
+    {
+      "kind": "user",
+      "prefix": "U",
+      "label": "User",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "patient",
+      "prefix": "U",
+      "label": "Patient",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "doctor",
+      "prefix": "D",
+      "label": "Doctor",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "nurse",
+      "prefix": "N",
+      "label": "Nurse",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "assistant",
+      "prefix": "A",
+      "label": "Doctor assistant",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "team",
+      "prefix": "T",
+      "label": "Team member",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "corporate_employee",
+      "prefix": "E",
+      "label": "Corporate employee",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "ohc",
+      "prefix": "O",
+      "label": "Occupational health centre",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "admin",
+      "prefix": "R",
+      "label": "Admin / system",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "phlebotomist",
+      "prefix": "F",
+      "label": "Phlebotomist / collection worker",
+      "is_org": false,
+      "tenant_type": null
+    },
+    {
+      "kind": "care_unit",
+      "prefix": "J",
+      "label": "Care unit (outreach clinic, medical centre, OHC)",
+      "is_org": true,
+      "tenant_type": null
+    },
+    {
+      "kind": "crm_social_post",
+      "prefix": "Q",
+      "label": "CRM social post",
+      "is_org": false,
+      "tenant_type": null
+    }
+  ],
+  "entity_uid_rules": [
+    {
+      "table_name": "tenants",
+      "kind": null,
+      "column_name": "unique_id",
+      "strict": true,
+      "type_column": "type",
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "corporates",
+      "kind": "corporate",
+      "column_name": "unique_id",
+      "strict": true,
+      "type_column": null,
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "insurance_brokers",
+      "kind": "broker",
+      "column_name": "broker_uid",
+      "strict": true,
+      "type_column": null,
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "crm_diagnostic_centres",
+      "kind": "diagnostic_centre",
+      "column_name": "unique_id",
+      "strict": true,
+      "type_column": null,
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "users",
+      "kind": "user",
+      "column_name": "unique_id",
+      "strict": false,
+      "type_column": null,
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "doctors",
+      "kind": "doctor",
+      "column_name": "unique_id",
+      "strict": false,
+      "type_column": null,
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "team_members",
+      "kind": "team",
+      "column_name": "unique_id",
+      "strict": false,
+      "type_column": null,
+      "attached_at": "2026-10-05T10:40:14.405Z"
+    },
+    {
+      "table_name": "crm_social_posts",
+      "kind": "crm_social_post",
+      "column_name": "unique_id",
+      "strict": false,
+      "type_column": null,
+      "attached_at": "2026-10-16T19:40:46.325Z"
+    }
+  ]
+}
