@@ -382,6 +382,18 @@ class SanityCheckAndSmokeTest {
     ];
 
     for (const test of tests) {
+      // Production release audits can avoid creating users, appointments, API
+      // credentials or assistant sessions, and avoid any notification/call flow.
+      const scenario = String(test).match(/this\.(smokeTest[A-Za-z]+)/)?.[1] || 'unknown';
+      const mutating = new Set(['smokeTestAggregatorCreation', 'smokeTestAggregatorLogin',
+        'smokeTestApiCredentialGeneration', 'smokeTestMobileAuth', 'smokeTestUserCreation',
+        'smokeTestEmergencyVideoCall', 'smokeTestDrIshaConsult', 'smokeTestDrIshaSessionReset',
+        'smokeTestVoiceAgentEndpoint', 'smokeTestDoctorTasksIsolation']);
+      if (process.env.SMOKE_READ_ONLY === 'true' && mutating.has(scenario)) {
+        this.log(`Skipped ${scenario}: read-only production smoke`, 'warning');
+        this.recordResult('smoke', { name: scenario, status: 'warning', skipped: true, reason: 'read-only production smoke' });
+        continue;
+      }
       try {
         await test();
       } catch (error) {
