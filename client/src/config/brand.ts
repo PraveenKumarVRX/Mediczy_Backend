@@ -5,13 +5,13 @@
 
 export const BRAND = {
   // Brand Names
-  name: 'Mediqzy',
-  fullName: 'HealthOS',
+  name: import.meta.env.VITE_BRAND_NAME || 'Mediqzy',
+  fullName: import.meta.env.VITE_BRAND_FULL_NAME || 'HealthOS',
   tagline: 'Mediqzy - HealthOS',
   signoff: 'Team Mediqzy',
 
   // Logo
-  logo: '/logo/Mediqzy_logo.jpeg',
+  logo: import.meta.env.VITE_BRAND_LOGO || '/logo/Mediqzy_logo.jpeg',
   
   // Colors (Tailwind classes)
   colors: {
@@ -60,12 +60,12 @@ export const BRAND = {
   
   // Support info
   support: {
-    email: 'support@mediqzy.com',
+    email: import.meta.env.VITE_SUPPORT_EMAIL || 'support@mediqzy.com',
     // Real, actively-used Twilio WhatsApp Business number (see
     // TWILIO_WHATSAPP_NUMBER) — there is no separate voice support line
     // configured anywhere in the system.
-    phone: '+91 8098998998',
-    website: 'https://mediqzy.com',
+    phone: import.meta.env.VITE_SUPPORT_PHONE || '+91 8098998998',
+    website: import.meta.env.VITE_SUPPORT_WEBSITE || 'https://mediqzy.com',
   },
   
   // Social links

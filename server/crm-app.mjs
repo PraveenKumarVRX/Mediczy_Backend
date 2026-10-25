@@ -4,15 +4,24 @@ import helmet from 'helmet';
 import cors from 'cors';
 import { createServer } from 'node:http';
 import { Server as SocketServer } from 'socket.io';
-import { createHash } from 'node:crypto';
-import { writeFileSync } from 'node:fs';
 import { validateDedicatedEnvironment, dedicatedBoundary } from './installations/crm/runtime-boundary.js';
 const installation = validateDedicatedEnvironment(process.env);
+process.env.DEDICATED_CRM_RUNTIME = 'true';
 const { default: pool } = await import('./db/pgPool.js');
 const { authCRM } = await import('./middleware/crm.middleware.js');
 const { buildMobileDiscoveryRouter } = await import('./routes/mobile-discovery.route.js');
 const { tenantMobileDiscovery } = await import('./services/tenant-mobile-apps.service.js');
 const { default: jwt } = await import('jsonwebtoken');
+const {default:Redis}=await import('ioredis');
+const readinessRedis=new Redis({host:process.env.REDIS_HOST,port:Number(process.env.REDIS_PORT||6379),password:process.env.REDIS_PASSWORD,maxRetriesPerRequest:1,enableOfflineQueue:false,connectTimeout:2000,commandTimeout:2000});
+readinessRedis.on('error',()=>{});
+async function checkDependencies(){
+ const required=['public.tenants','public.users','public.entity_registry','public.api_v2_refresh_tokens','public.crm_login_attempts','public.crm_leads','public.crm_leads_v2','public.crm_contacts','public.crm_deals','public.crm_activities','public.feature_flags','public.crm_installation_versions'];
+ const result=await pool.query('SELECT bool_and(to_regclass(name) IS NOT NULL) AS ready FROM unnest($1::text[]) AS name',[required]);
+ if(!result.rows[0]?.ready)throw Error('Schema unavailable');
+ await readinessRedis.ping();
+}
+
 const tenant = (await pool.query('SELECT id,unique_id,name,status,settings FROM tenants WHERE unique_id=$1 AND id=$2', [installation.tenantUid, installation.tenantId])).rows[0];
 if (!tenant || tenant.status !== 'active') throw Error('Dedicated installation tenant is unavailable.');
 const app=express();app.disable('x-powered-by');app.set('trust proxy','loopback');
@@ -20,7 +29,7 @@ app.use(helmet({contentSecurityPolicy:false}));
 app.use(cors({origin:installation.origin,credentials:true}));
 app.use(express.json({limit:'10mb'}));
 app.get('/health/live',(_req,res)=>res.json({status:'ok',service:'dedicated-crm'}));
-app.get('/health/ready',async(_req,res)=>{try{await pool.query('SELECT 1');res.json({status:'ready',tenantUid:installation.tenantUid,release:process.env.RELEASE_SHA});}catch{res.status(503).json({status:'unavailable'});}});
+app.get('/health/ready',async(_req,res)=>{try{await checkDependencies();res.json({status:'ready',tenantUid:installation.tenantUid,release:process.env.RELEASE_SHA});}catch{res.status(503).json({status:'unavailable'});}});
 app.use(dedicatedBoundary(installation));
 app.use('/api/mobile',buildMobileDiscoveryRouter({resolveTenant:async()=>tenantMobileDiscovery(tenant)}));
 app.use('/api/crm',async(req,res,next)=>{
@@ -54,7 +63,9 @@ const server=createServer(app);
 const io=new SocketServer(server,{cors:{origin:installation.origin,credentials:true}});
 io.use(async(socket,next)=>{try{
  const token=socket.handshake.auth?.token;const decoded=jwt.verify(token,process.env.JWT_SECRET);
- if(decoded.tokenType!=='access'||!decoded.isCRM)throw Error('Invalid CRM session');
+ if(decoded.tokenType!=='access'||!decoded.isCRM||!decoded.jti)throw Error('Invalid CRM session');
+ const session=await pool.query("SELECT 1 FROM api_v2_refresh_tokens t JOIN users u ON u.id=t.user_id WHERE t.jti=$1 AND t.role='crm' AND NOT t.revoked AND u.status='active'",[decoded.jti]);
+ if(!session.rows.length)throw Error('Revoked CRM session');
  const {mobileUserBelongsToTenant}=await import('./services/mobile-tenant-membership.service.js');
  if(!await mobileUserBelongsToTenant({mobileTenant:{id:tenant.id}},decoded.id))throw Error('Wrong tenant');
  socket.data.userId=decoded.id;next();
@@ -65,12 +76,18 @@ server.listen(Number(process.env.PORT||8888),'0.0.0.0',()=>console.log(JSON.stri
 if(process.env.DEDICATED_CONNECTOR_TOKEN_FILE){
  const {readFile}=await import('node:fs/promises');const {randomUUID}=await import('node:crypto');
  const {sendInstallationReport}=await import('./scripts/report-dedicated-installation.mjs');
+ const {ReportOutbox}=await import('./installations/crm/report-outbox.mjs');
+ const outbox=new ReportOutbox('/app/data/connector/outbox',async report=>{
+  const token=(await readFile(process.env.DEDICATED_CONNECTOR_TOKEN_FILE,'utf8')).trim();
+  return sendInstallationReport({origin:process.env.DEDICATED_CONTROL_PLANE_URL,token,profile:'crm',report});
+ });
  let reporting=false;
  async function report(){if(reporting)return;reporting=true;try{
-  const token=(await readFile(process.env.DEDICATED_CONNECTOR_TOKEN_FILE,'utf8')).trim();
-  const now=new Date().toISOString();
-  await sendInstallationReport({origin:process.env.DEDICATED_CONTROL_PLANE_URL,token,profile:'crm',report:{eventId:randomUUID(),observedAt:now,day:now.slice(0,10),release:process.env.RELEASE_SHA,health:'healthy',metrics:{}}});
- }catch(error){console.error('[connector]',error.message?.startsWith('Report rejected')?error.message:'Report delivery unavailable');}finally{reporting=false;}}
+  const now=new Date().toISOString();let health='healthy';
+  try{await checkDependencies();}catch{health='unavailable';}
+  await outbox.enqueue({eventId:randomUUID(),observedAt:now,day:now.slice(0,10),release:process.env.RELEASE_SHA,health,metrics:{}});
+  await outbox.drain();
+ }catch(error){console.error('[connector]',error.message?.startsWith('Report rejected')?error.message:'Report delivery unavailable; report retained');}finally{reporting=false;}}
  setInterval(report,60000).unref();report();
 }
-async function stop(){server.close();await pool.end();process.exit(0);}process.on('SIGTERM',stop);process.on('SIGINT',stop);
+async function stop(){server.close();readinessRedis.disconnect();await pool.end();process.exit(0);}process.on('SIGTERM',stop);process.on('SIGINT',stop);

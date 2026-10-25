@@ -123,7 +123,7 @@ export function CRMLayout({ title, children }: { title: string; activePath?: str
           </div>
           {!sidebarCollapsed && (
             <div className="overflow-hidden">
-              <span className="text-sm font-bold text-white block">Mediqzy CRM</span>
+              <span className="text-sm font-bold text-white block">{BRAND.name} CRM</span>
               <span className="text-[9px] text-violet-400/60 uppercase tracking-[0.15em]">Sales Hub</span>
             </div>
           )}

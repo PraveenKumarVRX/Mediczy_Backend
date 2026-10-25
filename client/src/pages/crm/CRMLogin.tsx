@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import api from '@/utils/api';
 import { clearAuthTokens } from '@/hooks/auth';
+import { BRAND } from '@/config/brand';
 
 const CRMLogin = () => {
   const navigate = useNavigate();
@@ -104,7 +105,7 @@ const CRMLogin = () => {
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shadow-lg shadow-violet-500/25">
               <Target className="h-5 w-5 text-white" />
             </div>
-            <span className="text-xl font-bold text-white tracking-tight">Mediqzy</span>
+            <span className="text-xl font-bold text-white tracking-tight">{BRAND.name}</span>
           </div>
           <span className="text-[11px] font-medium text-violet-400/80 uppercase tracking-[0.2em] ml-[52px]">Sales Intelligence</span>
         </div>
@@ -158,7 +159,7 @@ const CRMLogin = () => {
               <Target className="h-4.5 w-4.5 text-white" />
             </div>
             <div>
-              <span className="text-lg font-bold text-white">Mediqzy CRM</span>
+              <span className="text-lg font-bold text-white">{BRAND.name} CRM</span>
               <p className="text-[10px] text-violet-400/70 uppercase tracking-[0.15em] -mt-0.5">Sales Intelligence</p>
             </div>
           </div>

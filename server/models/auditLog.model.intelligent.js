@@ -18,6 +18,12 @@ async function getDB() {
 
 async function ensureAuditLogsTable(db) {
   if (auditLogsTableEnsured) return;
+  if (process.env.DEDICATED_CRM_RUNTIME === 'true') {
+    // The dedicated installer owns DDL; its application role must never need it.
+    await db.query('SELECT id, user_id, action, timestamp FROM audit_logs LIMIT 0');
+    auditLogsTableEnsured = true;
+    return;
+  }
 
   // Minimal schema to support compliance logging. Safe to run multiple times.
   await db.query(`
