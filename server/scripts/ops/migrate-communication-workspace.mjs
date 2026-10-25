@@ -1,13 +1,14 @@
 /** Run through the standard environment loader; default rolls all candidate copies back. */
 import { readFileSync } from 'node:fs';
 import pool from '../../db/pgPool.js';
-import { closeRedis } from '../../db/redis.js';
+import { closeRedis,connectRedis } from '../../db/redis.js';
 import { chatRooms,messages } from '../../utils/chatStorage.js';
 import { migrateLegacyRoom } from '../../services/communication-workspace-legacy.mjs';
 const apply=process.argv.includes('--apply'),manifestPath=process.argv.find(arg=>arg.startsWith('--manifest='))?.slice(11);
 const manifest=manifestPath?JSON.parse(readFileSync(manifestPath,'utf8')):{};
 const report={mode:apply?'apply':'audit',migrated:0,quarantined:0,items:[]};
 try{
+ const redis=await connectRedis();if(!redis)throw Error('Legacy Redis unavailable; refuse an empty migration report');
  for(const [id,room] of await chatRooms.entries()){
   const tenantUid=manifest[id];
   if(typeof tenantUid!=='string'||!tenantUid){report.quarantined++;report.items.push({legacyRoom:id,state:'ownership_unverified'});continue;}

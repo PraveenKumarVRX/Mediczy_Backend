@@ -1,6 +1,6 @@
 # Communication workspace API notes
 
-25 October 2026 — first implementation increment, not yet deployed.
+25 October 2026 — initial increment and durable workspace are deployed to the isolated Medstar preview. Shared-tenant rollout remains controlled. External channel activation is skipped at the user’s request.
 
 Existing Admin, Team and CRM URLs and response shapes remain supported. The new shared channel navigation links to existing portal pages. Unimplemented portal channels have no link to a platform administration page.
 

@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-25",
+  "apiRevision": "a58cbd825cb8f04624e584979e470ab82e7c5cd1",
+  "deployment": "isolated Medstar preview",
+  "tenantUid": "H98VG4",
+  "unitAndComponentTestsPassed": 59,
+  "backendTestsPassed": 5,
+  "newLiveApiChecksPassed": 17,
+  "existingLiveApiChecksPassed": 20,
+  "browserChecksPassed": 8,
+  "browserPageErrors": 0,
+  "browserApiErrors": 0,
+  "postgresAndAttachmentRestorePassed": true,
+  "syntheticFixturesRemoved": true,
+  "sharedLegacyRoomsAwaitingOwnershipMapping": 6,
+  "sharedTenantAutomaticRollout": false,
+  "externalChannelActivation": "skipped by user",
+  "providerMessagesSent": 0
+}

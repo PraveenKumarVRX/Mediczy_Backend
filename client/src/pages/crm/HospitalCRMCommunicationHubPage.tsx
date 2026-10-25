@@ -115,7 +115,7 @@ export default function HospitalCRMCommunicationHubPage() {
         whatsapp: '/crm/hospital/communication-hub?channel=whatsapp',
         voice: '/crm/hospital/communication-hub?channel=voice',
       }} />
-      <header className="flex flex-wrap items-center gap-3">
+      {tab !== 'chat' && <header className="flex flex-wrap items-center gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.16em] text-violet-400">Brevo-style orchestration</p>
           <h1 className="text-2xl font-semibold text-white mt-1">Communication Hub</h1>
@@ -127,7 +127,7 @@ export default function HospitalCRMCommunicationHubPage() {
         </select>
         <button className={button} onClick={refresh} title="Refresh monitoring data"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /> Refresh</button>
         <button className={primary} onClick={() => { setTab('campaigns'); setShowCampaignForm(true); }}><Plus className="h-4 w-4" /> New campaign</button>
-      </header>
+      </header>}
 
       <div className="text-slate-200"><ChatwootWorkspace endpoint="/crm/communication-hub/chatwoot" token={localStorage.getItem('crmToken')} /></div>
 

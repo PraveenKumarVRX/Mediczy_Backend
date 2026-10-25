@@ -1,3 +1,5 @@
+Updated status: the next increment is implemented and deployed to Medstar's isolated preview. Historical first-increment results below are retained. See [the rollout report](../deployment/COMMUNICATION_WORKSPACE_ROLLOUT_2026-10-25.md) for current scope and remaining operational gates.
+
 # Communication workspace implementation increment
 
 Scope: explicit Admin/Team session handling, same six-channel navigation vocabulary with links only to existing portal capabilities, CRM composer deep links, and tenant-scoped CRM history/recipient resolution. Existing pages, campaigns, templates and integrations are retained. No database migration or historical-data reassignment is performed.

@@ -113,8 +113,8 @@ export default function ConversationWorkspace({endpoint,portal,capability,tenant
  const insert=(value:string)=>{const start=composer.current?.selectionStart??draft.length,end=composer.current?.selectionEnd??start;writeDraft(draft.slice(0,start)+value+draft.slice(end));setPicker(null);composer.current?.focus();};
  return <section aria-label="Organisation conversations" className="overflow-hidden rounded-2xl border border-slate-400/20 bg-slate-950 text-slate-100">
   {error&&<div role="alert" className="border-b border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
-  <div className="grid min-h-[560px] md:grid-cols-[280px_1fr]">
-   <aside className={`${mobileThread?'hidden md:block':''} border-r border-slate-400/20 p-3`}>
+  <div className="grid h-[min(640px,calc(100dvh-320px))] min-h-[360px] md:grid-cols-[280px_1fr]">
+   <aside className={`${mobileThread?'hidden md:flex':'flex'} min-h-0 flex-col border-r border-slate-400/20 p-3`}>
     <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Conversations</h2>{capability.canWrite&&<button aria-label="New conversation" className="p-2" onClick={()=>setCreating(!creating)}><Plus className="h-5 w-5"/></button>}</div>
     {creating&&<form className="mb-3 space-y-2" onSubmit={event=>{event.preventDefault();create();}}>
      <input aria-label="Conversation name" maxLength={120} required value={roomName} onChange={event=>setRoomName(event.target.value)} className="w-full rounded bg-slate-800 p-2"/>
@@ -122,13 +122,13 @@ export default function ConversationWorkspace({endpoint,portal,capability,tenant
      <button disabled={sending} className="rounded bg-teal-700 px-3 py-2">Create conversation</button>
     </form>}
     <div className="mb-3 flex items-center gap-2 rounded bg-slate-800 px-2"><Search className="h-4 w-4"/><input aria-label="Search conversations" placeholder="Search" value={query} onChange={event=>setQuery(event.target.value)} className="min-w-0 bg-transparent py-2 outline-none"/></div>
-    <div className="max-h-[480px] overflow-y-auto">{rooms.filter(room=>room.name.toLowerCase().includes(query.toLowerCase())).map(room=><button key={room.id} aria-pressed={selected===room.id} onClick={()=>{setSelected(room.id);setMobileThread(true);setError('');}} className={`mb-1 w-full rounded-xl p-3 text-left ${selected===room.id?'bg-teal-700/40':'hover:bg-slate-800'}`}>
+    <div className="min-h-0 flex-1 overflow-y-auto">{rooms.filter(room=>room.name.toLowerCase().includes(query.toLowerCase())).map(room=><button key={room.id} aria-pressed={selected===room.id} onClick={()=>{setSelected(room.id);setMobileThread(true);setError('');}} className={`mb-1 w-full rounded-xl p-3 text-left ${selected===room.id?'bg-teal-700/40':'hover:bg-slate-800'}`}>
      <div className="flex items-center gap-2"><Hash className="h-4 w-4"/><span className="flex-1 truncate">{room.name}</span>{room.unread>0&&<span aria-label={`${room.unread} unread`} className="rounded-full bg-teal-600 px-2 text-xs">{room.unread}</span>}</div><p className="mt-1 truncate text-xs text-slate-400">{room.last_message||'No messages yet'}</p>
     </button>)}{!rooms.length&&<p className="p-3 text-sm text-slate-400">No conversations yet.</p>}</div>
    </aside>
-   <div className={`${!mobileThread?'hidden md:flex':'flex'} min-w-0 flex-col`}>
+   <div className={`${!mobileThread?'hidden md:flex':'flex'} min-h-0 min-w-0 flex-col`}>
     <header className="flex items-center gap-2 border-b border-slate-400/20 p-4"><button aria-label="Back to conversations" onClick={()=>setMobileThread(false)} className="p-1 md:hidden"><ArrowLeft className="h-5 w-5"/></button><Hash className="h-5 w-5"/><h3>{currentRoom?.name||'Select a conversation'}</h3></header>
-    <div aria-label="Message history" className="h-[400px] flex-1 space-y-3 overflow-y-auto p-4">
+    <div aria-label="Message history" className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
      {hasMore&&<button onClick={older} className="text-sm text-teal-300">Load earlier messages</button>}
      {messages.map(message=><article key={message.id} className={`rounded-xl p-3 ${message.sender_id===capability.userId?'bg-teal-800/30':'bg-slate-800/70'}`}><div className="mb-1 flex gap-3 text-xs text-slate-400"><span>{message.sender_name||(message.sender_id===capability.userId?'You':'Team member')}</span><time dateTime={message.created_at}>{new Date(message.created_at).toLocaleString()}</time></div><p className="whitespace-pre-wrap break-words text-sm">{message.body}</p>{message.attachment_id&&<button onClick={()=>download(message)} className="mt-2 inline-flex items-center gap-2 text-sm text-teal-300"><Download className="h-4 w-4"/>{message.attachment_name||'Download attachment'}</button>}</article>)}
      {selected&&!messages.length&&<p className="text-sm text-slate-400">No messages yet. Start the conversation.</p>}

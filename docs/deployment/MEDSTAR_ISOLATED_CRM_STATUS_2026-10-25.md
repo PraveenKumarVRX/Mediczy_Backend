@@ -28,3 +28,11 @@ Use the SSH preview instructions in [the operator guide](../../infra/medstar/REA
 The recent Claude session and updated Terraform proposal were reviewed. AWS currently has no Transit Gateway in ap-south-1, and both hub and Medstar VPCs use `172.31.0.0/16`. Direct routing in the saved plan requires an addressing or NAT correction before applying it. See [network preflight](../architecture/MEDSTAR_NETWORK_PREFLIGHT_2026-10-25.md). No saved Terraform plan or security-group change was applied.
 
 Production gates remain: corrected networking and scoped cross-account AWS management, DNS/TLS cutover, administrator password rotation, hospital-owned provider integration acceptance, attachment storage, and off-host backups with retention/monitoring. Outbound delivery and optional AI/social/flow integrations remain disabled; campaign workers are not started.
+
+## Communication workspace update
+
+The durable shared workspace API is deployed at revision `a58cbd82`, enabled only for local tenant `H98VG4`. It provides tenant-scoped internal chat, private rooms, durable messages, idempotent retries, unread markers, protected attachment storage and identity-bound drafts. Existing CRM operations still pass their 20-check API smoke suite; the new workspace passes 17 live API and 8 browser checks. No synthetic rooms/messages/files remain after cleanup.
+
+Networking changed during this release through parallel WireGuard work. Actual private listeners are now `10.99.0.6:8888` and `10.99.0.6:8080`; the prior Transit Gateway preflight above is historical. Those private bindings were preserved. The public hostname is still not switched by this release. See the current [workspace rollout report](COMMUNICATION_WORKSPACE_ROLLOUT_2026-10-25.md) for correct preview access and migration status.
+
+External email/SMS/WhatsApp/voice/video/Chatwoot activation is skipped at the user's request. Internal messaging triggers no provider dispatch. Local backup/restore now includes encrypted attachment files; off-host backup remains a separate production dependency.

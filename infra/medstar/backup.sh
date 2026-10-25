@@ -12,4 +12,11 @@ docker compose exec -T db pg_dump -U medstar_owner -d medstar_crm --format=custo
   openssl enc -aes-256-cbc -salt -pbkdf2 -pass file:secrets/backup-key -out "$backup_partial"
 mv "$backup_partial" "$backup_path"
 sha256sum "$backup_path" > "${backup_path}.sha256"
+if [[ -d data/app/communication-attachments ]]; then
+ files_path="${backup_path%.dump.enc}.files.tar.enc"
+ tar -C data/app -czf - communication-attachments |
+  openssl enc -aes-256-cbc -salt -pbkdf2 -pass file:secrets/backup-key -out "$backup_partial"
+ mv "$backup_partial" "$files_path"
+ sha256sum "$files_path" > "${files_path}.sha256"
+fi
 printf '%s\n' "$backup_path"
