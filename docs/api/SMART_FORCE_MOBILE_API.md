@@ -1,10 +1,18 @@
 # Smart Force — Mobile API Reference
 
-**Base URL:** `https://mediqzy.com`  
+**Hosted base URL:** `https://app.mediqzy.com`
+**Hosted compatibility URL:** `https://mediqzy.com`
 **Format:** JSON  
-**Updated:** 2026-10-18
+**Updated:** 2026-10-25
 
 ---
+
+## Organisation server connection (25 October 2026)
+
+The URLs above are hosted examples. Universal Smart-Force and white-labelled product apps must discover the organisation server before collecting credentials. Use the [versioned tenant server connection contract](TENANT_MOBILE_SERVER_CONNECTION.md) for `GET /api/mobile/discovery`, enabled products, registration policy, identity binding and safe server switching.
+
+The backend/admin release is deployed; native app binaries are unchanged. An unconfigured tenant server returns 503 until its administrator enables app access. Existing team/CRM authentication response shapes and password-recovery routes remain unchanged. See [release verification and limits](../testing/TENANT_APPS_RELEASE_2026-10-25.md).
+
 
 ## Authentication
 

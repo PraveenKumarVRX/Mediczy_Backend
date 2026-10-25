@@ -1,6 +1,6 @@
 # Tenant app onboarding and admin controls
 
-Implementation date: 25 October 2026. Changes are local source changes; no tenant records, running processes, DNS or production deployments were changed.
+Implementation and backend/admin deployment date: 25 October 2026. See [verified release results](../testing/TENANT_APPS_RELEASE_2026-10-25.md). Tenant settings and customer app binaries remain unchanged.
 
 ## Admin workflow
 
@@ -63,4 +63,8 @@ Before production rollout, integrate the connection contract into the real produ
 
 ## Local verification result
 
-Passed: 27 backend tests across the six focused suites, 9 connection tests, 3 admin UI tests, mobile TypeScript checking, targeted admin TypeScript checking, and Expo public configuration generation for all three sample profiles. The changed tracked source files passed whitespace checks. No Android/iOS binary, device acceptance, tenant-server deployment or real-database tenant provisioning was performed.
+Passed before release: 27 backend tests across the six focused suites, 9 connection tests, 3 admin UI tests, mobile TypeScript checking, targeted admin TypeScript checking, and Expo public configuration generation for all three sample profiles. The changed tracked source files passed whitespace checks. No Android/iOS binary, device acceptance, tenant-server deployment or real-database tenant provisioning was performed.
+
+## Production release
+
+The backend/admin release is deployed, with 28 focused backend tests and 17 live checks passing. The canonical suite returned GO in read-only mode, with ten state-changing scenarios skipped. Four deployed-browser scenarios passed without production settings writes. See the release report for hashes, rollback and mobile limitations.
