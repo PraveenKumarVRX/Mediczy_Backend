@@ -31,13 +31,31 @@ To create a branded frontend, build with `VITE_BRAND_NAME=Medstar`, `VITE_BRAND_
 
 ## Operator access
 
-Using the existing Windows SSH alias:
+The API and web proxy are bound to this EC2's WireGuard overlay address (`10.99.0.6`), not
+`127.0.0.1` or any public interface — confirmed unreachable from the public IP, reachable only
+from a host on the Mediqzy hub's WireGuard mesh (`wg0`, hub overlay `10.99.0.1/24`). Anyone with
+an authorized peer (`AllowedIPs` scoped to `10.99.0.6/32` on the hub) reaches it directly:
+
+```
+http://10.99.0.6:8080/crm
+```
+
+To provision a new remote-staff peer, run `scripts/wireguard/wg-add-peer.sh --name <label>
+--allowed-ips 10.99.0.6/32` on the hub (see `scripts/wireguard/README.md`) and hand the generated
+client config to that person. To revoke one, `scripts/wireguard/wg-remove-peer.sh --name <label>`.
+
+The public Medstar hostname (`medstar.mediqzy.com`) is deliberately not switched to this
+installation — there is no public-internet path to this app by design.
+
+**Break-glass fallback** (if the WireGuard mesh is down): the original SSH local-forward still
+works using the existing Windows SSH alias:
 
 ```powershell
 ssh -N -L 127.0.0.1:18080:127.0.0.1:8080 medstar-crm
 ```
 
-Open `http://127.0.0.1:18080/crm`. The loopback HTTP connection is carried inside SSH; it is not a public plaintext login endpoint. The public Medstar hostname is not switched by these scripts.
+Open `http://127.0.0.1:18080/crm`. The loopback HTTP connection is carried inside SSH; it is not
+a public plaintext login endpoint.
 
 ## Reporting, integrations and operations
 

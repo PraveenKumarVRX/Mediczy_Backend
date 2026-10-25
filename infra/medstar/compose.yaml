@@ -32,7 +32,7 @@ services:
         RELEASE_SHA: ${RELEASE_SHA:?required}
     restart: unless-stopped
     env_file: ./secrets/app.env
-    ports: ['127.0.0.1:8888:8888']
+    ports: ['10.99.0.6:8888:8888']
     volumes:
       - ./data/app:/app/data
       - ./secrets/db-tls/ca.crt:/run/secrets/db-ca.crt:ro
@@ -46,7 +46,7 @@ services:
   web:
     image: nginx:1.28-alpine
     restart: unless-stopped
-    ports: ['127.0.0.1:8080:80']
+    ports: ['10.99.0.6:8080:80']
     volumes:
       - ./release/client/dist:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
