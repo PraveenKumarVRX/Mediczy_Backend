@@ -8,6 +8,12 @@ import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import { listBlockedIPs, blockIP, unblockIP, getIPStats } from '../middleware/credentialStuffingGuard.js';
 import { getThreatEvents, getThreatStats, lookupIP } from '../middleware/ipThreatIntelligence.js';
 import { attachTenantScope, scopeFilter } from '../middleware/tenantScope.middleware.js';
+import { createCorporateSecurityRouter } from './corporate-security.route.js';
+import mfaStepUp from '../services/mfa-step-up.service.js';
+import { adminMfaIdentity } from '../services/admin-mfa.service.js';
+import { issueAdminTokenPair } from '../controller/admin.controller.js';
+import { listTrustedIps, addTrustedIp, removeTrustedIp } from '../services/admin-ip-binding.service.js';
+import getClientIp from '../utils/clientIp.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
@@ -8376,6 +8382,65 @@ router.get('/corporate-employee-qc/logs', authUser, requireRole(['admin', 'team'
       { replacements: { limit }, type: postgresSequelize.QueryTypes.SELECT }
     );
     return res.json({ success: true, logs: rows });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Admin MFA enrollment/confirm/disable - reuses the same generic TOTP engine
+// and router factory the corporate-login MFA already uses, under its own
+// identity namespace (adminMfaIdentity) so an admin's enrollment never
+// collides with a corporate account that happens to share a numeric id.
+// Exposed at /api/admin/security/mfa[...] (this router is mounted at /api/admin).
+router.use(createCorporateSecurityRouter({
+  authenticate: [authUser, requireRole('admin')],
+  limiter: authLimiter,
+  mfa: mfaStepUp,
+  identity: adminMfaIdentity,
+  passwordMatches: async (user, password) => {
+    const row = await userModel.findByPk(user.id);
+    return !!row?.password && bcrypt.compare(password, row.password);
+  },
+  tokenFor: async (req, proof) => {
+    const payload = {
+      id: req.user.id, email: req.user.email, role: 'admin', userType: 'admin', isAdmin: true, ...proof,
+    };
+    const { accessToken, refreshToken } = await issueAdminTokenPair(payload, getClientIp(req));
+    return { token: accessToken, refreshToken };
+  },
+}));
+
+// Admin trusted-IP binding management. Empty list = unrestricted (opt-in) -
+// adding the first entry is what turns IP enforcement on at login, see
+// adminLogin in admin.controller.js. requireRole('admin') here (not a
+// self-service corporate-style route) since this guards the platform's own
+// highest-privilege account, not a per-tenant setting.
+router.get('/security/trusted-ips', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const ips = await listTrustedIps(req.user.id);
+    return res.json({ success: true, data: { ips, currentIp: getClientIp(req) } });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/security/trusted-ips', authUser, requireRole('admin'),
+  [body('ipOrCidr').isString().trim().notEmpty(), body('label').optional().isString().isLength({ max: 100 })],
+  async (req, res) => {
+    try {
+      const row = await addTrustedIp(req.user.id, req.body.ipOrCidr, req.body.label, req.user.id);
+      return res.status(201).json({ success: true, data: row });
+    } catch (err) {
+      return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+    }
+  }
+);
+
+router.delete('/security/trusted-ips/:id', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const removed = await removeTrustedIp(req.user.id, Number(req.params.id));
+    if (!removed) return res.status(404).json({ success: false, message: 'Trusted IP entry not found' });
+    return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ success: false, message: err.message });
   }

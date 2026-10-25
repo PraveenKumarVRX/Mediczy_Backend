@@ -9,6 +9,9 @@ import { QueryTypes, Op } from 'sequelize';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import XLSX from '../utils/excel-compat.js';
 import sharedPool from '../db/pgPool.js';
+import getClientIp from '../utils/clientIp.js';
+import { isIpTrusted } from '../services/admin-ip-binding.service.js';
+import { requireAdminMfaOnLogin } from '../services/admin-mfa.service.js';
 
 // Production-level rate limiting store (would be Redis in production cluster)
 const loginAttempts = new Map();
@@ -29,7 +32,7 @@ const SECURITY_CONFIG = {
 
 // ── Token helpers (same pattern as team.route.js) ─────────────────────────────
 
-async function issueAdminTokenPair(payload, ip) {
+export async function issueAdminTokenPair(payload, ip) {
   const jti = randomUUID();
 
   const accessToken = jwt.sign(
@@ -103,7 +106,12 @@ const logFailedAttempt = (clientIP, email, reason) => {
 
 export const adminLogin = async (req, res) => {
   const { email, password } = req.body;
-  const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
+  // req.ip/X-Forwarded-For behind Cloudflare resolve to Cloudflare's own edge
+  // IP (different per PoP/request), not the real visitor - getClientIp()
+  // reads CF-Connecting-IP first, which nginx passes through untouched.
+  // This also means every rate-limit/audit-log entry below was previously
+  // keyed on the wrong IP for Cloudflare-proxied traffic.
+  const clientIP = getClientIp(req);
   const userAgent = req.headers['user-agent'] || 'unknown';
 
   if (!JWT_CONFIG.SECRET) {
@@ -195,14 +203,46 @@ export const adminLogin = async (req, res) => {
     console.log('🔍 Password valid:', isPasswordValid);
 
     if (isPasswordValid) {
+      // IP binding: no-op (unrestricted) until this admin has at least one
+      // trusted IP configured - adding the first one is what turns
+      // enforcement on, same opt-in shape as MFA below.
+      const ipOk = await isIpTrusted(adminUser.id, clientIP);
+      if (!ipOk) {
+        logFailedAttempt(clientIP, email, 'IP not authorized for this admin account');
+        await auditLoginAttempt(req, adminUser.id, email, false, 'IP not authorized');
+        console.warn(`❌ Admin login blocked - untrusted IP - Email: ${email}, IP: ${clientIP}`);
+        return res.status(403).json({
+          success: false,
+          message: 'Login blocked: this network is not authorized for this admin account.',
+          code: 'IP_NOT_TRUSTED',
+        });
+      }
+
+      // MFA: no-op (mfaClaims = {}) until this admin has enrolled via
+      // POST /api/admin/security/mfa/enroll - throws MFA_REQUIRED (401) once
+      // enrolled, if no/invalid code was supplied with this login request.
+      let mfaClaims;
+      try {
+        mfaClaims = await requireAdminMfaOnLogin(adminUser, req.body.code, req.id);
+      } catch (mfaError) {
+        logFailedAttempt(clientIP, email, mfaError.message);
+        await auditLoginAttempt(req, adminUser.id, email, false, mfaError.message);
+        return res.status(mfaError.statusCode || 401).json({
+          success: false,
+          code: mfaError.code || 'MFA_REQUIRED',
+          message: mfaError.message,
+        });
+      }
+
       // Update last login
-      await adminUser.update({ 
+      await adminUser.update({
         lastLoginAt: new Date()
       });
-      
+
       // Issue access + refresh token pair (same pattern as team login)
       const ip = clientIP;
       const payload = {
+        ...mfaClaims,
         id:       adminUser.id,
         email:    adminUser.email,
         role:     'admin',
