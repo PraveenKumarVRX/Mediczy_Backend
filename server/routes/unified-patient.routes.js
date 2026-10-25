@@ -23,6 +23,11 @@ import { withRlsTransaction } from '../middleware/rls-context.middleware.js';
 
 const router = express.Router();
 
+// An independently provisioned patient deployment owns its clinic binding.
+// Clients cannot override it by supplying a different numeric ID/domain.
+import { mobilePatientBinding } from '../middleware/mobile-patient-binding.js';
+router.use(mobilePatientBinding);
+
 /**
  * Middleware to ensure user is a patient
  */
@@ -33,6 +38,7 @@ const requirePatient = (req, res, next) => {
       message: 'Only patients can access this resource'
     });
   }
+  if (req.mobileTenant && String(req.user.organization_id || req.user.clinic_id) !== String(req.mobileTenant.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
   next();
 };
 

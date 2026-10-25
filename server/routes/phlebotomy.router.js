@@ -17,12 +17,12 @@ export function buildPhlebotomyRouter({ collectionService, phlebotomistService, 
 
   // ── session ────────────────────────────────────────────────────────────────
   router.post('/auth/login', authLimiter, handle(async (req, res) => {
-    const out = await phlebotomistService.login({ email: req.body?.email, password: req.body?.password, deviceId: req.get('X-Device-Id') });
+    const out = await phlebotomistService.login({ email: req.body?.email, password: req.body?.password, deviceId: req.get('X-Device-Id'), expectedOwnerUid: req.mobileTenant?.config.apps.find(app => app.product === 'phlebo')?.ownerUid });
     res.json({ success: true, ...out });
   }));
 
   router.post('/auth/refresh', authLimiter, handle(async (req, res) => {
-    const out = await phlebotomistService.refresh({ refreshToken: req.body?.refreshToken, deviceId: req.get('X-Device-Id') });
+    const out = await phlebotomistService.refresh({ refreshToken: req.body?.refreshToken, deviceId: req.get('X-Device-Id'), expectedOwnerUid: req.mobileTenant?.config.apps.find(app => app.product === 'phlebo')?.ownerUid });
     res.json({ success: true, accessToken: out.accessToken, refreshToken: out.refreshToken });
   }));
 

@@ -1,3 +1,4 @@
+import { mobileUserBelongsToTenant } from '../services/mobile-tenant-membership.service.js';
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { teamLoginValidation, rejectInvalidTeamLogin } from '../middleware/team-login-validation.js';
@@ -325,6 +326,8 @@ router.post('/login', authLimiter, teamLoginValidation, rejectInvalidTeamLogin, 
     }
 
     // --- issue 4h access + 30d refresh token pair ---
+    if (!await mobileUserBelongsToTenant(req, user.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
+
     const payload = {
       id: user.id,
       email: user.email,
@@ -436,6 +439,8 @@ router.post(['/auth/refresh', '/refresh-token'], async (req, res) => {
     }
 
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    if (!await mobileUserBelongsToTenant(req, user.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
+
     const payload = {
       id: user.id,
       email: user.email,

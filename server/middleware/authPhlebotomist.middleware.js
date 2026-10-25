@@ -31,6 +31,12 @@ export function createAuthPhlebotomist({ phlebotomistService, isTokenRevoked = a
 
       const { principal } = await phlebotomistService.loadPrincipal(decoded.id);
       if (!principal) return deny(res, 403, 'account_unavailable', 'This account is not currently active');
+      const expectedOwnerUid = req.mobileTenant?.config.apps.find(app => app.product === 'phlebo')?.ownerUid;
+      if (req.mobileTenant && !expectedOwnerUid) return deny(res, 403, 'wrong_organisation', 'Collection owner is not configured.');
+      if (expectedOwnerUid) {
+        principal.memberships = principal.memberships.filter(m => m.ownerUid === expectedOwnerUid);
+        if (!principal.memberships.length) return deny(res, 403, 'wrong_organisation', 'Account does not belong to this organisation.');
+      }
       req.phleb = principal;
       return next();
     } catch (err) {

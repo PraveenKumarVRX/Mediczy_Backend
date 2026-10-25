@@ -1,3 +1,4 @@
+import { mobileUserBelongsToTenant } from '../services/mobile-tenant-membership.service.js';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel from '../models/user.model.intelligent.js';
@@ -110,6 +111,8 @@ export const authTeam = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Team access has been revoked.' });
     }
 
+    if (!await mobileUserBelongsToTenant(req, user.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
+
     // JTI revocation check (only for tokens that carry a jti)
     if (decoded.jti) {
       try {
@@ -152,6 +155,7 @@ export const authTeam = async (req, res, next) => {
       deletableModules: metadata.deletableModules || []
     };
 
+    if (req.mobileTenant) req.teamUser.tenantId = req.mobileTenant.id;
     next();
   } catch (error) {
     console.error('[TeamAuth] Error:', error.message);

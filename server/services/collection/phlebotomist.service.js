@@ -92,7 +92,7 @@ export function createPhlebotomistService({ pool, tokens, now = () => new Date()
 
   const tokenPayload = (p) => ({ id: p.uid, role: 'phlebotomist', aud: PHLEBOTOMY_AUDIENCE, name: p.display_name });
 
-  async function login({ email, password, deviceId }) {
+  async function login({ email, password, deviceId, expectedOwnerUid }) {
     const e = String(email || '').toLowerCase().trim();
     if (!e || typeof password !== 'string' || !password) throw invalid('Email and password are required');
     const invalidCreds = () => new CollectionError('invalid_credentials', 401, 'Invalid email or password');
@@ -115,6 +115,7 @@ export function createPhlebotomistService({ pool, tokens, now = () => new Date()
       // Correct password, but not allowed in: a distinct, non-revealing status so the app can show "contact your lab".
       throw new CollectionError('account_unavailable', 403, 'This account cannot sign in. Contact your lab administrator.', { reason });
     }
+    if (expectedOwnerUid && !principal.memberships.some(m => m.ownerUid === expectedOwnerUid)) throw invalidCreds();
     await pool.query('UPDATE lab_phlebotomists SET failed_logins = 0, locked_until = NULL, last_login_at = now() WHERE id = $1', [row.id]);
     const pair = await tokens.issuePortalTokenPair(tokenPayload(principal), {
       portal: PHLEBOTOMY_PORTAL, deviceFp: deviceId || null, accessTtl: '15m', refreshTtl: '7d',
@@ -122,13 +123,13 @@ export function createPhlebotomistService({ pool, tokens, now = () => new Date()
     return { ...pair, mustChangePassword: principal.mustChangePassword, worker: { uid: principal.uid, displayName: principal.displayName } };
   }
 
-  async function refresh({ refreshToken, deviceId }) {
+  async function refresh({ refreshToken, deviceId, expectedOwnerUid }) {
     const rotated = await tokens.rotatePortalRefreshToken(refreshToken, {
       portal: PHLEBOTOMY_PORTAL, deviceFp: deviceId || null, accessTtl: '15m',
       // Re-check the worker at refresh time: a suspended worker's refresh token stops working here.
       resolvePayload: async (decoded) => {
         const { principal } = await loadPrincipal(decoded.userId);
-        return principal ? tokenPayload(principal) : null;
+        return principal && (!expectedOwnerUid || principal.memberships.some(m => m.ownerUid === expectedOwnerUid)) ? tokenPayload(principal) : null;
       },
     });
     if (!rotated) throw new CollectionError('invalid_refresh_token', 401, 'Session expired. Sign in again.');

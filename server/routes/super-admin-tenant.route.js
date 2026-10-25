@@ -94,6 +94,10 @@ const superAdminOnly = async (req, res, next) => {
 // Apply super admin middleware to all routes
 router.use(authUser, superAdminOnly);
 
+import { buildTenantMobileAdminRouter } from './tenant-mobile-admin.route.js';
+import { tenantMobileRepository } from '../services/tenant-mobile-apps.repository.js';
+router.use(buildTenantMobileAdminRouter(tenantMobileRepository));
+
 // ============================================================================
 // PLAN TIERS INFORMATION
 // ============================================================================
@@ -869,6 +873,12 @@ router.put('/tenants/:id', [
       }
     }
     
+    if (updateFields.settings) {
+      updateFields.settings = { ...updateFields.settings };
+      delete updateFields.settings.mobileApps;
+      if (tenant.settings?.mobileApps) updateFields.settings.mobileApps = tenant.settings.mobileApps;
+    }
+
     // Track changes
     updateFields.metadata = {
       ...tenant.metadata,

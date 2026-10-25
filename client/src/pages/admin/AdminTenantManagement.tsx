@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import TenantMobileAppsPanel from './TenantMobileAppsPanel';
 import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
 import { Button } from '@/components/ui/button';
@@ -1112,7 +1113,7 @@ const AdminTenantManagement = () => {
 
       {/* View Tenant Details Dialog */}
       <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Organization Details</DialogTitle>
           </DialogHeader>
@@ -1156,6 +1157,7 @@ const AdminTenantManagement = () => {
                   <p>{selectedTenant.created_at || selectedTenant.createdAt ? new Date(selectedTenant.created_at || selectedTenant.createdAt).toLocaleString() : 'N/A'}</p>
                 </div>
               </div>
+              <TenantMobileAppsPanel key={selectedTenant.id} tenantId={selectedTenant.id} tenantName={selectedTenant.name} token={token} />
               {selectedTenant.database_stats && (
                 <div className="p-4 bg-gray-50 rounded-lg">
                   <h4 className="font-medium mb-2 flex items-center gap-2">

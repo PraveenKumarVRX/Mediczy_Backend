@@ -1,3 +1,4 @@
+import { mobileUserBelongsToTenant } from '../services/mobile-tenant-membership.service.js';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel from '../models/user.model.intelligent.js';
@@ -52,6 +53,8 @@ export const authCRM = async (req, res, next) => {
     if (user.status && user.status !== 'active') {
       return res.status(403).json({ success: false, message: 'Account inactive. Contact admin.' });
     }
+
+    if (!await mobileUserBelongsToTenant(req, user.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
 
     // JTI revocation check
     if (decoded.jti) {
@@ -136,6 +139,11 @@ export const authCRM = async (req, res, next) => {
       department: metadata.department || null,
     };
 
+    if (req.mobileTenant) {
+      req.crmUser.tenantId = req.mobileTenant.id;
+      req.crmUser.tenantUid = await organizationUid.tenantUid(req.mobileTenant.id);
+      if (!req.crmUser.tenantUid) return res.status(403).json({ success: false, message: 'Organisation identity is not configured.' });
+    }
     next();
   } catch (error) {
     console.error('[CRMAuth] Error:', error.message);

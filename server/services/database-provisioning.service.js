@@ -1,3 +1,4 @@
+import { mobileDeploymentEnvironment } from './tenant-mobile-runtime.js';
 import { postgresTls } from '../db/postgres-tls.js';
 /**
  * Database Provisioning Service
@@ -813,6 +814,7 @@ export async function startTenantServer(tenant, useDedicatedDb = true) {
     TENANT_ID: tenant.id,
     TENANT_SLUG: tenant.slug,
     TENANT_NAME: tenant.name,
+    ...mobileDeploymentEnvironment(tenant),
     DATABASE_URL: useDedicatedDb ? buildConnectionString(dbName) : process.env.POSTGRES_URI || `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.POSTGRES_HOST}:${process.env.POSTGRES_PORT}/${process.env.POSTGRES_DATABASE}`,
     POSTGRES_DATABASE: dbName,
     NODE_ENV: process.env.NODE_ENV || 'production',

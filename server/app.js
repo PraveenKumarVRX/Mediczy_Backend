@@ -927,6 +927,11 @@ app.use((err, req, res, next) => {
 app.use('/api/downloads/hospital', hospitalDownloadsRouter);
 app.use('/api/docs', hospitalOpenApiRouter);
 
+// Credential-free mobile discovery, before global authentication/ring fencing.
+// The API global limiter above still applies. No other mobile path is public.
+import mobileDiscoveryRouter from './routes/mobile-discovery.route.js';
+app.use('/api/mobile', mobileDiscoveryRouter);
+
 // Serve downloadable app binaries (APKs, etc.)
 app.use('/api/downloads', express.static(path.join(__dirname, 'public/downloads'), {
   setHeaders: (res, filePath) => {
@@ -1036,6 +1041,8 @@ app.use(requestLogger);
 
 // 8. Multi-Tenant Context Extraction
 app.use(extractTenant);
+import { tenantMobileContext } from './middleware/tenant-mobile-context.js';
+app.use(tenantMobileContext);
 
 // 8a. Row-Level Security context — sets app.current_org_id / app.current_user_id
 //     Must run after extractTenant so req.user is available for authenticated routes

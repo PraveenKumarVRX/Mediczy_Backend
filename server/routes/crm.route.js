@@ -1,3 +1,4 @@
+import { mobileUserBelongsToTenant } from '../services/mobile-tenant-membership.service.js';
 import express from 'express';
 import { recordCRMChange } from '../services/crm/record-change.js';
 import { validateDeal, validEmail } from '../services/crm/validation.js';
@@ -214,6 +215,8 @@ router.post('/login', authLimiter, [
 
     const crmRole = metadata.crmRole || DEFAULT_CRM_ROLE;
 
+    if (!await mobileUserBelongsToTenant(req, user.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
+
     const payload = {
       id: user.id,
       userId: user.id,
@@ -305,6 +308,8 @@ router.post('/auth/refresh', async (req, res) => {
     try { metadata = typeof user.metadata === 'string' ? JSON.parse(user.metadata) : (user.metadata || {}); } catch (_) { metadata = {}; }
 
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    if (!await mobileUserBelongsToTenant(req, user.id)) return res.status(403).json({ success: false, message: 'Account does not belong to this organisation.' });
+
     const payload = {
       id: user.id,
       userId: user.id,
