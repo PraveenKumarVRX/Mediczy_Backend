@@ -5,6 +5,8 @@ import {
   ShieldCheck, Smartphone, Sparkles, Users, X, XCircle, Zap,
 } from 'lucide-react';
 import api from '@/utils/api';
+import { useSearchParams } from 'react-router-dom';
+import ChannelNavigation, { type CommunicationChannel } from '@/components/communication/ChannelNavigation';
 import ChatwootWorkspace from '@/components/communication/ChatwootWorkspace';
 import { CRMLayout } from './CRMModulePages';
 
@@ -40,7 +42,14 @@ const pct = (value: any) => `${Number(value || 0).toFixed(1)}%`;
 
 export default function HospitalCRMCommunicationHubPage() {
   const [data, setData] = useState<HubData>({});
+  const [searchParams] = useSearchParams();
+  const requestedChannel = searchParams.get('channel');
+  const channel = ['email', 'sms', 'whatsapp', 'voice'].includes(requestedChannel || '') ? requestedChannel as CommunicationChannel : undefined;
   const [tab, setTab] = useState('overview');
+  useEffect(() => {
+    if (channel === 'voice') setTab('calls');
+    else if (channel) setTab('compose');
+  }, [channel]);
   const [days, setDays] = useState('30');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -95,6 +104,12 @@ export default function HospitalCRMCommunicationHubPage() {
 
   return <CRMLayout title="Communication Hub">
     <div className="space-y-5">
+      <ChannelNavigation active={channel} links={{
+        email: '/crm/hospital/communication-hub?channel=email',
+        sms: '/crm/hospital/communication-hub?channel=sms',
+        whatsapp: '/crm/hospital/communication-hub?channel=whatsapp',
+        voice: '/crm/hospital/communication-hub?channel=voice',
+      }} />
       <header className="flex flex-wrap items-center gap-3">
         <div>
           <p className="text-[11px] uppercase tracking-[0.16em] text-violet-400">Brevo-style orchestration</p>
@@ -122,7 +137,7 @@ export default function HospitalCRMCommunicationHubPage() {
       </div>
 
       {tab === 'overview' && <Overview data={data} overview={overview} healthyIntegrations={healthyIntegrations} attentionCount={attentionCount} />}
-      {tab === 'compose' && <ComposeMessage />}
+      {tab === 'compose' && <ComposeMessage key={channel || 'default'} initialChannel={channel === 'sms' || channel === 'whatsapp' ? channel : 'email'} />}
       {tab === 'calls' && <CallsPanel />}
       {tab === 'campaigns' && <Campaigns campaigns={campaigns} showForm={showCampaignForm} setShowForm={setShowCampaignForm} form={campaignForm} setForm={setCampaignForm} create={createCampaign} update={updateCampaign} />}
       {tab === 'integrations' && <Integrations integrations={integrations} />}
@@ -190,10 +205,10 @@ function RecipientPicker({ recipientType, setRecipientType, selected, onSelect }
   </div>;
 }
 
-function ComposeMessage() {
+function ComposeMessage({ initialChannel = 'email' }: { initialChannel?: 'email' | 'whatsapp' | 'sms' }) {
   const [recipientType, setRecipientType] = useState<'lead' | 'deal' | 'contact'>('lead');
   const [selected, setSelected] = useState<CrmRecord | null>(null);
-  const [channel, setChannel] = useState<'email' | 'whatsapp' | 'sms'>('email');
+  const [channel, setChannel] = useState<'email' | 'whatsapp' | 'sms'>(initialChannel);
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);

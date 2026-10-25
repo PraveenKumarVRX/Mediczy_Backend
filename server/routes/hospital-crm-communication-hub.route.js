@@ -74,9 +74,9 @@ router.patch('/integrations/:id/health', action((req, tenantId) => recordCommuni
 router.post('/alerts/:id/acknowledge', action((req, tenantId) => acknowledgeCommunicationHubAlert(tenantId, req.params.id, req.crmUser.id), 'communication:write'));
 
 // ─── Real send + calls, scoped to this CRM user's own leads/contacts/deals ───
-router.post('/send', action((req) => sendCrmMessage({ ...req.body, userId: req.crmUser.id }), 'communication:write'));
-router.get('/calls', action((req) => listCrmCallActivity(req.query)));
-router.get('/log', action((req) => listCrmCommunicationLog(req.query)));
+router.post('/send', action((req) => sendCrmMessage({ ...req.body, tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid, userId: req.crmUser.id }), 'communication:write'));
+router.get('/calls', action((req) => listCrmCallActivity({ ...req.query, tenantUid: req.crmUser.tenantUid })));
+router.get('/log', action((req) => listCrmCommunicationLog({ ...req.query, tenantId: req.crmUser.tenantId, tenantUid: req.crmUser.tenantUid })));
 router.get('/conversations/:id', action(async (req, tenantId) => {
   const thread = await getConversationThread(tenantId, req.params.id);
   if (thread.conversation.metadata?.provider === 'chatwoot') {

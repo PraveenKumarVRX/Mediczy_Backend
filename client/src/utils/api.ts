@@ -162,12 +162,13 @@ let _refreshQueue: Array<(token: string) => void> = [];
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean; communicationPortal?: 'admin' | 'team' };
+    const responsePortal = ['admin', 'team'].includes(originalRequest?.communicationPortal || '') ? originalRequest.communicationPortal : getUserType();
 
     // A 401 from a login/auth endpoint itself (wrong credentials, inactive
     // account, etc.) must never trigger the session-management redirects
     // below — those are for an EXPIRED session on an already-authenticated
-    // request. Before any real session exists, getUserType() is falsy, so
+    // request. Before any real session exists, responsePortal is falsy, so
     // without this guard every portal's login attempt that returns 401 would
     // fall through to the generic patient-session handler and hard-navigate
     // the user away to /login instead of letting the login page show its own
@@ -187,7 +188,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      getUserType() === "team"
+      responsePortal === "team"
     ) {
       const refreshToken = window.localStorage.getItem("teamRefreshToken");
       if (!refreshToken) {
@@ -248,7 +249,7 @@ api.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       typeof window !== "undefined" &&
-      getUserType() === "admin"
+      responsePortal === "admin"
     ) {
       window.localStorage.removeItem("adminToken");
       window.localStorage.removeItem("token");
@@ -264,7 +265,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      String(getUserType()) === "crm"
+      String(responsePortal) === "crm"
     ) {
       const crmRefresh = window.localStorage.getItem("crmRefreshToken");
       if (crmRefresh) {
@@ -297,7 +298,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      getUserType() === "hospital"
+      responsePortal === "hospital"
     ) {
       originalRequest._retry = true;
       const refreshToken = window.localStorage.getItem("hospitalRefreshToken");
@@ -344,7 +345,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      getUserType() === "doctor"
+      responsePortal === "doctor"
     ) {
       // Mark as retried IMMEDIATELY so concurrent 401s from other requests don't
       // each trigger their own refresh or fall through to the patient handler.
@@ -398,7 +399,7 @@ api.interceptors.response.use(
       }
 
       // No refresh token or refresh failed — clear session and redirect to doctor login.
-      // Clear userType LAST so any concurrent 401s still match getUserType() === "doctor"
+      // Clear userType LAST so any concurrent 401s still match responsePortal === "doctor"
       // and don't cascade into the patient handler below.
       window.localStorage.removeItem("doctorToken");
       window.localStorage.removeItem("doctorRefreshToken");
@@ -420,7 +421,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      getUserType() === "corporate"
+      responsePortal === "corporate"
     ) {
       originalRequest._retry = true;
       const refreshToken = window.localStorage.getItem("refreshToken");
@@ -482,7 +483,7 @@ api.interceptors.response.use(
     if (
       error.response?.status === 401 &&
       typeof window !== "undefined" &&
-      getUserType() === "lab"
+      responsePortal === "lab"
     ) {
       const hadToken = window.localStorage.getItem("labToken");
       if (hadToken) {
@@ -504,7 +505,7 @@ api.interceptors.response.use(
       error.response?.status === 401 &&
       !originalRequest._retry &&
       typeof window !== "undefined" &&
-      (getUserType() === "user" || String(getUserType()) === "individual" || !getUserType())
+      (responsePortal === "user" || String(responsePortal) === "individual" || !responsePortal)
     ) {
       const refreshToken = window.localStorage.getItem("refreshToken");
 

@@ -1,0 +1,21 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
+import AdminChatDashboard from '@/pages/admin/AdminChatDashboard';
+import api from '@/utils/api';
+vi.mock('@/utils/api', () => ({ default: { get: vi.fn(), post: vi.fn() } }));
+vi.mock('@/components/layout/AdminLayout', () => ({ default: ({ children }: any) => <div data-testid="admin-shell">{children}</div> }));
+vi.mock('@/components/layout/MainLayout', () => ({ default: ({ children }: any) => <div data-testid="team-shell">{children}</div> }));
+vi.mock('@/hooks/use-toast', () => ({ useToast: () => ({ toast: vi.fn() }) }));
+afterEach(() => { cleanup(); localStorage.clear(); vi.resetAllMocks(); });
+it('keeps the Team shell and every initial request on Team authority when Admin is also logged in', async () => {
+  localStorage.setItem('adminToken', 'admin-secret'); localStorage.setItem('teamToken', 'team-secret');
+  vi.mocked(api.get).mockResolvedValue({ data: { success: true, rooms: [], members: [], conversations: [] } });
+  render(<MemoryRouter><AdminChatDashboard portal="team" /></MemoryRouter>);
+  await waitFor(() => expect(api.get).toHaveBeenCalledWith('/chat/rooms', expect.anything()));
+  await screen.findByPlaceholderText(/Message #/);
+  expect(screen.getByTestId('team-shell')).toBeTruthy(); expect(screen.queryByTestId('admin-shell')).toBeNull();
+  expect(screen.getByRole('navigation', { name: 'Communication channels' })).toBeTruthy();
+  for (const [, options] of vi.mocked(api.get).mock.calls) expect(options?.headers?.Authorization).toBe('Bearer team-secret');
+  expect(vi.mocked(api.get).mock.calls.some(([url]) => url === '/chat/dashboard/overview')).toBe(false);
+});

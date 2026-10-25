@@ -86,9 +86,16 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import api from '@/utils/api';
+import baseApi from '@/utils/api';
+import ChannelNavigation from '@/components/communication/ChannelNavigation';
+import { communicationSession, communicationRequestOptions, type CommunicationPortal } from '@/components/communication/portalSession';
 
-export default function AdminChatDashboard() {
+export default function AdminChatDashboard({ portal = 'admin' }: { portal?: CommunicationPortal }) {
+  const session = communicationSession(portal, localStorage);
+  const api = React.useMemo(() => ({
+    get: (url: string, options?: any) => baseApi.get(url, communicationRequestOptions(session.token, options, portal)),
+    post: (url: string, body?: any, options?: any) => baseApi.post(url, body, communicationRequestOptions(session.token, options, portal)),
+  }), [session.token, portal]);
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('chat');
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
@@ -101,11 +108,11 @@ export default function AdminChatDashboard() {
   const [roomMessages, setRoomMessages] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  const adminToken = localStorage.getItem('adminToken');
-  const teamToken = localStorage.getItem('teamToken');
+  const adminToken = portal === 'admin' ? session.token : null;
+  const teamToken = portal === 'team' ? session.token : null;
   
   // Determine which layout to use
-  const isTeamUser = !!teamToken && !adminToken;
+  const isTeamUser = portal === 'team';
   const LayoutComponent = isTeamUser ? MainLayout : AdminLayout;
 
   // Mock data for RocketChat-style interface
@@ -857,6 +864,10 @@ export default function AdminChatDashboard() {
   if (isLoading) {
     return (
       <LayoutComponent>
+      <ChannelNavigation active="chat" links={portal === 'team'
+        ? { chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp-inbox' }
+        : { chat: '/admin/chat', email: '/admin/email', sms: '/admin/sms', whatsapp: '/admin/whatsapp', video: '/admin/video', voice: '/admin/voice' }} />
+
         <div className="flex items-center justify-center min-h-[400px]">
           <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
         </div>
@@ -866,6 +877,9 @@ export default function AdminChatDashboard() {
 
   return (
     <LayoutComponent>
+      <ChannelNavigation active="chat" links={portal === 'team'
+        ? { chat: '/team/chat', email: '/team/email-inbox', whatsapp: '/team/whatsapp-inbox' }
+        : { chat: '/admin/chat', email: '/admin/email', sms: '/admin/sms', whatsapp: '/admin/whatsapp', video: '/admin/video', voice: '/admin/voice' }} />
       <div className="h-[calc(100vh-120px)] flex flex-col space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1468,7 +1482,7 @@ export default function AdminChatDashboard() {
 
           {/* WhatsApp Tab */}
           <TabsContent value="whatsapp" className="space-y-6">
-            <WhatsAppMessaging />
+            <WhatsAppMessaging api={api} />
           </TabsContent>
 
           {/* Support Tickets Tab */}
@@ -2239,7 +2253,7 @@ export default function AdminChatDashboard() {
 }
 
 // WhatsApp Messaging Component
-function WhatsAppMessaging() {
+function WhatsAppMessaging({ api }: { api: { get: (url: string, options?: any) => Promise<any>; post: (url: string, body?: any, options?: any) => Promise<any> } }) {
   const { toast } = useToast();
   const [activeTemplate, setActiveTemplate] = useState('otp');
   const [phoneNumber, setPhoneNumber] = useState('');

@@ -553,7 +553,7 @@ export const TeamAppointmentsPage = () => {
     </MainLayout>
   );
 };
-export const TeamChatDashboardPage = () => <AdminChatDashboard />;
+export const TeamChatDashboardPage = () => <AdminChatDashboard portal="team" />;
 export const TeamHealthPlansPage = createModulePage("healthPlans");
 export const TeamSettingsPage = createModulePage("settings");
 

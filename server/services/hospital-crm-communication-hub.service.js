@@ -15,6 +15,11 @@ function tenantId(value) {
   return id;
 }
 
+function requireTenantUid(value) {
+  if (typeof value !== 'string' || !value.trim()) throw Object.assign(new Error('CRM tenant identity is required'), { statusCode: 403 });
+  return value;
+}
+
 function positiveInt(value) {
   const id = Number(value);
   return Number.isInteger(id) && id > 0 ? id : null;
@@ -293,26 +298,28 @@ const _buildCrmEmailHtml = ({ subject, message }) => {
 </body></html>`;
 };
 
-async function _resolveCrmRecipient({ leadId, dealId, contactId }) {
+async function _resolveCrmRecipient({ leadId, dealId, contactId, tenantId: scopeId, tenantUid }) {
+  tenantId(scopeId);
+  requireTenantUid(tenantUid);
   if (leadId) {
     // crm_leads_v2 is the tenant-scoped mirror kept live by crm-v2-sync.service.js.
     // Prefer it (so sends log into crm_communication_events, feeding the hub's own
     // dashboard); fall back to the legacy row if the mirror hasn't caught up yet.
-    const v2 = await resolveV2LeadByLegacyId(leadId).catch(() => null);
+    const v2 = await resolveV2LeadByLegacyId(leadId, scopeId).catch(() => null);
     if (v2) {
       return { kind: 'lead', id: leadId, v2LeadId: v2.id, v2ContactId: v2.contact_id, v2TenantId: v2.tenant_id, name: v2.name, email: v2.email, phone: v2.phone };
     }
-    const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_leads WHERE id = $1`, [leadId]);
+    const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_leads WHERE id = $1 AND tenant_uid = $2`, [leadId, tenantUid]);
     if (!rows[0]) throw Object.assign(new Error('Lead not found'), { statusCode: 404 });
     return { kind: 'lead', id: rows[0].id, name: rows[0].name, email: rows[0].email, phone: rows[0].phone };
   }
   if (dealId) {
-    const { rows } = await sharedPool.query(`SELECT id, contact_name, contact_email, contact_phone FROM crm_deals WHERE id = $1`, [dealId]);
+    const { rows } = await sharedPool.query(`SELECT id, contact_name, contact_email, contact_phone FROM crm_deals WHERE id = $1 AND tenant_uid = $2`, [dealId, tenantUid]);
     if (!rows[0]) throw Object.assign(new Error('Deal not found'), { statusCode: 404 });
     return { kind: 'deal', id: rows[0].id, name: rows[0].contact_name, email: rows[0].contact_email, phone: rows[0].contact_phone };
   }
   if (contactId) {
-    const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_contacts WHERE id = $1`, [contactId]);
+    const { rows } = await sharedPool.query(`SELECT id, name, email, phone FROM crm_contacts WHERE id = $1 AND tenant_uid = $2`, [contactId, tenantUid]);
     if (!rows[0]) throw Object.assign(new Error('Contact not found'), { statusCode: 404 });
     return { kind: 'contact', id: rows[0].id, name: rows[0].name, email: rows[0].email, phone: rows[0].phone };
   }
@@ -338,7 +345,7 @@ export async function findOrCreateConversation({ tenantId, leadId, channel }) {
     await sharedPool.query(`UPDATE crm_conversations SET last_message_at = NOW(), updated_at = NOW() WHERE id = $1`, [existing.rows[0].id]);
     return existing.rows[0].id;
   }
-  const { rows: leadRows } = await sharedPool.query(`SELECT person_id FROM crm_leads_v2 WHERE id = $1`, [leadId]);
+  const { rows: leadRows } = await sharedPool.query(`SELECT person_id FROM crm_leads_v2 WHERE id = $1 AND tenant_id = $2`, [leadId, tenantId]);
   const created = await sharedPool.query(
     `INSERT INTO crm_conversations (tenant_id, lead_id, identity_id, channel, status, last_message_at) VALUES ($1,$2,$3,$4,'open',NOW()) RETURNING id`,
     [tenantId, leadId, leadRows[0]?.person_id || null, channel]
@@ -370,7 +377,7 @@ export async function getConversationThread(tenantId, conversationId) {
   return { conversation, messages };
 }
 
-async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, v2LeadId, v2ContactId, v2TenantId, userId }) {
+async function _logCrmCommunication({ channel, recipientLabel, subject, message, status, provider, providerMessageId, errorMessage, leadId, dealId, v2LeadId, v2ContactId, v2TenantId, tenantUid, userId }) {
   const failed = Boolean(errorMessage);
   const bodyPreview = message ? String(message).slice(0, 2000) : null;
 
@@ -402,12 +409,12 @@ async function _logCrmCommunication({ channel, recipientLabel, subject, message,
   const description = [subject ? `Subject: ${subject}` : null, message, provider ? `Provider: ${provider}` : null, providerMessageId ? `Ref: ${providerMessageId}` : null]
     .filter(Boolean).join('\n');
   await sharedPool.query(
-    `INSERT INTO crm_activities (type, title, description, lead_id, deal_id, outcome, completed_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)`,
-    [channel, title, description, leadId || null, dealId || null, outcome, userId || null]
+    `INSERT INTO crm_activities (type, title, description, lead_id, deal_id, outcome, completed_at, created_by, tenant_uid)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7,$8)`,
+    [channel, title, description, leadId || null, dealId || null, outcome, userId || null, tenantUid]
   );
   if (leadId) {
-    await sharedPool.query(`UPDATE crm_leads SET last_contacted = NOW(), updated_at = NOW() WHERE id = $1`, [leadId]);
+    await sharedPool.query(`UPDATE crm_leads SET last_contacted = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_uid = $2`, [leadId, tenantUid]);
   }
 }
 
@@ -472,7 +479,7 @@ export async function dispatchToChannel({ channel, to, subject, message }) {
   }
 }
 
-export async function sendCrmMessage({ channel, subject, message, leadId, dealId, contactId, userId }) {
+export async function sendCrmMessage({ channel, subject, message, leadId, dealId, contactId, userId, tenantId, tenantUid }) {
   const safeChannel = String(channel || '').toLowerCase();
   if (!['email', 'whatsapp', 'sms'].includes(safeChannel)) {
     throw Object.assign(new Error('Invalid channel. Use email, whatsapp, or sms.'), { statusCode: 400 });
@@ -481,6 +488,7 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
   if (!safeMessage) throw Object.assign(new Error('Message is required'), { statusCode: 400 });
 
   const recipient = await _resolveCrmRecipient({
+    tenantId, tenantUid,
     leadId: positiveInt(leadId),
     dealId: positiveInt(dealId),
     contactId: positiveInt(contactId),
@@ -492,7 +500,7 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
     v2LeadId: recipient.v2LeadId || null,
     v2ContactId: recipient.v2ContactId || null,
     v2TenantId: recipient.v2TenantId || null,
-    userId, subject, message: safeMessage,
+    tenantUid, userId, subject, message: safeMessage,
   };
 
   if (safeChannel === 'email') {
@@ -562,6 +570,7 @@ export async function sendCrmMessage({ channel, subject, message, leadId, dealId
 }
 
 export async function listCrmCallActivity({ tenantUid, leadId, dealId, limit } = {}) {
+  requireTenantUid(tenantUid);
   const conditions = [`a.type = 'call'`];
   const params = [];
   if (tenantUid) { params.push(tenantUid); conditions.push(`a.tenant_uid=$${params.length}`); }
@@ -571,8 +580,8 @@ export async function listCrmCallActivity({ tenantUid, leadId, dealId, limit } =
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
     FROM crm_activities a
-    LEFT JOIN crm_leads l ON l.id = a.lead_id
-    LEFT JOIN crm_deals d ON d.id = a.deal_id
+    LEFT JOIN crm_leads l ON l.id = a.lead_id AND l.tenant_uid = a.tenant_uid
+    LEFT JOIN crm_deals d ON d.id = a.deal_id AND d.tenant_uid = a.tenant_uid
     WHERE ${conditions.join(' AND ')}
     ORDER BY COALESCE(a.completed_at, a.scheduled_at, a.created_at) DESC
     LIMIT $${params.length}
@@ -581,6 +590,9 @@ export async function listCrmCallActivity({ tenantUid, leadId, dealId, limit } =
 }
 
 export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dealId, channel, limit } = {}) {
+  requireTenantUid(tenantUid);
+  tenantId = Number(tenantId);
+  if (!Number.isInteger(tenantId) || tenantId < 1) throw Object.assign(new Error('CRM tenant context is required'), { statusCode: 403 });
   const cappedLimit = Math.min(Math.max(positiveInt(limit) || 50, 1), 200);
 
   // Leads are mirrored into crm_leads_v2 — read their message history from
@@ -617,8 +629,8 @@ export async function listCrmCommunicationLog({ tenantId, tenantUid, leadId, dea
   const { rows } = await sharedPool.query(`
     SELECT a.*, l.name AS lead_name, l.company AS lead_company, d.title AS deal_title
     FROM crm_activities a
-    LEFT JOIN crm_leads l ON l.id = a.lead_id
-    LEFT JOIN crm_deals d ON d.id = a.deal_id
+    LEFT JOIN crm_leads l ON l.id = a.lead_id AND l.tenant_uid = a.tenant_uid
+    LEFT JOIN crm_deals d ON d.id = a.deal_id AND d.tenant_uid = a.tenant_uid
     WHERE ${conditions.join(' AND ')}
     ORDER BY a.created_at DESC
     LIMIT $${params.length}
