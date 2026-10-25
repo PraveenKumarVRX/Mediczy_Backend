@@ -35,7 +35,6 @@ const sidebarNav = [
     { icon: Calendar, label: 'Content Calendar', path: '/crm/social-content', cap: 'foundation:read' },
     { icon: Route, label: 'Hospital CRM', path: '/crm/hospital', cap: 'foundation:read' },
     { icon: Gauge, label: 'Command Center · Business & Marketing Heads', path: '/crm/hospital/command-center', cap: 'dashboard:command-center' },
-    { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
     { icon: Phone, label: 'Contact Center', path: '/crm/contact-center', cap: 'contact_center:read' },
     { icon: Smartphone, label: 'Dialer (mobile)', path: '/crm/dialer', cap: 'contact_center:write' },
     { icon: Filter, label: 'Segments', path: '/crm/hospital/segments', cap: 'segments:read' },
@@ -51,6 +50,10 @@ const sidebarNav = [
     { icon: UserCog, label: 'Team Performance', path: '/crm/hospital/people', cap: 'dashboard:people-performance' },
     { icon: ShieldCheck, label: 'Governance', path: '/crm/hospital/governance', cap: 'dashboard:business-head' },
   ]},
+  { section: 'COMMUNICATION', items: [
+    { icon: MessageSquare, label: 'Communication Hub', path: '/crm/hospital/communication-hub', cap: 'communication:read' },
+    { icon: Inbox, label: 'Email inbox', path: '/crm/emails' },
+  ]},
   { section: 'SALES', items: [
     { icon: Target, label: 'Leads', path: '/crm/leads' },
     { icon: Briefcase, label: 'Deals', path: '/crm/deals' },
@@ -61,7 +64,6 @@ const sidebarNav = [
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
   ]},
   { section: 'MARKETING', items: [
-    { icon: Inbox, label: 'Email', path: '/crm/emails' },
     { icon: Bot, label: 'AI Copilot', path: '/crm/marketing-copilot' },
     { icon: Mail, label: 'Campaigns', path: '/crm/campaigns' },
     { icon: List, label: 'Lists', path: '/crm/lists' },

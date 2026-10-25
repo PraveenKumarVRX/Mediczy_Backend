@@ -17,6 +17,7 @@ const readinessRedis=new Redis({host:process.env.REDIS_HOST,port:Number(process.
 readinessRedis.on('error',()=>{});
 async function checkDependencies(){
  const required=['public.tenants','public.users','public.entity_registry','public.api_v2_refresh_tokens','public.crm_login_attempts','public.crm_leads','public.crm_leads_v2','public.crm_contacts','public.crm_deals','public.crm_activities','public.feature_flags','public.crm_installation_versions'];
+ if((process.env.COMMUNICATION_WORKSPACE_ENABLED_TENANTS||'').split(',').includes(installation.tenantUid))required.push('public.communication_workspace_rooms','public.communication_workspace_members','public.communication_workspace_messages','public.communication_workspace_attachments');
  const result=await pool.query('SELECT bool_and(to_regclass(name) IS NOT NULL) AS ready FROM unnest($1::text[]) AS name',[required]);
  if(!result.rows[0]?.ready)throw Error('Schema unavailable');
  await readinessRedis.ping();
@@ -43,6 +44,7 @@ app.use('/api/crm',(req,res,next)=>{
  if(process.env.CRM_OUTBOUND_ENABLED!=='true'&&req.method!=='GET'&&/(?:^|\/)(?:send|send-test|schedule|blast|dispatch|execute|publish|sync|call)(?:\/|$)/i.test(req.path))return res.status(503).json({success:false,code:'integration_not_configured',message:'External delivery is not configured for this installation.'});
  next();
 });
+app.use('/api/crm/workspace',(await import('./routes/crm-communication-workspace.route.mjs')).default);
 const routes=[
  ['/api/crm','crm.route.js'],['/api/crm/team','crm-team.route.js'],
  ['/api/crm/v2','hospital-crm-v2.route.js'],['/api/crm/worldclass','hospital-crm-worldclass.route.js'],

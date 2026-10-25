@@ -165,7 +165,7 @@ const WebinarRoomPage          = lazy(() => import("@/pages/webinar/WebinarRoomP
 
 // ─── Admin ───────────────────────────────────────────────────────────────────
 const AdminLogin               = lazy(() => import("@/pages/admin/AdminLogin"));
-const AdminChatDashboard       = lazy(() => import("@/pages/admin/AdminChatDashboard"));
+const AdminChatDashboard       = lazy(() => import("@/pages/CommunicationChatPage"));
 const AdminTestPage            = lazy(() => import("@/pages/admin/AdminTestPage"));
 const SimpleAdminDashboard     = lazy(() => import("@/pages/admin/SimpleAdminDashboard"));
 const AdminAppointments        = lazy(() => import("@/pages/admin/AdminAppointments"));

@@ -495,7 +495,7 @@ export function Sidebar() {
 
             {/* Team */}
             {isTeamUser && renderFlatItems(
-              teamSidebarItems.map(i => ({ ...i })),
+              teamSidebarItems.map(i => ({ ...i, ...(['/team/chat','/team/email-inbox','/team/whatsapp-inbox','/team/social-inbox','/team/rc-omnichannel'].includes(i.path)?{category:'Communication',label:i.path==='/team/chat'?'Chat':i.path==='/team/rc-omnichannel'?'Omnichannel workspace':i.label}:{}) })),
               [{ label: "Management" }, { label: "Operations" }, { label: "Support" }]
             )}
           </div>

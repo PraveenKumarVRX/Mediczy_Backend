@@ -1,4 +1,4 @@
-export type CommunicationPortal = 'admin' | 'team';
+export type CommunicationPortal = 'admin' | 'team' | 'crm';
 
 /** Portal authority is explicit: a missing token must never fall back to another login. */
 export function communicationSession(portal: CommunicationPortal, storage: Pick<Storage, 'getItem'>) {

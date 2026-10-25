@@ -8,6 +8,7 @@ import api from '@/utils/api';
 import { useSearchParams } from 'react-router-dom';
 import ChannelNavigation, { type CommunicationChannel } from '@/components/communication/ChannelNavigation';
 import ChatwootWorkspace from '@/components/communication/ChatwootWorkspace';
+import ConversationWorkspace, { useCommunicationWorkspace } from '@/components/communication/ConversationWorkspace';
 import { CRMLayout } from './CRMModulePages';
 
 const headers = () => {
@@ -44,12 +45,15 @@ export default function HospitalCRMCommunicationHubPage() {
   const [data, setData] = useState<HubData>({});
   const [searchParams] = useSearchParams();
   const requestedChannel = searchParams.get('channel');
-  const channel = ['email', 'sms', 'whatsapp', 'voice'].includes(requestedChannel || '') ? requestedChannel as CommunicationChannel : undefined;
+  const workspace = useCommunicationWorkspace('/crm/workspace','crm');
+  const channel = ['chat', 'email', 'sms', 'whatsapp', 'voice'].includes(requestedChannel || '') ? requestedChannel as CommunicationChannel : undefined;
   const [tab, setTab] = useState('overview');
   useEffect(() => {
-    if (channel === 'voice') setTab('calls');
+    if(channel === 'chat')setTab(workspace.enabled?'chat':'overview');
+    else if(!channel&&workspace.enabled)setTab('chat');
+    else if (channel === 'voice') setTab('calls');
     else if (channel) setTab('compose');
-  }, [channel]);
+  }, [channel,workspace.enabled]);
   const [days, setDays] = useState('30');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -104,7 +108,8 @@ export default function HospitalCRMCommunicationHubPage() {
 
   return <CRMLayout title="Communication Hub">
     <div className="space-y-5">
-      <ChannelNavigation active={channel} links={{
+      <ChannelNavigation active={tab==='chat'?'chat':channel} links={{
+        ...(workspace.enabled?{chat:'/crm/hospital/communication-hub?channel=chat'}:{}),
         email: '/crm/hospital/communication-hub?channel=email',
         sms: '/crm/hospital/communication-hub?channel=sms',
         whatsapp: '/crm/hospital/communication-hub?channel=whatsapp',
@@ -130,12 +135,14 @@ export default function HospitalCRMCommunicationHubPage() {
 
       <div className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
         {[
+          ...(workspace.enabled?[['chat','Chat',MessageCircle]]:[]),
           ['overview', 'Overview', BarChart3], ['compose', 'Send message', Send], ['calls', 'Calls', PhoneCall],
           ['campaigns', 'Campaigns', Send], ['integrations', 'Integrations', Zap],
           ['inbox', 'Conversation inbox', Inbox], ['templates', 'Templates', Sparkles],
         ].map(([key, label, Icon]: any) => <button key={key} onClick={() => setTab(key)} className={`px-4 py-3 text-sm flex items-center gap-2 border-b-2 whitespace-nowrap ${tab === key ? 'text-violet-300 border-violet-400' : 'text-slate-500 border-transparent hover:text-slate-300'}`}><Icon className="h-4 w-4" />{label}</button>)}
       </div>
 
+      {tab === 'chat' && workspace.enabled && <ConversationWorkspace key={`${workspace.tenantUid}:${workspace.userId}:crm`} endpoint="/crm/workspace" portal="crm" capability={workspace} />}
       {tab === 'overview' && <Overview data={data} overview={overview} healthyIntegrations={healthyIntegrations} attentionCount={attentionCount} />}
       {tab === 'compose' && <ComposeMessage key={channel || 'default'} initialChannel={channel === 'sms' || channel === 'whatsapp' ? channel : 'email'} />}
       {tab === 'calls' && <CallsPanel />}

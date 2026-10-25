@@ -162,8 +162,8 @@ let _refreshQueue: Array<(token: string) => void> = [];
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean; communicationPortal?: 'admin' | 'team' };
-    const responsePortal = ['admin', 'team'].includes(originalRequest?.communicationPortal || '') ? originalRequest.communicationPortal : getUserType();
+    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean; communicationPortal?: 'admin' | 'team' | 'crm' };
+    const responsePortal = ['admin', 'team', 'crm'].includes(originalRequest?.communicationPortal || '') ? originalRequest.communicationPortal : getUserType();
 
     // A 401 from a login/auth endpoint itself (wrong credentials, inactive
     // account, etc.) must never trigger the session-management redirects

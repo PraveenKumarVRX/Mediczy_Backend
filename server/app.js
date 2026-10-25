@@ -169,6 +169,8 @@ import whatsappProductionRouter from './routes/whatsapp-production.route.js';
 import whatsappNumbersRouter from './routes/whatsapp-numbers.route.js';
 import whatsappRouter from './routes/whatsapp.route.js';
 import chatRouter from './routes/chat.route.js';
+import { teamCommunicationWorkspace, adminCommunicationWorkspace } from './routes/communication-workspace-portals.route.mjs';
+import crmCommunicationWorkspace from './routes/crm-communication-workspace.route.mjs';
 import supportChatRouter from './routes/support-chat.route.js';
 import omnichannelJourneyRouter from './routes/omnichannel-journey.route.js';
 import ticketsRouter from './routes/tickets.route.js';
@@ -1571,6 +1573,9 @@ app.use('/api/whatsapp-numbers', whatsappNumbersRouter); // WhatsApp multiple nu
 app.use('/api/payments', paymentRouter); // Payment gateway management
 app.use('/api/whatsapp-business', whatsappBusinessRouter); // WhatsApp Business API integration
 app.use('/api/whatsapp-production', whatsappProductionRouter); // Production WhatsApp messaging with templates
+app.use('/api/team/communication-workspace', teamCommunicationWorkspace);
+app.use('/api/admin/communication-workspace', adminCommunicationWorkspace);
+app.use('/api/crm/workspace', crmCommunicationWorkspace);
 app.use('/api/chat', chatRouter); // Chat system endpoints
 app.use('/api/support', supportChatRouter); // Omnichannel support chat (WhatsApp + In-App -> Chatwoot)
 app.use('/api/omnichannel', omnichannelJourneyRouter); // Omnichannel journey builder — multi-channel patient messaging

@@ -25,4 +25,8 @@ docker compose run --rm --no-deps \
  -v /mnt/medstar/secrets/owner-password:/run/bootstrap/owner-password:ro \
  -v /mnt/medstar/secrets/bootstrap-admin.json:/run/bootstrap/admin.json:ro \
  api node installations/crm/bootstrap.mjs
+docker compose run --rm --no-deps \
+ -v /mnt/medstar/secrets/owner-password:/run/bootstrap/owner-password:ro \
+ api node installations/crm/upgrade-workspace.mjs
 docker compose up -d api web
+docker compose restart web

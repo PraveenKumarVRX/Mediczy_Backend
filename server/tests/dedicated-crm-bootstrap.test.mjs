@@ -26,5 +26,9 @@ test('fresh CRM bootstrap is isolated, least-privilege and restart-safe',async()
   assert.match(run(),/already applied/);assert.equal((await db.query('SELECT count(*)::int AS count FROM users')).rows[0].count,1);
   assert.equal((await db.query('SELECT password FROM users')).rows[0].password,before[0].password);
   assert.equal((await db.query('SELECT count(*)::int AS count FROM crm_leads')).rows[0].count,0);
+  const upgrade=()=>execFileSync(process.execPath,[new URL('../installations/crm/upgrade-workspace.mjs',import.meta.url).pathname],{env,encoding:'utf8',stdio:['ignore','pipe','pipe']});
+  assert.match(upgrade(),/upgrade applied/);assert.match(upgrade(),/upgrade applied/);
+  assert.equal((await db.query("SELECT has_table_privilege('medstar_app','communication_workspace_messages','INSERT') AS allowed")).rows[0].allowed,true);
+  assert.equal((await db.query("SELECT has_schema_privilege('medstar_app','public','CREATE') AS allowed")).rows[0].allowed,false);
  }finally{if(db)await db.end();if(started)execFileSync(bin+'/pg_ctl',['-D',dir+'/pg','-m','immediate','stop'],{stdio:'ignore'});rmSync(dir,{recursive:true,force:true});}
 });

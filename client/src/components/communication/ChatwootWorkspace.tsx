@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, ExternalLink, Loader2, MessageCircle, RefreshCw } from 'lucide-react';
 import api from '@/utils/api';
+import { communicationRequestOptions, type CommunicationPortal } from './portalSession';
 
 type Workspace = {
   state: string;
@@ -16,30 +17,31 @@ const labels: Record<string, string> = {
   healthy: 'Healthy', inbox_mismatch: 'Inbox needs attention', unreachable: 'Connection unavailable',
 };
 
-export default function ChatwootWorkspace({ endpoint, token }: { endpoint: string; token: string | null }) {
+export default function ChatwootWorkspace({ endpoint, token, portal, tenantUid }: { endpoint: string; token: string | null; portal?: CommunicationPortal; tenantUid?:string }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
+  const options=()=>portal?communicationRequestOptions(token,tenantUid?{params:{tenantUid}}:{},portal):{headers};
 
   useEffect(() => {
     let active = true;
     setWorkspace(null);
     setLoading(true);
     setError('');
-    api.get(endpoint, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    api.get(endpoint, options())
       .then((response) => { if (active) setWorkspace(response.data?.data || null); })
       .catch(() => { if (active) setError('Agent workspace unavailable'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [endpoint, token]);
+  }, [endpoint, token, portal, tenantUid]);
 
   const checkConnection = async () => {
     setChecking(true);
     setError('');
     try {
-      const response = await api.get(`${endpoint}/health`, { headers });
+      const response = await api.get(`${endpoint}/health`, options());
       setWorkspace(response.data?.data || null);
     } catch { setError('Connection check failed'); }
     finally { setChecking(false); }
