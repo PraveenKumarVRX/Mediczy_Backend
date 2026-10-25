@@ -146,7 +146,7 @@ describe('production sender provider migration', () => {
   });
   it('sends OTP through an approved Gupshup template', async () => {
     await service.sendOTP({ to: '9000000001', otp: '123456' });
-    expect(JSON.parse(new URLSearchParams(post.mock.calls[0][1]).get('template'))).toEqual({ id: 'gup-otp', params: ['123456'] });
+    expect(JSON.parse(new URLSearchParams(post.mock.calls[0][1]).get('template'))).toEqual({ id: 'gup-otp', params: ['123456', 'Verification'] });
   });
   it('sends identity-link OTP through the active session when no template is needed', async () => {
     delete process.env.GUPSHUP_TEMPLATE_OTP;

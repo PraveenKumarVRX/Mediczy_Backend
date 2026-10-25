@@ -272,7 +272,7 @@ class SignupVerificationService {
   async sendOTPViaWhatsApp(account, otpCode) {
     if (whatsappProvider() === 'gupshup') {
       try { return await gupshup.sendTemplate({ to: account.phoneNumber,
-        templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode] }); }
+        templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode, 'Signup'] }); }
       catch { return await this.sendOTPViaEmail(account, otpCode); }
     }
     // If Twilio is not configured, fallback to email

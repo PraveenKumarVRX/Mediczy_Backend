@@ -304,7 +304,7 @@ class PasswordResetService {
     try {
       if (whatsappProvider() === 'gupshup') {
         const sent = await gupshup.sendTemplate({ to: account.phone || account.phoneNumber,
-          templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode] });
+          templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otpCode, 'Password Reset'] });
         return { messageSid: sent.sid, status: sent.status };
       }
       // Check if Twilio client is initialized and configured

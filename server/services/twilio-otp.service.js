@@ -138,8 +138,9 @@ class TwilioOTPService {
     }
 
     if (whatsappProvider() === 'gupshup') {
+      const purposeLabel = { signup: 'Signup', login: 'Login', password_reset: 'Password Reset', verification: 'Verification' }[purpose] || 'Verification';
       try {
-        const sent = await gupshup.sendTemplate({ to: phone, templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otp] });
+        const sent = await gupshup.sendTemplate({ to: phone, templateId: process.env.GUPSHUP_TEMPLATE_OTP, params: [otp, purposeLabel] });
         return { success: true, message: 'WhatsApp OTP submitted', sid: sent.sid, status: sent.status,
           phone: sent.to.replace('whatsapp:', ''), attempts: 1, submittedAt: new Date().toISOString() };
       } catch (error) {

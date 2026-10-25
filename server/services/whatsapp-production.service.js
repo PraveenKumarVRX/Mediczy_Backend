@@ -199,7 +199,7 @@ class WhatsAppProductionService {
   /**
    * Send OTP for verification
    */
-  async sendOTP({ to, otp, session = false }) {
+  async sendOTP({ to, otp, session = false, purpose = 'Verification' }) {
     if (!this.configured) {
       throw new Error('Selected WhatsApp provider is not configured');
     }
@@ -220,7 +220,9 @@ class WhatsAppProductionService {
 
     if (this.templates.otp) {
       messageParams.contentSid = this.templates.otp;
-      messageParams.contentVariables = JSON.stringify({ '1': otp });
+      messageParams.contentVariables = this.provider === 'gupshup'
+        ? JSON.stringify({ '1': otp, '2': purpose })
+        : JSON.stringify({ '1': otp });
     } else {
       messageParams.body = `Your SmartHealth verification code is *${otp}*. This code expires in 10 minutes. Do not share this code with anyone.`;
     }
