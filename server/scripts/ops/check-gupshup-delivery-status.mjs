@@ -1,0 +1,11 @@
+import crypto from 'node:crypto';
+import { createClient } from 'redis';
+const client = createClient({ url: `redis://${process.env.REDIS_PASSWORD ? ':' + process.env.REDIS_PASSWORD + '@' : ''}${process.env.REDIS_HOST || '127.0.0.1'}:${process.env.REDIS_PORT || 6379}` });
+await client.connect();
+const messageId = process.argv[process.argv.length - 1];
+const key = `gupshup:status:${crypto.createHash('sha256').update(messageId).digest('hex')}`;
+const value = await client.get(key);
+console.log('messageId:', messageId);
+console.log('status:', value || '(none recorded - no webhook callback received yet)');
+await client.quit();
+process.exit(0);

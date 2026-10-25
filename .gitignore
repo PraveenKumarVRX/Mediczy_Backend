@@ -161,3 +161,9 @@ qa-samples/
 
 # Public AWS trust anchors contain no private key material.
 !server/db/certs/aws-rds-ap-south-1.pem
+
+# Terraform
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.*
