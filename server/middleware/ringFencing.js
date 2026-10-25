@@ -975,6 +975,10 @@ const ringFencingMiddleware = (req, res, next) => {
     return next();
   }
 
+  // Installation connectors use a scoped machine credential, validated and
+  // rate-limited by the reports route. Keep every other admin path JWT-gated.
+  if (requestMethod === 'POST' && requestPath === '/api/admin/dedicated-installations/reports') return next();
+
   // Allow public endpoints
   if (PUBLIC_ENDPOINTS.some(endpoint => requestPath.startsWith(endpoint))) {
     return next();
