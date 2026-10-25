@@ -28,10 +28,12 @@ Shared production activation must use its reviewed release process after migrati
 
 ## Verified release status
 
-API source/image revision `a58cbd825cb8f04624e584979e470ab82e7c5cd1` is running on Medstar. The branded frontend is built from a clean worktree. Only tenant `H98VG4` is enabled there. Parallel networking work moved host bindings to WireGuard address `10.99.0.6`; that configuration was preserved, not replaced with loopback/public bindings.
+API source/image revision `58f96af3c9257daa6d7a0a10825bc5b76a98e39c` is running on Medstar. The branded frontend is built from a clean worktree. Only tenant `H98VG4` is enabled there. Parallel networking work moved host bindings to WireGuard address `10.99.0.6`; that configuration was preserved, not replaced with loopback/public bindings.
 
 Preview from an authorised mesh peer: `http://10.99.0.6:8080/crm`. SSH alternative: `ssh -N -L 127.0.0.1:18080:10.99.0.6:8080 medstar-crm`, then `http://127.0.0.1:18080/crm`. This release does not cut over the public hostname.
 
 Live verification: 17 new API smoke checks, 20 existing CRM API smoke checks and 8 browser checks passed. Browser checks covered login, default chat, room creation, send/reload, draft switching, emoji, upload/download and phone viewport. No page/API errors were recorded. Synthetic rooms/messages/files were cleaned up; the empty tenant Team Chat remains. Encrypted database and attachment restoration passed with one synthetic attachment before cleanup.
 
 A read-only shared legacy audit found six rooms without an explicit verified ownership mapping. No shared room was copied, assigned or deleted. Shared production is not automatically enabled, preserving its existing functions until that ownership review. Admin/Team/CRM adapters and tests are delivered; external provider activation and real delivery acceptance were explicitly skipped by the user. No provider message was sent.
+
+Deployment reconfirmed after the latest API rebuild: remote `main` matched code revision `58f96af3`; image label and readiness response match it. All 64 automated tests, 37 live API checks and 8 browser checks passed again. The frontend artifact checksum matches the clean verified build; this backend-only revision contains no frontend changes. Test fixtures and temporary credentials were removed, with zero leads/contacts/messages/attachments and one empty Team Chat remaining. Connector outbox: zero pending reports. Wider tenant rollout remains disabled pending legacy ownership review.

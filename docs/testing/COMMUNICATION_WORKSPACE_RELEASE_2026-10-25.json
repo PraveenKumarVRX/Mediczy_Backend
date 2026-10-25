@@ -1,6 +1,6 @@
 {
   "date": "2026-10-25",
-  "apiRevision": "a58cbd825cb8f04624e584979e470ab82e7c5cd1",
+  "apiRevision": "58f96af3c9257daa6d7a0a10825bc5b76a98e39c",
   "deployment": "isolated Medstar preview",
   "tenantUid": "H98VG4",
   "unitAndComponentTestsPassed": 59,
@@ -17,5 +17,10 @@
   "externalChannelActivation": "skipped by user",
   "providerMessagesSent": 0,
   "frontendRevision": "464dc6b21",
-  "mobileSettledViewportCheckPassed": true
+  "mobileSettledViewportCheckPassed": true,
+  "confirmedAt": "2026-10-25T18:37:31+05:30",
+  "frontendArtifactSha256": "fa542849b69caccf6b604b1d8d8cb7f9e6b18f0049c7c56f43bb982f6ea32997",
+  "mainCodeRevisionConfirmed": "58f96af3c9257daa6d7a0a10825bc5b76a98e39c",
+  "liveImageRevisionMatches": true,
+  "connectorReportsPending": 0
 }
