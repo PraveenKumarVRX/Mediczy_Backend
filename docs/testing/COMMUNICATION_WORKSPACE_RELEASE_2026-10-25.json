@@ -15,5 +15,7 @@
   "sharedLegacyRoomsAwaitingOwnershipMapping": 6,
   "sharedTenantAutomaticRollout": false,
   "externalChannelActivation": "skipped by user",
-  "providerMessagesSent": 0
+  "providerMessagesSent": 0,
+  "frontendRevision": "464dc6b21",
+  "mobileSettledViewportCheckPassed": true
 }

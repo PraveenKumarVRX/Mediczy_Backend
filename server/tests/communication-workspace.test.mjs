@@ -12,7 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { WorkspaceAttachments,attachmentMime } from '../services/communication-workspace-attachments.mjs';
 import { CommunicationWorkspace } from '../services/communication-workspace.service.mjs';
 import { buildCommunicationWorkspaceRouter } from '../routes/communication-workspace.route.mjs';
-import { resolveWorkspaceScope } from '../services/communication-workspace-scope.mjs';
+import { resolveWorkspaceScope,authoritativeTeamWorkspaceIdentity } from '../services/communication-workspace-scope.mjs';
 const bin='/usr/lib/postgresql/16/bin';
 test('durable workspace: tenant isolation, private membership, concurrency, retry, cursors, read state and API scope',async()=>{
  const dir=mkdtempSync(join(tmpdir(),'workspace-'));let started=false,pool,http;
@@ -27,6 +27,8 @@ test('durable workspace: tenant isolation, private membership, concurrency, retr
    INSERT INTO users VALUES(1,'A','One','a@example.test','TENANT_A','active'),(2,'A','Two','b@example.test','TENANT_A','active'),(3,'B','One','c@example.test','TENANT_B','active');`);
   const migration=readFileSync(new URL('../migrations/20261025000200-communication-workspace.sql',import.meta.url),'utf8');await pool.query(migration);await pool.query(migration);
   const service=new CommunicationWorkspace(pool),a={tenantUid:'TENANT_A',userId:1},a2={...a,userId:2},b={tenantUid:'TENANT_B',userId:3};
+  assert.deepEqual(authoritativeTeamWorkspaceIdentity({organization_uid:'TENANT_A',status:'active',role:'team',isAdmin:false}),{tenantUid:'TENANT_A',role:'team',isAdmin:false});
+  assert.throws(()=>authoritativeTeamWorkspaceIdentity({status:'suspended',isAdmin:true}),{statusCode:403});
   await assert.rejects(service.list({userId:1}),{statusCode:403});
   await assert.rejects(resolveWorkspaceScope(pool,{userId:1,tenantUid:'TENANT_B'}),{statusCode:403});
   const general=await Promise.all(Array.from({length:6},()=>service.ensureGeneral(a)));assert.equal(new Set(general).size,1);
@@ -48,6 +50,7 @@ test('durable workspace: tenant isolation, private membership, concurrency, retr
    await migrationClient.query('BEGIN');
    const legacy={db:migrationClient,room:{id:'legacy_owned',type:'team_internal',title:'Verified legacy',participants:[1,2]},legacyMessages:[{id:'old-1',type:'text',userRole:'team',userId:1,message:'Historical text',timestamp:'2026-10-24T00:00:00Z'}],tenantUid:'TENANT_A'};
    const imported=await migrateLegacyRoom(legacy);await migrateLegacyRoom(legacy);
+   await assert.rejects(migrateLegacyRoom({...legacy,legacyMessages:[{...legacy.legacyMessages[0],message:'Changed historical body'}]}),{statusCode:409});
    assert.equal((await service.thread(a,shared.id)).messages.length,6);
    assert.equal((await migrationClient.query('SELECT count(*)::int AS n FROM communication_workspace_messages WHERE room_id=$1',[imported.roomId])).rows[0].n,1);
    await assert.rejects(migrateLegacyRoom({...legacy,room:{id:'mixed',participants:[1,3]}}),{statusCode:409});

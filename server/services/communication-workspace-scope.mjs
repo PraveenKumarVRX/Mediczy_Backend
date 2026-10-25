@@ -10,3 +10,8 @@ export async function resolveWorkspaceScope(pool,{userId,tenantUid,platformAdmin
  }
  return {tenantUid:tenant.unique_id,tenantId:tenant.id,userId:Number(userId)};
 }
+
+export function authoritativeTeamWorkspaceIdentity(user) {
+ if(!user||user.status!=='active')throw fail('Active Team identity required');
+ return {tenantUid:user.organization_uid,role:user.role,isAdmin:user.isAdmin===true};
+}

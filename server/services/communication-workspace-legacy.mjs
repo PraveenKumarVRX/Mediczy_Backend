@@ -4,6 +4,8 @@ function stableUuid(value){const h=createHash('sha256').update(value).digest('he
 /** Explicit reviewed mapping only. Unowned, cross-tenant and media records remain quarantined in legacy storage. */
 export async function migrateLegacyRoom({db,room,legacyMessages,tenantUid}) {
  if(!['team_internal','channel'].includes(room?.type)||!room?.id||!tenantUid||!Array.isArray(room.participants)||!room.participants.length)throw fail('Room ownership is unverified');
+ const tenant=await db.query("SELECT id FROM tenants WHERE unique_id=$1 AND status='active'",[tenantUid]);
+ if(!tenant.rows.length)throw fail('An active canonical tenant is required');
  const participants=[...new Set(room.participants.map(Number))];
  if(participants.some(id=>!Number.isSafeInteger(id)||id<1))throw fail('Participant identity is unverified');
  const {rows}=await db.query(`SELECT id FROM users WHERE id=ANY($1::int[]) AND organization_uid=$2`,[participants,tenantUid]);
@@ -16,7 +18,8 @@ export async function migrateLegacyRoom({db,room,legacyMessages,tenantUid}) {
  await db.query(`INSERT INTO communication_workspace_members(tenant_uid,room_id,user_id) SELECT $1,$2,unnest($3::int[]) ON CONFLICT DO NOTHING`,[tenantUid,roomId,participants]);
  for(const [index,message] of legacyMessages.entries()){
   const id=stableUuid(`message:${tenantUid}:${room.id}:${message.id||index}`);
-  await db.query(`INSERT INTO communication_workspace_messages(id,tenant_uid,room_id,sender_id,client_id,body,created_at) VALUES($1,$2,$3,$4,$1,$5,$6) ON CONFLICT DO NOTHING`,[id,tenantUid,roomId,Number(message.userId),message.message.trim(),message.timestamp]);
+  const {rows:[stored]}=await db.query(`INSERT INTO communication_workspace_messages(id,tenant_uid,room_id,sender_id,client_id,body,created_at) VALUES($1,$2,$3,$4,$1,$5,$6) ON CONFLICT(id) DO UPDATE SET id=EXCLUDED.id RETURNING body,sender_id`,[id,tenantUid,roomId,Number(message.userId),message.message.trim(),message.timestamp]);
+  if(stored.body!==message.message.trim()||Number(stored.sender_id)!==Number(message.userId))throw fail('Legacy message changed; reconcile before copying');
  }
  return {roomId,messages:legacyMessages.length};
 }
