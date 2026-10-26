@@ -235,7 +235,7 @@ export default function SmartBenefitsHub() {
               className="bg-gradient-to-br from-emerald-600/20 to-emerald-800/10 border border-emerald-500/20 rounded-2xl p-4 text-center backdrop-blur-sm">
               <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider mb-1">Available</p>
               <p className="text-xl font-bold text-white">{fmt(totalRemaining)}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{((totalRemaining / totalSumInsured) * 100).toFixed(0)}% remaining</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{totalSumInsured > 0 ? ((totalRemaining / totalSumInsured) * 100).toFixed(0) : '0'}% remaining</p>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
               className="bg-gradient-to-br from-amber-600/20 to-amber-800/10 border border-amber-500/20 rounded-2xl p-4 text-center backdrop-blur-sm">

@@ -37,8 +37,11 @@ const resolveBaseURL = () => {
     /^192\.168\./.test(hostname) ||
     /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname);
 
-  // For network access (like 192.168.1.72), use localhost API
-  if (isPrivateLanIp && !isLocalHostName) {
+  // For network access (like 192.168.1.72) to a LOCAL DEV SERVER, use localhost API.
+  // Gated to dev builds only: a production build (e.g. a WireGuard overlay IP in
+  // 10.x.x.x, or any private-IP deployment) must never be mistaken for this case -
+  // it has no local backend on the viewer's own machine to fall back to.
+  if (import.meta.env.DEV && isPrivateLanIp && !isLocalHostName) {
     return "http://localhost:8000/api";
   }
 

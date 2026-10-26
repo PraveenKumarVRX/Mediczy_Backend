@@ -94,6 +94,45 @@ const normalizeFamilyMember = (member: any): FamilyMember => {
   };
 };
 
+// Maps GET /membership/my/current (the individual/retail plan a person
+// subscribed to directly - same source Membership Card and Claims Express
+// already use) into the BenefitPlan shape this page renders. Returns null
+// when there's no active individual plan either (genuinely no coverage).
+async function mapIndividualPlanToBenefitPlan(): Promise<BenefitPlan | null> {
+  try {
+    const { data } = await api.get('/membership/my/current');
+    const plan = data?.plan;
+    const userPlan = data?.userPlan;
+    if (!plan || !userPlan) return null;
+
+    const benefitsList: string[] = Array.isArray(plan.benefits) ? plan.benefits : [];
+    const familyMembers = Number(plan.features?.familyMembers) || 0;
+
+    return {
+      id: String(userPlan.id),
+      name: plan.name || 'My Plan',
+      type: 'personal',
+      insurer: null,
+      isEmployerFunded: false,
+      policyNumber: null,
+      // This is a service-entitlement plan (consult counts, discounts), not a
+      // monetary sum-insured policy - 0 renders as "Included" in the UI
+      // rather than a misleading ₹0.
+      sumInsured: 0,
+      utilized: 0,
+      remaining: 0,
+      familyCovered: familyMembers + 1,
+      validFrom: userPlan.startDate,
+      validTo: userPlan.endDate,
+      features: benefitsList,
+      sublimits: [],
+      status: userPlan.status || 'active',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function useSmartBenefits() {
   const [plans, setPlans]   = useState<BenefitPlan[]>([]);
   const [family, setFamily] = useState<FamilyMember[]>([]);
@@ -113,7 +152,19 @@ export function useSmartBenefits() {
         api.get('/family-members').catch(() => null),
       ]);
 
-      if (Array.isArray(benefitsRes?.data?.plans)) setPlans(benefitsRes.data.plans);
+      const employeePlans = Array.isArray(benefitsRes?.data?.plans) ? benefitsRes.data.plans : [];
+      if (employeePlans.length > 0) {
+        setPlans(employeePlans);
+      } else {
+        // /employee/benefits only covers corporate-employee plan assignments.
+        // An individual/retail plan holder (e.g. a self-purchased Silver plan)
+        // has no corporate assignment at all, so that call correctly returns
+        // nothing - fall back to the same source Membership Card and Claims
+        // Express already read from, instead of showing "no active plans" for
+        // an account that genuinely has one.
+        const individualPlan = await mapIndividualPlanToBenefitPlan();
+        setPlans(individualPlan ? [individualPlan] : []);
+      }
 
       const familyPayload = Array.isArray(familyRes?.data?.familyMembers)
         ? familyRes.data.familyMembers

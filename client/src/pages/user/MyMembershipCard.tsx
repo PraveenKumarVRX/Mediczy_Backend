@@ -328,6 +328,11 @@ const MyMembershipCard = () => {
   const hasError = userError || planError;
   const user = userData?.user || userData;
   const plan = planData?.plan || planData?.userPlan?.plan;
+  // The catalog definition (`plan`) has no per-subscription dates - those
+  // live on the actual subscription row (`userPlan.endDate`, always set at
+  // subscribe time). Reading them from `plan` instead silently fell back to
+  // "Lifetime" for every plan, regardless of its real duration.
+  const userPlan = planData?.userPlan;
 
   /* ─── QR code ─── */
   const generateQR = useCallback(async () => {
@@ -434,11 +439,27 @@ const MyMembershipCard = () => {
   const memberName = user ? `${user.firstName} ${user.lastName}` : 'Member';
   const memberSince = user?.createdAt ? new Date(user.createdAt).getFullYear() : new Date().getFullYear();
   const groupNumber = plan?.groupNumber || `GRP-${String(user?.id ? Math.floor(user.id / 100) + 1 : 1).padStart(4, '0')}`;
-  const validUntil = plan?.validUntil || plan?.endDate;
+  const validUntil = userPlan?.endDate || userPlan?.validUntil || plan?.validUntil || plan?.endDate;
   const validUntilStr = validUntil ? new Date(validUntil).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Lifetime';
 
+  /* ─── billing cycle label ─── */
+  const billingCycleLabel = (() => {
+    const months = Number(plan?.durationMonths);
+    if (!Number.isFinite(months) || months <= 0) return 'Plan Fee';
+    if (months === 1) return 'Monthly Fee';
+    if (months === 3) return 'Quarterly Fee';
+    if (months === 6) return 'Half-Yearly Fee';
+    if (months === 12) return 'Annual Fee';
+    return `Fee (every ${months} months)`;
+  })();
+
   /* ─── plan benefits ─── */
-  const benefits = plan?.features || plan?.benefits || [
+  // `plan.benefits` is the real, renderable list (JSONB array); `plan.features`
+  // is a loosely-typed flag object ({chat: 'unlimited', audioCalls: 10, ...})
+  // used elsewhere for entitlement checks, not display - it was being picked
+  // first here purely because a non-empty object is truthy, hiding the real
+  // benefits list even when one existed.
+  const benefits = (Array.isArray(plan?.benefits) && plan.benefits.length > 0) ? plan.benefits : [
     'OPD Consultations',
     'In-Patient Hospitalization',
     'Pharmacy Discounts',
@@ -959,7 +980,7 @@ const MyMembershipCard = () => {
 
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="bg-muted/50 rounded-lg p-3">
-                    <div className="text-[11px] text-muted-foreground flex items-center gap-1"><Wallet className="h-3 w-3" /> Monthly Fee</div>
+                    <div className="text-[11px] text-muted-foreground flex items-center gap-1"><Wallet className="h-3 w-3" /> {billingCycleLabel}</div>
                     <div className="text-xl font-bold mt-1">₹{plan?.price || plan?.priceINR || '0'}</div>
                   </div>
                   <div className="bg-muted/50 rounded-lg p-3">
