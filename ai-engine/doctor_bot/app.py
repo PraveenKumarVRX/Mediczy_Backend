@@ -621,8 +621,14 @@ async def ask_question(q: Query):
         answer += f"- CardioRisk: {bn_result.get('CardioRisk_label', 'N/A')} ({bn_result.get('CardioRisk_prob', 0):.0%})\n"
         answer += f"- Treatment Priority: {bn_result.get('TreatmentPriority_label', 'N/A')}"
     
-    # Safety filter
-    safe_answer, safety_alerts = validate_response(answer)
+    # Safety filter. Emergency detection already ran on the patient's own
+    # question above (and short-circuits before an answer is even generated),
+    # so only re-check the generated response for unsafe dosage/prescription
+    # instructions here - re-running emergency detection on the response text
+    # (what validate_response() used to do) produced false positives on any
+    # safety-conscious answer that mentions emergency symptoms as advice
+    # (e.g. "if you develop difficulty breathing, seek care immediately").
+    safe_answer, safety_alerts = filter_dosages(answer)
     
     total_latency = (time.time() - start_time) * 1000
     
@@ -926,8 +932,13 @@ async def chat(request: Dict[str, Any]):
             logger.warning(f"⚠️ Hybrid RAG fallback failed ({_rag_err}), using basic RAG")
             llm_result = generate_answer(message, use_biomedix=False, include_context=True)
         
-        # Safety filter
-        safe_answer, safety_alerts = validate_response(llm_result["answer"])
+        # Safety filter. The patient's message was already checked for
+        # emergencies earlier in this handler (and short-circuits before any
+        # answer is generated), so only re-check the generated response for
+        # unsafe dosage/prescription instructions here - see the matching fix
+        # and comment in /query above for why validate_response() (which
+        # also re-ran emergency detection on the response) is wrong here.
+        safe_answer, safety_alerts = filter_dosages(llm_result["answer"])
 
         # Translate fallback response if needed
         if patient_lang != "en":
