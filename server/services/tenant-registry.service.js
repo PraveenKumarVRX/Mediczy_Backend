@@ -117,7 +117,7 @@ class TenantRegistry {
         requireApproval: ['AI_PRESCRIPTION'],
         killSwitch: false
       },
-      allowedModels: ['llama-3.3-70b', 'bimedix2-8b'],
+      allowedModels: ['openai/gpt-oss-120b', 'bimedix2-8b'],
       maxAICallsPerMonth: 10000
     };
   }

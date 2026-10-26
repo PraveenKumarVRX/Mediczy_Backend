@@ -313,11 +313,12 @@ async def entrypoint(ctx: JobContext) -> None:
         )
         logger.info("LLM: Bimedix %s @ %s", ISHA_LLM_MODEL, ISHA_AI_URL)
     except Exception as exc:
-        logger.warning("Bimedix auth failed (%s) — falling back to Groq llama-3.3-70b", exc)
+        logger.warning("Bimedix auth failed (%s) — falling back to Groq openai/gpt-oss-120b", exc)
         llm = lk_openai.LLM(
             base_url=GROQ_BASE_URL,
             api_key=GROQ_API_KEY,
-            model="llama-3.3-70b-versatile",
+            # llama-3.3-70b-versatile was retired by Groq; verified live against this project's key
+            model="openai/gpt-oss-120b",
             temperature=0.3,
         )
 

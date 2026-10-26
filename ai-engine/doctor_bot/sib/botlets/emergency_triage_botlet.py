@@ -377,13 +377,17 @@ Respond with the JSON schema only."""
         try:
             response = await asyncio.to_thread(
                 self.groq_client.chat.completions.create,
-                model="llama-3.3-70b-versatile",
+                # llama-3.3-70b-versatile was retired by Groq; verified live against this
+                # project's key. gpt-oss is a reasoning model and spends tokens on hidden
+                # reasoning before the final JSON, so max_tokens is raised accordingly -
+                # the rule-engine floor below still applies if this call degrades or fails.
+                model="openai/gpt-oss-120b",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.2,
-                max_tokens=400,
+                max_tokens=800,
             )
 
             raw = response.choices[0].message.content.strip()
@@ -401,7 +405,7 @@ Respond with the JSON schema only."""
                 "response":           parsed.get("response", ""),
                 "urgency_suggestion": urgency_suggestion,
                 "confidence":         float(parsed.get("confidence", 0.85)),
-                "model":              "llama-3.3-70b-versatile",
+                "model":              "openai/gpt-oss-120b",
                 "follow_up_questions": parsed.get("follow_up_questions", [])[:3],
             }
 

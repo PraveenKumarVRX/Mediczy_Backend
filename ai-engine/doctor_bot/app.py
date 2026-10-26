@@ -964,7 +964,7 @@ async def chat(request: Dict[str, Any]):
             "response": safe_answer,          # canonical
             "chat_answer": safe_answer,         # legacy alias
             "provider": llm_result.get("model", "groq"),
-            "model": llm_result.get("model", "llama-3.3-70b"),
+            "model": llm_result.get("model", "openai/gpt-oss-120b"),
             "turn_count": len(conversation_history) + 1,
             "conversation_id": patient_id,
             "latency_ms": round(total_latency, 2),

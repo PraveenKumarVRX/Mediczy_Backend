@@ -567,7 +567,7 @@ class SaMDDocumentGeneratorService {
       system_overview: {
         architecture:  'Three-tier web application: React SPA frontend, Node.js Express API (ESM), PostgreSQL database on AWS RDS',
         deployment:    'EC2 + PM2 (mediqzy.com) → ECS Fargate (mediczy.in — future production)',
-        ai_subsystem:  'LLM cascade: iSHA (custom) → Groq (llama-3.3-70b) → OpenAI (gpt-4o) → Ollama local (qwen2:1.5b)',
+        ai_subsystem:  'LLM cascade: iSHA (custom) → Groq (openai/gpt-oss-120b) → OpenAI (currently no accessible model on this project — see 2026-10-26 incident) → Ollama local (qwen2:1.5b)',
         key_services:  [
           'AI Brain Orchestrator (agent loop, tool execution)',
           'SIB Control Layer (kill switch, circuit breakers, rate limits)',

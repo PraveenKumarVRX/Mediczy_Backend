@@ -533,12 +533,12 @@ class SyntheticIntelligenceBrain:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",  # llama-3.3-70b-versatile was retired by Groq; verified live against this project's key
             messages=messages,
             max_tokens=1024,
             temperature=0.7,
         )
-        return {"answer": response.choices[0].message.content, "model": "llama-3.3-70b-versatile"}
+        return {"answer": response.choices[0].message.content, "model": "openai/gpt-oss-120b"}
 
     def _isha_inc_inference(self, prompt: str, system_prompt: Optional[str] = None,
                             model: str = "insurance-llm", max_tokens: int = 512) -> Dict[str, Any]:
