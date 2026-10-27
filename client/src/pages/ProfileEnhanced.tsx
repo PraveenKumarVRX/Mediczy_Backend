@@ -251,8 +251,19 @@ const ProfileEnhanced = () => {
         api.get("/users/security"),
         api.get("/users/security/sessions"),
       ]);
-      if (secRes.status === 'fulfilled') setSecurityInfo(secRes.value.data.security);
-      if (sessRes.status === 'fulfilled') setActiveSessions(sessRes.value.data.sessions || []);
+      const sessions = sessRes.status === 'fulfilled' ? (sessRes.value.data.sessions || []) : [];
+      if (secRes.status === 'fulfilled') {
+        const security = secRes.value.data.security;
+        const currentSession = sessions.find((session: any) => session.isCurrent) || sessions[0];
+        // The session endpoint is the authoritative source when an older
+        // security profile has not yet populated its summary columns.
+        setSecurityInfo({
+          ...security,
+          last_login_at: security?.last_login_at || currentSession?.lastActiveAt || null,
+          last_login_ip: security?.last_login_ip || currentSession?.ip || null,
+        });
+      }
+      if (sessRes.status === 'fulfilled') setActiveSessions(sessions);
     } finally { setLoadingSecurity(false); }
   };
 

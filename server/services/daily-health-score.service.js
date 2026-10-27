@@ -704,9 +704,13 @@ const WEIGHTS = {
 export function computeDailyScore(logData, userProfile, scoringDate) {
   // Derive exact age from date_of_birth on the scoring date for daily precision
   let age;
-  if (userProfile.date_of_birth) {
+  // The current users table uses camelCase (`dateOfBirth`), while older
+  // installations used `date_of_birth`. Accept both while migrations are
+  // rolled out so a score never silently falls back to an arbitrary age.
+  const dateOfBirth = userProfile.dateOfBirth || userProfile.date_of_birth;
+  if (dateOfBirth) {
     const ref  = scoringDate ? new Date(scoringDate) : new Date();
-    const dob  = new Date(userProfile.date_of_birth);
+    const dob  = new Date(dateOfBirth);
     age = ref.getFullYear() - dob.getFullYear();
     const hadBirthday = (
       ref.getMonth() > dob.getMonth() ||
@@ -734,14 +738,42 @@ export function computeDailyScore(logData, userProfile, scoringDate) {
     mental:     scoreMental(logData),
   };
 
+  // Do not present an inferred wellness score as measured health data. In
+  // particular, a new user with no connected device used to receive neutral
+  // points for sleep, vitals, hydration and mental health, which could be
+  // rendered as a reassuring "Good" score. A zero is also not evidence of a
+  // reading: Android clients initialise several counters to zero before a
+  // Health Connect/device sync completes.
+  const hasPositiveNumber = (...values) => values.some(value => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) && numeric > 0;
+  });
+  const observedDomains = [];
+  if (hasPositiveNumber(logData.steps, logData.stairs, logData.exercise_minutes, logData.calories_burned)) observedDomains.push('activity');
+  if (hasPositiveNumber(logData.calories_consumed) || logData.diet_quality) observedDomains.push('nutrition');
+  if (hasPositiveNumber(logData.sleep_hours) || logData.sleep_quality) observedDomains.push('sleep');
+  if (hasPositiveNumber(logData.heart_rate, logData.blood_pressure_systolic, logData.blood_pressure_diastolic, logData.spo2, logData.blood_sugar, logData.temperature)) observedDomains.push('vitals');
+  if (logData.medication_adherence_pct != null || hasPositiveNumber(logData.medication_doses_prescribed, logData.medication_doses_taken)) observedDomains.push('medication');
+  if (hasPositiveNumber(logData.water_glasses)) observedDomains.push('hydration');
+  if (logData.stress_score != null || logData.mood_score != null) observedDomains.push('mental');
+  const dataQuality = {
+    status: observedDomains.length === 0 ? 'insufficient' : observedDomains.length < 3 ? 'partial' : 'complete',
+    observedDomains,
+    minimumDomainsForScore: 3,
+  };
+
   const composite = Object.entries(WEIGHTS).reduce((sum, [k, w]) => {
     return sum + (domains[k] || 0) * w;
   }, 0);
 
   return {
-    score:   Math.min(100, Math.max(0, Math.round(composite))),
+    // A score is intentionally withheld until enough independently observed
+    // domains exist. Clients can use dataQuality to show a clear connect/log
+    // data CTA instead of an invented score.
+    score:   dataQuality.status !== 'complete' ? null : Math.min(100, Math.max(0, Math.round(composite))),
     domains,
     ageBand: band,
+    dataQuality,
     targets: {
       steps:         TARGETS.steps[band],
       exerciseMins:  TARGETS.exercise_minutes[band],
@@ -804,8 +836,8 @@ async function computeAndStoreAllUsers(targetDate) {
     const users = await postgresSequelize.query(`
       SELECT DISTINCT
         u.id                                             AS user_id,
-        u.date_of_birth,
-        COALESCE(ha.gender, u.gender, 'other')           AS gender,
+        u."dateOfBirth"                                  AS "dateOfBirth",
+        COALESCE(ha.gender, u.gender, 'other')            AS gender,
         ha.height,
         -- Use the most recently logged weight, fall back to HRA baseline
         COALESCE(
@@ -851,7 +883,7 @@ async function computeAndStoreAllUsers(targetDate) {
         }
 
         const result = computeDailyScore(mergedData, {
-          date_of_birth: user.date_of_birth,
+          dateOfBirth: user.dateOfBirth,
           gender: user.gender,
           height: user.height,
           weight: user.weight,
@@ -884,7 +916,10 @@ async function computeAndStoreAllUsers(targetDate) {
           replacements: {
             userId:     user.user_id,
             date:       dateStr,
-            composite:  result.score,
+            // `composite_score` predates data-quality states and is NOT NULL.
+            // Persist 0 as a sentinel; the API returns null when targets carry
+            // an insufficient-data marker.
+            composite:  result.score ?? 0,
             activity:   result.domains.activity,
             nutrition:  result.domains.nutrition,
             sleep:      result.domains.sleep,
@@ -893,7 +928,7 @@ async function computeAndStoreAllUsers(targetDate) {
             hydration:  result.domains.hydration,
             mental:     result.domains.mental,
             ageBand:    result.ageBand,
-            targets:    JSON.stringify(result.targets),
+            targets:    JSON.stringify({ ...result.targets, dataQuality: result.dataQuality }),
           },
         });
         processed++;
@@ -963,7 +998,7 @@ class DailyHealthScoreService {
     `, {
       replacements: {
         userId, date: dateStr,
-        composite:  result.score,
+        composite:  result.score ?? 0,
         activity:   result.domains.activity,
         nutrition:  result.domains.nutrition,
         sleep:      result.domains.sleep,
@@ -972,7 +1007,7 @@ class DailyHealthScoreService {
         hydration:  result.domains.hydration,
         mental:     result.domains.mental,
         ageBand:    result.ageBand,
-        targets:    JSON.stringify(result.targets),
+        targets:    JSON.stringify({ ...result.targets, dataQuality: result.dataQuality }),
       },
     });
 

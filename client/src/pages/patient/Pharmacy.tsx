@@ -477,7 +477,7 @@ const Pharmacy = () => {
                                   <Plus className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{((item.price / parsePackSize(item.packSize).qty) * item.quantity).toFixed(0)}</span>
+                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{((item.price / parsePackSize(item.packSize).qty) * item.quantity).toFixed(2)}</span>
                               <Button
                                 type="button" variant="ghost" size="icon"
                                 className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
@@ -489,7 +489,7 @@ const Pharmacy = () => {
                           ))}
                           <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-b-xl">
                             <span className="text-sm font-semibold dark:text-slate-300">Total</span>
-                            <span className="text-lg font-bold text-emerald-600">₹{cartTotal.toFixed(0)}</span>
+                            <span className="text-lg font-bold text-emerald-600">₹{cartTotal.toFixed(2)}</span>
                           </div>
                           <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-1 px-2">Prices shown are approximate MRP. Actual billing may vary.</p>
                         </div>
@@ -532,7 +532,7 @@ const Pharmacy = () => {
                       {placingOrder ? (
                         <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Placing Order...</>
                       ) : (
-                        <><ShoppingCart className="h-4 w-4 mr-2" /> Place Order {cart.length > 0 && `· ₹${cartTotal.toFixed(0)}`}</>
+                        <><ShoppingCart className="h-4 w-4 mr-2" /> Place Order {cart.length > 0 && `· ₹${cartTotal.toFixed(2)}`}</>
                       )}
                     </Button>
                   </div>

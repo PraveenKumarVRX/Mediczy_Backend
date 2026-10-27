@@ -118,14 +118,14 @@ const Index = () => {
   const [healthStatsLoaded, setHealthStatsLoaded] = useState(false);
   const [healthStatsUpdatedAt, setHealthStatsUpdatedAt] = useState<Date | null>(null);
   const [healthinessScore, setHealthinessScore] = useState({
-    score: 78,
-    trend: 'up' as 'up' | 'down' | 'stable',
-    lastUpdated: new Date(),
+    score: 0,
+    trend: 'stable' as 'up' | 'down' | 'stable',
+    lastUpdated: null as Date | null,
     breakdown: {
-      activity: { current: 82, history: [65, 70, 68, 75, 78, 80, 82] },
-      nutrition: { current: 75, history: [60, 65, 70, 68, 72, 74, 75] },
-      sleep: { current: 85, history: [70, 75, 80, 78, 82, 84, 85] },
-      vitals: { current: 70, history: [72, 68, 65, 70, 72, 68, 70] },
+      activity: { current: 0, history: [0] },
+      nutrition: { current: 0, history: [0] },
+      sleep: { current: 0, history: [0] },
+      vitals: { current: 0, history: [0] },
     }
   });
   const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
@@ -571,6 +571,7 @@ const Index = () => {
   useEffect(() => {
     fetchDashboardData();
     fetchHealthStats(); // Fetch real health data from backend
+    fetchDailyHealthScore();
     fetchMembershipStatus();
     fetchStreakWalletData();
     
@@ -605,6 +606,7 @@ const Index = () => {
     const handleHealthDataSync = () => {
       console.log('Health data synced event received, refreshing stats...');
       fetchHealthStats();
+      fetchDailyHealthScore();
     };
     window.addEventListener('healthDataSynced', handleHealthDataSync);
     
@@ -629,7 +631,26 @@ const Index = () => {
             : Array.isArray(raw.appointments)
             ? raw.appointments
             : [];
-          setUpcomingAppointments(list.slice(0, 3));
+          // The dashboard must not call a past or closed appointment
+          // "Upcoming" just because the API returned it first. Some legacy
+          // rows are payment-pending while their appointment date is already
+          // over, so date and lifecycle status both need to be considered.
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const upcoming = list
+            .filter((appointment: any) => {
+              const status = String(appointment.status || '').toLowerCase();
+              if (['completed', 'cancelled', 'no-show', 'no_show'].includes(status)) return false;
+              const rawDate = appointment.appointmentDate || appointment.date;
+              if (!rawDate) return false;
+              const appointmentDate = new Date(`${String(rawDate).slice(0, 10)}T00:00:00`);
+              return !Number.isNaN(appointmentDate.getTime()) && appointmentDate >= today;
+            })
+            .sort((a: any, b: any) =>
+              String(a.appointmentDate || a.date).localeCompare(String(b.appointmentDate || b.date))
+              || String(a.appointmentTime || a.time || '').localeCompare(String(b.appointmentTime || b.time || ''))
+            );
+          setUpcomingAppointments(upcoming.slice(0, 3));
         } else {
           setUpcomingAppointments([]);
           setAppointmentsLoadError(true);
@@ -726,18 +747,35 @@ const Index = () => {
         return;
       }
 
-      const response = await api.get('/health-data/summary');
+      // `/health/latest` is the canonical latest-vitals source used by the
+      // health dashboard. Keep the older summary only for metrics it alone
+      // supplies (water/calories), rather than showing a different pulse on
+      // the home screen and My Vitals.
+      const [response, latestResponse] = await Promise.all([
+        api.get('/health-data/summary'),
+        api.get('/health/latest').catch(() => null),
+      ]);
       const data = response.data;
+      const latestVitals = latestResponse?.data || {};
       
       console.log('Fetched health summary:', data);
+
+      const normaliseSleepHours = (value: unknown) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric < 0) return null;
+        // Health integrations send duration in hours, seconds, or (rarely)
+        // milliseconds. The home card always displays hours.
+        const hours = numeric >= 86_400 ? numeric / 3_600_000 : numeric > 24 ? numeric / 3600 : numeric;
+        return Math.round(hours * 10) / 10;
+      };
 
       // Update health stats with real data from backend
       if (data.latest) {
         setHealthStats(prev => ({
           ...prev,
-          steps:     data.latest.steps?.value      ?? prev.steps,
-          heartRate: data.latest.heart_rate?.value ?? prev.heartRate,
-          sleep:     data.latest.sleep?.value ? data.latest.sleep.value / 3600 : prev.sleep,
+          steps:     latestVitals.steps ?? data.latest.steps?.value ?? prev.steps,
+          heartRate: latestVitals.heartRate ?? data.latest.heart_rate?.value ?? prev.heartRate,
+          sleep:     normaliseSleepHours(data.latest.sleep?.value) ?? prev.sleep,
           water:     data.latest.water?.value      ?? prev.water,
           calories:  data.latest.calories?.value   ?? prev.calories,
         }));
@@ -746,6 +784,37 @@ const Index = () => {
       }
     } catch {
       // API not available — leave stats at zero so UI shows empty state, not fake numbers
+    }
+  };
+
+  // All patient score surfaces use this daily composite endpoint. Keeping the
+  // dashboard off its old sample score prevents it from disagreeing with the
+  // health-intelligence and score pages for the same account/day.
+  const fetchDailyHealthScore = async () => {
+    try {
+      const { data } = await api.get('/health-score/today');
+      if (!data?.success || data?.score === null || data?.score === undefined) return;
+      const score = Number(data.score);
+      if (!Number.isFinite(score)) return;
+
+      const domains = data.domains || {};
+      const setDomain = (current: number, previous: number[]) => ({
+        current,
+        history: [...previous.slice(-6), current],
+      });
+      setHealthinessScore(previous => ({
+        ...previous,
+        score: Math.round(score),
+        lastUpdated: new Date(data.computedAt || Date.now()),
+        breakdown: {
+          activity: setDomain(Number(domains.activity) || 0, previous.breakdown.activity.history),
+          nutrition: setDomain(Number(domains.nutrition) || 0, previous.breakdown.nutrition.history),
+          sleep: setDomain(Number(domains.sleep) || 0, previous.breakdown.sleep.history),
+          vitals: setDomain(Number(domains.vitals) || 0, previous.breakdown.vitals.history),
+        },
+      }));
+    } catch {
+      // Keep the current rendered score if this optional refresh fails.
     }
   };
 

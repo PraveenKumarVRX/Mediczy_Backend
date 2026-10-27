@@ -60,6 +60,7 @@ const getPatientAppointmentStatus = (appointment: Record<string, any>): PatientA
   const originalStatus = asString(appointment.status, "scheduled");
 
   if (originalStatus === "cancelled") return "cancelled";
+  if (originalStatus === "rescheduled") return "rescheduled";
 
   const appointmentDate = new Date(asString(rawDate));
   appointmentDate.setHours(0, 0, 0, 0);
@@ -67,7 +68,7 @@ const getPatientAppointmentStatus = (appointment: Record<string, any>): PatientA
   today.setHours(0, 0, 0, 0);
   const isPast = appointmentDate < today;
 
-  if (!isPast && ["scheduled", "confirmed", "pending"].includes(originalStatus)) {
+  if (!isPast && ["scheduled", "confirmed", "pending", "accepted", "in-progress"].includes(originalStatus)) {
     return "upcoming";
   }
 
@@ -170,10 +171,43 @@ export const appointmentsService = {
   },
 
   async getEnhancedAppointments() {
-    const { data } = await api.get<EnhancedAppointmentListResponse>("/enhanced-appointments/my-appointments", {
-      params: { limit: 500 },
+    // Bookings are created through /appointments, while the patient calendar
+    // uses the enriched read endpoint. Keep the canonical read as a fallback
+    // (and merge it when both succeed) so an enrichment or pagination issue
+    // cannot make a successfully-created booking disappear from Upcoming.
+    const [enhancedResult, canonicalResult] = await Promise.allSettled([
+      api.get<EnhancedAppointmentListResponse>("/enhanced-appointments/my-appointments", {
+        params: { limit: 100 },
+      }),
+      api.get<AppointmentListResponse>("/appointments"),
+    ]);
+
+    if (enhancedResult.status === "rejected" && canonicalResult.status === "rejected") {
+      throw enhancedResult.reason;
+    }
+
+    const canonicalAppointments = canonicalResult.status === "fulfilled"
+      ? normalizeEnhancedAppointmentList(canonicalResult.value.data)
+      : [];
+    const enhancedAppointments = enhancedResult.status === "fulfilled"
+      ? normalizeEnhancedAppointmentList(enhancedResult.value.data)
+      : [];
+
+    // Add canonical rows first so the enriched representation wins for the
+    // same appointment ID. A stable fallback key protects older API rows that
+    // lack an ID without showing the booking twice.
+    const appointmentsByKey = new Map<string, PatientAppointment>();
+    for (const appointment of [...canonicalAppointments, ...enhancedAppointments]) {
+      const key = appointment.backendId !== undefined
+        ? `id:${appointment.backendId}`
+        : `${appointment.doctor.id ?? "unknown"}:${appointment.date}:${appointment.time}`;
+      appointmentsByKey.set(key, appointment);
+    }
+
+    return [...appointmentsByKey.values()].sort((a, b) => {
+      const dateComparison = a.date.localeCompare(b.date);
+      return dateComparison || a.time.localeCompare(b.time);
     });
-    return normalizeEnhancedAppointmentList(data);
   },
 
   async cancelAppointment(appointmentId: number, cancellationReason = "Cancelled by patient") {

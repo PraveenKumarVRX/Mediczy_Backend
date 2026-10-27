@@ -8,6 +8,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
@@ -2309,7 +2310,7 @@ router.post('/smart-route', async (req, res) => {
       'urine': 'urologist', 'kidney': 'nephrologist',
       'pregnancy': 'gynecologist', 'periods': 'gynecologist', 'women': 'gynecologist',
       'brain': 'neurologist', 'headache': 'neurologist', 'migraine': 'neurologist',
-      'lungs': 'pulmonologist', 'breath': 'pulmonologist', 'asthma': 'pulmonologist',
+      'lungs': 'pulmonologist', 'breath': 'pulmonologist', 'asthma': 'pulmonologist', 'cough': 'pulmonologist',
       'ear': 'ent', 'nose': 'ent', 'throat': 'ent',
       'cancer': 'oncologist', 'tumor': 'oncologist',
       'blood': 'hematologist', 'infection': 'general physician', 'fever': 'general physician',
@@ -2324,23 +2325,27 @@ router.post('/smart-route', async (req, res) => {
       }
     }
 
-    const { Op } = sequelize.constructor ?? {};
     const where = {};
     if (targetSpecialty) {
-      // Use Sequelize literal if Op not available (since sequelize.constructor may differ)
-      where.specialization = sequelize.literal
-        ? sequelize.literal(`LOWER("specialization") LIKE '%${targetSpecialty.toLowerCase().replace(/'/g, '')}%'`)
-        : { [Op?.iLike ?? Symbol()]: `%${targetSpecialty}%` };
+      // A Sequelize literal as the value of `where.specialization` produced
+      // `specialization = (LOWER(...) LIKE ...)`, a type-invalid comparison in
+      // Postgres. Use a parameterised case-insensitive predicate instead.
+      where[Op.and] = [
+        sequelize.where(
+          sequelize.fn('LOWER', sequelize.col('specialization')),
+          { [Op.like]: `%${targetSpecialty.toLowerCase()}%` },
+        ),
+      ];
     }
-    if (maxFee) where.consultationFees = sequelize.literal
-      ? sequelize.literal(`"consultationFees" <= ${parseInt(maxFee, 10)}`)
-      : { [Op?.lte ?? Symbol()]: parseInt(maxFee, 10) };
+    if (maxFee && Number.isFinite(Number(maxFee))) {
+      where.consultationFees = { [Op.lte]: Number(maxFee) };
+    }
 
     const rawDoctors = await Doctor.findAll({
       where,
       attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'isAvailable', 'profileImage'],
       order: [['consultationFees', 'ASC'], ['firstName', 'ASC']],
-      limit: parseInt(limit, 10) > 20 ? 20 : parseInt(limit, 10),
+      limit: Math.min(20, Math.max(1, Number.parseInt(limit, 10) || 10)),
     });
 
     const doctors = rawDoctors.map(d => ({

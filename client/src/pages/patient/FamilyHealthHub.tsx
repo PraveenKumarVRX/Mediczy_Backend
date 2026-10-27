@@ -145,14 +145,14 @@ export default function FamilyHealthHub() {
   };
 
   // Add current user as "Self" entry
-  const selfEntry = (): FamilyMember => ({
+  const selfEntry = (healthScore = 0): FamilyMember => ({
     id: 'self',
     name: currentUser ? `${currentUser.firstName ?? ''} ${currentUser.lastName ?? ''}`.trim() || 'You' : 'You',
     relation: 'Self',
     age: currentUser?.dateOfBirth ? Math.floor((Date.now() - new Date(currentUser.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0,
     gender: (currentUser?.gender || 'M')[0].toUpperCase(),
     avatar: '👤',
-    healthScore: 80,
+    healthScore,
     healthTrend: 'stable',
     bloodGroup: currentUser?.bloodGroup,
     allergies: [],
@@ -168,9 +168,14 @@ export default function FamilyHealthHub() {
     setLoading(true);
     setFamilyFetchError(false);
     try {
-      const res = await api.get('/family-members');
+      const [res, scoreRes] = await Promise.all([
+        api.get('/family-members'),
+        api.get('/health-score/today').catch(() => null),
+      ]);
+      const score = Number(scoreRes?.data?.score);
+      const selfScore = scoreRes?.data?.success && scoreRes?.data?.score !== null && scoreRes?.data?.score !== undefined && Number.isFinite(score) ? Math.round(score) : 0;
       if (res?.data?.success && Array.isArray(res.data.data)) {
-        setMembers([selfEntry(), ...res.data.data.map(mapMember)]);
+        setMembers([selfEntry(selfScore), ...res.data.data.map(mapMember)]);
         setLoading(false);
         return;
       }

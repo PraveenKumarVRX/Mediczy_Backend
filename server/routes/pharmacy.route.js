@@ -39,6 +39,22 @@ import creditRouter from './pharmacy/credit.route.js';
 
 const router = express.Router();
 
+// These schedules require a prescription before an order can be placed. Keep
+// this flag alongside catalog data so patient apps can label the item before a
+// customer tries to add it to the cart; the order endpoint independently
+// enforces the same rule.
+const PRESCRIPTION_REQUIRED_SCHEDULES = new Set(['H', 'H1', 'X', 'NARCOTIC', 'CONTROLLED']);
+
+function withPrescriptionRequirement(medicine) {
+  const schedule = String(medicine.schedule || '').trim().toUpperCase();
+  const requiresPrescription = PRESCRIPTION_REQUIRED_SCHEDULES.has(schedule);
+  return {
+    ...medicine,
+    requiresPrescription,
+    prescriptionLabel: requiresPrescription ? `Prescription required (Schedule ${schedule})` : null,
+  };
+}
+
 // Mount sub-routers
 router.use('/inventory', inventoryRouter);
 router.use('/prescriptions', prescriptionsRouter);
@@ -115,7 +131,7 @@ router.get('/medicines', async (req, res) => {
 
     res.json({
       success: true,
-      medicines: rowsResult.rows,
+      medicines: rowsResult.rows.map(withPrescriptionRequirement),
       total,
       page,
       limit,

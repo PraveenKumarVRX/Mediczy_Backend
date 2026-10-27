@@ -260,12 +260,16 @@ router.get('/', authUser, async (req, res) => {
     let domains = null, overallScore = null;
     try {
       const [scoreRow] = await postgresSequelize.query(
-        `SELECT composite_score, activity_score, nutrition_score, sleep_score, vitals_score, medication_score, hydration_score, mental_score
+        `SELECT composite_score, activity_score, nutrition_score, sleep_score, vitals_score, medication_score, hydration_score, mental_score, targets
          FROM daily_health_scores WHERE user_id = :userId AND score_date = :today LIMIT 1`,
         { replacements: { userId, today }, type: QueryTypes.SELECT }
       );
       if (scoreRow) {
-        overallScore = scoreRow.composite_score;
+        // The daily-score table uses 0 as a NOT NULL storage sentinel when
+        // too little data exists. Do not turn that sentinel into a real score
+        // on the intelligence page.
+        const quality = scoreRow.targets?.dataQuality?.status;
+        overallScore = ['insufficient', 'partial'].includes(quality) ? null : scoreRow.composite_score;
         domains = {
           activity:   scoreRow.activity_score,
           nutrition:  scoreRow.nutrition_score,

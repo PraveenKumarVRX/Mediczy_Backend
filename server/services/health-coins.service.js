@@ -376,6 +376,27 @@ class HealthCoinsService {
    */
   async getWalletSummary(userId) {
     const wallet = await this.getOrCreateWallet(userId);
+
+    // Wallet counter columns were introduced after transactions already
+    // existed, so they can be stale (for example, a 557-coin ledger paired
+    // with a 195-coin "earned" counter). The immutable transaction ledger is
+    // the source of truth for user-visible totals.
+    const ledgerTotals = await HealthCoinsTransaction.findAll({
+      where: { userId, status: 'COMPLETED' },
+      attributes: [
+        'type',
+        [sequelize.fn('SUM', sequelize.col('amount')), 'totalAmount'],
+      ],
+      group: ['type'],
+      raw: true,
+    });
+    const totals = ledgerTotals.reduce((summary, row) => {
+      const amount = Math.abs(Number(row.totalAmount) || 0);
+      if (row.type === 'SPEND') summary.totalSpent += amount;
+      else summary.totalEarned += amount;
+      if (row.type === 'PURCHASE') summary.totalPurchased += amount;
+      return summary;
+    }, { totalEarned: 0, totalSpent: 0, totalPurchased: 0 });
     
     // Get today's activity
     const today = new Date().toISOString().split('T')[0];
@@ -388,9 +409,9 @@ class HealthCoinsService {
     
     return {
       balance: parseFloat(wallet.balance),
-      totalEarned: parseFloat(wallet.totalEarned),
-      totalSpent: parseFloat(wallet.totalSpent),
-      totalPurchased: parseFloat(wallet.totalPurchased),
+      totalEarned: totals.totalEarned,
+      totalSpent: totals.totalSpent,
+      totalPurchased: totals.totalPurchased,
       streakDays: wallet.streakDays,
       todayActivity: todayActivity || null,
       recentTransactions

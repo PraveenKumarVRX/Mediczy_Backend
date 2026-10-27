@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Search,
@@ -422,6 +422,7 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
 };
 
 const DoctorListBooking = () => {
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
@@ -447,6 +448,13 @@ const DoctorListBooking = () => {
   const [userCoordinates, setUserCoordinates] = useState<UserCoordinates | null>(null);
   const [locationDetectionAttempted, setLocationDetectionAttempted] = useState(false);
   const lastRateLimitToastAt = useRef(0);
+
+  // Triage referrals arrive as a shareable URL. Read the specialty once the
+  // page mounts so "Find Doctor" actually narrows the live directory.
+  useEffect(() => {
+    const specialty = searchParams.get("specialty")?.trim();
+    if (specialty) setSelectedSpecialization(specialty);
+  }, [searchParams]);
   
   // Health Coins payment states
   const [paymentMethod, setPaymentMethod] = useState<"inr" | "hc">("inr");

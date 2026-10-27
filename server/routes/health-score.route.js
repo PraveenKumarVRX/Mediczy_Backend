@@ -127,7 +127,7 @@ router.post('/log', authUser, async (req, res) => {
     // Fetch user profile — DOB for precise daily age, most-recent weight
     const [profile] = await postgresSequelize.query(`
       SELECT
-        u.date_of_birth,
+        u."dateOfBirth" AS "dateOfBirth",
         COALESCE(ha.gender, u.gender, 'other') AS gender,
         ha.height,
         COALESCE(
@@ -167,6 +167,7 @@ router.post('/log', authUser, async (req, res) => {
       domains: result.domains,
       targets: result.targets,
       ageBand: result.ageBand,
+      dataQuality: result.dataQuality,
       date:    today,
     });
   } catch (err) {
@@ -195,7 +196,9 @@ router.get('/today', authUser, async (req, res) => {
       return res.json({
         success: true,
         date:    today,
-        score:   stored.composite_score,
+        score:   ['insufficient', 'partial'].includes(stored.targets?.dataQuality?.status)
+          ? null
+          : stored.composite_score,
         domains: {
           activity:   stored.activity_score,
           nutrition:  stored.nutrition_score,
@@ -209,6 +212,7 @@ router.get('/today', authUser, async (req, res) => {
         ageBand:    stored.age_band,
         computedAt: stored.computed_at,
         source:     'precomputed',
+        dataQuality: stored.targets?.dataQuality || { status: 'unknown', observedDomains: [] },
       });
     }
 
@@ -220,7 +224,7 @@ router.get('/today', authUser, async (req, res) => {
 
     const [profile] = await postgresSequelize.query(`
       SELECT
-        u.date_of_birth,
+        u."dateOfBirth" AS "dateOfBirth",
         COALESCE(ha.gender, u.gender, 'other') AS gender,
         ha.height,
         COALESCE(
@@ -253,6 +257,7 @@ router.get('/today', authUser, async (req, res) => {
       targets: result.targets,
       ageBand: result.ageBand,
       source:  'realtime',
+      dataQuality: result.dataQuality,
     });
   } catch (err) {
     console.error('health-score/today error:', err);

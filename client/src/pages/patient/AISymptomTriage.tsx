@@ -545,7 +545,7 @@ const AISymptomTriage: React.FC = () => {
                       </div>
                       <Button
                         size="sm"
-                        onClick={() => navigate(`/consultation?specialty=${encodeURIComponent(result.recommended_specialty || '')}`)}
+                        onClick={() => navigate(`/doctors?specialty=${encodeURIComponent(result.recommended_specialty || '')}`)}
                         className="bg-teal-600 hover:bg-teal-700 text-white"
                       >
                         Find Doctor

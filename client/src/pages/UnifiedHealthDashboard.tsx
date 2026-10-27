@@ -65,12 +65,9 @@ const UnifiedHealthDashboard = () => {
   useEffect(() => {
     loadDevices();
     loadHealthStats();
+    loadDailyHealthScore();
     setAutoSyncEnabled(healthSyncScheduler.isSchedulerRunning());
   }, []);
-
-  useEffect(() => {
-    calculateHealthScore();
-  }, [healthStats]);
 
   const loadDevices = async () => {
     try {
@@ -108,6 +105,17 @@ const UnifiedHealthDashboard = () => {
     }
   };
 
+  const loadDailyHealthScore = async () => {
+    try {
+      const { data } = await api.get('/health-score/today');
+      const score = Number(data?.score);
+      setHealthScore(data?.success && data?.score !== null && data?.score !== undefined && Number.isFinite(score) ? Math.round(score) : 0);
+    } catch (error) {
+      console.error('Error loading daily health score:', error);
+      setHealthScore(0);
+    }
+  };
+
   const toggleAutoSync = (checked: boolean) => {
     setAutoSyncEnabled(checked);
     if (checked) {
@@ -115,84 +123,6 @@ const UnifiedHealthDashboard = () => {
     } else {
       healthSyncScheduler.stop();
     }
-  };
-
-  const calculateHealthScore = () => {
-    let score = 0;
-    let factors = 0;
-
-    // Heart Rate (0-25 points)
-    if (healthStats.heartRate) {
-      factors++;
-      if (healthStats.heartRate >= 60 && healthStats.heartRate <= 100) {
-        score += 25;
-      } else if (healthStats.heartRate >= 50 && healthStats.heartRate <= 110) {
-        score += 15;
-      } else {
-        score += 5;
-      }
-    }
-
-    // Steps (0-20 points)
-    if (healthStats.steps) {
-      factors++;
-      if (healthStats.steps >= 10000) {
-        score += 20;
-      } else if (healthStats.steps >= 7500) {
-        score += 15;
-      } else if (healthStats.steps >= 5000) {
-        score += 10;
-      } else {
-        score += 5;
-      }
-    }
-
-    // Sleep Score (0-20 points)
-    if (healthStats.sleepScore) {
-      factors++;
-      score += (healthStats.sleepScore / 100) * 20;
-    }
-
-    // Blood Pressure (0-15 points)
-    if (healthStats.bloodPressure) {
-      factors++;
-      const { systolic, diastolic } = healthStats.bloodPressure;
-      if (systolic >= 90 && systolic <= 120 && diastolic >= 60 && diastolic <= 80) {
-        score += 15;
-      } else if (systolic >= 80 && systolic <= 130 && diastolic >= 50 && diastolic <= 85) {
-        score += 10;
-      } else {
-        score += 5;
-      }
-    }
-
-    // SpO2 (0-10 points)
-    if (healthStats.spo2) {
-      factors++;
-      if (healthStats.spo2 >= 95) {
-        score += 10;
-      } else if (healthStats.spo2 >= 90) {
-        score += 5;
-      } else {
-        score += 2;
-      }
-    }
-
-    // HRV (0-10 points)
-    if (healthStats.hrv) {
-      factors++;
-      if (healthStats.hrv >= 50) {
-        score += 10;
-      } else if (healthStats.hrv >= 30) {
-        score += 7;
-      } else {
-        score += 3;
-      }
-    }
-
-    // Calculate final score (normalize to 100)
-    const finalScore = factors > 0 ? Math.round(score) : 0;
-    setHealthScore(Math.min(finalScore, 100));
   };
 
   const getHealthScoreColor = (score: number) => {

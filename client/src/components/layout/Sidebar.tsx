@@ -86,7 +86,7 @@ const patientSections: SidebarSection[] = [
     items: [
       { icon: ShieldCheck, label: "My Insurance",     path: "/my-insurance" },
       { icon: Zap,         label: "File a Claim",     path: "/claims-express" },
-      { icon: FileText,    label: "Claims",           path: "/claims-management" },
+      { icon: FileText,    label: "Claims",           path: "/claims-express" },
       { icon: Sparkles,    label: "My Benefits",      path: "/benefits" },
       { icon: Award,       label: "Ayushman",         path: "/ayushman" },
     ],

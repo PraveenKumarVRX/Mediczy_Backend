@@ -61,7 +61,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
           return savedMsgs.map((m: Message) => ({ ...m, timestamp: new Date(m.timestamp) }));
         }
       }
-    } catch {}
+    } catch { /* a malformed saved chat starts a clean session */ }
     return [];
   });
   const [input, setInput] = useState("");
@@ -78,7 +78,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
         const { sessionId: savedSid } = JSON.parse(saved);
         if (savedSid) { drIshaAPI.currentSessionId = savedSid; return savedSid; }
       }
-    } catch {}
+    } catch { /* a malformed saved session starts a fresh one */ }
     return drIshaAPI.startNewSession();
   });
   const [suggestedFollowUps, setSuggestedFollowUps] = useState<string[]>([
@@ -126,7 +126,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ sessionId, messages: messages.slice(-30) }));
-    } catch {}
+    } catch { /* storage can be unavailable in privacy-restricted browsers */ }
   }, [messages, sessionId]);
 
   useEffect(() => {
@@ -214,10 +214,14 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
       setMessages(prev => prev.filter(msg => !msg.isTyping));
 
       if (response.success && response.data) {
+        const reply = String(response.data.response || '').trim();
+        if (!reply || reply === 'Based on the information I gathered, here is my response.') {
+          throw new Error('Dr. iSHA returned an incomplete response');
+        }
         const assistantMessage: Message = {
           id: generateMessageId(),
           role: "assistant",
-          content: response.data.response,
+          content: reply,
           timestamp: new Date(),
           confidence: response.data.confidence || 0.9,
           language: response.data.language
@@ -399,10 +403,10 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   };
 
   return (
-    <Card className={cn("flex flex-col bg-background/50 backdrop-blur-sm border-primary/20", className)}>
+    <Card className={cn("flex flex-col min-h-0 bg-background/50 backdrop-blur-sm border-primary/20", className)}>
       <ScrollArea 
-        className="flex-1 h-0 p-4 space-y-4" 
-        style={{ maxHeight }}
+        className="min-h-0 p-4 space-y-4"
+        style={{ height: maxHeight, maxHeight }}
         ref={scrollAreaRef}
       >
         <AnimatePresence>
@@ -632,7 +636,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
                 const newSid = drIshaAPI.startNewSession();
                 setSessionId(newSid);
                 setMessages([]);
-                try { localStorage.removeItem(STORAGE_KEY); } catch {}
+                try { localStorage.removeItem(STORAGE_KEY); } catch { /* clearing browser storage is best-effort */ }
                 setSuggestedFollowUps(["Tell me more","What should I do?","Is this serious?","Home remedies?","When to see a doctor?"]);
               }}
               className="flex-shrink-0 text-muted-foreground hover:text-destructive"

@@ -182,6 +182,9 @@ const extractSibResponse = (sibData) => {
 
 const buildSibConsultation = (sibData, { sessionId, language }) => {
   const responseText = extractSibResponse(sibData);
+  if (responseText === 'Based on the information I gathered, here is my response.') {
+    throw new Error('SIB returned a heading without an answer');
+  }
   const payload = {
     success: true,
     response: responseText,
@@ -445,7 +448,9 @@ router.post('/consult', authUser, consultLimiter, async (req, res) => {
           skipCache: true, // medical consult may include patient context — do not share across users
         });
         const fallbackText = llmResult?.content || llmResult?.text || llmResult?.response;
-        if (!fallbackText) throw new Error('LLM fallback also returned empty');
+        if (!fallbackText || String(fallbackText).trim() === 'Based on the information I gathered, here is my response.') {
+          throw new Error('LLM fallback also returned an empty answer');
+        }
         consultation = {
           success: true,
           response: String(fallbackText).trim(),
@@ -2039,16 +2044,14 @@ Patient's question: ${query}`;
         maxTokens: 2000
       });
     } catch (visionError) {
-      // Graceful fallback if vision provider is unavailable
-      return res.json({
-        success: true,
-        analysis: {
-          findings: 'AI Vision service is being configured. Please use the in-app camera analysis or try again shortly.',
-          assessment: 'Service temporarily limited',
-          recommendations: ['Please try again in a few minutes', 'You can also consult with a doctor for report interpretation'],
-          urgency: 'routine',
-          keyValues: {}
-        }
+      // A provider outage or an unreadable image is not a clinical finding.
+      // Return a failure so clients cannot render "Routine / no concern" for
+      // a report that was never analysed.
+      mwarn('Report vision analysis unavailable', { error: visionError?.message, userId: req.user.id });
+      return res.status(503).json({
+        success: false,
+        error: 'Report analysis is temporarily unavailable. Please retry or ask a clinician to review the report.',
+        retryAfterSeconds: 30,
       });
     }
 

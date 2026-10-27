@@ -140,6 +140,11 @@ const HealthIntelligenceDashboard: React.FC = () => {
     return 'Low';
   };
 
+  // A recommendation is actionable unless the API explicitly marks it as not
+  // actionable. Older generated reminders did not populate `actionable`,
+  // which made the headline say zero while the page visibly listed advice.
+  const actionableItems = intelligence?.all_reminders?.filter(reminder => reminder.actionable !== false).length ?? 0;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -225,7 +230,7 @@ const HealthIntelligenceDashboard: React.FC = () => {
             <CardTitle className="text-sm font-medium">Actionable Items</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-bold text-green-500">{intelligence.summary.actionable}</div>
+            <div className="text-3xl font-bold text-green-500">{actionableItems}</div>
             <p className="text-xs text-muted-foreground mt-1">Ready to act on</p>
           </CardContent>
         </Card>

@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
 import { format } from 'date-fns';
 import {
   Package, ShoppingBag, Search, RefreshCw, Download, Receipt,
@@ -15,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 
 const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
 const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
@@ -77,11 +77,10 @@ const OrderHistory = () => {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const token = localStorage.getItem('token');
       const params: any = { page: page + 1, limit: rowsPerPage };
       if (statusFilter) params.status = statusFilter;
       if (orderTypeFilter) params.orderType = orderTypeFilter;
-      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/orders`, { headers: { Authorization: `Bearer ${token}` }, params });
+      const response = await api.get('/billing/orders', { params });
       if (response.data.success) { setOrders(response.data.data.orders); setTotalOrders(response.data.data.pagination.total); }
       if (response.headers?.['x-ledger-canonical']) {
         console.info('[billing] Legacy /api/billing deprecated. Canonical ledger:', response.headers['x-ledger-canonical']);
@@ -100,16 +99,14 @@ const OrderHistory = () => {
 
   const fetchStats = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/stats`, { headers: { Authorization: `Bearer ${token}` } });
+      const response = await api.get('/billing/stats');
       if (response.data.success) setStats(response.data.data);
-    } catch {}
+    } catch { /* orders remain usable when the optional billing summary is unavailable */ }
   };
 
   const handleDownloadInvoice = async (invoiceId: string, invoiceNumber: string) => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/invoices/${invoiceId}/download`, { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob' });
+      const response = await api.get(`/billing/invoices/${invoiceId}/download`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const a = document.createElement('a'); a.href = url; a.setAttribute('download', `invoice_${invoiceNumber}.pdf`); document.body.appendChild(a); a.click(); a.remove();
       toast({ title: 'Downloaded', description: 'Invoice saved' });

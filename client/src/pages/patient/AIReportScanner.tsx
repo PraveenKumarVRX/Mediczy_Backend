@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import aiHealthServices from '@/services/aiHealthServices';
-import geminiMedicalAI from '@/services/geminiAI';
 
 type AnalysisStep = 'upload' | 'preview' | 'analyzing' | 'results';
 
@@ -112,28 +111,15 @@ const AIReportScanner: React.FC = () => {
     try {
       const userQuery = question.trim() || 'Analyze this medical report and explain the findings in simple, patient-friendly terms';
       
-      // Try backend Claude Vision API first (higher quality)
+      // A failed analysis must never be rendered as a reassuring result. The
+      // old browser-Gemini fallback always hard-coded `routine`, even if the
+      // backend analysis had failed or the image was unreadable.
       const response = await aiHealthServices.analyzeReport(imageData, imageMimeType, userQuery);
       
       if (response.success && response.analysis) {
         setResult(response.analysis as AnalysisResult);
       } else {
-        // Fallback to Gemini Vision (browser-based)
-        console.log('[ReportScanner] Falling back to Gemini Vision...');
-        const geminiResult = await geminiMedicalAI.analyzeMedicalImage(imageData, userQuery);
-        
-        if (geminiResult.success && geminiResult.response) {
-          setResult({
-            findings: geminiResult.response,
-            assessment: 'Analysis powered by Gemini AI',
-            recommendations: ['Please consult with your doctor to discuss these findings'],
-            urgency: 'routine',
-            summary: geminiResult.response.substring(0, 300),
-            disclaimer: 'This AI analysis is for informational purposes only.'
-          });
-        } else {
-          throw new Error(geminiResult.error || 'Analysis failed');
-        }
+        throw new Error(response.error || 'Analysis failed');
       }
       
       setAnalysisProgress(100);

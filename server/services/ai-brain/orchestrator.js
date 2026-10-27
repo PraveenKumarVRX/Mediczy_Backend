@@ -226,6 +226,10 @@ async function think({ message, userId, userType = 'patient', conversationId = n
   let lastProvider = null;
   let lastModel = null;
   let lastCascade = [];
+  const isEmptyTemplateResponse = (content) => {
+    const normalized = String(content || '').trim();
+    return !normalized || normalized === 'Based on the information I gathered, here is my response.';
+  };
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     iterations++;
@@ -250,7 +254,7 @@ async function think({ message, userId, userType = 'patient', conversationId = n
 
     // If no tool calls → final answer
     if (!llmResult.toolCalls || llmResult.toolCalls.length === 0) {
-      finalResponse = llmResult.content;
+      finalResponse = isEmptyTemplateResponse(llmResult.content) ? null : llmResult.content;
       break;
     }
 
@@ -264,7 +268,10 @@ async function think({ message, userId, userType = 'patient', conversationId = n
 
     // If ALL tool calls are duplicates, force final answer
     if (newToolCalls.length === 0) {
-      finalResponse = llmResult.content || 'Based on the information I gathered, here is my response.';
+      // A tool call without body text needs a final no-tools pass. Returning
+      // the old heading-only placeholder made the UI look like a successful
+      // clinical answer even though no answer was generated.
+      finalResponse = isEmptyTemplateResponse(llmResult.content) ? null : llmResult.content;
       break;
     }
 
@@ -344,7 +351,9 @@ async function think({ message, userId, userType = 'patient', conversationId = n
       tools: null, // No tools — force text response
       conversationId: convId
     });
-    finalResponse = fallbackResult.content || "I've gathered the information but couldn't formulate a complete response. Please try rephrasing your question.";
+    finalResponse = isEmptyTemplateResponse(fallbackResult.content)
+      ? "I've gathered the information but couldn't formulate a complete response. Please try rephrasing your question."
+      : fallbackResult.content;
     totalTokens += fallbackResult.usage.totalTokens;
   }
 

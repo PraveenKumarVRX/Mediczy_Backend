@@ -253,6 +253,23 @@ const calculateHealthRiskScore = (assessment) => {
   };
 };
 
+function ageOnDate(dateOfBirth, referenceDate = new Date()) {
+  if (!dateOfBirth) return null;
+  const dob = new Date(dateOfBirth);
+  if (Number.isNaN(dob.getTime())) return null;
+
+  let age = referenceDate.getUTCFullYear() - dob.getUTCFullYear();
+  const birthdayHasPassed = referenceDate.getUTCMonth() > dob.getUTCMonth()
+    || (referenceDate.getUTCMonth() === dob.getUTCMonth() && referenceDate.getUTCDate() >= dob.getUTCDate());
+  if (!birthdayHasPassed) age -= 1;
+  return age >= 0 && age <= 130 ? age : null;
+}
+
+function normaliseGender(value) {
+  const gender = String(value || '').trim().toLowerCase();
+  return ['male', 'female', 'other'].includes(gender) ? gender : null;
+}
+
 /**
  * @route   POST /api/health-assessment/save
  * @desc    Save health risk assessment
@@ -313,8 +330,21 @@ router.post('/save', authUser, async (req, res) => {
       responses = {}
     } = req.body;
 
+    // Demographics used in a clinical risk calculation must be tied to the
+    // authenticated account. Older clients can send cached onboarding values;
+    // accepting those values let an assessment for this account be stored with
+    // a different age/gender from its profile.
+    const accountProfile = await User.findByPk(userId, {
+      attributes: ['dateOfBirth', 'gender']
+    }).catch(() => null);
+    const profileAge = ageOnDate(accountProfile?.dateOfBirth);
+    const profileGender = normaliseGender(accountProfile?.gender);
+    const submittedGender = normaliseGender(gender);
+    const assessmentAge = profileAge ?? parseInt(age, 10);
+    const assessmentGender = profileGender ?? submittedGender;
+
     // Validate required fields
-    if (!age || !gender || !height || !weight) {
+    if (!assessmentAge || !assessmentGender || !height || !weight) {
       return res.status(400).json({
         success: false,
         message: 'Missing required fields: age, gender, height, weight'
@@ -322,7 +352,7 @@ router.post('/save', authUser, async (req, res) => {
     }
 
     // Validate numeric fields
-    if (isNaN(age) || isNaN(height) || isNaN(weight)) {
+    if (Number.isNaN(assessmentAge) || Number.isNaN(parseFloat(height)) || Number.isNaN(parseFloat(weight))) {
       return res.status(400).json({
         success: false,
         message: 'Invalid values for age, height, or weight'
@@ -331,8 +361,8 @@ router.post('/save', authUser, async (req, res) => {
 
     // Calculate risk assessment
     const assessmentData = {
-      age: parseInt(age),
-      gender,
+      age: assessmentAge,
+      gender: assessmentGender,
       height: parseFloat(height),
       weight: parseFloat(weight),
       waist: waist ? parseFloat(waist) : null,
@@ -436,8 +466,8 @@ router.post('/save', authUser, async (req, res) => {
         {
           height: parseFloat(height),
           weight: parseFloat(weight),
-          age: parseInt(age),
-          gender: gender
+          age: assessmentAge,
+          gender: assessmentGender
         },
         { where: { id: userId } }
       );
