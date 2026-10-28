@@ -7776,7 +7776,7 @@ Masked sample rows: ${JSON.stringify(sampleRows)}`;
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle>Health Checkup Packages</CardTitle>
+                      <CardTitle>Health Checkup Packages</CardTitle><Button onClick={() => navigate('/team/corporate-health-packages')}>Manage packages and employee eligibility</Button>
                       <CardDescription>
                         Configure health checkup packages for employees
                       </CardDescription>

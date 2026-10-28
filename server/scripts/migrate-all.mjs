@@ -41,6 +41,7 @@ const MANIFEST = [
 // manifest. Run via import+up() (arity-aware) rather than a child `node <file>` because
 // 11 of them have no direct-run block. Idempotent (IF NOT EXISTS); re-running is safe.
 const NEW_MIGRATIONS_2026Q4 = [
+  '20261028000100-health-package-eligibility.migration.js',
   '20261022010000-corporate-scheduling-doctor-uid.migration.js',
   '20261022011000-corporate-sso-sessions.migration.js',
   '20261022012000-corporate-identity-uniqueness.migration.js',

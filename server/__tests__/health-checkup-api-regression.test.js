@@ -25,13 +25,13 @@ test('booking returns its saved confirmation row', async () => {
     query.mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 5, name: 'Health', features: { tests: ['CBC'] }, price: 0 }])
         .mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 2, name: 'Lab', metadata: { healthCheckupSlots: ['09:00'] } }])
         .mockResolvedValueOnce([]).mockResolvedValueOnce([{ id: 8, status: 'confirmed', booking_reference: 'HC-8', package_id: '5', lab_id: 2 }]);
-    const r = await request(app).post('/bookings').send({ packageId: '5', labId: 2, date: '2099-01-01', timeSlot: '09:00', patient: { name: 'Patient', phone: '9999999999' } });
+    const r = await request(app).post('/bookings').send({ packageId: '5', labId: 2, relation:'self', date: '2099-01-01', timeSlot: '09:00', patient: { name: 'Patient', phone: '9999999999' } });
     expect(r.status).toBe(201);
     expect(r.body.booking.id).toBe('8');
     expect(r.body.confirmation.bookingReference).toBe('HC-8');
 });
 test('reschedule returns the updated booking row', async () => {
-    query.mockResolvedValueOnce([{ id: 8, status: 'confirmed', lab_id: 2 }]).mockResolvedValueOnce([])
+    query.mockResolvedValueOnce([{ id: 8, status: 'confirmed', lab_id: 2 }]).mockResolvedValueOnce([{ id: 8, status: 'confirmed', lab_id: 2 }]).mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: 2, metadata: { healthCheckupSlots: ['09:00'] } }]).mockResolvedValueOnce([])
         .mockResolvedValueOnce([{ id: 8, status: 'rescheduled', lab_id: 2, appointment_date: '2099-01-01', time_slot: '09:00' }]);
     const r = await request(app).post('/bookings/8/reschedule').send({ date: '2099-01-01', timeSlot: '09:00' });
@@ -43,4 +43,20 @@ test('verified payment returns its confirmed booking row', async () => {
     const r = await request(app).post('/bookings/8/payment/verify').send({ razorpayOrderId: 'order-1', razorpayPaymentId: 'payment-1', razorpaySignature: 'valid' });
     expect(r.status).toBe(200);
     expect(r.body.booking).toMatchObject({ id: '8', status: 'confirmed', payment: { status: 'paid' } });
+});
+
+test.each([undefined,'uncle','parent-in-law'])('rejects invalid beneficiary relation %s before SQL',async relation=>{expect((await request(app).post('/bookings').send({packageId:'5',labId:2,relation,date:'2099-01-01',timeSlot:'09:00',patient:{name:'Patient',phone:'9999999999'}})).status).toBe(400);expect(query).not.toHaveBeenCalled();});
+
+describe('health-checkup production path fencing',()=>{
+  let fenced,secret,jwt;
+  beforeAll(async()=>{
+    const {default:fence}=await import('../middleware/ringFencing.js');
+    ({SECRET:secret}=(await import('../config/auth.config.js')).JWT_CONFIG);
+    ({default:jwt}=await import('jsonwebtoken'));
+    fenced=express();fenced.use(fence);fenced.use((_req,res)=>res.json({ok:true}));
+  });
+  test.each(['user','patient','employee'])('allows member role %s through the global API fence',async role=>{
+    const token=jwt.sign({id:1,userType:role,role},secret);
+    expect((await request(fenced).get('/api/health-checkups/packages').set('Authorization',`Bearer ${token}`)).status).toBe(200);
+  });
 });

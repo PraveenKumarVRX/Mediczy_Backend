@@ -142,6 +142,9 @@ interface HealthCheckup {
 // above, which reflects a single generic plan benefit line, not a
 // real per-package test list.
 interface HealthPackage {
+  eligibleRelations?: string[];
+  venueMode?: string;
+  venues?: {name:string;relation:string}[];
   id: string;
   name: string;
   type: 'pre_employment' | 'annual' | 'other';
@@ -153,14 +156,7 @@ interface HealthPackage {
   validTo: string | null;
 }
 
-interface BookingDetails {
-  checkupId: string;
-  preferredDate: string;
-  preferredTime: string;
-  location: string;
-  hospital: string;
-  specialInstructions?: string;
-}
+
 
 interface MyAppointment {
   id: string;
@@ -358,16 +354,7 @@ const CorporateBenefits = () => {
     invoiceNumber: '',
     notes: '',
   });
-  const [selectedCheckup, setSelectedCheckup] = useState<HealthCheckup | null>(null);
-  const [bookingDialog, setBookingDialog] = useState(false);
-  const [bookingDetails, setBookingDetails] = useState<BookingDetails>({
-    checkupId: '',
-    preferredDate: '',
-    preferredTime: '',
-    location: '',
-    hospital: '',
-    specialInstructions: ''
-  });
+
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
 
@@ -423,7 +410,7 @@ const CorporateBenefits = () => {
       
       const [planRes, checkupsRes, appointmentsRes, packagesRes, employeeWalletRes, hrWalletRes, programsRes, authorizationsPayload] = await Promise.all([
         api.get('/corporate/my-benefits').catch(() => ({ data: null })),
-        api.get('/corporate/health-checkups').catch(() => ({ data: null })),
+        api.get('/health-checkups/packages').catch(() => ({ data: null })),
         api.get('/corporate/my-appointments').catch(() => ({ data: null })),
         // HR-only (authCorporate) -- 403s harmlessly for an employee session.
         api.get('/corporate/health-packages').catch(() => ({ data: null })),
@@ -443,7 +430,7 @@ const CorporateBenefits = () => {
       setPlanUsage(usagePayload);
       setViewMode(planRes?.data?.data?.viewMode === 'company' ? 'company' : 'personal');
 
-      const checkupsPayload = checkupsRes?.data?.checkups || checkupsRes?.data?.data?.checkups;
+      const checkupsPayload = checkupsRes?.data?.packages?.map((p: any) => ({...p, tests:(p.tests || []).map((t: any) => typeof t === 'string' ? t : t.name).filter(Boolean)}));
       setHealthCheckups(Array.isArray(checkupsPayload) ? checkupsPayload : []);
 
       const appointmentsPayload = appointmentsRes?.data?.appointments || appointmentsRes?.data?.data?.appointments;
@@ -647,38 +634,8 @@ const CorporateBenefits = () => {
   };
 
   const handleBookCheckup = (checkup: HealthCheckup) => {
-    setSelectedCheckup(checkup);
-    setBookingDetails({
-      ...bookingDetails,
-      checkupId: checkup.id
-    });
-    setBookingDialog(true);
+    navigate(`/health-checkups?packageId=${encodeURIComponent(checkup.id)}`);
   };
-
-  const handleSubmitBooking = async () => {
-    try {
-      if (!selectedCheckup) return;
-
-      const bookingLocation = bookingDetails.location || bookingDetails.hospital;
-      const bookingData = {
-        ...bookingDetails,
-        location: bookingLocation,
-        checkupName: selectedCheckup.name,
-        checkupPrice: selectedCheckup.discountedPrice || selectedCheckup.price,
-        userId: currentUser?.id
-      };
-
-      await api.post('/corporate/book-checkup', bookingData);
-
-      alert('Health checkup booked successfully! You will receive confirmation via email.');
-      setBookingDialog(false);
-      fetchData();
-    } catch (err) {
-      console.error('Booking failed', err);
-      alert('Failed to book appointment. Please try again.');
-    }
-  };
-
   const filteredCheckups = healthCheckups.filter(checkup => {
     const matchesSearch = searchQuery === '' ||
       checkup.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -1714,6 +1671,7 @@ const CorporateBenefits = () => {
                                           </span>
                                         )}
                                       </div>
+                                      <p className="text-xs text-slate-400">Covers: {(pkg.eligibleRelations || ['self']).join(', ').replace(/_/g,' ')} · {pkg.venueMode === 'restricted' ? `Selected venues: ${(pkg.venues || []).map(v => `${v.name} (${v.relation.replace(/_/g,' ')})`).join(', ')}` : 'Corporate network'}</p>
                                       {pkg.description && <p className="text-sm text-slate-400">{pkg.description}</p>}
                                       <div className="flex items-center gap-4 text-sm text-slate-400 pt-1">
                                         <span className="flex items-center gap-1"><TestTube className="w-3.5 h-3.5" />{pkg.tests.length} tests</span>
@@ -1977,125 +1935,7 @@ const CorporateBenefits = () => {
       </div>
 
       {/* Booking Dialog */}
-      <Dialog open={bookingDialog} onOpenChange={setBookingDialog}>
-        <DialogContent className="max-w-2xl bg-slate-900 border-slate-700">
-          <DialogHeader>
-            <DialogTitle>Book Health Checkup</DialogTitle>
-          </DialogHeader>
-          {selectedCheckup && (
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-800/60 rounded-lg border border-slate-700/50">
-                <h3 className="font-semibold text-lg text-slate-100">{selectedCheckup.name}</h3>
-                <p className="text-sm text-slate-400 mt-1">{selectedCheckup.description}</p>
-                <div className="flex items-center gap-4 mt-3">
-                  <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 border">
-                    {selectedCheckup.category}
-                  </Badge>
-                  <span className="text-sm text-slate-300">Duration: {selectedCheckup.duration}</span>
-                  <span className="text-sm font-bold text-emerald-400">
-                    ₹{selectedCheckup.discountedPrice || selectedCheckup.price}
-                  </span>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-200">Preferred Date</label>
-                  <input
-                    type="date"
-                    value={bookingDetails.preferredDate}
-                    onChange={(e) => setBookingDetails({...bookingDetails, preferredDate: e.target.value})}
-                    min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-200">Preferred Time</label>
-                  <select
-                    value={bookingDetails.preferredTime}
-                    onChange={(e) => setBookingDetails({...bookingDetails, preferredTime: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Select time</option>
-                    <option value="8:00 AM">8:00 AM</option>
-                    <option value="9:00 AM">9:00 AM</option>
-                    <option value="10:00 AM">10:00 AM</option>
-                    <option value="11:00 AM">11:00 AM</option>
-                    <option value="2:00 PM">2:00 PM</option>
-                    <option value="3:00 PM">3:00 PM</option>
-                    <option value="4:00 PM">4:00 PM</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-200">Hospital</label>
-                  <select
-                    value={bookingDetails.hospital}
-                    onChange={(e) => setBookingDetails({...bookingDetails, hospital: e.target.value})}
-                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 focus:ring-2 focus:ring-emerald-500"
-                  >
-                    <option value="">Select hospital</option>
-                    <option value="Apollo Hospital">Apollo Hospital</option>
-                    <option value="Fortis Hospital">Fortis Hospital</option>
-                    <option value="Max Healthcare">Max Healthcare</option>
-                    <option value="Medanta Hospital">Medanta Hospital</option>
-                    <option value="KIMS Hospital">KIMS Hospital</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-2 text-slate-200">Location</label>
-                  <input
-                    type="text"
-                    value={bookingDetails.location}
-                    onChange={(e) => setBookingDetails({...bookingDetails, location: e.target.value})}
-                    placeholder="Enter location/area"
-                    className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-slate-200">Special Instructions (Optional)</label>
-                <textarea
-                  value={bookingDetails.specialInstructions}
-                  onChange={(e) => setBookingDetails({...bookingDetails, specialInstructions: e.target.value})}
-                  placeholder="Any specific requirements or medical conditions to note..."
-                  rows={3}
-                  className="w-full px-3 py-2 bg-slate-800/60 border border-slate-700/60 rounded-lg text-slate-200 placeholder:text-slate-500 focus:ring-2 focus:ring-emerald-500"
-                />
-              </div>
-
-              {selectedCheckup.fasting && (
-                <div className="p-3 bg-orange-500/10 border border-orange-500/30 rounded-lg flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm">
-                    <p className="font-medium text-orange-300">Fasting Required</p>
-                    <p className="text-orange-400">Please ensure 8-12 hours of fasting before the checkup</p>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-4 border-t">
-                <Button variant="outline" onClick={() => setBookingDialog(false)}>
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={handleSubmitBooking}
-                  disabled={
-                    !bookingDetails.preferredDate ||
-                    !bookingDetails.preferredTime ||
-                    (!bookingDetails.hospital && !bookingDetails.location)
-                  }
-                >
-                  Confirm Booking
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </CorporateLayout>
   );
 };

@@ -793,14 +793,14 @@ router.get('/health-packages', authCorporate, async (req, res) => {
 
   try {
     const [rows] = await postgresSequelize.query(
-      `SELECT "packageId", "packageName", "packageDetails",
-              MIN("validFrom") AS "validFrom", MAX("validTo") AS "validTo",
-              COUNT(*)::int AS "employeeCount"
-       FROM user_health_packages
-       WHERE corporate_id = :corporateId
-         AND LOWER(COALESCE(status, 'active')) = 'active'
-       GROUP BY "packageId", "packageName", "packageDetails"
-       ORDER BY "packageName" ASC`,
+      `SELECT p.id AS "packageId", p.name AS "packageName", p.features AS "packageDetails", p.metadata,
+              (SELECT COALESCE(jsonb_agg(jsonb_build_object('partnerId',v.partner_id,'relation',v.relation,'partnerType',v.partner_type,'name',CASE WHEN v.partner_type='hospital' THEN h.hospital_name ELSE l.name END)),'[]'::jsonb) FROM health_package_venues v LEFT JOIN labs l ON l.id=v.partner_id AND v.partner_type='lab' LEFT JOIN hospitals h ON h.id=v.partner_id AND v.partner_type='hospital' WHERE v.package_id=p.id) AS venues,
+              MIN(u."validFrom") AS "validFrom", MAX(u."validTo") AS "validTo",
+              COUNT(u.id)::int AS "employeeCount"
+       FROM corporate_health_package_catalog p
+       LEFT JOIN user_health_packages u ON u."packageId"=p.id AND u.corporate_id=p.corporate_id AND LOWER(COALESCE(u.status,'active'))='active'
+       WHERE p.corporate_id=:corporateId AND p.metadata->>'kind'='health_checkup' AND p.is_active=true
+       GROUP BY p.id ORDER BY p.name ASC`,
       { replacements: { corporateId } }
     );
 
@@ -815,6 +815,9 @@ router.get('/health-packages', authCorporate, async (req, res) => {
       .filter((r) => Object.keys(r.packageDetails).length > 0)
       .map((r) => ({
         id: r.packageId,
+        eligibleRelations: r.metadata?.eligibleRelations ?? ['self'],
+        venueMode: r.metadata?.venueMode || 'inherit',
+        venues: r.venues || [],
         name: r.packageName,
         // Packages created before the pre_employment/annual/other type field
         // existed carry whatever free-text type Team used at the time (e.g.
@@ -884,80 +887,9 @@ router.get('/my-appointments', authEmployee, async (req, res) => {
   }
 });
 
-router.post('/book-checkup', authEmployee, async (req, res) => {
-  try {
-    const { checkupId, preferredDate, preferredTime, location, hospital, specialInstructions } = req.body || {};
+// Historical bookings remain readable; all new bookings use the validated engine.
+router.post('/book-checkup', authEmployee, (_req,res) => res.status(410).json({success:false,code:'booking_endpoint_retired',message:'Use /health-checkups/bookings with an assigned package, beneficiary relation and network venue'}));
 
-    if (!checkupId || !preferredDate || !preferredTime || !location) {
-      return res.status(400).json({
-        success: false,
-        message: 'Missing required fields',
-        details: {
-          checkupId: !checkupId ? 'required' : 'provided',
-          preferredDate: !preferredDate ? 'required' : 'provided',
-          preferredTime: !preferredTime ? 'required' : 'provided',
-          location: !location ? 'required' : 'provided'
-        }
-      });
-    }
-
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({
-        success: false,
-        message: 'User authentication required'
-      });
-    }
-
-    let activePlan = null;
-    if (Number.isInteger(parseInt(req.user.id))) {
-      try {
-        activePlan = await getActiveUserPlan(req.user.id);
-      } catch (error) {
-        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
-      }
-    }
-
-    if (!activePlan && process.env.NODE_ENV === 'production') {
-      return res.status(400).json({
-        success: false,
-        message: 'No active corporate plan found for user',
-        userId: req.user.id
-      });
-    }
-
-    const [[row]] = await postgresSequelize.query(
-      `INSERT INTO corporate_checkup_bookings
-         ("userId", "checkupId", "checkupName", "appointmentType", date, time, hospital, location, status, "specialInstructions")
-       VALUES (:userId, :checkupId, :checkupName, 'Annual Health Checkup', :date, :time, :hospital, :location, 'scheduled', :specialInstructions)
-       RETURNING *`,
-      {
-        replacements: {
-          userId: req.user.id, checkupId, checkupName: `Health Checkup ${checkupId}`,
-          date: preferredDate, time: preferredTime, hospital: hospital || 'Network Hospital', location,
-          specialInstructions: specialInstructions || null,
-        },
-      }
-    );
-
-    const appointment = mapCheckupBooking(row);
-
-    res.status(201).json({
-      success: true,
-      message: 'Health checkup booked successfully',
-      appointment,
-      data: { appointment }
-    });
-  } catch (error) {
-    console.error('Error booking corporate checkup:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to book health checkup',
-      error: error.message
-    });
-  }
-});
-
-// Get all available corporate plans (public - for browsing)
 router.get('/plans', async (req, res) => {
   try {
     const plans = await MembershipPlan.findAll({
