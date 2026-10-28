@@ -164,7 +164,7 @@ class EmergencyTriageService {
     // Determine routing
     const specialty = SPECIALTY_ROUTING[category] || 'Emergency Medicine';
     const ambulanceNeeded = esiLevel <= 2;
-    const estimatedWaitMinutes = this.estimateWait(esiLevel);
+    const estimatedWaitMinutes = esiLevel <= 2 ? null : this.estimateWait(esiLevel);
 
     // Build base result
     const result = {
@@ -270,7 +270,7 @@ class EmergencyTriageService {
    * LLM-based symptom assessment
    */
   async llmSymptomAnalysis(symptoms, vitals, painScale, age, gender) {
-    const prompt = `You are an emergency medicine triage nurse using the ESI 5-Level system.
+    const prompt = `You are an emergency medicine triage assistant using the ESI 5-Level system. Use only the symptoms and measurements explicitly supplied below. Never invent a history, measurement, symptom or diagnosis. Distinguish patient-reported information from measured data.
 
 Patient presents with:
 - Symptoms: ${symptoms}
@@ -323,7 +323,7 @@ Assess and respond with ONLY a JSON object:
    */
   estimateWait(esiLevel) {
     const waits = { 1: 0, 2: 5, 3: 30, 4: 60, 5: 120 };
-    return waits[esiLevel] || 60;
+    return waits[esiLevel] ?? 60;
   }
 
   /**
@@ -346,37 +346,13 @@ Assess and respond with ONLY a JSON object:
    * Get immediate actions for the triage level
    */
   getImmediateActions(esiLevel, category) {
-    if (esiLevel === 1) {
-      return [
-        'Activate emergency response team immediately',
-        'Prepare resuscitation bay',
-        'Notify attending physician STAT',
-        'Prepare defibrillator and airway equipment',
-        'Start continuous vital sign monitoring'
-      ];
-    }
-    if (esiLevel === 2) {
-      return [
-        'Place patient in monitored bed',
-        'Obtain IV access',
-        'Order STAT labs (CBC, BMP, Troponin if cardiac)',
-        'Notify attending physician within 10 minutes',
-        'Continuous pulse oximetry'
-      ];
-    }
-    if (esiLevel === 3) {
-      return [
-        'Assign to next available bed',
-        'Vital signs every 30 minutes',
-        'Order appropriate labs/imaging',
-        'Physician evaluation within 30 minutes'
-      ];
-    }
-    return [
-      'Register and seat in waiting area',
-      'Provide comfort measures',
-      'Re-assess if condition changes'
+    if (esiLevel <= 2) return [
+      'Call 112 or 108 now and describe your symptoms. Do not wait for an app consultation.',
+      'Do not drive yourself. Ask someone nearby to stay with you.',
+      'Stay seated or in a safe position and unlock the door if it is safe to do so.',
+      'Follow the emergency dispatcher’s instructions. Take medicines only if advised by a clinician.'
     ];
+    return ['Arrange a clinician assessment.', 'Seek emergency help immediately if symptoms worsen.'];
   }
 
   /**

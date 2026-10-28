@@ -1,3 +1,5 @@
+import api from '@/utils/api';
+import { scoreLabel } from '@/utils/patient-display';
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -42,6 +44,7 @@ const insightIcons: Record<string, any> = {
 
 const SmartHealthDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
+  const [dailyScore, setDailyScore] = useState<number | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [riskScore, setRiskScore] = useState<HealthRiskScore | null>(null);
   const [notifications, setNotifications] = useState<SmartNotification[]>([]);
@@ -56,17 +59,19 @@ const SmartHealthDashboard: React.FC = () => {
     else setLoading(true);
 
     try {
-      const [scoreRes, notifRes, intelRes] = await Promise.all([
+      const [scoreRes, notifRes, intelRes, dailyRes] = await Promise.all([
         aiHealthServices.getMyRiskScore(),
         aiHealthServices.getSmartNotifications({ limit: 30 }),
         aiHealthServices.getHealthIntelligence(),
+        api.get('/health-score/today', { timeout: 12000 }).catch(() => null),
       ]);
 
+      setDailyScore(dailyRes?.data?.score == null ? null : Number(dailyRes.data.score));
       if (scoreRes.success && scoreRes.score) {
         setRiskScore(scoreRes.score);
       }
       if (notifRes.success) {
-        setNotifications(notifRes.notifications);
+        setNotifications(Array.isArray(notifRes.notifications) ? notifRes.notifications : []);
       }
       if (intelRes.success && intelRes.data) {
         setIntelligence(intelRes.data);
@@ -101,7 +106,7 @@ const SmartHealthDashboard: React.FC = () => {
     }
   };
 
-  const overallScore = riskScore?.overall_score ?? 0;
+  const overallScore = dailyScore ?? 0;
   const scoreConfig = getScoreColor(overallScore);
   const unreadCount = notifications.filter(n => n.status === 'unread').length;
 
@@ -185,7 +190,7 @@ const SmartHealthDashboard: React.FC = () => {
                     </svg>
                     <div className="absolute inset-0 flex flex-col items-center justify-center">
                       <span className={`text-2xl font-bold ${scoreConfig.text}`}>
-                        {riskScore ? overallScore : '--'}
+                        {dailyScore ?? "—"}
                       </span>
                       <span className="text-xs text-muted-foreground">/100</span>
                     </div>
@@ -193,7 +198,7 @@ const SmartHealthDashboard: React.FC = () => {
 
                   <div className="flex-1 space-y-2">
                     <div>
-                      <p className="font-bold text-lg">{riskScore ? scoreConfig.label : 'No Data Yet'}</p>
+                      <p className="font-bold text-lg">{scoreLabel(dailyScore)}</p>
                       <p className="text-xs text-muted-foreground">
                         {riskScore
                           ? `Updated ${new Date(riskScore.updated_at).toLocaleDateString()}`
@@ -416,7 +421,7 @@ const SmartHealthDashboard: React.FC = () => {
                       <CardContent className="p-3 flex items-center gap-3">
                         <Heart className="h-8 w-8 text-teal-600 shrink-0" />
                         <div>
-                          <p className="text-3xl font-bold text-teal-600">{intelligence.summary.overall_score}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
+                          <p className="text-3xl font-bold text-teal-600">{intelligence.summary.overall_score ?? "Not available yet"}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
                           <p className="text-xs text-muted-foreground">Daily Health Score</p>
                         </div>
                       </CardContent>
@@ -525,9 +530,9 @@ const SmartHealthDashboard: React.FC = () => {
               <Card className="border-slate-200/50 dark:border-slate-700/50">
                 <CardContent className="p-8 text-center">
                   <Sparkles className="h-12 w-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-                  <h3 className="font-semibold mb-1">Health Insights Loading</h3>
+                  <h3 className="font-semibold mb-1">No health insights yet</h3>
                   <p className="text-sm text-muted-foreground">
-                    AI is continuously learning from your health data to provide personalized insights.
+                    Log or sync health readings to see observations. You can retry using Refresh.
                   </p>
                 </CardContent>
               </Card>

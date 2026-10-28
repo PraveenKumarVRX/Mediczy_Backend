@@ -128,7 +128,7 @@ const NetworkClinics: React.FC = () => {
     clinic.specialty || clinic.type || 'Clinic';
 
   return (
-    <MainLayout>
+    <>
     <motion.div initial="hidden" animate="show" variants={container} className="max-w-4xl mx-auto space-y-6 px-4 py-6">
       {/* Premium Header */}
       <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-700 via-emerald-700 to-teal-800 p-6 md:p-8 text-white shadow-2xl">
@@ -379,7 +379,7 @@ const NetworkClinics: React.FC = () => {
         </DialogContent>
       </Dialog>
     </motion.div>
-    </MainLayout>
+    </>
   );
 };
 

@@ -54,7 +54,7 @@ const PatientNotifications = () => {
     return colors[priority as keyof typeof colors];
   };
 
-  const formatTimestamp = (timestamp: Date) => timestamp.toLocaleString();
+  const formatTimestamp = (timestamp: Date) => timestamp.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">

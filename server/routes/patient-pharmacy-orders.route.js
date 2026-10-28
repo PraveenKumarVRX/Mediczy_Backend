@@ -62,8 +62,8 @@ function validateOrderBody(body) {
     return `delivery_type must be one of: ${VALID_DELIVERY_TYPES.join(', ')}`;
   }
 
-  if (delivery_type === 'home_delivery' && !body.delivery_address) {
-    return 'delivery_address is required for home_delivery';
+  if (delivery_type === 'home_delivery' && (!body.delivery_address || !/\b[1-9]\d{5}\b/.test(JSON.stringify(body.delivery_address)) || JSON.stringify(body.delivery_address).length < 20)) {
+    return 'Enter a full street address, city and valid six-digit pincode';
   }
 
   return null;

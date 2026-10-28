@@ -32,6 +32,7 @@ import veepooService from '@/services/ble/VeepooService';
 import fireBolttService from '@/services/ble/FireBolttService';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InlineError } from '@/components/ui/inline-error';
+import { liveDeviceStatus } from '@/utils/device-status';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface HealthMetric {
@@ -113,8 +114,8 @@ function emptyData(): HealthData {
     hrv:             emptyMetric('ms', [20, 80]),
     temperature:     emptyMetric('°C', [36.1, 37.2]),
     stress:          emptyMetric('%'),
-    bloodGlucose:    emptyMetric('mmol/L', [3.9, 7.8]),
-    uricAcid:        emptyMetric('μmol/L', [150, 420]),
+    bloodGlucose:    emptyMetric('mg/dL'),
+    uricAcid:        emptyMetric('mg/dL'),
     cholesterol:     emptyMetric('mmol/L', [0, 5.2]),
     gymWorkout:      emptyMetric('min'),
     outdoorActivity: emptyMetric('km'),
@@ -207,6 +208,7 @@ const MetricCard: React.FC<{
 const WatchAnalytics: React.FC = () => {
   const [data, setData] = useState<HealthData>(emptyData());
   const [device, setDevice] = useState<ConnectedDevice | null>(null);
+  const [deviceConnected, setDeviceConnected] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [autoSync, setAutoSync] = useState(false);
   const [syncInterval, setSyncIntervalState] = useState(30);
@@ -239,7 +241,13 @@ const WatchAnalytics: React.FC = () => {
       const res = await api.get(`/health-data/trends/${apiType}`, {
         params: { period: period === 'today' ? 'hour' : 'day' },
       });
-      setApiChartData(res.data.data ?? []);
+      const points = res.data.data ?? [];
+      if (points.length === 0) {
+        const { data: summary } = await api.get('/health-data/summary');
+        const last = summary.latest?.[apiType];
+        if (last && Number.isFinite(Number(last.value))) points.push({ label: `Last reading ${new Date(last.timestamp).toLocaleDateString('en-IN')}`, value: Number(last.value), min: Number(last.value), max: Number(last.value) });
+      }
+      setApiChartData(points);
       setChartStats(res.data.stats ?? null);
     } catch (e) {
       console.error('Chart load error:', e);
@@ -251,12 +259,19 @@ const WatchAnalytics: React.FC = () => {
   // ── Load device + health data ───────────────────────────────────────────────
   const loadData = useCallback(async () => {
     // Connected device from localStorage
-    const stored = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-    if (stored.length > 0) setDevice(stored[0]);
+    try {
+      const stored = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+      const paired = Array.isArray(stored) ? stored[0] ?? null : null;
+      setDevice(paired);
+      setDeviceConnected(paired ? liveDeviceStatus(paired) === 'connected' : false);
+    } catch {
+      setDevice(null);
+      setDeviceConnected(false);
+    }
 
     try {
       setFetchError(false);
-      const res = await api.get('/health-data/summary');
+      const [res, latestRes] = await Promise.all([api.get('/health-data/summary'), api.get('/health/latest')]);
       const d   = res.data;
       const latest = d.latest ?? {};
       const prev   = d.previous ?? {};
@@ -286,8 +301,8 @@ const WatchAnalytics: React.FC = () => {
         steps:         { value: latest.steps?.value ?? null, unit:'steps', history: mkHistory('steps') },
         calories:      { value: latest.calories?.value ?? null, unit:'kcal', history: mkHistory('calories') },
         activeMinutes: { value: latest.active_minutes?.value ?? null, unit:'min', history: mkHistory('active_minutes') },
-        sleepHours:    { value: latest.sleep?.value ?? null, unit:'hrs', normal:[7,9], history: mkHistory('sleep') },
-        sleepScore:    { value: latest.sleep?.value ? Math.min(100, Math.round(latest.sleep.value / SLEEP_GOAL * 100)) : null, unit:'%', history: [] },
+        sleepHours:    { value: latestRes.data.sleepHours ?? null, unit:'hrs', normal:[7,9], history: mkHistory('sleep') },
+        sleepScore:    { value: latestRes.data.sleepScore ?? null, unit:'%', history: [] },
         bloodPressure: {
           systolic: latest.blood_pressure_systolic?.value ?? null,
           diastolic: latest.blood_pressure_diastolic?.value ?? null,
@@ -298,9 +313,9 @@ const WatchAnalytics: React.FC = () => {
           })),
         },
         hrv:          { value: latest.hrv?.value ?? null, unit:'ms', normal:[20,80], history: mkHistory('hrv') },
-        temperature:  { value: latest.temperature?.value ?? null, unit:'°C', normal:[36.1,37.2], history: mkHistory('temperature') },
+        temperature:  { value: latest.temperature?.value ?? null, unit: latest.temperature?.unit || '°C', history: mkHistory('temperature') },
         stress:       { value: latest.stress?.value ?? null, unit:'%', history: mkHistory('stress') },
-        bloodGlucose: { value: latest.blood_glucose?.value ?? null, unit:'mmol/L', normal:[3.9,7.8], history: mkHistory('blood_glucose') },        uricAcid:     { value: latest.uric_acid?.value ?? null, unit:'\u03bcmol/L', normal:[150,420], history: mkHistory('uric_acid') },
+        bloodGlucose: { value: latest.blood_glucose?.value ?? null, unit: latest.blood_glucose?.unit || 'Unit unavailable', history: mkHistory('blood_glucose') },        uricAcid:     { value: latest.uric_acid?.value ?? null, unit: latest.uric_acid?.unit || 'Unit unavailable', history: mkHistory('uric_acid') },
         cholesterol:  { value: latest.cholesterol?.value ?? null, unit:'mmol/L', normal:[0,5.2], history: mkHistory('cholesterol') },
         gymWorkout:   { value: latest.gym_workout?.value ?? null, unit:'min', history: mkHistory('gym_workout') },
         outdoorActivity: { value: latest.outdoor_activity?.value ?? null, unit:'km', history: mkHistory('outdoor_activity') },
@@ -393,6 +408,13 @@ const WatchAnalytics: React.FC = () => {
     loadChartData(selectedMetric, chartPeriod);
   }, [selectedMetric, chartPeriod, loadChartData]);
 
+  useEffect(() => {
+    const refreshConnection = () => setDeviceConnected(device ? liveDeviceStatus(device) === 'connected' : false);
+    refreshConnection();
+    const timer = setInterval(refreshConnection, 5000);
+    return () => clearInterval(timer);
+  }, [device]);
+
   // ── Manual sync ─────────────────────────────────────────────────────────────
   const handleManualSync = async () => {
     setSyncing(true);
@@ -471,8 +493,8 @@ const WatchAnalytics: React.FC = () => {
     hrv:           { label:'HRV',              color:'#2dd4bf', unit:'ms'    },
     temperature:   { label:'Temperature',      color:'#facc15', unit:'\u00b0C'    },
     stress:        { label:'Stress',           color:'#f472b6', unit:'%'     },
-    bloodGlucose:  { label:'Blood Glucose',    color:'#a3e635', unit:'mmol/L'},
-    uricAcid:      { label:'Uric Acid',        color:'#fb7185', unit:'\u03bcmol/L'},
+    bloodGlucose:  { label:'Blood Glucose',    color:'#a3e635', unit:data.bloodGlucose.unit},
+    uricAcid:      { label:'Uric Acid',        color:'#fb7185', unit:data.uricAcid.unit},
     cholesterol:   { label:'Cholesterol',      color:'#f9a8d4', unit:'mmol/L'},
     gymWorkout:    { label:'Gym Workout',      color:'#86efac', unit:'min'   },
     outdoorActivity:{ label:'Outdoor Activity',color:'#67e8f9', unit:'km'    },
@@ -496,17 +518,17 @@ const WatchAnalytics: React.FC = () => {
             <div>
               <h1 className="text-2xl font-bold">{device?.name ?? 'Smart Wearables'}</h1>
               <div className="flex items-center gap-3 mt-1">
-                <span className="flex items-center gap-1 text-xs text-teal-300">
-                  <span className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-                  {device ? 'Connected' : 'No device paired'}
+                <span className={`flex items-center gap-1 text-xs ${deviceConnected ? 'text-teal-300' : 'text-slate-400'}`}>
+                  <span className={`w-2 h-2 rounded-full ${deviceConnected ? 'bg-teal-400 animate-pulse' : 'bg-slate-500'}`} />
+                  {deviceConnected ? 'Connected' : device ? 'Offline · paired' : 'No device paired'}
                 </span>
-                {device?.battery != null && (
+                {deviceConnected && device?.battery != null && (
                   <span className="flex items-center gap-1 text-xs text-slate-300">
                     <Battery className="w-3 h-3" /> {device.battery}%
                   </span>
                 )}
                 <span className="flex items-center gap-1 text-xs text-slate-400">
-                  <Clock className="w-3 h-3" /> {formatLastSync()}
+                  <Clock className="w-3 h-3" /> Last recorded: {formatLastSync()}
                 </span>
               </div>
             </div>
@@ -822,7 +844,7 @@ const WatchAnalytics: React.FC = () => {
             onClick={() => setSelectedMetric('stress')}
           />
           <MetricCard
-            label="Blood Glucose" value={data.bloodGlucose.value} unit="mmol/L"
+            label="Blood Glucose" value={data.bloodGlucose.value} unit={data.bloodGlucose.unit}
             icon={<Activity className="w-4 h-4 text-lime-400" />}
             color="text-lime-400" bgColor="bg-lime-500/15"
             normal={data.bloodGlucose.normal} history={data.bloodGlucose.history}
@@ -830,7 +852,7 @@ const WatchAnalytics: React.FC = () => {
             onClick={() => setSelectedMetric('bloodGlucose')}
           />
           <MetricCard
-            label="Uric Acid" value={data.uricAcid.value} unit="\u03bcmol/L"
+            label="Uric Acid" value={data.uricAcid.value} unit={data.uricAcid.unit}
             icon={<Droplets className="w-4 h-4 text-rose-400" />}
             color="text-rose-400" bgColor="bg-rose-500/15"
             normal={data.uricAcid.normal} history={data.uricAcid.history}

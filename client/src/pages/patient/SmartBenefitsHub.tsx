@@ -1,6 +1,7 @@
+import { toast } from 'sonner';
 /**
  * SmartBenefitsHub — World-Class Employee Benefits Dashboard
- * 
+ *
  * MediBuddy/GetVisit-tier employee benefits experience with:
  * - Insurance coverage visualization with sunburst cards
  * - One-tap claim filing with document AI
@@ -38,7 +39,7 @@ import MainLayout from '@/components/layout/MainLayout';
 import { FamilyMemberDialog } from '@/components/profile/FamilyMemberDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-const insurerLabel = (plan: BenefitPlan) => plan.insurer || 'Employer-funded (no third-party insurer)';
+const insurerLabel = (plan: BenefitPlan) => plan.insurer || (plan.isEmployerFunded ? 'Employer-funded service benefits' : 'Membership service benefits');
 
 interface FamilyMember {
   id: string;
@@ -76,48 +77,7 @@ const eCardEligible = new Set(['gmc', 'parents', 'topup', 'personal']);
 const isHealthCheckupPlan = (plan: BenefitPlan) =>
   plan.benefitCategory === 'health_checkup' || plan.source === 'user_health_packages';
 
-const policyBenefitChips: Record<string, { icon: any; label: string; highlight?: boolean }[]> = {
-  gmc: [
-    { icon: Building2, label: '6,000+ Cashless', highlight: true },
-    { icon: Baby, label: 'Maternity ₹50K' },
-    { icon: Zap, label: 'Day Care' },
-  ],
-  gpa: [
-    { icon: ShieldCheck, label: 'Accidental Death', highlight: true },
-    { icon: Bone, label: 'Disability Cover' },
-    { icon: Award, label: 'Edu Benefit' },
-  ],
-  topup: [
-    { icon: TrendingUp, label: 'Family Floater', highlight: true },
-    { icon: RefreshCw, label: 'Multi-Claim' },
-    { icon: Building2, label: 'Post-Deductible' },
-  ],
-  parents: [
-    { icon: Users, label: 'Parents Covered', highlight: true },
-    { icon: Building2, label: 'Cashless Network' },
-    { icon: Calendar, label: 'Day Care' },
-  ],
-  personal: [
-    { icon: Shield, label: 'Individual Cover', highlight: true },
-    { icon: Stethoscope, label: 'Annual Checkup' },
-    { icon: Gift, label: 'NCB Eligible' },
-  ],
-  opd: [
-    { icon: Stethoscope, label: 'Consultations', highlight: true },
-    { icon: Pill, label: 'Medicines' },
-    { icon: Activity, label: 'Diagnostics' },
-  ],
-  gtl: [
-    { icon: Heart, label: '₹25L Life Cover', highlight: true },
-    { icon: Zap, label: '₹50L Accidental' },
-    { icon: AlertCircle, label: 'Terminal Illness' },
-  ],
-  dental: [
-    { icon: Bone, label: 'Dental Care', highlight: true },
-    { icon: Eye, label: 'Eye Exam' },
-    { icon: Star, label: 'Spectacles' },
-  ],
-};
+const policyBenefitChips: Record<string, { icon: any; label: string; highlight?: boolean }[]> = {};
 
 const statusConfig: Record<string, { color: string; bg: string; icon: any; label: string }> = {
   submitted: { color: 'text-blue-400', bg: 'bg-blue-500/10', icon: Send, label: 'Submitted' },
@@ -129,7 +89,7 @@ const statusConfig: Record<string, { color: string; bg: string; icon: any; label
 };
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
-const fmt = (n: number) => n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
+const fmt = (n: number) => !n ? 'Not specified' : n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : `₹${(n / 1000).toFixed(0)}K`;
 const fmtFull = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 const MOTION_STAGGER = 0.08;
 const genderLabel = (value?: string) => {
@@ -156,10 +116,24 @@ export default function SmartBenefitsHub() {
     plans, family, claims, loading, claimsDataStatus, refresh: loadBenefitsData
   } = useSmartBenefits();
 
-  const totalSumInsured = plans.reduce((s, p) => s + p.sumInsured, 0);
+  const totalSumInsured = plans.reduce((s, p) => s + Number(p.sumInsured || 0), 0);
   const totalUtilized = plans.reduce((s, p) => s + p.utilized, 0);
   const totalRemaining = plans.reduce((s, p) => s + p.remaining, 0);
   const activeClaims = claims.filter(c => !['settled', 'rejected'].includes(c.status));
+
+  const eCardText = () => [
+    'Mediqzy Health Card', currentUser ? [currentUser.firstName, currentUser.lastName].filter(Boolean).join(' ') : '',
+    eCardPlan?.name || '', `Policy: ${eCardPlan?.policyNumber || 'Not issued — service entitlement'}`,
+    `Cover: ${eCardPlan?.sumInsured ? fmtFull(eCardPlan.sumInsured) : 'No monetary cover specified; see service entitlements'}`,
+    `Valid until: ${eCardPlan?.validTo || 'Confirm with support'}`,
+  ].filter(Boolean).join('\n');
+  const downloadECard = async () => {
+    const { jsPDF } = await import('jspdf'); const pdf = new jsPDF(); pdf.setFontSize(12); pdf.text(pdf.splitTextToSize(eCardText(), 175), 18, 22); pdf.save('mediqzy-health-card.pdf');
+  };
+  const shareECard = async () => {
+    try { if (navigator.share) await navigator.share({ title: 'My Mediqzy Health Card', text: eCardText() }); else { await navigator.clipboard.writeText(eCardText()); toast.success('Card details copied'); } }
+    catch (error: any) { if (error.name !== 'AbortError') toast.error('Could not share. Please download your card.'); }
+  };
 
   const openHealthCheckupBooking = (plan: BenefitPlan, forFamily = false) => {
     const params = new URLSearchParams({
@@ -195,7 +169,7 @@ export default function SmartBenefitsHub() {
               <h1 className="text-2xl font-bold text-white">My Benefits</h1>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-sm text-slate-400">
-                  {plans.length} active plans • {family.length} members covered
+                  {plans.length} active plans • {family.filter(member => member.covered).length} members covered
                 </p>
                 <Badge className={claimsDataStatus === 'live' ? 'bg-emerald-500/10 text-emerald-300 border-0' : 'bg-amber-500/10 text-amber-300 border-0'}>
                   {claimsDataStatus === 'live' ? 'Live Claims' : 'Claims Limited'}
@@ -235,7 +209,7 @@ export default function SmartBenefitsHub() {
               className="bg-gradient-to-br from-emerald-600/20 to-emerald-800/10 border border-emerald-500/20 rounded-2xl p-4 text-center backdrop-blur-sm">
               <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider mb-1">Available</p>
               <p className="text-xl font-bold text-white">{fmt(totalRemaining)}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">{totalSumInsured > 0 ? ((totalRemaining / totalSumInsured) * 100).toFixed(0) : '0'}% remaining</p>
+              <p className="text-[10px] text-slate-500 mt-0.5">{totalSumInsured > 0 ? `${((totalRemaining / totalSumInsured) * 100).toFixed(0)}% remaining` : 'See service entitlements'}</p>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
               className="bg-gradient-to-br from-amber-600/20 to-amber-800/10 border border-amber-500/20 rounded-2xl p-4 text-center backdrop-blur-sm">
@@ -283,12 +257,12 @@ export default function SmartBenefitsHub() {
           </div>
           <div className="flex gap-2 flex-wrap">
             {tab !== 'network' && (
-              <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('network')}>
+              <Button size="sm" variant="outline" className="bg-transparent hover:bg-slate-800 border-white/10 text-slate-300" onClick={() => setTab('network')}>
                 <MapPin className="h-3.5 w-3.5 mr-1" /> Find Network
               </Button>
             )}
             {tab !== 'claims' && (
-              <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('claims')}>
+              <Button size="sm" variant="outline" className="bg-transparent hover:bg-slate-800 border-white/10 text-slate-300" onClick={() => setTab('claims')}>
                 Track Claims
               </Button>
             )}
@@ -441,8 +415,8 @@ export default function SmartBenefitsHub() {
                   {[
                     { icon: Building2, label: 'Find Hospital', desc: 'Cashless network', action: () => setTab('network') },
                     { icon: Download, label: 'Download Card', desc: 'E-Health card', action: () => { setECardPlan(plans.find(p => p.type === 'gmc') || plans[0]); setShowECard(true); } },
-                    { icon: Phone, label: 'Claim Help', desc: '24/7 support', action: () => navigate('/emergency') },
-                    { icon: FileCheck, label: 'Pre-Auth', desc: 'Check status', action: () => setTab('claims') },
+                    { icon: Phone, label: 'Claim Help', desc: 'Contact support', action: () => navigate('/help?category=insurance') },
+
                   ].map((a, i) => (
                     <motion.button key={i} onClick={a.action}
                       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * MOTION_STAGGER, duration: 0.25 }}
@@ -613,80 +587,7 @@ export default function SmartBenefitsHub() {
           )}
 
           {/* ─── Network Tab ─────────────────────────────────────────────── */}
-          {tab === 'network' && (
-            <motion.div key="network" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
-              <div className="space-y-4 pb-8">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                  <Input value={networkSearch} onChange={e => setNetworkSearch(e.target.value)}
-                    placeholder="Search hospitals, clinics, labs..."
-                    className="pl-10 bg-slate-800/50 border-white/[0.08] text-white placeholder:text-slate-600 rounded-xl" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { count: '6,200+', label: 'Hospitals', icon: Building2, color: 'text-blue-400' },
-                    { count: '12,000+', label: 'Clinics', icon: Stethoscope, color: 'text-emerald-400' },
-                    { count: '4,500+', label: 'Labs', icon: Activity, color: 'text-violet-400' },
-                    { count: '2,800+', label: 'Pharmacies', icon: Pill, color: 'text-amber-400' },
-                  ].map((s, i) => (
-                    <Card key={i} className="!p-3 border-white/[0.06] bg-slate-900/50 text-center">
-                      <s.icon className={`h-5 w-5 ${s.color} mx-auto mb-1`} />
-                      <p className="text-lg font-bold text-white">{s.count}</p>
-                      <p className="text-[10px] text-slate-500">{s.label}</p>
-                    </Card>
-                  ))}
-                </div>
-
-                {/* Featured Hospitals */}
-                <h3 className="text-sm font-semibold text-white mt-4">Near You</h3>
-                {[
-                  { name: 'Apollo Hospitals', dist: '2.3 km', rating: 4.8, cashless: true, specialties: ['Cardiology', 'Ortho', 'Neuro'] },
-                  { name: 'Fortis Healthcare', dist: '3.1 km', rating: 4.6, cashless: true, specialties: ['Oncology', 'Cardiac', 'Gastro'] },
-                  { name: 'Max Super Speciality', dist: '4.7 km', rating: 4.7, cashless: true, specialties: ['Transplant', 'Neuro', 'Spine'] },
-                ].map((h, i) => (
-                  <Card key={i} className="!p-0 overflow-hidden border-white/[0.06] bg-slate-900/50">
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-                            <Building2 className="h-5 w-5 text-blue-400" />
-                          </div>
-                          <div>
-                            <h4 className="text-sm font-semibold text-white">{h.name}</h4>
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="text-[10px] text-slate-500 flex items-center gap-0.5">
-                                <MapPin className="h-3 w-3" /> {h.dist}
-                              </span>
-                              <span className="text-[10px] text-amber-400 flex items-center gap-0.5">
-                                <Star className="h-3 w-3 fill-amber-400" /> {h.rating}
-                              </span>
-                              {h.cashless && (
-                                <Badge className="bg-emerald-500/10 text-emerald-400 border-0 text-[8px]">Cashless</Badge>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <Button variant="outline" size="sm" className="border-white/10 text-xs rounded-lg h-8">
-                          <Navigation className="h-3 w-3 mr-1" /> Navigate
-                        </Button>
-                      </div>
-                      <div className="flex gap-1.5 mt-3">
-                        {h.specialties.map(s => (
-                          <Badge key={s} variant="outline" className="text-[9px] border-white/10 text-slate-400">{s}</Badge>
-                        ))}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-
-                <Button variant="outline" className="w-full border-white/10 text-slate-400 hover:text-white rounded-xl gap-2"
-                  onClick={() => navigate('/patient/network-hospitals')}>
-                  <MapPin className="h-4 w-4" /> View All Network Providers
-                </Button>
-              </div>
-            </motion.div>
-          )}
+          {tab === 'network' && <div className="space-y-4 py-4"><p className="text-slate-300">Browse the current provider directory and verify eligibility with your plan before treatment.</p><Button onClick={() => navigate('/patient/network-hospitals')}>Find Network Hospitals</Button><Button onClick={() => navigate('/patient/network-clinics')}>Find Clinics</Button></div>}
         </AnimatePresence>
       </div>
 
@@ -730,7 +631,7 @@ export default function SmartBenefitsHub() {
                     <div className="flex items-center justify-between border-t border-white/10 pt-3">
                       <div>
                         <p className="text-[9px] text-white/50 mb-0.5">Policy No.</p>
-                        <p className="text-[11px] font-mono text-white/80">{eCardPlan.policyNumber || '—'}</p>
+                        <p className="text-[11px] font-mono text-white/80">{eCardPlan.policyNumber || 'Not issued'}</p>
                       </div>
                       <div className="text-center">
                         <p className="text-[9px] text-white/50 mb-0.5">Cover</p>
@@ -765,10 +666,10 @@ export default function SmartBenefitsHub() {
                 )}
 
                 <div className="flex gap-2">
-                  <Button className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1 text-sm">
+                  <Button onClick={downloadECard} className="flex-1 bg-blue-600 hover:bg-blue-500 border-0 rounded-xl gap-1 text-sm">
                     <Download className="h-4 w-4" /> Download
                   </Button>
-                  <Button variant="outline" className="flex-1 border-white/10 text-slate-300 rounded-xl gap-1 text-sm">
+                  <Button onClick={shareECard} variant="outline" className="bg-transparent hover:bg-slate-800 flex-1 border-white/10 text-slate-300 rounded-xl gap-1 text-sm">
                     <Share2 className="h-4 w-4" /> Share
                   </Button>
                 </div>
@@ -847,7 +748,7 @@ export default function SmartBenefitsHub() {
                       File Claim
                     </Button>
                     {eCardEligible.has(selectedPlan.type) && (
-                      <Button variant="outline" className="flex-1 border-white/10 rounded-xl gap-1" onClick={() => { setECardPlan(selectedPlan); setSelectedPlan(null); setShowECard(true); }}>
+                      <Button variant="outline" className="bg-transparent hover:bg-slate-800 flex-1 border-white/10 rounded-xl gap-1" onClick={() => { setECardPlan(selectedPlan); setSelectedPlan(null); setShowECard(true); }}>
                         <CreditCard className="h-4 w-4" /> E-Card
                       </Button>
                     )}

@@ -1,3 +1,5 @@
+import ReactMarkdown from 'react-markdown';
+import { filterDietSuggestions, scaleMealBudgets, isDietAdvice } from '../../../shared/patient-diet.mjs';
 import { useState, useEffect, useMemo } from "react";
 import {
   Scale,
@@ -443,7 +445,7 @@ const Diet = () => {
     try {
       const activePlan = personalizedPlan || dietPlans[selectedPlan];
       await generateMonthlyDietPDF({
-        userName:          currentUser?.name || currentUser?.email?.split('@')[0] || 'Health Enthusiast',
+        userName:          [currentUser?.firstName, currentUser?.lastName].filter(Boolean).join(' ') || currentUser?.name || 'Member',
         goal:              selectedPlan as 'weight_loss' | 'weight_gain' | 'maintenance',
         bmi:               bmi!,
         bmiCategory:       getBMICategory(parseFloat(bmi!)),
@@ -608,6 +610,7 @@ const Diet = () => {
         }
       }
       
+      plan.meals = scaleMealBudgets(plan.meals, plan.dailyCalories);
       setSelectedPlan(type);
       setPersonalizedPlan(plan);
     } catch (error) {
@@ -638,6 +641,7 @@ const Diet = () => {
         dietaryRestrictions: currentUser?.allergies?.join(', ') || '',
       });
       if (data.success) {
+        for (const meal of Object.values(data.plan.mealPlan || {}) as any[]) meal.suggestions = filterDietSuggestions(meal.suggestions, currentUser || {});
         setBackendPlan(data.plan);
       }
     } catch (err) {
@@ -656,6 +660,7 @@ const Diet = () => {
     if (!currentUser) return;
 
     setDrIshaLoading(true);
+    setDrIshaRec(null);
     try {
       const { data } = await api.post('/medical-ai/diet-plan', {
         goal,
@@ -670,7 +675,7 @@ const Diet = () => {
       }, {
         timeout: 10000, // 10s fast-fail — falls through to client-side plan gracefully
       });
-      if (data.success) {
+      if (data.success && isDietAdvice(data.recommendation)) {
         setDrIshaRec({ recommendation: data.recommendation, healthProfile: data.healthProfile });
       }
     } catch (err: any) {
@@ -1018,6 +1023,7 @@ const Diet = () => {
               </div>
 
               <div className="space-y-4">
+                <p className="text-xs text-muted-foreground">Meal calories below are portion targets. Actual energy depends on ingredients and serving size.</p>
                 {(personalizedPlan || dietPlans[selectedPlan])?.meals.map((meal, index) => (
                   <div
                     key={index}
@@ -1139,7 +1145,7 @@ const Diet = () => {
                 </div>
                 <div>
                   <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Dr. iSHA Personalised Recommendations</h2>
-                  <p className="text-xs text-teal-600 dark:text-teal-400">MySmart Health · AI Nutritionist · Based on your full health profile</p>
+                  <p className="text-xs text-teal-600 dark:text-teal-400">MySmart Health · AI Nutritionist · Based on the profile information available</p>
                 </div>
               </div>
 
@@ -1153,10 +1159,10 @@ const Diet = () => {
                   {/* Condition badges */}
                   {drIshaRec.healthProfile?.hasConditions && (
                     <div className="flex flex-wrap gap-2 mb-4">
-                      {drIshaRec.healthProfile.chronicConditions?.map((c: string) => (
+                      {drIshaRec.healthProfile.chronicConditions?.filter((c: string) => c.trim() && !/^(nothing|none|n\/a)$/i.test(c.trim())).map((c: string) => (
                         <Badge key={c} className="bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-700/50">{c}</Badge>
                       ))}
-                      {drIshaRec.healthProfile.allergies?.map((a: string) => (
+                      {drIshaRec.healthProfile.allergies?.filter((a: string) => a.trim() && !/^(nothing|none|n\/a)$/i.test(a.trim())).map((a: string) => (
                         <Badge key={a} className="bg-red-50 text-red-700 border border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-700/50">Allergy: {a}</Badge>
                       ))}
                       {drIshaRec.healthProfile.familyRiskFlags?.map((f: string) => (
@@ -1168,7 +1174,7 @@ const Diet = () => {
                   {/* Recommendation text */}
                   <div className="bg-teal-50 dark:bg-teal-900/20 rounded-lg p-4 border border-teal-100 dark:border-teal-800/50">
                     <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap leading-relaxed">
-                      {drIshaRec.recommendation}
+                      <ReactMarkdown>{drIshaRec.recommendation.replace(/\b911\b/g, "112 or 108")}</ReactMarkdown>
                     </div>
                   </div>
 

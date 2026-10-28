@@ -178,7 +178,7 @@ const NetworkHospitals: React.FC = () => {
     });
 
   return (
-    <MainLayout>
+    <>
     <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
       {/* Premium Header */}
       <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-6 md:p-8 text-white shadow-2xl">
@@ -502,7 +502,7 @@ const NetworkHospitals: React.FC = () => {
         </DialogContent>
       </Dialog>
     </motion.div>
-    </MainLayout>
+    </>
   );
 };
 

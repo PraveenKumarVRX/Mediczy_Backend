@@ -14,7 +14,7 @@ const router = express.Router();
 router.use(authLab);
 
 const ALLOWED_STATUSES = new Set([
-  'ordered', 'pending', 'sample_collected', 'processing', 'in_progress', 'completed', 'cancelled'
+  'ordered', 'pending', 'confirmed', 'sample_collected', 'processing', 'in_progress', 'completed', 'cancelled'
 ]);
 
 router.get('/', async (req, res) => {
@@ -81,6 +81,7 @@ router.get('/:orderId', async (req, res) => {
 });
 
 router.patch('/:orderId/status', async (req, res) => {
+  let client;
   try {
     const labId = req.lab.id;
     const { orderId } = req.params;
@@ -91,15 +92,18 @@ router.patch('/:orderId/status', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Unsupported status value' });
     }
 
-    const current = await pool.query(
-      `SELECT * FROM lab_orders WHERE id = $1 AND lab_id = $2`,
+    client = await pool.connect();
+    await client.query('BEGIN');
+    const current = await client.query(
+      `SELECT * FROM lab_orders WHERE id = $1 AND lab_id = $2 FOR UPDATE`,
       [orderId, labId]
     );
     if (!current.rows[0]) {
+      await client.query('ROLLBACK');
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
 
-    const update = await pool.query(
+    const update = await client.query(
       `UPDATE lab_orders
        SET status = $1,
            results = COALESCE($2, results),
@@ -111,7 +115,20 @@ router.patch('/:orderId/status', async (req, res) => {
     );
 
     let billing = null;
-    if (nextStatus === 'completed') {
+    const labOrder = update.rows[0];
+    if (labOrder.source_type === 'patient_lab_checkout' && labOrder.source_id) {
+      const patientStatus = nextStatus === 'cancelled' ? 'cancelled'
+        : nextStatus === 'completed' && labOrder.release_status === 'released' ? 'completed'
+        : ['confirmed', 'sample_collected', 'processing', 'in_progress', 'completed'].includes(nextStatus) ? 'booked' : 'pending_confirmation';
+      await client.query(`UPDATE lab_tests SET status = $1, "confirmationStatus" = CASE WHEN $1 IN ('booked', 'completed') THEN 'confirmed' ELSE "confirmationStatus" END,
+        "resultStatus" = CASE WHEN $1 = 'completed' THEN 'ready' ELSE "resultStatus" END,
+        "confirmationDeadline" = CASE WHEN $1 <> 'pending_confirmation' THEN NULL ELSE "confirmationDeadline" END,
+        metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('labWorkflowStatus', $2::text), "updatedAt" = NOW()
+        WHERE id = $3 AND "userId" = $4 AND metadata->>'labId' = $5`,
+      [patientStatus, nextStatus, labOrder.source_id, labOrder.patient_id, String(labId)]);
+    }
+    await client.query('COMMIT');
+    if (nextStatus === 'completed' && labOrder.source_type !== 'patient_lab_checkout') {
       billing = await emrOrderRouter.finalizeLabOrderBilling(Number(orderId), {
         amount: req.body.amount
       });
@@ -124,8 +141,11 @@ router.patch('/:orderId/status', async (req, res) => {
       billing
     });
   } catch (error) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
     console.error('[lab/orders] status error:', error);
     res.status(500).json({ success: false, message: 'Failed to update order status', error: error.message });
+  } finally {
+    client?.release();
   }
 });
 

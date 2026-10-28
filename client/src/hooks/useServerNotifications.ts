@@ -136,7 +136,15 @@ export const useServerNotifications = (options: UseServerNotificationsOptions = 
 
   const uiNotifications = useMemo<NotificationUiModel[]>(() => {
     const list = notificationsQuery.data || [];
-    return list.map((n) => ({
+    const seen = new Set<string>();
+    return list.filter(n => {
+      const timestamp = new Date(n.createdAt || n.updatedAt || 0).getTime();
+      if (n.expiresAt && new Date(n.expiresAt).getTime() <= Date.now()) return false;
+      if (/is calling|tap to join now|started.*consultation/i.test(`${n.title} ${n.message}`) && timestamp < Date.now() - 15 * 60000) return false;
+      const key = `${n.title}|${n.message}|${Math.floor(timestamp / 60000)}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    }).map((n) => ({
       id: n.id,
       title: notificationText(n.title),
       message: notificationText(n.message),

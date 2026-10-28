@@ -1,3 +1,4 @@
+import LegalNotice from '@/pages/LegalNotice';
 /**
  * AppRoutes — all React Router route definitions.
  *
@@ -1097,6 +1098,11 @@ const AppRoutes = () => {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* ── Home / auth ─────────────────────────────────────────────── */}
+        <Route path="/privacy" element={<LegalNotice />} />
+        <Route path="/privacy-policy" element={<LegalNotice />} />
+        <Route path="/terms" element={<LegalNotice />} />
+        <Route path="/terms-of-service" element={<LegalNotice />} />
+        <Route path="/compliance" element={<LegalNotice />} />
         <Route path="/"                element={<MainLayout><Index /></MainLayout>} />
         <Route path="/login"           element={<TenantAwareLogin />} />
         <Route path="/claim-status/:token" element={<ClaimStatusPublicPage />} />
@@ -2119,7 +2125,7 @@ const AppRoutes = () => {
         <Route path="/health-risk-assessment"     element={<UserHealthRiskAssessment />} />
 
         {/* ── AI-Powered Features ─────────────────────────────────────── */}
-        <Route path="/report-scanner"          element={<AIReportScanner />} />
+        <Route path="/report-scanner"          element={<MainLayout><AIReportScanner /></MainLayout>} />
         <Route path="/symptom-checker"         element={<AISymptomTriage />} />
         <Route path="/smart-health"            element={<SmartHealthDashboard />} />
         <Route path="/benefits"               element={<SmartBenefitsHub />} />

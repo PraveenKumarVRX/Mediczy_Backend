@@ -1,3 +1,6 @@
+import { Op } from 'sequelize';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { setRlsContext } from '../middleware/rls-context.middleware.js';
 /**
  * Proactive Health Reminder Service
  * Dr. iSHA's Predictive Intelligence System
@@ -89,13 +92,16 @@ class HealthReminderService {
     
     try {
       // Check for active prescriptions
-      const prescriptions = await Prescription.findAll({
+      const prescriptions = await postgresSequelize.transaction(async transaction => {
+        await setRlsContext(transaction, { userId, orgId: 0 });
+        return Prescription.findAll({
         where: { 
           patientId: userId,
-          status: 'active'
+          status: { [Op.in]: ['issued', 'active', 'dispensed'] }
         },
         order: [['createdAt', 'DESC']],
-        limit: 10
+        limit: 10, transaction
+        });
       });
 
       for (const prescription of prescriptions) {
@@ -105,9 +111,9 @@ class HealthReminderService {
           // Check if medication schedule is being followed
           reminders.push({
             type: this.reminderTypes.MEDICATION,
-            priority: 10,
+            priority: 5,
             title: `💊 Medication Reminder: ${med.name}`,
-            message: `Remember to take ${med.name} ${med.dosage} ${med.frequency}`,
+            message: `Follow your prescription for ${[med.name, med.dosage, med.frequency].filter(Boolean).join(' ')}. A prescription alone does not confirm a dose was taken.`,
             actionable: true,
             action: {
               type: 'mark_taken',
@@ -129,7 +135,7 @@ class HealthReminderService {
    */
   async getCheckupReminders(userId, user) {
     const reminders = [];
-    const age = this.calculateAge(user.date_of_birth);
+    const age = this.calculateAge(user.dateOfBirth);
 
     try {
       // Age-based screening recommendations
@@ -500,7 +506,7 @@ class HealthReminderService {
    */
   async getActivityReminders(userId, user) {
     const reminders = [];
-    const age = this.calculateAge(user.date_of_birth);
+    const age = this.calculateAge(user.dateOfBirth);
     const conditions = user.medical_conditions || [];
 
     try {
@@ -696,7 +702,7 @@ class HealthReminderService {
    */
   async getLabTestReminders(userId, user) {
     const reminders = [];
-    const age = this.calculateAge(user.date_of_birth);
+    const age = this.calculateAge(user.dateOfBirth);
     const conditions = user.medical_conditions || [];
 
     try {

@@ -1,3 +1,4 @@
+import { filterDietSuggestions } from '../../../shared/patient-diet.mjs';
 /**
  * Bespoke 1-Month Diet Plan PDF Generator
  * Generates a beautifully branded printable PDF using jsPDF
@@ -388,7 +389,7 @@ export function generateMonthlyDietPDF(info: DietPdfInfo): void {
         hex(doc, 'fill', C.primaryLt);
         doc.roundedRect(mx + 3, ry + rowH - 9, 24, 6, 2, 2, 'F');
         doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); hex(doc, 'text', C.primaryXdk);
-        doc.text(`${meal.calories} cal`, mx + 15, ry + rowH - 5, { align: 'center' });
+        doc.text(`Target ${meal.calories} kcal`, mx + 15, ry + rowH - 5, { align: 'center' });
       });
 
       // Row border + column dividers
@@ -410,7 +411,7 @@ export function generateMonthlyDietPDF(info: DietPdfInfo): void {
     doc.roundedRect(M, y, CW, 11, 3, 3, 'D');
     doc.setFont('helvetica', 'italic'); doc.setFontSize(7.5); hex(doc, 'text', C.yellow800);
     doc.text(
-      'Tip: Add a mid-morning snack (~150 kcal) & an evening snack (~150 kcal) to each day for complete nutrition.',
+      'Meal values are portion targets, not recipe measurements. Include the snack budgets from your daily plan.',
       M + 5, y + 7.5
     );
 
@@ -595,7 +596,7 @@ function buildMonthlyMeals(info: DietPdfInfo): DayMeals[] {
     if (bp && bp.breakfast?.suggestions?.length) {
       // Rotate through backend regional meal suggestions
       const pick = (key: string, kcal: number) => {
-        const arr = bp[key]?.suggestions ?? [];
+        const arr = filterDietSuggestions(bp[key]?.suggestions ?? [], info.conditionsConsidered || {});
         const baseCal = bp[key]?.calories ?? kcal;
         return { name: arr.length > 0 ? arr[d % arr.length] : 'Balanced meal', calories: baseCal };
       };

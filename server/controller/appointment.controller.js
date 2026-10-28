@@ -1,4 +1,5 @@
 import { appointmentSlotInstant } from '../utils/appointmentSlotTime.js';
+import { appointmentFee } from '../utils/appointment-fee.js';
 import { validationResult } from 'express-validator';
 import Appointment from '../models/appointment.model.intelligent.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
@@ -361,27 +362,9 @@ export const createAppointment = async (req, res) => {
         transaction
       });
 
-      consultationFee = 500; // Default
-      if (availability) {
-        switch (requestedConsultationType) {
-          case 'video':
-            consultationFee = availability.videoConsultationFee;
-            break;
-          case 'audio':
-            consultationFee = availability.audioConsultationFee;
-            break;
-          case 'chat':
-            consultationFee = availability.chatConsultationFee;
-            break;
-          case 'in-person':
-            consultationFee = availability.inPersonConsultationFee;
-            break;
-          case 'review':
-            consultationFee = availability.videoConsultationFee || availability.audioConsultationFee || availability.chatConsultationFee;
-            break;
-        }
-      }
-      consultationFee = Number(consultationFee || 500);
+      consultationFee = appointmentFee(doctor, availability, requestedConsultationType);
+      if (consultationFee === null) fail(503, { success: false, message: 'Could not confirm the consultation price. Please try another doctor or contact support.' });
+      if (consultationFee === 0) paymentStatus = 'paid';
 
       if (requestedConsultationType === 'review') {
         const eligibleSource = await findEligibleFreeReviewSourceAppointment({
@@ -502,7 +485,7 @@ export const createAppointment = async (req, res) => {
     }
 
     // Keep compatibility for existing notification payloads that expect this field.
-    appointment.consultationFee = Number(appointment.paymentAmount || consultationFee || 0);
+    appointment.consultationFee = Number(appointment.paymentAmount ?? consultationFee ?? 0);
 
     // Send confirmation email (async task)
     try {
@@ -544,7 +527,7 @@ export const createAppointment = async (req, res) => {
       appointmentDate: appointment.appointmentDate,
       appointmentTime: appointment.appointmentTime,
       consultationType: appointment.consultationType,
-      consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
+      consultationFee: Number(appointment.paymentAmount ?? consultationFee ?? 0),
       status: appointment.status
     }).catch((n8nError) => {
       console.error('Failed to trigger n8n workflow:', n8nError);
@@ -567,7 +550,7 @@ export const createAppointment = async (req, res) => {
         appointmentTime: appointment.appointmentTime,
         duration: appointment.duration || 30,
         consultationType: appointment.consultationType,
-        consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
+        consultationFee: Number(appointment.paymentAmount ?? consultationFee ?? 0),
         symptoms: appointment.symptoms,
         notes: appointment.notes,
         location: appointment.location,
@@ -705,7 +688,7 @@ export const createAppointment = async (req, res) => {
         appointmentTime: appointment.appointmentTime,
         duration: appointment.duration || 30,
         consultationType: appointment.consultationType,
-        consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
+        consultationFee: Number(appointment.paymentAmount ?? consultationFee ?? 0),
         symptoms: appointment.symptoms,
         notes: appointment.notes,
         location: appointment.location,
@@ -814,12 +797,15 @@ export const createAppointment = async (req, res) => {
       message: qmsMessage,
       data: {
         id: appointment.id,
+        doctorId: appointment.doctorId,
         doctorName: appointment.doctorName,
+        patientName: appointment.patientName,
+        patientPhone: appointment.patientPhone,
         specialization: appointment.specialization,
         appointmentDate: appointment.appointmentDate,
         appointmentTime: appointment.appointmentTime,
         consultationType: requestedConsultationType || appointment.consultationType,
-        consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
+        consultationFee: Number(appointment.paymentAmount ?? consultationFee ?? 0),
         status: appointment.status,
         paymentStatus: appointment.paymentStatus,
         freeReviewApplied,
@@ -838,12 +824,15 @@ export const createAppointment = async (req, res) => {
       },
       appointment: {
         id: appointment.id,
+        doctorId: appointment.doctorId,
         doctorName: appointment.doctorName,
+        patientName: appointment.patientName,
+        patientPhone: appointment.patientPhone,
         specialization: appointment.specialization,
         appointmentDate: appointment.appointmentDate,
         appointmentTime: appointment.appointmentTime,
         consultationType: requestedConsultationType || appointment.consultationType,
-        consultationFee: Number(appointment.paymentAmount || consultationFee || 0),
+        consultationFee: Number(appointment.paymentAmount ?? consultationFee ?? 0),
         status: appointment.status,
         paymentStatus: appointment.paymentStatus,
         freeReviewApplied,

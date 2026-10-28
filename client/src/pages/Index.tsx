@@ -1,3 +1,7 @@
+import { useProgramAvailability } from '@/hooks/useProgramAvailability';
+import { liveDeviceStatus } from '@/utils/device-status';
+import { scoreLabel, wholeNumber, slotTime, finiteNumber } from "@/utils/patient-display";
+import { wellnessLevel } from "@/utils/wellness-level";
 import { useState, useEffect, useMemo } from "react";
 import {
   Activity,
@@ -68,6 +72,12 @@ const Index = () => {
   
   // Make healthSyncScheduler available on window for device connection
   useEffect(() => {
+    const update = () => setConnectedDevices(previous => previous.map(device => ({ ...device, status: liveDeviceStatus(device) })));
+    const timer = window.setInterval(update, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     (window as any).healthSyncScheduler = healthSyncScheduler;
   }, []);
   
@@ -105,6 +115,7 @@ const Index = () => {
   }, [userType, navigate]);
 
   const userName = currentUser?.firstName || "Guest";
+  const programsAvailable = useProgramAvailability();
   const [healthStats, setHealthStats] = useState({
     steps: 0,
     stepsGoal: 10000,
@@ -118,14 +129,14 @@ const Index = () => {
   const [healthStatsLoaded, setHealthStatsLoaded] = useState(false);
   const [healthStatsUpdatedAt, setHealthStatsUpdatedAt] = useState<Date | null>(null);
   const [healthinessScore, setHealthinessScore] = useState({
-    score: 0,
+    score: null as number | null,
     trend: 'stable' as 'up' | 'down' | 'stable',
     lastUpdated: null as Date | null,
     breakdown: {
-      activity: { current: 0, history: [0] },
-      nutrition: { current: 0, history: [0] },
-      sleep: { current: 0, history: [0] },
-      vitals: { current: 0, history: [0] },
+      activity: { current: null as number | null, history: [] as number[] },
+      nutrition: { current: null as number | null, history: [] as number[] },
+      sleep: { current: null as number | null, history: [] as number[] },
+      vitals: { current: null as number | null, history: [] as number[] },
     }
   });
   const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
@@ -267,9 +278,7 @@ const Index = () => {
       currentStreak: stored.currentStreak || 0,
       longestStreak: stored.longestStreak || 0,
       healthCoins: stored.healthCoins || 0,
-      level: stored.level || 1,
-      xp: stored.xp || 0,
-      nextLevelXp: stored.nextLevelXp || 500,
+      ...wellnessLevel(stored.xp || 0),
       todayCheckedIn: stored.todayCheckedIn || false,
       badges: stored.badges || [],
     };
@@ -288,7 +297,7 @@ const Index = () => {
           longestStreak: Math.max(prev.longestStreak || 0, wallet.streakDays || 0),
           healthCoins: Math.round(wallet.balance ?? prev.healthCoins ?? 0),
           // Keep dashboard level/xp predictable while aligning source to wallet totals.
-          level: Math.max(1, Math.floor((wallet.totalEarned ?? 0) / 1000) + 1),
+          ...wellnessLevel(wallet.totalEarned ?? 0),
           xp: Math.round(wallet.totalEarned ?? prev.xp ?? 0),
           todayCheckedIn: !!wallet.todayActivity?.dailyLoginRewarded,
         };
@@ -534,7 +543,7 @@ const Index = () => {
       console.error('[Sync] Error syncing device:', e);
     } finally {
       setConnectedDevices(prev =>
-        prev.map(d => d.id === deviceId ? { ...d, status: 'connected' } : d)
+        prev.map(d => d.id === deviceId ? { ...d, status: liveDeviceStatus(d) } : d)
       );
     }
   };
@@ -580,7 +589,8 @@ const Index = () => {
     
     // Auto-fix devices with incorrect types/icons (but don't change dataTypes)
     const fixedDevices = storedDevices.map((device: any) => {
-      const detected = detectDeviceType(device.name);
+      device = { ...device, status: liveDeviceStatus(device) };
+      const detected = detectDeviceType(device.name || "Device");
       const needsFix = device.type === 'fitness_band' && detected.type === 'smartwatch';
       
       if (needsFix) {
@@ -643,8 +653,8 @@ const Index = () => {
               if (['completed', 'cancelled', 'no-show', 'no_show'].includes(status)) return false;
               const rawDate = appointment.appointmentDate || appointment.date;
               if (!rawDate) return false;
-              const appointmentDate = new Date(`${String(rawDate).slice(0, 10)}T00:00:00`);
-              return !Number.isNaN(appointmentDate.getTime()) && appointmentDate >= today;
+              const appointmentDate = new Date(`${String(rawDate).slice(0, 10)}T${String(appointment.appointmentTime || appointment.time || '23:59').slice(0, 5)}:00+05:30`);
+              return !Number.isNaN(appointmentDate.getTime()) && appointmentDate.getTime() + 30 * 60000 >= Date.now();
             })
             .sort((a: any, b: any) =>
               String(a.appointmentDate || a.date).localeCompare(String(b.appointmentDate || b.date))
@@ -660,11 +670,7 @@ const Index = () => {
         setUpcomingAppointments(getSampleAppointments());
       }
 
-      setRecentActivities([
-        { id: 1, type: "checkup", message: "Health metrics updated", time: "2 hours ago", icon: Activity, link: "/health-tracker" },
-        { id: 2, type: "prescription", message: "New prescription added", time: "Yesterday", icon: Pill, link: "/my-prescriptions" },
-        { id: 3, type: "appointment", message: "Appointment confirmed", time: "2 days ago", icon: CalendarCheck, link: "/appointments" },
-      ]);
+      setRecentActivities([]);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
       setUpcomingAppointments([]);
@@ -773,8 +779,8 @@ const Index = () => {
       if (data.latest) {
         setHealthStats(prev => ({
           ...prev,
-          steps:     latestVitals.steps ?? data.latest.steps?.value ?? prev.steps,
-          heartRate: latestVitals.heartRate ?? data.latest.heart_rate?.value ?? prev.heartRate,
+          steps:     Number(latestVitals.steps ?? data.latest.steps?.value ?? prev.steps),
+          heartRate: Number(latestVitals.heartRate ?? data.latest.heart_rate?.value ?? prev.heartRate),
           sleep:     normaliseSleepHours(data.latest.sleep?.value) ?? prev.sleep,
           water:     data.latest.water?.value      ?? prev.water,
           calories:  data.latest.calories?.value   ?? prev.calories,
@@ -793,24 +799,24 @@ const Index = () => {
   const fetchDailyHealthScore = async () => {
     try {
       const { data } = await api.get('/health-score/today');
-      if (!data?.success || data?.score === null || data?.score === undefined) return;
+      if (!data?.success || data?.score === null || data?.score === undefined) {
+        setHealthinessScore(previous => ({ ...previous, score: null })); return;
+      }
       const score = Number(data.score);
       if (!Number.isFinite(score)) return;
 
       const domains = data.domains || {};
-      const setDomain = (current: number, previous: number[]) => ({
-        current,
-        history: [...previous.slice(-6), current],
-      });
+      const setDomain = (current: number | null, previous: number[]) => ({ current, history: current === null ? [] : [...previous.slice(-6), current] });
+      const domainValue = (key: string) => Array.isArray(data.dataQuality?.observedDomains) && !data.dataQuality.observedDomains.includes(key) ? null : finiteNumber(domains[key]);
       setHealthinessScore(previous => ({
         ...previous,
         score: Math.round(score),
         lastUpdated: new Date(data.computedAt || Date.now()),
         breakdown: {
-          activity: setDomain(Number(domains.activity) || 0, previous.breakdown.activity.history),
-          nutrition: setDomain(Number(domains.nutrition) || 0, previous.breakdown.nutrition.history),
-          sleep: setDomain(Number(domains.sleep) || 0, previous.breakdown.sleep.history),
-          vitals: setDomain(Number(domains.vitals) || 0, previous.breakdown.vitals.history),
+          activity: setDomain(domainValue("activity"), previous.breakdown.activity.history),
+          nutrition: setDomain(domainValue("nutrition"), previous.breakdown.nutrition.history),
+          sleep: setDomain(domainValue("sleep"), previous.breakdown.sleep.history),
+          vitals: setDomain(domainValue("vitals"), previous.breakdown.vitals.history),
         },
       }));
     } catch {
@@ -833,7 +839,7 @@ const Index = () => {
   const healthMetrics = [
     {
       title: "Steps",
-      value: healthStats.steps.toLocaleString(),
+      value: wholeNumber(healthStats.steps),
       goal: healthStats.stepsGoal.toLocaleString(),
       progress: (healthStats.steps / healthStats.stepsGoal) * 100,
       icon: Footprints,
@@ -843,7 +849,7 @@ const Index = () => {
     },
     {
       title: "Heart Rate",
-      value: `${healthStats.heartRate}`,
+      value: wholeNumber(healthStats.heartRate),
       unit: "bpm",
       icon: Heart,
       color: "text-destructive",
@@ -1917,7 +1923,7 @@ const Index = () => {
                     <div className="h-1.5 bg-amber-200/50 dark:bg-amber-900/30 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-gradient-to-r from-amber-400 to-orange-400 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min((streakData.xp / streakData.nextLevelXp) * 100, 100)}%` }}
+                        style={{ width: `${wellnessLevel(streakData.xp).progress}%` }}
                       />
                     </div>
                   </div>
@@ -1943,33 +1949,31 @@ const Index = () => {
                     <circle
                       cx="50" cy="50" r="42"
                       className={`fill-none transition-all duration-1000 ${
-                        healthinessScore.score >= 80 ? 'stroke-teal-500' :
+                        healthinessScore.score === null ? 'stroke-slate-300' : healthinessScore.score >= 80 ? 'stroke-teal-500' :
                         healthinessScore.score >= 60 ? 'stroke-yellow-500' :
                         healthinessScore.score >= 40 ? 'stroke-orange-500' : 'stroke-red-500'
                       }`}
                       strokeWidth="8"
                       strokeLinecap="round"
-                      strokeDasharray={`${healthinessScore.score * 2.64} 264`}
+                      strokeDasharray={`${(healthinessScore.score ?? 0) * 2.64} 264`}
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className={`text-3xl font-bold ${
-                      healthinessScore.score >= 80 ? 'text-teal-600 dark:text-teal-400' :
+                      healthinessScore.score === null ? 'text-slate-500' : healthinessScore.score >= 80 ? 'text-teal-600 dark:text-teal-400' :
                       healthinessScore.score >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
                       healthinessScore.score >= 40 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'
-                    }`}>{healthinessScore.score}</span>
+                    }`}>{healthinessScore.score ?? "—"}</span>
                     <span className="text-xs text-slate-500 dark:text-slate-400">out of 100</span>
                   </div>
                 </div>
                 <Badge className={`mt-2 ${
-                  healthinessScore.score >= 80 ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400' :
+                  healthinessScore.score === null ? 'bg-slate-100 text-slate-700' : healthinessScore.score >= 80 ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400' :
                   healthinessScore.score >= 60 ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' :
                   healthinessScore.score >= 40 ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400' :
                   'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                 }`}>
-                  {healthinessScore.score >= 80 ? '🌟 Excellent' :
-                   healthinessScore.score >= 60 ? '👍 Good' :
-                   healthinessScore.score >= 40 ? '⚠️ Moderate Risk' : '🚨 High Risk'}
+                  {scoreLabel(healthinessScore.score)}
                 </Badge>
               </div>
               
@@ -2002,7 +2006,8 @@ const Index = () => {
                     { label: 'Vitals', data: healthinessScore.breakdown.vitals, icon: Heart },
                   ].map((item, idx) => {
                     const value = item.data.current;
-                    const history = item.data.history;
+                    const history = item.data.history.filter(Number.isFinite);
+                    if (history.length < 2 || healthinessScore.score === null) return <div key={item.label} className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/80"><div className="flex items-center gap-2"><item.icon className="h-4 w-4 text-slate-500" /><span className="text-xs font-medium">{item.label}</span></div><p className="mt-2 font-semibold">{item.data.current ?? '—'}</p><p className="mt-2 text-xs text-muted-foreground">{item.data.current === null ? 'No data recorded' : 'More readings needed for a trend'}</p></div>;
                     const maxVal = Math.max(...history);
                     const minVal = Math.min(...history);
                     const range = maxVal - minVal || 1;
@@ -2017,7 +2022,7 @@ const Index = () => {
                     
                     // Calculate points
                     const pointsData = history.map((val, i) => ({
-                      x: padding + (i / (history.length - 1)) * (width - padding * 2),
+                      x: padding + (i / Math.max(1, history.length - 1)) * (width - padding * 2),
                       y: height - padding - ((val - minVal) / range) * (height - padding * 2)
                     }));
                     
@@ -2049,7 +2054,7 @@ const Index = () => {
                     const wavePath = generateSmoothPath(pointsData);
                     const lastPoint = pointsData[pointsData.length - 1];
                     const firstPoint = pointsData[0];
-                    const areaPath = `${wavePath} L ${lastPoint.x},${height - padding} L ${firstPoint.x},${height - padding} Z`;
+                    const areaPath = pointsData.length >= 2 ? `${wavePath} L ${lastPoint.x},${height - padding} L ${firstPoint.x},${height - padding} Z` : "";
                     
                     return (
                       <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/80 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer group">
@@ -2063,7 +2068,7 @@ const Index = () => {
                               value >= 80 ? 'text-teal-600 dark:text-teal-400' :
                               value >= 60 ? 'text-yellow-600 dark:text-yellow-400' :
                               value >= 40 ? 'text-orange-600 dark:text-orange-400' : 'text-red-600 dark:text-red-400'
-                            }`}>{value}</span>
+                            }`}>{healthinessScore.score === null ? "—" : value}</span>
                             {trend > 0 ? (
                               <TrendingUp className="w-3 h-3 text-teal-500" />
                             ) : trend < 0 ? (
@@ -2471,20 +2476,20 @@ const Index = () => {
                         <div>
                           <p className="text-sm font-medium text-white">{device.name}</p>
                           <p className="text-xs text-teal-400 flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Connected
+                            <CheckCircle2 className="w-3 h-3" /> {device.status === "connected" ? "Connected" : "Not connected"}
                           </p>
                           <p className="text-[10px] text-slate-500 capitalize">{device.type?.replace('_', ' ') || 'Device'}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="text-right">
-                          {device.battery && (
+                          {device.status === "connected" && device.battery != null && (
                             <div className="flex items-center gap-1 text-xs text-slate-400">
                               <Zap className="w-3 h-3" /> {device.battery}%
                             </div>
                           )}
                           <p className="text-[10px] text-slate-500">
-                            {device.lastSync ? `Synced ${new Date(device.lastSync).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Ready to sync'}
+                            {device.lastSync ? `Last seen ${new Date(device.lastSync).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Not seen in this browser session'}
                           </p>
                         </div>
                         <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-teal-400 hover:bg-teal-500/10" title="Sync Now" onClick={() => syncDevice(device.id)}>
@@ -2502,16 +2507,16 @@ const Index = () => {
                       </div>
                     </div>
                     {/* Data Types */}
-                    {device.dataTypes && device.dataTypes.length > 0 ? (
+                    {device.dataTypes && (device.dataTypes || []).length > 0 ? (
                       <div className="flex flex-wrap gap-1 pt-3 border-t border-slate-700/50">
                         {device.dataTypes.slice(0, 6).map((dataType, i) => (
                           <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">
                             {dataType}
                           </span>
                         ))}
-                        {device.dataTypes.length > 6 && (
+                        {(device.dataTypes || []).length > 6 && (
                           <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
-                            +{device.dataTypes.length - 6} more
+                            +{(device.dataTypes || []).length - 6} more
                           </span>
                         )}
                       </div>
@@ -2610,7 +2615,7 @@ const Index = () => {
             <Badge variant="outline" className="text-xs">Personalized</Badge>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {essentials.map((item, idx) => (
+            {essentials.filter(item => item.link !== "/my-programs" || programsAvailable).map((item, idx) => (
               <Link key={idx} to={item.link} className="group">
                 <Card className="h-full transition-all duration-300 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 relative overflow-hidden hover:-translate-y-1">
                   <CardContent className="p-4 relative space-y-3 flex flex-col h-full">
@@ -2665,13 +2670,13 @@ const Index = () => {
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-slate-800 dark:text-white truncate">{apt.doctorName || apt.doctor?.name || "Doctor"}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{apt.specialty || apt.doctor?.specialty || "Specialist"}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{apt.specialty || apt.doctor?.specialization || apt.doctor?.specialty || "Specialty not provided"}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-semibold text-slate-800 dark:text-white">
                           {new Date(apt.date || apt.appointmentDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </p>
-                        <p className="text-xs text-teal-600 dark:text-teal-400 font-medium">{apt.time || apt.appointmentTime}</p>
+                        <p className="text-xs text-teal-600 dark:text-teal-400 font-medium">{slotTime(apt.time || apt.appointmentTime)}</p>
                       </div>
                     </div>
                   ))}
@@ -2706,7 +2711,7 @@ const Index = () => {
           </Card>
 
           {/* Recent Activity */}
-          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 shadow-sm">
+          {recentActivities.length > 0 && <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 shadow-sm">
             <CardHeader className="pb-2 border-b border-slate-100 dark:border-slate-700/50">
               <CardTitle className="text-lg font-semibold flex items-center gap-2 text-slate-800 dark:text-white">
                 <div className="p-1.5 rounded-lg bg-teal-50 dark:bg-teal-900/30">
@@ -2749,7 +2754,7 @@ const Index = () => {
                 })}
               </div>
             </CardContent>
-          </Card>
+          </Card>}
         </div>
 
         {/* Main Features Grid */}

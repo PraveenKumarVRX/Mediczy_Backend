@@ -9,10 +9,14 @@ export function preferenceReminderDecision(appointment, preferences, now = Date.
   const date = String(appointment.appointmentDate).slice(0, 10);
   const time = String(appointment.appointmentTime);
   const instant = appointmentSlotInstant(date, time);
-  if (!instant || instant.getTime() <= now || instant.getTime() - minutes * 60000 > now) return null;
+  if (!instant || instant.getTime() <= now || instant.getTime() - minutes * 60000 > now || now - (instant.getTime() - minutes * 60000) >= 60000) return null;
   const key = `${date}/${time}/${minutes}`;
   if (appointment.metadata?.preferenceReminderKey === key) return null;
-  return { key, date, time, minutes, message: `Your health appointment is on ${date} at ${time.slice(0, 5)} IST.` };
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(now));
+  const dateLabel = date === today ? 'Today' : instant.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' });
+  const timeLabel = instant.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: 'numeric', minute: '2-digit', hour12: true });
+  const doctor = appointment.doctorName ? ` with Dr. ${String(appointment.doctorName).replace(/^(?:Dr\.?\s*)+/i, '').trim()}` : '';
+  return { key, date, time, minutes, message: `${dateLabel}, ${timeLabel}${doctor} (IST).` };
 }
 
 // The notification and deduplication marker commit together under the appointment row lock.
@@ -20,7 +24,7 @@ export async function sendPreferenceReminders({ database = db, preferencesFor = 
   const deliveries = await database.transaction(async transaction => {
     await setContext(transaction, { orgId: 0, userId: 0, isPlatformAdmin: true });
     const query = (sql, replacements) => database.query(sql, { transaction, replacements, type: database.QueryTypes.SELECT });
-    const appointments = await query(`SELECT id,"userId","appointmentDate","appointmentTime",metadata FROM appointments
+    const appointments = await query(`SELECT id,"userId","doctorName","appointmentDate","appointmentTime",metadata FROM appointments
       WHERE status IN ('scheduled','confirmed','pending','accepted','rescheduled')
         AND "appointmentDate" BETWEEN (NOW() AT TIME ZONE 'Asia/Kolkata')::date AND (NOW() AT TIME ZONE 'Asia/Kolkata')::date+1
         AND ("appointmentDate"::text || 'T' || LEFT("appointmentTime"::text,5) || ':00+05:30')::timestamptz > NOW()

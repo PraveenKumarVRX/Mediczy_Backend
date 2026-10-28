@@ -39,6 +39,7 @@ const MyReports = () => {
   const [uploadDescription, setUploadDescription] = useState('');
   const [uploadTestName, setUploadTestName] = useState('');
   const [uploadLabName, setUploadLabName] = useState('');
+  const [confirmedMedicalDocument, setConfirmedMedicalDocument] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
 
   // Fetch reports from API
@@ -90,6 +91,7 @@ const MyReports = () => {
   };
 
   const handleUpload = async () => {
+    if (!confirmedMedicalDocument) { toast({ title: "Confirm the document type", description: "Confirm this is a medical document and select the correct category.", variant: "destructive" }); return; }
     if (!uploadFile) {
       toast({
         variant: 'destructive',
@@ -323,6 +325,7 @@ const MyReports = () => {
                     accept=".pdf,.jpg,.jpeg,.png,.tiff,.webp"
                     onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
                   />
+                  <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmedMedicalDocument} onChange={e => setConfirmedMedicalDocument(e.target.checked)} />I confirm this is a medical document and the selected category is correct.</label>
                   {uploadFile && (
                     <p className="text-sm text-gray-500 mt-1">
                       Selected: {uploadFile.name} ({formatFileSize(uploadFile.size)})
@@ -332,7 +335,7 @@ const MyReports = () => {
                 <Button
                   className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700"
                   onClick={handleUpload}
-                  disabled={isUploading || !uploadFile}
+                  disabled={isUploading || !uploadFile || !confirmedMedicalDocument}
                 >
                   {isUploading ? (
                     <>
@@ -484,7 +487,7 @@ const MyReports = () => {
                 </div>
                 <CardTitle
                   className="text-lg leading-snug break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
-                  title={report.fileName}
+                  title={getDisplayName(report)}
                 >
                   {getDisplayName(report)}
                 </CardTitle>

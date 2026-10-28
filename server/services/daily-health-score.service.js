@@ -29,6 +29,25 @@
 import cron from 'node-cron';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
+import { sleepHours } from '../utils/health-display.js';
+
+export async function currentDailyScore(userId) {
+  await ensureTables();
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+  const [enriched, logs, profiles] = await Promise.all([
+    enrichLogDataFromDiary(userId, date),
+    postgresSequelize.query('SELECT * FROM daily_activity WHERE user_id = :userId AND date = :date LIMIT 1', { replacements: { userId, date }, type: QueryTypes.SELECT }),
+    postgresSequelize.query(`SELECT u."dateOfBirth", COALESCE(ha.gender, u.gender, 'other') AS gender, ha.height,
+      COALESCE((SELECT weight FROM daily_activity WHERE user_id = u.id AND weight IS NOT NULL ORDER BY date DESC LIMIT 1), ha.weight) AS weight
+      FROM users u LEFT JOIN user_health_assessments ha ON ha.user_id = u.id
+      AND ha.id = (SELECT id FROM user_health_assessments WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1)
+      WHERE u.id = :userId`, { replacements: { userId }, type: QueryTypes.SELECT }),
+  ]);
+  const merged = { ...enriched };
+  for (const [key, value] of Object.entries(logs[0] || {})) if (value != null) merged[key] = value;
+  const result = computeDailyScore(merged, profiles[0] || {}, date);
+  return { ...result, date, computedAt: new Date().toISOString(), domains: Object.fromEntries(Object.entries(result.domains).map(([key, value]) => [key, result.dataQuality.observedDomains.includes(key) ? value : null])) };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. Age-band helper
@@ -266,8 +285,8 @@ function scoreVitals(data, ageBand) {
     const g  = data.blood_sugar;
     const bg = TARGETS.glucose_normal;
     let bgScore;
-    if (g >= bg.min && g <= bg.max)                                bgScore = 100;
-    else if (g > bg.max && g < TARGETS.glucose_prediabetic.max)   bgScore = 60;
+    if (g >= bg.min && g < bg.max)                                bgScore = 100;
+    else if (g >= bg.max && g < TARGETS.glucose_prediabetic.max)   bgScore = 60;
     else if (g < bg.min)                                           bgScore = 50;
     else                                                            bgScore = 20;
     totalScore  += bgScore * 0.20;
@@ -353,7 +372,7 @@ export async function enrichLogDataFromDiary(userId, dateStr) {
       SELECT "entryType", data, mood, severity
       FROM health_diary
       WHERE "userId" = :userId
-        AND "entryDate"::date = :date
+        AND ("entryDate" AT TIME ZONE 'Asia/Kolkata')::date = :date
         -- Compared as text, not as enum_health_diary_entryType: 'screen_time' is not a label on
         -- that enum, and Postgres casts every literal in the list, so including it made the whole
         -- query fail with "invalid input value for enum" and lost ALL diary enrichment, not just
@@ -375,7 +394,7 @@ export async function enrichLogDataFromDiary(userId, dateStr) {
       SELECT reading_type, value, unit, activity, recorded_at
       FROM health_readings
       WHERE user_id = :userId
-        AND recorded_at::date = :date
+        AND (recorded_at AT TIME ZONE 'Asia/Kolkata')::date = :date
       ORDER BY reading_type, recorded_at ASC
     `, {
       replacements: { userId, date: dateStr },
@@ -399,6 +418,19 @@ export async function enrichLogDataFromDiary(userId, dateStr) {
     });
 
     const enriched = {};
+    // Manual readings and web/BLE integrations also use the health_data store.
+    const healthRows = await postgresSequelize.query(`SELECT DISTINCT ON (data_type) data_type, value, unit, metadata
+      FROM health_data WHERE user_id = :userId AND (recorded_at AT TIME ZONE 'Asia/Kolkata')::date = :date
+      ORDER BY data_type, recorded_at DESC, id DESC`, { replacements: { userId, date: dateStr }, type: QueryTypes.SELECT }).catch(() => []);
+    const metricFields = { heart_rate: 'heart_rate', steps: 'steps', sleep: 'sleep_hours', spo2: 'spo2', weight: 'weight', blood_glucose: 'blood_sugar', calories: 'calories_burned', water: 'water_glasses', blood_pressure_systolic: 'blood_pressure_systolic', blood_pressure_diastolic: 'blood_pressure_diastolic' };
+    for (const row of healthRows) {
+      const key = metricFields[row.data_type];
+      if (key && Number.isFinite(Number(row.value))) enriched[key] = key === 'sleep_hours' ? sleepHours(row.value, row.unit) : Number(row.value);
+      if (row.data_type === 'blood_pressure' && row.metadata?.systolic && row.metadata?.diastolic) {
+        enriched.blood_pressure_systolic = Number(row.metadata.systolic);
+        enriched.blood_pressure_diastolic = Number(row.metadata.diastolic);
+      }
+    }
     let medicationCount = 0;
 
     // ── Health diary enrichment ──────────────────────────────────────────────
@@ -479,7 +511,7 @@ export async function enrichLogDataFromDiary(userId, dateStr) {
         }
 
         case 'medication': {
-          medicationCount++;
+          if (d.action === 'taken' || d.status === 'taken') medicationCount++;
           break;
         }
 
@@ -753,7 +785,7 @@ export function computeDailyScore(logData, userProfile, scoringDate) {
   if (hasPositiveNumber(logData.calories_consumed) || logData.diet_quality) observedDomains.push('nutrition');
   if (hasPositiveNumber(logData.sleep_hours) || logData.sleep_quality) observedDomains.push('sleep');
   if (hasPositiveNumber(logData.heart_rate, logData.blood_pressure_systolic, logData.blood_pressure_diastolic, logData.spo2, logData.blood_sugar, logData.temperature)) observedDomains.push('vitals');
-  if (logData.medication_adherence_pct != null || hasPositiveNumber(logData.medication_doses_prescribed, logData.medication_doses_taken)) observedDomains.push('medication');
+  if (logData.medication_adherence_pct != null || (logData.medication_doses_taken != null && hasPositiveNumber(logData.medication_doses_prescribed))) observedDomains.push('medication');
   if (hasPositiveNumber(logData.water_glasses)) observedDomains.push('hydration');
   if (logData.stress_score != null || logData.mood_score != null) observedDomains.push('mental');
   const dataQuality = {
@@ -762,9 +794,8 @@ export function computeDailyScore(logData, userProfile, scoringDate) {
     minimumDomainsForScore: 3,
   };
 
-  const composite = Object.entries(WEIGHTS).reduce((sum, [k, w]) => {
-    return sum + (domains[k] || 0) * w;
-  }, 0);
+  const observedWeight = observedDomains.reduce((sum, domain) => sum + WEIGHTS[domain], 0);
+  const composite = observedWeight > 0 ? observedDomains.reduce((sum, domain) => sum + domains[domain] * WEIGHTS[domain], 0) / observedWeight : 0;
 
   return {
     // A score is intentionally withheld until enough independently observed

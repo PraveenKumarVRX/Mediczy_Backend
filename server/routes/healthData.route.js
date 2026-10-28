@@ -2,8 +2,41 @@ import express from 'express';
 import auth from '../middleware/auth.js';
 import HealthData from '../models/HealthData.model.intelligent.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { classifyVital, patientVitalHistory, vitalUnits } from '../utils/patient-vitals.js';
 
 const router = express.Router();
+
+// Patient readings use the same health_data store as dashboards and wearables.
+router.get('/vitals', auth, async (req, res) => {
+  try {
+    const records = await HealthData.findAll({ where: { userId: req.user.id }, order: [['recordedAt', 'DESC']], limit: 1000 });
+    const vitals = patientVitalHistory(records);
+    res.json({ success: true, vitals });
+  } catch (error) {
+    console.error('Load patient vitals:', error);
+    res.status(500).json({ message: 'Could not load your readings. Please try again.' });
+  }
+});
+
+router.post('/vitals', auth, async (req, res) => {
+  const { type, value, notes = '', fasting = false } = req.body;
+  let status;
+  try { status = classifyVital(type, value, fasting); }
+  catch (error) { return res.status(400).json({ message: error.message }); }
+  try {
+    const timestamp = new Date();
+    const types = { blood_sugar: 'blood_glucose', oxygen_level: 'spo2' };
+    const reading = await HealthData.create({ userId: req.user.id, dataType: types[type] || type,
+      value: Number(String(value).split('/')[0]), unit: vitalUnits[type], source: 'manual', recordedAt: timestamp,
+      metadata: { displayValue: String(value), notes: String(notes).slice(0, 2000), fasting: fasting === true,
+        ...(type === 'blood_pressure' ? { systolic: Number(String(value).split('/')[0]), diastolic: Number(String(value).split('/')[1]) } : {}) },
+    });
+    res.status(201).json({ success: true, vital: { id: String(reading.id), type, value: String(value), unit: vitalUnits[type], status, timestamp, notes, recordedBy: 'Self' } });
+  } catch (error) {
+    console.error('Save patient vital:', error);
+    res.status(500).json({ message: 'Could not save your reading. Please try again.' });
+  }
+});
 
 /**
  * Validate device ownership - ensures device is registered to user
@@ -227,74 +260,25 @@ router.get('/recent', auth, async (req, res) => {
 router.get('/summary', auth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { days = 7 } = req.query;
+    const days = Math.min(90, Math.max(1, Number.parseInt(req.query.days, 10) || 7));
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(days));
     const endDate = new Date();
 
-    // Get latest readings for each type
-    const latestReadings = {};
-    const dataTypes = [
-      'heart_rate', 'hrv', 'ecg', 'steps', 'calories', 'distance', 'sleep',
-      'blood_pressure_systolic', 'blood_pressure_diastolic', 'blood_glucose', 'weight', 'body_fat',
-      'temperature', 'spo2', 'activity', 'total_cholesterol', 'uric_acid'
-    ];
-
-    if (HealthData) {
-      for (const dataType of dataTypes) {
-        try {
-          const latest = await HealthData.findOne({
-            where: { userId, dataType },
-            order: [['recordedAt', 'DESC']]
-          });
-          console.log(`Health summary - ${dataType}: ${latest ? latest.value : 'null'}`);
-          if (latest) {
-            latestReadings[dataType] = {
-              value: parseFloat(latest.value),
-              unit: latest.unit,
-              timestamp: latest.recordedAt,
-              deviceId: latest.deviceId
-            };
-          }
-        } catch (e) {
-          console.error(`Error fetching ${dataType}:`, e.message);
-        }
-      }
-    }
-    
-    console.log('Latest readings:', JSON.stringify(latestReadings, null, 2));
-
-    // Calculate averages for the period
-    const averages = {};
-    const aggregateTypes = ['heart_rate', 'steps', 'calories', 'spo2'];
-
-    if (HealthData) {
-      for (const dataType of aggregateTypes) {
-        try {
-          const readings = await HealthData.findAll({
-            where: {
-              userId,
-              dataType,
-              recordedAt: { $gte: startDate, $lte: endDate }
-            }
-          });
-          
-          if (readings.length > 0) {
-            const sum = readings.reduce((acc, r) => acc + parseFloat(r.value), 0);
-            averages[dataType] = Math.round(sum / readings.length);
-          }
-        } catch (e) {
-          // Skip if error
-        }
-      }
-    }
+    const [[latestRows], [averageRows]] = await Promise.all([
+      postgresSequelize.query(`SELECT DISTINCT ON (data_type) data_type, value, unit, recorded_at, device_id FROM health_data WHERE user_id = $1 ORDER BY data_type, recorded_at DESC, id DESC`, { bind: [userId] }),
+      postgresSequelize.query(`SELECT data_type, AVG(value)::float AS average FROM health_data WHERE user_id = $1 AND recorded_at BETWEEN $2 AND $3 GROUP BY data_type`, { bind: [userId, startDate, endDate] }),
+    ]);
+    const latestReadings = Object.fromEntries(latestRows.map(row => [row.data_type, { value: Number(row.value), unit: row.unit, timestamp: row.recorded_at, deviceId: row.device_id }]));
+    const averages = Object.fromEntries(averageRows.map(row => [row.data_type, Math.round(row.average)]));
+    const lastSync = latestRows.reduce((last, row) => !last || new Date(row.recorded_at) > new Date(last) ? row.recorded_at : last, null);
 
     res.json({
       period: { start: startDate, end: endDate, days: parseInt(days) },
       latest: latestReadings,
       averages,
-      lastSync: new Date()
+      lastSync
     });
 
   } catch (error) {

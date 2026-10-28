@@ -963,7 +963,9 @@ const DoctorListBooking = () => {
         staleTime: 60_000,
       });
       
-      setDoctorSlots(data);
+      const slotDate = dateParam || data.date;
+      const future = (slot: any) => !slotDate || new Date(`${slotDate}T${String(slot.time).split(' - ')[0].slice(0, 5)}:00+05:30`).getTime() > Date.now();
+      setDoctorSlots({ ...data, slots: { ...data.slots, online: (data.slots?.online || []).filter(future), inPerson: (data.slots?.inPerson || []).filter(future) } });
     } catch (error) {
       console.error('Error fetching doctor slots:', error);
       toast({
@@ -1091,7 +1093,7 @@ const DoctorListBooking = () => {
                 <span>Speaks: {doctor.languages.join(", ")}</span>
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-100 dark:border-slate-700">
                 <div className="flex items-center gap-6">
                   {consultationTypeFilter !== "inPerson" && (
                     <div>
@@ -1133,7 +1135,7 @@ const DoctorListBooking = () => {
                       onClick={() => handleBookAppointment(doctor)}
                       disabled={!doctor.isLive}
                       className={cn(
-                        "text-white shadow-lg hover:shadow-xl transition-all rounded-full px-6",
+                        "shrink-0 max-w-full text-white shadow-lg hover:shadow-xl transition-all rounded-full px-4",
                         consultationTypeFilter === "inPerson"
                           ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
                           : "bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700"
@@ -1314,7 +1316,7 @@ const DoctorListBooking = () => {
         title: "Booking Failed",
         description: error?.response?.status === 409
           ? `${errorMessage} Availability has been refreshed.`
-          : errorMessage,
+          : "Could not book this appointment. Please try another slot or contact support.",
         variant: "destructive"
       });
     } finally {
@@ -2101,7 +2103,7 @@ const DoctorListBooking = () => {
                         })()}
                         
                         {doctorSlots.slots.online.filter((s: any) => s.available && !s.blocked).length === 0 && (
-                          <p className="text-sm text-amber-700 dark:text-amber-300 py-4 text-center bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">⚠️ All online slots are booked or unavailable for this date. Please try another date.</p>
+                          <p className="text-sm text-amber-700 dark:text-amber-300 py-4 text-center bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">⚠️ No future online slots are available for this date. Please choose another date.</p>
                         )}
                       </div>
                     ) : null}
@@ -2262,17 +2264,17 @@ const DoctorListBooking = () => {
                         })()}
                         
                         {doctorSlots.slots.inPerson.filter((s: any) => s.available && !s.blocked).length === 0 && (
-                          <p className="text-sm text-amber-700 dark:text-amber-300 py-4 text-center bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">⚠️ All in-person slots are booked or unavailable for this date. Please try another date.</p>
+                          <p className="text-sm text-amber-700 dark:text-amber-300 py-4 text-center bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">⚠️ No future in-person slots are available for this date. Please choose another date.</p>
                         )}
                       </div>
                     ) : null}
 
                     {/* No slots available for selected type */}
                     {consultationType === "online" && (!doctorSlots.slots?.online || doctorSlots.slots.online.length === 0) && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Doctor does not have online consultation slots configured for this day</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">No future online slots are available for this day. Please choose another date.</p>
                     )}
                     {consultationType === "inPerson" && (!doctorSlots.slots?.inPerson || doctorSlots.slots.inPerson.length === 0) && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Doctor does not have in-person consultation slots configured for this day</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">No future in-person slots are available for this day. Please choose another date.</p>
                     )}
                   </div>
                 ) : doctorSlots && doctorSlots.isOff ? (

@@ -9,12 +9,22 @@ import emailService from './emailService.js';
 import { SMSService } from './sms.service.js';
 import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
 import { Notification } from '../models/index.js';
-import { DataTypes } from 'sequelize';
+import { DataTypes, Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import whatsappService from './whatsapp.service.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import { doctorDisplayName, renderNotificationTemplate } from '../utils/doctor-name.js';
+
+const visibleNotifications = () => ({
+  [Op.and]: [
+    { [Op.or]: [{ expiresAt: null }, { expiresAt: { [Op.gt]: new Date() } }] },
+    { [Op.or]: [
+      { [Op.and]: [{ title: { [Op.notILike]: '%is calling%' } }, { message: { [Op.notILike]: '%Tap to join%' } }] },
+      { createdAt: { [Op.gte]: new Date(Date.now() - 15 * 60000) } },
+    ] },
+  ],
+});
 
 // Initialize SMS service
 const smsService = new SMSService();
@@ -322,7 +332,14 @@ class NotificationService {
       const priority = template.priority;
 
       // Create in-app notification record
-      const notification = await Notification.create({
+      const isCall = /calling|call_incoming|call_started|consultation_started|video_call/i.test(type);
+      const outcome = await postgresSequelize.transaction(async transaction => {
+        if (isCall) {
+          await postgresSequelize.query('SELECT pg_advisory_xact_lock(hashtext(:key))', { transaction, replacements: { key: `call:${userType}:${userId}:${data.appointmentId || variables?.appointmentId || title}` } });
+          const existing = await Notification.findOne({ where: { userId, userType, title, message, createdAt: { [Op.gte]: new Date(Date.now() - 2 * 60000) } }, transaction });
+          if (existing) return { notification: existing, duplicate: true };
+        }
+        const notification = await Notification.create({
         userId,
         userType, // Add userType to the notification record
         type,
@@ -334,8 +351,13 @@ class NotificationService {
         webRoute: actionUrl,
         deepLink: actionUrl,
         status: 'pending',
-        isRead: false
+        isRead: false,
+        expiresAt: isCall ? new Date(Date.now() + 15 * 60000) : null
+      }, { transaction });
+        return { notification, duplicate: false };
       });
+      const { notification } = outcome;
+      if (outcome.duplicate) return { success: true, notificationId: notification.id, duplicate: true, channels: {} };
 
       const results = {
         notificationId: notification.id,
@@ -1047,7 +1069,7 @@ class NotificationService {
   async getNotifications(userId, userType, options = {}) {
     const { page = 1, limit = 20, unreadOnly = false, type } = options;
 
-    const where = { userId };
+    const where = { userId, ...visibleNotifications() };
     // Only filter by userType if provided and not null
     if (userType) {
       where.userType = userType;
@@ -1063,7 +1085,7 @@ class NotificationService {
     });
 
     // Build unread count query
-    const unreadWhere = { userId, isRead: false };
+    const unreadWhere = { userId, isRead: false, ...visibleNotifications() };
     if (userType) {
       unreadWhere.userType = userType;
     }
@@ -1113,7 +1135,7 @@ class NotificationService {
    * Get unread count
    */
   async getUnreadCount(userId, userType) {
-    const where = { userId, isRead: false };
+    const where = { userId, isRead: false, ...visibleNotifications() };
     // Only filter by userType if provided
     if (userType) {
       where.userType = userType;

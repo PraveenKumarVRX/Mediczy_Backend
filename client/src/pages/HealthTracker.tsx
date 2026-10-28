@@ -572,7 +572,7 @@ const HealthTracker = () => {
   })();
 
   return (
-    <MainLayout>
+    <>
       <div className="space-y-8 animate-in fade-in duration-700">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
@@ -1137,7 +1137,7 @@ const HealthTracker = () => {
           </div>
         )}
       </div>
-    </MainLayout>
+    </>
   );
 };
 

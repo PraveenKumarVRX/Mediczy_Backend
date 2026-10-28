@@ -1,3 +1,4 @@
+import { coveragePeriod } from '@/utils/plan-entitlements';
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -50,7 +51,7 @@ const TIER_LIST = [0, 1, 4, 7, 10];
 // ── Types ────────────────────────────────────────────────────────────────────
 interface BenefitLimits { pharmacyLimitINR?: number; homeCareLimitINR?: number; ambulanceLimitINR?: number }
 interface TeleConsultLimits { allSpecialties?: number; [k: string]: number | undefined }
-interface CoverageItem { limit?: number; limitINR?: number; unit?: string; package?: string }
+interface CoverageItem { limit?: number; limitINR?: number; unit?: string; package?: string; discountPct?: number }
 interface CoverageDetails {
   onlineConsult?: CoverageItem; physicalConsult?: CoverageItem;
   labTests?: CoverageItem; pharmacy?: CoverageItem;
@@ -90,7 +91,7 @@ const COVERAGE_ROWS: Array<{
   { key: "dental",           label: "Dental Coverage",       sub: "Dental treatments",  Icon: Smile,        type: "money",    color: "#4f46e5" },
 ];
 
-function formatCoverageValue(row: typeof COVERAGE_ROWS[0], item?: CoverageItem): { text: string; included: boolean } {
+function formatCoverageValue(row: typeof COVERAGE_ROWS[0], item?: CoverageItem, period = "plan term"): { text: string; included: boolean } {
   if (!item) return { text: "Not included", included: false };
   if (row.type === "package") {
     const pkg = item.package ?? "None";
@@ -98,13 +99,13 @@ function formatCoverageValue(row: typeof COVERAGE_ROWS[0], item?: CoverageItem):
   }
   if (row.type === "money") {
     const v = item.limitINR ?? 0;
-    return { text: v > 0 ? `₹${v.toLocaleString("en-IN")}` : "Not included", included: v > 0 };
+    return { text: v > 0 ? `₹${v.toLocaleString("en-IN")}` : (item.discountPct || 0) > 0 ? `${item.discountPct}% discount` : "Not included", included: v > 0 || (item.discountPct || 0) > 0 };
   }
   // consult
   const v = item.limit ?? 0;
   if (v >= 999) return { text: "Unlimited", included: true };
   if (v === 0) return { text: "Not included", included: false };
-  return { text: `${v}/month`, included: true };
+  return { text: `${v}/${item.unit?.includes("year") ? "year" : item.unit?.includes("month") ? "month" : period}`, included: true };
 }
 
 // ── Coverage grid (current plan detail) ──────────────────────────────────────
@@ -119,7 +120,7 @@ function CoverageGrid({ coverage, tier, remaining, usedConsults }: {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {COVERAGE_ROWS.map(row => {
         const item = coverage[row.key];
-        const { text, included } = formatCoverageValue(row, item);
+        const { text, included } = formatCoverageValue(row, item, coveragePeriod(coverage));
         const Icon = row.Icon;
 
         // Live remaining for tracked benefits
@@ -131,7 +132,7 @@ function CoverageGrid({ coverage, tier, remaining, usedConsults }: {
           liveText = `${rem} remaining`;
           usedInfo = `${usedConsults} used · ${allowed} total`;
         }
-        if (included && row.key === "pharmacy" && remaining?.pharmacyLimitINR !== undefined) {
+        if (included && row.key === "pharmacy" && (item?.limitINR || 0) > 0 && remaining?.pharmacyLimitINR !== undefined) {
           liveText = `₹${remaining.pharmacyLimitINR.toLocaleString("en-IN")} left`;
           const total = item?.limitINR ?? 0;
           usedInfo = `₹${(total - remaining.pharmacyLimitINR).toLocaleString("en-IN")} used`;
@@ -178,7 +179,7 @@ function CoverageGrid({ coverage, tier, remaining, usedConsults }: {
 // ── Coverage summary chips for upgrade cards ───────────────────────────────────
 function CoverageSummary({ coverage }: { coverage?: CoverageDetails }) {
   if (!coverage) return null;
-  const rows = COVERAGE_ROWS.map(r => ({ ...r, val: formatCoverageValue(r, coverage[r.key]) }));
+  const rows = COVERAGE_ROWS.map(r => ({ ...r, val: formatCoverageValue(r, coverage[r.key], coveragePeriod(coverage)) }));
   const included = rows.filter(r => r.val.included);
   return (
     <div className="flex flex-wrap gap-1.5 mt-3 mb-4">
@@ -335,7 +336,7 @@ function UpgradeCard({ plan, onRequest, isPopular }: { plan: UpgradeOption; onRe
         <p className="text-white/70 text-xs mt-0.5">{plan.description}</p>
         <div className="mt-3 flex items-end gap-1">
           <span className="text-3xl font-black">₹{plan.originalPrice.toLocaleString("en-IN")}</span>
-          <span className="text-white/60 text-sm mb-1">/month</span>
+          <span className="text-white/60 text-sm mb-1">/{plan.durationMonths === 12 ? "year" : plan.durationMonths && plan.durationMonths > 1 ? `${plan.durationMonths} months` : "month"}</span>
         </div>
         {plan.proratedRefund > 0 && <p className="text-[11px] text-white/60 mt-1">After ₹{plan.proratedRefund} credit → pay ₹{plan.amountDue}</p>}
         {/* Coverage chips inside gradient header */}
@@ -346,7 +347,7 @@ function UpgradeCard({ plan, onRequest, isPopular }: { plan: UpgradeOption; onRe
         {coverage ? (
           <div className="space-y-2 mb-5">
             {COVERAGE_ROWS.map(row => {
-              const { text, included } = formatCoverageValue(row, coverage[row.key]);
+              const { text, included } = formatCoverageValue(row, coverage[row.key], coveragePeriod(coverage));
               const RowIcon = row.Icon;
               if (!included) return null;
               return (

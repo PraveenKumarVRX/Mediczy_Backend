@@ -340,11 +340,13 @@ async function notifyOrderPurchase({ order, user, payment, lineItems, itemLabel 
         },
       });
 
+    }
+    if (!invoice.pdfUrl) {
       try {
         const pdfResult = await invoiceService.generateInvoicePDF(invoice.toJSON());
         await invoice.update({ pdfUrl: pdfResult.url });
       } catch (pdfErr) {
-        console.error(`⚠️ Invoice PDF generation failed for ${invoiceNumber} (order ${order.id}), continuing without PDF:`, pdfErr.message);
+        console.error(`⚠️ Invoice PDF generation failed for ${invoice.invoiceNumber} (order ${order.id}), continuing without PDF:`, pdfErr.message);
       }
     }
 

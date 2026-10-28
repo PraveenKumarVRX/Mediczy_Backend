@@ -182,9 +182,10 @@ router.post('/', authUser, async (req, res) => {
       isPrivate
     } = req.body;
     
+    if (!entryDate || Number.isNaN(new Date(entryDate).getTime())) return res.status(400).json({ success: false, message: 'Please enter a complete date and time' });
     const entry = await HealthDiary.create({
       userId: parseInt(userId),
-      entryDate: entryDate || new Date(),
+      entryDate: new Date(entryDate),
       entryType: entryType || 'note',
       title,
       description,

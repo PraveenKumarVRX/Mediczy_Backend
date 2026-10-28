@@ -10,7 +10,7 @@ const HospitalCommunication: React.FC = () => {
     <HospitalLayout title="Communication Hub" subtitle="Messages, calls, and notifications">
       <CommunicationModule
         userType="hospital"
-        userId={currentUser?.id}
+        userId={currentUser?.id == null ? undefined : String(currentUser.id)}
         organizationId={currentUser?.organizationId}
       />
     </HospitalLayout>

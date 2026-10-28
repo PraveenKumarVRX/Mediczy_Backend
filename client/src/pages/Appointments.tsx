@@ -1,3 +1,7 @@
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { doctorBookingService } from '@/services/doctor-booking.service';
+import { slotTime, doctorName } from '@/utils/patient-display';
 import EmployeeCareFeedback from "@/components/corporate/EmployeeCareFeedback";
 import MainLayout from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -102,6 +106,9 @@ const extractRoomId = (meetingLink?: string) => {
   return meetingLink;
 };
 
+const appointmentInstant = (appointment: Appointment) => new Date(`${String(appointment.date).slice(0, 10)}T${String(appointment.time).slice(0, 5)}:00+05:30`).getTime();
+const appointmentIsPast = (appointment: Appointment) => appointmentInstant(appointment) + (appointment.estimatedDuration || 30) * 60000 < Date.now();
+
 const isExternalMeetingLink = (meetingLink?: string) => {
   if (!meetingLink) return false;
   try {
@@ -132,15 +139,39 @@ const Appointments = () => {
   const [savingReminderPrefs, setSavingReminderPrefs] = useState(false);
   const [reminderPrefsLoaded, setReminderPrefsLoaded] = useState(false);
 
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleSlots, setRescheduleSlots] = useState<{ time: string }[]>([]);
+  const [rescheduleSlotsLoading, setRescheduleSlotsLoading] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setRescheduleSlots([]); setRescheduleTime('');
+    if (!rescheduleTarget?.doctor.id || !rescheduleDate) return;
+    setRescheduleSlotsLoading(true);
+    doctorBookingService.getDoctorSlots(String(rescheduleTarget.doctor.id), { date: rescheduleDate }).then(data => {
+      const mode = rescheduleTarget.consultationType === 'online' ? 'online' : 'inPerson';
+      const slots = (data.slots?.[mode] || []).filter((slot: any) => slot.available && !slot.blocked && new Date(`${rescheduleDate}T${String(slot.time).split(' - ')[0].slice(0, 5)}:00+05:30`).getTime() > Date.now());
+      if (!cancelled) setRescheduleSlots(slots);
+    }).catch(() => { if (!cancelled) toast({ title: 'Could not load available slots', variant: 'destructive' }); }).finally(() => { if (!cancelled) setRescheduleSlotsLoading(false); });
+    return () => { cancelled = true; };
+  }, [rescheduleTarget, rescheduleDate]);
+
   // Memoized filtered lists — avoids calling filterAppointments() inside JSX render
   const upcomingAppointments = useMemo(
-    () => appointments.filter(apt => ['upcoming', 'pending', 'confirmed', 'pending_confirmation'].includes(apt.status)),
+    () => appointments.filter(apt => ['upcoming', 'pending', 'confirmed', 'pending_confirmation', 'scheduled', 'rescheduled'].includes(apt.status) && !appointmentIsPast(apt)),
     [appointments]
   );
   const completedAppointments = useMemo(
-    () => appointments.filter(apt => ['completed', 'cancelled', 'no_show'].includes(apt.status)),
+    () => appointments.filter(apt => ['completed', 'cancelled', 'no_show', 'no-show'].includes(apt.status) || appointmentIsPast(apt)).map(apt => appointmentIsPast(apt) && !['completed', 'cancelled', 'no-show', 'no_show'].includes(apt.originalStatus || '') ? { ...apt, originalStatus: 'expired' } : apt),
     [appointments]
   );
+
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('all');
+  const [historyPage, setHistoryPage] = useState(1);
+  useEffect(() => setHistoryPage(1), [historySearch, historyStatus]);
+  const matchingHistory = completedAppointments.filter(apt => (!historySearch || `${apt.doctor.name} ${apt.doctor.specialty} ${apt.date}`.toLowerCase().includes(historySearch.toLowerCase())) && (historyStatus === 'all' || apt.originalStatus === historyStatus));
 
   // Incoming doctor call state
   const [incomingCall, setIncomingCall] = useState<{
@@ -674,36 +705,16 @@ const Appointments = () => {
       return;
     }
 
-    const appointmentDate = window.prompt(
-      "Enter new appointment date (YYYY-MM-DD):",
-      String(appointment.date ?? "")
-    );
-    if (!appointmentDate) return;
-    const appointmentTime = window.prompt(
-      "Enter new appointment time (HH:MM, 24-hour):",
-      String(appointment.time ?? "")
-    );
-    if (!appointmentTime) return;
-    const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
-    const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
-    if (!DATE_REGEX.test(appointmentDate) || !TIME_REGEX.test(appointmentTime)) {
-      toast({
-        title: "Invalid date or time",
-        description: "Use YYYY-MM-DD and HH:MM (24-hour) format.",
-        variant: "destructive",
-      });
-      return;
-    }
-    const rescheduleDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
-    if (Number.isNaN(rescheduleDateTime.getTime()) || rescheduleDateTime < new Date()) {
-      toast({
-        title: "Invalid reschedule time",
-        description: "Choose a future date and time.",
-        variant: "destructive",
-      });
-      return;
-    }
+    setRescheduleTarget(appointment);
+    setRescheduleDate('');
+    setRescheduleTime('');
+  };
 
+  const saveReschedule = async () => {
+    const appointment = rescheduleTarget;
+    if (!appointment || !rescheduleDate || !rescheduleTime || !rescheduleSlots.some(slot => slot.time.split(' - ')[0].slice(0, 5) === rescheduleTime)) return;
+    const appointmentDate = rescheduleDate;
+    const appointmentTime = rescheduleTime;
     setActionLoadingId(appointment.id);
     try {
       await rescheduleMutation.mutateAsync({
@@ -724,6 +735,7 @@ const Appointments = () => {
         )
       );
       toast({ title: "Appointment rescheduled" });
+      setRescheduleTarget(null);
     } catch (error: any) {
       toast({
         title: "Reschedule failed",
@@ -974,7 +986,7 @@ const Appointments = () => {
                         {appointment.doctor.profileImage ? (
                           <img
                             src={appointment.doctor.profileImage}
-                            alt={appointment.doctor.name}
+                            alt={doctorName(appointment.doctor.name)}
                             className="w-16 h-16 rounded-lg object-cover"
                           />
                         ) : (
@@ -985,7 +997,7 @@ const Appointments = () => {
                         <div className="space-y-2">
                           <div className="flex items-center space-x-2">
                             <h3 className="text-xl font-semibold text-[#00FFF3]">
-                              {appointment.doctor.name}
+                              {doctorName(appointment.doctor.name)}
                             </h3>
                           </div>
                           <p className="text-gray-300">{appointment.doctor.specialty}</p>
@@ -997,7 +1009,7 @@ const Appointments = () => {
                             </div>
                             <div className="flex items-center gap-1">
                               <Clock className="h-4 w-4" />
-                              {appointment.time}
+                              {slotTime(appointment.time)}
                             </div>
                             <div className="flex items-center gap-1">
                               {getTypeIcon(appointment.channel)}
@@ -1031,12 +1043,13 @@ const Appointments = () => {
 
                         <p className="text-lg font-semibold text-[#00FFF3]">₹{appointment.fee}</p>
 
-                        <div className="flex gap-2 mt-4">
+                        {['scheduled', 'pending', 'pending_confirmation', 'rescheduled'].includes(appointment.originalStatus || '') && appointmentInstant(appointment) - Date.now() <= 30 * 60000 && <p role="status" className="mt-2 text-sm text-amber-300">Your doctor has not confirmed this appointment yet. Contact support before travelling or waiting for the call. <a className="underline" href="/help">Get help</a></p>}
+                        <div className="flex flex-wrap gap-2 mt-4">
                           {appointment.consultationType === 'online' && appointment.channel === 'video' && (
                             <div className="flex flex-col items-start gap-1">
                               <Button
                                 size="sm"
-                                className="bg-green-600 hover:bg-green-700 disabled:opacity-60"
+                                className="bg-green-600 hover:bg-green-700 disabled:bg-slate-600 disabled:text-slate-300 disabled:opacity-100"
                                 disabled={actionLoadingId === appointment.id || !getJoinCallState(appointment).enabled}
                                 title={getJoinCallState(appointment).enabled ? "" : getJoinCallState(appointment).reason}
                                 onClick={() => handleJoinCall(appointment)}
@@ -1094,8 +1107,10 @@ const Appointments = () => {
 
           {/* Completed Appointments */}
           <TabsContent value="completed" className="space-y-6">
+            <div className="flex flex-wrap gap-3"><Input aria-label="Search appointment history" placeholder="Search doctor or date" value={historySearch} onChange={e => setHistorySearch(e.target.value)} className="max-w-sm" /><select aria-label="Filter appointment history" className="rounded border bg-slate-900 text-white p-2" value={historyStatus} onChange={e => setHistoryStatus(e.target.value)}>{['all', 'completed', 'cancelled', 'no-show', 'expired'].map(status => <option key={status} value={status}>{status.replace(/[-_]/g, ' ')}</option>)}</select></div>
+            <div className="flex items-center gap-3"><Button variant="outline" disabled={historyPage <= 1} onClick={() => setHistoryPage(page => page - 1)}>Previous</Button><span>{matchingHistory.length} appointments · Page {historyPage} of {Math.max(1, Math.ceil(matchingHistory.length / 20))}</span><Button variant="outline" disabled={historyPage * 20 >= matchingHistory.length} onClick={() => setHistoryPage(page => page + 1)}>Next</Button></div>
             <div className="grid gap-4">
-              {filterAppointments('completed').map((appointment) => (
+              {matchingHistory.slice((historyPage - 1) * 20, historyPage * 20).map((appointment) => (
                 <Card key={appointment.id} className="border-[#00FFF3]/10 bg-[#0B1120]/50">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
@@ -1105,7 +1120,7 @@ const Appointments = () => {
                         </div>
                         <div className="space-y-2">
                           <h3 className="text-lg font-semibold text-[#00FFF3]">
-                            {appointment.doctor.name}
+                            {doctorName(appointment.doctor.name)}
                           </h3>
                           <p className="text-gray-400">{appointment.doctor.specialty}</p>
                           <div className="flex items-center gap-4 text-sm text-gray-500">
@@ -1131,7 +1146,7 @@ const Appointments = () => {
                           {appointment.originalStatus === 'no-show' ? <AlertCircle className="h-3 w-3" /> :
                             appointment.originalStatus === 'expired' ? <Clock className="h-3 w-3" /> :
                               <CheckCircle className="h-3 w-3" />}
-                          <span className="ml-1 capitalize">{appointment.originalStatus || 'completed'}</span>
+                          <span className="ml-1 capitalize">{(appointment.originalStatus || 'completed').replace(/[-_]/g, ' ')}</span>
                         </Badge>
                         <div className="flex gap-2 mt-2">
                           {appointment.originalStatus === 'completed' && (
@@ -1329,7 +1344,16 @@ const Appointments = () => {
         )}
 
         {/* Quick Appointment Booking Modal */}
-        <QuickAppointmentModal
+        <Dialog open={!!rescheduleTarget} onOpenChange={open => { if (!open) setRescheduleTarget(null); }}>
+        <DialogContent><DialogHeader><DialogTitle>Reschedule appointment</DialogTitle></DialogHeader>
+          <Label htmlFor="reschedule-date">Appointment date</Label><Input id="reschedule-date" type="date" min={new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date())} value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)} />
+          <Label htmlFor="reschedule-slot">Available slots (IST)</Label>
+          <select id="reschedule-slot" className="rounded border bg-background p-2" value={rescheduleTime} onChange={e => setRescheduleTime(e.target.value)}><option value="">{rescheduleSlotsLoading ? 'Loading slots…' : 'Choose a slot'}</option>{rescheduleSlots.map(slot => <option key={slot.time} value={slot.time.split(' - ')[0].slice(0, 5)}>{slotTime(slot.time.split(' - ')[0].slice(0, 5))}</option>)}</select>
+          {rescheduleDate && !rescheduleSlotsLoading && rescheduleSlots.length === 0 && <p>No available slots for this date. Please choose another date.</p>}
+          <Button onClick={saveReschedule} disabled={!rescheduleTime || actionLoadingId !== null}>Confirm reschedule</Button>
+        </DialogContent>
+      </Dialog>
+      <QuickAppointmentModal
           open={showBookingModal}
           onOpenChange={setShowBookingModal}
         />

@@ -9,7 +9,7 @@ const InsuranceCommunication: React.FC = () => {
     <div className="p-6">
       <CommunicationModule
         userType="insurer"
-        userId={currentUser?.id}
+        userId={currentUser?.id == null ? undefined : String(currentUser.id)}
         organizationId={currentUser?.organizationId}
       />
     </div>

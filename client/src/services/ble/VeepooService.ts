@@ -189,7 +189,7 @@ export interface DeviceInfo {
   name: string;
   model: string;
   version: string;
-  battery: number;
+  battery?: number;
   mac?: string;
 }
 
@@ -953,8 +953,7 @@ export class VeepooService {
     const info: DeviceInfo = {
       name: this.device?.name || 'Unknown Device',
       model: 'VE30',
-      version: '1.0',
-      battery: 100
+      version: '1.0'
     };
 
     // Try to get battery level

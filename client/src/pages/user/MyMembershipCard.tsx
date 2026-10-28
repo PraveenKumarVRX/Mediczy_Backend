@@ -1,3 +1,5 @@
+import { pharmacyBenefit, coveragePeriod } from '@/utils/plan-entitlements';
+import { BRAND } from '@/config/brand';
 /**
  * My Membership Card — Aetna-Grade Digital Health Card
  * World-class UI with 3D flip, glassmorphism, Framer Motion,
@@ -363,17 +365,8 @@ const MyMembershipCard = () => {
   const downloadCard = async () => {
     if (!cardRef.current) return;
     try {
-      const wasFlipped = isFlipped;
-      if (wasFlipped) setIsFlipped(false);
-      await new Promise((r) => setTimeout(r, 200));
-      const canvas = await html2canvas(cardRef.current, {
-        scale: 3,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: null,
-        logging: false,
-      });
-      if (wasFlipped) setIsFlipped(true);
+      const canvas = await captureCardSides();
+      if (!canvas) return;
       const link = document.createElement('a');
       link.download = `mediqzy-card-${user?.firstName || 'member'}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -391,19 +384,30 @@ const MyMembershipCard = () => {
   };
 
   /* ─── print card ─── */
-  const printCard = () => {
-    if (!cardRef.current) return;
-    html2canvas(cardRef.current, { scale: 3, useCORS: true, backgroundColor: null, logging: false }).then((canvas) => {
-      const win = window.open('', '_blank');
-      if (!win) return;
-      win.document.write(
-        '<html><head><title>MediQzy Health Card</title>' +
-        '<style>@page{size:landscape;margin:0.5in}body{display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#fff}img{max-width:100%;height:auto;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,.12)}</style>' +
-        '</head><body><img src="' + canvas.toDataURL('image/png') + '"/>' +
-        '<script>setTimeout(function(){window.print();window.close()},300)<\/script></body></html>'
-      );
-      win.document.close();
+  const captureCardSides = async () => {
+    if (!cardRef.current) return null;
+    return html2canvas(cardRef.current, { scale: 3, useCORS: true, backgroundColor: null, logging: false,
+      onclone: document => {
+        const card = document.querySelector('[data-membership-card]') as HTMLElement | null;
+        if (!card) return;
+        card.style.perspective = 'none';
+        const flip = card.firstElementChild as HTMLElement;
+        flip.style.transform = 'none'; flip.style.transformStyle = 'flat';
+        for (const side of Array.from(flip.children) as HTMLElement[]) {
+          side.style.position = 'relative'; side.style.transform = 'none'; side.style.backfaceVisibility = 'visible'; side.style.marginBottom = '16px';
+        }
+      },
     });
+  };
+  const printCard = async () => {
+    const win = window.open('', '_blank');
+    if (!win) return;
+    const canvas = await captureCardSides();
+    if (!canvas) { win.close(); return; }
+    win.document.write('<html><head><title>Mediqzy Health Card</title><style>@page{size:A4 portrait;margin:12mm}body{margin:0;text-align:center}img{width:125mm;max-height:265mm;object-fit:contain;break-inside:avoid;page-break-inside:avoid}</style></head><body><img alt="Membership card, front and back" src="' + canvas.toDataURL('image/png') + '"/></body></html>');
+    win.document.close();
+    const picture = win.document.querySelector('img');
+    if (picture) picture.onload = () => { win.focus(); win.print(); };
   };
 
   /* ─── tier helpers ─── */
@@ -459,26 +463,27 @@ const MyMembershipCard = () => {
   // used elsewhere for entitlement checks, not display - it was being picked
   // first here purely because a non-empty object is truthy, hiding the real
   // benefits list even when one existed.
-  const benefits = (Array.isArray(plan?.benefits) && plan.benefits.length > 0) ? plan.benefits : [
-    'OPD Consultations',
-    'In-Patient Hospitalization',
-    'Pharmacy Discounts',
-    'Annual Health Check-up',
-    'Teleconsultation Access',
-    '24/7 Emergency Helpline',
-  ];
-  const benefitsList = Array.isArray(benefits)
+  const benefits = Array.isArray(plan?.benefits) ? plan.benefits : [];
+  const rawBenefitsList = Array.isArray(benefits)
     ? benefits
     : typeof benefits === 'string'
     ? benefits.split(',').map((b: string) => b.trim())
     : [];
 
+  const coverage = plan?.metadata?.coverageDetails;
+  const benefitsList = coverage ? [
+    ...rawBenefitsList.filter((value: any) => typeof value === 'string' && !/emergency consultation|pharmacy/i.test(value)),
+    ...(Number(coverage.emergencyConsult?.limit) > 0 ? [`${coverage.emergencyConsult.limit} emergency consultations/${coveragePeriod(coverage)}`] : []),
+    `Pharmacy: ${pharmacyBenefit(coverage)}`,
+  ] : rawBenefitsList.filter((value: any) => typeof value === 'string');
+  const monetaryCover = Number(plan?.sumInsured ?? coverage?.insurance?.health ?? 0);
+
   /* ─── coverage data ─── */
   const coverageItems = [
-    { label: 'Sum Insured', value: plan?.sumInsured ? `₹${Number(plan.sumInsured).toLocaleString('en-IN')}` : '₹5,00,000', icon: Shield },
-    { label: 'OPD Copay', value: plan?.opdCopay || '₹0', icon: Stethoscope },
-    { label: 'Room Rent', value: plan?.roomRent || 'Single AC', icon: Building2 },
-    { label: 'Pharmacy', value: plan?.pharmacyDiscount || '15% off', icon: Pill },
+    { label: 'Sum Insured', value: monetaryCover > 0 ? `₹${monetaryCover.toLocaleString('en-IN')}` : 'No monetary cover', icon: Shield },
+    { label: 'OPD Copay', value: plan?.opdCopay || 'See plan terms', icon: Stethoscope },
+    { label: 'Room Rent', value: plan?.roomRent || 'Not specified', icon: Building2 },
+    { label: 'Pharmacy', value: coverage ? pharmacyBenefit(coverage) : plan?.pharmacyDiscount || "See plan entitlements", icon: Pill },
   ];
 
   /* ─── loading skeleton ─── */
@@ -576,7 +581,7 @@ const MyMembershipCard = () => {
           {/* ── membership card with 3D flip ── */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <div
-              ref={cardRef}
+              ref={cardRef} data-membership-card
               className="relative cursor-pointer select-none mx-auto max-w-lg"
               style={{ perspective: '1200px' }}
               onClick={() => {
@@ -844,7 +849,7 @@ const MyMembershipCard = () => {
                               {k:'Issuer',   v:'MediQzy Health Systems'},
                               {k:'Network',  v:'Pan India · Cashless'},
                               {k:'Plan',     v:plan?.name||'Basic Plan'},
-                              {k:'Helpline', v:'1800-MEDIQZY · 24×7'},
+                              {k:'Helpline', v:BRAND.support.phone},
                             ].map(r=>(
                               <div key={r.k} className="flex items-baseline gap-2 justify-between">
                                 <span className="text-[5.5px] tracking-wider uppercase flex-shrink-0" style={{color:`${ct.numColor}35`}}>{r.k}</span>
@@ -1115,7 +1120,7 @@ const MyMembershipCard = () => {
                           <div className="text-xs font-semibold text-muted-foreground mb-2">EMERGENCY HELPLINE</div>
                           <div className="flex items-center gap-2">
                             <Phone className="h-4 w-4 text-red-500" />
-                            <span className="text-base font-bold">1800-MEDIQZY</span>
+                            <span className="text-base font-bold">{BRAND.support.phone}</span>
                           </div>
                           <p className="text-[11px] text-muted-foreground mt-1">Available 24×7 for medical emergencies</p>
                         </div>

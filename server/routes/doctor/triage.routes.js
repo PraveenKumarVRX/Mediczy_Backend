@@ -15,7 +15,6 @@ export const createDoctorTriageRouter = ({
   ensureMeetingInfo,
   getProviderLabel,
   buildLiveKitJoinData,
-  Notification,
   FCMToken,
   sendDoctorCallingNotification,
   getIO,
@@ -515,7 +514,8 @@ export const createDoctorTriageRouter = ({
             callInitiatedAt: callStartedAtIso,
           },
           actionUrl: meetingLink,
-          channels: ['push', 'in-app'],
+          // The dedicated FCM payload below carries the call join credentials.
+          channels: ['in-app'],
           priority: 'urgent',
         });
       } catch (notifError) {
@@ -620,27 +620,6 @@ export const createDoctorTriageRouter = ({
         }
       } catch (fcmError) {
         console.error('Failed to send doctor call FCM:', fcmError);
-      }
-
-      try {
-        if (Notification) {
-          await Notification.create({
-            userId: appointment.userId,
-            userType: 'patient',
-            type: 'call_incoming',
-            title: doctorName + ' is calling',
-            message: 'Tap to join your video consultation',
-            data: callPayload,
-            deepLink: 'mediczy://consultation/video/' + appointment.id,
-            webRoute: '/video-consultation?room=' + encodeURIComponent(meetingId) + '&appointmentId=' + encodeURIComponent(appointment.id),
-            priority: 'urgent',
-            channels: ['app', 'push'],
-            status: 'sent',
-            sentAt: callStartedAt,
-          });
-        }
-      } catch (notificationError) {
-        console.error('Failed to create incoming call notification:', notificationError);
       }
 
       res.json({

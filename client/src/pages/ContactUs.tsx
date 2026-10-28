@@ -1,3 +1,4 @@
+import { BRAND } from '@/config/brand';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,31 +13,31 @@ import {
 const SUPPORT_CHANNELS = [
   {
     icon: Phone, title: "Phone Support",
-    description: "Talk to our support team", value: "1800-XXX-XXXX",
-    subtext: "Toll-free · Mon–Sat 8AM–8PM", accent: "teal",
-    action: () => window.location.href = "tel:1800XXXXXXX",
-    actionLabel: "Call Now",
+    description: "Talk to our support team", value: "Use email or WhatsApp",
+    subtext: "Voice support is not configured", accent: "teal",
+    action: () => window.location.href = `mailto:${BRAND.support.email}`,
+    actionLabel: "Email Support",
   },
   {
     icon: Mail, title: "Email Support",
-    description: "Get a response within 24 hours", value: "support@mediczy.com",
+    description: "Contact our support team", value: BRAND.support.email,
     subtext: "For non-urgent queries", accent: "blue",
-    action: () => window.location.href = "mailto:support@mediczy.com",
+    action: () => window.location.href = `mailto:${BRAND.support.email}`,
     actionLabel: "Send Email",
   },
   {
     icon: MessageSquare, title: "WhatsApp",
-    description: "Chat with us on WhatsApp", value: "+91 98765 43210",
-    subtext: "Mon–Sat 9AM–6PM", accent: "green",
-    action: () => window.open("https://wa.me/919876543210", "_blank"),
+    description: "Chat with us on WhatsApp", value: BRAND.support.phone,
+    subtext: "Replies during staffed hours", accent: "green",
+    action: () => window.open(`https://wa.me/${BRAND.support.phone.replace(/\D/g, "")}`, "_blank"),
     actionLabel: "Open WhatsApp",
   },
   {
     icon: HeadphonesIcon, title: "Live Chat",
-    description: "Get instant support in-app", value: "Available now",
-    subtext: "Avg. response < 5 mins", accent: "purple",
+    description: "Get instant support in-app", value: "Currently unavailable",
+    subtext: "Please raise a support ticket", accent: "purple",
     action: null,
-    actionLabel: "Start Chat",
+    actionLabel: "Raise Ticket",
     isHelp: true,
   },
 ];
@@ -50,26 +51,7 @@ const QUICK_LINKS = [
   { icon: AlertCircle,label: "Raise a Ticket",       path: "/help" },
 ];
 
-const OFFICE_LOCATIONS = [
-  {
-    city: "Mumbai — HQ",
-    address: "Level 12, One BKC, Bandra Kurla Complex, Mumbai — 400 051",
-    phone: "+91 22 4567 8900",
-    hours: "Mon–Fri 9AM–6PM",
-  },
-  {
-    city: "Bengaluru",
-    address: "Embassy TechVillage, Outer Ring Road, Devarabisanahalli, Bengaluru — 560 103",
-    phone: "+91 80 4567 8901",
-    hours: "Mon–Fri 9AM–6PM",
-  },
-  {
-    city: "Delhi NCR",
-    address: "DLF Cyber Hub, Sector 24, Gurugram, Haryana — 122 002",
-    phone: "+91 11 4567 8902",
-    hours: "Mon–Fri 9AM–6PM",
-  },
-];
+const OFFICE_LOCATIONS: { city: string; address: string; phone: string; hours: string }[] = [];
 
 const ACCENT_CLASSES: Record<string, { icon: string; bg: string; border: string }> = {
   teal:   { icon: "text-teal-500",   bg: "bg-teal-50 dark:bg-teal-900/20",   border: "border-teal-200 dark:border-teal-800"   },
@@ -106,11 +88,11 @@ const ContactUs = () => {
       <div className="rounded-xl border border-teal-200 bg-teal-50/70 p-3 mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-3 transition-all duration-300">
         <div>
           <p className="text-xs font-semibold text-teal-700">Next Best Action</p>
-          <p className="text-[11px] text-slate-600">For urgent care-blocking issues, call support first, then raise a trackable ticket in Help.</p>
+          <p className="text-[11px] text-slate-600">Raise a trackable ticket in Help for appointment, account or payment issues.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button size="sm" variant="outline" onClick={() => window.location.href = "tel:1800XXXXXXX"}>
-            <Phone className="w-3.5 h-3.5 mr-1" /> Call Support
+          <Button size="sm" variant="outline" onClick={() => window.location.href = `mailto:${BRAND.support.email}`}>
+            <Phone className="w-3.5 h-3.5 mr-1" /> Email Support
           </Button>
           <Button size="sm" variant="outline" onClick={() => navigate("/help")}>Raise Ticket</Button>
         </div>
@@ -158,9 +140,8 @@ const ContactUs = () => {
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
-              { day: "Monday – Friday",   hours: "8:00 AM – 9:00 PM",  badge: "Full Support" },
-              { day: "Saturday",          hours: "9:00 AM – 6:00 PM",  badge: "Limited" },
-              { day: "Sunday & Holidays", hours: "10:00 AM – 2:00 PM", badge: "Emergency Only" },
+              { day: "Email and tickets", hours: "Submit anytime", badge: "Replies during staffed hours" },
+              { day: "WhatsApp", hours: "Replies during staffed hours", badge: "Not an emergency service" },
             ].map(row => (
               <div key={row.day} className="text-center p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700">
                 <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{row.day}</p>
@@ -170,7 +151,7 @@ const ContactUs = () => {
             ))}
           </div>
           <p className="text-xs text-slate-400 text-center mt-4">
-            Emergency medical assistance is available 24×7 via the Emergency SOS button in the app.
+            For a medical emergency in India, call 112 or 108. Support channels do not provide emergency dispatch.
           </p>
         </CardContent>
       </Card>
@@ -199,7 +180,7 @@ const ContactUs = () => {
       </Card>
 
       {/* Office locations */}
-      <Card className="mb-8">
+      {OFFICE_LOCATIONS.length > 0 && <Card className="mb-8">
         <CardHeader>
           <div className="flex items-center gap-2">
             <MapPin className="w-4 h-4 text-teal-500" />
@@ -226,7 +207,7 @@ const ContactUs = () => {
             </div>
           ))}
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* Legal links */}
       <div className="flex items-center justify-center gap-6 flex-wrap pb-4">
@@ -234,7 +215,7 @@ const ContactUs = () => {
           { icon: Globe,      label: "Website",         href: "https://mediczy.com"         },
           { icon: FileText,   label: "Privacy Policy",  href: "/privacy-policy"              },
           { icon: FileText,   label: "Terms of Service",href: "/terms"                       },
-          { icon: Shield,     label: "HIPAA / DPDP",    href: "/compliance"                  },
+          { icon: Shield,     label: "Privacy & Data Rights",    href: "/compliance"                  },
         ].map(link => {
           const Icon = link.icon;
           return (

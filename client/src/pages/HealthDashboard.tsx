@@ -1,3 +1,5 @@
+import { liveDeviceStatus } from '@/utils/device-status';
+import { wholeNumber, indiaTime } from '@/utils/patient-display';
 import MainLayout from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -136,6 +138,12 @@ const HealthDashboard = () => {
 
   // Load all data on mount
   useEffect(() => {
+    const update = () => setDevices(previous => previous.map(device => ({ ...device, status: liveDeviceStatus(device) })));
+    const timer = window.setInterval(update, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     loadDevices();
     loadHealthStats();
     updateSyncStatus();
@@ -164,6 +172,7 @@ const HealthDashboard = () => {
       const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
       setDevices(storedDevices.map((device: Device) => ({
         ...device,
+        status: liveDeviceStatus(device),
         lastSync: device.lastSync ? new Date(device.lastSync) : null,
       })));
     } catch (error) {
@@ -182,8 +191,8 @@ const HealthDashboard = () => {
 
       if (data) {
         setHealthStats({
-          heartRate: data.heartRate || null,
-          steps: data.steps || null,
+          heartRate: data.heartRate == null ? null : Number(data.heartRate),
+          steps: data.steps == null ? null : Number(data.steps),
           sleepScore: data.sleepScore || null,
           bloodPressure: data.bloodPressure || null,
           spo2: data.spo2 || null,
@@ -192,7 +201,7 @@ const HealthDashboard = () => {
           hrv: data.hrv || null,
           uricAcid: data.uricAcid || null,
           totalCholesterol: data.totalCholesterol || null,
-          lastUpdated: new Date(data.timestamp || Date.now()),
+          lastUpdated: data.timestamp ? new Date(data.timestamp) : null,
         });
       }
     } catch (error) {
@@ -359,7 +368,7 @@ const HealthDashboard = () => {
       
       setDevices(prev => prev.map(device => 
         device.id === deviceId 
-          ? { ...device, status: 'connected' as const, lastSync: new Date() }
+          ? { ...device, status: 'disconnected' as const }
           : device
       ));
       
@@ -557,7 +566,7 @@ const HealthDashboard = () => {
                       <div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Heart Rate</p>
                         <p className="text-lg font-bold text-slate-800 dark:text-white">
-                          {loadingStats ? '...' : healthStats.heartRate ? `${healthStats.heartRate} bpm` : '-- bpm'}
+                          {loadingStats ? '...' : healthStats.heartRate ? `${wholeNumber(healthStats.heartRate)} bpm` : '-- bpm'}
                         </p>
                       </div>
                     </div>
@@ -576,7 +585,7 @@ const HealthDashboard = () => {
                       <div>
                         <p className="text-xs text-slate-500 dark:text-slate-400">Steps Today</p>
                         <p className="text-lg font-bold text-slate-800 dark:text-white">
-                          {loadingStats ? '...' : healthStats.steps ? healthStats.steps.toLocaleString() : '--'}
+                          {loadingStats ? '...' : healthStats.steps ? wholeNumber(healthStats.steps) : '--'}
                         </p>
                       </div>
                     </div>
@@ -625,18 +634,18 @@ const HealthDashboard = () => {
                             <p className="font-medium text-slate-800 dark:text-white">{device.name}</p>
                             <p className="text-sm text-slate-500 dark:text-slate-400">{device.brand} {device.model}</p>
                             <div className="flex gap-2 mt-2">
-                              {device.dataTypes.slice(0, 3).map((type, idx) => (
+                              {(device.dataTypes || []).slice(0, 3).map((type, idx) => (
                                 <Badge key={idx} variant="outline" className="text-xs">{type}</Badge>
                               ))}
-                              {device.dataTypes.length > 3 && (
-                                <Badge variant="outline" className="text-xs">+{device.dataTypes.length - 3}</Badge>
+                              {(device.dataTypes || []).length > 3 && (
+                                <Badge variant="outline" className="text-xs">+{(device.dataTypes || []).length - 3}</Badge>
                               )}
                             </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
-                            {device.battery !== undefined && (
+                            {device.status === 'connected' && device.battery != null && (
                               <p className="text-sm text-slate-600 dark:text-slate-400">🔋 {device.battery}%</p>
                             )}
                             {device.lastSync && (
@@ -685,7 +694,7 @@ const HealthDashboard = () => {
                   {autoSyncEnabled && syncStatus && (
                     <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                       <Clock className="w-4 h-4 text-teal-500" />
-                      <span>Next sync: {syncStatus.nextSync ? new Date(syncStatus.nextSync).toLocaleTimeString() : 'Soon'}</span>
+                      <span>Next sync: {syncStatus.nextSync ? indiaTime(syncStatus.nextSync) : 'Soon'}</span>
                     </div>
                   )}
                 </div>

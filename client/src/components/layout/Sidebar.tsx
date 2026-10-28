@@ -1,3 +1,4 @@
+import { useProgramAvailability } from '@/hooks/useProgramAvailability';
 import React, { useRef, useState, useEffect } from 'react';
 import { Link, useLocation } from "react-router-dom";
 import { BRAND } from "@/config/brand";
@@ -226,7 +227,7 @@ function SidebarAccordion({
       <button
         onClick={() => setOpen(o => !o)}
         className={cn(
-          "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150",
+          "w-full min-h-10 shrink-0 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all duration-150",
           hasActive ? "text-teal-400" : "text-slate-300 hover:text-white hover:bg-slate-800/40"
         )}
         aria-expanded={open}
@@ -242,7 +243,7 @@ function SidebarAccordion({
         <div className="ml-3 pl-3 border-l border-slate-700/50 mt-0.5 space-y-0.5">
           {visibleItems.map(item => (
             <NavLink
-              key={item.path}
+              key={`${item.path}:${item.label}`}
               item={item}
               active={currentPath === item.path}
               onClick={onNavClick}
@@ -257,6 +258,7 @@ function SidebarAccordion({
 /* ─── Main Sidebar ────────────────────────────────────────────────────────── */
 export function Sidebar() {
   const location = useLocation();
+  const programsAvailable = useProgramAvailability();
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
   const [isTeamUser, setIsTeamUser] = useState(false);
@@ -348,7 +350,7 @@ export function Sidebar() {
 
     if (!sections) {
       return visible.map(item => (
-        <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+        <NavLink key={`${item.path}:${item.label}`} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
       ));
     }
 
@@ -367,7 +369,7 @@ export function Sidebar() {
     return (
       <>
         {topItems.map(item => (
-          <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+          <NavLink key={`${item.path}:${item.label}`} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
         ))}
         {Object.entries(grouped).map(([cat, catItems]) => (
           <div key={cat}>
@@ -375,7 +377,7 @@ export function Sidebar() {
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{cat}</p>
             </div>
             {catItems.map(item => (
-              <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+              <NavLink key={`${item.path}:${item.label}`} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
             ))}
           </div>
         ))}
@@ -403,7 +405,7 @@ export function Sidebar() {
         role="navigation"
         aria-label="Main navigation"
         className={cn(
-          "fixed inset-y-0 left-0 flex flex-col w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 transform transition-transform duration-300 ease-in-out z-40 shadow-xl",
+          "fixed inset-y-0 left-0 flex flex-col w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 transform transition-transform duration-300 ease-in-out z-40 shadow-xl md:translate-x-0",
           (isDesktop || isOpen) ? "translate-x-0" : "-translate-x-full"
         )}
       >
@@ -473,7 +475,7 @@ export function Sidebar() {
                 {patientSections.map(section => (
                   <SidebarAccordion
                     key={section.id}
-                    section={section}
+                    section={{ ...section, items: section.items.filter(item => item.path !== "/my-programs" || programsAvailable) }}
                     currentPath={location.pathname}
                     onNavClick={handleNavClick}
                     isAdmin={isAdmin}
@@ -481,7 +483,7 @@ export function Sidebar() {
                 ))}
                 <div className="pt-3 border-t border-slate-700/30 mt-3 space-y-0.5">
                   {patientFooterItems.map(item => (
-                    <NavLink key={item.path} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
+                    <NavLink key={`${item.path}:${item.label}`} item={item} active={location.pathname === item.path} onClick={handleNavClick} />
                   ))}
                 </div>
               </>

@@ -43,6 +43,7 @@ export interface FamilyMember {
   gender?: string;
   covered: boolean;
   planId: string;
+  healthScore?: number | null;
 }
 
 // Matches the real shape returned by GET /employee/claims (employee-network.route.js).
@@ -89,7 +90,7 @@ const normalizeFamilyMember = (member: any): FamilyMember => {
     relation: relationship.charAt(0).toUpperCase() + relationship.slice(1),
     age: Number(member.age) || calculateAge(member.dateOfBirth),
     gender: member.gender || '',
-    covered: member.covered !== false,
+    covered: member.covered === true,
     planId: member.planId || '',
   };
 };
@@ -107,6 +108,7 @@ async function mapIndividualPlanToBenefitPlan(): Promise<BenefitPlan | null> {
 
     const benefitsList: string[] = Array.isArray(plan.benefits) ? plan.benefits : [];
     const familyMembers = Number(plan.features?.familyMembers) || 0;
+    const monetaryCover = Number(plan.sumInsured ?? plan.metadata?.coverageDetails?.insurance?.health ?? 0);
 
     return {
       id: String(userPlan.id),
@@ -118,9 +120,9 @@ async function mapIndividualPlanToBenefitPlan(): Promise<BenefitPlan | null> {
       // This is a service-entitlement plan (consult counts, discounts), not a
       // monetary sum-insured policy - 0 renders as "Included" in the UI
       // rather than a misleading ₹0.
-      sumInsured: 0,
+      sumInsured: monetaryCover,
       utilized: 0,
-      remaining: 0,
+      remaining: monetaryCover,
       familyCovered: familyMembers + 1,
       validFrom: userPlan.startDate,
       validTo: userPlan.endDate,
@@ -146,14 +148,17 @@ export function useSmartBenefits() {
       const token = getToken();
       if (!token) { setLoading(false); return; }
 
-      const [benefitsRes, claimsRes, familyRes] = await Promise.all([
+      const [benefitsRes, claimsRes, familyRes, profileRes] = await Promise.all([
         api.get('/employee/benefits').catch(() => null),
         api.get('/employee/claims').catch(() => null),
         api.get('/family-members').catch(() => null),
+        api.get('/users/profile').catch(() => null),
       ]);
 
       const employeePlans = Array.isArray(benefitsRes?.data?.plans) ? benefitsRes.data.plans : [];
+      let loadedPlans: BenefitPlan[] = [];
       if (employeePlans.length > 0) {
+        loadedPlans = employeePlans;
         setPlans(employeePlans);
       } else {
         // /employee/benefits only covers corporate-employee plan assignments.
@@ -163,7 +168,8 @@ export function useSmartBenefits() {
         // Express already read from, instead of showing "no active plans" for
         // an account that genuinely has one.
         const individualPlan = await mapIndividualPlanToBenefitPlan();
-        setPlans(individualPlan ? [individualPlan] : []);
+        loadedPlans = individualPlan ? [individualPlan] : [];
+        setPlans(loadedPlans);
       }
 
       const familyPayload = Array.isArray(familyRes?.data?.familyMembers)
@@ -171,7 +177,9 @@ export function useSmartBenefits() {
         : Array.isArray(familyRes?.data?.data)
           ? familyRes.data.data
           : [];
-      setFamily(familyPayload.map(normalizeFamilyMember));
+      const profile = profileRes?.data?.user || profileRes?.data?.data || profileRes?.data;
+      const self = profile ? normalizeFamilyMember({ ...profile, id: 'self', relationship: 'self', covered: loadedPlans.some(plan => plan.status === 'active') }) : null;
+      setFamily([...(self ? [self] : []), ...familyPayload.map(normalizeFamilyMember)]);
 
       if (Array.isArray(claimsRes?.data?.claims)) {
         setClaims(claimsRes.data.claims);
@@ -190,8 +198,8 @@ export function useSmartBenefits() {
 
   const activePlans  = plans.filter(p => p.status === 'active');
   const expiredPlans = plans.filter(p => p.status === 'expired');
-  const pendingClaims   = claims.filter(c => ['pending', 'processing'].includes(c.status));
-  const settledClaims   = claims.filter(c => ['approved', 'rejected'].includes(c.status));
+  const pendingClaims   = claims.filter(c => ['submitted', 'under_review', 'info_needed'].includes(c.status));
+  const settledClaims   = claims.filter(c => ['settled', 'rejected'].includes(c.status));
   const totalCovered    = family.filter(f => f.covered).length;
   const totalClaimAmount = claims.filter(c => c.status === 'approved').reduce((s, c) => s + c.amount, 0);
 

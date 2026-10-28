@@ -1,3 +1,5 @@
+import { filterDietSuggestions, dietRiskFlags } from '../../shared/patient-diet.mjs';
+import { User } from '../models/user.model.intelligent.js';
 /**
  * Diet Plan Route Alias
  * 
@@ -60,7 +62,11 @@ router.post('/generate', auth, async (req, res) => {
     const carbGrams = Math.round((targetCalories - (proteinGrams * 4 + fatGrams * 9)) / 4);
 
     // Generate meal plan based on dietary preferences and cuisine region
+    const profile = await User.findByPk(req.user.id);
+    const riskProfile = profile?.toJSON?.() || {};
     const mealPlan = generateMealPlan(dietaryPreference || dietaryRestrictions, targetCalories, cuisineRegion);
+    for (const meal of Object.values(mealPlan)) meal.suggestions = filterDietSuggestions(meal.suggestions, riskProfile);
+    const flags = dietRiskFlags(riskProfile);
 
     const dietPlan = {
       success: true,
@@ -86,6 +92,8 @@ router.post('/generate', auth, async (req, res) => {
           fats: { grams: fatGrams, calories: fatGrams * 9, percentage: Math.round((fatGrams * 9 / targetCalories) * 100) }
         },
         mealPlan,
+        riskAdjustments: flags,
+        calorieNote: 'Meal calories are portion budgets, not measured calories for each recipe. Adjust portions with a dietitian.',
         hydration: {
           daily: `${Math.round(weight * 35 / 1000 * 10) / 10} liters`,
           recommendation: 'Drink water regularly throughout the day, especially before and after workouts'

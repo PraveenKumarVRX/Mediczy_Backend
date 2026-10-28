@@ -1,3 +1,4 @@
+import { sleepHours, sleepScore } from '../utils/health-display.js';
 import express from 'express';
 import auth from '../middleware/auth.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
@@ -37,11 +38,14 @@ router.get('/latest', auth, async (req, res) => {
 
     // Group by data type and get latest of each
     const latestMetrics = {};
+    const latestUnits = {};
     const metricMap = {
       'heart_rate': 'heartRate',
       'heart rate': 'heartRate',
       'hr': 'heartRate',
       'steps': 'steps',
+      'sleep': 'sleepHours',
+      'blood_sugar': 'bloodGlucose',
       'sleep_score': 'sleepScore',
       'sleep score': 'sleepScore',
       'blood_pressure': 'bloodPressure',
@@ -68,7 +72,8 @@ router.get('/latest', auth, async (req, res) => {
       const metricKey = metricMap[record.data_type?.toLowerCase()] || record.data_type;
       
       if (!latestMetrics[metricKey]) {
-        latestMetrics[metricKey] = record.value;
+        latestMetrics[metricKey] = metricKey === 'bloodPressure' ? (record.metadata?.systolic != null ? { systolic: record.metadata.systolic, diastolic: record.metadata.diastolic } : record.value) : record.value;
+        latestUnits[metricKey] = record.unit;
         if (!latestTimestamp || new Date(record.recorded_at) > new Date(latestTimestamp)) {
           latestTimestamp = record.recorded_at;
         }
@@ -96,7 +101,8 @@ router.get('/latest', auth, async (req, res) => {
         const metricKey = metricMap[record.metric_type?.toLowerCase()] || record.metric_type;
         
         if (!latestMetrics[metricKey]) {
-          latestMetrics[metricKey] = record.value;
+          latestMetrics[metricKey] = metricKey === 'bloodPressure' ? (record.metadata?.systolic != null ? { systolic: record.metadata.systolic, diastolic: record.metadata.diastolic } : record.value) : record.value;
+        latestUnits[metricKey] = record.unit;
           if (!latestTimestamp || new Date(record.recorded_at) > new Date(latestTimestamp)) {
             latestTimestamp = record.recorded_at;
           }
@@ -111,7 +117,8 @@ router.get('/latest', auth, async (req, res) => {
     const response = {
       heartRate: latestMetrics.heartRate || null,
       steps: latestMetrics.steps || null,
-      sleepScore: latestMetrics.sleepScore || null,
+      sleepHours: sleepHours(latestMetrics.sleepHours, latestUnits.sleepHours),
+      sleepScore: latestMetrics.sleepScore ?? sleepScore(sleepHours(latestMetrics.sleepHours, latestUnits.sleepHours)),
       bloodPressure: latestMetrics.bloodPressure || null,
       spo2: latestMetrics.spo2 || null,
       temperature: latestMetrics.temperature || null,
@@ -119,7 +126,7 @@ router.get('/latest', auth, async (req, res) => {
       hrv: latestMetrics.hrv || null,
       uricAcid: latestMetrics.uricAcid || null,
       totalCholesterol: latestMetrics.totalCholesterol || null,
-      timestamp: latestTimestamp || new Date().toISOString(),
+      timestamp: latestTimestamp,
     };
 
     // Include advanced metrics if requested

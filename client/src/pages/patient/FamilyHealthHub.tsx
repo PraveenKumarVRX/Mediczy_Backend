@@ -1,6 +1,6 @@
 /**
  * FamilyHealthHub — World-Class Family Health Management
- * 
+ *
  * MediBuddy-tier family health experience:
  * - Family member cards with health scores
  * - Shared health timeline
@@ -43,7 +43,7 @@ interface FamilyMember {
   age: number;
   gender: string;
   avatar: string;
-  healthScore: number;
+  healthScore: number | null;
   healthTrend: 'up' | 'down' | 'stable';
   bloodGroup?: string;
   allergies: string[];
@@ -57,9 +57,9 @@ interface FamilyMember {
 }
 
 // ─── Score Color Helper ──────────────────────────────────────────────────────
-const scoreColor = (s: number) => s > 80 ? 'text-emerald-400' : s > 60 ? 'text-amber-400' : 'text-red-400';
+const scoreColor = (s: number | null) => s === null ? 'text-slate-400' : s > 80 ? 'text-emerald-400' : s > 60 ? 'text-amber-400' : 'text-red-400';
 const scoreBg = (s: number) => s > 80 ? 'from-emerald-600/20' : s > 60 ? 'from-amber-600/20' : 'from-red-600/20';
-const scoreGradient = (s: number) => s > 80 ? '#10b981' : s > 60 ? '#f59e0b' : '#ef4444';
+const scoreGradient = (s: number | null) => s === null ? '#94a3b8' : s > 80 ? '#10b981' : s > 60 ? '#f59e0b' : '#ef4444';
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function FamilyHealthHub() {
@@ -86,11 +86,9 @@ export default function FamilyHealthHub() {
     try {
       const conditions = member.conditions.length > 0 ? member.conditions.join(', ') : 'none known';
       const allergies = member.allergies.length > 0 ? member.allergies.join(', ') : 'none';
-      const result = await aiHealthServices.thinkWithBrain({
-        query: `Give a brief health assessment for ${member.name}, ${member.age} years old, ${member.gender === 'F' ? 'female' : 'male'}. Conditions: ${conditions}. Allergies: ${allergies}. Health score: ${member.healthScore}/100. Provide: 1) A 1-sentence health summary. 2) Exactly 3 short, actionable wellness tips. Respond in JSON: {"summary":"...","tips":["...","...","..."]}`,
-        type: 'health_analysis',
-      });
-      if (result?.response) {
+      const result = await aiHealthServices.thinkWithBrain( `Give a brief health assessment for ${member.name}, ${member.age} years old, ${member.gender === 'F' ? 'female' : 'male'}. Conditions: ${conditions}. Allergies: ${allergies}. Health score: ${member.healthScore}/100 (unavailable if null; never infer missing results). Provide: 1) A 1-sentence health summary. 2) Exactly 3 short, actionable wellness tips. Respond in JSON: {"summary":"...","tips":["...","...","..."]}`,
+        { context: { familyMemberId: member.id, source: 'User-managed family profile' } });
+      if (result?.success && result?.response && !/temporarily unavailable|try again|unable to/i.test(result.response)) {
         try {
           const jsonMatch = result.response.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
@@ -130,7 +128,7 @@ export default function FamilyHealthHub() {
       age,
       gender: genderChar,
       avatar: avatarMap[m.relationship?.toLowerCase()] || '🧑',
-      healthScore: 80,
+      healthScore: null,
       healthTrend: 'stable',
       bloodGroup: m.bloodGroup || undefined,
       allergies: m.allergies || [],
@@ -145,7 +143,7 @@ export default function FamilyHealthHub() {
   };
 
   // Add current user as "Self" entry
-  const selfEntry = (healthScore = 0): FamilyMember => ({
+  const selfEntry = (healthScore: number | null = null): FamilyMember => ({
     id: 'self',
     name: currentUser ? `${currentUser.firstName ?? ''} ${currentUser.lastName ?? ''}`.trim() || 'You' : 'You',
     relation: 'Self',
@@ -173,7 +171,7 @@ export default function FamilyHealthHub() {
         api.get('/health-score/today').catch(() => null),
       ]);
       const score = Number(scoreRes?.data?.score);
-      const selfScore = scoreRes?.data?.success && scoreRes?.data?.score !== null && scoreRes?.data?.score !== undefined && Number.isFinite(score) ? Math.round(score) : 0;
+      const selfScore = scoreRes?.data?.success && scoreRes?.data?.score !== null && scoreRes?.data?.score !== undefined && Number.isFinite(score) ? Math.round(score) : null;
       if (res?.data?.success && Array.isArray(res.data.data)) {
         setMembers([selfEntry(selfScore), ...res.data.data.map(mapMember)]);
         setLoading(false);
@@ -182,105 +180,12 @@ export default function FamilyHealthHub() {
     } catch {
       setFamilyFetchError(true);
     }
-    // Demo fallback
-    setMembers([
-      {
-        id: '1', name: currentUser?.firstName || 'You', relation: 'Self', age: 32, gender: 'M',
-        avatar: '👨‍💼', healthScore: 82, healthTrend: 'up', bloodGroup: 'B+',
-        allergies: ['Penicillin'], conditions: ['Mild Hypertension'],
-        medications: [
-          { name: 'Amlodipine 5mg', dosage: '1 tablet', time: 'Morning' },
-          { name: 'Vitamin D3', dosage: '60K IU', time: 'Weekly - Sunday' },
-        ],
-        upcomingAppointments: [
-          { doctor: 'Dr. Mehta', specialty: 'Cardiologist', date: '2026-04-02', type: 'Video' },
-        ],
-        vitals: [
-          { label: 'Heart Rate', value: '72', unit: 'bpm', status: 'normal', icon: HeartPulse },
-          { label: 'BP', value: '128/82', unit: 'mmHg', status: 'warning', icon: Activity },
-          { label: 'SpO₂', value: '98', unit: '%', status: 'normal', icon: Droplets },
-          { label: 'Sleep', value: '7.2', unit: 'hrs', status: 'normal', icon: Moon },
-          { label: 'Steps', value: '6,542', unit: 'steps', status: 'normal', icon: Footprints },
-          { label: 'BMI', value: '23.4', unit: 'kg/m²', status: 'normal', icon: TrendingUp },
-        ],
-        lastCheckup: '2026-02-15',
-        vaccinations: [
-          { name: 'COVID-19 Booster', date: '2025-11-10' },
-          { name: 'Flu Shot', date: '2025-09-01', next: '2026-09-01' },
-        ],
-        insuranceCovered: true,
-      },
-      {
-        id: '2', name: 'Priya', relation: 'Spouse', age: 29, gender: 'F',
-        avatar: '👩', healthScore: 88, healthTrend: 'up', bloodGroup: 'O+',
-        allergies: [], conditions: [],
-        medications: [
-          { name: 'Iron + Folic Acid', dosage: '1 tablet', time: 'After lunch' },
-        ],
-        upcomingAppointments: [
-          { doctor: 'Dr. Gupta', specialty: 'Gynecologist', date: '2026-04-05', type: 'In-Person' },
-        ],
-        vitals: [
-          { label: 'Heart Rate', value: '68', unit: 'bpm', status: 'normal', icon: HeartPulse },
-          { label: 'BP', value: '118/76', unit: 'mmHg', status: 'normal', icon: Activity },
-          { label: 'SpO₂', value: '99', unit: '%', status: 'normal', icon: Droplets },
-          { label: 'Sleep', value: '7.8', unit: 'hrs', status: 'normal', icon: Moon },
-          { label: 'Steps', value: '8,123', unit: 'steps', status: 'normal', icon: Footprints },
-          { label: 'BMI', value: '21.8', unit: 'kg/m²', status: 'normal', icon: TrendingUp },
-        ],
-        lastCheckup: '2026-01-20',
-        vaccinations: [
-          { name: 'COVID-19 Booster', date: '2025-11-10' },
-          { name: 'HPV (Dose 2)', date: '2025-06-15' },
-        ],
-        insuranceCovered: true,
-      },
-      {
-        id: '3', name: 'Aarav', relation: 'Son', age: 5, gender: 'M',
-        avatar: '👦', healthScore: 95, healthTrend: 'stable', bloodGroup: 'B+',
-        allergies: ['Peanuts'], conditions: [],
-        medications: [],
-        upcomingAppointments: [
-          { doctor: 'Dr. Sharma', specialty: 'Pediatrician', date: '2026-04-10', type: 'In-Person' },
-        ],
-        vitals: [
-          { label: 'Height', value: '110', unit: 'cm', status: 'normal', icon: TrendingUp },
-          { label: 'Weight', value: '18', unit: 'kg', status: 'normal', icon: Activity },
-          { label: 'Temperature', value: '36.5', unit: '°C', status: 'normal', icon: Thermometer },
-        ],
-        lastCheckup: '2026-03-01',
-        vaccinations: [
-          { name: 'DPT Booster', date: '2025-08-15' },
-          { name: 'Flu Shot', date: '2025-10-01', next: '2026-10-01' },
-          { name: 'Measles', date: '2024-05-01' },
-        ],
-        insuranceCovered: true,
-      },
-      {
-        id: '4', name: 'Ananya', relation: 'Daughter', age: 2, gender: 'F',
-        avatar: '👧', healthScore: 97, healthTrend: 'stable', bloodGroup: 'O+',
-        allergies: [], conditions: [],
-        medications: [{ name: 'Vitamin D Drops', dosage: '400 IU', time: 'Morning' }],
-        upcomingAppointments: [],
-        vitals: [
-          { label: 'Height', value: '86', unit: 'cm', status: 'normal', icon: TrendingUp },
-          { label: 'Weight', value: '12', unit: 'kg', status: 'normal', icon: Activity },
-          { label: 'Temperature', value: '36.8', unit: '°C', status: 'normal', icon: Thermometer },
-        ],
-        lastCheckup: '2026-02-28',
-        vaccinations: [
-          { name: 'Hepatitis B', date: '2024-01-15' },
-          { name: 'Polio (OPV)', date: '2025-03-01', next: '2026-06-01' },
-        ],
-        insuranceCovered: true,
-      },
-    ]);
+    setMembers([selfEntry()]);
     setLoading(false);
   };
 
-  const avgHealthScore = members.length > 0
-    ? Math.round(members.reduce((s, m) => s + m.healthScore, 0) / members.length)
-    : 0;
+  const scoredMembers = members.filter(m => m.healthScore !== null);
+  const avgHealthScore = scoredMembers.length > 0 ? Math.round(scoredMembers.reduce((s, m) => s + (m.healthScore ?? 0), 0) / scoredMembers.length) : null;
 
   const allUpcoming = members.flatMap(m =>
     m.upcomingAppointments.map(a => ({ ...a, member: m.name, avatar: m.avatar }))
@@ -304,7 +209,7 @@ export default function FamilyHealthHub() {
               <h1 className="text-2xl font-bold text-white flex items-center gap-2">
                 <Heart className="h-6 w-6 text-pink-400" /> Family Hub
               </h1>
-              <p className="text-sm text-slate-400 mt-1">{members.length} members • Everyone is covered</p>
+              <p className="text-sm text-slate-400 mt-1">{members.length} members in your health record • Check Benefits for plan coverage</p>
             </div>
             <Button size="sm" onClick={() => setShowAddMember(true)}
               className="bg-gradient-to-r from-violet-600 to-pink-600 hover:from-violet-500 hover:to-pink-500 border-0 rounded-xl gap-1.5 shadow-lg shadow-violet-600/20">
@@ -322,10 +227,10 @@ export default function FamilyHealthHub() {
                   <circle cx="40" cy="40" r="34" fill="none" stroke="#1e293b" strokeWidth="6" />
                   <circle cx="40" cy="40" r="34" fill="none" stroke={scoreGradient(avgHealthScore)}
                     strokeWidth="6" strokeLinecap="round"
-                    strokeDasharray={`${avgHealthScore * 2.136} 213.6`} />
+                    strokeDasharray={`${(avgHealthScore ?? 0) * 2.136} 213.6`} />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
-                  <span className={`text-xl font-bold ${scoreColor(avgHealthScore)}`}>{avgHealthScore}</span>
+                  <span className={`text-xl font-bold ${scoreColor(avgHealthScore)}`}>{avgHealthScore ?? "—"}</span>
                   <span className="text-[8px] text-slate-500 uppercase">Family</span>
                 </div>
               </div>
@@ -335,7 +240,7 @@ export default function FamilyHealthHub() {
                   {members.map(m => (
                     <div key={m.id} className="flex items-center gap-1.5">
                       <span className="text-sm">{m.avatar}</span>
-                      <span className={`text-xs font-semibold ${scoreColor(m.healthScore)}`}>{m.healthScore}</span>
+                      <span className={`text-xs font-semibold ${scoreColor(m.healthScore)}`}>{m.healthScore ?? "—"}</span>
                     </div>
                   ))}
                 </div>
@@ -373,7 +278,7 @@ export default function FamilyHealthHub() {
                     </div>
                     <div className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold"
                       style={{ background: scoreGradient(member.healthScore), color: 'white' }}>
-                      {member.healthScore}
+                      {member.healthScore ?? "—"}
                     </div>
                   </div>
                   <h4 className="text-sm font-semibold text-white truncate">{member.name}</h4>
@@ -476,7 +381,7 @@ export default function FamilyHealthHub() {
         <div className="grid grid-cols-2 gap-3">
           {[
             { icon: Stethoscope, label: 'Book Doctor', desc: 'For any member', color: 'text-blue-400', bg: 'bg-blue-500/10', action: () => navigate('/doctors') },
-            { icon: Syringe, label: 'Vaccinations', desc: 'Track & schedule', color: 'text-emerald-400', bg: 'bg-emerald-500/10', action: () => {} },
+
             { icon: FileText, label: 'Health Records', desc: 'Shared family vault', color: 'text-violet-400', bg: 'bg-violet-500/10', action: () => navigate('/patient/my-reports') },
             { icon: AlertCircle, label: 'Emergency SOS', desc: 'Call 112 instantly', color: 'text-red-400', bg: 'bg-red-500/10', action: () => navigate('/emergency') },
           ].map((a, i) => (
@@ -510,7 +415,7 @@ export default function FamilyHealthHub() {
                   <p className="text-sm text-slate-400">{selectedMember.relation} • {selectedMember.age} yrs • {selectedMember.bloodGroup || 'N/A'}</p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className={`text-sm font-bold ${scoreColor(selectedMember.healthScore)}`}>
-                      Health Score: {selectedMember.healthScore}
+                      Health Score: {selectedMember.healthScore ?? "Not enough data yet"}
                     </span>
                     {selectedMember.insuranceCovered && (
                       <Badge className="bg-emerald-500/10 text-emerald-400 border-0 text-[9px]">

@@ -39,7 +39,7 @@ async function buildSystemPrompt(userId, userType, conversationId) {
   let patientName = 'Unknown';
   try {
     const { rows: [patient] } = await db.query(
-      `SELECT "firstName", "lastName" FROM patients WHERE id = $1`, [userId]
+      `SELECT "firstName", "lastName" FROM users WHERE id = $1`, [userId]
     );
     if (patient) patientName = `${patient.firstName || ''} ${patient.lastName || ''}`.trim();
   } catch { /* ignore if not a patient */ }
@@ -62,7 +62,7 @@ async function buildSystemPrompt(userId, userType, conversationId) {
   if (conversationId) {
     try {
       const { rows: [conv] } = await db.query(
-        `SELECT summary FROM ai_brain_conversations WHERE id = $1`, [conversationId]
+        `SELECT summary FROM ai_brain_conversations WHERE id = $1 AND user_id = $2 AND user_type = $3`, [conversationId, userId, userType]
       );
       if (conv?.summary) convSummary = conv.summary;
     } catch { /* ignore */ }
@@ -77,6 +77,15 @@ async function buildSystemPrompt(userId, userType, conversationId) {
     .replace('{{rag_context}}', '') // RAG injected per-message, not system-level
     .replace('{{conversation_summary}}', convSummary || 'New conversation');
 
+  if (['patient', 'user', 'employee'].includes(userType)) systemText += `
+PATIENT SAFETY AND SOURCE RULES (apply to every response):
+- Use only symptoms explicitly reported in this conversation and records returned by authenticated patient-scoped tools. Never invent vital signs, past symptoms, conditions, timing or history.
+- Label each personal clinical fact as "You reported" or "Your record dated ... shows". If its source is unknown, omit it and ask the patient to confirm.
+- Retrieved clinical examples, teaching cases, population data and assistant summaries are not this patient's record. Never present them as personal facts.
+- Give patient-facing actions. Never instruct a patient to activate a hospital response team, prepare a resuscitation bay, order STAT tests, set up a defibrillator or notify an attending physician.
+- For possible emergency symptoms, advise immediate emergency help in India at 112 or 108; do not give a waiting-time estimate. Do not prescribe aspirin or other medication without clinician guidance.
+- State uncertainty clearly. Never describe missing data as normal, low-risk or evidence of adherence.
+`;
   return systemText;
 }
 
@@ -87,8 +96,8 @@ async function getOrCreateConversation(userId, userType, conversationId = null) 
 
   if (conversationId) {
     const { rows: [existing] } = await db.query(
-      `SELECT * FROM ai_brain_conversations WHERE id = $1 AND user_id = $2`,
-      [conversationId, userId]
+      `SELECT * FROM ai_brain_conversations WHERE id = $1 AND user_id = $2 AND user_type = $3`,
+      [conversationId, userId, userType]
     );
     if (existing) return existing;
   }
@@ -206,7 +215,7 @@ async function think({ message, userId, userType = 'patient', conversationId = n
   // 5. Build messages array
   const historyMessages = await getConversationMessages(convId);
   const messages = [
-    { role: 'system', content: systemPrompt + (ragContext ? `\n\n${ragContext}` : '') },
+    { role: 'system', content: systemPrompt + (ragContext ? `\n\nREFERENCE KNOWLEDGE ONLY — NOT THIS PATIENT’S HISTORY:\n${ragContext}` : '') },
     ...historyMessages.filter(m => m.role !== 'system') // exclude old system messages
   ];
 

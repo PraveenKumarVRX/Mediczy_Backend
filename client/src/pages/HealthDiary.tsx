@@ -1,3 +1,4 @@
+import { doctorName, reportTitle } from '@/utils/patient-display';
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -241,7 +242,15 @@ const HealthDiary: React.FC = () => {
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      setEntries(data.entries || []);
+      setEntries((data.entries || []).map((entry: HealthDiaryEntry) => {
+        const details = entry.data || {};
+        let title = entry.title.replace(/\bDr\.?\s+(?:Dr\.?\s+)+/gi, 'Dr. ');
+        let description = entry.description || '';
+        if (entry.entryType === 'medication' && /undefined|null/.test(description)) description = [details.dosage, details.frequency, details.duration].filter(value => value && !/undefined|null/.test(String(value))).join(' · ') || 'Dose timing and duration not specified';
+        if (entry.entryType === 'prescription' && /to be filled by doctor/i.test(`${title} ${description}`)) { title = 'Draft prescription'; description = 'Awaiting completion by your doctor'; }
+        if (['lab_result', 'lab_test'].includes(entry.entryType)) title = reportTitle(details.testName || title, 'Medical report');
+        return { ...entry, title, description };
+      }));
     } catch {
       toast.error('Failed to load health diary');
     } finally {
@@ -357,6 +366,9 @@ const HealthDiary: React.FC = () => {
   // ── Save new entry ──────────────────────────────────────────────────────────
   const handleLogEvent = async () => {
     if (!form.title.trim()) { toast.error('Please add a title'); return; }
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(form.entryDate) || Number.isNaN(new Date(form.entryDate).getTime())) {
+      toast.error('Please enter a complete time'); return;
+    }
     const token = localStorage.getItem('token');
     let data: Record<string, any> = {};
     if (form.entryType === 'vital')       data = { vitalType: form.vitalType, vitalValue: form.vitalValue, unit: form.vitalUnit };
@@ -370,7 +382,7 @@ const HealthDiary: React.FC = () => {
       const res = await fetch('/api/health-diary', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entryType: form.entryType, title: form.title.trim(), description: form.description.trim(), entryDate: form.entryDate ? new Date(form.entryDate).toISOString() : new Date().toISOString(), data }),
+        body: JSON.stringify({ entryType: form.entryType, title: form.title.trim(), description: form.description.trim(), entryDate: new Date(form.entryDate).toISOString(), data }),
       });
       if (!res.ok) throw new Error();
       toast.success('Health event logged');

@@ -1,3 +1,4 @@
+import { completeLabCheckout } from '../services/patient-lab-checkout.service.js';
 import express from 'express';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import legacyBillingDeprecation from '../middleware/legacy-billing-deprecation.middleware.js';
@@ -149,8 +150,8 @@ router.post('/orders', authUser, async (req, res) => {
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ success: false, message: 'items must be a non-empty array' });
     }
-    if (!deliveryAddress || !String(deliveryAddress).trim()) {
-      return res.status(400).json({ success: false, message: 'deliveryAddress is required' });
+    if (!deliveryAddress || String(deliveryAddress).trim().length < 15 || !/\b[1-9]\d{5}\b/.test(String(deliveryAddress)) || !/[a-zA-Z]{3}/.test(String(deliveryAddress))) {
+      return res.status(400).json({ success: false, message: 'Enter a full street address, city and valid six-digit pincode.' });
     }
 
     const subtotal = items.reduce((sum, item) => {
@@ -668,7 +669,7 @@ router.get('/orders/pharmacy/history', authUser, async (req, res) => {
       totalOrders: count,
       activeOrders: orders.filter(o => ['pending', 'confirmed', 'processing', 'out_for_delivery'].includes(o.status)).length,
       deliveredOrders: orders.filter(o => o.status === 'delivered' || o.status === 'completed').length,
-      totalSpent: orders.reduce((sum, o) => sum + parseFloat(o.total), 0)
+      totalSpent: Number(await Payment.sum('amount', { where: { userId, status: 'success' }, include: [{ model: Order, as: 'order', attributes: [], where: { orderType: 'medicine' } }] })) || 0
     };
 
     return res.json({
@@ -847,6 +848,7 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
     // updated, so a failure here must be loud but must not fail the verification response.
     try {
       const paidOrder = await Order.findByPk(payment.orderId);
+      if (paidOrder?.metadata?.source === 'patient_lab_checkout') await completeLabCheckout(userId, payment.orderId);
       const pharmacyOrderId = paidOrder?.metadata?.pharmacyOrderId;
       if (pharmacyOrderId) {
         const gatewayRef = payment.gatewayPaymentId || payment.paymentId || null;
@@ -870,6 +872,17 @@ router.post('/payments/razorpay/verify', authUser, async (req, res) => {
     } catch (pharmErr) {
       console.error(`❌ failed to mark pharmacy order paid for order ${payment.orderId}:`, pharmErr.message);
     }
+
+    await sequelize.transaction(async transaction => {
+      const paidOrder = await Order.findByPk(payment.orderId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!paidOrder) throw new Error('Paid order was not found');
+      const [invoice] = await Invoice.findOrCreate({ where: { orderId: paidOrder.id }, defaults: {
+        invoiceNumber: paymentGateway.generateInvoiceNumber(), userId, issueDate: new Date(), dueDate: new Date(), status: 'paid',
+        subtotal: paidOrder.subtotal, tax: paidOrder.tax, discount: paidOrder.discount, total: paidOrder.total, currency: paidOrder.currency,
+        lineItems: paidOrder.metadata?.items || [{ description: buildOrderItemLabel(paidOrder), quantity: 1, unitPrice: paidOrder.total, total: paidOrder.total }],
+      }, transaction });
+      if (invoice.status !== 'paid') await invoice.update({ status: 'paid' }, { transaction });
+    });
 
     // Create transaction record
     await Transaction.create({

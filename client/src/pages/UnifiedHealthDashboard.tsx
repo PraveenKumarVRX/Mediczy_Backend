@@ -1,3 +1,5 @@
+import { liveDeviceStatus } from '@/utils/device-status';
+import { wholeNumber, indiaTime, scoreLabel } from '@/utils/patient-display';
 import MainLayout from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,7 +13,7 @@ import { drIshaAPI } from "@/services/drIsha";
 import { useState, useEffect } from "react";
 import api from "@/utils/api";
 import { healthSyncScheduler } from "@/services/health/HealthSyncScheduler";
-import { 
+import {
   Activity, Heart, Footprints, Moon, Droplets, Brain, TrendingUp, Target,
   CheckCircle, Sparkles, Watch, Bluetooth, RefreshCw, Plus, MessageSquare,
   BarChart3, Calendar, Award, Clock, Zap
@@ -59,8 +61,14 @@ const UnifiedHealthDashboard = () => {
   const [loadingStats, setLoadingStats] = useState(true);
   const [showChat, setShowChat] = useState(false);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
-  const [healthScore, setHealthScore] = useState<number>(0);
+  const [healthScore, setHealthScore] = useState<number | null>(null);
   const [chatLanguage, setChatLanguage] = useState<string>('en');
+
+  useEffect(() => {
+    const update = () => setDevices(previous => previous.map(device => ({ ...device, status: liveDeviceStatus(device) })));
+    const timer = window.setInterval(update, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     loadDevices();
@@ -72,7 +80,7 @@ const UnifiedHealthDashboard = () => {
   const loadDevices = async () => {
     try {
       const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
-      setDevices(storedDevices);
+      setDevices((Array.isArray(storedDevices) ? storedDevices : []).map(d => ({ ...d, status: liveDeviceStatus(d), lastSync: d.lastSync ? new Date(d.lastSync) : null })));
     } catch (error) {
       console.error('Error loading devices:', error);
     }
@@ -95,7 +103,7 @@ const UnifiedHealthDashboard = () => {
           temperature: data.temperature || null,
           bloodGlucose: data.bloodGlucose || null,
           hrv: data.hrv || null,
-          lastUpdated: new Date(data.timestamp || Date.now()),
+          lastUpdated: data.timestamp ? new Date(data.timestamp) : null,
         });
       }
     } catch (error) {
@@ -109,10 +117,10 @@ const UnifiedHealthDashboard = () => {
     try {
       const { data } = await api.get('/health-score/today');
       const score = Number(data?.score);
-      setHealthScore(data?.success && data?.score !== null && data?.score !== undefined && Number.isFinite(score) ? Math.round(score) : 0);
+      setHealthScore(data?.success && data?.score !== null && data?.score !== undefined && Number.isFinite(score) ? Math.round(score) : null);
     } catch (error) {
       console.error('Error loading daily health score:', error);
-      setHealthScore(0);
+      setHealthScore(null);
     }
   };
 
@@ -125,7 +133,8 @@ const UnifiedHealthDashboard = () => {
     }
   };
 
-  const getHealthScoreColor = (score: number) => {
+  const getHealthScoreColor = (score: number | null) => {
+    if (score === null) return { bg: "from-slate-500 to-slate-600", text: "text-slate-600", ring: "ring-slate-400" };
     if (score >= 80) return { bg: 'from-green-500 to-emerald-600', text: 'text-green-600', ring: 'ring-green-500' };
     if (score >= 60) return { bg: 'from-blue-500 to-cyan-600', text: 'text-blue-600', ring: 'ring-blue-500' };
     if (score >= 40) return { bg: 'from-yellow-500 to-orange-600', text: 'text-yellow-600', ring: 'ring-yellow-500' };
@@ -174,16 +183,16 @@ const UnifiedHealthDashboard = () => {
               <div className="flex-1">
                 <p className="text-white/80 text-sm font-medium mb-2">Overall Health Score</p>
                 <div className="flex items-baseline gap-3">
-                  <span className="text-5xl font-bold">{healthScore}</span>
+                  <span className="text-5xl font-bold">{healthScore ?? "—"}</span>
                   <span className="text-2xl font-semibold text-white/80">/100</span>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   <Badge className="bg-white/20 text-white border-white/30 hover:bg-white/30">
-                    {getHealthScoreLabel(healthScore)}
+                    {scoreLabel(healthScore)}
                   </Badge>
                   {healthStats.lastUpdated && (
                     <span className="text-xs text-white/60">
-                      Updated {healthStats.lastUpdated.toLocaleTimeString()}
+                      Updated {indiaTime(healthStats.lastUpdated)}
                     </span>
                   )}
                 </div>
@@ -207,7 +216,7 @@ const UnifiedHealthDashboard = () => {
                     strokeWidth="8"
                     fill="none"
                     strokeDasharray={`${2 * Math.PI * 40}`}
-                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - healthScore / 100)}`}
+                    strokeDashoffset={`${2 * Math.PI * 40 * (1 - (healthScore ?? 0) / 100)}`}
                     className="text-white transition-all duration-1000"
                     strokeLinecap="round"
                   />
@@ -231,7 +240,7 @@ const UnifiedHealthDashboard = () => {
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Heart Rate</p>
                   <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? "..." : healthStats.heartRate ? `${healthStats.heartRate} bpm` : "-- bpm"}
+                    {loadingStats ? "..." : healthStats.heartRate ? `${wholeNumber(healthStats.heartRate)} bpm` : "-- bpm"}
                   </p>
                 </div>
               </div>
@@ -247,7 +256,7 @@ const UnifiedHealthDashboard = () => {
                 <div>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Steps Today</p>
                   <p className="text-lg font-bold text-slate-800 dark:text-white">
-                    {loadingStats ? "..." : healthStats.steps ? healthStats.steps.toLocaleString() : "--"}
+                    {loadingStats ? "..." : healthStats.steps ? wholeNumber(healthStats.steps) : "--"}
                   </p>
                 </div>
               </div>
@@ -326,7 +335,7 @@ const UnifiedHealthDashboard = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-600 dark:text-slate-400">Blood Pressure</span>
                     <span className="font-semibold">
-                      {healthStats.bloodPressure 
+                      {healthStats.bloodPressure
                         ? `${healthStats.bloodPressure.systolic}/${healthStats.bloodPressure.diastolic} mmHg`
                         : "--/-- mmHg"}
                     </span>
@@ -360,8 +369,8 @@ const UnifiedHealthDashboard = () => {
                     <span className="text-sm text-slate-600 dark:text-slate-400">Daily Steps</span>
                     <div className="flex items-center gap-2">
                       <div className="w-24 bg-slate-200 dark:bg-slate-700 rounded-full h-2">
-                        <div 
-                          className="bg-blue-500 h-2 rounded-full" 
+                        <div
+                          className="bg-blue-500 h-2 rounded-full"
                           style={{ width: `${Math.min(((healthStats.steps || 0) / 10000) * 100, 100)}%` }}
                         />
                       </div>
@@ -377,7 +386,7 @@ const UnifiedHealthDashboard = () => {
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-slate-600 dark:text-slate-400">Last Updated</span>
                     <span className="text-xs text-slate-500">
-                      {healthStats.lastUpdated ? healthStats.lastUpdated.toLocaleTimeString() : "Never"}
+                      {healthStats.lastUpdated ? indiaTime(healthStats.lastUpdated) : "Never"}
                     </span>
                   </div>
                 </CardContent>
@@ -437,7 +446,7 @@ const UnifiedHealthDashboard = () => {
                             <p className="text-sm text-slate-500 dark:text-slate-400">
                               {device.brand} {device.model}
                             </p>
-                            {device.battery !== undefined && (
+                            {device.status === 'connected' && device.battery != null && (
                               <p className="text-xs text-slate-500 mt-1">🔋 {device.battery}%</p>
                             )}
                           </div>
@@ -516,8 +525,8 @@ const UnifiedHealthDashboard = () => {
                   Health Consultation with Dr. iSHA
                 </h3>
                 <div className="flex items-center gap-2">
-                  <select 
-                    value={chatLanguage} 
+                  <select
+                    value={chatLanguage}
                     onChange={(e) => setChatLanguage(e.target.value)}
                     className="px-3 py-1 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300"
                   >

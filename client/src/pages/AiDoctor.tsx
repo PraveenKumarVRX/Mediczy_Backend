@@ -892,7 +892,7 @@ const AiDoctor = () => {
                   <div className="grid grid-cols-2 gap-2 md:grid-cols-4 md:gap-3">
                     <Button
                       variant="outline"
-                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('symptoms')}
                     >
                       <ThermometerSun className="h-4 w-4 md:h-5 md:w-5 text-orange-500" />
@@ -900,7 +900,7 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('wellness')}
                     >
                       <Activity className="h-4 w-4 md:h-5 md:w-5 text-teal-500" />
@@ -908,7 +908,7 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('medications')}
                     >
                       <Pill className="h-4 w-4 md:h-5 md:w-5 text-teal-600" />
@@ -916,7 +916,7 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
+                      className="h-auto rounded-xl py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('emergency')}
                     >
                       <AlertTriangle className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
@@ -997,7 +997,7 @@ const AiDoctor = () => {
                             variant="ghost"
                             size="sm"
                             className={cn(
-                              "h-6 w-6 p-0 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20",
+                              "h-6 w-6 p-0 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:hover:bg-teal-900/20",
                               speakingMessageId === message.id && "text-teal-500 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20"
                             )}
                             onClick={() => speakMessage(message.id!, message.content)}
@@ -1076,7 +1076,7 @@ const AiDoctor = () => {
                   variant="ghost"
                   size="icon"
                   aria-label="Open symptom selector"
-                  className="h-9 w-9 rounded-full text-slate-500 hover:bg-teal-50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-teal-900/20 dark:hover:text-teal-400 md:h-10 md:w-10"
+                  className="h-9 w-9 rounded-full text-slate-500 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-teal-900/20 dark:hover:text-teal-400 md:h-10 md:w-10"
                   onClick={() => setShowSymptomDialog(true)}
                 >
                   <Activity className="h-4 w-4 md:h-5 md:w-5" />
@@ -1086,7 +1086,7 @@ const AiDoctor = () => {
                   variant="ghost"
                   size="icon"
                   aria-label="Attach file"
-                  className="h-9 w-9 rounded-full text-slate-500 hover:bg-teal-50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-teal-900/20 dark:hover:text-teal-400 md:h-10 md:w-10"
+                  className="h-9 w-9 rounded-full text-slate-500 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 hover:text-teal-600 dark:text-slate-400 dark:hover:bg-teal-900/20 dark:hover:text-teal-400 md:h-10 md:w-10"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
@@ -1160,7 +1160,7 @@ const AiDoctor = () => {
                       key={idx}
                       type="button"
                       variant="outline"
-                      className="h-auto whitespace-nowrap rounded-full border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700 hover:border-teal-300 hover:bg-teal-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-900/20 md:text-xs"
+                      className="h-auto whitespace-nowrap rounded-full border-slate-200 bg-white px-3 py-1.5 text-[11px] text-slate-700 hover:border-teal-300 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 dark:hover:border-teal-600 dark:hover:bg-teal-900/20 md:text-xs"
                       onClick={() => {
                         trackPromptClick(prompt);
                         void emitMetric('prompt_click', {
@@ -1206,7 +1206,7 @@ const AiDoctor = () => {
                     "h-auto py-3 flex flex-col items-center gap-1",
                     selectedSymptoms.includes(symptom.id)
                       ? "bg-teal-500 hover:bg-teal-600 text-white border-teal-500"
-                      : "bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600"
+                      : "bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:text-teal-800 dark:hover:text-teal-100 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600"
                   )}
                   onClick={() => handleSymptomSelect(symptom.id)}
                 >

@@ -43,6 +43,9 @@ interface HealthAppreciation {
   title: string;
   message: string;
   domain: string;
+  reason?: string;
+  confidence?: string;
+  source?: string;
 }
 
 interface HealthHazard {
@@ -51,6 +54,9 @@ interface HealthHazard {
   recommendation: string;
   urgency: 'low' | 'medium' | 'high';
   domain: string;
+  reason?: string;
+  confidence?: string;
+  source?: string;
 }
 
 interface HealthIntelligence {
@@ -199,7 +205,7 @@ const HealthIntelligenceDashboard: React.FC = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-teal-600">{intelligence.summary.overall_score}</div>
+              <div className="text-3xl font-bold text-teal-600">{intelligence.summary.overall_score ?? "Not available yet"}</div>
               <p className="text-xs text-muted-foreground mt-1">Out of 100 today</p>
             </CardContent>
           </Card>
@@ -238,10 +244,10 @@ const HealthIntelligenceDashboard: React.FC = () => {
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid grid-cols-4 lg:grid-cols-9 w-full">
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 [&_svg]:shrink-0">
           <TabsTrigger value="ai_narrative">
             <Sparkles className="h-4 w-4 mr-2" />
-            AI Narrative
+            Health Narrative
           </TabsTrigger>
           <TabsTrigger value="overview">
             <TrendingUp className="h-4 w-4 mr-2" />
@@ -277,7 +283,7 @@ const HealthIntelligenceDashboard: React.FC = () => {
           </TabsTrigger>
         </TabsList>
 
-        {/* AI Narrative Tab */}
+        {/* Health Narrative Tab */}
         <TabsContent value="ai_narrative" className="space-y-6">
           {/* Appreciations */}
           {intelligence.appreciations && intelligence.appreciations.length > 0 ? (
@@ -315,8 +321,9 @@ const HealthIntelligenceDashboard: React.FC = () => {
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="h-5 w-5 text-orange-600" />
-                <h2 className="text-lg font-semibold text-orange-700 dark:text-orange-400">Health Hazard Predictions</h2>
+                <h2 className="text-lg font-semibold text-orange-700 dark:text-orange-400">Health Observations</h2>
               </div>
+              <p className="text-sm text-muted-foreground">These observations are based on your recorded data and are not medical advice or a diagnosis. Consult your doctor for assessment.</p>
               {intelligence.hazards.map((item, i) => {
                 const urgencyColor = item.urgency === 'high'
                   ? 'border-red-300 bg-red-50/40 dark:border-red-800 dark:bg-red-900/10'
@@ -339,8 +346,11 @@ const HealthIntelligenceDashboard: React.FC = () => {
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-2">
+                      <p className="text-xs">Source: {item.source || "Your recorded health data"}</p>
+                      <p className="text-xs">Confidence: {item.confidence || "Limited — insufficient evidence for clinical prediction"}</p>
+                      <p className="text-xs">Why: {item.reason || "Based on available recorded data"}</p>
                       <p className="text-sm text-slate-700 dark:text-slate-300">
-                        <span className="font-medium">Prediction:</span> {item.prediction}
+                        <span className="font-medium">Observation:</span> {item.prediction}
                       </p>
                       <p className="text-sm text-slate-600 dark:text-slate-400">
                         <span className="font-medium">Recommendation:</span> {item.recommendation}

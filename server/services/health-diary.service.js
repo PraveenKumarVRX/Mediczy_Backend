@@ -79,7 +79,7 @@ class HealthDiaryService {
     return this.logHealthEvent({
       userId,
       entryType: 'consultation',
-      title: `Consultation with Dr. ${appointment.doctorName || 'Doctor'}`,
+      title: `Consultation with Dr. ${String(appointment.doctorName || 'Doctor').replace(/^(?:Dr\.?\s*)+/i, '')}`,
       description: `${appointment.consultationType || 'Medical'} consultation`,
       data: {
         appointmentId: appointment.id,
@@ -129,7 +129,7 @@ class HealthDiaryService {
       userId,
       entryType: 'medication',
       title: `${medication.name} ${action}`,
-      description: `${medication.dosage} - ${medication.frequency}`,
+      description: [medication.dosage, medication.frequency].filter(Boolean).join(' - ') || 'Dose timing not specified',
       data: {
         medicationId: medication.id,
         medicationName: medication.name,
@@ -175,6 +175,7 @@ class HealthDiaryService {
    * Log prescription
    */
   async logPrescription(userId, prescription, metadata = {}) {
+    if (prescription.status === 'draft' || !prescription.medications?.length) return null;
     return this.logHealthEvent({
       userId,
       entryType: 'prescription',

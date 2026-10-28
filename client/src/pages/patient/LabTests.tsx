@@ -73,93 +73,28 @@ interface AvailableTest {
   turnaroundTime: string;
 }
 
-// Comprehensive list of available lab tests
-// invented-data-check: static-reference -- lab-test booking catalog, not patient records.
-const availableTests: AvailableTest[] = [
-  // Hematology
-  { id: 'cbc', name: 'Complete Blood Count (CBC)', category: 'Hematology', description: 'Measures red blood cells, white blood cells, hemoglobin, and platelets', price: '₹300', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'esr', name: 'ESR (Erythrocyte Sedimentation Rate)', category: 'Hematology', description: 'Detects inflammation in the body', price: '₹150', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'hemoglobin', name: 'Hemoglobin Test', category: 'Hematology', description: 'Measures oxygen-carrying protein in blood', price: '₹100', preparationRequired: false, turnaroundTime: '12 hours' },
-  { id: 'platelet', name: 'Platelet Count', category: 'Hematology', description: 'Counts number of platelets in blood', price: '₹150', preparationRequired: false, turnaroundTime: '24 hours' },
-  
-  // Biochemistry
-  { id: 'lipid', name: 'Lipid Profile', category: 'Biochemistry', description: 'Cholesterol, HDL, LDL, Triglycerides', price: '₹500', preparationRequired: true, turnaroundTime: '24 hours' },
-  { id: 'liver', name: 'Liver Function Test (LFT)', category: 'Biochemistry', description: 'SGOT, SGPT, Bilirubin, Albumin, ALP', price: '₹600', preparationRequired: true, turnaroundTime: '24 hours' },
-  { id: 'kidney', name: 'Kidney Function Test (KFT)', category: 'Biochemistry', description: 'Creatinine, Urea, BUN, Electrolytes', price: '₹500', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'thyroid', name: 'Thyroid Profile (T3, T4, TSH)', category: 'Biochemistry', description: 'Complete thyroid function assessment', price: '₹700', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'electrolytes', name: 'Electrolytes Panel', category: 'Biochemistry', description: 'Sodium, Potassium, Chloride, Bicarbonate', price: '₹400', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'calcium', name: 'Calcium Test', category: 'Biochemistry', description: 'Serum calcium levels', price: '₹200', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'vitamin-d', name: 'Vitamin D Test', category: 'Biochemistry', description: '25-OH Vitamin D levels', price: '₹1200', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'vitamin-b12', name: 'Vitamin B12', category: 'Biochemistry', description: 'Serum B12 levels', price: '₹800', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'iron', name: 'Iron Studies', category: 'Biochemistry', description: 'Serum Iron, TIBC, Ferritin', price: '₹900', preparationRequired: true, turnaroundTime: '48 hours' },
-  
-  // Diabetes
-  { id: 'fbs', name: 'Fasting Blood Sugar (FBS)', category: 'Diabetes', description: 'Blood glucose after fasting', price: '₹100', preparationRequired: true, turnaroundTime: '12 hours' },
-  { id: 'ppbs', name: 'Post Prandial Blood Sugar (PPBS)', category: 'Diabetes', description: 'Blood glucose after meal', price: '₹100', preparationRequired: false, turnaroundTime: '12 hours' },
-  { id: 'rbs', name: 'Random Blood Sugar (RBS)', category: 'Diabetes', description: 'Blood glucose at any time', price: '₹80', preparationRequired: false, turnaroundTime: '6 hours' },
-  { id: 'hba1c', name: 'HbA1c (Glycated Hemoglobin)', category: 'Diabetes', description: 'Average blood sugar over 3 months', price: '₹600', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'gtt', name: 'Glucose Tolerance Test (GTT)', category: 'Diabetes', description: 'Diabetes screening test', price: '₹400', preparationRequired: true, turnaroundTime: '24 hours' },
-  
-  // Cardiac
-  { id: 'troponin', name: 'Troponin I/T', category: 'Cardiac', description: 'Heart attack marker', price: '₹1500', preparationRequired: false, turnaroundTime: '6 hours' },
-  { id: 'cpk', name: 'CPK (Creatine Phosphokinase)', category: 'Cardiac', description: 'Muscle and heart enzyme', price: '₹500', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'ldh', name: 'LDH (Lactate Dehydrogenase)', category: 'Cardiac', description: 'Tissue damage marker', price: '₹400', preparationRequired: false, turnaroundTime: '24 hours' },
-  
-  // Urine Tests
-  { id: 'urine-routine', name: 'Urine Routine & Microscopy', category: 'Urine Analysis', description: 'Complete urine examination', price: '₹200', preparationRequired: false, turnaroundTime: '12 hours' },
-  { id: 'urine-culture', name: 'Urine Culture & Sensitivity', category: 'Urine Analysis', description: 'Bacterial infection detection', price: '₹800', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'microalbumin', name: 'Microalbumin (Urine)', category: 'Urine Analysis', description: 'Early kidney damage detection', price: '₹600', preparationRequired: false, turnaroundTime: '24 hours' },
-  
-  // Infectious Diseases
-  { id: 'dengue', name: 'Dengue NS1 Antigen & IgG/IgM', category: 'Infectious Diseases', description: 'Dengue fever detection', price: '₹1200', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'malaria', name: 'Malaria Antigen Test', category: 'Infectious Diseases', description: 'Malaria parasite detection', price: '₹400', preparationRequired: false, turnaroundTime: '6 hours' },
-  { id: 'typhoid', name: 'Typhoid (Widal Test)', category: 'Infectious Diseases', description: 'Typhoid fever antibodies', price: '₹300', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'hiv', name: 'HIV 1 & 2 (ELISA)', category: 'Infectious Diseases', description: 'HIV screening test', price: '₹500', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'hbsag', name: 'HBsAg (Hepatitis B Surface Antigen)', category: 'Infectious Diseases', description: 'Hepatitis B screening', price: '₹400', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'hcv', name: 'Anti-HCV (Hepatitis C)', category: 'Infectious Diseases', description: 'Hepatitis C antibodies', price: '₹800', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'covid', name: 'COVID-19 RT-PCR', category: 'Infectious Diseases', description: 'COVID-19 detection', price: '₹500', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'covid-antibody', name: 'COVID-19 Antibody (IgG)', category: 'Infectious Diseases', description: 'COVID immunity check', price: '₹600', preparationRequired: false, turnaroundTime: '24 hours' },
-  
-  // Hormones
-  { id: 'testosterone', name: 'Testosterone (Total)', category: 'Hormones', description: 'Male hormone levels', price: '₹700', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'prolactin', name: 'Prolactin', category: 'Hormones', description: 'Prolactin hormone levels', price: '₹600', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'cortisol', name: 'Cortisol', category: 'Hormones', description: 'Stress hormone levels', price: '₹800', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'pth', name: 'Parathyroid Hormone (PTH)', category: 'Hormones', description: 'Calcium regulation hormone', price: '₹1500', preparationRequired: false, turnaroundTime: '72 hours' },
-  
-  // Tumor Markers
-  { id: 'psa', name: 'PSA (Prostate Specific Antigen)', category: 'Tumor Markers', description: 'Prostate cancer screening', price: '₹800', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'cea', name: 'CEA (Carcinoembryonic Antigen)', category: 'Tumor Markers', description: 'Cancer marker', price: '₹1200', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'ca125', name: 'CA 125', category: 'Tumor Markers', description: 'Ovarian cancer marker', price: '₹1200', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'afp', name: 'AFP (Alpha Fetoprotein)', category: 'Tumor Markers', description: 'Liver cancer marker', price: '₹1000', preparationRequired: false, turnaroundTime: '48 hours' },
-  
-  // Allergy Tests
-  { id: 'ige', name: 'Total IgE', category: 'Allergy', description: 'Allergy screening test', price: '₹600', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'allergy-panel', name: 'Allergy Panel (Food)', category: 'Allergy', description: 'Common food allergens', price: '₹5000', preparationRequired: false, turnaroundTime: '5-7 days' },
-  
-  // Autoimmune
-  { id: 'ana', name: 'ANA (Antinuclear Antibody)', category: 'Autoimmune', description: 'Autoimmune disease screening', price: '₹1200', preparationRequired: false, turnaroundTime: '48 hours' },
-  { id: 'ra-factor', name: 'RA Factor (Rheumatoid Factor)', category: 'Autoimmune', description: 'Rheumatoid arthritis marker', price: '₹500', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'crp', name: 'CRP (C-Reactive Protein)', category: 'Autoimmune', description: 'Inflammation marker', price: '₹400', preparationRequired: false, turnaroundTime: '24 hours' },
-  
-  // Stool Tests
-  { id: 'stool-routine', name: 'Stool Routine & Microscopy', category: 'Stool Analysis', description: 'Digestive system examination', price: '₹200', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'stool-culture', name: 'Stool Culture', category: 'Stool Analysis', description: 'Bacterial infection detection', price: '₹800', preparationRequired: false, turnaroundTime: '48 hours' },
-  
-  // Comprehensive Packages
-  { id: 'basic-health', name: 'Basic Health Checkup', category: 'Health Packages', description: 'CBC, Blood Sugar, Lipid Profile, LFT, KFT', price: '₹2000', preparationRequired: true, turnaroundTime: '48 hours' },
-  { id: 'diabetic-profile', name: 'Diabetic Profile', category: 'Health Packages', description: 'FBS, PPBS, HbA1c, Lipid Profile, KFT', price: '₹2500', preparationRequired: true, turnaroundTime: '48 hours' },
-  { id: 'cardiac-profile', name: 'Cardiac Risk Profile', category: 'Health Packages', description: 'Lipid Profile, CRP, Homocysteine', price: '₹3000', preparationRequired: true, turnaroundTime: '48 hours' },
-  { id: 'senior-citizen', name: 'Senior Citizen Package', category: 'Health Packages', description: 'Comprehensive health screening for seniors', price: '₹5000', preparationRequired: true, turnaroundTime: '72 hours' },
-  { id: 'women-wellness', name: 'Women Wellness Package', category: 'Health Packages', description: 'CBC, Thyroid, Vitamin D, Iron, Calcium', price: '₹3500', preparationRequired: true, turnaroundTime: '48 hours' },
-
-  // Diagnostic Imaging
-  { id: 'usg-abdomen', name: 'USG Abdomen', category: 'Imaging', description: 'Ultrasound scan of abdomen and pelvis', price: '₹1500', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'ct-scan', name: 'CT Scan', category: 'Imaging', description: 'Computed tomography scan as advised', price: '₹3500', preparationRequired: false, turnaroundTime: '24 hours' },
-  { id: 'mri-brain', name: 'MRI Brain', category: 'Imaging', description: 'Magnetic resonance imaging of brain', price: '₹5500', preparationRequired: false, turnaroundTime: '48 hours' },
-];
-
 const LabTests = () => {
   const { toast } = useToast();
+  const [availableTests, setAvailableTests] = useState<AvailableTest[]>([]);
+  const [collectionTime, setCollectionTime] = useState('');
+  const [collectionAddress, setCollectionAddress] = useState({ street: '', city: '', pincode: '' });
+  const checkoutOrderRef = useRef<{ key: string; order: any; paid: boolean } | null>(null);
+  useEffect(() => {
+    const loadCatalog = async () => {
+      const all: AvailableTest[] = [];
+      let offset = 0;
+      while (true) {
+        const { data } = await api.get('/lab-tests/catalog', { params: { limit: 200, offset } });
+        const rows = data.data || [];
+        all.push(...rows.map((test: any) => ({ id: String(test.test_id), name: test.name, category: test.category || 'Lab tests', description: test.description || '', price: `₹${Number(test.price)}`, preparationRequired: false, turnaroundTime: test.turnaround_time_hours ? `${test.turnaround_time_hours} hours` : 'Confirm with lab' })));
+        offset += rows.length;
+        if (!rows.length || offset >= data.pagination.total) break;
+      }
+      setAvailableTests(all);
+    };
+    loadCatalog().catch(() => toast({ title: 'Could not load the lab catalogue', description: 'Please refresh to try again.', variant: 'destructive' }));
+  }, []);
+
 
   // ── Extracted hooks ──────────────────────────────────────────────────────
   const {
@@ -177,6 +112,8 @@ const LabTests = () => {
     refresh: fetchMyLabTests,
   } = useLabBookings();
 
+  const [historyPage, setHistoryPage] = useState(1);
+  useEffect(() => setHistoryPage(1), [filterStatus, searchTerm]);
   const [labFetchError, setLabFetchError] = useState(false);
 
   const {
@@ -274,98 +211,6 @@ const LabTests = () => {
     }
   }, [collectionType]);
 
-  // Book a new lab test
-  const handleBookLabTest = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      toast({
-        title: 'Login Required',
-        description: 'Please login to book a lab test',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!selectedTest || !bookingForm.appointmentDate) {
-      toast({
-        title: 'Missing Information',
-        description: 'Please select a test and appointment date',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (!collectionType) {
-      toast({
-        title: 'Collection Type Required',
-        description: 'Please select Home Collection or Visit Lab',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    if (collectionType === 'lab' && !selectedLab) {
-      toast({
-        title: 'Lab Required',
-        description: 'Please choose a lab before booking',
-        variant: 'destructive'
-      });
-      return;
-    }
-
-    // Determine the actual lab ID to send
-    const actualLabId = collectionType === 'lab'
-      ? selectedLab?.id || null
-      : null;
-
-    try {
-      setIsBooking(true);
-      const response = await api.post('/lab-tests', {
-        testType: resolveTestType(selectedTest),
-        testName: selectedTest.name,
-        hospitalId: actualLabId,
-        appointmentDate: bookingForm.appointmentDate,
-        notes: `${collectionType === 'home' ? '[Home Collection] ' : '[Visit Lab] '}${bookingForm.notes}`,
-        urgency: 'routine',
-        ...(isImagingTest(selectedTest) && bookingForm.couponCode.trim()
-          ? { coupon_code: bookingForm.couponCode.trim().toUpperCase() }
-          : {})
-      });
-
-      const data = response.data;
-      if (data?.success) {
-        toast({
-          title: 'Test Booked!',
-          description: `Your ${selectedTest.name} has been booked for ${new Date(bookingForm.appointmentDate).toLocaleDateString()}${collectionType === 'home' ? ' (Home Collection)' : ''}`
-        });
-        setShowBookDialog(false);
-        setSelectedTest(null);
-        setBookingForm({ testName: '', appointmentDate: '', testType: 'blood_test', notes: '', labId: '' });
-        setCollectionType('');
-        setSelectedLab(null);
-        setSelectedLabId('');
-        setLabSearchCity('');
-        setLabSearchQuery('');
-        fetchMyLabTests(); // Refresh list
-      } else {
-        toast({
-          title: 'Booking Failed',
-          description: data?.message || 'Failed to book lab test',
-          variant: 'destructive'
-        });
-      }
-    } catch (error) {
-      console.error('Error booking lab test:', error);
-      toast({
-        title: 'Error',
-        description: 'Something went wrong while booking',
-        variant: 'destructive'
-      });
-    } finally {
-      setIsBooking(false);
-    }
-  };
-
   // Map test category to testType
   const mapTestToType = (category: string): string => {
     const typeMap: Record<string, string> = {
@@ -414,7 +259,7 @@ const LabTests = () => {
 
   // Fetch labs when collection type is "lab" and search query changes
   useEffect(() => {
-    if (collectionType === 'lab') {
+    if (collectionType) {
       const timer = setTimeout(() => {
         fetchLabs(labSearchQuery);
       }, 300);
@@ -698,7 +543,7 @@ const LabTests = () => {
                       </div>
                       
                       {/* Lab Selection for Visit Lab */}
-                      {collectionType === 'lab' && (
+                      {collectionType && (
                         <div className="space-y-3">
                           {/* Corporate Network Labs */}
                           {isCorporateEmployee && (isCorpLoading || corpLabs.length > 0) && (
@@ -749,7 +594,7 @@ const LabTests = () => {
                                             )}
                                           </div>
                                           <div className="text-right ml-2 shrink-0">
-                                            {lab.rating > 0 && (
+                                            {Number(lab.rating) > 0 && (
                                               <div className="flex items-center gap-1">
                                                 <span className="text-yellow-500 text-xs">⭐</span>
                                                 <span className="text-xs font-semibold text-gray-900 dark:text-white">{lab.rating}</span>
@@ -900,7 +745,7 @@ const LabTests = () => {
                             <h4 className="font-semibold text-sm mb-3 text-gray-900 dark:text-white">Collection Details</h4>
                             <div className="text-sm space-y-2">
                               <p><span className="text-gray-700 dark:text-slate-300 font-medium">Type:</span> <span className="text-gray-900 dark:text-white font-semibold">{collectionType === 'home' ? '🏠 Home Collection' : '🏥 Lab Visit'}</span></p>
-                              {collectionType === 'lab' && selectedLab && (
+                              {selectedLab && (
                                 <>
                                   <p><span className="text-gray-700 dark:text-slate-300 font-medium">Lab:</span> <span className="text-gray-900 dark:text-white font-semibold">{selectedLab.name}</span></p>
                                   <p><span className="text-gray-700 dark:text-slate-300 font-medium">Address:</span> <span className="text-gray-900 dark:text-white">{selectedLab.address.street}, {selectedLab.address.city}</span></p>
@@ -951,6 +796,8 @@ const LabTests = () => {
                             </div>
                           )}
                           
+                          <div className="space-y-2"><Label htmlFor="lab-collection-time">Preferred collection time (IST) *</Label><Input id="lab-collection-time" type="time" required value={collectionTime} onChange={e => setCollectionTime(e.target.value)} /><p className="text-xs text-muted-foreground">The lab must confirm your requested time.</p></div>
+                          {collectionType === 'home' && <div className="space-y-2"><Label>Collection address *</Label><Input placeholder="House, street and locality" value={collectionAddress.street} onChange={e => setCollectionAddress({ ...collectionAddress, street: e.target.value })} /><Input placeholder="City" value={collectionAddress.city} onChange={e => setCollectionAddress({ ...collectionAddress, city: e.target.value })} /><Input placeholder="Six-digit pincode" inputMode="numeric" maxLength={6} value={collectionAddress.pincode} onChange={e => setCollectionAddress({ ...collectionAddress, pincode: e.target.value })} /></div>}
                           {/* Pricing */}
                           <div className="border-t-2 border-teal-200 dark:border-teal-700 pt-4 space-y-3 bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-slate-800 dark:to-slate-700 p-3 rounded-lg">
                             <div className="flex justify-between text-sm">
@@ -959,7 +806,7 @@ const LabTests = () => {
                             </div>
                             <div className="flex justify-between text-sm">
                               <span className="text-gray-700 dark:text-slate-300 font-medium">Collection Charges</span>
-                              <span className="text-green-700 dark:text-green-400 font-semibold">FREE</span>
+                              <span className="text-green-700 dark:text-green-400 font-semibold">Confirmed at payment</span>
                             </div>
                             <div className="flex justify-between font-bold text-lg pt-2 border-t-2 border-teal-200 dark:border-teal-700">
                               <span className="text-gray-900 dark:text-white">Total</span>
@@ -972,187 +819,47 @@ const LabTests = () => {
                       {/* Payment Button */}
                       <Button 
                         className="w-full h-12 text-lg bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700"
-                        disabled={isBooking || !bookingForm.appointmentDate || (collectionType === 'lab' && !selectedLab)}
+                        disabled={isBooking || !bookingForm.appointmentDate || !selectedLab || !collectionTime}
                         onClick={async () => {
-                          // Validate before booking
-                          if (!bookingForm.appointmentDate) {
-                            toast({ title: 'Please select an appointment date', variant: 'destructive' });
-                            return;
+                          if (!selectedLab || !collectionType || !bookingForm.appointmentDate || !collectionTime || checkoutInFlightRef.current) {
+                            toast({ title: 'Choose a lab, collection type, date and complete time', variant: 'destructive' }); return;
                           }
-                          if (collectionType === 'lab' && !selectedLab) {
-                            toast({ title: 'Please select a lab', variant: 'destructive' });
-                            return;
-                          }
-
-                          const checkoutKey = buildCheckoutKey();
-                          if (checkoutInFlightRef.current) {
-                            toast({ title: 'Checkout already in progress', description: 'Please wait for the current request to finish.' });
-                            return;
-                          }
-                          if (lastCheckoutKey === checkoutKey) {
-                            toast({ title: 'Duplicate checkout blocked', description: 'This booking request was already submitted.' });
-                            return;
-                          }
-                          
-                          checkoutInFlightRef.current = true;
-                          setIsBooking(true);
-                          telemetry.funnel('lab_checkout', 'payment_initiated', { cartSize: cart.length, totalAmount: cartTotal });
+                          checkoutInFlightRef.current = true; setIsBooking(true);
                           try {
-                            const token = localStorage.getItem('token');
-                            if (!token) {
-                              toast({ title: 'Please login to continue', variant: 'destructive' });
-                              setIsBooking(false);
-                              checkoutInFlightRef.current = false;
-                              return;
+                            const request = { testIds: cart.map(item => item.test.id), labId: selectedLab.id, collectionType, date: bookingForm.appointmentDate, time: collectionTime, address: collectionAddress, notes: bookingForm.notes };
+                            const key = JSON.stringify(request);
+                            if (checkoutOrderRef.current?.key !== key) {
+                              const { data } = await api.post('/lab-tests/checkout', request);
+                              checkoutOrderRef.current = { key, order: data.order, paid: Number(data.order.total) === 0 };
                             }
-
-                            // Step 1: Book all tests in cart
-                            let hasError = false;
-                            let couponUsed = false;
-                            for (const item of cart) {
-                              const testType = resolveTestType(item.test);
-                              const imaging = isImagingTest(item.test);
-                              const requestBody = {
-                                testType,
-                                testName: item.test.name,
-                                appointmentDate: bookingForm.appointmentDate,
-                                // checkoutKey is an internal idempotency fingerprint (sent separately via the
-                                // X-Idempotency-Key header below) — it must never be embedded in user-facing notes.
-                                notes: `${collectionType === 'home' ? '[Home Collection] ' : `[Lab: ${selectedLab?.name}] `}${bookingForm.notes}`.trim(),
-                                urgency: 'routine',
-                                ...(imaging && bookingForm.couponCode.trim() && !couponUsed
-                                  ? { coupon_code: bookingForm.couponCode.trim().toUpperCase() }
-                                  : {})
-                              };
-                              const response = await api.post('/lab-tests', requestBody, {
-                                headers: { 'X-Idempotency-Key': `${checkoutKey}-${item.test.id}` }
-                              });
-                              if (!response.data?.success) {
-                                toast({ 
-                                  title: 'Booking failed', 
-                                  description: response.data?.message || 'Failed to book test', 
-                                  variant: 'destructive' 
-                                });
-                                hasError = true;
-                                break;
-                              }
-                              if (imaging && bookingForm.couponCode.trim()) {
-                                couponUsed = true;
-                              }
-                            }
-                            if (hasError) return;
-
-                            setLastCheckoutKey(checkoutKey);
-
-                            const totalAmount = getCartTotal();
-
-                            // Step 2: Create a billing order for payment
-                            let orderId: string | null = null;
-                            try {
-                              const orderRes = await api.post('/billing/orders/create', {
-                                orderType: 'lab_test',
-                                subtotal: totalAmount,
-                                tax: 0,
-                                discount: 0,
-                                currency: 'INR',
-                                notes: `Lab tests: ${cart.map(i => i.test.name).join(', ')}`
-                              }, {
-                                headers: { 'X-Idempotency-Key': `${checkoutKey}-order` }
-                              });
-                              if (orderRes.data?.success && orderRes.data?.data?.order?.id) {
-                                orderId = orderRes.data.data.order.id;
-                              }
-                            } catch (orderErr) {
-                              console.error('Order creation failed:', orderErr);
-                            }
-
-                            // Step 3: Initiate Razorpay payment if order was created
-                            if (orderId && totalAmount > 0) {
-                              const scriptLoaded = await loadRazorpayScript();
-                              if (!scriptLoaded) {
-                                toast({ title: 'Payment gateway unavailable', description: 'Could not load Razorpay. Please try again.', variant: 'destructive' });
-                                return;
-                              }
-
-                              const payRes = await api.post('/billing/payments/razorpay/create', {
-                                orderId,
-                                amount: totalAmount,
-                                currency: 'INR'
-                              }, {
-                                headers: { 'X-Idempotency-Key': `${checkoutKey}-payment-create` }
-                              });
-
-                              if (!payRes.data?.success) {
-                                toast({ title: 'Payment initiation failed', description: payRes.data?.message || 'Could not start payment', variant: 'destructive' });
-                                return;
-                              }
-
-                              const { orderId: razorpayOrderId, amount, currency, key } = payRes.data.data;
-                              const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-
+                            const checkout = checkoutOrderRef.current!;
+                            const orderId = checkout.order.id;
+                            if (!checkout.paid) {
+                              if (!await loadRazorpayScript()) throw new Error('Payment gateway is unavailable. Please try again.');
+                              const { data: payment } = await api.post('/billing/payments/razorpay/create', { orderId, amount: Number(checkout.order.total), currency: 'INR' });
+                              const { data: profile } = await api.get('/users/profile');
+                              const user = profile.user || profile.data || profile;
                               await new Promise<void>((resolve, reject) => {
-                                const options = {
-                                  key,
-                                  amount,
-                                  currency,
-                                  name: 'Mediczy',
-                                  description: `Lab Tests - ${cart.length} test(s)`,
-                                  order_id: razorpayOrderId,
-                                  prefill: {
-                                    name: userData.name || userData.firstName || '',
-                                    email: userData.email || localStorage.getItem('userEmail') || '',
-                                    contact: userData.phone || userData.phoneNumber || localStorage.getItem('userPhone') || ''
-                                  },
-                                  theme: { color: '#14b8a6' },
-                                  handler: async function (response: any) {
+                                const rzp = new window.Razorpay({ ...payment.data, order_id: payment.data.orderId, name: 'Mediqzy', description: `${cart.length} lab test(s)`,
+                                  prefill: { name: [user.firstName, user.lastName].filter(Boolean).join(' '), email: user.email || '', contact: user.phoneNumber || user.phone || '' },
+                                  handler: async (response: any) => {
                                     try {
-                                      await verifyRazorpayPaymentWithRetry({
-                                        orderId,
-                                        razorpayOrderId: response.razorpay_order_id,
-                                        razorpayPaymentId: response.razorpay_payment_id,
-                                        razorpaySignature: response.razorpay_signature,
-                                        idempotencyKey: checkoutKey,
-                                      });
-                                      toast({ title: 'Payment Successful! 🎉', description: `${cart.length} test(s) booked and payment confirmed.` });
-                                      resolve();
-                                    } catch {
-                                      toast({ title: 'Payment verification failed', description: 'Please contact support with your payment ID.', variant: 'destructive' });
-                                      resolve();
-                                    }
+                                      await verifyRazorpayPaymentWithRetry({ orderId, razorpayOrderId: response.razorpay_order_id, razorpayPaymentId: response.razorpay_payment_id, razorpaySignature: response.razorpay_signature, idempotencyKey: key });
+                                      checkout.paid = true; resolve();
+                                    } catch { reject(new Error(`Payment could not be verified. Keep order ${orderId} and contact support before paying again.`)); }
                                   },
-                                  modal: {
-                                    ondismiss: () => {
-                                      toast({ title: 'Payment cancelled', description: 'Your tests are booked but payment was not completed.' });
-                                      resolve();
-                                    }
-                                  }
-                                };
-                                const rzp = new window.Razorpay(options);
+                                  modal: { ondismiss: () => reject(new Error('Payment cancelled. No tests were booked; your cart is saved.')) },
+                                });
+                                rzp.on('payment.failed', () => reject(new Error('Payment failed. Your cart is saved.')));
                                 rzp.open();
                               });
-                            } else {
-                              // Free or order creation failed – just confirm booking
-                              toast({
-                                title: 'Booking Successful! 🎉',
-                                description: `${cart.length} test(s) booked for ${new Date(bookingForm.appointmentDate).toLocaleDateString()}`
-                              });
                             }
-
-                            // Reset everything after booking (+payment)
-                            clearCart();
-                            setCollectionType('');
-                            setSelectedLab(null);
-                            setLabSearchQuery('');
-                            setBookingForm({ testName: '', appointmentDate: '', testType: 'blood_test', notes: '', labId: '' });
-                            setShowBookDialog(false);
-                            fetchMyLabTests();
+                            await api.post(`/lab-tests/checkout/${orderId}/complete`);
+                            toast({ title: 'Lab booking submitted', description: 'Payment confirmed. Awaiting the lab’s confirmation of your requested time.' });
+                            clearCart(); checkoutOrderRef.current = null; setShowBookDialog(false); await fetchMyLabTests();
                           } catch (error: any) {
-                            console.error('Checkout error:', error);
-                            toast({ title: 'Checkout failed', description: error.message || 'Please try again', variant: 'destructive' });
-                          } finally {
-                            setIsBooking(false);
-                            checkoutInFlightRef.current = false;
-                          }
+                            toast({ title: 'Checkout not completed', description: error.response?.data?.message || error.message || 'Please try again.', variant: 'destructive' });
+                          } finally { setIsBooking(false); checkoutInFlightRef.current = false; }
                         }}
                         title={!bookingForm.appointmentDate ? 'Select an appointment date first' : (collectionType === 'lab' && !selectedLab ? 'Select a lab first' : '')}
                       >
@@ -1438,7 +1145,7 @@ const LabTests = () => {
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <AnimatePresence>
-          {filteredTests.map((test) => (
+          {filteredTests.slice((historyPage - 1) * 20, historyPage * 20).map((test) => (
             <motion.div key={test.id} whileHover={{ y: -4 }} transition={{ type: 'spring', stiffness: 300 }} layout>
             <Card className="hover:shadow-lg transition-shadow bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
               <CardHeader>
@@ -1512,6 +1219,7 @@ const LabTests = () => {
         </div>
         )}
 
+        {filteredTests.length > 20 && <div className="flex items-center justify-between gap-3 py-4"><Button variant="outline" disabled={historyPage <= 1} onClick={() => setHistoryPage(page => page - 1)}>Previous</Button><span>Page {historyPage} of {Math.ceil(filteredTests.length / 20)}</span><Button variant="outline" disabled={historyPage * 20 >= filteredTests.length} onClick={() => setHistoryPage(page => page + 1)}>Next</Button></div>}
         {!isLoading && !labFetchError && filteredTests.length === 0 && (
           <EmptyState
             icon={FlaskRound}

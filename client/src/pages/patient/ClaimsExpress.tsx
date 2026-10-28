@@ -1,3 +1,4 @@
+import { useSmartBenefits } from '@/hooks/patient/useSmartBenefits';
 /**
  * ClaimsExpress — World-Class One-Tap AI-Powered Claims Filing
  * 
@@ -162,6 +163,10 @@ const toUiClaim = (claim: ClaimsApiItem, index: number) => {
 export default function ClaimsExpress() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { family } = useSmartBenefits();
+  const [memberId, setMemberId] = useState('self');
+  const [eligibility, setEligibility] = useState<{ eligible: boolean; reason?: string } | null>(null);
+  useEffect(() => { api.get('/employee/claims/eligibility').then(({ data }) => setEligibility(data)).catch(() => setEligibility({ eligible: false, reason: 'Could not verify claim eligibility. Please contact support.' })); }, []);
   const [tab, setTab] = useState<'active' | 'history' | 'file'>('active');
   const [showNewClaim, setShowNewClaim] = useState(false);
   const [selectedClaimType, setSelectedClaimType] = useState<string | null>(null);
@@ -244,6 +249,8 @@ export default function ClaimsExpress() {
       toast({ title: 'Login required', description: 'Please login to file a claim', variant: 'destructive' });
       return;
     }
+    if (!eligibility?.eligible) { toast({ title: 'Claim filing unavailable', description: eligibility?.reason || 'Verifying eligibility', variant: 'destructive' }); return; }
+    if (!uploadFiles.length) { toast({ title: 'Attach supporting documents', variant: 'destructive' }); return; }
     if (!selectedClaimType) {
       toast({ title: 'Claim type required', description: 'Please select a claim type', variant: 'destructive' });
       return;
@@ -265,13 +272,18 @@ export default function ClaimsExpress() {
 
     setIsSubmittingClaim(true);
     try {
-      const documents = [
-        ...uploadFiles.map((f) => f.name),
-        ...(scanMode === 'scan' ? ['Scanned bill image'] : []),
-      ];
+      const documents = [];
+      for (const file of uploadFiles) {
+        if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type) || file.size > 10 * 1024 * 1024) throw new Error('Use PDF, JPG or PNG documents up to 10MB.');
+        const body = new FormData(); body.append('file', file); body.append('reportType', 'general');
+        const { data } = await api.post('/reports/upload', body);
+        if (!data.reportId) throw new Error('Could not save a supporting document.');
+        documents.push(`report:${data.reportId}`);
+      }
 
       const payload = {
         type: selectedClaimType,
+        memberId,
         amount,
         hospital: claimForm.hospital.trim(),
         date: claimForm.date,
@@ -318,7 +330,7 @@ export default function ClaimsExpress() {
             </Badge>
           </div>
         </div>
-        <Button onClick={() => setShowNewClaim(true)}
+        <Button disabled={!eligibility?.eligible} onClick={() => setShowNewClaim(true)}
           className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-0 rounded-xl gap-1.5 shadow-lg shadow-amber-600/20">
           <Plus className="h-4 w-4" /> File Claim
         </Button>
@@ -372,7 +384,7 @@ export default function ClaimsExpress() {
           { key: 'history', label: 'History', icon: FileText },
           { key: 'file', label: 'File New', icon: Plus },
         ] as const).map(t => (
-          <button key={t.key} onClick={() => t.key === 'file' ? setShowNewClaim(true) : setTab(t.key)}
+          <button key={t.key} disabled={t.key === "file" && !eligibility?.eligible} onClick={() => t.key === 'file' ? setShowNewClaim(true) : setTab(t.key)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-xs font-medium transition-all ${
               tab === t.key ? 'bg-white/10 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
             }`}>
@@ -393,18 +405,19 @@ export default function ClaimsExpress() {
         </div>
         <div className="flex gap-2 flex-wrap">
           {tab !== 'active' && (
-            <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('active')}>
+            <Button size="sm" variant="outline" className="bg-transparent hover:bg-slate-800 border-white/10 text-slate-300" onClick={() => setTab('active')}>
               Track Active
             </Button>
           )}
           {tab !== 'history' && (
-            <Button size="sm" variant="outline" className="border-white/10 text-slate-300" onClick={() => setTab('history')}>
+            <Button size="sm" variant="outline" className="bg-transparent hover:bg-slate-800 border-white/10 text-slate-300" onClick={() => setTab('history')}>
               View History
             </Button>
           )}
         </div>
       </div>
 
+      {eligibility && !eligibility.eligible && <p className="text-sm text-slate-300">{eligibility.reason} <a className="underline" href="/help">Contact support</a></p>}
       <AnimatePresence mode="wait">
         {/* Active Claims */}
         {tab === 'active' && (
@@ -633,22 +646,23 @@ export default function ClaimsExpress() {
           {/* Step 3: Document Capture */}
           {selectedClaimType && scanMode && (
             <div className="space-y-4 mt-2">
+              <label className="block text-sm text-slate-300">Claim for *<select className="ml-2 rounded border bg-slate-800 p-2 text-white" value={memberId} onChange={e => setMemberId(e.target.value)}><option value="self">Self</option>{family.filter(member => member.id !== "self").map(member => <option key={member.id} value={member.id}>{member.name} ({member.relationship})</option>)}</select></label>
               {scanMode === 'scan' && (
                 <>
                   <div className="aspect-[4/3] bg-slate-800 rounded-xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-3">
                     <Camera className="h-12 w-12 text-slate-600" />
                     <p className="text-sm text-slate-400">Position your bill/receipt</p>
-                    <Button className="bg-amber-600 hover:bg-amber-500 border-0 rounded-xl gap-1.5">
+                    <Button onClick={() => document.getElementById("claims-upload-input")?.click()} className="bg-amber-600 hover:bg-amber-500 border-0 rounded-xl gap-1.5">
                       <Camera className="h-4 w-4" /> Open Camera
                     </Button>
                   </div>
                   <div className="bg-amber-600/5 border border-amber-500/20 rounded-xl p-3 flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-amber-400 flex-shrink-0" />
-                    <p className="text-[10px] text-slate-400">AI will automatically extract hospital name, amount, date, diagnosis, and more from your document.</p>
+                    <p className="text-[10px] text-slate-400">Attach a clear photo or PDF, then enter the bill details for review.</p>
                   </div>
                 </>
               )}
-              {scanMode === 'upload' && (
+              {scanMode && (
                 <div className="aspect-[4/3] bg-slate-800 rounded-xl border-2 border-dashed border-white/10 flex flex-col items-center justify-center gap-3">
                   <Upload className="h-12 w-12 text-slate-600" />
                   <p className="text-sm text-slate-400">Drag & drop or browse</p>
@@ -663,7 +677,7 @@ export default function ClaimsExpress() {
                     id="claims-upload-input"
                     type="file"
                     multiple
-                    className="hidden"
+                    className="hidden" accept="application/pdf,image/jpeg,image/png"
                     onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
                   />
                   {uploadFiles.length > 0 && (
@@ -674,7 +688,7 @@ export default function ClaimsExpress() {
               {scanMode === 'manual' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs text-slate-400 block mb-1">Hospital / Provider</label>
+                    <label className="text-xs text-slate-400 block mb-1">Hospital / Provider *</label>
                     <Input
                       className="bg-slate-800 border-white/10 text-white rounded-xl"
                       placeholder="Apollo Hospitals..."
@@ -693,7 +707,7 @@ export default function ClaimsExpress() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-slate-400 block mb-1">Amount (₹)</label>
+                      <label className="text-xs text-slate-400 block mb-1">Amount (₹) *</label>
                       <Input
                         type="number"
                         className="bg-slate-800 border-white/10 text-white rounded-xl"
@@ -703,7 +717,7 @@ export default function ClaimsExpress() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-slate-400 block mb-1">Date</label>
+                      <label className="text-xs text-slate-400 block mb-1">Date *</label>
                       <Input
                         type="date"
                         className="bg-slate-800 border-white/10 text-white rounded-xl"
@@ -715,8 +729,8 @@ export default function ClaimsExpress() {
                   <div className="flex gap-2">
                     {['Cashless', 'Reimbursement'].map(t => (
                       <button key={t}
-                        onClick={() => setClaimForm((prev) => ({ ...prev, claimType: t }))}
-                        className="flex-1 py-2.5 rounded-xl border border-white/10 text-xs font-medium text-slate-400 hover:text-white hover:border-white/20 transition-all">
+                        aria-pressed={claimForm.claimType === t} onClick={() => setClaimForm((prev) => ({ ...prev, claimType: t }))}
+                        className={`flex-1 py-2.5 rounded-xl border text-xs font-medium transition-all ${claimForm.claimType === t ? "border-amber-500 bg-amber-500/20 text-amber-200" : "border-white/10 text-slate-300"}`}>
                         {t}
                       </button>
                     ))}
@@ -735,7 +749,7 @@ export default function ClaimsExpress() {
               {scanMode && scanMode !== 'manual' && (
                 <div className="space-y-3">
                   <div>
-                    <label className="text-xs text-slate-400 block mb-1">Hospital / Provider</label>
+                    <label className="text-xs text-slate-400 block mb-1">Hospital / Provider *</label>
                     <Input
                       className="bg-slate-800 border-white/10 text-white rounded-xl"
                       placeholder="Hospital or provider name"
@@ -745,7 +759,7 @@ export default function ClaimsExpress() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-slate-400 block mb-1">Amount (₹)</label>
+                      <label className="text-xs text-slate-400 block mb-1">Amount (₹) *</label>
                       <Input
                         type="number"
                         className="bg-slate-800 border-white/10 text-white rounded-xl"
@@ -755,7 +769,7 @@ export default function ClaimsExpress() {
                       />
                     </div>
                     <div>
-                      <label className="text-xs text-slate-400 block mb-1">Date</label>
+                      <label className="text-xs text-slate-400 block mb-1">Date *</label>
                       <Input
                         type="date"
                         className="bg-slate-800 border-white/10 text-white rounded-xl"
@@ -767,7 +781,7 @@ export default function ClaimsExpress() {
                 </div>
               )}
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1 border-white/10 rounded-xl text-slate-400"
+                <Button variant="outline" className="bg-transparent hover:bg-slate-800 flex-1 border-white/10 rounded-xl text-slate-400"
                   onClick={() => setScanMode(null)}>
                   Back
                 </Button>

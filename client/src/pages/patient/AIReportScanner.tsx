@@ -114,7 +114,7 @@ const AIReportScanner: React.FC = () => {
       // A failed analysis must never be rendered as a reassuring result. The
       // old browser-Gemini fallback always hard-coded `routine`, even if the
       // backend analysis had failed or the image was unreadable.
-      const response = await aiHealthServices.analyzeReport(imageData, imageMimeType, userQuery);
+      const response = await aiHealthServices.analyzeReport(imageData.replace(/^data:[^;]+;base64,/, ""), imageMimeType, userQuery);
       
       if (response.success && response.analysis) {
         setResult(response.analysis as AnalysisResult);
@@ -267,7 +267,7 @@ const AIReportScanner: React.FC = () => {
                 <Shield className="h-5 w-5 text-green-600 shrink-0" />
                 <div>
                   <p className="text-xs font-medium text-green-700 dark:text-green-400">Your data is secure</p>
-                  <p className="text-xs text-green-600/80 dark:text-green-500/80">Reports are analyzed in real-time and never stored</p>
+                  <p className="text-xs text-green-600/80 dark:text-green-500/80">Reports and analysis may be stored securely in your health record. See our Privacy Policy.</p>
                 </div>
               </div>
             </motion.div>

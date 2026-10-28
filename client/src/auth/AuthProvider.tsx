@@ -154,6 +154,11 @@ export const AuthProvider = ({ children }) => {
       }
     }
     
+    if (['/privacy', '/privacy-policy', '/terms', '/terms-of-service', '/compliance'].includes(location.pathname)) {
+      setAuthState(previous => ({ ...previous, hasCheckedAuth: true }));
+      return;
+    }
+
     // Check if it's a corporate route - corporate routes have their own auth flow
     const isCorporateRoute = location.pathname.startsWith('/corporate');
     

@@ -1,3 +1,5 @@
+import { Report, User } from '../models/index.js';
+import FamilyMember from '../models/postgres/family-member.model.postgres.js';
 /**
  * Employee Corporate Network Routes
  * Surfaces the labs/hospitals/clinics that an employee's corporate
@@ -92,7 +94,15 @@ async function getUserCorporate(userId) {
       LIMIT 1`,
     { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
   );
-  return row || null;
+  if (row) return row;
+  const [assigned] = await postgresSequelize.query(
+    `SELECT c.id AS "corporateId", c."companyName" FROM user_plans up
+      JOIN corporates c ON c.id::text = COALESCE(up.metadata->>'corporateId', up.metadata->>'corporate_id') AND LOWER(c.status) = 'active'
+      WHERE up."userId" = :userId AND up.status = 'active' AND (up."endDate" IS NULL OR up."endDate" >= NOW())
+      ORDER BY up."createdAt" DESC LIMIT 1`,
+    { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  return assigned || null;
 }
 
 /**
@@ -495,7 +505,7 @@ router.get('/claims', authUser, async (req, res) => {
       status: normalizeClaimStatus(row.status),
       hospital: row.insurance_provider || undefined,
       date: toISODate(row.submitted_date || row.created_at) || toISODate(new Date()),
-      member: 'Self',
+      member: row.metadata?.memberName || 'Self',
       documents: Array.isArray(row.documents) ? row.documents : [],
       timeline: []
     }));
@@ -517,6 +527,14 @@ router.get('/claims', authUser, async (req, res) => {
  * POST /api/employee/claims
  * Creates a new employee insurance claim from ClaimsExpress flow.
  */
+router.get('/claims/eligibility', authUser, async (req, res) => {
+  try {
+    const corp = await getUserCorporate(req.user.id);
+    const [plan] = await postgresSequelize.query(`SELECT id FROM user_plans WHERE "userId" = :userId AND status = 'active' AND ("endDate" IS NULL OR "endDate" >= NOW()) LIMIT 1`, { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT });
+    res.json({ success: true, eligible: !!corp && !!plan, reason: corp && plan ? null : 'Claim filing requires an active employer benefit plan. Contact support to verify your eligibility.' });
+  } catch (error) { res.status(503).json({ success: false, eligible: false, reason: 'Could not verify eligibility. Please try again.' }); }
+});
+
 router.post('/claims', authUser, async (req, res) => {
   try {
     const corp = await getUserCorporate(req.user.id);
@@ -535,9 +553,19 @@ router.post('/claims', authUser, async (req, res) => {
       claimType,
       diagnosis,
       notes,
-      documents
+      documents, memberId = 'self'
     } = req.body || {};
 
+    if (!['Cashless', 'Reimbursement'].includes(claimType) || !String(hospital || '').trim() || !toISODate(date)) return res.status(400).json({ success: false, message: 'Provider, treatment date and claim type are required.' });
+    const [activePlan] = await postgresSequelize.query(`SELECT id FROM user_plans WHERE "userId" = :userId AND status = 'active' AND ("endDate" IS NULL OR "endDate" >= NOW()) LIMIT 1`, { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT });
+    if (!activePlan) return res.status(403).json({ success: false, message: 'An active employer benefit plan is required.' });
+    const member = memberId === 'self' ? await User.findByPk(req.user.id) : await FamilyMember.findOne({ where: { id: Number(memberId) || 0, userId: req.user.id } });
+    if (!member) return res.status(400).json({ success: false, message: 'Choose a member from your own family list.' });
+    const memberName = [member.firstName, member.lastName].filter(Boolean).join(' ');
+    const reportIds = Array.isArray(documents) ? documents.map(value => /^report:(\d+)$/.exec(String(value))?.[1]).filter(Boolean) : [];
+    if (!reportIds.length || reportIds.length !== documents.length || reportIds.length > 20) return res.status(400).json({ success: false, message: 'Attach supporting bills or medical documents.' });
+    const reports = await Report.findAll({ where: { userId: req.user.id, id: reportIds } });
+    if (reports.length !== reportIds.length) return res.status(400).json({ success: false, message: 'One or more documents could not be verified for your account.' });
     const claimAmount = Number(amount);
     if (!Number.isFinite(claimAmount) || claimAmount <= 0) {
       return res.status(400).json({ success: false, message: 'Valid claim amount is required' });
@@ -548,9 +576,7 @@ router.post('/claims', authUser, async (req, res) => {
     const provider = String(hospital || '').trim().slice(0, 200) || 'Provider not specified';
     const submittedDate = toISODate(date) || toISODate(new Date());
     const claimNumber = `CLM-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-    const docs = Array.isArray(documents)
-      ? documents.filter((d) => typeof d === 'string').slice(0, 20)
-      : [];
+    const docs = reports.map(report => `/api/reports/download/${report.id}`);
 
     const organizationId = Number(
       req.user.organization_id || req.user.organizationId || corp.corporateId
@@ -581,7 +607,7 @@ router.post('/claims', authUser, async (req, res) => {
             :claimNumber,
             :patientId,
             :organizationId,
-            'reimbursement',
+            :settlementType,
             :benefitCategory,
             'submitted',
             :claimAmount,
@@ -598,6 +624,7 @@ router.post('/claims', authUser, async (req, res) => {
         {
           replacements: {
             claimNumber,
+            settlementType: claimType.toLowerCase(),
             patientId: req.user.id,
             organizationId,
             benefitCategory,
@@ -606,7 +633,7 @@ router.post('/claims', authUser, async (req, res) => {
             diagnosis: diagnosis ? String(diagnosis).slice(0, 500) : null,
             notes: notes ? String(notes).slice(0, 1000) : null,
             documents: JSON.stringify(docs),
-            metadata: JSON.stringify({ category: claimLabel }),
+            metadata: JSON.stringify({ category: claimLabel, memberId, memberName }),
             submittedDate,
           },
           transaction: tx,

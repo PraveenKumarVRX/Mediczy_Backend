@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import api from '@/utils/api';
+import { toast } from 'sonner';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,78 +19,26 @@ interface VitalReading {
   type: 'blood_pressure' | 'heart_rate' | 'temperature' | 'blood_sugar' | 'oxygen_level' | 'weight';
   value: string;
   unit: string;
-  status: 'normal' | 'low' | 'high' | 'critical';
+  status: 'normal' | 'low' | 'high' | 'critical' | 'prediabetes_range' | 'diabetes_range' | 'unclassified';
   timestamp: Date;
   notes?: string;
   recordedBy: string;
 }
 
 const VitalReports: React.FC = () => {
-  const [vitals, setVitals] = useState<VitalReading[]>([
-    {
-      id: '1',
-      type: 'blood_pressure',
-      value: '120/80',
-      unit: 'mmHg',
-      status: 'normal',
-      timestamp: new Date('2025-01-15T08:30:00'),
-      recordedBy: 'Self',
-      notes: 'Morning reading'
-    },
-    {
-      id: '2',
-      type: 'heart_rate',
-      value: '72',
-      unit: 'bpm',
-      status: 'normal',
-      timestamp: new Date('2025-01-15T08:30:00'),
-      recordedBy: 'Self'
-    },
-    {
-      id: '3',
-      type: 'blood_sugar',
-      value: '110',
-      unit: 'mg/dL',
-      status: 'normal',
-      timestamp: new Date('2025-01-15T07:00:00'),
-      recordedBy: 'Self',
-      notes: 'Fasting'
-    },
-    {
-      id: '4',
-      type: 'oxygen_level',
-      value: '98',
-      unit: '%',
-      status: 'normal',
-      timestamp: new Date('2025-01-15T08:30:00'),
-      recordedBy: 'Self'
-    },
-    {
-      id: '5',
-      type: 'temperature',
-      value: '98.6',
-      unit: '°F',
-      status: 'normal',
-      timestamp: new Date('2025-01-14T20:00:00'),
-      recordedBy: 'Self'
-    },
-    {
-      id: '6',
-      type: 'weight',
-      value: '70.5',
-      unit: 'kg',
-      status: 'normal',
-      timestamp: new Date('2025-01-14T06:00:00'),
-      recordedBy: 'Self'
-    }
-  ]);
+  const [vitals, setVitals] = useState<VitalReading[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  useEffect(() => {
+    api.get('/health-data/vitals').then(({ data }) => setVitals(data.vitals || [])).catch(() => setLoadError(true));
+  }, []);
 
   const [selectedType, setSelectedType] = useState<string>('all');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newVital, setNewVital] = useState({
     type: 'blood_pressure',
     value: '',
-    notes: ''
+    notes: '', fasting: false
   });
 
   const vitalTypes = [
@@ -116,6 +66,9 @@ const VitalReports: React.FC = () => {
       normal: { label: 'Normal', color: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/70 dark:bg-emerald-950/40 dark:text-emerald-300' },
       low: { label: 'Low', color: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/40 dark:text-amber-300' },
       high: { label: 'High', color: 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-800/70 dark:bg-orange-950/40 dark:text-orange-300' },
+      unclassified: { label: 'Needs context', color: 'bg-slate-100 text-slate-700' },
+      prediabetes_range: { label: 'Prediabetes range', color: 'bg-amber-100 text-amber-900' },
+      diabetes_range: { label: 'Diabetes range — review with doctor', color: 'bg-orange-100 text-orange-900' },
       critical: { label: 'Critical', color: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800/70 dark:bg-red-950/40 dark:text-red-300' }
     };
     const variant = variants[status] || variants.normal;
@@ -135,26 +88,18 @@ const VitalReports: React.FC = () => {
     ? vitals 
     : vitals.filter(vital => vital.type === selectedType);
 
-  const handleAddVital = () => {
-    if (!newVital.value) return;
-
-    const vitalType = vitalTypes.find(v => v.value === newVital.type);
-    if (!vitalType) return;
-
-    const newReading: VitalReading = {
-      id: Date.now().toString(),
-      type: newVital.type as VitalReading['type'],
-      value: newVital.value,
-      unit: vitalType.unit,
-      status: 'normal',
-      timestamp: new Date(),
-      recordedBy: 'Self',
-      notes: newVital.notes
-    };
-
-    setVitals([newReading, ...vitals]);
-    setIsAddDialogOpen(false);
-    setNewVital({ type: 'blood_pressure', value: '', notes: '' });
+  const handleAddVital = async () => {
+    if (!newVital.value.trim() || saving) return;
+    setSaving(true);
+    try {
+      const { data } = await api.post('/health-data/vitals', newVital);
+      setVitals(previous => [data.vital, ...previous]);
+      toast.success('Vital reading saved');
+      if (data.vital.status === 'critical') toast.error('Critical reading. Seek urgent medical help; call 112 or 108 if you have symptoms.');
+      setIsAddDialogOpen(false);
+      setNewVital({ type: 'blood_pressure', value: '', notes: '', fasting: false });
+    } catch (error: any) { toast.error(error.response?.data?.message || 'Could not save your reading. Please try again.'); }
+    finally { setSaving(false); }
   };
 
   const getLatestReading = (type: string) => {
@@ -216,6 +161,7 @@ const VitalReports: React.FC = () => {
                   />
                 </div>
                 <div className="grid gap-2">
+                  {newVital.type === 'blood_sugar' && <label className="flex items-center gap-2"><input type="checkbox" checked={newVital.fasting} onChange={e => setNewVital({ ...newVital, fasting: e.target.checked })} />Fasting reading (at least 8 hours)</label>}
                   <Label htmlFor="notes">Notes (Optional)</Label>
                   <Input
                     id="notes"
@@ -229,13 +175,15 @@ const VitalReports: React.FC = () => {
                 <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleAddVital}>Record</Button>
+                <Button onClick={handleAddVital} disabled={saving || !newVital.value.trim()}>{saving ? "Saving…" : "Record"}</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
       </motion.div>
 
+      {loadError && <p role="alert">Could not load your readings. Please refresh to try again.</p>}
+      <p className="text-sm text-muted-foreground">Screening flags are not a diagnosis. Review abnormal readings with your doctor.</p>
       <motion.div variants={item} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {vitalTypes.map(vitalType => {
           const latest = getLatestReading(vitalType.value);

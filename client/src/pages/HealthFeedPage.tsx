@@ -43,6 +43,10 @@ interface Video {
   isShort: boolean;
 }
 
+const decodeTitle = (title: string) => {
+  const element = document.createElement('textarea'); element.innerHTML = title; return element.value;
+};
+
 export default function HealthFeedPage() {
   const [videos, setVideos] = useLocalStorage<Video[]>("health-videos", []);
   const [loading, setLoading] = useState(false);
@@ -72,7 +76,7 @@ export default function HealthFeedPage() {
         )
       ]);
 
-      const allVideos = [...regularVideos.data.items, ...shorts.data.items];
+      const allVideos = [...new Map([...regularVideos.data.items, ...shorts.data.items].map(item => [item.id.videoId, item])).values()];
       const videoIds = allVideos.map(item => item.id.videoId).join(',');
 
       // Get video durations
@@ -80,7 +84,7 @@ export default function HealthFeedPage() {
         `https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${videoIds}&key=${apiKey}`
       );
 
-      const durationMap = new Map(
+      const durationMap = new Map<string, string | undefined>(
         videoDetails.data.items.map(item => [item.id, item.contentDetails?.duration])
       );
 
@@ -90,9 +94,9 @@ export default function HealthFeedPage() {
 
         return {
           id: item.id.videoId,
-          title: item.snippet.title,
+          title: decodeTitle(item.snippet.title),
           description: item.snippet.description,
-          thumbnail: item.snippet.thumbnails.medium.url,
+          thumbnail: item.snippet.thumbnails?.medium?.url || "/placeholder.svg",
           publishedAt: new Date(item.snippet.publishedAt).toLocaleDateString(),
           channelTitle: item.snippet.channelTitle,
           duration,
@@ -136,8 +140,8 @@ export default function HealthFeedPage() {
     return parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(seconds);
   };
 
-  const shortsVideos = videos.filter(v => v.isShort);
-  const longVideos = videos.filter(v => !v.isShort);
+  const shortsVideos = [...new Map(videos.map(video => [decodeTitle(video.title).trim().toLowerCase(), video])).values()].filter(v => v.isShort);
+  const longVideos = [...new Map(videos.map(video => [decodeTitle(video.title).trim().toLowerCase(), video])).values()].filter(v => !v.isShort);
 
   const nextShort = () => {
     if (currentShortIndex < shortsVideos.length - 1) {
@@ -249,7 +253,7 @@ export default function HealthFeedPage() {
             <div className="aspect-video relative">
               <img
                 src={video.thumbnail}
-                alt={video.title}
+                alt={decodeTitle(video.title)} onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = "/placeholder.svg"; }}
                 className="w-full h-full object-cover"
               />
               <div className="absolute inset-0 bg-teal-600/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -257,7 +261,7 @@ export default function HealthFeedPage() {
               </div>
             </div>
             <CardContent className="p-4 bg-white dark:bg-slate-800/50">
-              <h3 className="font-semibold line-clamp-2 mb-2 text-slate-800 dark:text-white">{video.title}</h3>
+              <h3 className="font-semibold line-clamp-2 mb-2 text-slate-800 dark:text-white">{decodeTitle(video.title)}</h3>
               <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
                 <span className="text-teal-600 dark:text-teal-400">{video.channelTitle}</span>
                 <span>{video.publishedAt}</span>
@@ -299,7 +303,7 @@ export default function HealthFeedPage() {
   return (
     <div className="container py-6 space-y-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Doctor's Health Feed</h1>
+        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Health Video Library</h1>
         <Button 
           variant="outline" 
           size="sm"
@@ -312,13 +316,14 @@ export default function HealthFeedPage() {
         </Button>
       </div>
 
+      <p className="text-sm text-slate-700 dark:text-slate-300">Third-party content has not been medically reviewed by Mediqzy. It is not medical advice or an endorsement. Consult your doctor before changing treatment.</p>
       <Tabs defaultValue="videos" className="space-y-6">
         <TabsList className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1">
           <TabsTrigger 
             value="videos" 
             className="data-[state=active]:bg-teal-500 data-[state=active]:text-white dark:data-[state=active]:bg-teal-600 text-slate-600 dark:text-slate-300"
           >
-            Doctor's Videos
+            Videos
           </TabsTrigger>
           <TabsTrigger 
             value="shorts" 
@@ -338,4 +343,4 @@ export default function HealthFeedPage() {
       </Tabs>
     </div>
   );
-} 
+}

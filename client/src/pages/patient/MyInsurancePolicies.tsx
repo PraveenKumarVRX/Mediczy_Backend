@@ -1,3 +1,5 @@
+import { useSmartBenefits } from '@/hooks/patient/useSmartBenefits';
+import { Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +67,7 @@ const fmtDate = (d?: string | null) =>
 
 const MyInsurancePolicies = () => {
   const { toast } = useToast();
+  const { plans: benefitPlans } = useSmartBenefits();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [policies, setPolicies] = useState<PersonalPolicy[]>([]);
@@ -182,6 +185,8 @@ const MyInsurancePolicies = () => {
   return (
     <>
       <div className="container mx-auto px-4 py-6 max-w-4xl">
+      {benefitPlans.length > 0 && <Card className="mb-4"><CardHeader><CardTitle>Your active benefits</CardTitle></CardHeader><CardContent className="space-y-3">{benefitPlans.map(plan => <div key={plan.id}><p className="font-semibold">{plan.name}</p><p className="text-sm text-muted-foreground">{plan.insurer ? `Insurer: ${plan.insurer}` : plan.isEmployerFunded ? 'Employer-funded service plan' : 'Membership service plan'}{plan.sumInsured > 0 ? ` · Cover ₹${plan.sumInsured.toLocaleString('en-IN')}` : ' · See service entitlements; no monetary insurance cover specified'}</p></div>)}<Link className="underline" to="/benefits">View benefits and covered members</Link></CardContent></Card>}
+
         <div className="rounded-2xl border border-teal-200/80 bg-gradient-to-r from-teal-50 via-cyan-50 to-emerald-50 p-5 md:p-6 mb-6 shadow-sm transition-all duration-300">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>

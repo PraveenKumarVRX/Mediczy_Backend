@@ -59,7 +59,7 @@ const CATEGORIES = [
 const FAQ_ITEMS = [
   { q: "How do I reschedule an appointment?", a: "Go to My Appointments, click on the appointment, and choose Reschedule. You can reschedule up to 2 hours before the appointment time." },
   { q: "How do I download my medical reports?", a: "Visit My Reports section, select the report, and click the Download button. Reports are available as PDF." },
-  { q: "How do I raise an insurance claim?", a: "Navigate to My Insurance → Claims Express, fill in the claim form with bill details and upload your bills. Claims are typically processed within 7 working days." },
+  { q: "How do I raise an insurance claim?", a: "Open Insurance & Benefits → File a Claim. Claim filing requires an eligible active employer plan. Select the member and claim type, enter provider, amount and treatment date, and attach supporting documents. If filing is unavailable, raise an Insurance / Claims support ticket. Processing time depends on your plan and document review." },
   { q: "How do I change my registered mobile number?", a: "Go to Profile → Personal Information → Edit. Enter OTP sent to the new number to verify the change." },
   { q: "How do I cancel my membership?", a: "Go to My Plans and click Cancel Membership. Refunds are processed as per the cancellation policy." },
   { q: "My video consultation is not connecting. What do I do?", a: "Check your internet connection and allow browser camera/microphone permissions. Use Chrome or Firefox for best results. Contact support if the issue persists." },

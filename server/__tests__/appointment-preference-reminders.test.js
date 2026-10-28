@@ -14,7 +14,7 @@ it('honors selected lead time, disabled reminders, and future appointments', () 
 it('does not repeat a committed reminder and allows a rescheduled time', () => {
   const row={...appointment,metadata:{preferenceReminderKey:'2026-10-21/18:30/60'}};
   expect(preferenceReminderDecision(row,{reminderMinutesBefore:60},now)).toBeNull();
-  expect(preferenceReminderDecision({...row,appointmentTime:'18:00'},{reminderMinutesBefore:60},now)).not.toBeNull();
+  expect(preferenceReminderDecision({...row,appointmentTime:'18:31'},{reminderMinutesBefore:60},now+60000)).not.toBeNull();
 });
 it('persists the employee inbox notification and marker in one RLS transaction before delivery', async () => {
   const transaction={}; let committed=false;
@@ -25,4 +25,13 @@ it('persists the employee inbox notification and marker in one RLS transaction b
   expect(database.query.mock.calls.every(([,opts])=>opts.transaction===transaction)).toBe(true);
   expect(setContext).toHaveBeenCalledWith(transaction,{orgId:0,userId:0,isPlatformAdmin:true});
   expect(delivery).toHaveBeenCalledTimes(1);
+});
+
+it('does not mislabel a late catch-up as the configured lead time', () => {
+  const late = Date.parse('2026-10-21T12:59:00Z');
+  expect(preferenceReminderDecision(appointment, {reminderMinutesBefore:30}, late)).toBeNull();
+});
+it('uses friendly IST time and doctor name without repeated honorifics', () => {
+  const result = preferenceReminderDecision({...appointment, doctorName:'Dr. Dr Nandita Agarwal'}, {reminderMinutesBefore:60}, now);
+  expect(result.message).toMatch(/Today, 6:30 pm with Dr\. Nandita Agarwal/i);
 });

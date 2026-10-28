@@ -66,7 +66,7 @@ export default function SmartOPD() {
         setDoctors([]);
       }
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? 'Search failed. Please try again.');
+      setError('Smart matching is temporarily unavailable. You can browse doctors by specialty.');
       setDoctors([]);
     } finally {
       setLoading(false);
@@ -161,6 +161,7 @@ export default function SmartOPD() {
             <div className="flex items-center gap-2 text-amber-400 text-sm mb-4 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
               <AlertCircle className="h-4 w-4 flex-shrink-0" />
               {error}
+              <Button variant="outline" className="bg-transparent text-amber-300" onClick={() => navigate("/doctors")}>Find a Doctor</Button>
             </div>
           )}
 

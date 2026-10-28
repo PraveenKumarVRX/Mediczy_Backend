@@ -40,7 +40,7 @@ export const doctorBookingService = {
   },
 
   async createMobileAppointment(payload: CreateMobileAppointmentPayload) {
-    const { data } = await api.post<CreateMobileAppointmentResponse>("/mobile/appointments", payload);
+    const { data } = await api.post<CreateMobileAppointmentResponse>("/appointments", { ...payload, consultationType: payload.type === "in-person" ? "in-person" : "video" });
     return data;
   },
 };

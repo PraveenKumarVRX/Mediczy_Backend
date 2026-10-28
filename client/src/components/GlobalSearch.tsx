@@ -1,3 +1,4 @@
+import { rankPageSearch } from '@/utils/page-search';
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -36,7 +37,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 interface SearchItem {
   label: string;
   path: string;
-  icon: React.ElementType;
+  icon: import("lucide-react").LucideIcon;
   keywords: string[];
   group: string;
 }
@@ -80,6 +81,7 @@ export function GlobalSearch() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const [query, setQuery] = useState("");
 
   // Ctrl+K / Cmd+K keyboard shortcut
   useEffect(() => {
@@ -101,10 +103,10 @@ export function GlobalSearch() {
     [navigate]
   );
 
-  // Group items by their group
-  const groups = searchItems.reduce<Record<string, SearchItem[]>>((acc, item) => {
-    if (!acc[item.group]) acc[item.group] = [];
-    acc[item.group].push(item);
+  const term = query.trim().toLowerCase();
+  const rankedItems = rankPageSearch(searchItems, query);
+  const groups = term ? { Results: rankedItems } : rankedItems.reduce<Record<string, SearchItem[]>>((acc, item) => {
+    (acc[item.group] ||= []).push(item);
     return acc;
   }, {});
 
@@ -136,8 +138,8 @@ export function GlobalSearch() {
       )}
 
       {/* Command Palette Dialog */}
-      <CommandDialog open={open} onOpenChange={setOpen}>
-        <CommandInput placeholder="Search pages, features, or actions..." />
+      <CommandDialog open={open} onOpenChange={setOpen} shouldFilter={false}>
+        <CommandInput value={query} onValueChange={setQuery} placeholder="Search pages, features, or actions..." />
         <CommandList>
           <CommandEmpty>
             <div className="py-4 text-center">

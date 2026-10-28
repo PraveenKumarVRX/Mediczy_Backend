@@ -1,3 +1,4 @@
+import PatientImage from '@/components/PatientImage';
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -328,7 +329,7 @@ export default function QuickAppointmentModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-2xl font-bold primary-grad">
+          <DialogTitle className="text-xl sm:text-2xl font-bold text-teal-700 dark:text-teal-300 pr-6 leading-snug">
             Book New Appointment
           </DialogTitle>
           <DialogDescription>
@@ -525,7 +526,7 @@ export default function QuickAppointmentModal({
                         }}
                       >
                         <div className="flex gap-4">
-                          <img src={doctor.profileImage || "/default-doctor.png"} alt={`${doctor.firstName} ${doctor.lastName}`} className="w-16 h-16 rounded-full object-cover" />
+                          <PatientImage src={doctor.profileImage} name={`${doctor.firstName} ${doctor.lastName}`} className="w-16 h-16 rounded-full object-cover" />
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-lg truncate">Dr. {doctor.firstName} {doctor.lastName}</h3>
                             <Badge variant="outline" className="mb-2 text-[#00FFF3] border-[#00FFF3]/30">{doctor.specialization}</Badge>
@@ -570,7 +571,7 @@ export default function QuickAppointmentModal({
                     {nurses.map((nurse: Nurse) => (
                       <Card key={nurse._id} className="p-4 hover:border-[#00FFF3]/40 transition-all cursor-pointer" onClick={() => handleProviderSelect(nurse._id)}>
                         <div className="flex gap-4">
-                          <img src={nurse.profileImage || "/default-doctor.png"} alt={`${nurse.firstName} ${nurse.lastName}`} className="w-16 h-16 rounded-full object-cover" />
+                          <PatientImage src={nurse.profileImage} name={`${nurse.firstName} ${nurse.lastName}`} className="w-16 h-16 rounded-full object-cover" />
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-lg truncate">{nurse.firstName} {nurse.lastName}</h3>
                             {nurse.specialization && (

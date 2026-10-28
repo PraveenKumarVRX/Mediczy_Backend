@@ -9,7 +9,7 @@ import express from 'express';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 import { authUser } from '../middleware/auth.middleware.js';
-import dailyHealthScoreService, { computeDailyScore, ensureTables, enrichLogDataFromDiary } from '../services/daily-health-score.service.js';
+import dailyHealthScoreService, { computeDailyScore, ensureTables, enrichLogDataFromDiary, currentDailyScore } from '../services/daily-health-score.service.js';
 
 const router = express.Router();
 
@@ -21,7 +21,7 @@ router.post('/log', authUser, async (req, res) => {
   try {
     await ensureTables();
     const userId = req.user.id;
-    const today  = new Date().toISOString().split('T')[0];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 
     const {
       // Physical activity
@@ -182,86 +182,11 @@ router.post('/log', authUser, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/today', authUser, async (req, res) => {
   try {
-    await ensureTables();
-    const userId = req.user.id;
-    const today  = new Date().toISOString().split('T')[0];
-
-    // Try pre-computed score
-    const [stored] = await postgresSequelize.query(`
-      SELECT * FROM daily_health_scores
-      WHERE user_id = :userId AND score_date = :today
-    `, { replacements: { userId, today }, type: QueryTypes.SELECT });
-
-    if (stored) {
-      return res.json({
-        success: true,
-        date:    today,
-        score:   ['insufficient', 'partial'].includes(stored.targets?.dataQuality?.status)
-          ? null
-          : stored.composite_score,
-        domains: {
-          activity:   stored.activity_score,
-          nutrition:  stored.nutrition_score,
-          sleep:      stored.sleep_score,
-          vitals:     stored.vitals_score,
-          medication: stored.medication_score,
-          hydration:  stored.hydration_score,
-          mental:     stored.mental_score,
-        },
-        targets:    stored.targets,
-        ageBand:    stored.age_band,
-        computedAt: stored.computed_at,
-        source:     'precomputed',
-        dataQuality: stored.targets?.dataQuality || { status: 'unknown', observedDomains: [] },
-      });
-    }
-
-    // Compute on-the-fly from today's log + diary enrichment (if the cron hasn't run yet)
-    const [log] = await postgresSequelize.query(
-      `SELECT * FROM daily_activity WHERE user_id = :userId AND date = :today LIMIT 1`,
-      { replacements: { userId, today }, type: QueryTypes.SELECT }
-    );
-
-    const [profile] = await postgresSequelize.query(`
-      SELECT
-        u."dateOfBirth" AS "dateOfBirth",
-        COALESCE(ha.gender, u.gender, 'other') AS gender,
-        ha.height,
-        COALESCE(
-          (SELECT weight FROM daily_activity
-           WHERE user_id = u.id AND weight IS NOT NULL
-           ORDER BY date DESC LIMIT 1),
-          ha.weight
-        ) AS weight
-      FROM users u
-      LEFT JOIN user_health_assessments ha
-        ON ha.user_id = u.id
-        AND ha.id = (SELECT id FROM user_health_assessments WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1)
-      WHERE u.id = :userId
-    `, { replacements: { userId }, type: QueryTypes.SELECT });
-
-    // Enrich with health diary and recent lab report values
-    const diaryEnrichment = await enrichLogDataFromDiary(userId, today);
-    const mergedLog = Object.assign({}, diaryEnrichment);
-    for (const [k, v] of Object.entries(log || {})) {
-      if (v !== null && v !== undefined) mergedLog[k] = v;
-    }
-
-    const result = computeDailyScore(mergedLog, profile || {}, today);
-
-    res.json({
-      success: true,
-      date:    today,
-      score:   result.score,
-      domains: result.domains,
-      targets: result.targets,
-      ageBand: result.ageBand,
-      source:  'realtime',
-      dataQuality: result.dataQuality,
-    });
-  } catch (err) {
-    console.error('health-score/today error:', err);
-    res.status(500).json({ success: false, message: 'Failed to get health score', error: err.message });
+    const result = await currentDailyScore(req.user.id);
+    res.json({ success: true, ...result, source: 'realtime' });
+  } catch (error) {
+    console.error('health-score/today error:', error);
+    res.status(500).json({ success: false, message: 'Could not calculate your health score. Please try again.' });
   }
 });
 

@@ -155,9 +155,12 @@ export const healthRiskSections: Omit<RiskSection, 'icon'>[] = [
         id: 'sleep',
         title: 'Sleep Duration (nightly)',
         options: [
-          { id: '7_8', label: '7–8 hours', score: 0 },
-          { id: '5_6', label: '5–6 hours', score: 2 },
-          { id: 'lt5_gt9', label: '<5 or >9 hours', score: 4 },
+          { id: 'lt5', label: 'Less than 5 hours', score: 4 },
+          { id: '5_6', label: '5 to under 6 hours', score: 2 },
+          { id: '6_7', label: '6 to under 7 hours', score: 2 },
+          { id: '7_8', label: '7 to under 8 hours', score: 0 },
+          { id: '8_9', label: '8–9 hours', score: 0 },
+          { id: 'gt9', label: 'More than 9 hours', score: 4 },
         ],
       },
       {

@@ -11,6 +11,7 @@ import { authLab } from '../middleware/authLab.middleware.js';
 import { LabTest, Report } from '../models/index.js';
 import { Op } from 'sequelize';
 import pool from '../db/pgPool.js';
+import { prepareLabCheckout, completeLabCheckout } from '../services/patient-lab-checkout.service.js';
 import { uploadEncryptedReport } from '../services/minio-upload.service.js';
 import {
   testTypeToDiagnosticScope,
@@ -21,6 +22,26 @@ import {
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+
+router.post('/checkout', authUser, async (req, res) => {
+  try {
+    const order = await prepareLabCheckout(req.user.id, req.body);
+    res.status(201).json({ success: true, order });
+  } catch (error) {
+    console.error('Prepare lab checkout:', error.message);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Could not start lab checkout. Please try again.' });
+  }
+});
+
+router.post('/checkout/:orderId/complete', authUser, async (req, res) => {
+  try {
+    const result = await completeLabCheckout(req.user.id, req.params.orderId);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Complete lab checkout:', error.message);
+    res.status(error.statusCode || 500).json({ success: false, message: error.statusCode ? error.message : 'Could not finish booking. Your payment is retained; retry or contact support with your order number.' });
+  }
+});
 
 /**
  * GET /api/lab-tests/catalog
@@ -205,28 +226,14 @@ router.post('/', authUser, async (req, res) => {
     // Create lab test booking in database
     console.log('🔄 Creating lab test with data:', { userId, testType, testName, appointmentDate, hospitalId, organizationId });
     
-    // Auto-lookup price from catalog if not provided and testName is given
-    let resolvedPrice = price !== null && price !== undefined ? parseFloat(price) : null;
-    let catalogTestId = null;
-    if (resolvedPrice === null && testName) {
-      const catalogRow = await pool.query(
-        `SELECT test_id, price FROM api_lab_tests
-         WHERE status = 'active' AND (name ILIKE $1 OR test_code ILIKE $1)
-         ORDER BY CASE WHEN LOWER(name) = LOWER($2) THEN 0 ELSE 1 END LIMIT 1`,
-        [`%${testName.trim()}%`, testName.trim()]
-      );
-      if (catalogRow.rows.length) {
-        resolvedPrice = parseFloat(catalogRow.rows[0].price);
-        catalogTestId = catalogRow.rows[0].test_id;
-        console.log(`💊 Auto-priced "${testName}" from catalog: ₹${resolvedPrice} (${catalogTestId})`);
-      }
-    }
+    const catalog = await pool.query("SELECT test_id, price FROM api_lab_tests WHERE status = 'active' AND (LOWER(name) = LOWER($1) OR LOWER(test_code) = LOWER($1) OR test_id::text = $1) LIMIT 1", [String(testName || '').trim()]);
+    if (!catalog.rows.length) return res.status(400).json({ success: false, message: 'Select a test from the active lab catalogue.' });
+    if (catalog.rows[0].price == null || !Number.isFinite(Number(catalog.rows[0].price))) return res.status(400).json({ success: false, message: 'This test does not have a confirmed price. Contact the lab.' });
+    let resolvedPrice = Number(catalog.rows[0].price);
+    const catalogTestId = catalog.rows[0].test_id;
 
-    let couponValidation = null;
-    let discountVal = parseFloat(discount) || 0;
-    let totalAmountVal = total_amount !== null && total_amount !== undefined
-      ? parseFloat(total_amount)
-      : (resolvedPrice !== null ? resolvedPrice - discountVal : null);
+    let discountVal = 0;
+    let totalAmountVal = resolvedPrice;
 
     if (coupon_code) {
       const diagnosticScope = testTypeToDiagnosticScope(testType);
@@ -251,6 +258,8 @@ router.post('/', authUser, async (req, res) => {
         resolvedPrice = Number(couponValidation.coupon.value) + discountVal;
       }
     }
+
+    if (totalAmountVal > 0) return res.status(402).json({ success: false, message: 'Please complete payment through lab checkout before booking.' });
 
     // Prepare lab test data
     const labTestData = {

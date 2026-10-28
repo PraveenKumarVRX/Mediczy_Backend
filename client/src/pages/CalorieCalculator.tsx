@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { useState, useEffect } from "react";
 import {
   Calculator,
@@ -135,6 +136,7 @@ const CalorieCalculator = () => {
     // Update both localStorage and state
     const updatedMeals = [...savedMeals, meal];
     localStorage.setItem("savedMeals", JSON.stringify(updatedMeals));
+    toast.success("Meal plan saved");
     setSavedMeals(updatedMeals);
 
     // Reset form
@@ -149,15 +151,15 @@ const CalorieCalculator = () => {
   };
 
   return (
-    <MainLayout>
-      <div className="max-w-7xl mx-auto p-6">
+    <>
+      <div className="max-w-7xl mx-auto p-1 md:p-4">
         <div className="flex justify-between items-center mb-8">
           <h1 className="text-4xl font-bold text-foreground">
             Calorie Calculator
           </h1>
           <Dialog>
             <DialogTrigger asChild>
-              <Button variant="outline" className="flex items-center gap-2">
+              <Button variant="outline" className="flex min-w-0 items-center gap-2">
                 <List className="h-5 w-5" />
                 Saved Meals
               </Button>
@@ -206,9 +208,9 @@ const CalorieCalculator = () => {
           </Dialog>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] gap-4">
           {/* Left Column - Food Categories */}
-          <Card className="lg:col-span-2 p-6 shadow-lg">
+          <Card className="min-w-0 p-4 shadow-lg">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {foodCategories.map((category) => (
                 <Card key={category.name} className="p-4">
@@ -218,13 +220,13 @@ const CalorieCalculator = () => {
                       <Button
                         key={food.name}
                         variant="outline"
-                        className="flex items-center justify-between h-auto p-2 hover:bg-primary/5"
+                        className="flex min-w-0 items-center justify-between gap-2 h-auto p-2 whitespace-normal text-foreground hover:text-foreground hover:bg-primary/5"
                         onClick={() => addFoodItem(food)}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
                           <span className="text-xl">{food.image}</span>
                           <div className="text-left">
-                            <div className="text-sm font-medium">{food.name}</div>
+                            <div className="text-sm font-medium break-words whitespace-normal">{food.name}</div>
                             <div className="text-xs text-muted-foreground">{food.calories} cal</div>
                           </div>
                         </div>
@@ -238,25 +240,25 @@ const CalorieCalculator = () => {
           </Card>
 
           {/* Right Column - Selected Foods */}
-          <Card className="p-6 shadow-lg">
+          <Card className="min-w-0 p-4 shadow-lg">
             <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
               <Apple className="h-6 w-6 text-primary" />
               Selected Foods
             </h2>
 
-            <div className="space-y-2 max-h-[calc(100vh-400px)] overflow-y-auto mb-4">
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto overflow-x-hidden mb-4">
               {selectedFoods.map((food, index) => (
-                <div key={index} className="flex items-center justify-between p-2 border rounded-lg hover:bg-primary/5">
-                  <div className="flex items-center gap-2">
+                <div key={index} className="flex flex-wrap items-center justify-between gap-2 p-2 border rounded-lg hover:bg-primary/5">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className="text-xl">{food.image}</span>
                     <div>
-                      <div className="text-sm font-medium">{food.name}</div>
+                      <div className="text-sm font-medium break-words whitespace-normal">{food.name}</div>
                       <div className="text-xs text-muted-foreground">
                         {food.calories * food.quantity} cal
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Button
                       variant="outline"
                       size="sm"
@@ -297,7 +299,7 @@ const CalorieCalculator = () => {
                   onChange={(e) => setMealName(e.target.value)}
                   className="w-full"
                 />
-                <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="flex flex-col gap-3">
                   <Button 
                     className="flex-1 h-14 bg-primary hover:bg-primary/90 text-white shadow-lg text-lg font-semibold flex items-center justify-center gap-2 rounded-xl transition-all duration-200" 
                     variant="default"
@@ -325,7 +327,7 @@ const CalorieCalculator = () => {
           </Card>
         </div>
       </div>
-    </MainLayout>
+    </>
   );
 };
 

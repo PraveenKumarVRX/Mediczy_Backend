@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import axios from 'axios';
+import api from '@/utils/api';
 import { format } from 'date-fns';
 import {
   FileText, Download, Eye, RefreshCw, Search, Receipt, ChevronRight,
@@ -23,6 +23,7 @@ interface Invoice {
   invoiceNumber: string;
   status: 'paid' | 'pending' | 'overdue' | 'cancelled' | 'draft' | string;
   totalAmount: number;
+  total?: string | number;
   taxAmount?: number;
   amount?: number;
   currency?: string;
@@ -60,7 +61,7 @@ const MyInvoices = () => {
       const token = localStorage.getItem('token');
       const params: any = { page: page + 1, limit: rowsPerPage };
       if (statusFilter !== 'all') params.status = statusFilter;
-      const { data } = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/invoices`, { headers: { Authorization: `Bearer ${token}` }, params });
+      const { data } = await api.get('/billing/invoices', { params });
       if (data?.success) { setInvoices(data.data.invoices); setTotal(data.data.pagination.total); }
     } catch {
       toast({ title: 'Unable to load invoices', description: 'Please try again.', variant: 'destructive' });
@@ -77,14 +78,14 @@ const MyInvoices = () => {
     try {
       setDownloadingId(invoice.id);
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${import.meta.env.VITE_API_BASE_URL}/api/billing/invoices/${invoice.id}/download`, { headers: { Authorization: `Bearer ${token}` }, responseType: 'blob' });
+      const response = await api.get(`/billing/invoices/${invoice.id}/download`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
-      const a = document.createElement('a'); a.href = url; a.setAttribute('download', `invoice_${invoice.invoiceNumber}.pdf`); document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = url; a.setAttribute('download', `invoice_${invoice.invoiceNumber}.pdf`); document.body.appendChild(a); a.click(); a.remove(); window.URL.revokeObjectURL(url);
       toast({ title: 'Downloaded', description: invoice.invoiceNumber });
     } catch { toast({ title: 'Download failed', variant: 'destructive' }); } finally { setDownloadingId(null); }
   };
 
-  const paidAmount = (inv: Invoice) => (inv.totalAmount ?? inv.amount ?? 0) + (inv.taxAmount ?? 0);
+  const paidAmount = (inv: Invoice) => Number(inv.total ?? inv.totalAmount ?? inv.amount ?? 0);
   const totalPages = Math.ceil(total / rowsPerPage);
   const gs = (s: string) => statusCfg[s] || statusCfg.draft;
 

@@ -747,7 +747,7 @@ const UserHealthRiskAssessment = () => {
       return;
     }
 
-    if (completionPct < 50) {
+    if (completionPct < 100) {
       toast({
         variant: 'destructive',
         title: 'Incomplete Assessment',
@@ -873,6 +873,10 @@ const UserHealthRiskAssessment = () => {
         sleep_hours: (() => {
           switch (responses.sleep) {
             case '7_8': return 7.5;
+            case '6_7': return 6.5;
+            case '8_9': return 8.5;
+            case 'lt5': return 4.5;
+            case 'gt9': return 9.5;
             case '5_6': return 5.5;
             case 'lt5_gt9': return 4.5;
             default: return 7;
@@ -966,7 +970,7 @@ const UserHealthRiskAssessment = () => {
                 {(latestAssessment?.riskLevel || latestAssessment?.risk_level) && (
                   <div className="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
                     <Shield className="h-3.5 w-3.5 text-teal-300" />
-                    <span className="text-xs font-medium">Latest: {latestAssessment?.riskLevel || latestAssessment?.risk_level}</span>
+                    <span className="text-xs font-medium">Latest: {String(latestAssessment?.riskLevel || latestAssessment?.risk_level).replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}</span>
                   </div>
                 )}
                 {(latestAssessment?.assessedAt || latestAssessment?.assessed_at) && (
@@ -1305,10 +1309,11 @@ const UserHealthRiskAssessment = () => {
                 <Separator />
 
                 {/* Animated risk gauge */}
-                <RiskGauge score={totalScore} max={MAX_THEORETICAL_SCORE} band={scoreBand} />
+                <p className="text-xs text-muted-foreground">In-progress draft — separate from your latest saved assessment.</p>
+                {completionPct === 100 ? <RiskGauge score={totalScore} max={MAX_THEORETICAL_SCORE} band={scoreBand} /> : <p role="status" className="text-sm">Answer all questions to see your risk. Incomplete answers cannot establish a risk level.</p>}
 
                 {/* Bayesian Risk Bar */}
-                {Object.keys(responses).length >= 3 && (
+                {completionPct === 100 && (
                   <>
                     <Separator />
                     <BayesianBar result={bayesianResult} />
@@ -1316,7 +1321,7 @@ const UserHealthRiskAssessment = () => {
                 )}
 
                 {/* Clinical Scores Dashboard */}
-                {clinicalScores && (
+                {completionPct === 100 && clinicalScores && (
                   <>
                     <Separator />
                     <ClinicalScoresDashboard scores={clinicalScores} trajectory={trajectory} />
@@ -1328,7 +1333,7 @@ const UserHealthRiskAssessment = () => {
                 <div className="flex gap-2">
                   <Button 
                     onClick={handleSaveAssessment}
-                    disabled={completionPct === 0 || submitting}
+                    disabled={completionPct < 100 || submitting}
                     className="flex-1 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 text-white shadow-lg shadow-teal-500/20"
                   >
                     {submitting ? (
@@ -1480,7 +1485,7 @@ const UserHealthRiskAssessment = () => {
             )}
 
             {/* Risk Insights */}
-            {!loading && totalScore > 0 && (
+            {!loading && completionPct === 100 && totalScore > 0 && (
               <Card className="border-amber-200/50">
                 <CardHeader>
                   <CardTitle className="text-lg flex items-center gap-2">

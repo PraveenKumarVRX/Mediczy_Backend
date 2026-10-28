@@ -156,7 +156,7 @@ class AIHealthServices {
    */
   async getMyRiskScore(): Promise<{ success: boolean; score: HealthRiskScore | null; message?: string }> {
     try {
-      const { data } = await api.get('/v3/ai-intelligence/risk-score/me');
+      const { data } = await api.get('/v3/ai-intelligence/risk-score/me', { timeout: 12000 });
       return data;
     } catch (error: any) {
       console.error('[AIHealth] Risk score fetch failed:', error.message);
@@ -180,7 +180,7 @@ class AIHealthServices {
       if (options?.limit) params.set('limit', String(options.limit));
       if (options?.status) params.set('status', options.status);
       
-      const { data } = await api.get(`/v3/ai-intelligence/notifications/smart?${params}`);
+      const { data } = await api.get(`/v3/ai-intelligence/notifications/smart?${params}`, { timeout: 12000 });
       return data;
     } catch (error: any) {
       console.error('[AIHealth] Smart notifications fetch failed:', error.message);
@@ -303,7 +303,7 @@ class AIHealthServices {
    */
   async getHealthIntelligence(): Promise<{ success: boolean; data?: HealthIntelligenceData }> {
     try {
-      const { data } = await api.get('/health-intelligence');
+      const { data } = await api.get('/health-intelligence', { timeout: 12000 });
       return data;
     } catch (error: any) {
       console.error('[AIHealth] Health intelligence fetch failed:', error.message);
@@ -327,8 +327,8 @@ class AIHealthServices {
   ): Promise<AIBrainResponse> {
     try {
       const { data } = await api.post('/v3/ai-brain/think', {
-        query,
-        ...options
+        message: query,
+        conversationId: options?.sessionId || null
       });
       return data;
     } catch (error: any) {

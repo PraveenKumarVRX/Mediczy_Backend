@@ -45,3 +45,9 @@ describe('daily health score data-quality guard', () => {
     expect(result.score).toBeGreaterThanOrEqual(0);
   });
 });
+
+  it('does not infer adherence from a prescription or isolated medication event', () => {
+    expect(computeDailyScore({ medication_doses_prescribed: 2 }, profile, '2026-10-27').dataQuality.observedDomains).not.toContain('medication');
+    expect(computeDailyScore({ medication_doses_taken: 1 }, profile, '2026-10-27').dataQuality.observedDomains).not.toContain('medication');
+    expect(computeDailyScore({ medication_doses_prescribed: 2, medication_doses_taken: 1 }, profile, '2026-10-27').dataQuality.observedDomains).toContain('medication');
+  });

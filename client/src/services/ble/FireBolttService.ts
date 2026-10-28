@@ -32,7 +32,10 @@ export interface FireBolttHealthData {
 
 type DataCallback = (data: FireBolttHealthData) => void;
 
-class FireBolttService {
+export class FireBolttService {
+  getConnectedDeviceId(): string | null {
+    return this.server?.connected ? this.server.device.id : null;
+  }
   private server: BluetoothRemoteGATTServer | null = null;
   private writeChar: BluetoothRemoteGATTCharacteristic | null = null;
   private notifyChar: BluetoothRemoteGATTCharacteristic | null = null;

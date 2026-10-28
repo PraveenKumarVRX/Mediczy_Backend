@@ -18,6 +18,11 @@ type locationProp = {
 };
 interface profileProps {
   _id?: string;
+  id?: string | number;
+  name?: string;
+  profileImage?: string;
+  bloodGroup?: string;
+  phone?: string;
   firstName: string;
   lastName: string;
   email: string;

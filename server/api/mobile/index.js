@@ -1,3 +1,5 @@
+import { createAppointment as createCanonicalAppointment } from '../../controller/appointment.controller.js';
+import { rlsContextMiddleware } from '../../middleware/rls-context.middleware.js';
 /**
  * Mobile API Gateway
  * Dedicated gateway for mobile applications (iOS/Android)
@@ -2869,198 +2871,18 @@ router.get('/appointments', authenticate(), asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
-  const { doctorId, appointmentDate, appointmentTime: rawAppointmentTime, type, symptoms, notes } = req.body;
-  const appointmentTime = canonicalizeAppointmentTime(rawAppointmentTime);
-  
-  if (!doctorId || !appointmentDate || !appointmentTime) {
-    return res.status(400).json({
-      success: false,
-      error: { code: 'MISSING_FIELDS', message: 'doctorId, appointmentDate, and appointmentTime are required' }
-    });
-  }
-
-  const doctorIdRaw = String(doctorId).trim();
-  const isNumericDoctorId = /^\d+$/.test(doctorIdRaw);
-  const isPublicDoctorId = /^D[A-Z0-9]{5}$/i.test(doctorIdRaw);
-
-  if (!isNumericDoctorId && !isPublicDoctorId) {
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid doctorId. Use numeric ID (e.g., 70) or public ID (e.g., D2C193).',
-      error: {
-        code: 'INVALID_DOCTOR_ID',
-        message: 'Invalid doctorId. Use numeric ID (e.g., 70) or public ID (e.g., D2C193).'
-      }
-    });
-  }
-
-  const doctorLookupPromise = db.query(`
-    SELECT id,
-           prefix,
-           "firstName" AS first_name,
-           "lastName" AS last_name,
-           specialization,
-           "profileImage" AS avatar_url,
-           COALESCE("consultationFees", "onlineConsultationFee", "inPersonConsultationFee") AS consultation_fee
-    FROM doctors
-    WHERE ${isNumericDoctorId ? 'id = $1' : 'unique_id = $1'}
-  `, [isNumericDoctorId ? parseInt(doctorIdRaw, 10) : doctorIdRaw.toUpperCase()]);
-
-  const userLookupPromise = db.query(`
-    SELECT id,
-           "firstName" AS first_name,
-           "lastName" AS last_name,
-           email,
-           "phoneNumber" AS phone
-    FROM users
-    WHERE id = $1
-  `, [req.userId]);
-
-  const patientConflictResult = await checkPatientConflict(req.userId, appointmentDate, appointmentTime);
-
-  const [doctorResult, userResult] = await Promise.all([
-    doctorLookupPromise,
-    userLookupPromise,
-  ]);
-
-  if (doctorResult.rows.length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'DOCTOR_NOT_FOUND', message: 'Doctor not found' }
-    });
-  }
-
-  const resolvedDoctorId = doctorResult.rows[0].id;
-
-  if (userResult.rows.length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'USER_NOT_FOUND', message: 'User not found' }
-    });
-  }
-
-  if (patientConflictResult.conflict) {
-    return res.status(409).json({
-      success: false,
-      message: 'You already have an appointment at this time. Please choose a different slot.',
-      error: {
-        code: 'PATIENT_TIME_CONFLICT',
-        message: 'You already have an appointment at this time. Please choose a different slot.'
-      },
-      conflict: {
-        type: 'patient_busy',
-        appointmentId: patientConflictResult.existingAppointment?.id
-      }
-    });
-  }
-
-  const doctorConflictResult = await checkDoctorConflict(
-    resolvedDoctorId,
-    appointmentDate,
-    appointmentTime
-  );
-  
-  if (doctorConflictResult.conflict) {
-    return res.status(409).json({
-      success: false,
-      message: 'This time slot is no longer available. Please select a different slot.',
-      error: { code: 'SLOT_UNAVAILABLE', message: 'This time slot is no longer available. Please select a different slot.' },
-      conflict: {
-        type: 'doctor_busy'
-      }
-    });
-  }
-
-  const doctor = doctorResult.rows[0];
-  const patient = userResult.rows[0];
-  const patientName = [patient.first_name, patient.last_name].filter(Boolean).join(' ') || 'Patient';
-  const doctorName = [doctor.prefix, doctor.first_name, doctor.last_name].filter(Boolean).join(' ');
-  const appointmentDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
-  const appointmentDateTimeValue = Number.isNaN(appointmentDateTime.getTime())
-    ? null
-    : appointmentDateTime;
-  const normalizedType = String(type || 'online').toLowerCase();
-  const consultationType = ['in-person', 'inperson', 'walk-in', 'walkin', 'clinic'].includes(normalizedType)
-    ? 'in-person'
-    : 'online';
-  const symptomList = normalizeSymptoms(symptoms);
-
-  // Create appointment
-  const result = await db.query(`
-    INSERT INTO appointments (
-      "userId",
-      "patientName",
-      "patientEmail",
-      "patientPhone",
-      "doctorId",
-      "doctorName",
-      specialization,
-      "appointmentDate",
-      "appointmentTime",
-      "appointmentDateTime",
-      "consultationType",
-      symptoms,
-      notes,
-      status,
-      "createdAt",
-      "updatedAt"
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
-    RETURNING id,
-              "appointmentDate" AS appointment_date,
-              "appointmentTime" AS appointment_time,
-              "consultationType" AS type,
-              status,
-              "doctorId" AS doctor_id,
-              "doctorName" AS doctor_name,
-              specialization,
-              "patientName" AS patient_name,
-              "patientPhone" AS patient_phone
-  `, [
-    req.userId,
-    patientName,
-    patient.email,
-    patient.phone,
-    resolvedDoctorId,
-    doctorName,
-    doctor.specialization,
-    appointmentDate,
-    appointmentTime,
-    appointmentDateTimeValue,
-    consultationType,
-    symptomList,
-    notes || null,
-    'pending'
-  ]);
-  
-  const bookedAppointment = result.rows[0];
-  notifyCareTeamOfBooking({
-    appointment: {
-      id: bookedAppointment.id,
-      patientName,
-      patientEmail: patient.email,
-      patientPhone: patient.phone,
-      doctorName,
-      specialization: doctor.specialization,
-      appointmentDate,
-      appointmentTime,
-      consultationType,
-      symptoms: symptomList,
-      notes: notes || null,
-      status: 'pending'
-    },
-    bookingSource: 'mobile'
-  });
-
-  res.status(201).json({
-    success: true,
-    message: 'Appointment booked successfully',
-    data: {
-      ...result.rows[0],
-      doctor_avatar: doctor.avatar_url || null,
-      doctor_specialty: doctor.specialization
+router.post('/appointments', authenticate({ allowedRoles: ['user', 'patient', 'employee'] }), rlsContextMiddleware, asyncHandler(async (req, res) => {
+  req.user.id = req.userId;
+  const originalJson = res.json.bind(res);
+  res.json = body => {
+    if (body?.success && body.data) {
+      const a = body.data;
+      body.data = { ...a, appointment_date: a.appointmentDate, appointment_time: a.appointmentTime, type: a.consultationType === 'in-person' ? 'in-person' : 'online', doctor_id: a.doctorId, doctor_name: a.doctorName, doctor_specialty: a.specialization, patient_name: a.patientName, patient_phone: a.patientPhone };
     }
-  });
+    return originalJson(body);
+  };
+  req.body.consultationType = ['in-person', 'inperson', 'walk-in', 'walkin', 'clinic'].includes(String(req.body.type || '').toLowerCase()) ? 'in-person' : 'video';
+  return createCanonicalAppointment(req, res);
 }));
 
 router.put('/appointments/:id/cancel', authenticate(), asyncHandler(async (req, res) => {

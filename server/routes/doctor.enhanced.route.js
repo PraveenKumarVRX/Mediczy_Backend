@@ -2343,7 +2343,7 @@ router.post('/smart-route', async (req, res) => {
 
     const rawDoctors = await Doctor.findAll({
       where,
-      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'isAvailable', 'profileImage'],
+      attributes: ['id', 'firstName', 'lastName', 'specialization', 'consultationFees', 'profileImage'],
       order: [['consultationFees', 'ASC'], ['firstName', 'ASC']],
       limit: Math.min(20, Math.max(1, Number.parseInt(limit, 10) || 10)),
     });
@@ -2353,7 +2353,7 @@ router.post('/smart-route', async (req, res) => {
       name: `${d.firstName} ${d.lastName}`.trim(),
       specialization: d.specialization,
       consultationFees: d.consultationFees,
-      availableToday: d.isAvailable !== false,
+      availableToday: false,
       profileImage: d.profileImage || null,
       profilePicture: d.profileImage || null,
       recommendedReason: targetSpecialty

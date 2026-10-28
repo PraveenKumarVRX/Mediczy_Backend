@@ -28,7 +28,7 @@ interface PharmacyOrder {
   orderNumber?: string;
   orderDate: string;
   status: 'pending' | 'confirmed' | 'processing' | 'out_for_delivery' | 'delivered' | 'completed' | 'cancelled';
-  items: { name: string; quantity: number; price: number }[];
+  items: { name: string; quantity: number; price: number; unit?: string; packSize?: string; packPrice?: number }[];
   totalAmount: number;
   deliveryAddress: string;
   estimatedDelivery?: string;
@@ -295,7 +295,7 @@ const Pharmacy = () => {
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0) { toast.error('Add at least one medicine'); return; }
-    if (!deliveryAddr.trim()) { toast.error('Enter a delivery address'); return; }
+    if (deliveryAddr.trim().length < 15 || !/\b[1-9]\d{5}\b/.test(deliveryAddr) || !/[a-zA-Z]{3}/.test(deliveryAddr)) { toast.error('Enter your full street address, city and six-digit pincode'); return; }
     try {
       setPlacingOrder(true);
       const { data } = await api.post('/billing/orders', {
@@ -458,7 +458,7 @@ const Pharmacy = () => {
                             <div key={item.id} className="flex items-center gap-3 px-3 py-2.5">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium dark:text-white truncate">{item.name}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{(item.price / parsePackSize(item.packSize).qty).toFixed(2)} / {parsePackSize(item.packSize).unit}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">Pack: ₹{item.price.toFixed(2)} ({item.packSize || "pack size not specified"}) · ₹{(item.price / parsePackSize(item.packSize).qty).toFixed(2)} / {parsePackSize(item.packSize).unit}</p>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <Button
@@ -514,9 +514,9 @@ const Pharmacy = () => {
 
                     {/* ── Delivery Address ── */}
                     <div className="space-y-2">
-                      <Label className="dark:text-slate-300">Delivery Address</Label>
+                      <Label className="dark:text-slate-300">Delivery Address (including city and pincode) *</Label>
                       <Input
-                        placeholder="Enter delivery address"
+                        placeholder="House, street, city, six-digit pincode"
                         className="dark:bg-slate-800 dark:border-slate-600"
                         value={deliveryAddr}
                         onChange={(e) => setDeliveryAddr(e.target.value)}
@@ -570,7 +570,7 @@ const Pharmacy = () => {
           { label: 'Total Orders', value: stats.totalOrders, icon: BoxIcon, color: '#475569', iconBg: 'bg-slate-100 dark:bg-slate-700', gradient: 'from-slate-600 to-slate-800' },
           { label: 'Active', value: stats.activeOrders, icon: Truck, color: '#3b82f6', iconBg: 'bg-blue-100 dark:bg-blue-900/40', gradient: 'from-blue-500 to-indigo-600' },
           { label: 'Delivered', value: stats.deliveredOrders, icon: CheckCircle, color: '#10b981', iconBg: 'bg-emerald-100 dark:bg-emerald-900/40', gradient: 'from-emerald-500 to-teal-600' },
-          { label: 'Total Spent', value: `₹${stats.totalSpent.toFixed(0)}`, icon: IndianRupee, color: '#a855f7', iconBg: 'bg-purple-100 dark:bg-purple-900/40', gradient: 'from-purple-500 to-pink-500' },
+          { label: 'Paid for medicines', value: `₹${stats.totalSpent.toFixed(0)}`, icon: IndianRupee, color: '#a855f7', iconBg: 'bg-purple-100 dark:bg-purple-900/40', gradient: 'from-purple-500 to-pink-500' },
         ].map((stat) => (
           <motion.div key={stat.label} whileHover={{ scale: 1.03, y: -3 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
             <Card className="dark:bg-slate-800/60 dark:border-slate-700/60 border-slate-200/80 hover:shadow-xl transition-all duration-300 h-full">
@@ -732,7 +732,7 @@ const Pharmacy = () => {
                         {order.items.slice(0, 3).map((item, i) => (
                           <span key={i} className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
                             <Pill className="h-3 w-3 text-emerald-500" />
-                            {item.name} × {item.quantity}
+                            {item.name} × {item.quantity} {item.unit || "units"}
                           </span>
                         ))}
                         {order.items.length > 3 && (

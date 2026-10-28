@@ -1,3 +1,4 @@
+import { reportTitle } from '@/utils/patient-display';
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -107,13 +108,28 @@ const MyPrescriptions = () => {
 
   // Fetch patient prescriptions
   const { data: prescriptions = [], isLoading } = useQuery({
-    queryKey: ["myPrescriptions", currentUser?._id],
+    queryKey: ["myPrescriptions", currentUser?.id || currentUser?._id],
     queryFn: async () => {
       const { data } = await api.get("/prescriptions/patient");
       return (data as any).prescriptions || data || [];
     },
-    enabled: !!currentUser?._id,
+    enabled: !!(currentUser?.id || currentUser?._id),
   });
+
+  const { data: uploadedPrescriptions = [] } = useQuery({
+    queryKey: ['uploaded-prescriptions', currentUser?.id || currentUser?._id],
+    queryFn: async () => {
+      const { data } = await api.get('/reports', { params: { reportType: 'prescription', limit: 100 } });
+      const reports = Array.isArray(data.data) ? data.data : data.reports || [];
+      return reports.filter((report: any) => report.reportType === 'prescription');
+    }, enabled: !!(currentUser?.id || currentUser?._id),
+  });
+  const openUploadedPrescription = async (id: string | number) => {
+    try {
+      const response = await api.get(`/reports/download/${id}`, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data); window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch { toast({ title: 'Could not open prescription document', variant: 'destructive' }); }
+  };
 
   const handleDownloadPDF = async (id: number, prescriptionNumber?: string) => {
     try {
@@ -298,6 +314,7 @@ const MyPrescriptions = () => {
           </div>
         </div>
 
+        {uploadedPrescriptions.length > 0 && <Card><CardHeader><CardTitle>Uploaded prescription documents ({uploadedPrescriptions.length})</CardTitle></CardHeader><CardContent><p className="mb-3 text-sm text-muted-foreground">These are the same prescription uploads shown in My Reports. Doctor-issued prescriptions appear below.</p><div className="space-y-2">{uploadedPrescriptions.map((report: any) => <Button key={report.id} variant="outline" onClick={() => openUploadedPrescription(report.id)}>{reportTitle(report.testName || report.fileName, 'Prescription')} · View document</Button>)}</div></CardContent></Card>}
         {/* Prescriptions List */}
         <Card>
           <CardContent className="p-0">

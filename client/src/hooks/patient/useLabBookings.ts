@@ -13,7 +13,7 @@ export interface LabTest {
   category: string;
   orderedBy: string;
   orderDate: string;
-  status: 'pending' | 'pending_confirmation' | 'confirmed' | 'sample_collected' | 'processing' | 'completed' | 'cancelled';
+  status: 'pending' | 'booked' | 'no_show' | 'rescheduled' | 'pending_confirmation' | 'confirmed' | 'sample_collected' | 'processing' | 'completed' | 'cancelled';
   sampleCollected: boolean;
   results?: string;
   reportUrl?: string;
@@ -46,7 +46,14 @@ export function useLabBookings() {
     try {
       setIsLoading(true);
       const res = await api.get('/lab-tests', { params: { limit: 100 } });
-      const arr = res.data?.labTests || res.data?.data || [];
+      const arr = [...(res.data?.labTests || res.data?.data || [])];
+      let more = res.data?.pagination?.hasMore;
+      while (more) {
+        const next = await api.get('/lab-tests', { params: { limit: 100, skip: arr.length } });
+        const rows = next.data?.labTests || next.data?.data || [];
+        if (!rows.length) break;
+        arr.push(...rows); more = next.data?.pagination?.hasMore;
+      }
       if (res.data?.success) {
         setTests(arr.map((lt: any): LabTest => ({
           id:             lt.id.toString(),
@@ -61,7 +68,7 @@ export function useLabBookings() {
           reportUrl:      lt.reportUrl,
           estimatedDate:  lt.expectedCompletionDate?.split('T')[0],
           hospitalId:     lt.hospitalId,
-          labName:        lt.labName,
+          labName:        lt.labName || lt.metadata?.labName,
           labAddress:     lt.labAddress,
           urgency:        lt.urgency,
           notes:          lt.notes,
@@ -80,5 +87,5 @@ export function useLabBookings() {
     return matchStatus && matchSearch;
   });
 
-  return { tests: filtered, allTests: tests, isLoading, filterStatus, setFilterStatus, searchTerm, setSearchTerm, refresh: fetch };
+  return { tests, filteredTests: filtered, allTests: tests, isLoading, filterStatus, setFilterStatus, searchTerm, setSearchTerm, refresh: fetch };
 }

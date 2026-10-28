@@ -1,4 +1,5 @@
 import { sendPreferenceReminders } from './appointment-preference-reminders.service.js';
+import { followUpUnconfirmedCare } from './patient-care-followup.service.js';
 import cron from 'node-cron';
 import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
@@ -31,6 +32,11 @@ class AppointmentReminderService {
     cron.schedule('* * * * *', async () => {
       if (!(await beginJob('appt_reminder'))) return;
       await this.checkAndSendReminders();
+    });
+    cron.schedule('*/15 * * * *', async () => {
+      if (!(await beginJob('patient_care_followup'))) return;
+      try { tick('patient_care_followup', await followUpUnconfirmedCare()); }
+      catch (error) { tickError('patient_care_followup', error.message); }
     });
 
     console.log('✅ Appointment reminder automation started (checks every minute)');

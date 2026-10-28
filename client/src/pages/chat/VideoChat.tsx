@@ -456,6 +456,7 @@ const Chat = () => {
             </CardHeader>
             <CardContent className="p-0">
               <ScrollArea className="h-[calc(100vh-280px)]">
+                {availableUsers.length === 0 && <div className="p-4 text-sm text-muted-foreground"><p>No doctors are available for chat right now.</p><a className="underline" href="/doctors">Find a doctor or book an appointment</a></div>}
                 {/* Show available conversations */}
                 {conversations.length > 0 && (
                   <div className="mb-4">
