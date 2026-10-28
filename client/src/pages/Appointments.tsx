@@ -108,6 +108,14 @@ const extractRoomId = (meetingLink?: string) => {
 
 const appointmentInstant = (appointment: Appointment) => new Date(`${String(appointment.date).slice(0, 10)}T${String(appointment.time).slice(0, 5)}:00+05:30`).getTime();
 const appointmentIsPast = (appointment: Appointment) => appointmentInstant(appointment) + (appointment.estimatedDuration || 30) * 60000 < Date.now();
+// Mirrors the server's canCancelOrReschedule (appointment.controller.js) so the
+// buttons are disabled proactively instead of only failing after the click -
+// the server remains the real authority, this just avoids a confusing round trip.
+const CANCEL_WINDOW_HOURS = 2;
+const canCancelOrReschedule = (appointment: Appointment) => {
+  if (['completed', 'cancelled', 'no-show', 'no_show'].includes(appointment.status)) return false;
+  return appointmentInstant(appointment) - Date.now() >= CANCEL_WINDOW_HOURS * 60 * 60000;
+};
 
 const isExternalMeetingLink = (meetingLink?: string) => {
   if (!meetingLink) return false;
@@ -1062,24 +1070,34 @@ const Appointments = () => {
                               )}
                             </div>
                           )}
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-[#00FFF3]/30 text-[#00FFF3]"
-                            disabled={actionLoadingId === appointment.id}
-                            onClick={() => handleRescheduleAppointment(appointment)}
-                          >
-                            Reschedule
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="border-red-500/30 text-red-500"
-                            disabled={actionLoadingId === appointment.id}
-                            onClick={() => handleCancelAppointment(appointment)}
-                          >
-                            Cancel
-                          </Button>
+                          {canCancelOrReschedule(appointment) ? (
+                            <>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-[#00FFF3]/30 text-[#00FFF3]"
+                                disabled={actionLoadingId === appointment.id}
+                                onClick={() => handleRescheduleAppointment(appointment)}
+                              >
+                                Reschedule
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="border-red-500/30 text-red-500"
+                                disabled={actionLoadingId === appointment.id}
+                                onClick={() => handleCancelAppointment(appointment)}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <p className="text-[11px] text-slate-400">
+                              {appointmentIsPast(appointment)
+                                ? 'This appointment has passed and can no longer be changed.'
+                                : `Too close to the appointment time to reschedule or cancel (within ${CANCEL_WINDOW_HOURS}h). Contact support if you need changes.`}
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>

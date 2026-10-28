@@ -127,6 +127,22 @@ router.get('/latest', auth, async (req, res) => {
       uricAcid: latestMetrics.uricAcid || null,
       totalCholesterol: latestMetrics.totalCholesterol || null,
       timestamp: latestTimestamp,
+      // Units were computed per metric (latestUnits) but never surfaced -
+      // every value above was returned bare, with no way for a client to
+      // know mg/dL from mmol/L. This caused a clinically risky unit mixup
+      // on blood glucose/uric acid in particular (95 mg/dL displayed with
+      // the wrong unit label reads as a dangerously different value).
+      units: {
+        heartRate: latestUnits.heartRate || 'bpm',
+        sleepHours: latestUnits.sleepHours || 'hours',
+        bloodPressure: latestUnits.bloodPressure || 'mmHg',
+        spo2: latestUnits.spo2 || '%',
+        temperature: latestUnits.temperature || null,
+        bloodGlucose: latestUnits.bloodGlucose || null,
+        hrv: latestUnits.hrv || 'ms',
+        uricAcid: latestUnits.uricAcid || null,
+        totalCholesterol: latestUnits.totalCholesterol || null,
+      },
     };
 
     // Include advanced metrics if requested

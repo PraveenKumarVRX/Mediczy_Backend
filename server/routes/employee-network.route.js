@@ -105,6 +105,28 @@ async function getUserCorporate(userId) {
   return assigned || null;
 }
 
+// A corporate association isn't the only path to real insurance - an
+// individually-purchased plan (e.g. Silver+, Silver Pro, Silver Elite) can
+// carry genuine claimable cover too. Plan tiers disagree on the flag's name
+// (`features.insuranceAccess.enabled` vs `features.healthInsurance`), so
+// check both rather than picking one and silently excluding the other's
+// subscribers.
+async function hasClaimableInsurance(userId) {
+  const [row] = await postgresSequelize.query(
+    `SELECT 1 FROM user_plans up
+       JOIN membership_plans mp ON mp.id = up."membershipPlanId"
+      WHERE up."userId" = :userId AND up.status = 'active'
+        AND (up."endDate" IS NULL OR up."endDate" >= NOW())
+        AND (
+          COALESCE((mp.features->'insuranceAccess'->>'enabled')::boolean, false)
+          OR COALESCE((mp.features->>'healthInsurance')::boolean, false)
+        )
+      LIMIT 1`,
+    { replacements: { userId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+  return !!row;
+}
+
 /**
  * GET /api/employee/my-corporate
  * Returns info about the corporate this employee belongs to.
@@ -531,17 +553,20 @@ router.get('/claims/eligibility', authUser, async (req, res) => {
   try {
     const corp = await getUserCorporate(req.user.id);
     const [plan] = await postgresSequelize.query(`SELECT id FROM user_plans WHERE "userId" = :userId AND status = 'active' AND ("endDate" IS NULL OR "endDate" >= NOW()) LIMIT 1`, { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT });
-    res.json({ success: true, eligible: !!corp && !!plan, reason: corp && plan ? null : 'Claim filing requires an active employer benefit plan. Contact support to verify your eligibility.' });
+    const hasInsurance = await hasClaimableInsurance(req.user.id);
+    const eligible = (!!corp && !!plan) || hasInsurance;
+    res.json({ success: true, eligible, reason: eligible ? null : 'Your current plan does not include insurance claims. Upgrade to a plan with insurance cover, or contact support if this looks wrong.' });
   } catch (error) { res.status(503).json({ success: false, eligible: false, reason: 'Could not verify eligibility. Please try again.' }); }
 });
 
 router.post('/claims', authUser, async (req, res) => {
   try {
     const corp = await getUserCorporate(req.user.id);
-    if (!corp) {
+    const hasInsurance = !corp && await hasClaimableInsurance(req.user.id);
+    if (!corp && !hasInsurance) {
       return res.status(403).json({
         success: false,
-        message: 'Claims filing is available only for corporate employees'
+        message: 'Your current plan does not include insurance claims'
       });
     }
 
@@ -558,7 +583,7 @@ router.post('/claims', authUser, async (req, res) => {
 
     if (!['Cashless', 'Reimbursement'].includes(claimType) || !String(hospital || '').trim() || !toISODate(date)) return res.status(400).json({ success: false, message: 'Provider, treatment date and claim type are required.' });
     const [activePlan] = await postgresSequelize.query(`SELECT id FROM user_plans WHERE "userId" = :userId AND status = 'active' AND ("endDate" IS NULL OR "endDate" >= NOW()) LIMIT 1`, { replacements: { userId: req.user.id }, type: postgresSequelize.QueryTypes.SELECT });
-    if (!activePlan) return res.status(403).json({ success: false, message: 'An active employer benefit plan is required.' });
+    if (!activePlan) return res.status(403).json({ success: false, message: 'An active benefit plan with insurance cover is required.' });
     const member = memberId === 'self' ? await User.findByPk(req.user.id) : await FamilyMember.findOne({ where: { id: Number(memberId) || 0, userId: req.user.id } });
     if (!member) return res.status(400).json({ success: false, message: 'Choose a member from your own family list.' });
     const memberName = [member.firstName, member.lastName].filter(Boolean).join(' ');
