@@ -9,6 +9,8 @@
  */
 
 import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { createCorporateCheckupOrder, withCorporateBookingContext } from '../services/corporate-health-checkup-booking.service.js';
 import multer from 'multer';
 import nodemailer from 'nodemailer';
 import { authUser } from '../middleware/auth.middleware.js';
@@ -522,34 +524,14 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
     if (!employee) {
       return res.status(404).json({ success: false, message: 'Employee not found' });
     }
-    if (!(await assertEmployeeInCorporate(employeeId, corporateId))) {
-      return res.status(403).json({ success: false, message: "Employee is not assigned to this corporate" });
-    }
-
-
-    // ── 2. Generate unique order number ───────────────────────────
-    const orderNumber = `CHK-${corporateId}-${Date.now()}`;
-
-    // ── 3. Insert into lab_orders ─────────────────────────────────
-    const [insertResult] = await postgresSequelize.query(
-      `INSERT INTO lab_orders
-         (order_number, patient_id, test_type, test_category, status, notes, organization_id, created_at, updated_at)
-       VALUES
-         (:orderNumber, :patientId, :testType, 'corporate_health_checkup', 'pending', :notes, :orgId, NOW(), NOW())
-       RETURNING id, order_number`,
-      {
-        replacements: {
-          orderNumber,
-          patientId: parseInt(employeeId),
-          testType: testPackage,
-          notes: `Corp Health Checkup | Lab: ${labName} (ID:${labId}) | Date: ${checkupDate} ${checkupTime || ''} | ${notes} | Booked by team: ${req.user.email}`,
-          orgId: parseInt(corporateId)
-        },
-        type: postgresSequelize.QueryTypes.INSERT
-      }
-    );
-
-    const bookingId = insertResult?.[0]?.id || insertResult?.id || orderNumber;
+    const resolvedCorporateId=req.resolvedCorporate.id;
+    const orderNumber = `CHK-${resolvedCorporateId}-${Date.now()}-${randomUUID().slice(0,8)}`;
+    const order=await createCorporateCheckupOrder({
+      corporateId:resolvedCorporateId, employeeId, labId, bookedByUserId:req.user.id,
+      orderNumber, testPackage,
+      notes:`Corp Health Checkup | Lab: ${labName} (ID:${labId}) | Date: ${checkupDate} ${checkupTime || ''} | ${notes} | Booked by team: ${req.user.email}`
+    });
+    const bookingId=order.id;
     const employeeFullName = `${employee.firstName} ${employee.lastName}`.trim();
     const displayDate = new Date(checkupDate).toLocaleDateString('en-IN', {
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
@@ -659,7 +641,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, requireCorporateAcc
     });
   } catch (err) {
     console.error('[corporate-bookings] POST /health-checkup error:', err);
-    return res.status(500).json({ success: false, message: err.message });
+    return res.status(err.status || 500).json({ success: false, message: err.status ? err.message : 'Unable to book health checkup. Please try again.' });
   }
 });
 
@@ -673,44 +655,48 @@ router.get('/history', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const bookings = await postgresSequelize.query(
-      `SELECT
-         lo.id,
-         lo.order_number,
-         lo.test_type,
-         lo.status,
-         lo.notes,
-         lo.created_at,
-         u.id AS employee_id,
-         u."firstName",
-         u."lastName",
-         u.email,
-         u."phoneNumber"
-       FROM lab_orders lo
-       JOIN users u ON u.id = lo.patient_id
-       WHERE lo.test_category = 'corporate_health_checkup'
-         AND lo.organization_id = :corporateId
-       ORDER BY lo.created_at DESC
-       LIMIT :limit OFFSET :offset`,
-      {
-        replacements: {
-          corporateId: parseInt(corporateId),
-          limit: parseInt(limit),
-          offset
-        },
-        type: postgresSequelize.QueryTypes.SELECT
-      }
-    );
+    const {bookings,countRow}=await withCorporateBookingContext({corporateId:req.resolvedCorporate.id,bookedByUserId:req.user.id},async transaction=>{
+      const bookings = await postgresSequelize.query(
+        `SELECT
+           lo.id,
+           lo.order_number,
+           lo.test_type,
+           lo.status,
+           lo.notes,
+           lo.created_at,
+           u.id AS employee_id,
+           u."firstName",
+           u."lastName",
+           u.email,
+           u."phoneNumber"
+         FROM lab_orders lo
+         JOIN users u ON u.id = lo.patient_id
+         WHERE lo.test_category = 'corporate_health_checkup'
+           AND lo.organization_id = :corporateId
+         ORDER BY lo.created_at DESC
+         LIMIT :limit OFFSET :offset`,
+        {
+          replacements: {
+            corporateId: req.resolvedCorporate.id,
+            limit: parseInt(limit),
+            offset
+          },
+          transaction, type: postgresSequelize.QueryTypes.SELECT
+        }
+      );
 
-    const [countRow] = await postgresSequelize.query(
-      `SELECT COUNT(*) AS total FROM lab_orders
-       WHERE test_category = 'corporate_health_checkup'
-         AND organization_id = :corporateId`,
-      {
-        replacements: { corporateId: parseInt(corporateId) },
-        type: postgresSequelize.QueryTypes.SELECT
-      }
-    );
+      const [countRow] = await postgresSequelize.query(
+        `SELECT COUNT(*) AS total FROM lab_orders
+         WHERE test_category = 'corporate_health_checkup'
+           AND organization_id = :corporateId`,
+        {
+          replacements: { corporateId: req.resolvedCorporate.id },
+          transaction, type: postgresSequelize.QueryTypes.SELECT
+        }
+      );
+
+      return {bookings,countRow};
+    });
 
     return res.json({
       success: true,
