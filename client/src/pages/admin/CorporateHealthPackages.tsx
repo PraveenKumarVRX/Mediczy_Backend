@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import MainLayout from '@/components/layout/MainLayout';
+import { useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -41,6 +43,9 @@ interface HealthCheckupPackage {
   currentEnrolled: number;
   status: string;
   createdAt: string;
+  eligibleRelations?: string[];
+  venueMode?: string;
+  venues?: {partnerId: number; partnerType: string; relation: string}[];
 }
 
 interface Employee {
@@ -62,7 +67,10 @@ const CorporateHealthPackages = () => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const token = localStorage.getItem('adminToken');
+  const isTeamPortal = useLocation().pathname.startsWith('/team/');
+  const Layout = isTeamPortal ? MainLayout : AdminLayout;
+  const token = isTeamPortal ? localStorage.getItem('teamToken') : localStorage.getItem('adminToken');
+  const [venues, setVenues] = useState<{partnerId:number;partnerType:string;name:string}[]>([]);
 
   // Packages state
   const [packages, setPackages] = useState<HealthCheckupPackage[]>([]);
@@ -96,7 +104,8 @@ const CorporateHealthPackages = () => {
     validityPeriod: '1 Year',
     costPerEmployee: '',
     maxEmployees: '',
-    status: 'Active'
+    status: 'Active',
+    eligibleRelations: ['self'] as string[], venueMode: 'inherit', venues: [] as {partnerId:number;partnerType:string;relation:string}[]
   });
 
   useEffect(() => {
@@ -107,6 +116,14 @@ const CorporateHealthPackages = () => {
   useEffect(() => {
     filterPackages();
   }, [searchTerm, selectedStatus, selectedCorporate, packages]);
+
+  useEffect(() => {
+    let current = true;
+    setVenues([]);
+    if (newPackage.corporateId) api.get(`/admin/health-packages/corporates/${newPackage.corporateId}/venues`, {headers: token ? {Authorization:`Bearer ${token}`} : undefined})
+      .then(r => {if(current) setVenues(r.data.data || []);}).catch(() => {if(current) setError('Unable to load network venues');});
+    return () => {current = false;};
+  }, [newPackage.corporateId, token]);
 
   const fetchCorporates = async () => {
     try {
@@ -139,16 +156,18 @@ const CorporateHealthPackages = () => {
     }
   };
 
-  const fetchEmployees = async (corporateId: string) => {
+  const fetchEmployees = async (corporateId: string, packageId: string) => {
     try {
       setLoading(true);
       const { data } = await api.get(`/admin/corporate-employees/${corporateId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
+      const assignments = await api.get(`/admin/health-packages/${packageId}/assignments`, {headers:token ? {Authorization:`Bearer ${token}`} : undefined});
+      const enrolled = new Set((assignments.data.data || []).filter((a:any) => a.status?.toLowerCase()==='active').map((a:any) => String(a.userId)));
       setEmployees((data.employees || []).filter((e: any) => e.id && e.hasAssociation && String(e.status).toLowerCase() === 'active').map((e: any) => ({
         id:String(e.id),employeeId:e.user_employee_id || e.corporate_employee_id || '',
         name:[e.firstName,e.lastName].filter(Boolean).join(' '),email:e.email || '',
-        department:e.department_name || '',designation:e.metadata?.designation || '',isEligible:true,enrolledPackages:[],
+        department:e.department_name || '',designation:e.metadata?.designation || '',isEligible:true,enrolledPackages:enrolled.has(String(e.id)) ? [packageId] : [],
       })));
     } catch (err: any) {
       setEmployees([]);
@@ -196,7 +215,8 @@ const CorporateHealthPackages = () => {
       validityPeriod: pkg.validityPeriod,
       costPerEmployee: pkg.costPerEmployee.toString(),
       maxEmployees: pkg.maxEmployees.toString(),
-      status: pkg.status
+      status: pkg.status,
+      eligibleRelations: pkg.eligibleRelations || ['self'], venueMode: pkg.venueMode || 'inherit', venues: pkg.venues || []
     });
     setActiveTab('create');
   };
@@ -220,7 +240,7 @@ const CorporateHealthPackages = () => {
 
   const handleTagEmployees = (pkg: HealthCheckupPackage) => {
     setTaggingPackage(pkg);
-    fetchEmployees(pkg.corporateId);
+    fetchEmployees(pkg.corporateId,pkg.id);
     setSelectedEmployees([]);
     setIsTagEmployeesDialogOpen(true);
   };
@@ -250,6 +270,7 @@ const CorporateHealthPackages = () => {
 
   const handleSubmitPackage = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!newPackage.eligibleRelations.length || (newPackage.venueMode === 'restricted' && !newPackage.venues.length)) {setError('Select covered relations and at least one venue for restricted packages'); return;}
     try {
       setLoading(true);
       setError(null);
@@ -294,7 +315,8 @@ const CorporateHealthPackages = () => {
       validityPeriod: '1 Year',
       costPerEmployee: '',
       maxEmployees: '',
-      status: 'Active'
+      status: 'Active',
+    eligibleRelations: ['self'] as string[], venueMode: 'inherit', venues: [] as {partnerId:number;partnerType:string;relation:string}[]
     });
     setEditingPackage(null);
   };
@@ -327,7 +349,7 @@ const CorporateHealthPackages = () => {
   );
 
   return (
-    <AdminLayout>
+    <Layout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -481,7 +503,7 @@ const CorporateHealthPackages = () => {
                                   <Heart className="h-4 w-4 text-red-500" />
                                 </div>
                                 <div>
-                                  <div className="font-medium">{pkg.packageName}</div>
+                                  <div className="font-medium">{pkg.packageName}</div><p className="text-xs text-muted-foreground">Covers: {(pkg.eligibleRelations || ['self']).join(', ').replace(/_/g,' ')} · {pkg.venueMode === 'restricted' ? 'Selected venues' : 'Corporate network'}</p>
                                   <div className="text-sm text-muted-foreground line-clamp-2">{pkg.description}</div>
                                   <div className="text-xs text-muted-foreground mt-1">ID: {pkg.id}</div>
                                 </div>
@@ -597,12 +619,26 @@ const CorporateHealthPackages = () => {
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleSubmitPackage} className="space-y-6">
+                  <fieldset className="space-y-3 rounded border p-4">
+                    <legend>Covered family members</legend>
+                    <p className="text-sm text-muted-foreground">Select each covered relation. Leave Employee unchecked for dependent-only packages.</p>
+                    {['self','spouse','child','parent','parent_in_law','sibling'].map(relation => <label key={relation} className="mr-4 inline-flex items-center gap-2"><Checkbox checked={newPackage.eligibleRelations.includes(relation)} onCheckedChange={checked => setNewPackage(p => ({...p,eligibleRelations:checked ? [...p.eligibleRelations,relation] : p.eligibleRelations.filter(r => r!==relation)}))} />{relation === 'self' ? 'Employee' : relation.replace(/_/g,' ')}</label>)}
+                  </fieldset>
+                  <fieldset className="space-y-3 rounded border p-4">
+                    <legend>Diagnostic venues</legend>
+                    <select aria-label="Venue policy" value={newPackage.venueMode} onChange={e => setNewPackage(p => ({...p,venueMode:e.target.value,venues:[]}))}>
+                      <option value="inherit">Inherit corporate network</option><option value="restricted">Only selected venues and relations</option>
+                    </select>
+                    <p className="text-sm text-muted-foreground">Inherited packages use the corporate network. Restricted packages require a venue for each relation that can book.</p>
+                    {newPackage.venueMode === 'restricted' && (venues.length ? venues.map(v => <div key={`${v.partnerType}:${v.partnerId}`}><strong>{v.name}</strong><div className="flex flex-wrap gap-3">{newPackage.eligibleRelations.map(relation => <label key={relation} className="inline-flex items-center gap-2"><Checkbox checked={newPackage.venues.some(x => x.partnerType===v.partnerType && Number(x.partnerId)===Number(v.partnerId) && (x.relation===relation || x.relation==='all'))} onCheckedChange={checked => setNewPackage(p => ({...p,venues:checked ? [...p.venues,{partnerId:v.partnerId,partnerType:v.partnerType,relation}] : p.venues.filter(x => !(x.partnerType===v.partnerType && Number(x.partnerId)===Number(v.partnerId) && (x.relation===relation || x.relation==='all')))}))} />{relation.replace(/_/g,' ')}</label>)}</div></div>) : <p>No diagnostic centres are assigned to this corporate network.</p>)}
+                  </fieldset>
+
                   <div className="grid md:grid-cols-2 gap-4">
                     <div>
                       <Label>Corporate *</Label>
                       <Select 
-                        value={newPackage.corporateId} 
-                        onValueChange={(val) => setNewPackage({...newPackage, corporateId: val})}
+                        value={newPackage.corporateId} disabled={Boolean(editingPackage)}
+                        onValueChange={(val) => setNewPackage({...newPackage, corporateId: val, venues: []})}
                         required
                       >
                         <SelectTrigger className="bg-background text-foreground">
@@ -921,7 +957,7 @@ const CorporateHealthPackages = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </AdminLayout>
+    </Layout>
   );
 };
 

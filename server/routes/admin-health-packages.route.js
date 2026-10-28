@@ -1,15 +1,24 @@
 import express from 'express';
+import { HEALTH_CHECKUP_VENUES_SQL } from '../services/health-checkup-venues.js';
+import { eligibleRelations, validRelations, BENEFICIARY_RELATIONS } from '../services/health-package-policy.js';
 import crypto from 'node:crypto';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { postgresSequelize as db } from '../db/postgres-sequelize.js';
 const router = express.Router();
-router.use(authUser, requireRole('admin'));
-const select = `SELECT p.*, c."companyName" AS "corporateName",
+router.use(authUser, requireRole(['admin', 'team']), (req, res, next) => {
+    if (req.user?.isAdmin || ['admin','system_admin','super_admin'].includes(req.userRole || req.user?.role)) return next();
+    let metadata = req.user?.metadata || {};
+    if (typeof metadata === 'string') { try { metadata = JSON.parse(metadata); } catch { metadata = {}; } }
+    const permissions = [...(Array.isArray(metadata.permissions) ? metadata.permissions : []), ...(Array.isArray(req.user?.permissions) ? req.user.permissions : [])];
+    if (metadata.accessLevel === 'full' || permissions.some(p => ['corporate management','corporate management access','all access'].includes(String(p).trim().toLowerCase()))) return next();
+    return res.status(403).json({success:false,message:'Corporate Management permission required'});
+});
+const select = `SELECT p.*, COALESCE((SELECT jsonb_agg(jsonb_build_object('partnerId',v.partner_id,'partnerType',v.partner_type,'relation',v.relation)) FROM health_package_venues v WHERE v.package_id=p.id),'[]'::jsonb) AS venues, c."companyName" AS "corporateName",
   (SELECT COUNT(*)::int FROM user_health_packages u WHERE u."packageId"=p.id::text AND u.corporate_id=c.id AND LOWER(u.status)='active') AS enrolled
   FROM corporate_health_package_catalog p JOIN corporates c ON c.id::text=p.metadata->>'corporateId'
   WHERE p.metadata->>'kind'='health_checkup'`;
 const view = p => ({ id: String(p.id), corporateId: String(p.metadata.corporateId), corporateName: p.corporateName,
-    packageName: p.name, description: p.description || '', tests: p.features?.tests || [], frequency: p.metadata.frequency,
+    eligibleRelations: eligibleRelations(p.metadata), venues: p.venues || [], venueMode: p.metadata.venueMode || 'inherit', packageName: p.name, description: p.description || '', tests: p.features?.tests || [], frequency: p.metadata.frequency,
     validityPeriod: p.metadata.validityPeriod, costPerEmployee: Number(p.price), maxEmployees: Number(p.max_users || 0),
     currentEnrolled: p.enrolled || 0, status: p.metadata.status || (p.is_active ? 'Active' : 'Inactive'), createdAt: p.created_at });
 const query = (sql, replacements = {}, transaction) => db.query(sql, { replacements, transaction, type: db.QueryTypes.SELECT });
@@ -20,6 +29,13 @@ router.get('/', async (req, res) => { try {
 catch (e) {
     return fail(res, e);
 } });
+router.get('/corporates/:corporateId/venues', async (req,res) => {
+    if (!/^\d+$/.test(req.params.corporateId)) return res.status(400).json({success:false,message:'Invalid corporate'});
+    try { const venues = await query(`SELECT l.partner_id AS "partnerId", l.partner_type AS "partnerType", l.name FROM ${HEALTH_CHECKUP_VENUES_SQL} l JOIN corporate_network_assignments n ON n.partner_id=l.partner_id AND n.partner_type=l.partner_type WHERE n.corporate_id=:corporateId AND LOWER(COALESCE(l.status,'active'))='active' ORDER BY l.name`,req.params); return res.json({success:true,data:venues}); } catch(e) {return fail(res,e);}
+});
+router.get('/:id/assignments', async (req,res) => {
+    try {const rows=await query(`SELECT u."userId",u.status,u."validFrom",u."validTo",u."usedAt" FROM user_health_packages u JOIN corporate_health_package_catalog p ON p.id=u."packageId" AND p.corporate_id=u.corporate_id WHERE p.id=:id`,req.params);return res.json({success:true,data:rows});} catch(e){return fail(res,e);}
+});
 router.get('/:id', async (req, res) => { if (!/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id))
     return res.status(404).json({ success: false, message: 'Package not found' }); try {
     const [p] = await query(`${select} AND p.id=:id`, req.params);
@@ -32,15 +48,27 @@ async function save(req, res) {
     const b = req.body || {}, price = Number(b.costPerEmployee), capacity = Number(b.maxEmployees);
     if (!/^\d+$/.test(String(b.corporateId)) || !String(b.packageName || '').trim() || String(b.packageName).trim().length > 255 || !Array.isArray(b.tests) || !b.tests.length || b.tests.some(t => typeof t !== 'string' || !t.trim()) || !Number.isFinite(price) || price < 0 || !Number.isInteger(capacity) || capacity < 1 || !['Active', 'Inactive', 'Draft', 'Expired'].includes(b.status) || !['Annual', 'Bi-Annual', 'Quarterly', 'Monthly'].includes(b.frequency) || !['1 Year', '2 Years', '3 Years', 'Lifetime'].includes(b.validityPeriod))
         return res.status(400).json({ success: false, message: 'Provide a corporate, package name, tests, valid status, frequency, validity, nonnegative cost and positive employee capacity' });
+    if ((b.eligibleRelations !== undefined && !validRelations(b.eligibleRelations)) || (b.venueMode !== undefined && !['inherit','restricted'].includes(b.venueMode)) || (b.venues !== undefined && (!Array.isArray(b.venues) || b.venues.some(v => !/^\d+$/.test(String(v.partnerId)) || !['lab','hospital'].includes(v.partnerType) || !['all',...BENEFICIARY_RELATIONS].includes(v.relation))))) return res.status(400).json({success:false,message:'Provide valid eligible relations and network venues'});
+    if (b.venueMode === 'restricted' && !b.venues?.length) return res.status(400).json({success:false,message:'Select at least one venue for restricted packages'});
     if (req.params.id && !/^[A-Za-z0-9_-]{1,150}$/.test(req.params.id))
         return res.status(404).json({ success: false, message: 'Package not found' });
     try {
         const [corporate] = await query('SELECT id FROM corporates WHERE id=:id', { id: b.corporateId });
         if (!corporate)
             return res.status(404).json({ success: false, message: 'Corporate not found' });
-        const metadata = JSON.stringify({ kind: 'health_checkup', corporateId: String(corporate.id), frequency: b.frequency, validityPeriod: b.validityPeriod, status: b.status });
+        const metadata = JSON.stringify({ kind: 'health_checkup', corporateId: String(corporate.id), frequency: b.frequency, validityPeriod: b.validityPeriod, status: b.status, eligibleRelations: b.eligibleRelations || ['self'], venueMode: b.venueMode || 'inherit' });
         const replacements = { id: req.params.id, corporateId: corporate.id, name: b.packageName.trim(), description: String(b.description || ''), price, capacity, active: b.status === 'Active', features: JSON.stringify({ tests: b.tests, price, description: String(b.description || '') }), metadata, slug: `hc-${crypto.randomUUID()}` };
         const result = await db.transaction(async (transaction) => {
+            async function saveVenues(id) {
+                if (b.venues === undefined) return;
+                for (const v of b.venues) {
+                    const [network] = await query(`SELECT partner_id FROM corporate_network_assignments WHERE corporate_id=:corporateId AND partner_type=:partnerType AND partner_id=:partnerId FOR SHARE`, {corporateId:corporate.id,partnerId:Number(v.partnerId),partnerType:v.partnerType}, transaction);
+                    if (!network) throw Object.assign(new Error('Every venue must belong to the corporate network'),{validation:true});
+                }
+                await query('DELETE FROM health_package_venues WHERE package_id=:id RETURNING package_id',{id},transaction);
+                for (const v of b.venues) await query(`INSERT INTO health_package_venues (package_id,partner_id,partner_type,relation) VALUES (:id,:partnerId,:partnerType,:relation) ON CONFLICT DO NOTHING RETURNING package_id`,{id,partnerId:Number(v.partnerId),partnerType:v.partnerType,relation:v.relation},transaction);
+            }
+
             if (req.params.id) {
                 const [old] = await query(`${select} AND p.id=:id FOR UPDATE OF p`, { id: req.params.id }, transaction);
                 if (!old)
@@ -49,12 +77,15 @@ async function save(req, res) {
                     throw Object.assign(new Error('A package cannot be moved to another corporate'), { validation: true });
                 if (old.enrolled > capacity)
                     throw Object.assign(new Error('Capacity cannot be less than current enrollment'), { validation: true });
+                replacements.metadata = JSON.stringify({...old.metadata,...JSON.parse(metadata),eligibleRelations:b.eligibleRelations ?? eligibleRelations(old.metadata),venueMode:b.venueMode ?? old.metadata.venueMode ?? 'inherit'});
                 const [p] = await query(`UPDATE corporate_health_package_catalog SET name=:name,description=:description,price=:price,max_users=:capacity,is_active=:active,features=:features,metadata=:metadata,updated_at=NOW() WHERE id=:id RETURNING *`, replacements, transaction);
                 await query(`UPDATE user_health_packages SET "packageName"=:name,"packageDetails"=:features,status=CASE WHEN :active THEN 'active' ELSE 'inactive' END,"updatedAt"=NOW() WHERE "packageId"=:id AND corporate_id=:corporateId RETURNING id`, { ...replacements, id: String(p.id), corporateId: corporate.id }, transaction);
-                return p;
+                await saveVenues(p.id);
+                return {...p,venues:b.venues};
             }
             const [p] = await query(`INSERT INTO corporate_health_package_catalog (id,corporate_id,name,slug,type,description,price,max_users,is_active,features,metadata,created_at,updated_at) VALUES (:slug,:corporateId,:name,:slug,'CORPORATE',:description,:price,:capacity,:active,:features,:metadata,NOW(),NOW()) RETURNING *`, replacements, transaction);
-            return p;
+            await saveVenues(p.id);
+            return {...p,venues:b.venues};
         });
         return result ? res.status(req.params.id ? 200 : 201).json({ success: true, data: view(result) }) : res.status(404).json({ success: false, message: 'Package not found' });
     }
@@ -84,6 +115,16 @@ router.post('/:id/tag-employees', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Select linked employee accounts' });
     try {
         const result = await db.transaction(async (transaction) => {
+            async function saveVenues(id) {
+                if (b.venues === undefined) return;
+                for (const v of b.venues) {
+                    const [network] = await query(`SELECT partner_id FROM corporate_network_assignments WHERE corporate_id=:corporateId AND partner_type=:partnerType AND partner_id=:partnerId FOR SHARE`, {corporateId:corporate.id,partnerId:Number(v.partnerId),partnerType:v.partnerType}, transaction);
+                    if (!network) throw Object.assign(new Error('Every venue must belong to the corporate network'),{validation:true});
+                }
+                await query('DELETE FROM health_package_venues WHERE package_id=:id RETURNING package_id',{id},transaction);
+                for (const v of b.venues) await query(`INSERT INTO health_package_venues (package_id,partner_id,partner_type,relation) VALUES (:id,:partnerId,:partnerType,:relation) ON CONFLICT DO NOTHING RETURNING package_id`,{id,partnerId:Number(v.partnerId),partnerType:v.partnerType,relation:v.relation},transaction);
+            }
+
             const [p] = await query(`${select} AND p.id=:id FOR UPDATE OF p`, req.params, transaction);
             if (!p || !p.is_active)
                 throw Object.assign(new Error('Active package not found'), { status: 404 });

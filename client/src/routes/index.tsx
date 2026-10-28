@@ -1499,6 +1499,7 @@ const AppRoutes = () => {
           element={<TeamGuard permission="Doctor Management"><TeamDoctorManagement /></TeamGuard>} />
         <Route path="/team/corporate-management"
           element={<TeamGuard permission="Corporate Management"><TeamCorporateManagement /></TeamGuard>} />
+        <Route path="/team/corporate-health-packages" element={<TeamGuard permission="Corporate Management"><CorporateHealthPackages /></TeamGuard>} />
         <Route path="/team/corporate-health-booking"
           element={<TeamGuard permission="Corporate Management"><CorporateHealthBooking /></TeamGuard>} />
         <Route path="/team/hospital-management"
