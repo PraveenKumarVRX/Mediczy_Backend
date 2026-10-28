@@ -2538,7 +2538,7 @@ const Index = () => {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-sm font-medium text-slate-400">Add New Device</h4>
-                <Link to="/patient/devices?tab=devices" className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1">
+                <Link to="/patient/device-integration" className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1">
                   View all <ArrowRight className="w-3 h-3" />
                 </Link>
               </div>
