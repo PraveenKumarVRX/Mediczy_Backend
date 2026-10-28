@@ -12,6 +12,7 @@
  *  - Feeds extracted lab values into HRA scoring
  */
 
+import {getCorporateReportClient,readCorporateReportFile} from './corporate-report-storage-client.js';
 import { downloadDecryptedReport } from './minio-upload.service.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import Report from '../models/postgres/report.model.postgres.js';
@@ -179,13 +180,14 @@ export async function analyzeReport(reportId, userId, options = {}) {
     // Decrypt from MinIO
     const meta = report.metadata || {};
     const enc = meta.encryption || {};
-    const { buffer } = await downloadDecryptedReport({
+    const { buffer } = meta.storageBackend==='corporate_minio'&&!enc.iv ? {buffer:await readCorporateReportFile(report.filePath,meta.bucket)} : await downloadDecryptedReport({
       key: report.filePath,
       bucket: meta.bucket,
       iv: enc.iv,
       authTag: enc.authTag,
       compressionMethod: meta.compressionMethod,
       mimeType: report.mimeType,
+      client:meta.storageBackend==='corporate_minio'?getCorporateReportClient():undefined,
     });
 
     // Extract text or prepare vision input

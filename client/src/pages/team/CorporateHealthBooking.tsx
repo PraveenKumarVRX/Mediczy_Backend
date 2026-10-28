@@ -348,6 +348,7 @@ export default function CorporateHealthBooking() {
     if (rptFiles.length === 0) { toast({ variant: 'destructive', title: 'File required', description: 'Please select at least one PDF or image file.' }); return; }
     if (!rptName || !rptDate) { toast({ variant: 'destructive', title: 'Report name & date required' }); return; }
 
+    if(rptFiles.length>10||rptFiles.some(f=>f.size>25*1024*1024)||rptFiles.reduce((total,f)=>total+f.size,0)>50*1024*1024){toast({variant:'destructive',title:'Report size limit',description:'Select up to 10 files, each no more than 25 MB and 50 MB combined.'});return;}
     const formData = new FormData();
     rptFiles.forEach(f => formData.append('reports', f));
     formData.append('employeeId', String(rptEmployee.id));
@@ -363,6 +364,7 @@ export default function CorporateHealthBooking() {
     setRptUploading(true);
     try {
       const r = await api.post('/corporate-bookings/reports/upload', formData, {
+        timeout:180000,
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       const empName = `${rptEmployee.firstName} ${rptEmployee.lastName}`;
@@ -370,7 +372,7 @@ export default function CorporateHealthBooking() {
       setRptSuccess({ reportName: rptName, employeeName: empName, reportUrl: r.data.report.reportUrl });
       const notif = r.data.notifications as { email: string; whatsapp: string };
       const sent = [notif.email === 'sent' && '📧 Email', notif.whatsapp === 'sent' && '📱 WhatsApp'].filter(Boolean).join(' & ');
-      toast({ title: `✅ ${uploadedCount} Report${uploadedCount > 1 ? 's' : ''} Uploaded!`, description: `Sent to ${empName} via ${sent || 'system'}.` });
+      toast({ title: `✅ ${uploadedCount} Report${uploadedCount > 1 ? 's' : ''} Uploaded!`, description: `Saved for ${empName}. ${sent?`Notifications sent via ${sent}.`:'No notifications sent.'}` });
       // Reset form
       setRptEmployee(null); setRptEmployeeSearch('');
       setRptName(''); setRptDate(''); setRptNotes(''); setRptFiles([]);
@@ -388,10 +390,11 @@ export default function CorporateHealthBooking() {
   const handleShareReport = async (reportId: number) => {
     setSharingId(reportId);
     try {
-      await api.post(`/corporate-bookings/reports/${reportId}/share`, {
-        sendEmail: true, sendWhatsapp: true, corporateName: corporate?.companyName || 'Corporate'
+      const {data}=await api.post(`/corporate-bookings/reports/${reportId}/share`, {
+        sendEmail: true, sendWhatsapp: true, corporateId:corporate?.id, corporateName: corporate?.companyName || 'Corporate'
       });
-      toast({ title: '📤 Notification Sent', description: 'Email & WhatsApp resent to employee.' });
+      const sent=[data.notifications?.email==='sent'&&'Email',data.notifications?.whatsapp==='sent'&&'WhatsApp'].filter(Boolean);
+      toast({title:sent.length?'Notification sent':'Notification not sent',description:sent.length?`Sent via ${sent.join(' and ')}.`:'Check the employee contact details and retry.',variant:sent.length?'default':'destructive'});
       fetchReports();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Share failed';
@@ -1500,7 +1503,7 @@ export default function CorporateHealthBooking() {
                 ) : (
                   <div className="space-y-3">
                     {reports.map(rpt => (
-                      <div key={rpt.id} className="flex items-start gap-3 p-4 bg-accent/30 rounded-lg border">
+                      <div key={`${rpt.source||'manual'}-${rpt.id}`} className="flex items-start gap-3 p-4 bg-accent/30 rounded-lg border">
                         <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center shrink-0 mt-0.5">
                           <FileText className="h-4 w-4 text-emerald-600" />
                         </div>
@@ -1539,7 +1542,8 @@ export default function CorporateHealthBooking() {
                             size="sm"
                             variant="outline"
                             className="h-7 text-xs flex items-center gap-1.5"
-                            disabled={sharingId === rpt.id}
+                            disabled={sharingId === rpt.id||rpt.source==='email'}
+                            title={rpt.source==='email'?'Resend is available for Team-uploaded reports':undefined}
                             onClick={() => handleShareReport(rpt.id)}
                           >
                             {sharingId === rpt.id

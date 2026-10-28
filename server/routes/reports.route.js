@@ -5,6 +5,7 @@
  */
 
 import express from 'express';
+import {corporateReportDownloadUrl,getCorporateReportClient,corporateStoredFileUrl} from '../services/corporate-report-storage-client.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import multer from 'multer';
 import path from 'path';
@@ -20,6 +21,12 @@ import healthDiaryService from '../services/health-diary.service.js';
 import { analyzeReport } from '../services/report-analysis.service.js';
 
 const router = express.Router();
+async function withCorporateReportLink(report){
+  const row=typeof report.toJSON==='function'?report.toJSON():{...report};
+  if(row.metadata?.storageBackend==='corporate_minio'&&!row.metadata?.encryption?.iv)row.fileUrl=await corporateReportDownloadUrl(row.filePath,row.metadata.bucket);
+  return row;
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Configure multer for file upload — memory storage (file goes to MinIO)
@@ -86,7 +93,7 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     }
 
     // Compress + encrypt + upload to MinIO
-    // If MinIO is unavailable, fall back to local storage so uploads do not fail hard.
+    // New reports stay in object storage; storage/scanner failures are retryable errors. Legacy local downloads remain supported.
     let result;
     let storageWarning = null;
     try {
@@ -95,32 +102,11 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
         originalName: req.file.originalname,
         mimeType: req.file.mimetype,
         keyPrefix: `uploads/reports/${userId}`,
+        ...(process.env.PACS_ARCHIVE_MINIO_ENDPOINT?{bucket:process.env.MEDICAL_REPORTS_MINIO_BUCKET||process.env.PACS_ARCHIVE_MINIO_BUCKET,client:getCorporateReportClient(),buildUrl:corporateStoredFileUrl}:{}),
       });
     } catch (storageError) {
-      const uploadDir = path.join(__dirname, '../../uploads/reports');
-      await fsPromises.mkdir(uploadDir, { recursive: true });
-
-      const safeName = (req.file.originalname || 'report')
-        .replace(/[^a-zA-Z0-9._-]/g, '_')
-        .slice(0, 100);
-      const fallbackFileName = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}`;
-      const fallbackPath = path.join(uploadDir, fallbackFileName);
-      await fsPromises.writeFile(fallbackPath, req.file.buffer);
-
-      console.error('⚠️ MinIO upload failed, switched to local fallback:', storageError.message);
-
-      storageWarning = 'Primary object storage unavailable. Saved to local fallback storage.';
-      result = {
-        key: fallbackFileName,
-        url: null,
-        bucket: null,
-        encryption: null,
-        compressionMethod: 'none',
-        storedMimeType: req.file.mimetype,
-        originalSize: req.file.size,
-        compressedSize: req.file.size,
-        size: req.file.size,
-      };
+      if(['MALWARE_DETECTED','AV_SCAN_UNAVAILABLE'].includes(storageError.code))throw storageError;
+      throw Object.assign(new Error('Report storage is temporarily unavailable. Please retry.'),{status:503,code:'REPORT_STORAGE_UNAVAILABLE',cause:storageError});
     }
 
     const savedReport = await Report.create({
@@ -148,6 +134,7 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
         compressedSize: result.compressedSize,
         encryptedSize: result.size,
         bucket: result.bucket,
+        storageBackend:result.bucket&&process.env.PACS_ARCHIVE_MINIO_ENDPOINT?'corporate_minio':undefined,
         fallbackStorage: !result.bucket,
         storageWarning,
       }
@@ -240,6 +227,7 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       });
     }
 
+    if(error.code==='AV_SCAN_UNAVAILABLE'||error.code==='REPORT_STORAGE_UNAVAILABLE')return res.status(503).json({success:false,code:error.code,message:error.message});
     return res.status(500).json({
       success: false,
       message: 'Failed to upload report',
@@ -291,7 +279,7 @@ router.get('/', authUser, async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Reports retrieved successfully',
-      data: reports,
+      data: await Promise.all(reports.map(withCorporateReportLink)),
       pagination: {
         total,
         skip: parseInt(skip),
@@ -335,7 +323,7 @@ router.get('/:id', authUser, async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Report retrieved successfully',
-      data: report
+      data: await withCorporateReportLink(report)
     });
   } catch (error) {
     console.error('❌ Get report error:', error);
@@ -432,6 +420,8 @@ router.get('/download/:id', authUser, async (req, res) => {
 
     const meta = report.metadata || {};
 
+    if(meta.storageBackend==='corporate_minio'&&!meta.encryption?.iv)return res.redirect(await corporateReportDownloadUrl(report.filePath,meta.bucket));
+
     // Encrypted report — decrypt and stream
     if (meta.encryption && meta.encryption.iv) {
       const { buffer, mimeType } = await downloadDecryptedReport({
@@ -441,6 +431,7 @@ router.get('/download/:id', authUser, async (req, res) => {
         authTag: meta.encryption.authTag,
         compressionMethod: meta.compressionMethod,
         mimeType: meta.storedMimeType || report.mimeType,
+        client:meta.storageBackend==='corporate_minio'?getCorporateReportClient():undefined,
       });
 
       res.setHeader('Content-Type', mimeType);

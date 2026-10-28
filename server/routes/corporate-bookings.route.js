@@ -17,8 +17,8 @@ import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from '../services/emailService.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
-import { uploadToMinio } from '../services/minio-upload.service.js';
-import { ensureCorporateHealthReportsBucket } from '../services/corporate-storage.service.js';
+import { saveCorporateHealthReports } from '../services/corporate-health-reports.service.js';
+import { corporateReportDownloadUrl } from '../services/corporate-report-storage-client.js';
 import { requireCorporateAccess } from '../middleware/corporateTenant.js';
 import { computeReportSla } from '../services/corporate-wellness-mis.service.js';
 
@@ -81,32 +81,10 @@ function requireTeamOrAdmin(req, res, next) {
   return next();
 }
 
-async function assertCorporateAccessForId(req, res, corporateId) {
-  const role = req.user?.isAdmin ? 'admin' : req.user?.isTeam ? 'team' : req.user?.role;
-  const isAdmin = req.user?.isAdmin === true || role === 'admin' || role === 'super_admin';
-  if (isAdmin) return true;
-
-  const isTeam = req.user?.isTeam === true || ['team', 'team_member', 'team_lead'].includes(role);
-  if (!isTeam) {
-    res.status(403).json({ success: false, message: 'Team or admin access required' });
-    return false;
-  }
-
-  const [row] = await postgresSequelize.query(
-    `SELECT 1 FROM user_associations
-     WHERE "userId" = :userId
-       AND "entityType" = 'corporate'
-       AND "entityId" = :corporateId
-       AND status = 'active'
-     LIMIT 1`,
-    { replacements: { userId: req.user.id, corporateId: parseInt(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
-  );
-
-  if (!row) {
-    res.status(403).json({ success: false, message: 'Access denied – you are not assigned to this corporate' });
-    return false;
-  }
-  return true;
+async function assertCorporateAccessForId(req,res,corporateId){
+  let allowed=false;
+  await requireCorporateAccess({...req,params:{corporateId}},res,()=>{allowed=true;});
+  return allowed;
 }
 
 // ──────────────────────────────────────────────
@@ -724,7 +702,10 @@ router.post(
   '/reports/upload',
   authUser,
   requireTeamOrAdmin,
-  reportUpload.array('reports', 10),        // up to 10 files per request
+  (req,res,next)=>reportUpload.array('reports',10)(req,res,error=>{
+    if(!error)return next();
+    return res.status(error.code==='LIMIT_FILE_SIZE'?413:400).json({success:false,message:error.code==='LIMIT_FILE_SIZE'?'Each report must be 25 MB or smaller':error.code==='LIMIT_UNEXPECTED_FILE'?'Upload at most 10 reports':error.message});
+  }),
   requireCorporateAccess,
   async (req, res) => {
     const {
@@ -759,7 +740,7 @@ router.post(
         { replacements: { empId: parseInt(employeeId) }, type: postgresSequelize.QueryTypes.SELECT }
       );
       if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
-      if (!(await assertEmployeeInCorporate(employeeId, corporateId))) {
+      if (!(await assertEmployeeInCorporate(employeeId, req.resolvedCorporate.id))) {
         return res.status(403).json({ success: false, message: "Employee is not assigned to this corporate" });
       }
 
@@ -773,124 +754,16 @@ router.post(
       const deliveredAt = new Date();
       const sla = computeReportSla(checkupCompletedAt, deliveredAt);
 
-      // ── 1b. Dedicated MinIO bucket for this corporate ──────
-      // Isolates each corporate's employee health documents into their own
-      // bucket rather than a shared bucket with only a key-prefix boundary
-      // — same pattern already running in production for imaging tenants.
-      // Idempotent (HeadBucket-then-create), so this is safe to run on
-      // every upload rather than only on corporate creation.
-      const { bucket: corpBucket } = await ensureCorporateHealthReportsBucket(corporateId);
-
-      // ── 2. Upload each file to MinIO and insert DB row ─────
-      const uploadedReports = [];
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        // Use filename-based name when multiple files are uploaded
-        const fileBaseName = file.originalname.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
-        const perFileReportName = files.length === 1
-          ? reportName
-          : `${reportName} — ${fileBaseName}`;
-
-        const { url: reportUrl, key: s3Key } = await uploadToMinio({
-          buffer: file.buffer,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          keyPrefix: `health-reports/corp-${corporateId}/emp-${employeeId}`,
-          bucket: corpBucket,
-        });
-
-        const [dbRow] = await postgresSequelize.query(
-          `INSERT INTO corporate_health_reports
-             (corporate_id, employee_id, lab_order_id, report_name, report_type, report_date,
-              s3_key, report_url, file_size_bytes, mime_type, notes, uploaded_by,
-              checkup_type, checkup_completed_at, report_due_at, report_delivered_at, sla_status,
-              created_at, updated_at)
-           VALUES
-             (:corporateId, :employeeId, :labOrderId, :reportName, :reportType, :reportDate,
-              :s3Key, :reportUrl, :fileSize, :mimeType, :notes, :uploadedBy,
-              :checkupType, :checkupCompletedAt, :reportDueAt, :reportDeliveredAt, :slaStatus,
-              NOW(), NOW())
-           RETURNING id, report_due_at, sla_status`,
-          {
-            replacements: {
-              corporateId: parseInt(corporateId),
-              employeeId: parseInt(employeeId),
-              labOrderId: labOrderId ? parseInt(labOrderId) : null,
-              reportName: perFileReportName,
-              reportType,
-              reportDate,
-              s3Key,
-              reportUrl,
-              fileSize: file.size,
-              mimeType: file.mimetype,
-              notes,
-              uploadedBy: req.user.id,
-              checkupType: reportType,
-              checkupCompletedAt,
-              reportDueAt: sla.dueAt,
-              reportDeliveredAt: deliveredAt,
-              slaStatus: sla.status
-            },
-            type: postgresSequelize.QueryTypes.INSERT
-          }
-        );
-        const reportId = dbRow?.[0]?.id || dbRow?.id;
-
-        const patientReportRows = await postgresSequelize.query(
-          `INSERT INTO reports
-             ("userId", organization_id, "fileName", "fileSize", "mimeType", "filePath", "fileUrl",
-              "reportType", description, "testName", "labName", "reportDate", status, "uploadedAt",
-              "analysisStatus", metadata, "createdAt", "updatedAt")
-           VALUES
-             (:userId, :organizationId, :fileName, :fileSize, :mimeType, :filePath, :fileUrl,
-              :patientReportType, :description, :testName, :labName, :reportDate, 'active', NOW(),
-              'pending', CAST(:metadata AS JSONB), NOW(), NOW())
-           RETURNING id`,
-          {
-            replacements: {
-              userId: parseInt(employeeId),
-              organizationId: employee.organization_id || null,
-              fileName: file.originalname,
-              fileSize: file.size,
-              mimeType: file.mimetype,
-              filePath: s3Key,
-              fileUrl: reportUrl,
-              patientReportType: mapCorporateReportTypeToPatientReportType(reportType, file.mimetype),
-              description: notes || `${reportLabel} uploaded by ${corporateName || 'corporate health team'}`,
-              testName: perFileReportName,
-              labName: corporateName || 'Corporate health check-up',
-              reportDate,
-              metadata: JSON.stringify({
-                source: 'team_corporate_health_upload',
-                corporateId: parseInt(corporateId),
-                corporateHealthReportId: reportId,
-                corporateReportType: reportType,
-                checkupType: reportType,
-                uploadedByTeamUserId: req.user.id,
-                labOrderId: labOrderId ? parseInt(labOrderId) : null,
-                bucket: corpBucket,
-                s3Key,
-              }),
-            },
-            type: postgresSequelize.QueryTypes.SELECT
-          }
-        );
-        const patientReportId = patientReportRows?.[0]?.id;
-
-        uploadedReports.push({
-          id: reportId,
-          patientReportId,
-          reportName: perFileReportName,
-          reportUrl,
-          mimeType: file.mimetype,
-          reportDueAt: (dbRow?.[0]?.report_due_at || sla.dueAt)?.toISOString?.() || dbRow?.[0]?.report_due_at || sla.dueAt,
-          slaStatus: dbRow?.[0]?.sla_status || sla.status
-        });
-      }
+      const savedReports=await saveCorporateHealthReports({
+        corporateId:req.resolvedCorporate.id,employeeId,uploadedBy:req.user.id,files,reportName,reportType,reportDate,
+        labOrderId:labOrderId?Number(labOrderId):null,notes,corporateName,reportLabel,checkupCompletedAt,deliveredAt,sla,
+        patientReportType:mime=>mapCorporateReportTypeToPatientReportType(reportType,mime)
+      });
+      const uploadedReports=await Promise.all(savedReports.map(async report=>({...report,reportUrl:await corporateReportDownloadUrl(report.key,report.bucket)})));
 
       // ── 3. Send one consolidated Email ────────────────────
       let emailStatus = 'skipped';
-      if (sendEmail !== 'false') {
+      if (sendEmail !== 'false' && sendEmail !== false) {
         if (isPlaceholderEmail(employee.email)) {
           emailStatus = 'skipped_placeholder';
         } else {
@@ -910,7 +783,7 @@ router.post(
             emailStatus = 'sent';
             const ids = uploadedReports.map(r => r.id);
             await postgresSequelize.query(
-              `UPDATE corporate_health_reports SET notified_email=TRUE, notified_at=NOW() WHERE id = ANY(:ids)`,
+              `UPDATE corporate_health_reports SET notified_email=TRUE, notified_at=NOW() WHERE id IN (:ids)`,
               { replacements: { ids }, type: postgresSequelize.QueryTypes.UPDATE }
             );
           } catch (e) {
@@ -922,7 +795,7 @@ router.post(
 
       // ── 4. Send one consolidated WhatsApp ─────────────────
       let waStatus = 'skipped';
-      if (sendWhatsapp !== 'false') {
+      if (sendWhatsapp !== 'false' && sendWhatsapp !== false) {
         const rawPhone = (employee.phoneNumber || '').replace(/\D/g, '');
         const phoneE164 = rawPhone.startsWith('91') ? `+${rawPhone}` : `+91${rawPhone}`;
         if (rawPhone.length >= 10) {
@@ -954,7 +827,7 @@ router.post(
             waStatus = 'sent';
             const ids = uploadedReports.map(r => r.id);
             await postgresSequelize.query(
-              `UPDATE corporate_health_reports SET notified_whatsapp=TRUE, notified_at=NOW() WHERE id = ANY(:ids)`,
+              `UPDATE corporate_health_reports SET notified_whatsapp=TRUE, notified_at=NOW() WHERE id IN (:ids)`,
               { replacements: { ids }, type: postgresSequelize.QueryTypes.UPDATE }
             );
           } catch (e) {
@@ -975,7 +848,7 @@ router.post(
       });
     } catch (err) {
       console.error('[corp-reports] upload error:', err);
-      return res.status(500).json({ success: false, message: err.message });
+      return res.status(err.status||err.statusCode||(err.code==='MALWARE_DETECTED'?400:500)).json({success:false,code:err.code||'REPORT_UPLOAD_FAILED',message:err.status||err.statusCode?err.message:err.code==='MALWARE_DETECTED'?'File rejected by antivirus scanning':'Report upload could not be completed. Please retry.'});
     }
   }
 );
@@ -1005,6 +878,9 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         chr.report_type,
         chr.report_date::timestamptz AS report_date,
         chr.report_url,
+        chr.s3_key AS storage_key,
+        pr.metadata->>'bucket' AS storage_bucket,
+        pr.metadata->>'storageBackend' AS storage_backend,
         chr.file_size_bytes,
         chr.mime_type,
         chr.notes,
@@ -1030,6 +906,7 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
       FROM corporate_health_reports chr
       JOIN users u ON u.id = chr.employee_id
       LEFT JOIN users up ON up.id = chr.uploaded_by
+      LEFT JOIN LATERAL (SELECT r.metadata FROM reports r WHERE r."userId"=chr.employee_id AND r.metadata->>'source'='team_corporate_health_upload' AND r.metadata->>'corporateHealthReportId'=chr.id::text LIMIT 1) pr ON true
       LEFT JOIN lab_orders lo ON lo.id = chr.lab_order_id
       WHERE chr.corporate_id = :corporateId
         ${empFilterChr}
@@ -1042,6 +919,9 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         r."reportType"::text AS report_type,
         r."reportDate"::timestamptz AS report_date,
         r."fileUrl" AS report_url,
+        r."filePath" AS storage_key,
+        r.metadata->>'bucket' AS storage_bucket,
+        r.metadata->>'storageBackend' AS storage_backend,
         r."fileSize" AS file_size_bytes,
         r."mimeType" AS mime_type,
         r.description AS notes,
@@ -1074,18 +954,19 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         ${empFilterRpt}
     `;
 
+    const {reports,countRow}=await withCorporateBookingContext({corporateId:req.resolvedCorporate.id,bookedByUserId:req.user.id},async transaction=>{
     const reports = await postgresSequelize.query(
       `SELECT * FROM (${unionQuery}) combined
        ORDER BY created_at DESC
        LIMIT :limit OFFSET :offset`,
       {
         replacements: {
-          corporateId: parseInt(corporateId),
+          corporateId: req.resolvedCorporate.id,
           ...(employeeId ? { employeeId: parseInt(employeeId) } : {}),
           limit: parseInt(limit),
           offset,
         },
-        type: postgresSequelize.QueryTypes.SELECT,
+        transaction, type: postgresSequelize.QueryTypes.SELECT,
       }
     );
 
@@ -1093,13 +974,16 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
       `SELECT COUNT(*) AS total FROM (${unionQuery}) combined`,
       {
         replacements: {
-          corporateId: parseInt(corporateId),
+          corporateId: req.resolvedCorporate.id,
           ...(employeeId ? { employeeId: parseInt(employeeId) } : {}),
         },
-        type: postgresSequelize.QueryTypes.SELECT,
+        transaction, type: postgresSequelize.QueryTypes.SELECT,
       }
     );
 
+    return {reports,countRow};
+    });
+    for(const report of reports)if(report.storage_backend==='corporate_minio')report.report_url=await corporateReportDownloadUrl(report.storage_key,report.storage_bucket);
     return res.json({ success: true, reports, total: parseInt(countRow?.total || 0) });
   } catch (err) {
     console.error('[corp-reports] list error:', err);
@@ -1117,16 +1001,18 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
     const { sendEmail = true, sendWhatsapp = true, corporateName = '' } = req.body;
 
     const [row] = await postgresSequelize.query(
-      `SELECT chr.*, u."firstName", u."lastName", u.email, u."phoneNumber"
+      `SELECT chr.*, pr.metadata AS storage_metadata, u."firstName", u."lastName", u.email, u."phoneNumber"
        FROM corporate_health_reports chr
        JOIN users u ON u.id = chr.employee_id
+       LEFT JOIN LATERAL (SELECT r.metadata FROM reports r WHERE r."userId"=chr.employee_id AND r.metadata->>'source'='team_corporate_health_upload' AND r.metadata->>'corporateHealthReportId'=chr.id::text LIMIT 1) pr ON true
        WHERE chr.id = :id LIMIT 1`,
       { replacements: { id: parseInt(id) }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
-    if (!row) return res.status(404).json({ success: false, message: 'Report not found' });
+    if (!row || (req.body.corporateId && Number(req.body.corporateId)!==row.corporate_id)) return res.status(404).json({ success: false, message: 'Report not found' });
     if (!(await assertCorporateAccessForId(req, res, row.corporate_id))) return;
 
+    if(row.storage_metadata?.storageBackend==='corporate_minio')row.report_url=await corporateReportDownloadUrl(row.s3_key,row.storage_metadata.bucket);
     const employeeFullName = `${row.firstName} ${row.lastName}`.trim();
     const displayDate = new Date(row.report_date).toLocaleDateString('en-IN', {
       day: 'numeric', month: 'long', year: 'numeric'
@@ -1136,7 +1022,7 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
     let emailStatus = 'skipped';
     let waStatus = 'skipped';
 
-    if (sendEmail) {
+    if (sendEmail!==false&&sendEmail!=='false') {
       if (isPlaceholderEmail(row.email)) {
         console.log(`ℹ️ [corp-reports] Share email skipped — placeholder address: ${row.email}`);
         emailStatus = 'skipped_placeholder';
@@ -1145,7 +1031,7 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
           const html = buildReportEmailHtml({
             employeeName: employeeFullName,
             corporateName,
-            reportName: row.report_name,
+            reports:[{reportName:row.report_name,reportUrl:row.report_url,mimeType:row.mime_type}],
             reportLabel,
             reportDate: displayDate,
             reportUrl: row.report_url,
@@ -1165,7 +1051,7 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
       }
     }
 
-    if (sendWhatsapp) {
+    if (sendWhatsapp!==false&&sendWhatsapp!=='false') {
       const rawPhone = (row.phoneNumber || '').replace(/\D/g, '');
       const phoneE164 = rawPhone.startsWith('91') ? `+${rawPhone}` : `+91${rawPhone}`;
       if (rawPhone.length >= 10) {

@@ -36,7 +36,7 @@ async function scanFile(bufferOrPath) {
     // If we got a buffer, write it to a temp file for clamdscan
     if (Buffer.isBuffer(bufferOrPath)) {
       tmpPath = `/tmp/av-scan-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-      await fs.writeFile(tmpPath, bufferOrPath);
+      await fs.writeFile(tmpPath, bufferOrPath, {mode:0o600});
     } else {
       tmpPath = null; // don't delete the caller's file
     }
@@ -90,7 +90,7 @@ async function scanFile(bufferOrPath) {
  * @param {string} [opts.bucket]     - Override bucket (default: S3_UPLOADS_BUCKET / web-uploads)
  * @returns {Promise<{ success: boolean, url: string, key: string, size: number, avResult: object }>}
  */
-export async function uploadToMinio({ buffer, filePath, originalName, mimeType, keyPrefix, bucket }) {
+export async function uploadToMinio({ buffer, filePath, originalName, mimeType, keyPrefix, bucket, client, buildUrl }) {
   // 1. Determine scan target — scan directly on disk when possible (avoids loading GB files into RAM)
   const scanTarget = buffer || filePath;
   if (!scanTarget) {
@@ -113,7 +113,7 @@ export async function uploadToMinio({ buffer, filePath, originalName, mimeType, 
 
   // 4. Upload to MinIO — stream from disk for large files, use buffer for small ones
   const resolvedBucket = bucket || getUploadsBucket() || 'web-uploads';
-  const s3 = getS3Client();
+  const s3 = client || getS3Client();
 
   let body, fileSize;
   if (buffer) {
@@ -136,7 +136,7 @@ export async function uploadToMinio({ buffer, filePath, originalName, mimeType, 
   }));
 
   // 5. Build public URL
-  const publicUrl = buildPublicFileUrl(s3Key, resolvedBucket);
+  const publicUrl = (buildUrl || buildPublicFileUrl)(s3Key, resolvedBucket);
 
   return {
     success: true,
@@ -258,7 +258,7 @@ export function decryptBuffer(encryptedBuffer, ivHex, authTagHex) {
  *
  * Returns { url, key, bucket, size, originalSize, compressedSize, encryption: { iv, authTag }, compressionMethod, avResult }
  */
-export async function uploadEncryptedReport({ buffer, originalName, mimeType, keyPrefix, bucket }) {
+export async function uploadEncryptedReport({ buffer, originalName, mimeType, keyPrefix, bucket, client, buildUrl }) {
   if (!buffer) throw new Error('Buffer required for encrypted report upload');
 
   // 1. AV scan
@@ -283,7 +283,7 @@ export async function uploadEncryptedReport({ buffer, originalName, mimeType, ke
 
   // 5. Upload encrypted blob to MinIO
   const resolvedBucket = bucket || getUploadsBucket() || 'web-uploads';
-  const s3 = getS3Client();
+  const s3 = client || getS3Client();
 
   await s3.send(new PutObjectCommand({
     Bucket: resolvedBucket,
@@ -293,7 +293,7 @@ export async function uploadEncryptedReport({ buffer, originalName, mimeType, ke
     ContentLength: encrypted.length,
   }));
 
-  const publicUrl = buildPublicFileUrl(s3Key, resolvedBucket);
+  const publicUrl = (buildUrl || buildPublicFileUrl)(s3Key,resolvedBucket);
 
   return {
     success: true,
@@ -314,9 +314,9 @@ export async function uploadEncryptedReport({ buffer, originalName, mimeType, ke
  * Download and decrypt an encrypted report from MinIO.
  * Returns { buffer, mimeType }
  */
-export async function downloadDecryptedReport({ key, bucket, iv, authTag, compressionMethod, mimeType }) {
+export async function downloadDecryptedReport({ key, bucket, iv, authTag, compressionMethod, mimeType, client }) {
   const resolvedBucket = bucket || getUploadsBucket() || 'web-uploads';
-  const s3 = getS3Client();
+  const s3 = client || getS3Client();
 
   const resp = await s3.send(new GetObjectCommand({
     Bucket: resolvedBucket,
