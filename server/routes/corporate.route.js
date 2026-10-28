@@ -30,6 +30,7 @@ import {
 import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { reactivateCorporateEmployeeAccount } from '../services/corporate-employee-activation.service.js';
+import { EmployeeConflictError } from '../services/corporate-employee-create.service.js';
 import { setRlsContext } from '../middleware/rls-context.middleware.js';
 import {
   generateCorporateMisReport,
@@ -1349,6 +1350,9 @@ router.post('/employees', authCorporate, async (req, res) => {
     const created = { id: normalizedEmployeeId, employeeId: normalizedEmployeeId, name, email: normalizedEmail || '', phone: '', businessUnit: businessUnit || '', department: department || '', designation: designation || '', joiningDate: joiningDate || '', healthStatus: 'good', lastCheckup: '', insurancePlan: 'Standard Plan', appStatus };
     return res.status(201).json({ success: true, data: { employee: created } });
   } catch (err) {
+    if (err instanceof EmployeeConflictError) {
+      return res.status(409).json({ success: false, code: err.code, message: err.message });
+    }
     console.error('[corporate] POST /employees error:', err.message);
     const databaseCode = err?.original?.code || err?.parent?.code || err?.code;
     if (databaseCode === '23505') {
