@@ -1,27 +1,8 @@
-/**
- * Per-corporate MinIO bucket isolation for corporate health reports.
- *
- * Today every corporate's employee health-checkup reports land in one
- * shared bucket (`web-uploads`, via minio-upload.service.js's default),
- * separated only by an S3 key prefix (`health-reports/corp-{id}/emp-{id}/…`).
- * This gives each corporate its own dedicated bucket instead — the same
- * isolation pattern already established and running in production for
- * imaging tenants (see imaging-tenant-storage.service.js's
- * ISOLATION_MINIO_BUCKET mode) — so one corporate's employee health
- * documents are never physically co-located with another's.
- *
- * Deliberately NOT changed here: bucket public-read access. The existing
- * shared bucket serves report files via a fully public URL with no auth or
- * signing (confirmed live — any report_url is directly fetchable by
- * anyone who has it) — that gap predates this change and isn't fixed by
- * per-corporate buckets alone; blocking public access here without also
- * switching report_url generation to presigned URLs would just break every
- * report link (email, WhatsApp, in-app list) the moment this bucket goes
- * live. That's a real, separate piece of work, flagged, not silently done
- * or silently ignored.
+/** Corporate-specific private report buckets on the configured PACS MinIO backend.
+ * Downloads are authorized before a short-lived signed URL is issued.
  */
 import { CreateBucketCommand, HeadBucketCommand, BucketAlreadyOwnedByYou, BucketAlreadyExists } from '@aws-sdk/client-s3';
-import { getS3Client } from './s3-presign.service.js';
+import { getCorporateReportClient } from './corporate-report-storage-client.js';
 
 const BUCKET_PREFIX = process.env.MINIO_CORPORATE_BUCKET_PREFIX || 'mediczy-corp-health';
 
@@ -41,7 +22,7 @@ export function normalizeCorporateId(corporateId) {
 export function getCorporateHealthReportsBucket(corporateId) {
   const id = normalizeCorporateId(corporateId);
   if (!id) throw new Error('corporateId is required to resolve a per-corporate health-reports bucket');
-  return `${BUCKET_PREFIX}-c${id}`.toLowerCase().slice(0, 63);
+  return process.env.CORPORATE_REPORTS_MINIO_BUCKET || process.env.PACS_ARCHIVE_MINIO_BUCKET || `${BUCKET_PREFIX}-c${id}`.toLowerCase().slice(0,63);
 }
 
 /**
@@ -53,7 +34,7 @@ export function getCorporateHealthReportsBucket(corporateId) {
  */
 export async function ensureCorporateHealthReportsBucket(corporateId) {
   const bucket = getCorporateHealthReportsBucket(corporateId);
-  const client = getS3Client();
+  const client = getCorporateReportClient();
 
   try {
     await client.send(new HeadBucketCommand({ Bucket: bucket }));

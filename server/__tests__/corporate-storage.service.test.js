@@ -52,8 +52,8 @@ describe('corporate-storage.service — ensureCorporateHealthReportsBucket (mock
   });
 
   async function loadWithMockClient() {
-    jest.unstable_mockModule('../services/s3-presign.service.js', () => ({
-      getS3Client: () => ({ send: mockSend }),
+    jest.unstable_mockModule('../services/corporate-report-storage-client.js', () => ({
+      getCorporateReportClient: () => ({ send: mockSend }),
     }));
     return import('../services/corporate-storage.service.js');
   }
