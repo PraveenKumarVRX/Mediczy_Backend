@@ -28,10 +28,10 @@ try {
   const [{invalid}]=await select(`SELECT COUNT(*)::int AS invalid FROM health_checkup_bookings WHERE beneficiary_relation IS NULL OR (lab_id IS NOT NULL)::int+(hospital_id IS NOT NULL)::int<>1`);
   check('Existing booking rows retain valid beneficiary and venue',invalid===0);
   const [admin]=await select(`SELECT id FROM users WHERE "isAdmin"=true AND LOWER(status::text)='active' ORDER BY id LIMIT 1`);
-  const teams=await select(`SELECT id,metadata FROM users WHERE "isTeam"=true AND LOWER(status::text)='active' ORDER BY id`);
+  const teams=await select(`SELECT id,metadata FROM users WHERE "isTeam"=true AND COALESCE("isAdmin",false)=false AND LOWER(status::text)='active' ORDER BY id`);
   const permitted=u=>{let m=u.metadata||{};if(typeof m==='string'){try{m=JSON.parse(m);}catch{return false;}}return m.accessLevel==='full'||(m.permissions||[]).some(p=>['corporate management','corporate management access','all access'].includes(String(p).trim().toLowerCase()));};
   const team=teams.find(permitted),limitedTeam=teams.find(u=>!permitted(u));
-  const [member]=await select(`SELECT u.id,a."entityId" AS corporate_id FROM users u JOIN LATERAL (SELECT "entityId" FROM user_associations WHERE "userId"=u.id AND "entityType"='corporate' AND role='employee' AND status='active' ORDER BY "createdAt" DESC LIMIT 1) a ON true WHERE LOWER(u.status::text)='active' AND COALESCE(u."isAdmin",false)=false AND COALESCE(u."isTeam",false)=false ORDER BY EXISTS (SELECT 1 FROM user_health_packages h JOIN corporate_health_package_catalog p ON p.id=h."packageId" AND p.corporate_id=h.corporate_id WHERE h."userId"=u.id AND h.corporate_id=a."entityId" AND LOWER(h.status)='active') DESC,u.id LIMIT 1`);
+  const [member]=await select(`SELECT u.id,a."entityId" AS corporate_id FROM users u JOIN LATERAL (SELECT a."entityId" FROM user_associations a JOIN corporates c ON c.id=a."entityId" AND LOWER(c.status)='active' WHERE a."userId"=u.id AND a."entityType"='corporate' AND a.role='employee' AND a.status='active' ORDER BY a."createdAt" DESC LIMIT 1) a ON true WHERE LOWER(u.status::text)='active' AND COALESCE(u."isAdmin",false)=false AND COALESCE(u."isTeam",false)=false ORDER BY EXISTS (SELECT 1 FROM user_health_packages h JOIN corporate_health_package_catalog p ON p.id=h."packageId" AND p.corporate_id=h.corporate_id WHERE h."userId"=u.id AND h.corporate_id=a."entityId" AND LOWER(h.status)='active') DESC,u.id LIMIT 1`);
   if(!admin||!member||!team) throw new Error('Active admin, corporate employee and permitted Team identities are required');
   const adminToken=sign(admin,'admin'),memberToken=sign(member,'user'),teamToken=sign(team,'team');
   const catalog=await api('Admin package catalog','/api/admin/health-packages',adminToken,200,b=>Array.isArray(b.data)&&b.data.every(p=>Array.isArray(p.eligibleRelations)&&p.eligibleRelations.length>0&&Array.isArray(p.venues)&&['inherit','restricted'].includes(p.venueMode)));
@@ -46,7 +46,7 @@ try {
     const [corporate]=await select(`SELECT id FROM corporates WHERE id=:id AND LOWER(status::text) IN ('active','pending')`,{id:pkg.corporateId});
     if(corporate) await api('HR sees authoritative policy and venue data','/api/corporate/health-packages',sign(corporate,'corporate'),200,b=>Array.isArray(b.data?.packages)&&b.data.packages.every(p=>Array.isArray(p.eligibleRelations)&&Array.isArray(p.venues)));
   }
-  await api('Member profile','/api/health-checkups/me',memberToken,200,b=>b.corporate?.id===member.corporate_id);
+  await api('Member profile','/api/health-checkups/me',memberToken,200,b=>Number(b.corporate?.id)===Number(member.corporate_id));
   const packages=await api('Member packages include current eligibility','/api/health-checkups/packages',memberToken,200,b=>Array.isArray(b.packages)&&b.packages.every(p=>Array.isArray(p.eligibleRelations)));
   await api('Member network discovery','/api/health-checkups/labs',memberToken,200,b=>Array.isArray(b.labs));
   for(const p of packages.packages||[]){
