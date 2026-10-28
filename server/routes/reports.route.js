@@ -127,6 +127,7 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       uploadedAt: new Date(),
       analysisStatus: 'pending',
       metadata: {
+        source:'patient_report_upload',
         encryption: result.encryption,
         compressionMethod: result.compressionMethod,
         storedMimeType: result.storedMimeType,

@@ -1,0 +1,12 @@
+import {jest} from '@jest/globals';import express from 'express';import request from 'supertest';
+const create=jest.fn(),upload=jest.fn();
+jest.unstable_mockModule('../middleware/auth.middleware.js',()=>({authUser:(req,_res,next)=>{req.user={id:9};next();}}));
+jest.unstable_mockModule('../models/medical-report.model.js',()=>({default:{}}));
+jest.unstable_mockModule('../models/index.js',()=>({Report:{create}}));
+jest.unstable_mockModule('../services/minio-upload.service.js',()=>({uploadEncryptedReport:upload}));
+jest.unstable_mockModule('../services/corporate-report-storage-client.js',()=>({getCorporateReportClient:()=>({}),corporateStoredFileUrl:()=>''}));
+const {default:router}=await import('../routes/upload.route.js');const app=express();app.use(express.json());app.use((req,_res,next)=>{req.files={file:{name:'synthetic.pdf',mimetype:'application/pdf',size:9,data:Buffer.from('%PDF-test')}};next();});app.use(router);
+beforeEach(()=>{create.mockReset().mockResolvedValue({id:17});upload.mockReset().mockResolvedValue({key:'uploads/reports/9/file.enc',url:'https://private.example/file.enc',bucket:'pacs-entity-001',encryption:{iv:'iv',authTag:'tag'},originalSize:9,size:8,compressionMethod:'none'});});
+test('legacy upload creates a real canonical report visible to the normal report APIs',async()=>{const result=await request(app).post('/upload').send({reportType:'bloodtest'});expect(result.status).toBe(201);expect(result.body.reportId).toBe(17);expect(result.body.downloadUrl).toBe('/api/reports/download/17');expect(create.mock.calls[0][0]).toMatchObject({userId:9,reportType:'lab',metadata:{source:'legacy_report_upload',encryption:{iv:'iv',authTag:'tag'}}});});
+test('a database failure never returns a fake successful report ID',async()=>{create.mockRejectedValue(new Error('database unavailable'));const result=await request(app).post('/upload').send({});expect(result.status).toBe(500);expect(result.body.reportId).toBeUndefined();});
+test('malware rejection never creates a report record',async()=>{upload.mockRejectedValue(Object.assign(new Error('rejected'),{code:'MALWARE_DETECTED'}));expect((await request(app).post('/upload').send({})).status).toBe(400);expect(create).not.toHaveBeenCalled();});

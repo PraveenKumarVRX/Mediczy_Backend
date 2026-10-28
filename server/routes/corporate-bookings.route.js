@@ -950,7 +950,7 @@ router.get('/reports', authUser, requireTeamOrAdmin, requireCorporateAccess, asy
         AND ua."entityType" = 'corporate'
         AND ua."entityId" = :corporateId
       WHERE r."reportType" = 'lab'
-        AND COALESCE(r.metadata->>'source', '') <> 'team_corporate_health_upload'
+        AND COALESCE(r.metadata->>'source', '') NOT IN ('team_corporate_health_upload','patient_report_upload','legacy_report_upload')
         ${empFilterRpt}
     `;
 

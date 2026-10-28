@@ -4,6 +4,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { authUser } from '../middleware/auth.middleware.js';
 import MedicalReport from '../models/medical-report.model.js';
+import {Report} from '../models/index.js';
+import {getCorporateReportClient,corporateStoredFileUrl} from '../services/corporate-report-storage-client.js';
 import { uploadEncryptedReport } from '../services/minio-upload.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -93,35 +95,26 @@ router.post('/upload', authUser, async (req, res) => {
       originalName: uploadedFile.name,
       mimeType: uploadedFile.mimetype,
       keyPrefix: `uploads/reports/${req.user.id}`,
+      ...(process.env.PACS_ARCHIVE_MINIO_ENDPOINT?{bucket:process.env.MEDICAL_REPORTS_MINIO_BUCKET||process.env.PACS_ARCHIVE_MINIO_BUCKET,client:getCorporateReportClient(),buildUrl:corporateStoredFileUrl}:{}),
     });
     console.log(`📄 File uploaded (encrypted) to MinIO: ${result.key} [${result.compressionMethod}, ${result.originalSize}→${result.size} bytes]`);
 
-    // Create database record for the report
-    let medicalReport = null;
-    try {
-      medicalReport = await MedicalReport.create({
-        userId: req.user.id,
-        fileName: uploadedFile.name,
-        filePath: result.key,
-        fileType: fileExtension.substring(1),
-        fileSize: uploadedFile.size,
-        mimeType: uploadedFile.mimetype,
-        reportType: reportType,
-        reportDate: reportDate ? new Date(reportDate) : new Date(),
-        notes: notes || null,
-        uploadedAt: new Date(),
-        status: 'uploaded',
-        analysisStatus: 'pending'
-      });
-    } catch (dbErr) {
-      console.warn('⚠️ Database record creation failed, but file saved:', dbErr.message);
-    }
+    // Persist into the same report collection used by list/download/ownership checks.
+    const normalizedType=['lab','imaging','prescription','general'].includes(reportType)?reportType:/xray|radiology|scan/i.test(reportType)?'imaging':/blood|test/i.test(reportType)?'lab':'general';
+    const medicalReport=await Report.create({
+      userId:req.user.id,organization_id:req.user.organization_id||null,fileName:uploadedFile.name,
+      filePath:result.key,fileUrl:result.url,fileSize:uploadedFile.size,mimeType:uploadedFile.mimetype,
+      reportType:normalizedType,reportDate:reportDate?new Date(reportDate):new Date(),description:notes||null,
+      uploadedAt:new Date(),status:'active',analysisStatus:'pending',
+      metadata:{source:'legacy_report_upload',originalReportType:reportType,encryption:result.encryption,compressionMethod:result.compressionMethod,storedMimeType:result.storedMimeType,bucket:result.bucket,storageBackend:process.env.PACS_ARCHIVE_MINIO_ENDPOINT?'corporate_minio':undefined}
+    });
 
     // Return success response
     res.status(201).json({
       success: true,
       message: 'Report uploaded successfully',
-      reportId: medicalReport?.id || Date.now(),
+      reportId:medicalReport.id,
+      downloadUrl:`/api/reports/download/${medicalReport.id}`,
       fileName: uploadedFile.name,
       fileUrl: result.url,
       reportType: reportType,
@@ -149,9 +142,10 @@ router.post('/upload', authUser, async (req, res) => {
       });
     }
 
-    res.status(500).json({
+    if(error.code==='AV_SCAN_UNAVAILABLE')return res.status(503).json({success:false,code:error.code,message:error.message});
+    res.status(error.$metadata?503:500).json({
       success: false,
-      message: 'Failed to upload report',
+      message: error.$metadata?'Report storage is temporarily unavailable. Please retry.':'Failed to upload report',
       error: error.message
     });
   }
