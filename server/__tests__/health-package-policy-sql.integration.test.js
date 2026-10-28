@@ -12,10 +12,10 @@ const enabled = process.env.HEALTH_PACKAGE_POLICY_SQL_INTEGRATION === '1';
     outer = await db.transaction();
     const query = (sql, options={}) => db.query(sql,{...options,transaction:outer});
     await query(`CREATE SCHEMA health_package_policy_qa_${process.pid}; SET LOCAL search_path TO health_package_policy_qa_${process.pid};
-      CREATE TABLE users (id INTEGER PRIMARY KEY,"firstName" TEXT,"lastName" TEXT,email TEXT,"phoneNumber" TEXT,gender TEXT,"dateOfBirth" DATE);
+      CREATE TABLE users (id INTEGER PRIMARY KEY,"firstName" TEXT,"lastName" TEXT,email TEXT,"phoneNumber" TEXT,gender TEXT,"dateOfBirth" DATE,employee_id TEXT,department_name TEXT,metadata JSONB DEFAULT '{}');
       CREATE TABLE corporates (id INTEGER PRIMARY KEY,"companyName" TEXT,status TEXT);
-      CREATE TABLE user_associations ("userId" INTEGER,"entityId" INTEGER,"entityType" TEXT,role TEXT,status TEXT,"createdAt" TIMESTAMPTZ DEFAULT NOW());
-      CREATE TABLE corporate_employees ("userId" INTEGER,corporate_id INTEGER,"isActive" BOOLEAN);
+      CREATE TABLE user_associations ("userId" INTEGER,"entityId" INTEGER,"entityType" TEXT,role TEXT,status TEXT,"createdAt" TIMESTAMPTZ DEFAULT NOW(),metadata JSONB DEFAULT '{}');
+      CREATE TABLE corporate_employees (id SERIAL PRIMARY KEY,"userId" INTEGER,corporate_id INTEGER,"isActive" BOOLEAN,"employeeId" TEXT,department TEXT,designation TEXT,metadata JSONB);
       CREATE TABLE labs (id INTEGER PRIMARY KEY,name TEXT,address JSONB,"phoneNumber" TEXT,accreditation JSONB,rating NUMERIC,metadata JSONB,status TEXT);
       CREATE TABLE hospitals (id INTEGER PRIMARY KEY,hospital_name TEXT,address TEXT,metadata JSONB,status TEXT);
       CREATE TABLE corporate_network_assignments (corporate_id INTEGER,partner_id INTEGER,partner_type TEXT);
@@ -23,7 +23,7 @@ const enabled = process.env.HEALTH_PACKAGE_POLICY_SQL_INTEGRATION === '1';
       INSERT INTO users (id) VALUES (1),(2);
       INSERT INTO corporates VALUES (3,'Test corporate','active');
       INSERT INTO user_associations ("userId","entityId","entityType",role,status) VALUES (1,3,'corporate','employee','active'),(2,3,'corporate','employee','active');
-      INSERT INTO corporate_employees VALUES (1,3,true),(2,3,true);
+      INSERT INTO corporate_employees ("userId",corporate_id,"isActive") VALUES (1,3,true),(2,3,true);
       INSERT INTO labs VALUES (5,'Allowed lab','{}','', '[]',5,'{"healthCheckupSlots":["09:00"]}','active'),(6,'Other lab','{}','','[]',5,'{"healthCheckupSlots":["09:00"]}','active');
       INSERT INTO hospitals VALUES (5,'Allowed hospital','Test city','{"healthCheckupSlots":["09:00"]}','active');
       INSERT INTO corporate_network_assignments VALUES (3,5,'lab'),(3,6,'lab'),(3,5,'hospital');`);
@@ -85,6 +85,28 @@ const enabled = process.env.HEALTH_PACKAGE_POLICY_SQL_INTEGRATION === '1';
       await expect(db.query(`INSERT INTO health_checkup_bookings (booking_reference,user_id,member_type,corporate_id,package_id,package_name,hospital_id,appointment_date,time_slot,status)
         VALUES ('HC-COLLISION',2,'corporate',3,:packageId,'Collision',5,'2099-01-02','09:00','confirmed')`,{replacements:{packageId},transaction:outer})).rejects.toMatchObject({original:{code:'23505',constraint:'uniq_health_checkup_active_hospital_slot'}});
     } finally {await db.query('ROLLBACK TO SAVEPOINT slot_collision',{transaction:outer});}
+  });
+
+  test('package-specific employee management swaps at capacity and preserves other packages/redemption history',async()=>{
+    actor={id:1,role:'team',isTeam:true,metadata:{permissions:['Corporate Management']}};
+    const other=await request(app).post('/admin').send({...payload,packageName:'Pre-employment'});
+    expect(other.status).toBe(201);const otherId=other.body.data.id;
+    expect((await request(app).post(`/admin/${otherId}/tag-employees`).send({employeeIds:[1]})).status).toBe(200);
+    await db.query(`UPDATE corporate_health_package_catalog SET max_users=1 WHERE id=:packageId`,{replacements:{packageId},transaction:outer});
+    await db.query(`UPDATE user_health_packages SET "usedAt"=NOW() WHERE "packageId"=:packageId AND "userId"=1`,{replacements:{packageId},transaction:outer});
+    const options=await request(app).get(`/admin/${packageId}/employee-options`);
+    expect(options.status).toBe(200);expect(options.body.data).toHaveLength(2);expect(options.body.data.find(e=>e.id===1).assigned).toBe(true);
+    const swap=await request(app).patch(`/admin/${packageId}/assignments`).send({addEmployeeIds:[2],removeEmployeeIds:[1]});
+    expect(swap.status).toBe(200);expect(swap.body.data).toEqual({added:1,removed:1,enrolled:1});
+    const [otherAssignment]=await db.query(`SELECT status FROM user_health_packages WHERE "packageId"=:otherId AND "userId"=1`,{replacements:{otherId},transaction:outer,type:db.QueryTypes.SELECT});
+    expect(otherAssignment.status).toBe('active');
+    expect((await request(app).put(`/admin/${packageId}`).send({...payload,maxEmployees:1,packageName:'Edited Sales package'})).status).toBe(200);
+    const removedAfterEdit=await request(app).get(`/admin/${packageId}/assignments`);
+    expect(removedAfterEdit.body.data.find(e=>e.userId===1).status).toBe('inactive');
+    expect((await request(app).patch(`/admin/${packageId}/assignments`).send({removeEmployeeIds:[2]})).body.data.enrolled).toBe(0);
+    expect((await request(app).patch(`/admin/${packageId}/assignments`).send({addEmployeeIds:[1]})).status).toBe(200);
+    const [retained]=await db.query(`SELECT "usedAt",status FROM user_health_packages WHERE "packageId"=:packageId AND "userId"=1`,{replacements:{packageId},transaction:outer,type:db.QueryTypes.SELECT});
+    expect(retained.status).toBe('active');expect(retained.usedAt).not.toBeNull();
   });
 
 });
