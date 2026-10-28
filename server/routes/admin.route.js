@@ -5293,14 +5293,15 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
              COUNT(*)::int AS "employeeCount",
              COUNT(*) FILTER (WHERE LOWER(COALESCE(status, 'active')) = 'active')::int AS "activeEmployeeCount",
              COUNT(*) FILTER (WHERE LOWER(COALESCE(status, 'active')) <> 'active')::int AS "inactiveEmployeeCount",
-             CASE
+             CASE WHEN p.id IS NOT NULL THEN CASE WHEN p.is_active THEN 'active' ELSE 'inactive' END ELSE CASE
                WHEN COUNT(*) FILTER (WHERE LOWER(COALESCE(status, 'active')) = 'active') > 0 THEN 'active'
                ELSE 'inactive'
-             END AS status
-      FROM user_health_packages
-      WHERE corporate_id = :corporateId
+             END END AS status
+      FROM user_health_packages uhp LEFT JOIN corporate_health_package_catalog p ON p.id=uhp."packageId" AND p.corporate_id=uhp.corporate_id
+      WHERE uhp.corporate_id = :corporateId
         AND (:includeInactive = true OR LOWER(COALESCE(status, 'active')) = 'active')
-      GROUP BY "packageId", "packageName", "packageDetails"
+        AND (:includeInactive = true OR p.is_active IS DISTINCT FROM false)
+      GROUP BY "packageId", "packageName", "packageDetails",p.id,p.is_active
       ORDER BY "packageName" ASC
     `, {
       replacements: { corporateId: numericCorporateId, includeInactive },
@@ -5369,6 +5370,13 @@ router.patch('/corporate-health-packages/:corporateId/:packageId/status', authUs
     }
     if (!['active', 'inactive'].includes(status)) {
       return res.status(400).json({ success: false, message: 'status must be active or inactive' });
+    }
+
+    // Catalog availability and individual employee eligibility are separate decisions.
+    const catalogRows=await postgresSequelize.query(`UPDATE corporate_health_package_catalog SET is_active=:active,metadata=metadata||jsonb_build_object('status',CAST(:catalogStatus AS text)),updated_at=NOW() WHERE id=:packageId AND corporate_id=:corporateId AND metadata->>'kind'='health_checkup' RETURNING id`,{replacements:{active:status==='active',catalogStatus:status==='active'?'Active':'Inactive',packageId,corporateId:numericCorporateId},type:postgresSequelize.QueryTypes.SELECT});
+    if(catalogRows.length){
+      await auditAction({module:'corporate',entityType:'health_package',entityId:packageId,action:`status_${status}`,actor:req.user?.id,details:{corporateId:numericCorporateId,employeeAssignmentsPreserved:true}});
+      return res.json({success:true,message:`Package marked ${status}. Employee eligibility preserved.`,status,updatedAssignments:0});
     }
 
     const updatedAssignments = await postgresSequelize.query(`

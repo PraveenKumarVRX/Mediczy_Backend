@@ -7,8 +7,14 @@ Admin access remains at `/admin/corporate-health-packages`.
 Each package supports any nonempty subset of `self`, `spouse`, `child`,
 `parent`, `parent_in_law`, and `sibling`. Exclude `self` for dependent-only
 packages. Employees are individually assigned through the package's Tag action;
-the assignment dialog identifies existing active enrollments. An employee may
-hold multiple packages.
+the assignment dialog preselects the current employees for that package. Tick
+or untick employees, filter by department/designation/current assignment, and
+choose Save eligibility changes. Select shown / Deselect shown affect only the
+visible filtered group. The save sends explicit additions and removals, so hidden
+or concurrently assigned employees are preserved. An employee may hold multiple
+packages; changing Sales eligibility does not change pre-employment eligibility.
+Removing an assignment preserves its redemption dates, usage and booking history.
+Editing or toggling a catalog package does not re-enroll removed employees.
 
 Venue policy is explicit: inherit the corporate network, or restrict to selected
 labs/diagnostic centres and hospitals for each covered relation. Restricted venues

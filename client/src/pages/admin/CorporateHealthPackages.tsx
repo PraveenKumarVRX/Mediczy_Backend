@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
@@ -28,6 +28,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import api from '@/utils/api';
+import { assignmentChanges, selectVisibleEmployees } from '@/utils/health-package-employees';
 
 interface HealthCheckupPackage {
   id: string;
@@ -83,6 +84,13 @@ const CorporateHealthPackages = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
   const [employeeSearchTerm, setEmployeeSearchTerm] = useState('');
+  const [initialEmployees, setInitialEmployees] = useState<string[]>([]);
+  const [employeeDepartment, setEmployeeDepartment] = useState('all');
+  const [employeeDesignation, setEmployeeDesignation] = useState('all');
+  const [employeeAssignment, setEmployeeAssignment] = useState('all');
+  const [employeesLoading, setEmployeesLoading] = useState(false);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const employeeRequest=useRef(0);
 
   // Dialog states
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
@@ -156,25 +164,17 @@ const CorporateHealthPackages = () => {
     }
   };
 
-  const fetchEmployees = async (corporateId: string, packageId: string) => {
+  const fetchEmployees = async (packageId: string) => {
+    const request=++employeeRequest.current;
+    setEmployeesLoading(true);
     try {
-      setLoading(true);
-      const { data } = await api.get(`/admin/corporate-employees/${corporateId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
-      });
-      const assignments = await api.get(`/admin/health-packages/${packageId}/assignments`, {headers:token ? {Authorization:`Bearer ${token}`} : undefined});
-      const enrolled = new Set((assignments.data.data || []).filter((a:any) => a.status?.toLowerCase()==='active').map((a:any) => String(a.userId)));
-      setEmployees((data.employees || []).filter((e: any) => e.id && e.hasAssociation && String(e.status).toLowerCase() === 'active').map((e: any) => ({
-        id:String(e.id),employeeId:e.user_employee_id || e.corporate_employee_id || '',
-        name:[e.firstName,e.lastName].filter(Boolean).join(' '),email:e.email || '',
-        department:e.department_name || '',designation:e.metadata?.designation || '',isEligible:true,enrolledPackages:enrolled.has(String(e.id)) ? [packageId] : [],
-      })));
-    } catch (err: any) {
-      setEmployees([]);
-      setError(err?.response?.data?.message || 'Unable to load employees');
-    } finally {
-      setLoading(false);
-    }
+      const {data}=await api.get(`/admin/health-packages/${packageId}/employee-options`,{headers:token?{Authorization:`Bearer ${token}`}:undefined});
+      if(request!==employeeRequest.current)return;
+      const rows:Employee[]=(data.data||[]).map((e:any)=>({id:String(e.id),employeeId:e.employeeId||'',name:e.name||'',email:e.email||'',department:e.department||'',designation:e.designation||'',isEligible:e.canAssign,enrolledPackages:e.assigned?[packageId]:[]}));
+      const assigned=rows.filter(e=>e.enrolledPackages.includes(packageId)).map(e=>e.id);
+      setEmployees(rows);setInitialEmployees(assigned);setSelectedEmployees(assigned);
+    } catch(err:any){if(request===employeeRequest.current){setEmployees([]);setAssignmentError(err?.response?.data?.message||'Unable to load package employees');}}
+    finally{if(request===employeeRequest.current)setEmployeesLoading(false);}
   };
 
   const filterPackages = () => {
@@ -239,33 +239,22 @@ const CorporateHealthPackages = () => {
   };
 
   const handleTagEmployees = (pkg: HealthCheckupPackage) => {
-    setTaggingPackage(pkg);
-    fetchEmployees(pkg.corporateId,pkg.id);
-    setSelectedEmployees([]);
-    setIsTagEmployeesDialogOpen(true);
+    setTaggingPackage(pkg);setEmployees([]);setSelectedEmployees([]);setInitialEmployees([]);
+    setEmployeeSearchTerm('');setEmployeeDepartment('all');setEmployeeDesignation('all');setEmployeeAssignment('all');setAssignmentError(null);
+    setIsTagEmployeesDialogOpen(true);fetchEmployees(pkg.id);
   };
 
   const handleSubmitTagging = async () => {
-    if (!taggingPackage || selectedEmployees.length === 0) {
-      setError('Please select at least one employee');
-      return;
-    }
-
+    if(!taggingPackage||employeesLoading)return;
+    const changes=assignmentChanges(initialEmployees,selectedEmployees);
+    if(!changes.addEmployeeIds.length&&!changes.removeEmployeeIds.length)return;
     try {
-      setLoading(true);
-      await api.post(`/admin/health-packages/${taggingPackage.id}/tag-employees`, {
-        employeeIds: selectedEmployees
-      }, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined
-      });
-      setResult({ message: `${selectedEmployees.length} employees tagged successfully` });
-      setIsTagEmployeesDialogOpen(false);
-      fetchPackages();
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to tag employees');
-    } finally {
-      setLoading(false);
-    }
+      setLoading(true);setAssignmentError(null);
+      const {data}=await api.patch(`/admin/health-packages/${taggingPackage.id}/assignments`,changes,{headers:token?{Authorization:`Bearer ${token}`}:undefined});
+      setResult({message:`${taggingPackage.packageName}: ${data.data.added} employees added, ${data.data.removed} removed`});
+      setIsTagEmployeesDialogOpen(false);await fetchPackages();
+    } catch(err:any){setAssignmentError(err?.response?.data?.message||'Unable to update employee eligibility');}
+    finally{setLoading(false);}
   };
 
   const handleSubmitPackage = async (e: React.FormEvent) => {
@@ -339,14 +328,18 @@ const CorporateHealthPackages = () => {
     });
   };
 
-  const filteredEmployees = employees.filter(emp =>
-    emp.isEligible && (
-      emp.name.toLowerCase().includes(employeeSearchTerm.toLowerCase()) ||
-      emp.email.toLowerCase().includes(employeeSearchTerm.toLowerCase()) ||
-      emp.employeeId.toLowerCase().includes(employeeSearchTerm.toLowerCase()) ||
-      emp.department.toLowerCase().includes(employeeSearchTerm.toLowerCase())
-    )
-  );
+  const initialEmployeeSet=new Set(initialEmployees),selectedEmployeeSet=new Set(selectedEmployees);
+  const employeeChanges=assignmentChanges(initialEmployees,selectedEmployees);
+  const hasEmployeeChanges=Boolean(employeeChanges.addEmployeeIds.length||employeeChanges.removeEmployeeIds.length);
+  const employeeDepartments=[...new Set(employees.map(e=>e.department).filter(Boolean))].sort();
+  const employeeDesignations=[...new Set(employees.map(e=>e.designation).filter(Boolean))].sort();
+  const filteredEmployees=employees.filter(emp=>{
+    const assigned=initialEmployeeSet.has(emp.id);
+    return [emp.name,emp.email,emp.employeeId,emp.department,emp.designation].some(value=>value.toLowerCase().includes(employeeSearchTerm.toLowerCase()))
+      && (employeeDepartment==='all'||emp.department===employeeDepartment)
+      && (employeeDesignation==='all'||emp.designation===employeeDesignation)
+      && (employeeAssignment==='all'||employeeAssignment==='assigned'&&assigned||employeeAssignment==='unassigned'&&!assigned||employeeAssignment==='changed'&&assigned!==selectedEmployeeSet.has(emp.id));
+  });
 
   return (
     <Layout>
@@ -868,25 +861,31 @@ const CorporateHealthPackages = () => {
 
         {/* Tag Employees Dialog */}
         <Dialog open={isTagEmployeesDialogOpen} onOpenChange={setIsTagEmployeesDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl h-[90dvh] flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-blue-500" />
-                Tag Eligible Employees - {taggingPackage?.packageName}
+                Manage Eligible Employees - {taggingPackage?.packageName}
               </DialogTitle>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="flex items-center gap-4 p-4 bg-blue-50 rounded-lg">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+              <div className="flex items-center gap-4 p-4 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                 <Package className="h-8 w-8 text-blue-500" />
                 <div className="flex-1">
                   <div className="font-medium">{taggingPackage?.packageName}</div>
                   <div className="text-sm text-muted-foreground">
-                    {taggingPackage?.currentEnrolled} / {taggingPackage?.maxEmployees} enrolled • 
-                    Available slots: {(taggingPackage?.maxEmployees || 0) - (taggingPackage?.currentEnrolled || 0)}
+                    {selectedEmployees.length} / {taggingPackage?.maxEmployees} selected for this package · Available slots after saving: {Math.max(0,(taggingPackage?.maxEmployees||0)-selectedEmployees.length)}
                   </div>
                 </div>
               </div>
 
+              <p className="text-sm text-muted-foreground">Tick employees eligible for this package; untick employees to remove eligibility. Use department or designation to find Sales staff and new joiners. Other package assignments and booking history are kept.</p>
+              {assignmentError&&<p role="alert" className="text-sm text-red-500">{assignmentError}</p>}
+              <div className="grid gap-2 sm:grid-cols-3">
+                <select aria-label="Filter employee department" className="rounded-md border bg-background text-foreground p-2" value={employeeDepartment} onChange={e=>setEmployeeDepartment(e.target.value)}><option value="all">All departments</option>{employeeDepartments.map(d=><option key={d} value={d}>{d}</option>)}</select>
+                <select aria-label="Filter employee designation" className="rounded-md border bg-background text-foreground p-2" value={employeeDesignation} onChange={e=>setEmployeeDesignation(e.target.value)}><option value="all">All designations</option>{employeeDesignations.map(d=><option key={d} value={d}>{d}</option>)}</select>
+                <select aria-label="Filter package assignment" className="rounded-md border bg-background text-foreground p-2" value={employeeAssignment} onChange={e=>setEmployeeAssignment(e.target.value)}><option value="all">All employees</option><option value="assigned">Assigned to this package</option><option value="unassigned">Not assigned to this package</option><option value="changed">Pending changes</option></select>
+              </div>
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -897,25 +896,31 @@ const CorporateHealthPackages = () => {
                 />
               </div>
 
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {loading ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mr-auto text-sm text-muted-foreground">{filteredEmployees.length} employees shown</span>
+                <Button variant="outline" size="sm" disabled={employeesLoading||loading} onClick={()=>setSelectedEmployees(selected=>selectVisibleEmployees(selected,filteredEmployees,true))}>Select shown</Button>
+                <Button variant="outline" size="sm" disabled={employeesLoading||loading} onClick={()=>setSelectedEmployees(selected=>selectVisibleEmployees(selected,filteredEmployees,false))}>Deselect shown</Button>
+              </div>
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+                {employeesLoading ? (
                   <div className="text-center py-8">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
                     <p className="text-muted-foreground mt-2">Loading employees...</p>
                   </div>
                 ) : filteredEmployees.length > 0 ? (
                   filteredEmployees.map((employee) => (
-                    <div key={employee.id} className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50">
+                    <div key={employee.id} className="flex items-center gap-3 p-3 border rounded-lg text-foreground hover:bg-muted/50">
                       <Checkbox
-                        checked={selectedEmployees.includes(employee.id)}
+                        checked={selectedEmployeeSet.has(employee.id)}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSelectedEmployees([...selectedEmployees, employee.id]);
+                            setSelectedEmployees(selected=>[...new Set([...selected,employee.id])]);
                           } else {
-                            setSelectedEmployees(selectedEmployees.filter(id => id !== employee.id));
+                            setSelectedEmployees(selected=>selected.filter(id=>id!==employee.id));
                           }
                         }}
-                        disabled={employee.enrolledPackages.includes(taggingPackage?.id || '')}
+                        aria-label={`Eligibility for ${employee.name||employee.employeeId}`}
+                        disabled={loading||(!employee.isEligible&&!initialEmployeeSet.has(employee.id))}
                       />
                       <div className="flex-1">
                         <div className="font-medium">{employee.name}</div>
@@ -925,7 +930,7 @@ const CorporateHealthPackages = () => {
                         <div className="text-xs text-muted-foreground">{employee.email}</div>
                         {employee.enrolledPackages.includes(taggingPackage?.id || '') && (
                           <Badge variant="outline" className="mt-1 bg-green-500/10 border-green-500/20 text-green-700">
-                            Already Enrolled
+                            Currently assigned to this package
                           </Badge>
                         )}
                       </div>
@@ -939,17 +944,17 @@ const CorporateHealthPackages = () => {
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t">
+              <div className="flex shrink-0 items-center justify-between gap-2 pt-3 border-t">
                 <div className="text-sm text-muted-foreground">
-                  {selectedEmployees.length} employee{selectedEmployees.length !== 1 ? 's' : ''} selected
+                  {selectedEmployees.length} selected · {employeeChanges.addEmployeeIds.length} to add · {employeeChanges.removeEmployeeIds.length} to remove
                 </div>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={() => setIsTagEmployeesDialogOpen(false)}>
                     Cancel
                   </Button>
-                  <Button onClick={handleSubmitTagging} disabled={loading || selectedEmployees.length === 0}>
+                  <Button onClick={handleSubmitTagging} disabled={loading||employeesLoading||!hasEmployeeChanges}>
                     <UserCheck className="h-4 w-4 mr-2" />
-                    {loading ? 'Tagging...' : `Tag ${selectedEmployees.length} Employee${selectedEmployees.length !== 1 ? 's' : ''}`}
+                    {loading?'Saving...':'Save eligibility changes'}
                   </Button>
                 </div>
               </div>
