@@ -232,6 +232,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/qms',  // Unified QMS + Aadhaar QR check-in — same clinic-tenant-linked-doctor
       // case as occupational-health above; authPortalQms itself still rejects any
       // standalone doctor with no clinic attached, so this is safe to open broadly.
+      '/api/v1/queue', // Doctor's own hospital queue; route additionally scopes by req.doctor.id.
       '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'

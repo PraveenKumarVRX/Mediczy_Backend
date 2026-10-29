@@ -24,6 +24,7 @@ import { runPreDischargeAudit } from '../services/insurance-pre-discharge-audit.
 import { draftAppealLetter, checkDocumentationGaps } from '../services/insurance-ai-copilot.service.js';
 import ClaimDenial from '../models/postgres/claimDenial.model.postgres.js';
 import denialService from '../services/denial-management.service.js';
+import rcmGovernance from '../services/insurance-rcm-governance.service.js';
 import socketService from '../services/socket.service.js';
 import cacheService from '../services/cache.service.js';
 import { uploadToMinio } from '../services/minio-upload.service.js';
@@ -2316,6 +2317,47 @@ router.get('/patient/:patientId/billing-summary', authUser, requireRole(['hospit
 
 // ==================== 5.5. RECONCILIATION UPLOAD ====================
 
+// ── RCM governance: payer coding, accountable denial queues and metrics ──
+router.get('/denial-reason-codes', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try { res.json({ success: true, codes: await rcmGovernance.listDenialReasonCodes({ payerName: req.query.payerName, active: req.query.active === undefined ? true : req.query.active !== 'false' }) }); }
+  catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.post('/denial-reason-codes', authUser, requireRole(['admin']), async (req, res) => {
+  try { res.status(201).json({ success: true, code: await rcmGovernance.upsertDenialReasonCode(req.body || {}) }); }
+  catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.get('/denial-work-queue', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, items: await rcmGovernance.listDenialWorkQueue(hospitalId, req.query) });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+});
+
+router.patch('/denial-work-queue/:id', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, item: await rcmGovernance.updateDenialWorkItem(hospitalId, req.params.id, req.body || {}) });
+  } catch (error) { res.status(error.message.includes('not found') ? 404 : 400).json({ success: false, message: error.message }); }
+});
+
+router.get('/rcm/payer-analytics', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    res.json({ success: true, ...(await rcmGovernance.payerRcmAnalytics(hospitalId, req.user, req.query)) });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
+router.post('/reconciliation/import', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const hospitalId = resolveTenantId(req.user);
+    const remittances = Array.isArray(req.body?.remittances) ? req.body.remittances : Array.isArray(req.body?.rows) ? req.body.rows : [];
+    const out = await rcmGovernance.importEraBatch(hospitalId, remittances, { sourceName: req.body?.sourceName || 'api', actor: { id: req.user.id, name: req.user.name, req } });
+    res.status(out.duplicate ? 200 : 201).json({ success: true, ...out });
+  } catch (error) { res.status(400).json({ success: false, message: error.message }); }
+});
+
 /**
  * POST /hospital/insurance/reconciliation/upload
  * Upload a reconciliation CSV for matching
@@ -2323,32 +2365,22 @@ router.get('/patient/:patientId/billing-summary', authUser, requireRole(['hospit
 router.post('/reconciliation/upload', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
   try {
     const hospitalId = resolveTenantId(req.user);
-    const remittances = Array.isArray(req.body?.remittances) ? req.body.remittances : (req.body?.claimNumber ? [req.body] : []);
+    const remittances = Array.isArray(req.body?.remittances) ? req.body.remittances : Array.isArray(req.body?.rows) ? req.body.rows : (req.body?.claimNumber ? [req.body] : []);
     if (remittances.length === 0) {
-      return res.json({
-        success: true,
-        message: 'Reconciliation file received. No remittance rows in payload — upload CSV parser pending.',
-        matched: 0, unmatched: 0, total: 0,
-      });
+      return res.status(400).json({ success: false, message: 'At least one remittance row is required' });
     }
-    const eraService = (await import('../services/hospital-era.service.js')).default;
-    const results = [];
-    for (const row of remittances) {
-      try {
-        const posted = await eraService.postEraRemittance(hospitalId, row, { id: req.user.id, name: req.user.name });
-        results.push({ success: true, ...posted });
-      } catch (e) {
-        results.push({ success: false, claimNumber: row.claimNumber, message: e.message });
-      }
-    }
-    const matched = results.filter((r) => r.success).length;
+    const imported = await rcmGovernance.importEraBatch(hospitalId, remittances, {
+      sourceName: req.body?.sourceName || 'reconciliation-upload',
+      actor: { id: req.user.id, name: req.user.name, req },
+    });
+    const matched = imported.results.filter((r) => r.success).length;
     res.json({
       success: true,
-      message: `Posted ${matched} of ${remittances.length} ERA remittance(s)`,
+      message: imported.duplicate ? 'This ERA batch was already imported' : `Posted ${matched} of ${remittances.length} ERA remittance(s)`,
       matched,
       unmatched: remittances.length - matched,
       total: remittances.length,
-      results,
+      ...imported,
     });
   } catch (error) {
     console.error('Reconciliation upload error:', error);
@@ -3012,6 +3044,7 @@ router.post('/claims/:claimId/appeal', authUser, requireRole(['hospital', 'admin
           appealedAt: new Date(),
           appealedBy: req.user.id,
         });
+        await rcmGovernance.advanceDenialWorkByDenial(linkedDenial.id, 'appealed');
       }
     } catch (syncError) {
       console.warn('claim_denials sync on appeal skipped:', syncError.message);
@@ -3072,6 +3105,7 @@ router.post('/claims/:claimId/denials', authUser, requireRole(['hospital', 'admi
       claimId: claim.id,
       claimNumber: claim.claimNumber,
       patientId: claim.patientId,
+      payerName: claim.insuranceProvider || claim.schemeName || null,
       denialCode: req.body.denialCode,
       denialReason: req.body.denialReason,
       deniedAmount: req.body.deniedAmount,
@@ -3100,6 +3134,30 @@ router.post('/claims/:claimId/denials/:denialId/appeal', authUser, requireRole([
   } catch (error) {
     console.error('Draft denial appeal error:', error);
     res.status(error.message === 'Denial not found' ? 404 : 500).json({ success: false, message: error.message });
+  }
+});
+
+router.post('/claims/:claimId/denials/:denialId/submit-appeal', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  param('denialId').isInt(),
+  body('notes').optional().isString().isLength({ max: 4000 }),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+
+    const claim = await withClaimsRls(req, (transaction) => InsuranceClaim.findByPk(req.params.claimId, { transaction }));
+    if (!claim) return res.status(404).json({ success: false, message: 'Claim not found' });
+    const result = await denialService.submitAppeal(
+      claim.hospitalId || claim.organizationId,
+      parseInt(req.params.denialId),
+      { notes: req.body.notes },
+      req.user.id,
+    );
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Submit denial appeal error:', error);
+    res.status(error.message === 'Denial not found' ? 404 : 400).json({ success: false, message: error.message });
   }
 });
 

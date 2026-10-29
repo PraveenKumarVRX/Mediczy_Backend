@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, Cell,
@@ -20,10 +21,23 @@ const CATEGORICAL = ['#2a78d6', '#1baf7a', '#eda100'];
 
 const formatCurrency = (amount?: number) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0, notation: 'compact' }).format(amount || 0);
+const formatPercent = (value?: number) => `${Math.round((value || 0) * 1000) / 10}%`;
 
 interface AgingBucket { bucket: string; count: number; amount: number; }
 interface TatByInsurer { insurer: string; avgHrs: number; totalClaims: number; }
 interface TrendPoint { month: string; submitted: number; approved: number; rejected: number; queries: number; }
+interface PayerRcm {
+  payer: string;
+  claim_count: number;
+  outstanding_amount: number | string;
+  ar_0_30: number | string;
+  ar_31_60: number | string;
+  ar_61_90: number | string;
+  ar_90_plus: number | string;
+  cleanClaimRate: number;
+  denialRate: number;
+  collectionRate: number;
+}
 
 function StatTile({ icon: Icon, label, value, tone }: { icon: React.ElementType; label: string; value: string; tone: string }) {
   return (
@@ -57,16 +71,18 @@ const InsuranceDeskAnalytics = () => {
   const [tatByInsurer, setTatByInsurer] = useState<TatByInsurer[]>([]);
   const [trends, setTrends] = useState<{ queries: number; rejections: number; approvals: number }>({ queries: 0, rejections: 0, approvals: 0 });
   const [timeline, setTimeline] = useState<TrendPoint[]>([]);
+  const [payerRcm, setPayerRcm] = useState<PayerRcm[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [receivablesRes, agingRes, tatRes, trendsRes] = await Promise.all([
+      const [receivablesRes, agingRes, tatRes, trendsRes, payerRcmRes] = await Promise.all([
         api.get('/hospital/insurance/revenue/receivables'),
         api.get('/hospital/insurance/reports/claims-aging'),
         api.get('/hospital/insurance/reports/tat'),
         api.get('/hospital/insurance/reports/query-rejection-trends'),
+        api.get('/hospital/insurance/rcm/payer-analytics'),
       ]);
       setReceivables(receivablesRes.data.receivables || { approvedNotSettled: 0, settled: 0, pending: 0, total: 0 });
       setAgingBuckets(agingRes.data.agingBuckets || []);
@@ -75,6 +91,7 @@ const InsuranceDeskAnalytics = () => {
       setTatByInsurer(tatRes.data.tatReport?.byInsurer || tatRes.data.report || []);
       setTrends(trendsRes.data.trends || { queries: 0, rejections: 0, approvals: 0 });
       setTimeline(trendsRes.data.timeline || []);
+      setPayerRcm(payerRcmRes.data.payers || []);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not load analytics.');
     } finally {
@@ -165,6 +182,34 @@ const InsuranceDeskAnalytics = () => {
                   <Line type="monotone" dataKey="approved" name="Approvals" stroke={CATEGORICAL[2]} strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
+            )}
+          </ChartCard>
+
+          <ChartCard title="Payer-wise RCM performance & A/R ageing">
+            {payerRcm.length === 0 ? (
+              <p className="text-sm text-muted-foreground h-32 flex items-center justify-center">No payer claims in the current 90-day reporting period.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader><TableRow>
+                    <TableHead>Payer</TableHead><TableHead className="text-right">Claims</TableHead><TableHead className="text-right">Outstanding</TableHead>
+                    <TableHead className="text-right">0–30</TableHead><TableHead className="text-right">31–60</TableHead><TableHead className="text-right">61–90</TableHead><TableHead className="text-right">90+</TableHead>
+                    <TableHead className="text-right">Clean</TableHead><TableHead className="text-right">Denial</TableHead><TableHead className="text-right">Collection</TableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>{payerRcm.map((payer) => <TableRow key={payer.payer}>
+                    <TableCell className="font-medium whitespace-nowrap">{payer.payer}</TableCell>
+                    <TableCell className="text-right">{payer.claim_count}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(Number(payer.outstanding_amount))}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(Number(payer.ar_0_30))}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(Number(payer.ar_31_60))}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(Number(payer.ar_61_90))}</TableCell>
+                    <TableCell className="text-right text-amber-700">{formatCurrency(Number(payer.ar_90_plus))}</TableCell>
+                    <TableCell className="text-right">{formatPercent(payer.cleanClaimRate)}</TableCell>
+                    <TableCell className="text-right">{formatPercent(payer.denialRate)}</TableCell>
+                    <TableCell className="text-right">{formatPercent(payer.collectionRate)}</TableCell>
+                  </TableRow>)}</TableBody>
+                </Table>
+              </div>
             )}
           </ChartCard>
         </div>

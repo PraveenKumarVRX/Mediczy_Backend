@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Clock, User, AlertTriangle, PhoneOff, CheckCircle2 } from 'lucide-react';
-import axios from 'axios';
+import api from '@/utils/api';
 
 interface QueueEntry {
   id: number;
@@ -32,12 +32,10 @@ export default function QueueManagementPanel() {
 
   const fetchQueue = async () => {
     try {
-      const token = localStorage.getItem('doctorToken');
-      const { data } = await axios.get('/api/v1/queue/my', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setQueue(data.data);
-      setCurrentPatient(data.data.find((p: QueueEntry) => p.status === 'in_consultation') || null);
+      const { data } = await api.get('/v1/queue/my');
+      const entries = Array.isArray(data?.data) ? data.data : [];
+      setQueue(entries);
+      setCurrentPatient(entries.find((p: QueueEntry) => p.status === 'in_consultation') || null);
     } catch (error) {
       console.error('Failed to fetch queue:', error);
     } finally {
@@ -47,13 +45,10 @@ export default function QueueManagementPanel() {
 
   const callNextPatient = async () => {
     try {
-      const token = localStorage.getItem('doctorToken');
       const nextPatient = queue.find(p => p.status === 'waiting');
       if (!nextPatient) return;
 
-      await axios.patch(`/api/v1/queue/${nextPatient.id}/call`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(`/v1/queue/${nextPatient.id}/call`);
       fetchQueue();
     } catch (error) {
       console.error('Failed to call patient:', error);
@@ -62,10 +57,7 @@ export default function QueueManagementPanel() {
 
   const completeConsultation = async (entryId: number) => {
     try {
-      const token = localStorage.getItem('doctorToken');
-      await axios.patch(`/api/v1/queue/${entryId}/complete`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(`/v1/queue/${entryId}/complete`);
       fetchQueue();
     } catch (error) {
       console.error('Failed to complete consultation:', error);
@@ -74,10 +66,7 @@ export default function QueueManagementPanel() {
 
   const markNoShow = async (entryId: number) => {
     try {
-      const token = localStorage.getItem('doctorToken');
-      await axios.patch(`/api/v1/queue/${entryId}/no-show`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await api.patch(`/v1/queue/${entryId}/no-show`);
       fetchQueue();
     } catch (error) {
       console.error('Failed to mark no-show:', error);

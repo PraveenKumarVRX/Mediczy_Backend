@@ -29,7 +29,15 @@ const DoctorAlerts: React.FC = () => {
     queryFn: async () => {
       try {
         const response = await api.get('/doctors/alerts');
-        return response.data.alerts || [];
+        // APIs may return an error/envelope object during a rolling deploy.
+        // React Query's default only protects against `undefined`; a truthy
+        // object here would later make every `.filter()` in this page throw.
+        const payload = response.data;
+        return Array.isArray(payload?.alerts)
+          ? payload.alerts
+          : Array.isArray(payload?.data?.alerts)
+            ? payload.data.alerts
+            : [];
       } catch (err: any) {
         console.warn('Failed to fetch alerts:', err.message);
         // Return empty array as fallback

@@ -11,6 +11,7 @@
 import ClaimDenial from '../models/postgres/claimDenial.model.postgres.js';
 import InsuranceClaim from '../models/postgres/insuranceClaim.model.postgres.js';
 import { draftAppealLetter } from './insurance-ai-copilot.service.js';
+import { advanceDenialWorkByDenial, createDenialWorkItem } from './insurance-rcm-governance.service.js';
 
 export async function listDenials(hospitalId, { status, limit = 50 } = {}) {
   const where = { hospitalId };
@@ -41,12 +42,19 @@ export async function createDenial(hospitalId, data, actorId) {
     // uses elsewhere, so updatedAt/audit bookkeeping stays consistent instead
     // of a bare fire-and-forget UPDATE.
     await InsuranceClaim.update(
-      { status: 'denied', lastModifiedBy: actorId || null },
+      // `rejected` is the canonical InsuranceClaim state (and the value used
+      // by payer analytics); `denied` is not valid on that model.
+      { status: 'rejected', settlementStatus: 'rejected', lastModifiedBy: actorId || null },
       { where: { id: data.claimId } }
     ).catch(() => {});
   }
 
-  return denial.toJSON();
+  const result = denial.toJSON();
+  await createDenialWorkItem({
+    denialId: result.id, hospitalId, payerName: data.payerName, denialCode: result.denialCode,
+    priority: Number(result.deniedAmount) >= 100000 ? 'high' : 'normal',
+  });
+  return result;
 }
 
 /**
@@ -87,11 +95,30 @@ Please find enclosed clinical documentation supporting this claim.`;
   await denial.update({
     appealLetter: letter,
     status: 'appeal_drafted',
-    appealedAt: new Date(),
-    appealedBy: actorId || null,
   });
+  await advanceDenialWorkByDenial(denial.id, 'appeal_drafted');
 
   return { denialId, appealLetter: letter };
+}
+
+/**
+ * Records the point at which an approved appeal package actually leaves the
+ * hospital. Drafting is intentionally separate: a generated letter must not
+ * be counted as an appeal submitted to a payer.
+ */
+export async function submitAppeal(hospitalId, denialId, { notes } = {}, actorId) {
+  const denial = await ClaimDenial.findOne({ where: { id: denialId, hospitalId } });
+  if (!denial) throw new Error('Denial not found');
+  if (!denial.appealLetter) throw new Error('Draft an appeal before recording its submission');
+
+  await denial.update({
+    status: 'appealed',
+    appealedAt: new Date(),
+    appealedBy: actorId || null,
+    resolutionNotes: notes ? `${denial.resolutionNotes || ''}\n[APPEAL SUBMITTED] ${notes}`.trim() : denial.resolutionNotes,
+  });
+  await advanceDenialWorkByDenial(denial.id, 'appealed');
+  return { success: true, denialId, appealedAt: denial.appealedAt };
 }
 
 export async function resolveDenial(hospitalId, denialId, { resolution, notes }, actorId) {
@@ -103,7 +130,8 @@ export async function resolveDenial(hospitalId, denialId, { resolution, notes },
     resolutionNotes: notes || null,
     resolvedAt: new Date(),
   });
+  await advanceDenialWorkByDenial(denial.id, 'resolved');
   return { success: true, denialId };
 }
 
-export default { listDenials, createDenial, draftAppeal, resolveDenial };
+export default { listDenials, createDenial, draftAppeal, submitAppeal, resolveDenial };
