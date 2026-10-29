@@ -1487,6 +1487,12 @@ Rules:
     let ishaOk = false;
 
     if (!toolName) try {
+      // sib's circuit breaker is a local, no-network check — if it's already
+      // tripped, forceProvider: 'sib' is a guaranteed failure, so skip straight
+      // to the full-cascade fallback below instead of waiting out that call.
+      if (llmProvider.isProviderCircuitOpen('sib')) {
+        throw new Error('sib circuit open (skipped)');
+      }
       const ishaResp = await llmProvider.chat({
         messages: [
           { role: 'system', content: ishaIntentPrompt },

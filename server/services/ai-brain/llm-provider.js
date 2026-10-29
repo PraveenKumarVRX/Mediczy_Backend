@@ -369,6 +369,19 @@ function cbFail(getF, setF, getO, setO, name) {
 }
 
 /**
+ * Cheap, local-only check (no network call) for whether a provider's circuit
+ * breaker is currently tripped. Callers that would otherwise force a single
+ * provider (e.g. forceProvider: 'sib' for a fast intent-classification pass)
+ * can use this to skip straight to the full cascade instead of waiting out
+ * a guaranteed-failing call.
+ */
+export function isProviderCircuitOpen(name) {
+  if (name === 'isha') return cbCheck(_ishaOpenUntil);
+  if (name === 'sib') return Date.now() < _sibOpenUntil;
+  return false;
+}
+
+/**
  * Call a local Ollama-protocol endpoint (/api/chat). Used both by the
  * cloud-server's own last-resort qwen2:1.5b (provider 'local-slm') and any
  * workstation GGUF model (provider 'gguf-workstation') — each provider's own
@@ -1440,4 +1453,4 @@ async function transcribe(fileInput, { language = null, responseFormat = 'verbos
 getIshaToken().catch(() => {});
 getModelConfig().catch(() => {});
 
-export default { chat, vision, transcribe, getModelConfig, listProviders, PROVIDERS };
+export default { chat, vision, transcribe, getModelConfig, listProviders, PROVIDERS, isProviderCircuitOpen };
