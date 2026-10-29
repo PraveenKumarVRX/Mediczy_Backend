@@ -232,6 +232,16 @@ class InitializationController {
       await runOhcWorkplaceEmergenciesMigration().catch(e =>
         console.warn('⚠️  OHC workplace emergencies migration skipped:', e.message)
       );
+      const { runOhcEmergencyResponseMigration } = await import('../migrations/ohc-emergency-response.migration.js');
+      await runOhcEmergencyResponseMigration().catch(e =>
+        console.warn('⚠️  OHC emergency response migration skipped:', e.message)
+      );
+      const { runOhcOccupationalWorkflowsMigration } = await import('../migrations/ohc-occupational-workflows.migration.js');
+      await runOhcOccupationalWorkflowsMigration().catch(e =>
+        console.warn('⚠️  OHC occupational workflows migration skipped:', e.message)
+      );
+      const { startOhcAppointmentReminder } = await import('../services/ohc-appointment-reminder.service.js');
+      startOhcAppointmentReminder();
       const { runOhcClinicianDoctorLinkMigration } = await import('../migrations/ohc-clinician-doctor-link.migration.js');
       await runOhcClinicianDoctorLinkMigration().catch(e =>
         console.warn('⚠️  OHC clinician doctor-link migration skipped:', e.message)

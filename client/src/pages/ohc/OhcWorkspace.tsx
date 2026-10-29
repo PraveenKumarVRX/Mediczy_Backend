@@ -8,6 +8,7 @@ import { AlertTriangle, LogOut, ShieldCheck, Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { InlineError } from "@/components/ui/inline-error";
@@ -15,8 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { CertificatesTable, EmergenciesPanel, EmergencyReportDialog, IssueCertificateDialog, PrescriptionDialog, PrescriptionsTable, ReferralDialog, StaffList } from "../care-units/ohcPanels";
-import type { ClinicalPrescription, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "../care-units/types";
-import { OhcError, changePassword, createPrescription, createReferral, fetchCertificatePdfBlob, getCertificates, getEmployees, getEmergencies, getMe, getMyPrescriptions, getStaff, hasSession, issueCertificate, logout, reportEmergency, updateEmergency } from "./ohcClient";
+import type { ClinicalPrescription, EmergencyMetrics, Employee, OccupationalSummary, OhcAppointment, OhcEncounter, OhcMe, OhcResponder, OhcStaffMember, OhcStaffMessage, WorkplaceEmergency, WorkspaceCertificate } from "../care-units/types";
+import { OhcError, addEmergencyNote, assignEmergencyResponder, changePassword, createAppointment, createOhcStaffMessage, createPrescription, createReferral, fetchCertificatePdfBlob, finalizeEmergencyReport, getAppointments, getCertificates, getEmergencyDetail, getEmergencyMetrics, getEmployees, getEmergencies, getMe, getMyPrescriptions, getOccupationalEncounters, getOccupationalSummary, getOhcStaffMessages, getResponders, getStaff, hasSession, issueCertificate, logout, remindAppointment, reportEmergency, respondToEmergencyAssignment, saveEmergencyReportDraft, setMyResponderAvailability, updateAppointment, updateEmergency } from "./ohcClient";
 
 function ChangePassword({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
@@ -44,15 +45,27 @@ function ChangePassword({ onDone }: { onDone: () => void }) {
 
 export default function OhcWorkspace() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [me, setMe] = useState<OhcMe | null>(null);
   const [error, setError] = useState<OhcError | null>(null);
-  const [tab, setTab] = useState<"employees" | "certificates" | "prescriptions" | "staff" | "emergencies">("employees");
+  const [tab, setTab] = useState<"employees" | "occupational" | "certificates" | "prescriptions" | "staff" | "emergencies">("employees");
   const [search, setSearch] = useState("");
   const [employees, setEmployees] = useState<Employee[] | null>(null);
   const [certs, setCerts] = useState<WorkspaceCertificate[] | null>(null);
   const [prescriptions, setPrescriptions] = useState<ClinicalPrescription[] | null>(null);
   const [staff, setStaff] = useState<OhcStaffMember[] | null>(null);
+  const [responders, setResponders] = useState<OhcResponder[] | null>(null);
   const [emergencies, setEmergencies] = useState<WorkplaceEmergency[] | null>(null);
+  const [emergencyMetrics, setEmergencyMetrics] = useState<EmergencyMetrics | null>(null);
+  const [appointments, setAppointments] = useState<OhcAppointment[] | null>(null);
+  const [encounters, setEncounters] = useState<OhcEncounter[] | null>(null);
+  const [staffMessages, setStaffMessages] = useState<OhcStaffMessage[] | null>(null);
+  const [occupationalSummary, setOccupationalSummary] = useState<OccupationalSummary | null>(null);
+  const [appointmentEmployeeId, setAppointmentEmployeeId] = useState("");
+  const [appointmentAt, setAppointmentAt] = useState("");
+  const [appointmentType, setAppointmentType] = useState("occupational_visit");
+  const [messageTitle, setMessageTitle] = useState("");
+  const [messageBody, setMessageBody] = useState("");
   const [listError, setListError] = useState(false);
   const [issueFor, setIssueFor] = useState<Employee | null>(null);
   const [prescribeFor, setPrescribeFor] = useState<Employee | null>(null);
@@ -79,13 +92,22 @@ export default function OhcWorkspace() {
   const loadPrescriptions = useCallback(async () => { try { setPrescriptions((await getMyPrescriptions()).prescriptions); setListError(false); } catch { setListError(true); } }, []);
   const loadStaff = useCallback(async () => { if (!unit) return; try { setStaff((await getStaff(unit.uid)).staff); setListError(false); } catch { setListError(true); } }, [unit]);
   const loadEmergencies = useCallback(async () => { if (!unit) return; try { setEmergencies((await getEmergencies(unit.uid)).emergencies); setListError(false); } catch { setListError(true); } }, [unit]);
+  const loadEmergencyMetrics = useCallback(async () => { if (!unit) return; try { setEmergencyMetrics((await getEmergencyMetrics(unit.uid)).metrics); } catch { setEmergencyMetrics(null); } }, [unit]);
+  const loadResponders = useCallback(async () => { if (!unit) return; try { setResponders((await getResponders(unit.uid)).responders); } catch { setResponders([]); } }, [unit]);
+  const loadOccupational = useCallback(async () => { if (!unit) return; try { const [a, e, m, s] = await Promise.all([getAppointments(unit.uid), getOccupationalEncounters(unit.uid), getOhcStaffMessages(unit.uid), getOccupationalSummary(unit.uid)]); setAppointments(a.appointments); setEncounters(e.encounters); setStaffMessages(m.messages); setOccupationalSummary(s.summary); setListError(false); } catch { setListError(true); } }, [unit]);
   useEffect(() => {
     if (tab === "employees") { const t = setTimeout(loadEmployees, 250); return () => clearTimeout(t); }
     if (tab === "certificates") { loadCerts(); return undefined; }
     if (tab === "prescriptions") { loadPrescriptions(); return undefined; }
     if (tab === "staff") { loadStaff(); return undefined; }
-    loadEmergencies(); return undefined;
-  }, [tab, loadEmployees, loadCerts, loadPrescriptions, loadStaff, loadEmergencies]);
+    if (tab === "occupational") { loadOccupational(); return undefined; }
+    loadEmergencies(); loadResponders(); loadEmergencyMetrics(); return undefined;
+  }, [tab, loadEmployees, loadCerts, loadPrescriptions, loadStaff, loadOccupational, loadEmergencies, loadResponders, loadEmergencyMetrics]);
+  useEffect(() => {
+    if (tab !== "emergencies") return undefined;
+    const timer = window.setInterval(() => { loadEmergencies(); loadResponders(); loadEmergencyMetrics(); }, 15000);
+    return () => window.clearInterval(timer);
+  }, [tab, loadEmergencies, loadResponders, loadEmergencyMetrics]);
 
   const signOut = async () => { await logout(); navigate("/ohc/login", { replace: true }); };
 
@@ -113,7 +135,7 @@ export default function OhcWorkspace() {
           </p>
         )}
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList><TabsTrigger value="employees">Employees</TabsTrigger><TabsTrigger value="certificates">Certificates issued</TabsTrigger><TabsTrigger value="prescriptions">Prescriptions</TabsTrigger><TabsTrigger value="staff">Clinic staff</TabsTrigger><TabsTrigger value="emergencies">Emergencies</TabsTrigger></TabsList>
+          <TabsList><TabsTrigger value="employees" onClick={() => setTab("employees")}>Employees</TabsTrigger><TabsTrigger value="occupational" onClick={() => setTab("occupational")}>Occupational care</TabsTrigger><TabsTrigger value="certificates" onClick={() => setTab("certificates")}>Certificates issued</TabsTrigger><TabsTrigger value="prescriptions" onClick={() => setTab("prescriptions")}>Prescriptions</TabsTrigger><TabsTrigger value="staff" onClick={() => setTab("staff")}>Clinic staff</TabsTrigger><TabsTrigger value="emergencies" onClick={() => setTab("emergencies")}>Emergencies</TabsTrigger></TabsList>
         </Tabs>
 
         {tab === "employees" && (
@@ -128,7 +150,7 @@ export default function OhcWorkspace() {
                   <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 p-3">
                     <span><span className="font-medium">{e.name}</span><span className="block text-xs text-muted-foreground">{[e.employeeId, e.department, e.designation].filter(Boolean).join(" · ")}</span></span>
                     <div className="flex gap-2">
-                      <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setIssueFor(e)}>Certificate</Button>
+                      <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setIssueFor(e)}>Issue certificate</Button>
                       <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setPrescribeFor(e)}>Prescribe</Button>
                       <Button size="sm" variant="outline" disabled={!canSign} onClick={() => setReferFor(e)}>Refer</Button>
                     </div>
@@ -136,6 +158,18 @@ export default function OhcWorkspace() {
                 ))}
               </ul>
             )}
+          </section>
+        )}
+
+        {tab === "occupational" && (
+          <section aria-label="Occupational care" className="space-y-4">
+            <div><h2 className="text-base font-semibold">Occupational care</h2><p className="text-sm text-muted-foreground">Schedule workplace visits, retain occupational encounters and share OHC operational updates.</p></div>
+            {occupationalSummary ? <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-3"><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Visits completed</span>{occupationalSummary.appointments.completed} / {occupationalSummary.appointments.total}</div><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Finalized encounters</span>{occupationalSummary.encounters.finalized} / {occupationalSummary.encounters.total}</div><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Screenings needing attention</span>{occupationalSummary.screenings.attention_required}</div></div> : null}
+            <form className="grid gap-2 rounded-lg border p-3 sm:grid-cols-4" onSubmit={(event) => { event.preventDefault(); if (!appointmentEmployeeId || !appointmentAt) return; void createAppointment({ unit: unit.uid, employeeUserId: Number(appointmentEmployeeId), scheduledAt: new Date(appointmentAt).toISOString(), appointmentType }).then(async () => { setAppointmentEmployeeId(""); setAppointmentAt(""); await loadOccupational(); toast({ title: "Occupational visit scheduled" }); }).catch((err: OhcError) => toast({ variant: "destructive", title: "Could not schedule visit", description: err.message })); }}><div><Label htmlFor="ohc-employee-id">Employee user ID</Label><Input id="ohc-employee-id" value={appointmentEmployeeId} inputMode="numeric" onChange={(event) => setAppointmentEmployeeId(event.target.value)} /></div><div><Label htmlFor="ohc-scheduled-at">Date and time</Label><Input id="ohc-scheduled-at" type="datetime-local" value={appointmentAt} onChange={(event) => setAppointmentAt(event.target.value)} /></div><div><Label htmlFor="ohc-visit-type">Visit type</Label><Select value={appointmentType} onValueChange={setAppointmentType}><SelectTrigger id="ohc-visit-type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="occupational_visit">Occupational visit</SelectItem><SelectItem value="pre_employment">Pre-employment</SelectItem><SelectItem value="periodic">Periodic</SelectItem><SelectItem value="return_to_work">Return to work</SelectItem><SelectItem value="screening">Screening</SelectItem><SelectItem value="dot_testing">DOT testing</SelectItem></SelectContent></Select></div><div className="self-end"><Button type="submit">Schedule visit</Button></div></form>
+            {listError ? <InlineError message="Could not load occupational care." onRetry={loadOccupational} /> : null}
+            <div className="rounded-lg border"><p className="border-b p-3 text-sm font-medium">Scheduled visits</p>{appointments?.length ? <ul className="divide-y">{appointments.map((appointment) => <li key={appointment.id} className="flex flex-wrap items-center justify-between gap-2 p-3 text-sm"><span><span className="font-medium">{appointment.employee_name}</span><span className="block text-xs text-muted-foreground">{appointment.appointment_type.replaceAll("_", " ")} · {new Date(appointment.scheduled_at).toLocaleString()} · {appointment.status}</span></span>{appointment.status === "scheduled" ? <span className="flex gap-2"><Button size="sm" variant="outline" onClick={() => void remindAppointment(appointment.id, { unit: unit.uid }).then((outcome) => toast({ title: outcome.notificationSent ? "Reminder sent" : "Reminder queued" }))}>Send reminder</Button><Button size="sm" variant="outline" onClick={() => void updateAppointment(appointment.id, { unit: unit.uid, status: "completed" }).then(loadOccupational)}>Mark completed</Button></span> : null}</li>)}</ul> : <p className="p-3 text-sm text-muted-foreground">No occupational visits scheduled.</p>}</div>
+            <div className="rounded-lg border"><p className="border-b p-3 text-sm font-medium">OHC staff communications</p><div className="space-y-2 p-3"><Input aria-label="Announcement title" value={messageTitle} maxLength={160} placeholder="Announcement title" onChange={(event) => setMessageTitle(event.target.value)} /><Textarea aria-label="Announcement message" value={messageBody} maxLength={4000} placeholder="Operational update, handover or announcement" onChange={(event) => setMessageBody(event.target.value)} /><Button size="sm" disabled={!messageTitle.trim() || !messageBody.trim()} onClick={() => void createOhcStaffMessage({ unit: unit.uid, title: messageTitle.trim(), body: messageBody.trim(), messageType: "announcement" }).then(async () => { setMessageTitle(""); setMessageBody(""); await loadOccupational(); })}>Post announcement</Button></div>{staffMessages?.map((message) => <div key={message.id} className="border-t p-3 text-sm"><span className="font-medium">{message.title}</span><span className="block text-xs text-muted-foreground">{message.author_name} · {message.message_type}</span><p className="mt-1">{message.body}</p></div>)}</div>
+            <div className="rounded-lg border"><p className="border-b p-3 text-sm font-medium">Recent occupational encounters</p>{encounters?.length ? <ul className="divide-y">{encounters.map((encounter) => <li key={encounter.id} className="p-3 text-sm"><span className="font-medium">{encounter.employee_name}</span><span className="block text-xs text-muted-foreground">{encounter.encounter_type.replaceAll("_", " ")} · {encounter.status}</span>{encounter.assessment ? <p className="mt-1">{encounter.assessment}</p> : null}</li>)}</ul> : <p className="p-3 text-sm text-muted-foreground">No encounters recorded.</p>}</div>
           </section>
         )}
 
@@ -162,7 +196,9 @@ export default function OhcWorkspace() {
               <div><h2 className="text-base font-semibold">Workplace emergencies</h2><p className="text-sm text-muted-foreground">Triage and track medical events reported at the corporate workplace.</p></div>
               <Button onClick={() => setEmergencyOpen(true)}><AlertTriangle className="mr-2 size-4" aria-hidden />Report emergency</Button>
             </div>
-            <EmergenciesPanel emergencies={emergencies} listError={listError} onRetry={loadEmergencies} onAdvance={async (id, status) => { await updateEmergency(id, { unit: unit.uid, status }); loadEmergencies(); }} />
+            {emergencyMetrics ? <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Active</span>{emergencyMetrics.activeIncidents}</div><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Critical active</span>{emergencyMetrics.criticalActiveIncidents}</div><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Today</span>{emergencyMetrics.incidentsToday}</div><div className="rounded-md border p-2"><span className="block text-xs text-muted-foreground">Avg acknowledgement</span>{emergencyMetrics.averageAcknowledgementSeconds == null ? "—" : `${Math.round(emergencyMetrics.averageAcknowledgementSeconds / 60)} min`}</div></div> : null}
+            {me.worker.role !== "corporate_cmo" && <div className="flex max-w-sm items-center gap-2 rounded-md border p-3"><Label htmlFor="responder-availability">My response availability</Label><Select value={responders?.find((responder) => responder.uid === me.worker.uid)?.availability || "available"} onValueChange={async (availability) => { try { await setMyResponderAvailability({ unit: unit.uid, availability }); await loadResponders(); } catch (err) { toast({ variant: "destructive", title: "Could not update availability", description: (err as OhcError).message }); } }}><SelectTrigger id="responder-availability"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="available">Available</SelectItem><SelectItem value="busy">Busy</SelectItem><SelectItem value="off_duty">Off duty</SelectItem></SelectContent></Select></div>}
+            <EmergenciesPanel emergencies={emergencies} responders={responders} listError={listError} onRetry={() => { loadEmergencies(); loadResponders(); }} onAdvance={async (id, status) => { await updateEmergency(id, { unit: unit.uid, status }); await loadEmergencies(); }} onAssign={async (id, responderUid) => { await assignEmergencyResponder(id, { unit: unit.uid, responderUid }); await loadEmergencies(); await loadResponders(); }} onRespond={async (emergencyId, assignmentId, status) => { await respondToEmergencyAssignment(emergencyId, assignmentId, { unit: unit.uid, status }); await loadEmergencies(); await loadResponders(); }} onOpenTimeline={(id) => getEmergencyDetail(id, unit.uid)} onAddNote={async (id, input) => { await addEmergencyNote(id, { unit: unit.uid, ...input }); }} onSaveReportDraft={async (id, summary) => { await saveEmergencyReportDraft(id, { unit: unit.uid, summary }); }} onFinalizeReport={async (id) => { await finalizeEmergencyReport(id, { unit: unit.uid }); }} canFinalizeReport={me.worker.role === "ohc_doctor"} />
           </section>
         )}
       </main>

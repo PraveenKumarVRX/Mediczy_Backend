@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { FITNESS_LABEL, formatDate } from "./format";
-import type { ApiProblem, ClinicalPrescription, Employee, Medication, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "./types";
+import type { ApiProblem, ClinicalPrescription, EmergencyDetail, Employee, Medication, OhcResponder, OhcStaffMember, WorkplaceEmergency, WorkspaceCertificate } from "./types";
 
 const NEXT_STATUS: Record<WorkplaceEmergency["status"], WorkplaceEmergency["status"] | null> = {
   open: "triaged", triaged: "resolved", resolved: "closed", closed: null, transferred: null,
@@ -103,10 +103,20 @@ export function EmergencyReportDialog({ employees, open, onOpenChange, onReport,
   return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Report workplace emergency</DialogTitle><DialogDescription>Record the minimum necessary information so the OHC can triage the employee and coordinate escalation.</DialogDescription></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><div className="space-y-1.5"><Label htmlFor="em-type">Event type</Label><Input id="em-type" value={incidentType} maxLength={80} onChange={(e) => setIncidentType(e.target.value)} /></div><div className="space-y-1.5"><Label htmlFor="em-severity">Severity</Label><Select value={severity} onValueChange={setSeverity}><SelectTrigger id="em-severity"><SelectValue /></SelectTrigger><SelectContent>{["low", "medium", "high", "critical"].map((v) => <SelectItem key={v} value={v}>{v[0].toUpperCase() + v.slice(1)}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1.5 sm:col-span-2"><Label htmlFor="em-employee">Employee (optional)</Label><Select value={employeeUserId || "none"} onValueChange={(v) => setEmployeeUserId(v === "none" ? "" : v)}><SelectTrigger id="em-employee"><SelectValue placeholder="Select an employee" /></SelectTrigger><SelectContent><SelectItem value="none">Not specified</SelectItem>{employees.map((e) => <SelectItem key={e.id} value={String(e.id)}>{e.name}{e.employeeId ? ` · ${e.employeeId}` : ""}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1.5 sm:col-span-2"><Label htmlFor="em-location">Location</Label><Input id="em-location" value={location} maxLength={200} placeholder="Building, floor or clinic room" onChange={(e) => setLocation(e.target.value)} /></div><div className="space-y-1.5 sm:col-span-2"><Label htmlFor="em-description">What happened</Label><Textarea id="em-description" value={description} maxLength={2000} onChange={(e) => setDescription(e.target.value)} /></div></div><DialogFooter><Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button disabled={busy || description.trim().length < 2} onClick={submit}>{busy ? "Saving…" : "Log emergency"}</Button></DialogFooter></DialogContent></Dialog>;
 }
 
-export function EmergenciesPanel({ emergencies, listError, onRetry, onAdvance }: {
-  emergencies: WorkplaceEmergency[] | null; listError: boolean; onRetry: () => void; onAdvance: (id: number, nextStatus: string) => Promise<void>;
+export function EmergenciesPanel({ emergencies, responders, listError, onRetry, onAdvance, onAssign, onRespond, onOpenTimeline, onAddNote, onSaveReportDraft, onFinalizeReport, canFinalizeReport = false }: {
+  emergencies: WorkplaceEmergency[] | null; responders?: OhcResponder[] | null; listError: boolean; onRetry: () => void; onAdvance: (id: number, nextStatus: string) => Promise<void>;
+  onAssign?: (id: number, responderUid: string) => Promise<void>; onRespond?: (emergencyId: number, assignmentId: number, status: "acknowledged" | "responding" | "on_scene" | "cleared" | "declined") => Promise<void>;
+  onOpenTimeline?: (id: number) => Promise<EmergencyDetail>;
+  onAddNote?: (id: number, input: { body: string; noteType: "operational" | "handover" | "clinical_summary" }) => Promise<void>;
+  onSaveReportDraft?: (id: number, summary: string) => Promise<void>; onFinalizeReport?: (id: number) => Promise<void>; canFinalizeReport?: boolean;
 }) {
   const { toast } = useToast();
+  const [selectedResponder, setSelectedResponder] = useState<Record<number, string>>({});
+  const [busy, setBusy] = useState<string | null>(null);
+  const [timeline, setTimeline] = useState<EmergencyDetail | null>(null);
+  const [noteBody, setNoteBody] = useState("");
+  const [noteType, setNoteType] = useState<"operational" | "handover" | "clinical_summary">("operational");
+  const [reportSummary, setReportSummary] = useState("");
   if (listError) return <InlineError message="Could not load emergencies." onRetry={onRetry} />;
   if (emergencies === null) return <Skeleton className="h-24" />;
   if (emergencies.length === 0) return <EmptyState icon={AlertTriangle} title="No workplace emergencies" description="New reports will appear here for triage." />;
@@ -114,15 +124,44 @@ export function EmergenciesPanel({ emergencies, listError, onRetry, onAdvance }:
     <div className="space-y-2">
       {emergencies.map((e) => {
         const next = NEXT_STATUS[e.status];
+        const availableResponders = responders?.filter((r) => r.availability !== "off_duty") ?? [];
+        const dispatch = async () => {
+          const responderUid = selectedResponder[e.id];
+          if (!responderUid) return;
+          setBusy(`assign:${e.id}`);
+          try { if (!onAssign) return; await onAssign(e.id, responderUid); setSelectedResponder((current) => ({ ...current, [e.id]: "" })); toast({ title: "Responder assigned" }); }
+          catch (err) { toast({ variant: "destructive", title: "Could not assign responder", description: (err as ApiProblem).message }); }
+          finally { setBusy(null); }
+        };
+        const respond = async (status: "acknowledged" | "responding" | "on_scene" | "cleared" | "declined") => {
+          if (!e.my_assignment_id) return;
+          setBusy(`respond:${e.id}`);
+          try { if (!onRespond) return; await onRespond(e.id, e.my_assignment_id, status); toast({ title: status === "acknowledged" ? "Response acknowledged" : status === "declined" ? "Assignment declined" : `Marked ${status.replace("_", " ")}` }); }
+          catch (err) { toast({ variant: "destructive", title: "Could not update assignment", description: (err as ApiProblem).message }); }
+          finally { setBusy(null); }
+        };
         return (
           <div key={e.id} className="rounded-lg border bg-card p-3">
             <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-medium">{e.incident_type.replaceAll("_", " ")}</span><span className="text-xs font-medium uppercase text-muted-foreground">{e.severity} · {e.status}</span></div>
             <p className="mt-1 text-sm">{e.description}</p>
             <p className="mt-1 text-xs text-muted-foreground">{e.employee_name || "Employee not specified"}{e.location ? ` · ${e.location}` : ""} · {formatDate(e.occurred_at)}</p>
-            {next && <div className="mt-2 flex gap-2"><Button size="sm" variant="outline" onClick={async () => { try { await onAdvance(e.id, next); } catch (err) { toast({ variant: "destructive", title: "Could not update emergency", description: (err as ApiProblem).message }); } }}>{ADVANCE_LABEL[e.status]}</Button></div>}
+            <p className="mt-1 text-xs text-muted-foreground">{e.acknowledged_assignment_count || 0} acknowledged / {e.active_assignment_count || 0} active responders</p>
+            {onOpenTimeline ? <Button className="mt-2" size="sm" variant="ghost" disabled={busy === `timeline:${e.id}`} onClick={() => { setBusy(`timeline:${e.id}`); void onOpenTimeline(e.id).then((detail) => { setTimeline(detail); setReportSummary(detail.report?.summary || ""); }).catch((err: ApiProblem) => toast({ variant: "destructive", title: "Could not load timeline", description: err.message })).finally(() => setBusy(null)); }}>{busy === `timeline:${e.id}` ? "Loading…" : "Operational timeline"}</Button> : null}
+            {onRespond && e.my_assignment_status && !["declined", "cleared", "cancelled"].includes(e.my_assignment_status) ? <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-xs text-muted-foreground">Your response: {e.my_assignment_status.replace("_", " ")}</span>{e.my_assignment_status === "assigned" ? <><Button size="sm" disabled={busy === `respond:${e.id}`} onClick={() => void respond("acknowledged")}>Acknowledge</Button><Button size="sm" variant="outline" disabled={busy === `respond:${e.id}`} onClick={() => void respond("declined")}>Decline</Button></> : null}{e.my_assignment_status === "acknowledged" ? <Button size="sm" disabled={busy === `respond:${e.id}`} onClick={() => void respond("responding")}>Start response</Button> : null}{["acknowledged", "responding"].includes(e.my_assignment_status) ? <Button size="sm" variant="outline" disabled={busy === `respond:${e.id}`} onClick={() => void respond("on_scene")}>On scene</Button> : null}{["acknowledged", "responding", "on_scene"].includes(e.my_assignment_status) ? <Button size="sm" variant="outline" disabled={busy === `respond:${e.id}`} onClick={() => void respond("cleared")}>Clear</Button> : null}</div> : null}
+            {next || (onAssign && !["resolved", "transferred", "closed"].includes(e.status)) ? <div className="mt-2 flex flex-wrap gap-2">
+              {next && <Button size="sm" variant="outline" onClick={async () => { try { await onAdvance(e.id, next); } catch (err) { toast({ variant: "destructive", title: "Could not update emergency", description: (err as ApiProblem).message }); } }}>{ADVANCE_LABEL[e.status]}</Button>}
+              {onAssign ? <><select aria-label={`Assign responder for emergency ${e.id}`} className="h-9 rounded-md border bg-background px-2 text-sm" value={selectedResponder[e.id] || ""} onChange={(event) => setSelectedResponder((current) => ({ ...current, [e.id]: event.target.value }))}>
+                <option value="">Assign responder…</option>{availableResponders.map((responder) => <option key={responder.uid} value={responder.uid}>{responder.name} · {responder.role.replace("ohc_", "")} · {responder.availability}</option>)}
+              </select><Button size="sm" variant="outline" disabled={!selectedResponder[e.id] || busy === `assign:${e.id}`} onClick={() => void dispatch()}>Assign</Button></> : null}
+            </div> : null}
           </div>
         );
       })}
+      <Dialog open={Boolean(timeline)} onOpenChange={(open) => { if (!open) setTimeline(null); }}>
+        <DialogContent className="max-h-[80vh] max-w-xl overflow-y-auto"><DialogHeader><DialogTitle>Emergency operational timeline</DialogTitle><DialogDescription>{timeline?.emergency.incident_type.replaceAll("_", " ")} · event #{timeline?.emergency.id}</DialogDescription></DialogHeader>
+          {timeline ? <div className="space-y-3"><div><p className="text-sm font-medium">Assigned responders</p>{timeline.assignments.length ? <ul className="mt-1 space-y-1 text-sm">{timeline.assignments.map((assignment) => <li key={assignment.id}>{assignment.responder_name} · {assignment.status.replace("_", " ")} · {formatDate(assignment.updated_at || assignment.assigned_at)}</li>)}</ul> : <p className="text-sm text-muted-foreground">No responder has been assigned yet.</p>}</div><div><p className="text-sm font-medium">Event history</p>{timeline.events.length ? <ol className="mt-1 space-y-2">{timeline.events.map((event) => <li key={event.id} className="border-l-2 pl-3 text-sm"><span className="font-medium">{event.event_type.replaceAll("_", " ")}</span><span className="block text-xs text-muted-foreground">{event.actor_name || "System"} · {formatDate(event.created_at)}</span></li>)}</ol> : <p className="text-sm text-muted-foreground">No timeline events recorded.</p>}</div><div><p className="text-sm font-medium">Field notes</p>{timeline.notes.map((note) => <p key={note.id} className="mt-1 rounded border p-2 text-sm"><span className="font-medium">{note.note_type.replace("_", " ")}</span> · {note.author_name}<span className="block">{note.body}</span></p>)}{onAddNote ? <div className="mt-2 space-y-2"><Select value={noteType} onValueChange={(value) => setNoteType(value as typeof noteType)}><SelectTrigger aria-label="Note type"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="operational">Operational</SelectItem><SelectItem value="handover">Handover</SelectItem><SelectItem value="clinical_summary">Clinical summary</SelectItem></SelectContent></Select><Textarea aria-label="Add field note" value={noteBody} maxLength={4000} onChange={(event) => setNoteBody(event.target.value)} /><Button size="sm" disabled={!noteBody.trim() || busy === "note"} onClick={() => { setBusy("note"); void onAddNote(timeline.emergency.id, { body: noteBody.trim(), noteType }).then(async () => { setNoteBody(""); setTimeline(await onOpenTimeline?.(timeline.emergency.id) || null); }).catch((err: ApiProblem) => toast({ variant: "destructive", title: "Could not add note", description: err.message })).finally(() => setBusy(null)); }}>Add note</Button></div> : null}</div>{onSaveReportDraft ? <div><p className="text-sm font-medium">Incident report · {timeline.report?.status || "not started"}</p><Textarea aria-label="Incident report summary" value={reportSummary} maxLength={8000} onChange={(event) => setReportSummary(event.target.value)} /><div className="mt-2 flex gap-2"><Button size="sm" variant="outline" disabled={busy === "report"} onClick={() => { setBusy("report"); void onSaveReportDraft(timeline.emergency.id, reportSummary).then(async () => setTimeline(await onOpenTimeline?.(timeline.emergency.id) || null)).catch((err: ApiProblem) => toast({ variant: "destructive", title: "Could not save report", description: err.message })).finally(() => setBusy(null)); }}>Save draft</Button>{canFinalizeReport && timeline.report?.status === "draft" ? <Button size="sm" disabled={busy === "finalize"} onClick={() => { setBusy("finalize"); void onFinalizeReport?.(timeline.emergency.id).then(async () => setTimeline(await onOpenTimeline?.(timeline.emergency.id) || null)).catch((err: ApiProblem) => toast({ variant: "destructive", title: "Could not finalize report", description: err.message })).finally(() => setBusy(null)); }}>Finalize report</Button> : null}</div></div> : null}</div> : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

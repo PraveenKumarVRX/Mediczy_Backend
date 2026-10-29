@@ -42,13 +42,31 @@ export interface OhcMe {
 }
 export interface Employee { id: number; uid: string; name: string; employeeId: string | null; department: string | null; designation: string | null }
 export interface OhcStaffMember { uid: string; name: string; email: string | null; role: string; active: boolean }
+export interface OhcResponder { uid: string; name: string; role: "ohc_doctor" | "ohc_staff"; availability: "available" | "busy" | "off_duty"; updatedAt: string | null }
 /** Raw row from /api/ohc-workspace/certificates and /api/corporate/ohc-units/:uid/certificates (ohcService.certificates — not the camelCase CorporateDashboard.certificates). */
 export interface WorkspaceCertificate { id: number; patient_name: string | null; employee_id: string | null; fitness_status: string; restrictions: string | null; valid_until: string | null; created_at: string }
 export interface WorkplaceEmergency {
   id: number; unit_uid: string; corporate_uid: string; employee_user_id: number | null; employee_name?: string; employee_uid?: string;
   incident_type: string; severity: "low" | "medium" | "high" | "critical"; description: string; location: string | null;
   occurred_at: string; status: "open" | "triaged" | "resolved" | "transferred" | "closed"; triage_notes: string | null; resolution: string | null;
+  active_assignment_count?: number; acknowledged_assignment_count?: number; my_assignment_id?: number | null;
+  my_assignment_status?: "assigned" | "acknowledged" | "responding" | "on_scene" | "cleared" | "declined" | "cancelled" | null;
+  my_pending_assignment_id?: number | null;
 }
+export interface EmergencyAssignment {
+  id: number; responder_uid: string; responder_name: string; status: "assigned" | "acknowledged" | "responding" | "on_scene" | "cleared" | "declined" | "cancelled";
+  assigned_at: string; acknowledged_at: string | null; responded_at: string | null; cleared_at: string | null; note: string | null; updated_at: string;
+}
+export interface EmergencyEvent { id: number; event_type: string; actor_name: string | null; detail: Record<string, unknown>; created_at: string }
+export interface EmergencyNote { id: number; note_type: "operational" | "handover" | "clinical_summary"; body: string; author_name: string; created_at: string }
+export interface EmergencyReport { emergency_id: number; summary: string; status: "draft" | "finalized"; finalized_at: string | null }
+export interface EmergencyReportAmendment { id: number; reason: string; amendment: string; author_name: string; created_at: string }
+export interface EmergencyDetail { emergency: WorkplaceEmergency; assignments: EmergencyAssignment[]; events: EmergencyEvent[]; notes: EmergencyNote[]; report: EmergencyReport | null; amendments: EmergencyReportAmendment[] }
+export interface EmergencyMetrics { activeIncidents: number; criticalActiveIncidents: number; incidentsToday: number; averageAcknowledgementSeconds: number | null }
+export interface OhcAppointment { id: number; employee_user_id: number; employee_name: string; employee_id: string | null; scheduled_at: string; duration_minutes: number; appointment_type: string; location: string | null; reason: string | null; status: "scheduled" | "completed" | "cancelled" | "no_show" }
+export interface OhcEncounter { id: number; employee_user_id: number; employee_name: string; appointment_id: number | null; encounter_type: string; status: "draft" | "finalized"; observations: Record<string, unknown>; assessment: string | null; treatment: string | null; follow_up_at: string | null; created_at: string }
+export interface OhcStaffMessage { id: number; author_name: string; message_type: "announcement" | "operational" | "handover"; title: string; body: string; created_at: string }
+export interface OccupationalSummary { appointments: { total: number; completed: number; no_show: number }; encounters: { total: number; finalized: number }; screenings: { total: number; attention_required: number } }
 
 export interface ApiProblem { status: number; code: string; message: string; details?: Record<string, unknown> }
 

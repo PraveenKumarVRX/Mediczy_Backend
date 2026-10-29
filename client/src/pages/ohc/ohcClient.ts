@@ -5,7 +5,7 @@
  * Browser storage is the best a web build can do; a native shell should keep these in the platform secure store.
  */
 import api from "@/utils/api";
-import type { ApiProblem, ClinicalPrescription, ClinicalReferral, Employee, OhcMe, OhcStaffMember, WorkplaceEmergency } from "../care-units/types";
+import type { ApiProblem, ClinicalPrescription, ClinicalReferral, EmergencyDetail, EmergencyMetrics, Employee, OccupationalSummary, OhcAppointment, OhcEncounter, OhcMe, OhcResponder, OhcStaffMember, OhcStaffMessage, WorkplaceEmergency } from "../care-units/types";
 
 const ACCESS = "ohcAccessToken";
 const REFRESH = "ohcRefreshToken";
@@ -84,12 +84,40 @@ export const getEmployees = (unit: string, search: string) =>
   request<{ employees: Employee[] }>("GET", `/employees?unit=${encodeURIComponent(unit)}&search=${encodeURIComponent(search)}`);
 export const getStaff = (unit: string) =>
   request<{ staff: OhcStaffMember[] }>("GET", `/staff?unit=${encodeURIComponent(unit)}`);
+export const getAppointments = (unit: string) => request<{ appointments: OhcAppointment[] }>("GET", `/appointments?unit=${encodeURIComponent(unit)}`);
+export const createAppointment = (input: Record<string, unknown>) => request<{ appointment: OhcAppointment }>("POST", "/appointments", input);
+export const updateAppointment = (id: number, input: Record<string, unknown>) => request<{ appointment: OhcAppointment }>("PATCH", `/appointments/${id}`, input);
+export const remindAppointment = (id: number, input: Record<string, unknown>) => request<{ appointmentId: number; notificationSent: boolean }>("POST", `/appointments/${id}/remind`, input);
+export const getOccupationalEncounters = (unit: string, employeeUserId?: number) => request<{ encounters: OhcEncounter[] }>("GET", `/encounters?unit=${encodeURIComponent(unit)}${employeeUserId ? `&employeeUserId=${employeeUserId}` : ""}`);
+export const createOccupationalEncounter = (input: Record<string, unknown>) => request<{ encounter: OhcEncounter }>("POST", "/encounters", input);
+export const finalizeOccupationalEncounter = (id: number, input: Record<string, unknown>) => request<{ encounter: OhcEncounter }>("POST", `/encounters/${id}/finalize`, input);
+export const getOhcStaffMessages = (unit: string) => request<{ messages: OhcStaffMessage[] }>("GET", `/staff-messages?unit=${encodeURIComponent(unit)}`);
+export const createOhcStaffMessage = (input: Record<string, unknown>) => request<{ message: OhcStaffMessage }>("POST", "/staff-messages", input);
+export const getOccupationalSummary = (unit: string) => request<{ summary: OccupationalSummary }>("GET", `/occupational-summary?unit=${encodeURIComponent(unit)}`);
+export const getResponders = (unit: string) =>
+  request<{ responders: OhcResponder[] }>("GET", `/responders?unit=${encodeURIComponent(unit)}`);
+export const setMyResponderAvailability = (input: Record<string, unknown>) =>
+  request<{ availability: OhcResponder["availability"]; updatedAt: string }>("PUT", "/responders/me/availability", input);
 export const getCertificates = (unit: string) => request<{ certificates: Record<string, unknown>[] }>("GET", `/certificates?unit=${encodeURIComponent(unit)}`);
 export const issueCertificate = (input: Record<string, unknown>) => request<{ certificate: { id: number }; pdfUrl: string | null }>("POST", "/certificates", input);
 export const getEmergencies = (unit: string, status = "") =>
   request<{ emergencies: WorkplaceEmergency[] }>("GET", `/emergencies?unit=${encodeURIComponent(unit)}${status ? `&status=${encodeURIComponent(status)}` : ""}`);
+export const getEmergencyMetrics = (unit: string) =>
+  request<{ metrics: EmergencyMetrics }>("GET", `/emergencies/analytics?unit=${encodeURIComponent(unit)}`);
+export const getEmergencyDetail = (id: number, unit: string) =>
+  request<EmergencyDetail>("GET", `/emergencies/${id}?unit=${encodeURIComponent(unit)}`);
+export const addEmergencyNote = (id: number, input: Record<string, unknown>) =>
+  request<{ note: { id: number } }>("POST", `/emergencies/${id}/notes`, input);
+export const saveEmergencyReportDraft = (id: number, input: Record<string, unknown>) =>
+  request<{ report: { emergency_id: number; status: string } }>("PUT", `/emergencies/${id}/report/draft`, input);
+export const finalizeEmergencyReport = (id: number, input: Record<string, unknown>) =>
+  request<{ report: { emergency_id: number; status: "finalized" } }>("POST", `/emergencies/${id}/report/finalize`, input);
 export const reportEmergency = (input: Record<string, unknown>) => request<{ emergency: WorkplaceEmergency }>("POST", "/emergencies", input);
 export const updateEmergency = (id: number, input: Record<string, unknown>) => request<{ emergency: WorkplaceEmergency }>("PATCH", `/emergencies/${id}`, input);
+export const assignEmergencyResponder = (id: number, input: Record<string, unknown>) =>
+  request<{ assignment: { id: number; status: string } }>("POST", `/emergencies/${id}/assignments`, input);
+export const respondToEmergencyAssignment = (emergencyId: number, assignmentId: number, input: Record<string, unknown>) =>
+  request<{ assignment: { id: number; status: "acknowledged" | "responding" | "on_scene" | "cleared" | "declined" } }>("PATCH", `/emergencies/${emergencyId}/assignments/${assignmentId}/respond`, input);
 
 // ── The real hospital prescription + clinical-referral systems (ohcClinicianAuth.middleware.js) ──
 export const getMyPrescriptions = () => requestAt<{ count: number; prescriptions: ClinicalPrescription[] }>("/prescriptions/doctor", "GET");

@@ -126,6 +126,71 @@ describe("OHC workspace", () => {
     expect((screen.getByRole("button", { name: "Sign and issue" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("assigns an available OHC responder from an active emergency without supplying corporate ownership", async () => {
+    routes["GET /me"] = () => ({ body: ME() });
+    routes["GET /emergencies"] = () => ({ body: { emergencies: [{ id: 71, unit_uid: "JBBBB2", corporate_uid: "CAF030", employee_user_id: 41, employee_name: "Anil Employee", incident_type: "injury", severity: "critical", description: "Hand injury", location: "Assembly", occurred_at: "2026-10-08T08:00:00Z", status: "open", triage_notes: null, resolution: null, active_assignment_count: 0, acknowledged_assignment_count: 0 }] } });
+    routes["GET /responders"] = () => ({ body: { responders: [{ uid: "N00001", name: "Nurse Bina", role: "ohc_staff", availability: "available", updatedAt: null }] } });
+    routes["POST /emergencies/71/assignments"] = () => ({ status: 201, body: { assignment: { id: 9, status: "assigned" } } });
+    renderAt("/ohc");
+    const emergencyTab = await screen.findByRole("tab", { name: "Emergencies" });
+    fireEvent.pointerDown(emergencyTab, { button: 0, ctrlKey: false });
+    fireEvent.pointerUp(emergencyTab, { button: 0 });
+    fireEvent.click(emergencyTab);
+    await screen.findByText("Hand injury");
+    fireEvent.change(screen.getByLabelText("Assign responder for emergency 71"), { target: { value: "N00001" } });
+    fireEvent.click(screen.getByRole("button", { name: "Assign" }));
+    await waitFor(() => expect(calls.some((call) => call.init.method === "POST" && call.url.endsWith("/emergencies/71/assignments"))).toBe(true));
+    const assignment = calls.find((call) => call.init.method === "POST" && call.url.endsWith("/emergencies/71/assignments"))!;
+    expect(JSON.parse(String(assignment.init.body))).toEqual({ unit: "JBBBB2", responderUid: "N00001" });
+  });
+
+  it("lets the assigned responder acknowledge an emergency with the OHC unit scope", async () => {
+    routes["GET /me"] = () => ({ body: ME() });
+    routes["GET /emergencies"] = () => ({ body: { emergencies: [{ id: 71, unit_uid: "JBBBB2", corporate_uid: "CAF030", employee_user_id: 41, employee_name: "Anil Employee", incident_type: "injury", severity: "critical", description: "Hand injury", location: "Assembly", occurred_at: "2026-10-08T08:00:00Z", status: "open", triage_notes: null, resolution: null, active_assignment_count: 1, acknowledged_assignment_count: 0, my_assignment_id: 9, my_assignment_status: "assigned", my_pending_assignment_id: 9 }] } });
+    routes["GET /responders"] = () => ({ body: { responders: [] } });
+    routes["PATCH /emergencies/71/assignments/9/respond"] = () => ({ body: { assignment: { id: 9, status: "acknowledged" } } });
+    renderAt("/ohc");
+    fireEvent.click(await screen.findByRole("tab", { name: "Emergencies" }));
+    await screen.findByText("Hand injury");
+    fireEvent.click(screen.getByRole("button", { name: "Acknowledge" }));
+    await waitFor(() => expect(calls.some((call) => call.init.method === "PATCH" && call.url.endsWith("/emergencies/71/assignments/9/respond"))).toBe(true));
+    const response = calls.find((call) => call.init.method === "PATCH" && call.url.endsWith("/emergencies/71/assignments/9/respond"))!;
+    expect(JSON.parse(String(response.init.body))).toEqual({ unit: "JBBBB2", status: "acknowledged" });
+  });
+
+  it("records an attributed field note against the selected emergency", async () => {
+    routes["GET /me"] = () => ({ body: ME() });
+    routes["GET /emergencies"] = () => ({ body: { emergencies: [{ id: 71, unit_uid: "JBBBB2", corporate_uid: "CAF030", employee_user_id: 41, employee_name: "Anil Employee", incident_type: "injury", severity: "critical", description: "Hand injury", location: "Assembly", occurred_at: "2026-10-08T08:00:00Z", status: "open", triage_notes: null, resolution: null, active_assignment_count: 0, acknowledged_assignment_count: 0 }] } });
+    routes["GET /responders"] = () => ({ body: { responders: [] } });
+    routes["GET /emergencies/71"] = () => ({ body: { emergency: { id: 71, incident_type: "injury" }, assignments: [], events: [], notes: [], report: null, amendments: [] } });
+    routes["POST /emergencies/71/notes"] = () => ({ status: 201, body: { note: { id: 2 } } });
+    renderAt("/ohc");
+    fireEvent.click(await screen.findByRole("tab", { name: "Emergencies" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Operational timeline" }));
+    fireEvent.change(await screen.findByLabelText("Add field note"), { target: { value: "First aider en route" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    await waitFor(() => expect(calls.some((call) => call.init.method === "POST" && call.url.endsWith("/emergencies/71/notes"))).toBe(true));
+    const note = calls.find((call) => call.init.method === "POST" && call.url.endsWith("/emergencies/71/notes"))!;
+    expect(JSON.parse(String(note.init.body))).toEqual({ unit: "JBBBB2", body: "First aider en route", noteType: "operational" });
+  });
+
+  it("schedules a Mediqzy occupational visit with unit-scoped employee data", async () => {
+    routes["GET /me"] = () => ({ body: ME() });
+    routes["GET /appointments"] = () => ({ body: { appointments: [] } });
+    routes["GET /encounters"] = () => ({ body: { encounters: [] } });
+    routes["GET /staff-messages"] = () => ({ body: { messages: [] } });
+    routes["GET /occupational-summary"] = () => ({ body: { summary: { appointments: { total: 0, completed: 0, no_show: 0 }, encounters: { total: 0, finalized: 0 }, screenings: { total: 0, attention_required: 0 } } } });
+    routes["POST /appointments"] = () => ({ status: 201, body: { appointment: { id: 3 } } });
+    renderAt("/ohc");
+    fireEvent.click(await screen.findByRole("tab", { name: "Occupational care" }));
+    fireEvent.change(await screen.findByLabelText("Employee user ID"), { target: { value: "41" } });
+    fireEvent.change(screen.getByLabelText("Date and time"), { target: { value: "2026-10-10T10:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Schedule visit" }));
+    await waitFor(() => expect(calls.some((call) => call.init.method === "POST" && call.url.endsWith("/appointments"))).toBe(true));
+    const appointment = calls.find((call) => call.init.method === "POST" && call.url.endsWith("/appointments"))!;
+    expect(JSON.parse(String(appointment.init.body))).toMatchObject({ unit: "JBBBB2", employeeUserId: 41, appointmentType: "occupational_visit" });
+  });
+
   it("an ended contract (account_unavailable) signs the worker out of the workspace", async () => {
     routes["GET /me"] = () => ({ status: 403, body: { code: "account_unavailable", message: "x" } });
     renderAt("/ohc");
