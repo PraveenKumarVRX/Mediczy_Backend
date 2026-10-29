@@ -8,7 +8,11 @@ const sibBodies = [];
 
 async function loadWith(env) {
   jest.resetModules();
-  Object.assign(process.env, { SIB_URL: 'http://sib.test', ...env });
+  // These tests exercise sib/isha cascade routing specifically, independent of
+  // today's production ISHA_INFRA_DOWN default (ai.isha.buzz's domain expired
+  // 2026-10-29) — force it back on here so the assertions below still cover
+  // the normal-operation behavior that applies once the domain is renewed.
+  Object.assign(process.env, { SIB_URL: 'http://sib.test', ISHA_INFRA_DOWN: 'false', ...env });
   global.fetch = jest.fn(async (url, init) => {
     if (String(url).startsWith('http://sib.test')) {
       sibBodies.push(JSON.parse(init.body));

@@ -585,6 +585,14 @@ const ISHA_DIRECT_ENABLED = isIshaConfigured();
 const MEDIQZY_AI_PRIMARY_PROVIDER = String(getProviderEnv('MEDIQZY_AI_PRIMARY_PROVIDER') || 'isha').toLowerCase();
 const ISHA_LLM_AGENT_TYPE = getProviderEnv('ISHA_LLM_AGENT_TYPE') || getProviderEnv('ISHA_AGENT_TYPE') || 'Claims';
 const ISHA_PRIMARY_ENABLED = MEDIQZY_AI_PRIMARY_PROVIDER === 'isha' && ISHA_DIRECT_ENABLED;
+// ai.isha.buzz's domain registration expired (2026-10-29, confirmed NXDOMAIN
+// on two independent public resolvers), taking down both the direct iSHA
+// provider and sib (which proxies every request to that same host). Defaults
+// to "down" so production traffic maps straight to groq without wasting time
+// on a guaranteed-failing provider; flip ISHA_INFRA_DOWN=false (no deploy
+// needed, just the env var) once the domain is renewed and iSHA is reachable
+// again — no other code change required.
+const ISHA_INFRA_DOWN = String(getProviderEnv('ISHA_INFRA_DOWN') || 'true').toLowerCase() !== 'false';
 const GROQ_CHAT_MODEL = getProviderEnv('GROQ_MODEL') || getProviderEnv('GROQ_CHAT_MODEL') || 'openai/gpt-oss-20b';
 // Sarvam AI — opt-in Indic/multilingual fallback. Inert unless SARVAM_ENABLED=true AND a key is set.
 const SARVAM_MODEL = getProviderEnv('SARVAM_MODEL') || 'sarvam-105b-conversations';
@@ -598,13 +606,17 @@ const PROVIDERS = [
     getClient: () => ({ available: true }),
     useSib: true,
     priority: ISHA_PRIMARY_ENABLED ? 10 : 0,
+    // sib's only backend is iSHA — see ISHA_INFRA_DOWN above.
+    disabled: ISHA_INFRA_DOWN,
   },
   {
     name: 'groq',
-    label: 'Groq chat fallback',
+    label: ISHA_INFRA_DOWN
+      ? 'Groq chat fallback (temporary primary — iSHA domain expired, see sib/isha)'
+      : 'Groq chat fallback',
     model: GROQ_CHAT_MODEL,
     getClient: getGroqClient,
-    priority: ISHA_PRIMARY_ENABLED ? 20 : 1,
+    priority: ISHA_INFRA_DOWN ? 0 : (ISHA_PRIMARY_ENABLED ? 20 : 1),
   },
   {
     name: 'sarvam',
@@ -631,9 +643,10 @@ const PROVIDERS = [
     getClient: () => ({ available: true }),
     useFetch: true,
     priority: ISHA_PRIMARY_ENABLED ? 0 : 2,
-    // Enabled as a genuine cascade fallback whenever iSHA credentials are set.
-    // Falls through gracefully (cascade continues) if the endpoint is unreachable.
-    disabled: !ISHA_DIRECT_ENABLED,
+    // isIshaConfigured() still reports credentials present even though the
+    // domain itself is dead, so ISHA_INFRA_DOWN (see above) is the override
+    // that actually keeps this off until the domain is renewed.
+    disabled: ISHA_INFRA_DOWN || !ISHA_DIRECT_ENABLED,
     extraBody: { agent_type: ISHA_LLM_AGENT_TYPE },
   },
   {
