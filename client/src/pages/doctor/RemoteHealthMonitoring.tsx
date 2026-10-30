@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/utils/api";
@@ -1272,14 +1273,228 @@ const mapApiPatient = (p: any): Patient => {
 // MAIN DASHBOARD COMPONENT
 // ==========================================
 
+// Sample fixtures are used only when the explicitly labelled sample mode is selected.
+const generateSamplePatients = (count: number, mode: DashboardMode = 'remote'): Patient[] => {
+  const erComplaints = [
+    'Chest Pain', 'SOB - Acute', 'Abdominal Pain', 'Head Injury', 'RTA - Polytrauma',
+    'Fever with Altered Sensorium', 'Snake Bite', 'Poisoning', 'Burns 30% TBSA',
+    'Stroke - Acute Onset', 'MI - STEMI', 'Diabetic Ketoacidosis', 'Status Epilepticus',
+    'Anaphylaxis', 'GI Bleed', 'Acute Kidney Injury', 'Hanging - Near Fatal'
+  ];
+
+  const icuDiagnoses = [
+    'Septic Shock - Pneumonia', 'ARDS', 'Post CABG Day 2', 'Severe Pancreatitis',
+    'Hepatic Encephalopathy', 'Status Asthmaticus', 'Guillain-Barré Syndrome',
+    'Myasthenic Crisis', 'Post Craniotomy', 'Poly-trauma - Post Op', 'COPD Exacerbation',
+    'Cardiogenic Shock', 'DKA - Resolving', 'Acute Liver Failure', 'Meningitis'
+  ];
+
+  const remoteConditions = [
+    'Post-MI Follow-up', 'CHF Monitoring', 'Arrhythmia Surveillance', 'Hypertension',
+    'Diabetes - Insulin Dependent', 'COPD - Home O2', 'Post Pacemaker', 'Post Stent',
+    'CKD Stage 4', 'Post Transplant', 'Heart Failure - LVEF 30%', 'Atrial Fibrillation'
+  ];
+
+  const erLocations = ['Resuscitation Bay', 'Trauma Bay', 'Red Zone', 'Yellow Zone', 'Green Zone', 'Observation', 'Procedure Room'];
+  const icuLocations = ['ICU Bed', 'CCU Bed', 'SICU Bed', 'Neuro ICU', 'MICU Bed', 'Cardiac ICU', 'Isolation ICU'];
+  const remoteLocations = ['Home', 'Nursing Home', 'Sub-center', 'PHC', 'Mobile'];
+
+  const doctors = ['Dr. Sharma', 'Dr. Patel', 'Dr. Reddy', 'Dr. Singh', 'Dr. Khan', 'Dr. Iyer', 'Dr. Das'];
+  const nurses = ['Sr. Mary', 'Sr. Lakshmi', 'Sr. Fatima', 'Sr. Priya', 'Sr. Geeta', 'Br. Rajan', 'Br. Sunil'];
+
+  const complaints = mode === 'er' ? erComplaints : mode === 'icu' ? icuDiagnoses : remoteConditions;
+  const locations = mode === 'er' ? erLocations : mode === 'icu' ? icuLocations : remoteLocations;
+
+  const patients: Patient[] = [];
+
+  for (let i = 1; i <= count; i++) {
+    const age = Math.floor(Math.random() * 85) + 10;
+    const riskScore = Math.floor(Math.random() * 100);
+
+    let status: Patient['status'] = 'stable';
+    if (riskScore >= RISK_THRESHOLDS.CRITICAL) status = 'critical';
+    else if (riskScore >= RISK_THRESHOLDS.WARNING) status = 'warning';
+
+    const heartRate = status === 'critical'
+      ? Math.floor(Math.random() * 60) + 100
+      : status === 'warning'
+        ? Math.floor(Math.random() * 30) + 80
+        : Math.floor(Math.random() * 20) + 60;
+
+    const oxygenSat = status === 'critical'
+      ? Math.floor(Math.random() * 10) + 85
+      : status === 'warning'
+        ? Math.floor(Math.random() * 5) + 92
+        : Math.floor(Math.random() * 3) + 96;
+
+    const respRate = status === 'critical'
+      ? Math.floor(Math.random() * 15) + 22
+      : status === 'warning'
+        ? Math.floor(Math.random() * 8) + 18
+        : Math.floor(Math.random() * 6) + 12;
+
+    const temp = status === 'critical'
+      ? parseFloat((37 + Math.random() * 3).toFixed(1))
+      : parseFloat((36.5 + Math.random() * 1.5).toFixed(1));
+
+    const systolic = status === 'critical'
+      ? Math.random() > 0.5 ? Math.floor(Math.random() * 30) + 70 : Math.floor(Math.random() * 40) + 170
+      : Math.floor(Math.random() * 40) + 110;
+
+    const vitalSigns: VitalSigns = {
+      heartRate,
+      bloodPressure: {
+        systolic,
+        diastolic: Math.floor(systolic * 0.6) + Math.floor(Math.random() * 10)
+      },
+      oxygenSaturation: oxygenSat,
+      temperature: temp,
+      respiratoryRate: respRate,
+      map: Math.floor((systolic + 2 * (systolic * 0.6)) / 3),
+      gcs: status === 'critical' ? Math.floor(Math.random() * 7) + 3 : status === 'warning' ? Math.floor(Math.random() * 4) + 10 : 15,
+      etCO2: Math.floor(Math.random() * 15) + 30,
+      cvp: Math.floor(Math.random() * 10) + 5
+    };
+
+    vitalSigns.newsScore = calculateNEWS(vitalSigns);
+
+    const location = locations[Math.floor(Math.random() * locations.length)];
+    const bedNum = mode === 'remote' ? '' : `-${Math.floor(Math.random() * 20) + 1}`;
+
+    const patient: Patient = {
+      id: `sample-P${i.toString().padStart(4, '0')}`,
+      name: 'Sample ' + INDIAN_NAMES[Math.floor(Math.random() * INDIAN_NAMES.length)],
+      age,
+      gender: ['Male', 'Female'][Math.floor(Math.random() * 2)] as Patient['gender'],
+      bedNumber: `${location}${bedNum}`,
+      admissionTime: new Date(Date.now() - Math.random() * 48 * 60 * 60 * 1000).toISOString(),
+      chiefComplaint: complaints[Math.floor(Math.random() * complaints.length)],
+      riskScore,
+      status,
+      vitalSigns,
+      trend: ['improving', 'stable', 'declining'][Math.floor(Math.random() * 3)] as Patient['trend'],
+      alerts: status === 'critical'
+        ? ['⚠️ Critical vitals', '🚨 Immediate attention required']
+        : status === 'warning'
+          ? ['📉 Vitals trending down']
+          : [],
+      lastUpdated: new Date(),
+      location,
+      assignedDoctor: doctors[Math.floor(Math.random() * doctors.length)],
+      assignedNurse: nurses[Math.floor(Math.random() * nurses.length)]
+    };
+
+    // Add mode-specific properties
+    if (mode === 'er') {
+      patient.triageCategory = (Math.floor(Math.random() * 5) + 1) as 1 | 2 | 3 | 4 | 5;
+      patient.waitTime = Math.floor(Math.random() * 180);
+      patient.arrivalMode = ['ambulance', 'walk-in', 'transfer', 'police'][Math.floor(Math.random() * 4)] as Patient['arrivalMode'];
+    }
+
+    if (mode === 'icu') {
+      patient.dayInICU = Math.floor(Math.random() * 14) + 1;
+      patient.isolation = ['none', 'contact', 'droplet', 'airborne'][Math.floor(Math.random() * 4)] as Patient['isolation'];
+      patient.dialysis = Math.random() > 0.7;
+
+      // Add ventilator for critical/warning patients
+      if (status === 'critical' || (status === 'warning' && Math.random() > 0.5)) {
+        patient.ventilator = {
+          mode: ['SIMV', 'AC', 'PS', 'CPAP', 'BiPAP'][Math.floor(Math.random() * 5)] as VentilatorSettings['mode'],
+          fio2: Math.floor(Math.random() * 60) + 40,
+          peep: Math.floor(Math.random() * 10) + 5,
+          tidalVolume: Math.floor(Math.random() * 200) + 400,
+          rr: Math.floor(Math.random() * 10) + 12,
+          pip: Math.floor(Math.random() * 15) + 15
+        };
+      }
+
+      // Add infusions
+      patient.infusions = [];
+      if (status === 'critical') {
+        const drugs = ['Noradrenaline', 'Dopamine', 'Dobutamine', 'Vasopressin', 'Midazolam', 'Fentanyl', 'Propofol', 'Insulin'];
+        const numInfusions = Math.floor(Math.random() * 4) + 1;
+        for (let j = 0; j < numInfusions; j++) {
+          patient.infusions.push({
+            drug: drugs[Math.floor(Math.random() * drugs.length)],
+            rate: parseFloat((Math.random() * 10 + 0.5).toFixed(1)),
+            unit: 'mcg/kg/min',
+            remaining: Math.floor(Math.random() * 360) + 30,
+            status: Math.random() > 0.9 ? 'alarm' : 'running'
+          });
+        }
+      }
+    }
+
+    if (mode === 'remote') {
+      patient.deviceType = ['wearable', 'home-monitor', 'implant', 'mobile-app'][Math.floor(Math.random() * 4)] as Patient['deviceType'];
+      patient.connectivity = Math.random() > 0.1 ? 'online' : Math.random() > 0.5 ? 'offline' : 'intermittent';
+      patient.lastSync = new Date(Date.now() - Math.random() * 60 * 60 * 1000);
+    }
+
+    patients.push(patient);
+  }
+
+  return patients;
+};
+
+// Generate incoming ambulances
+const generateAmbulances = (count: number): AmbulanceIncoming[] => {
+  const conditions = [
+    'RTA - Head Injury', 'Chest Pain - ?MI', 'Burns 40%', 'Drowning', 'Snake Bite',
+    'Fall from Height', 'Assault - Stab Wound', 'Seizures', 'Unconscious', 'Labour - Complicated'
+  ];
+  const sources = ['Accident Site', 'PHC Transfer', 'Home Call', 'Industrial Injury', 'Railway Accident'];
+
+  return Array.from({ length: count }, (_, i) => ({
+    id: `AMB-${i + 1}`,
+    eta: Math.floor(Math.random() * 30) + 2,
+    patientCondition: conditions[Math.floor(Math.random() * conditions.length)],
+    category: (['red', 'yellow', 'green'] as const)[Math.floor(Math.random() * 3)],
+    source: sources[Math.floor(Math.random() * sources.length)],
+    paramedic: `EMT ${['Rajan', 'Suresh', 'Mohan', 'Anil'][Math.floor(Math.random() * 4)]}`,
+    vitals: {
+      heartRate: Math.floor(Math.random() * 60) + 60,
+      bloodPressure: { systolic: Math.floor(Math.random() * 80) + 80, diastolic: Math.floor(Math.random() * 40) + 50 },
+      oxygenSaturation: Math.floor(Math.random() * 15) + 85
+    }
+  }));
+};
+
+// Generate resource status
+const generateResourceStatus = (mode: DashboardMode): ResourceStatus => {
+  const totalBeds = mode === 'icu' ? 20 : mode === 'er' ? 40 : 100;
+  const occupancy = mode === 'icu' ? 0.85 : mode === 'er' ? 0.7 : 0.5;
+  const occupied = Math.floor(totalBeds * occupancy);
+
+  return {
+    totalBeds,
+    occupiedBeds: occupied,
+    availableBeds: totalBeds - occupied,
+    ventilators: { total: mode === 'icu' ? 15 : 5, inUse: mode === 'icu' ? 12 : 3 },
+    dialysisMachines: { total: mode === 'icu' ? 6 : 2, inUse: mode === 'icu' ? 4 : 1 },
+    monitors: { total: mode === 'icu' ? 20 : 15, inUse: mode === 'icu' ? 18 : 12 },
+    isolation: { total: 5, inUse: Math.floor(Math.random() * 4) + 1 },
+    staff: {
+      doctors: mode === 'icu' ? 4 : mode === 'er' ? 6 : 2,
+      nurses: mode === 'icu' ? 12 : mode === 'er' ? 15 : 5,
+      techs: mode === 'icu' ? 4 : mode === 'er' ? 5 : 2
+    }
+  };
+};
+
+
 const RemoteHealthMonitoring = () => {
   const { currentDoctor } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const socket = useSocketConnection();
 
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sampleMode = searchParams.get("data") === "sample";
+
   // Dashboard Mode
   const [dashboardMode, setDashboardMode] = useState<DashboardMode>('remote');
+  const sampleResources = useMemo(() => sampleMode ? generateResourceStatus(dashboardMode) : null, [sampleMode, dashboardMode]);
   const [viewMode, setViewMode] = useState<'grid' | 'scatter' | 'list'>('scatter');
 
   // State
@@ -1314,26 +1529,29 @@ const RemoteHealthMonitoring = () => {
     },
     staleTime: 60_000,
     refetchInterval: 90_000,
-    enabled: dashboardMode === 'remote',
+    enabled: !sampleMode && dashboardMode === 'remote',
   });
 
   // ── Initialize patients based on mode ────────────────────────────────────
   useEffect(() => {
-    setPatients([]);
-    setAmbulances([]);
+    setPatients(sampleMode ? generateSamplePatients(dashboardMode === 'icu' ? 12 : 24, dashboardMode) : []);
+    setAmbulances(sampleMode && dashboardMode === 'er' ? generateAmbulances(3) : []);
+    setAlerts([]);
+    setSelectedPatient(null);
+    setShowCodeBlue(false);
     setViewMode(dashboardMode === 'icu' ? 'grid' : 'scatter');
-  }, [dashboardMode]);
+  }, [dashboardMode, sampleMode]);
 
   // Sync real API data → patients state when in remote mode
   useEffect(() => {
-    if (dashboardMode === 'remote') {
+    if (!sampleMode && dashboardMode === 'remote') {
       setPatients(remoteApiData || []);
     }
-  }, [dashboardMode, remoteApiData]);
+  }, [dashboardMode, remoteApiData, sampleMode]);
 
   // ── Socket.IO: real-time vitals alert from patient BLE sync ─────────────
   useEffect(() => {
-    if (!socket || dashboardMode !== 'remote') return;
+    if (!socket || sampleMode || dashboardMode !== 'remote') return;
 
     const handleVitalsAlert = (data: {
       patientId: number | string;
@@ -1374,7 +1592,7 @@ const RemoteHealthMonitoring = () => {
 
     socket.on('patient_vitals_alert', handleVitalsAlert);
     return () => { socket.off('patient_vitals_alert', handleVitalsAlert); };
-  }, [socket, dashboardMode, soundEnabled]);
+  }, [socket, dashboardMode, soundEnabled, sampleMode]);
 
   // Vitals are updated only from persisted remote data and socket events.
   
@@ -1467,6 +1685,10 @@ const RemoteHealthMonitoring = () => {
   };
   
   const handleVideoCall = (patient: Patient) => {
+    if (sampleMode) {
+      toast({ title: "Sample patient", description: "Video calls are available for live patients." });
+      return;
+    }
     toast({
       title: "Starting Video Call",
       description: `Connecting to ${patient.name}...`
@@ -1529,7 +1751,7 @@ const RemoteHealthMonitoring = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCodeBlue(false)}>Cancel</Button>
               <Button className="bg-red-600 hover:bg-red-700" onClick={() => {
-                toast({ title: "🚨 CODE BLUE ACTIVATED", description: "Emergency response team notified" });
+                toast({ title: sampleMode ? "Sample Code Blue drill" : "Code Blue preview", description: "Demonstration only — no emergency team was notified." });
                 setShowCodeBlue(false);
                 playAlertSound();
               }}>
@@ -1542,6 +1764,14 @@ const RemoteHealthMonitoring = () => {
       </Dialog>
       
       <div ref={containerRef} className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:bg-amber-950 dark:text-amber-100">
+          <p>{sampleMode ? 'Sample data — fictional patients, vitals, beds, and ambulances for demonstration.' : 'Live data — remote patient records. ICU and ER live sources are not connected.'}</p>
+          <Button variant="outline" size="sm" onClick={() => {
+            const next = new URLSearchParams(searchParams);
+            if (sampleMode) next.delete('data'); else next.set('data', 'sample');
+            setSearchParams(next, { replace: true });
+          }}>{sampleMode ? 'Use live data' : 'Show sample data'}</Button>
+        </div>
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -1561,11 +1791,11 @@ const RemoteHealthMonitoring = () => {
                  'Remote Health Monitoring'}
               </h1>
               <p className="text-muted-foreground text-sm flex items-center gap-2">
-                {dashboardMode === 'icu' ? 'Intensive Care Unit • Live source unavailable' :
+                {dashboardMode === 'icu' ? 'Intensive Care Unit • Bedside monitoring' :
                  dashboardMode === 'er' ? 'Emergency Department • Triage & casualty management' :
                  'Home patients • Remote vital signs monitoring'}
                 {' '}• Last updated: {new Date().toLocaleTimeString()}
-                  {dashboardMode === 'remote' ? (
+                  {sampleMode ? <Badge variant="outline">Sample data</Badge> : dashboardMode === 'remote' ? (
                     remoteLoading
                       ? <span className="inline-flex items-center gap-1 text-xs text-teal-500"><RefreshCw className="h-3 w-3 animate-spin" />Loading live data…</span>
                       : remoteError
@@ -1707,7 +1937,10 @@ const RemoteHealthMonitoring = () => {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => {
-                  if (dashboardMode === 'remote') {
+                  if (sampleMode) {
+                    setPatients(generateSamplePatients(dashboardMode === 'icu' ? 12 : 24, dashboardMode));
+                    setAmbulances(dashboardMode === 'er' ? generateAmbulances(3) : []);
+                  } else if (dashboardMode === 'remote') {
                     refetchRemote();
                   } else {
                     toast({ title: 'Live data unavailable', description: 'This view has no connected live-data source.' });
@@ -1722,13 +1955,13 @@ const RemoteHealthMonitoring = () => {
         </div>
         
         {/* Resource Bar (ICU/ER only) */}
-        {(dashboardMode === 'icu' || dashboardMode === 'er') && (
+        {(dashboardMode === 'icu' || dashboardMode === 'er') && (sampleResources ? <ResourceBar resources={sampleResources} mode={dashboardMode} /> : (
           <Card>
             <CardContent className="p-4 text-sm text-muted-foreground">
               Resource data is unavailable because this view has no connected live-data source.
             </CardContent>
           </Card>
-        )}
+        ))}
         
         {/* Filters Panel */}
         {showFilters && (
@@ -1863,7 +2096,7 @@ const RemoteHealthMonitoring = () => {
         </div>
 
         {/* Loading skeleton for remote mode */}
-        {dashboardMode === 'remote' && remoteLoading && patients.length === 0 && (
+        {!sampleMode && dashboardMode === 'remote' && remoteLoading && patients.length === 0 && (
           <Card>
             <CardContent className="p-8 flex flex-col items-center gap-3 text-center">
               <RefreshCw className="h-8 w-8 text-teal-500 animate-spin" />
@@ -1873,7 +2106,7 @@ const RemoteHealthMonitoring = () => {
         )}
 
         {/* Empty state for remote mode with no patients */}
-        {dashboardMode === 'remote' && !remoteLoading && !remoteError && patients.length === 0 && (
+        {!sampleMode && dashboardMode === 'remote' && !remoteLoading && !remoteError && patients.length === 0 && (
           <Card>
             <CardContent className="p-8 flex flex-col items-center gap-3 text-center">
               <Radio className="h-10 w-10 text-teal-400" />
@@ -1883,7 +2116,7 @@ const RemoteHealthMonitoring = () => {
           </Card>
         )}
 
-        {dashboardMode === 'remote' && remoteError && patients.length === 0 && (
+        {!sampleMode && dashboardMode === 'remote' && remoteError && patients.length === 0 && (
           <Card className="border-red-500">
             <CardContent className="p-4 flex flex-col items-center gap-2 text-center">
               <AlertCircle className="h-6 w-6 text-red-500" />

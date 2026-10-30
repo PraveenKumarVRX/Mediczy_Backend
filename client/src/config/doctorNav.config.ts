@@ -37,6 +37,7 @@ export const DOCTOR_NAV_ITEMS: DoctorNavItem[] = [
   { icon: FileText, label: 'Prescriptions', path: '/doctor/prescriptions', category: 'Clinical' },
   { icon: ShieldCheck, label: 'Fitness Certificates', path: '/doctor/fitness-certificates', category: 'Clinical', clinicOnly: true },
   { icon: QrCode, label: 'Patient Self Check-in', path: '/doctor/self-checkin', category: 'Clinical', clinicOnly: true },
+  { icon: HeartPulse, label: 'Remote Monitoring', path: '/doctor/health-monitoring?view=advanced&data=sample', category: 'Clinical' },
   { icon: HeartPulse, label: 'Health Monitoring', path: '/doctor/health-monitoring', category: 'Clinical' },
   {
     icon: FilePlus2,

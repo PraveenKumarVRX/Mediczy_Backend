@@ -200,6 +200,8 @@ import hrmsRouter from './routes/hrms.route.js';
 import hospitalInsuranceRouter from './routes/hospital-insurance.route.js';
 import hospitalInsuranceAuthRouter from './routes/hospital-insurance/auth.routes.js';
 import hospitalInsuranceEmailRouter from './routes/hospital-insurance/email.route.js';
+import idempotentWebhookRouter from './routes/idempotent-webhook.route.js';
+import tpaWebhookRouter from './routes/webhooks/tpa-webhook.route.js';
 import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
@@ -886,7 +888,7 @@ app.use(express.json({
   limit: '50mb',
   verify: (req, _res, buf) => {
     // The WhatsApp webhook is HMAC-signed by Meta over the exact bytes it sent, so the raw body is required to verify it.
-    if (/^\/api\/contact-center\/hooks\/livekit\/[A-Za-z0-9_-]{4,64}$/.test(req.originalUrl.split('?')[0]) || req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook' || req.originalUrl.split('?')[0] === '/api/chatwoot/webhook') {
+    if (/^\/api\/contact-center\/hooks\/livekit\/[A-Za-z0-9_-]{4,64}$/.test(req.originalUrl.split('?')[0]) || req.originalUrl === '/api/payments/webhook' || req.originalUrl === '/api/hospital/billing/pgi/webhook' || req.originalUrl === '/api/hospital/billing/refunds/webhook' || req.originalUrl.split('?')[0] === '/api/whatsapp-business/webhook' || req.originalUrl.split('?')[0] === '/api/chatwoot/webhook' || /^\/api\/webhooks\/tpa(?:\/|$)/.test(req.originalUrl.split('?')[0])) {
       req.rawBody = buf.toString('utf8');
     }
   }
@@ -1072,7 +1074,8 @@ app.use((req, res, next) => {
       req.path === '/api/payments/webhook' ||
       req.path === '/api/hospital/billing/pgi/webhook' ||
       req.path === '/api/hospital/billing/refunds/webhook' ||
-      req.path === '/api/payments/config') {
+      req.path === '/api/payments/config' ||
+      /^\/api\/webhooks\/tpa(?:\/|$)/.test(req.path.split('?')[0])) {
     req.skipAuth = true;
   }
   next();
@@ -1417,6 +1420,7 @@ app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospita
 app.use("/api/hospital-insurance/auth", hospitalInsuranceAuthRouter); // Separate insurance portal login
 app.use("/api/hospital/insurance/emails", hospitalInsuranceEmailRouter); // Insurance portal email AI inbox
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
+app.use('/api/admin/webhooks', idempotentWebhookRouter); // Idempotent webhook event log (admin: list, retry, stats)
 app.use("/api/appointments", appointmentRouter);
 mountLabRoutes(app, 'catalog'); // lab routes — see routes/lab/registry.js
 app.use("/api/employee", employeeNetworkRouter); // Corporate employee network (my-labs, my-hospitals, my-clinics)
@@ -1543,6 +1547,7 @@ app.use('/api/webinars', authUser, publicWebinarRouter); // Public webinar brows
 
 // n8n Webhook callbacks
 app.use('/api/webhooks/n8n-callback', n8nCallbackRouter); // n8n workflow callbacks
+app.use('/api/webhooks/tpa', tpaWebhookRouter); // TPA/insurer inbound webhooks (idempotent + HMAC verified)
 
 // Prometheus metrics endpoint
 const isLocalMetricsRequest = (req) => {

@@ -77,6 +77,59 @@ interface ScribeResult {
   duration_seconds?: number;
 }
 
+type ApiRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is ApiRecord =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+const asText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return '';
+};
+
+const asFiniteNumber = (value: unknown): number | undefined => {
+  const numberValue = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+};
+
+const firstText = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    const text = asText(value).trim();
+    if (text) return text;
+  }
+  return undefined;
+};
+
+// The full-pipeline API returns `transcription` as an object, but older
+// endpoints return a string. Convert both shapes before they reach JSX.
+const normalizeScribeResult = (payload: unknown): ScribeResult => {
+  const data = isRecord(payload) ? payload : {};
+  const transcription = isRecord(data.transcription) ? data.transcription : {};
+  const document = isRecord(data.document) ? data.document : {};
+
+  return {
+    transcription: firstText(
+      transcription.text,
+      transcription.transcript,
+      data.transcript,
+      data.transcription,
+      data.text,
+    ),
+    document: data.document ?? data.structured_data,
+    text: firstText(data.formatted_text, document.formatted_text, data.text),
+    detected_language: firstText(
+      data.detected_language,
+      transcription.detected_language,
+      transcription.language,
+      data.language,
+    ),
+    duration_seconds: asFiniteNumber(
+      data.duration_seconds ?? data.audio_duration ?? transcription.duration_seconds,
+    ),
+  };
+};
+
 // ─── Format result object to readable text ────────────────────────────────────
 const formatDoc = (doc: unknown): string => {
   if (typeof doc === 'string') return doc;
@@ -249,7 +302,7 @@ const DoctorVoiceScribe = () => {
       });
 
       setProgress('Processing complete!');
-      setResult(res.data);
+      setResult(normalizeScribeResult(res.data));
       toast({ title: '✅ Document Generated', description: 'AI processing complete.' });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
@@ -479,7 +532,7 @@ const DoctorVoiceScribe = () => {
                           🌐 {result.detected_language}
                         </Badge>
                       )}
-                      {result.duration_seconds && (
+                      {result.duration_seconds !== undefined && (
                         <span className="text-xs text-muted-foreground">
                           {result.duration_seconds.toFixed(1)}s audio
                         </span>
