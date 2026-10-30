@@ -16,8 +16,8 @@
  * Mounted in server/app.js as: app.use('/api/webhooks/tpa', tpaWebhookRouter)
  */
 import express from 'express';
-import { verifyWebhookHmac } from '../middleware/hmac-webhook.middleware.js';
-import { isDuplicate, recordEvent, markProcessed, markFailed } from '../services/idempotent-webhook.service.js';
+import { verifyWebhookHmac } from '../../middleware/hmac-webhook.middleware.js';
+import { isDuplicate, recordEvent, markProcessed, markFailed } from '../../services/idempotent-webhook.service.js';
 
 const router = express.Router();
 
