@@ -255,37 +255,48 @@ function SidebarAccordion({
   );
 }
 
+/* Reads localStorage synchronously, so the very first render already shows
+ * the right role's sidebar — computing this later in a useEffect left a
+ * one-frame gap on every fresh mount (hard refresh, or a login flow's
+ * full-page redirect into /team, /nurse or /assistant) where isTeamUser etc.
+ * were still their useState(false) default, flashing the patient sidebar
+ * before flipping to the correct one. */
+const computeRoleFlags = (pathname: string) => {
+  const teamToken       = localStorage.getItem('teamToken');
+  const nurseToken      = localStorage.getItem('nurseToken');
+  const assistantToken  = localStorage.getItem('assistantToken');
+  const userToken       = localStorage.getItem('token');
+
+  let userIsAdmin = false;
+  if (userToken) {
+    try {
+      const payload = JSON.parse(atob(userToken.split('.')[1]));
+      userIsAdmin = payload.role === 'admin' || payload.isAdmin === true;
+    } catch {
+      // A malformed token is treated as a non-admin session.
+    }
+  }
+
+  return {
+    isAdmin: userIsAdmin,
+    isTeamUser: !!teamToken && pathname.startsWith('/team'),
+    isNurseUser: !!nurseToken && pathname.startsWith('/nurse'),
+    isAssistantUser: !!assistantToken && pathname.startsWith('/assistant'),
+  };
+};
+
 /* ─── Main Sidebar ────────────────────────────────────────────────────────── */
 export function Sidebar() {
   const location = useLocation();
   const programsAvailable = useProgramAvailability();
   const [isOpen, setIsOpen] = useState(false);
   const [isDesktop, setIsDesktop] = useState(false);
-  const [isTeamUser, setIsTeamUser] = useState(false);
-  const [isNurseUser, setIsNurseUser] = useState(false);
-  const [isAssistantUser, setIsAssistantUser] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [roleFlags, setRoleFlags] = useState(() => computeRoleFlags(location.pathname));
+  const { isTeamUser, isNurseUser, isAssistantUser, isAdmin } = roleFlags;
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const teamToken   = localStorage.getItem('teamToken');
-    const nurseToken  = localStorage.getItem('nurseToken');
-    const assistantToken = localStorage.getItem('assistantToken');
-    const userToken   = localStorage.getItem('token');
-
-    let userIsAdmin = false;
-    if (userToken) {
-      try {
-        const payload = JSON.parse(atob(userToken.split('.')[1]));
-        userIsAdmin = payload.role === 'admin' || payload.isAdmin === true;
-      } catch {
-        // A malformed token is treated as a non-admin session.
-      }
-    }
-    setIsAdmin(userIsAdmin);
-    setIsTeamUser(!!teamToken && location.pathname.startsWith('/team'));
-    setIsNurseUser(!!nurseToken && location.pathname.startsWith('/nurse'));
-    setIsAssistantUser(!!assistantToken && location.pathname.startsWith('/assistant'));
+    setRoleFlags(computeRoleFlags(location.pathname));
   }, [location.pathname]);
 
   useEffect(() => {
